@@ -9,10 +9,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use gantry::analysis::{AnalysisStatus, analyze_package_types};
 use gantry::frontend::validate_package_syntax;
 use gantry::identity::ProtocolIdentity;
+use gantry::ir::ReceiverSource;
+use gantry::numeric::GantryInt;
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    InstructionKind, Machine, MachineBuildError, MachineLimits, MachineOutcome, MachineStep,
-    OperationCompletionError,
+    CanonicalTranscriptV1, ConcurrentTaskStateV1, ExecutionBudget, InstructionKind,
+    LogicalSessionRegistryV1, Machine, MachineBuildError, MachineLabel, MachineLimits,
+    MachineOutcome, MachineStep, OperationCompletionError, SessionCreationModeV1, TaskCaptureV1,
+    TaskCreationRequestV1, root_task_identity,
 };
 use gantry::source::SourceLimits;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
@@ -543,6 +547,584 @@ pure fn main() -> Tuple<Int, Int, String> {
     assert!(matches!(label.view(), LogicalValueView::String("counter")));
 }
 
+/// A shared inherent receiver lowers from an addressable root without a copied receiver load.
+#[test]
+fn shared_inherent_method_lowers_caller_root_and_struct_field_places() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+impl Counter { pure fn read(shared self) -> Int { self.value } }
+fn main(holder: Holder) -> Int { holder.counter.read() }
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let main = entry_workflow(&package);
+    let shared_signature = "fn <crate::Counter>::read(shared self)->Int";
+    assert!(
+        package
+            .workflows()
+            .iter()
+            .any(|workflow| workflow.signature.to_string() == shared_signature),
+        "{:#?}",
+        package.workflows()
+    );
+    assert!(
+        package
+            .canonical_ir()
+            .unwrap_or_else(|| panic!("valid package omitted canonical IR"))
+            .workflows()
+            .iter()
+            .any(|workflow| workflow.signature.to_string() == shared_signature),
+        "source canonical IR omitted {shared_signature}"
+    );
+    assert!(
+        program.workflows().iter().any(|workflow| {
+            workflow.path.as_str() == "<crate::Counter>::read"
+                && matches!(
+                    workflow.parameters.as_slice(),
+                    [gantry::ir::Parameter {
+                        name,
+                        receiver_mode: Some(gantry::ir::ReceiverMode::SharedPlace),
+                        ..
+                    }] if name.as_ref() == "self"
+                )
+        }),
+        "{:#?}",
+        program.workflows()
+    );
+    let shared_call = main
+        .instructions
+        .iter()
+        .find_map(|instruction| match &instruction.kind {
+            InstructionKind::ReceiverCall {
+                callee,
+                arguments,
+                source,
+            } if callee.as_str() == "<crate::Counter>::read" => Some((arguments, source)),
+            _ => None,
+        });
+    assert!(
+        matches!(
+            shared_call,
+            Some((1, ReceiverSource::CallerPlace { root, path }))
+                if root.as_ref() == "holder"
+                    && path == &vec![gantry::value::ValuePathSegment::StructField("counter".to_owned())]
+        ),
+        "{:#?}",
+        main.instructions
+    );
+    assert!(
+        !main.instructions.iter().any(|instruction| matches!(
+            &instruction.kind,
+            InstructionKind::Load(name) if name.as_ref() == "holder"
+        )),
+        "shared receiver lowering must not materialize a copied receiver"
+    );
+
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x3c; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let holder = LogicalValue::structure(
+        "crate::Holder",
+        vec![(
+            "counter".to_owned(),
+            LogicalValue::structure(
+                "crate::Counter",
+                vec![(
+                    "value".to_owned(),
+                    LogicalValue::integer(
+                        GantryInt::new(7)
+                            .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                    ),
+                )],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}")),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}"));
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![holder],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("shared source program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
+/// Shared caller places preserve every nested field projection in aggregate and assignment RHSs.
+#[test]
+fn shared_calls_preserve_nested_places_in_aggregate_and_assignment_rhs() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Inner { counter: Counter }
+struct Outer { inner: Inner }
+impl Counter { pure fn read(shared self) -> Int { self.value } }
+fn main(outer: Outer) -> Tuple<Int, Int> {
+    let mut result: Tuple<Int, Int> = (0, 0);
+    result = (outer.inner.counter.read(), outer.inner.counter.read());
+    result
+}
+"#,
+    );
+    let package = analyze(&root);
+    let main = entry_workflow(&package);
+    let calls = main
+        .instructions
+        .iter()
+        .filter_map(|instruction| match &instruction.kind {
+            InstructionKind::ReceiverCall { callee, source, .. }
+                if callee.as_str() == "<crate::Counter>::read" =>
+            {
+                Some(source)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 2, "{:#?}", main.instructions);
+    assert!(calls.iter().all(|source| matches!(
+        source,
+        ReceiverSource::CallerPlace { root, path }
+            if root.as_ref() == "outer"
+                && matches!(path.as_slice(),
+                    [
+                        gantry::value::ValuePathSegment::StructField(inner),
+                        gantry::value::ValuePathSegment::StructField(counter),
+                    ] if inner == "inner" && counter == "counter")
+    )));
+    assert!(!main.instructions.iter().any(|instruction| matches!(
+        &instruction.kind,
+        InstructionKind::Load(root) if root.as_ref() == "outer"
+    )));
+}
+
+/// A shared receiver may reborrow its own admitted caller place for another shared method.
+#[test]
+fn shared_inherent_method_reborrows_nested_caller_place() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter {
+    pure fn read(shared self) -> Int { self.value }
+    pure fn nested(shared self) -> Int { self.read() }
+}
+fn main(counter: Counter) -> Int { counter.nested() }
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let receiver_calls = program
+        .workflows()
+        .iter()
+        .flat_map(|workflow| &workflow.instructions)
+        .filter_map(|instruction| match &instruction.kind {
+            InstructionKind::ReceiverCall { callee, source, .. } => Some((callee.as_str(), source)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(receiver_calls.iter().any(|(callee, source)| {
+        *callee == "<crate::Counter>::nested"
+            && matches!(source, ReceiverSource::CallerPlace { root, path } if root.as_ref() == "counter" && path.is_empty())
+    }));
+    assert!(receiver_calls.iter().any(|(callee, source)| {
+        *callee == "<crate::Counter>::read"
+            && matches!(source, ReceiverSource::CallerPlace { root, path } if root.as_ref() == "self" && path.is_empty())
+    }));
+
+    let counter = LogicalValue::structure(
+        "crate::Counter",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}"));
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x3d; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![counter],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("nested shared source program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
+/// Copied receivers retain each projected type and leave the caller value unchanged.
+#[test]
+fn copied_method_receiver_lowers_root_load_and_nested_field_projections() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder<T> { marker: T, counter: Counter }
+impl Counter {
+    pure fn read(self) -> Int { self.value }
+    fn bump(mut self) -> Int { self.value += 6; self.value }
+}
+fn main(holder: Holder<Counter>) -> Tuple<Int, Int, Int> {
+    (holder.counter.read(), holder.counter.bump(), holder.counter.value)
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let main = entry_workflow(&package);
+    for callee in ["<crate::Counter>::read", "<crate::Counter>::bump"] {
+        let call = main
+            .instructions
+            .iter()
+            .position(|instruction| matches!(
+                &instruction.kind,
+                InstructionKind::ReceiverCall { callee: candidate, source: ReceiverSource::CopiedValue, .. }
+                    if candidate.as_str() == callee
+            ))
+            .unwrap_or_else(|| panic!("missing copied {callee} call: {:#?}", main.instructions));
+        assert!(
+            matches!(
+                &main.instructions[call - 2..call],
+                [
+                    gantry::ir::Instruction { ty: holder, kind: InstructionKind::Load(root), .. },
+                    gantry::ir::Instruction { ty: counter_ty, kind: InstructionKind::Project(gantry::ir::Projection::Field(counter)), .. },
+                ] if root.as_ref() == "holder" && counter.as_ref() == "counter"
+                    && holder.canonical_string() == "crate::Holder<crate::Counter>"
+                    && counter_ty.canonical_string() == "crate::Counter"
+            ),
+            "{:#?}",
+            main.instructions
+        );
+    }
+    let holder = LogicalValue::structure(
+        "crate::Holder<crate::Counter>",
+        vec![
+            (
+                "marker".to_owned(),
+                LogicalValue::structure(
+                    "crate::Counter",
+                    vec![(
+                        "value".to_owned(),
+                        LogicalValue::integer(
+                            GantryInt::new(0)
+                                .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                        ),
+                    )],
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("marker fixture failed: {error:?}")),
+            ),
+            (
+                "counter".to_owned(),
+                LogicalValue::structure(
+                    "crate::Counter",
+                    vec![(
+                        "value".to_owned(),
+                        LogicalValue::integer(
+                            GantryInt::new(1)
+                                .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                        ),
+                    )],
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}")),
+            ),
+        ],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}"));
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x3f; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![holder],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("copied receiver program did not start: {error:?}"));
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("copied receiver program did not succeed")
+    };
+    let read = value
+        .member(0)
+        .unwrap_or_else(|| panic!("result omitted the copied read result"));
+    let bumped = value
+        .member(1)
+        .unwrap_or_else(|| panic!("result omitted the copied mutation result"));
+    let original = value
+        .member(2)
+        .unwrap_or_else(|| panic!("result omitted the caller value"));
+    assert!(matches!(read.view(), LogicalValueView::Int(number) if number.get() == 1));
+    assert!(matches!(bumped.view(), LogicalValueView::Int(number) if number.get() == 7));
+    assert!(matches!(original.view(), LogicalValueView::Int(number) if number.get() == 1));
+}
+
+/// Shared calls are selected at their own postfix site, not by enclosing-expression containment.
+#[test]
+fn shared_calls_compose_with_free_calls_and_binary_expressions() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Pair { left: Counter, right: Counter }
+impl Counter { pure fn read(shared self) -> Int { self.value } }
+fn add(left: Int, right: Int) -> Int { left + right }
+fn main(pair: Pair) -> Int { add(pair.left.read(), pair.right.read()) + pair.left.read() }
+"#,
+    );
+    let package = analyze(&root);
+    let main = entry_workflow(&package);
+    let calls = main
+        .instructions
+        .iter()
+        .filter_map(|instruction| match &instruction.kind {
+            InstructionKind::ReceiverCall { callee, source, .. }
+                if callee.as_str() == "<crate::Counter>::read" =>
+            {
+                Some(source)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 3, "{:#?}", main.instructions);
+    assert!(calls.iter().all(|source| matches!(
+        source,
+        ReceiverSource::CallerPlace { root, path }
+            if root.as_ref() == "pair"
+                && matches!(path.as_slice(),
+                    [gantry::value::ValuePathSegment::StructField(field)]
+                        if matches!(field.as_str(), "left" | "right"))
+    )));
+    assert!(
+        main.instructions.iter().any(|instruction| matches!(
+            &instruction.kind,
+            InstructionKind::Call { callee, arguments: 2 } if callee.as_str() == "crate::add"
+        )),
+        "{:#?}",
+        main.instructions
+    );
+}
+
+/// Source-lowered shared calls retain their v3 program and mid-call checkpoint exactly.
+#[test]
+fn source_shared_call_round_trips_program_and_rejects_tampered_mid_call_checkpoint() {
+    use gantry::runtime::{
+        DurableCommitCutV1, DurableExecutionStartV3, DurableLogicalEvidenceV3, ExecutionBudget,
+        MachineCheckpointV3, root_task_identity,
+    };
+
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+impl Counter { pure fn read(shared self) -> Int { self.value } }
+fn main(holder: Holder) -> Int { holder.counter.read() }
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let entry = entry_workflow(&package);
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x3e; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let task = root_task_identity(execution);
+    let holder = LogicalValue::structure(
+        "crate::Holder",
+        vec![(
+            "counter".to_owned(),
+            LogicalValue::structure(
+                "crate::Counter",
+                vec![(
+                    "value".to_owned(),
+                    LogicalValue::integer(
+                        GantryInt::new(7)
+                            .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                    ),
+                )],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}")),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![holder],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("shared source program did not start: {error:?}"));
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+
+    let checkpoint_bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(checkpoint_bytes.get(..8), Some(b"GNTMCP05".as_slice()));
+    let checkpoint = MachineCheckpointV3::decode(program, &checkpoint_bytes)
+        .unwrap_or_else(|error| panic!("mid-call checkpoint did not decode: {error:?}"));
+    assert_eq!(checkpoint.canonical_bytes(), checkpoint_bytes);
+    let mut altered_root = checkpoint_bytes.clone();
+    let root = altered_root
+        .windows(b"holder".len())
+        .rposition(|window| window == b"holder")
+        .unwrap_or_else(|| panic!("checkpoint omitted shared admission root"));
+    altered_root[root..root + b"holder".len()].copy_from_slice(b"absent");
+    assert_eq!(
+        MachineCheckpointV3::decode(program, &altered_root),
+        Err(gantry::runtime::MachineRecoveryError::ProgramMismatch)
+    );
+    let mut altered_path = checkpoint_bytes.clone();
+    let path = altered_path
+        .windows(b"counter".len())
+        .rposition(|window| window == b"counter")
+        .unwrap_or_else(|| panic!("checkpoint omitted shared admission path"));
+    altered_path[path..path + b"counter".len()].copy_from_slice(b"missing");
+    assert_eq!(
+        MachineCheckpointV3::decode(program, &altered_path),
+        Err(gantry::runtime::MachineRecoveryError::ProgramMismatch)
+    );
+
+    let state = DurableLogicalEvidenceV3::new(
+        execution,
+        task,
+        DurableCommitCutV1::Checkpoint,
+        None,
+        &machine,
+    )
+    .unwrap_or_else(|error| panic!("mid-call evidence failed: {error:?}"));
+    let retained = DurableExecutionStartV3::new(
+        execution,
+        task,
+        program,
+        Arc::<[u8]>::from(&b"{}"[..]),
+        state,
+    )
+    .unwrap_or_else(|error| panic!("retained source program failed: {error:?}"));
+    let retained_body = retained.canonical_body();
+    assert!(
+        retained_body
+            .windows(16)
+            .any(|window| window == b"474e545052473033")
+    );
+    assert_eq!(
+        DurableExecutionStartV3::retained_program(&retained_body),
+        Ok(program.clone())
+    );
+
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("mid-call budget recovery failed: {error:?}"));
+    let mut recovered =
+        Machine::recover_from_checkpoint(Arc::new(program.clone()), checkpoint, budget)
+            .unwrap_or_else(|error| panic!("mid-call recovery failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
+/// Source-lowered Result branches retain their successor wire across checkpoints.
+#[test]
+fn source_result_if_let_checkpoint_recovers_from_retained_program() {
+    use gantry::runtime::{
+        DurableCommitCutV1, DurableExecutionStartV3, DurableLogicalEvidenceV3, ExecutionBudget,
+        MachineCheckpointV3, root_task_identity,
+    };
+
+    let root = TempDirectory::new(
+        r#"
+fn main(value: Result<Int, Int>) -> Int {
+    if let Err(number) = value { return number; }
+    0
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let entry = entry_workflow(&package);
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x3f; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let task = root_task_identity(execution);
+    let value = LogicalValue::err(
+        LogicalValue::integer(
+            GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+        ),
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("result fixture failed: {error:?}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![value],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("Result if-let program did not start: {error:?}"));
+    for _ in 0..2 {
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    }
+
+    let checkpoint_bytes = machine.checkpoint().canonical_bytes();
+    let checkpoint = MachineCheckpointV3::decode(program, &checkpoint_bytes)
+        .unwrap_or_else(|error| panic!("Result if-let checkpoint did not decode: {error:?}"));
+    let state = DurableLogicalEvidenceV3::new(
+        execution,
+        task,
+        DurableCommitCutV1::Checkpoint,
+        None,
+        &machine,
+    )
+    .unwrap_or_else(|error| panic!("Result if-let evidence failed: {error:?}"));
+    let retained = DurableExecutionStartV3::new(
+        execution,
+        task,
+        program,
+        Arc::<[u8]>::from(&b"{}"[..]),
+        state,
+    )
+    .unwrap_or_else(|error| panic!("retained Result if-let program failed: {error:?}"));
+    assert_eq!(
+        retained
+            .program()
+            .unwrap_or_else(|error| panic!("retained Result if-let decode failed: {error:?}")),
+        *program
+    );
+
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("Result if-let budget recovery failed: {error:?}"));
+    let mut recovered =
+        Machine::recover_from_checkpoint(Arc::new(program.clone()), checkpoint, budget)
+            .unwrap_or_else(|error| panic!("Result if-let recovery failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
 /// Explicit IR caller-place admission executes without asserting source syntax or mutations.
 #[test]
 fn explicit_ir_shared_place_admission_executes_without_copy_or_mutation_claims() {
@@ -988,6 +1570,778 @@ fn main() -> Int {
             .last()
             .map(|instruction| &instruction.kind),
         Some(InstructionKind::TaskComplete)
+    ));
+}
+
+/// Spawned shared calls capture their caller-place roots without materializing copied receivers.
+#[test]
+fn spawned_shared_calls_capture_root_and_nested_field_places() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+struct Inputs { counter: Counter, holder: Holder }
+impl Counter { pure fn read(shared self) -> Int { self.value } }
+fn main(inputs: Inputs) -> List<Int> {
+    spawn root_read -> Int { inputs.counter.read() }
+    spawn field_read -> Int { inputs.holder.counter.read() }
+    joinall()
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let bodies = program.task_bodies();
+    assert_eq!(bodies.len(), 2, "{bodies:#?}");
+    let root_body = bodies
+        .iter()
+        .find(|body| {
+            body.captures()
+                .iter()
+                .any(|capture| capture.name() == "inputs")
+        })
+        .unwrap_or_else(|| panic!("root shared task omitted inputs capture: {bodies:#?}"));
+    assert!(matches!(root_body.captures(), [capture]
+        if capture.name() == "inputs"
+            && capture.ty().canonical_string() == "crate::Inputs"
+            && !capture.is_mutable()));
+    assert!(root_body.instructions().iter().any(|instruction| matches!(
+        &instruction.kind,
+        InstructionKind::ReceiverCall {
+            source: ReceiverSource::CallerPlace { root, path }, ..
+        } if root.as_ref() == "inputs"
+            && matches!(path.as_slice(),
+                [gantry::value::ValuePathSegment::StructField(field)] if field == "counter")
+    )));
+    let field_body = bodies
+        .iter()
+        .find(|body| body.identity() != root_body.identity())
+        .unwrap_or_else(|| panic!("nested shared task body missing: {bodies:#?}"));
+    assert!(matches!(field_body.captures(), [capture]
+        if capture.name() == "inputs"
+            && capture.ty().canonical_string() == "crate::Inputs"
+            && !capture.is_mutable()));
+    assert!(field_body.instructions().iter().any(|instruction| matches!(
+        &instruction.kind,
+        InstructionKind::ReceiverCall {
+            source: ReceiverSource::CallerPlace { root, path }, ..
+        } if root.as_ref() == "inputs"
+            && matches!(path.as_slice(),
+                [
+                    gantry::value::ValuePathSegment::StructField(holder),
+                    gantry::value::ValuePathSegment::StructField(counter),
+                ] if holder == "holder" && counter == "counter")
+    )));
+
+    let inputs = LogicalValue::structure(
+        "crate::Inputs",
+        vec![
+            (
+                "counter".to_owned(),
+                LogicalValue::structure(
+                    "crate::Counter",
+                    vec![(
+                        "value".to_owned(),
+                        LogicalValue::integer(
+                            GantryInt::new(7)
+                                .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                        ),
+                    )],
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("root counter fixture failed: {error:?}")),
+            ),
+            (
+                "holder".to_owned(),
+                LogicalValue::structure(
+                    "crate::Holder",
+                    vec![(
+                        "counter".to_owned(),
+                        LogicalValue::structure(
+                            "crate::Counter",
+                            vec![(
+                                "value".to_owned(),
+                                LogicalValue::integer(
+                                    GantryInt::new(7).unwrap_or_else(|| {
+                                        unreachable!("fixture integer is valid")
+                                    }),
+                                ),
+                            )],
+                            DEFAULT_VALUE_LIMITS,
+                        )
+                        .unwrap_or_else(|error| panic!("nested counter fixture failed: {error:?}")),
+                    )],
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}")),
+            ),
+        ],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("inputs fixture failed: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x5b; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let root_task = root_task_identity(execution);
+    let root_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0x5c; 32])
+        .unwrap_or_else(|error| panic!("session identity failed: {error}"));
+    let mut sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("root session registry failed: {error:?}"));
+    let mut tasks = ConcurrentTaskStateV1::new(execution, root_task, 3)
+        .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+    for (index, body) in [root_body, field_body].into_iter().enumerate() {
+        let captures = body
+            .captures()
+            .iter()
+            .map(|capture| {
+                TaskCaptureV1::new(
+                    Arc::from(capture.name()),
+                    capture.ty().clone(),
+                    capture.is_mutable(),
+                    &inputs,
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("task capture failed: {error:?}"))
+            })
+            .collect::<Vec<_>>();
+        let created = tasks
+            .create_child(
+                &mut sessions,
+                TaskCreationRequestV1 {
+                    parent_task_id: root_task,
+                    handle_name: Arc::from(format!("shared-{index}")),
+                    workflow: entry_workflow(&package).path.clone(),
+                    spawn_site: body.identity().spawn_site().clone(),
+                    spawn_occurrence: 0,
+                    result_type: body.result_type().clone(),
+                    captures: captures.clone(),
+                    inherited_agent: None,
+                    parent_session_id: root_session,
+                },
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("child creation failed: {error:?}"));
+        tasks
+            .resolve_submission(created.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("child submission resolution failed: {error:?}"));
+        let task_path = Arc::from(
+            tasks
+                .task_record(created.task_id)
+                .unwrap_or_else(|| panic!("child task record is absent"))
+                .task_path(),
+        );
+        let mut child = Machine::new_concurrent_task_body_with_context(
+            Arc::new(program.clone()),
+            body.identity(),
+            &captures,
+            execution,
+            created.task_id,
+            task_path,
+            limits(),
+            ExecutionBudget::new(execution, limits()),
+            None,
+            Some(created.base_session_id),
+        )
+        .unwrap_or_else(|error| panic!("shared child machine failed: {error:?}"));
+        assert!(matches!(child.step(), MachineStep::Transition(_)));
+        let budget = ExecutionBudget::recover_from_checkpoint(child.budget_checkpoint())
+            .unwrap_or_else(|error| panic!("child budget recovery failed: {error:?}"));
+        let recovered = child.checkpoint();
+        let mut recovered =
+            Machine::recover_from_checkpoint(Arc::new(program.clone()), recovered, budget)
+                .unwrap_or_else(|error| panic!("shared child recovery failed: {error:?}"));
+        assert!(matches!(
+            drive(&mut recovered),
+            MachineOutcome::Succeeded(ref value)
+                if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+        ));
+    }
+}
+
+/// Tuple destructuring creates an ordinary caller-place root for a shared call.
+#[test]
+fn tuple_destructured_shared_receiver_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { pure fn read(shared self) -> Int { self.value } }
+fn main(pair: Tuple<Counter, Int>) -> Int {
+    let (counter, _): Tuple<Counter, Int> = pair;
+    counter.read()
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let main = entry_workflow(&package);
+    assert!(main.instructions.iter().any(|instruction| matches!(
+        &instruction.kind,
+        InstructionKind::ReceiverCall {
+            source: ReceiverSource::CallerPlace { root, path }, ..
+        } if root.as_ref() == "counter" && path.is_empty()
+    )));
+    let counter = LogicalValue::structure(
+        "crate::Counter",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}"));
+    let pair = LogicalValue::tuple(
+        vec![
+            counter,
+            LogicalValue::integer(
+                GantryInt::new(0).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+            ),
+        ],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("tuple fixture failed: {error:?}"));
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x4c; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![pair],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("tuple shared program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
+/// Refutable Option patterns branch on the actual value and bind nested payloads lexically.
+#[test]
+fn if_let_option_payload_executes_with_early_return() {
+    let root = TempDirectory::new(
+        r#"
+fn main(value: Option<Tuple<Int, Int>>) -> Int {
+    if let Some((number, _)) = value {
+        return number;
+    }
+    8
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let value = LogicalValue::some(
+        LogicalValue::tuple(
+            vec![
+                LogicalValue::integer(
+                    GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                ),
+                LogicalValue::integer(
+                    GantryInt::new(0).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                ),
+            ],
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("tuple fixture failed: {error:?}")),
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("option fixture failed: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6a; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![value],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("if-let program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+    assert!(
+        entry_workflow(&package)
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction.kind, InstructionKind::BranchOption { .. }))
+    );
+}
+
+/// Refutable Result and declared-enum patterns use their exact executable discriminants.
+#[test]
+fn if_let_result_and_enum_payloads_execute() {
+    for (source, value, expected) in [
+        (
+            r#"fn main(value: Result<Int, Int>) -> Int { if let Ok(number) = value { return number; } 4 }"#,
+            LogicalValue::ok(
+                LogicalValue::integer(
+                    GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("result fixture failed: {error:?}")),
+            7,
+        ),
+        (
+            r#"enum State { Ready(Int), Empty } fn main(value: State) -> Int { if let State::Ready(number) = value { return number; } 5 }"#,
+            LogicalValue::enumeration(
+                "crate::State",
+                "Ready",
+                Some(LogicalValue::integer(
+                    GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                )),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("enum fixture failed: {error:?}")),
+            7,
+        ),
+    ] {
+        let root = TempDirectory::new(source);
+        let package = analyze(&root);
+        let program = executable(&package);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted entry"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6b; 32])
+            .unwrap_or_else(|error| panic!("identity failed: {error}"));
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &entry.path,
+            vec![value],
+            execution,
+            limits(),
+        )
+        .unwrap_or_else(|error| panic!("if-let program did not start: {error:?}"));
+        assert!(matches!(
+            drive(&mut machine),
+            MachineOutcome::Succeeded(ref value)
+                if matches!(value.view(), LogicalValueView::Int(number) if number.get() == expected)
+        ));
+    }
+}
+
+/// `if let` follows the authored Option, Result, and declared-enum variant.
+#[test]
+fn if_let_honors_none_err_and_payloadless_enum_polarity() {
+    for (source, value, expected) in [
+        (
+            r#"fn main(value: Option<Int>) -> Int { if let None = value { return 1; } 2 }"#,
+            LogicalValue::none(),
+            1,
+        ),
+        (
+            r#"fn main(value: Option<Int>) -> Int { if let None = value { return 1; } 2 }"#,
+            LogicalValue::some(
+                LogicalValue::integer(
+                    GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("option fixture failed: {error:?}")),
+            2,
+        ),
+        (
+            r#"fn main(value: Result<Int, Int>) -> Int { if let Err(number) = value { return number; } 4 }"#,
+            LogicalValue::err(
+                LogicalValue::integer(
+                    GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("result fixture failed: {error:?}")),
+            7,
+        ),
+        (
+            r#"fn main(value: Result<Int, Int>) -> Int { if let Err(number) = value { return number; } 4 }"#,
+            LogicalValue::ok(
+                LogicalValue::integer(
+                    GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("result fixture failed: {error:?}")),
+            4,
+        ),
+        (
+            r#"enum State { Ready(Int), Empty } fn main(value: State) -> Int { if let State::Empty = value { return 1; } 2 }"#,
+            LogicalValue::enumeration("crate::State", "Empty", None, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("enum fixture failed: {error:?}")),
+            1,
+        ),
+        (
+            r#"enum State { Ready(Int), Empty } fn main(value: State) -> Int { if let State::Empty = value { return 1; } 2 }"#,
+            LogicalValue::enumeration(
+                "crate::State",
+                "Ready",
+                Some(LogicalValue::integer(
+                    GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                )),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("enum fixture failed: {error:?}")),
+            2,
+        ),
+    ] {
+        let root = TempDirectory::new(source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted entry"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6d; 32])
+            .unwrap_or_else(|error| panic!("identity failed: {error}"));
+        let mut machine = Machine::new(
+            Arc::new(executable(&package).clone()),
+            &entry.path,
+            vec![value],
+            execution,
+            limits(),
+        )
+        .unwrap_or_else(|error| panic!("if-let program did not start: {error:?}"));
+        assert!(matches!(
+            drive(&mut machine),
+            MachineOutcome::Succeeded(ref value)
+                if matches!(value.view(), LogicalValueView::Int(number) if number.get() == expected)
+        ));
+    }
+}
+
+/// False refutable branches discard exposed payloads before looping or checkpoint recovery.
+#[test]
+fn false_if_let_branches_keep_stack_and_checkpoints_bounded() {
+    use gantry::runtime::MachineCheckpointV3;
+
+    for (source, value, expected_discards) in [
+        (
+            r#"fn main(value: Option<Int>) -> Int { let mut count: Int = 0; while count < 64 { if let None = value { count += 64; } else { count += 1; } } count }"#,
+            LogicalValue::some(
+                LogicalValue::integer(GantryInt::new(7).unwrap_or_else(|| unreachable!())),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("option fixture failed: {error:?}")),
+            64,
+        ),
+        (
+            r#"fn main(value: Result<Int, Int>) -> Int { let mut count: Int = 0; while count < 64 { if let Ok(_) = value { count += 64; } else { count += 1; } } count }"#,
+            LogicalValue::err(
+                LogicalValue::integer(GantryInt::new(7).unwrap_or_else(|| unreachable!())),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("Result fixture failed: {error:?}")),
+            64,
+        ),
+        (
+            r#"fn main(value: Result<Int, Int>) -> Int { let mut count: Int = 0; while count < 64 { if let Err(_) = value { count += 64; } else { count += 1; } } count }"#,
+            LogicalValue::ok(
+                LogicalValue::integer(GantryInt::new(7).unwrap_or_else(|| unreachable!())),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("Result fixture failed: {error:?}")),
+            64,
+        ),
+        (
+            r#"enum State { Ready(Int), Empty } fn main(value: State) -> Int { let mut count: Int = 0; while count < 64 { if let State::Empty = value { count += 64; } else { count += 1; } } count }"#,
+            LogicalValue::enumeration(
+                "crate::State",
+                "Ready",
+                Some(LogicalValue::integer(
+                    GantryInt::new(7).unwrap_or_else(|| unreachable!()),
+                )),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("enum fixture failed: {error:?}")),
+            64,
+        ),
+        (
+            r#"enum State { Ready(Int), Empty } fn main(value: State) -> Int { let mut count: Int = 0; while count < 64 { if let State::Ready(_) = value { count += 64; } else { count += 1; } } count }"#,
+            LogicalValue::enumeration("crate::State", "Empty", None, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("enum fixture failed: {error:?}")),
+            0,
+        ),
+    ] {
+        let root = TempDirectory::new(source);
+        let package = analyze(&root);
+        let program = Arc::new(executable(&package).clone());
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted entry"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6f; 32])
+            .unwrap_or_else(|error| panic!("identity failed: {error}"));
+        let bounded_loop_limits =
+            MachineLimits::new(10_000, 100, 100, 64, 100, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("positive regression limits"));
+        let mut machine = Machine::new(
+            Arc::clone(&program),
+            &entry.path,
+            vec![value],
+            execution,
+            bounded_loop_limits,
+        )
+        .unwrap_or_else(|error| panic!("false branch fixture did not start: {error:?}"));
+        let mut false_branches = 0;
+        let mut checkpoint_sizes = Vec::new();
+        let mut outcome = None;
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(MachineLabel::Deterministic { kind, .. })
+                    if kind.as_ref() == "discard" =>
+                {
+                    false_branches += 1;
+                    let checkpoint_bytes = machine.checkpoint().canonical_bytes();
+                    if checkpoint_sizes.is_empty() {
+                        let checkpoint = MachineCheckpointV3::decode(&program, &checkpoint_bytes)
+                            .unwrap_or_else(|error| {
+                                panic!("false-branch checkpoint did not decode: {error:?}")
+                            });
+                        let budget =
+                            ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+                                .unwrap_or_else(|error| {
+                                    panic!("false-branch budget did not recover: {error:?}")
+                                });
+                        machine = Machine::recover_from_checkpoint(
+                            Arc::clone(&program),
+                            checkpoint,
+                            budget,
+                        )
+                        .unwrap_or_else(|error| {
+                            panic!("false-branch checkpoint did not recover: {error:?}")
+                        });
+                    }
+                    checkpoint_sizes.push(checkpoint_bytes.len());
+                }
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::Complete(result) => {
+                    outcome = Some(result);
+                    break;
+                }
+                other => panic!("false branch loop ended unexpectedly: {other:?}"),
+            }
+        }
+        assert_eq!(false_branches, expected_discards);
+        if let (Some(smallest_checkpoint), Some(largest_checkpoint)) = (
+            checkpoint_sizes.iter().min().copied(),
+            checkpoint_sizes.iter().max().copied(),
+        ) {
+            assert!(
+                largest_checkpoint - smallest_checkpoint <= 4,
+                "false-branch checkpoints grew from {smallest_checkpoint} to {largest_checkpoint} bytes"
+            );
+        }
+        assert!(matches!(
+            outcome,
+            Some(MachineOutcome::Succeeded(ref value))
+                if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 64)
+        ));
+    }
+}
+
+/// Compiler temporaries cannot collide with visible source bindings in any pattern form.
+#[test]
+fn pattern_temporaries_do_not_collide_with_outer_source_bindings() {
+    for (source, inputs, expected) in [
+        (
+            r#"fn main(pair: Tuple<Int, Int>) -> Int { let __gantry_tuple_1: Tuple<Int, Int> = pair; let (left, _): Tuple<Int, Int> = __gantry_tuple_1; left }"#,
+            vec![
+                LogicalValue::tuple(
+                    vec![
+                        LogicalValue::integer(GantryInt::new(7).unwrap_or_else(|| unreachable!())),
+                        LogicalValue::integer(GantryInt::new(0).unwrap_or_else(|| unreachable!())),
+                    ],
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("tuple fixture failed: {error:?}")),
+            ],
+            7,
+        ),
+        (
+            r#"fn main(value: Option<Int>) -> Int { let __gantry_payload: Int = 3; if let Some(number) = value { return number + __gantry_payload; } 0 }"#,
+            vec![
+                LogicalValue::some(
+                    LogicalValue::integer(GantryInt::new(4).unwrap_or_else(|| unreachable!())),
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("option fixture failed: {error:?}")),
+            ],
+            7,
+        ),
+        (
+            r#"fn main(value: Result<Int, Int>) -> Int { let __gantry_payload: Int = 3; match value { Ok(number) => number + __gantry_payload, Err(number) => number + __gantry_payload, } }"#,
+            vec![
+                LogicalValue::err(
+                    LogicalValue::integer(GantryInt::new(4).unwrap_or_else(|| unreachable!())),
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("result fixture failed: {error:?}")),
+            ],
+            7,
+        ),
+    ] {
+        let root = TempDirectory::new(source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted entry"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6e; 32])
+            .unwrap_or_else(|error| panic!("identity failed: {error}"));
+        let mut machine = Machine::new(
+            Arc::new(executable(&package).clone()),
+            &entry.path,
+            inputs,
+            execution,
+            limits(),
+        )
+        .unwrap_or_else(|error| panic!("collision fixture did not start: {error:?}"));
+        assert!(matches!(
+            drive(&mut machine),
+            MachineOutcome::Succeeded(ref value)
+                if matches!(value.view(), LogicalValueView::Int(number) if number.get() == expected)
+        ));
+        assert!(
+            entry_workflow(&package)
+                .instructions
+                .iter()
+                .all(|instruction| {
+                    !matches!(&instruction.kind, InstructionKind::Bind { name, .. }
+                if name.starts_with('\0') && !name.starts_with("\0gantry_"))
+                })
+        );
+    }
+}
+
+/// Spawned bodies inherit exact if-let payload binding types and capture the lexical value.
+#[test]
+fn spawned_if_let_payload_compiles_with_typed_capture() {
+    let root = TempDirectory::new(
+        r#"
+fn main(value: Option<Int>) -> Int {
+    if let Some(number) = value {
+        spawn child -> Int { number }
+        return join(child);
+    }
+    0
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let body = program
+        .task_bodies()
+        .first()
+        .unwrap_or_else(|| panic!("if-let spawn body was not lowered"));
+    assert!(matches!(body.captures(), [capture]
+        if capture.name() == "number"
+            && capture.ty().canonical_string() == "Int"
+            && !capture.is_mutable()));
+    assert!(body.instructions().iter().any(|instruction| matches!(
+        &instruction.kind,
+        InstructionKind::Load(name) if name.as_ref() == "number"
+    )));
+}
+
+/// Tuple destructuring evaluates its source once and supports nested patterns from calls.
+#[test]
+fn nested_call_produced_tuple_destructuring_executes() {
+    let root = TempDirectory::new(
+        r#"
+fn pair() -> Tuple<Tuple<Int, Int>, Int> { ((7, 8), 9) }
+fn main() -> Int {
+    let ((number, _), _): Tuple<Tuple<Int, Int>, Int> = pair();
+    number
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6b; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("tuple program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
+/// Payload bindings remain values, while copied nested receiver calls remain executable.
+#[test]
+fn copied_nested_payload_receiver_call_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+impl Counter { pure fn read(self) -> Int { self.value } }
+fn main(value: Option<Holder>) -> Int {
+    if let Some(holder) = value { return holder.counter.read(); }
+    0
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let holder = LogicalValue::structure(
+        "crate::Holder",
+        vec![(
+            "counter".to_owned(),
+            LogicalValue::structure(
+                "crate::Counter",
+                vec![(
+                    "value".to_owned(),
+                    LogicalValue::integer(
+                        GantryInt::new(7)
+                            .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                    ),
+                )],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}")),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}"));
+    let value = LogicalValue::some(holder, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|error| panic!("option fixture failed: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6c; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![value],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("payload receiver program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
     ));
 }
 

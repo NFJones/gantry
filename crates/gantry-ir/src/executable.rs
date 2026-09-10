@@ -480,6 +480,13 @@ pub enum InstructionKind {
         /// Program counter for the `None` arm.
         when_none: usize,
     },
+    /// Select a Result arm and expose the selected payload to that arm.
+    BranchResult {
+        /// Program counter for the `Ok` arm.
+        when_ok: usize,
+        /// Program counter for the `Err` arm.
+        when_err: usize,
+    },
     /// Select one analyzer-validated declared-enum arm by exact variant name.
     BranchEnum {
         /// Distinct variant names and their arm program counters in source order.
@@ -967,6 +974,9 @@ fn validate_instruction(
         }
         | InstructionKind::BranchOption {
             when_some: target, ..
+        }
+        | InstructionKind::BranchResult {
+            when_ok: target, ..
         } if *target >= length => {
             return Err(ProgramError::InvalidTarget(workflow.clone()));
         }
@@ -974,6 +984,9 @@ fn validate_instruction(
             return Err(ProgramError::InvalidTarget(workflow.clone()));
         }
         InstructionKind::BranchOption { when_none, .. } if *when_none >= length => {
+            return Err(ProgramError::InvalidTarget(workflow.clone()));
+        }
+        InstructionKind::BranchResult { when_err, .. } if *when_err >= length => {
             return Err(ProgramError::InvalidTarget(workflow.clone()));
         }
         InstructionKind::BranchEnum { arms }

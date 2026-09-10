@@ -22,8 +22,8 @@ use gantry_ir::generated::{Effect, TemplateKind, TypeKind};
 use gantry_ir::{
     CanonicalCallableIdentity, CanonicalImplementationIdentity, CanonicalPath,
     CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, EffectSet, GenericTemplate,
-    ImplementationHead, Predicate, TraitContract, TraitMethodContract, TraitReference,
-    TypeDescriptor, TypeDescriptorError, TypeExpression, WorkflowParameter,
+    ImplementationHead, Predicate, ReceiverMode, TraitContract, TraitMethodContract,
+    TraitReference, TypeDescriptor, TypeDescriptorError, TypeExpression, WorkflowParameter,
 };
 
 use crate::generics::{
@@ -56,6 +56,12 @@ enum BoolFact {
 struct CallableSignature {
     parameters: Vec<TypeDescriptor>,
     result: TypeDescriptor,
+}
+
+#[derive(Clone, Debug)]
+struct InherentMethodMetadata {
+    declaration: SourceSpan,
+    receiver_mode: ReceiverMode,
 }
 
 #[derive(Clone, Debug)]
@@ -105,6 +111,7 @@ pub(crate) struct EffectDraft {
 
 pub(crate) struct BodyAnalysis {
     pub(crate) expression_types: Vec<BTreeMap<NodeId, TypeDescriptor>>,
+    pub(crate) struct_fields: BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, TypeDescriptor>>,
     /// Typed outer binding candidates indexed by closed owner and authored spawn.
     pub(crate) spawn_captures:
         BTreeMap<EffectNode, BTreeMap<SourceSpan, Vec<SpawnCaptureMetadata>>>,
@@ -154,6 +161,7 @@ pub(crate) struct ResolvedCallMetadata {
 pub(crate) struct SourceCallableMetadata {
     pub(crate) identity: CanonicalCallableIdentity,
     pub(crate) receiver: Option<TypeDescriptor>,
+    pub(crate) receiver_mode: Option<ReceiverMode>,
     pub(crate) parameters: Vec<WorkflowParameter>,
     pub(crate) result: TypeDescriptor,
     pub(crate) effects: EffectSet,
@@ -250,12 +258,14 @@ struct BodyContext {
     effect_drafts: RefCell<BTreeMap<EffectNode, EffectDraft>>,
     callable_sources: BTreeMap<SymbolId, SourceSpan>,
     method_sources: BTreeMap<(CanonicalImplementationIdentity, Arc<str>), SourceSpan>,
-    inherent_method_sources: BTreeMap<(TypeDescriptor, Arc<str>), SourceSpan>,
+    inherent_method_sources: BTreeMap<(TypeDescriptor, Arc<str>), InherentMethodMetadata>,
     action_effects: BTreeMap<SymbolId, Effect>,
     parametric_validation: Cell<bool>,
     generic_analysis_counters: RefCell<Option<GenericAnalysisCounters>>,
     trait_obligations: RefCell<BTreeMap<String, ObligationProof>>,
     expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
+    shared_receiver_value_roots: RefCell<BTreeSet<Arc<str>>>,
+    resolved_struct_fields: RefCell<BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, TypeDescriptor>>>,
     spawn_captures: RefCell<BTreeMap<EffectNode, BTreeMap<SourceSpan, Vec<SpawnCaptureMetadata>>>>,
     concrete_declaration_types: RefCell<BTreeMap<InstantiationKey, BTreeMap<NodeId, TypeFact>>>,
     concrete_expression_types:
@@ -818,7 +828,10 @@ fn build_body_context(
                         direct_identifier(source.tree(), method)?
                             .ok_or(AnalysisError::Invariant)?,
                     ),
-                    method_node.span().clone(),
+                    InherentMethodMetadata {
+                        declaration: method_node.span().clone(),
+                        receiver_mode: method_receiver_mode(source.tree(), method)?,
+                    },
                 );
             }
         }
@@ -877,6 +890,8 @@ fn build_body_context(
         generic_analysis_counters: RefCell::new(generic_analysis_counters),
         trait_obligations: RefCell::new(BTreeMap::new()),
         expression_types: RefCell::new(BTreeMap::new()),
+        shared_receiver_value_roots: RefCell::new(BTreeSet::new()),
+        resolved_struct_fields: RefCell::new(BTreeMap::new()),
         spawn_captures: RefCell::new(BTreeMap::new()),
         concrete_declaration_types: RefCell::new(BTreeMap::new()),
         concrete_expression_types: RefCell::new(BTreeMap::new()),
@@ -1175,6 +1190,7 @@ pub(crate) fn check_package_bodies(
     generic_analysis_counters: &mut Option<GenericAnalysisCounters>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<BodyAnalysis, AnalysisError> {
+    validate_shared_receiver_declarations(sources, diagnostics)?;
     let context = build_body_context(
         sources,
         facts,
@@ -1256,10 +1272,25 @@ pub(crate) fn check_package_bodies(
                 .flat_map(BTreeMap::values)
                 .cloned(),
         );
+        let mut struct_fields = context
+            .structs
+            .values()
+            .map(|shape| {
+                (
+                    shape.descriptor.clone(),
+                    shape
+                        .fields
+                        .iter()
+                        .map(|(name, field)| (name.clone(), field.ty.clone()))
+                        .collect(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        struct_fields.extend(context.resolved_struct_fields.take());
         let mut closed_enums = BTreeMap::new();
-        for descriptor in closed_types {
-            if let Some(shape) = enum_shape_for_descriptor(&context, &descriptor)? {
-                closed_enums.insert(descriptor, shape.variants);
+        for descriptor in &closed_types {
+            if let Some(shape) = enum_shape_for_descriptor(&context, descriptor)? {
+                closed_enums.insert(descriptor.clone(), shape.variants);
             }
         }
         let generic_declarations = context
@@ -1275,10 +1306,22 @@ pub(crate) fn check_package_bodies(
             })
             .collect::<Result<BTreeSet<_>, _>>()?;
         let mut generic_declarations = generic_declarations;
-        generic_declarations.extend(context.method_sources.values().cloned());
+        generic_declarations.extend(
+            context
+                .method_sources
+                .values()
+                .filter(|declaration| {
+                    !context.inherent_method_sources.values().any(|metadata| {
+                        metadata.declaration == **declaration
+                            && metadata.receiver_mode == ReceiverMode::SharedPlace
+                    })
+                })
+                .cloned(),
+        );
         context.expression_types.borrow_mut().clear();
         Ok(BodyAnalysis {
             expression_types,
+            struct_fields,
             spawn_captures: context.spawn_captures.take(),
             generic_templates: context.generic_templates.clone(),
             generic_instantiations: context
@@ -1486,6 +1529,7 @@ fn collect_source_callable_metadata(
         callables.push(SourceCallableMetadata {
             identity: CanonicalCallableIdentity::free(&symbol.path, &[]),
             receiver: None,
+            receiver_mode: None,
             parameters,
             result: signature.result.clone(),
             effects: effects.get(&declaration).copied().unwrap_or_default(),
@@ -1493,8 +1537,8 @@ fn collect_source_callable_metadata(
             direct_calls: source_direct_calls(context, &declaration),
         });
     }
-    for ((receiver, method), declaration) in &context.inherent_method_sources {
-        let (source_index, tree, callable) = find_source_callable(sources, declaration)?;
+    for ((receiver, method), metadata) in &context.inherent_method_sources {
+        let (source_index, tree, callable) = find_source_callable(sources, &metadata.declaration)?;
         let parameters = source_callable_parameters(
             tree,
             callable,
@@ -1510,11 +1554,15 @@ fn collect_source_callable_metadata(
             identity: CanonicalCallableIdentity::inherent(receiver, method, &[])
                 .map_err(|_| AnalysisError::Invariant)?,
             receiver: Some(receiver.clone()),
+            receiver_mode: Some(metadata.receiver_mode),
             parameters,
             result,
-            effects: effects.get(declaration).copied().unwrap_or_default(),
-            declaration: declaration.clone(),
-            direct_calls: source_direct_calls(context, declaration),
+            effects: effects
+                .get(&metadata.declaration)
+                .copied()
+                .unwrap_or_default(),
+            declaration: metadata.declaration.clone(),
+            direct_calls: source_direct_calls(context, &metadata.declaration),
         });
     }
     for ((implementation, method), declaration) in &context.method_sources {
@@ -1583,6 +1631,7 @@ fn collect_source_callable_metadata(
         callables.push(SourceCallableMetadata {
             identity,
             receiver: Some(receiver),
+            receiver_mode: Some(method_receiver_mode(tree, callable)?),
             parameters,
             result,
             effects: effects.get(declaration).copied().unwrap_or_default(),
@@ -1652,6 +1701,97 @@ fn source_callable_parameters(
         });
     }
     Ok(parameters)
+}
+
+fn validate_shared_receiver_declarations(
+    sources: &[ParsedSource],
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    for source in sources {
+        for method in source.tree().nodes().iter().filter(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::MethodDeclaration | SyntaxForm::TraitMethodDeclaration
+            )
+        }) {
+            let Some(receiver) = method.children().iter().copied().find_map(|child| {
+                let parameter = source.tree().node(child)?;
+                matches!(parameter.form(), SyntaxForm::Parameter).then_some(parameter)
+            }) else {
+                continue;
+            };
+            if !node_has_identifier(source.tree(), receiver, "shared") {
+                continue;
+            }
+            let inherent = matches!(method.form(), SyntaxForm::MethodDeclaration)
+                && source.tree().nodes().iter().any(|implementation| {
+                    matches!(implementation.form(), SyntaxForm::ImplDeclaration)
+                        && span_contains(implementation.span(), method.span())
+                        && direct_child_form(
+                            source.tree(),
+                            implementation,
+                            SyntaxForm::TraitReference,
+                        )
+                        .is_none()
+                        && direct_child_form(
+                            source.tree(),
+                            implementation,
+                            SyntaxForm::TypeParameterList,
+                        )
+                        .is_none()
+                        && direct_child_form(source.tree(), implementation, SyntaxForm::ValueType)
+                            .and_then(|receiver| source.tree().node(receiver))
+                            .is_none_or(|receiver| {
+                                direct_child_form(
+                                    source.tree(),
+                                    receiver,
+                                    SyntaxForm::TypeArgumentList,
+                                )
+                                .is_none()
+                            })
+                });
+            let method_is_monomorphic =
+                direct_child_form(source.tree(), method, SyntaxForm::TypeParameterList).is_none();
+            let argument_count = method
+                .children()
+                .iter()
+                .filter_map(|child| source.tree().node(*child))
+                .filter(|parameter| matches!(parameter.form(), SyntaxForm::Parameter))
+                .filter(|parameter| !node_has_reserved_word(source.tree(), parameter, "self"))
+                .count();
+            if !inherent || !method_is_monomorphic || argument_count != 0 {
+                diagnostics.push(body_diagnostic(
+                    "shared-receiver-scope",
+                    DiagnosticCategory::Type,
+                    "`shared self` is limited to zero-argument monomorphic inherent methods",
+                    receiver.span().clone(),
+                    [] as [(&str, &str); 0],
+                )?);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn method_receiver_mode(
+    tree: &SyntaxTree,
+    callable: NodeId,
+) -> Result<ReceiverMode, AnalysisError> {
+    let callable = tree.node(callable).ok_or(AnalysisError::Invariant)?;
+    let receiver = callable.children().iter().copied().find(|child| {
+        tree.node(*child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::Parameter))
+    });
+    let Some(receiver) = receiver.and_then(|receiver| tree.node(receiver)) else {
+        return Err(AnalysisError::Invariant);
+    };
+    if node_has_identifier(tree, receiver, "shared") {
+        Ok(ReceiverMode::SharedPlace)
+    } else {
+        Ok(ReceiverMode::from_v1_mutability(node_has_reserved_word(
+            tree, receiver, "mut",
+        )))
+    }
 }
 
 fn callable_result(
@@ -2122,6 +2262,7 @@ fn check_callable(
 ) -> Result<(), AnalysisError> {
     let node = tree.node(callable).ok_or(AnalysisError::Invariant)?;
     initialize_effect_draft(tree, node, context)?;
+    context.shared_receiver_value_roots.borrow_mut().clear();
     *context.current_visible_traits.borrow_mut() = context
         .callable_visible_traits
         .get(node.span())
@@ -2329,6 +2470,7 @@ fn check_block(
                         .is_some_and(|node| matches!(node.form(), SyntaxForm::Pattern))
                 });
                 let mut pattern_environment = environment.clone();
+                let mut pattern_payload_roots = BTreeSet::new();
                 if has_pattern {
                     let pattern = direct_child_form(tree, child_node, SyntaxForm::Pattern)
                         .ok_or(AnalysisError::Invariant)?;
@@ -2350,11 +2492,16 @@ fn check_block(
                         context,
                         diagnostics,
                     )? {
-                        pattern_environment.extend(pattern_type_bindings(
+                        let (_, bindings) = pattern_coverage(
                             tree,
                             pattern,
                             &scrutinee_type,
-                        )?);
+                            &BTreeSet::new(),
+                            context,
+                            diagnostics,
+                        )?;
+                        pattern_payload_roots = bindings.keys().cloned().collect();
+                        pattern_environment.extend(bindings);
                     }
                 }
                 let conditions = child_node
@@ -2403,15 +2550,33 @@ fn check_block(
                         &environment
                     };
                     blocks = blocks.saturating_add(1);
-                    let result = check_block(
-                        tree,
-                        nested,
-                        facts,
-                        branch_environment,
-                        expected_result,
-                        context,
-                        diagnostics,
-                    )?;
+                    let result = if has_pattern && blocks == 1 {
+                        with_shared_receiver_payload_roots(
+                            context,
+                            pattern_payload_roots.clone(),
+                            || {
+                                check_block(
+                                    tree,
+                                    nested,
+                                    facts,
+                                    branch_environment,
+                                    expected_result,
+                                    context,
+                                    diagnostics,
+                                )
+                            },
+                        )?
+                    } else {
+                        check_block(
+                            tree,
+                            nested,
+                            facts,
+                            branch_environment,
+                            expected_result,
+                            context,
+                            diagnostics,
+                        )?
+                    };
                     branch_results.push(result);
                 }
                 if has_pattern {
@@ -2735,18 +2900,21 @@ fn check_match_statement(
         }
         covered.extend(keys);
         let mut arm_environment = environment.clone();
+        let payload_roots = pattern_payload_binding_names(tree, pattern, &bindings)?;
         arm_environment.extend(bindings);
         let body =
             direct_child_form(tree, arm_node, SyntaxForm::Block).ok_or(AnalysisError::Invariant)?;
-        let result = check_block(
-            tree,
-            body,
-            facts,
-            &arm_environment,
-            expected_result,
-            context,
-            diagnostics,
-        )?;
+        let result = with_shared_receiver_payload_roots(context, payload_roots, || {
+            check_block(
+                tree,
+                body,
+                facts,
+                &arm_environment,
+                expected_result,
+                context,
+                diagnostics,
+            )
+        })?;
         any_fallthrough |= result.falls_through;
     }
     let exhaustive = !universe.is_empty() && universe.is_subset(&covered);
@@ -2791,7 +2959,8 @@ fn check_let(
     }
     if let Some(pattern) = direct_child_form(tree, node, SyntaxForm::Pattern) {
         if validate_pattern_shape(tree, pattern, &expected, false, context, diagnostics)? {
-            environment.extend(pattern_type_bindings(tree, pattern, &expected)?);
+            let bindings = pattern_type_bindings(tree, pattern, &expected)?;
+            environment.extend(bindings);
         }
     } else if let Some(name) = direct_identifier(tree, statement)? {
         environment.insert(name, expected);
@@ -3120,6 +3289,64 @@ fn pattern_type_bindings(
     Ok(bindings)
 }
 
+fn pattern_payload_binding_names(
+    tree: &SyntaxTree,
+    pattern: NodeId,
+    bindings: &BTreeMap<Arc<str>, TypeDescriptor>,
+) -> Result<BTreeSet<Arc<str>>, AnalysisError> {
+    if node_contains_punctuation(tree, pattern, Punctuation::PathSeparator) {
+        return Ok(bindings.keys().cloned().collect());
+    }
+    let mut payload_bindings = BTreeSet::new();
+    let mut work = vec![(pattern, false)];
+    while let Some((pattern, inherited_payload)) = work.pop() {
+        let node = tree.node(pattern).ok_or(AnalysisError::Invariant)?;
+        let nested = node
+            .children()
+            .iter()
+            .copied()
+            .filter(|child| {
+                tree.node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Pattern))
+            })
+            .collect::<Vec<_>>();
+        let payload =
+            inherited_payload
+                || matches!(
+                    direct_reserved_word(tree, node).as_deref(),
+                    Some("Some" | "Ok" | "Err")
+                )
+                || node.children().iter().copied().any(|child| {
+                    node_contains_punctuation(tree, child, Punctuation::PathSeparator)
+                });
+        if nested.is_empty() {
+            if payload
+                && let Some(name) = direct_identifier(tree, pattern)?
+                && bindings.contains_key(&name)
+            {
+                payload_bindings.insert(name);
+            }
+        } else {
+            work.extend(nested.into_iter().map(|nested| (nested, payload)));
+        }
+    }
+    Ok(payload_bindings)
+}
+
+fn with_shared_receiver_payload_roots<T>(
+    context: &BodyContext,
+    payload_roots: BTreeSet<Arc<str>>,
+    check: impl FnOnce() -> Result<T, AnalysisError>,
+) -> Result<T, AnalysisError> {
+    let previous = context.shared_receiver_value_roots.replace(BTreeSet::new());
+    let mut scoped = previous.clone();
+    scoped.extend(payload_roots);
+    context.shared_receiver_value_roots.replace(scoped);
+    let result = check();
+    context.shared_receiver_value_roots.replace(previous);
+    result
+}
+
 fn validate_pattern_shape(
     tree: &SyntaxTree,
     pattern: NodeId,
@@ -3170,6 +3397,15 @@ fn validate_pattern_shape(
                 if current_type.kind() == TypeKind::Tuple && nested.len() == members.len() {
                     work.extend(nested.into_iter().zip(members).rev());
                     true
+                } else if allow_refutable
+                    && current_type.kind() == TypeKind::Declared
+                    && let Some(shape) = enum_shape_for_descriptor(context, &current_type)?
+                    && let Some(variant) = direct_identifiers(tree, pattern)?.last()
+                    && let Some(Some(payload)) = shape.variants.get(variant)
+                    && let Some(nested) = nested.first()
+                {
+                    work.push((*nested, payload.clone()));
+                    true
                 } else {
                     false
                 }
@@ -3181,10 +3417,7 @@ fn validate_pattern_shape(
                 !qualified
                     || (allow_refutable
                         && current_type.kind() == TypeKind::Declared
-                        && context
-                            .enums
-                            .values()
-                            .any(|shape| shape.descriptor == current_type))
+                        && enum_shape_for_descriptor(context, &current_type)?.is_some())
             }
         };
         if !valid {
@@ -3218,6 +3451,16 @@ fn node_has_reserved_word(
 ) -> bool {
     node.children().iter().filter_map(|child| tree.node(*child)).any(|node| {
         matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == expected)
+    })
+}
+
+fn node_has_identifier(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    expected: &str,
+) -> bool {
+    node.children().iter().filter_map(|child| tree.node(*child)).any(|node| {
+        matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(value)) if value.as_ref() == expected)
     })
 }
 
@@ -4874,6 +5117,7 @@ fn infer_projection(
             return Ok(None);
         };
         if let Some(member) = base.immediate_members().into_iter().nth(index) {
+            diagnose_projected_shared_receiver_place(tree, node, &member, context, diagnostics)?;
             return Ok(Some(member));
         }
         diagnostics.push(body_diagnostic(
@@ -4909,9 +5153,40 @@ fn infer_projection(
                 [("actual", actual.canonical_string())],
             )?);
         }
-        return Ok(base.immediate_members().into_iter().next());
+        let projected = base.immediate_members().into_iter().next();
+        if let Some(receiver) = &projected {
+            diagnose_projected_shared_receiver_place(tree, node, receiver, context, diagnostics)?;
+        }
+        return Ok(projected);
     }
     Ok(None)
+}
+
+fn diagnose_projected_shared_receiver_place(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    receiver: &TypeDescriptor,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    if let Some((member, member_id)) = postfix_called_member(tree, node)
+        && let Some(metadata) = context
+            .inherent_method_sources
+            .get(&(receiver.clone(), member.clone()))
+        && metadata.receiver_mode == ReceiverMode::SharedPlace
+    {
+        diagnostics.push(body_diagnostic(
+            "shared-receiver-place",
+            DiagnosticCategory::Type,
+            "`shared self` requires a binding root or struct-field receiver place",
+            tree.node(member_id)
+                .ok_or(AnalysisError::Invariant)?
+                .span()
+                .clone(),
+            [] as [(&str, &str); 0],
+        )?);
+    }
+    Ok(())
 }
 
 fn require_aggregate_member(
@@ -5084,11 +5359,46 @@ fn infer_member_sequence(
     }
     let Some(dot) = children
         .iter()
-        .position(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
+        .rposition(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
     else {
         return Ok(None);
     };
     let receiver = if let Some(receiver) = receiver {
+        receiver
+    } else if let Some((root, fields)) =
+        postfix_field_sequence(tree, children.get(..dot).unwrap_or_default())
+    {
+        let Some(mut receiver) = environment.get(&root).cloned() else {
+            return Ok(None);
+        };
+        for (field, field_id) in fields {
+            let resolved = context
+                .structs
+                .values()
+                .find(|shape| shape.descriptor == receiver)
+                .and_then(|shape| shape.fields.get(&field))
+                .map(|field| field.ty.clone())
+                .or_else(|| {
+                    generic_field_type(&receiver, &field, context)
+                        .ok()
+                        .flatten()
+                });
+            let Some(resolved) = resolved else {
+                let field_node = tree.node(field_id).ok_or(AnalysisError::Invariant)?;
+                diagnostics.push(body_diagnostic(
+                    "unknown-member",
+                    DiagnosticCategory::Type,
+                    "a receiver type has no field or inherent method with this name",
+                    field_node.span().clone(),
+                    [
+                        ("member", field.as_ref()),
+                        ("receiver", receiver.canonical_string().as_str()),
+                    ],
+                )?);
+                return Ok(None);
+            };
+            receiver = resolved;
+        }
         receiver
     } else {
         let root = children
@@ -5107,13 +5417,24 @@ fn infer_member_sequence(
                     _ => None,
                 }
             });
-        let Some(root) = root else {
-            return Ok(None);
-        };
-        let Some(receiver) = environment.get(&root).cloned() else {
-            return Ok(None);
-        };
-        receiver
+        if let Some(root) = root
+            && let Some(receiver) = environment.get(&root).cloned()
+        {
+            receiver
+        } else {
+            let Some(receiver) = infer_operand_sequence(
+                tree,
+                children.get(..dot).unwrap_or_default(),
+                facts,
+                environment,
+                context,
+                diagnostics,
+            )?
+            else {
+                return Ok(None);
+            };
+            receiver
+        }
     };
     let member_id = children
         .get(dot.saturating_add(1))
@@ -5226,8 +5547,31 @@ fn infer_member_sequence(
         let Some(signature) = signature else {
             return Ok(None);
         };
-        if let Some(source) = inherent_source.flatten() {
-            record_effect_call(context, EffectNode::Source(source));
+        if let Some(metadata) = inherent_source.flatten() {
+            if metadata.receiver_mode == ReceiverMode::SharedPlace
+                && !postfix_shared_receiver_place(tree, children, context)
+            {
+                diagnostics.push(body_diagnostic(
+                    "shared-receiver-place",
+                    DiagnosticCategory::Type,
+                    "`shared self` requires a binding root or struct-field receiver place",
+                    member_node.span().clone(),
+                    [] as [(&str, &str); 0],
+                )?);
+            }
+            if let Some(caller) = context.current_effect_owner.borrow().clone() {
+                let call_site = call_sequence_span(tree, children, member_node)
+                    .unwrap_or_else(|| member_node.span().clone());
+                context.resolved_calls.borrow_mut().insert(
+                    (
+                        caller,
+                        call_site,
+                        EffectNode::Source(metadata.declaration.clone()),
+                    ),
+                    None,
+                );
+            }
+            record_effect_call(context, EffectNode::Source(metadata.declaration));
         }
         if arguments.len() != signature.parameters.len() {
             diagnostics.push(body_diagnostic(
@@ -5356,15 +5700,181 @@ fn postfix_field_sequence(tree: &SyntaxTree, children: &[NodeId]) -> Option<Post
     (!fields.is_empty()).then_some((root, fields))
 }
 
-fn generic_field_type(
-    receiver: &TypeDescriptor,
-    member: &str,
+fn postfix_shared_receiver_place(
+    tree: &SyntaxTree,
+    children: &[NodeId],
     context: &BodyContext,
-) -> Result<Option<TypeDescriptor>, AnalysisError> {
-    let Some(path) = receiver.declared_path() else {
+) -> bool {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let Some(node) = tree.node(id) else {
+            return false;
+        };
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let Some(method_dot) = tokens.iter().rposition(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    }) else {
+        return false;
+    };
+    let root_is_place = match tokens.first().map(|node| node.form()) {
+        Some(SyntaxForm::Token(TokenKind::Identifier(_))) => true,
+        Some(SyntaxForm::Token(TokenKind::ReservedWord(word))) => word.spelling() == "self",
+        _ => false,
+    };
+    root_is_place
+        && tokens.first().is_some_and(|node| match node.form() {
+            SyntaxForm::Token(TokenKind::Identifier(root)) => {
+                !context.shared_receiver_value_roots.borrow().contains(root)
+            }
+            _ => true,
+        })
+        && tokens[..method_dot]
+            .iter()
+            .enumerate()
+            .skip(1)
+            .all(|(index, node)| {
+                matches!(
+                    (index % 2, node.form()),
+                    (
+                        1,
+                        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+                    ) | (0, SyntaxForm::Token(TokenKind::Identifier(_)))
+                )
+            })
+}
+
+fn call_sequence_span(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    callee: &gantry_frontend::SyntaxNode,
+) -> Option<SourceSpan> {
+    let mut local_tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            local_tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let start = local_tokens.first()?;
+    let mut tokens = tree
+        .nodes()
+        .iter()
+        .filter(|node| {
+            matches!(node.form(), SyntaxForm::Token(_))
+                && node.span().source() == callee.span().source()
+        })
+        .collect::<Vec<_>>();
+    tokens.sort_by_key(|token| token.span().bytes());
+    let callee_index = tokens
+        .iter()
+        .position(|token| token.span() == callee.span())?;
+    let open = tokens
+        .get(callee_index.saturating_add(1)..)?
+        .iter()
+        .position(|token| {
+            matches!(
+                token.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+            )
+        })?
+        .saturating_add(callee_index.saturating_add(1));
+    let mut depth = 0_u64;
+    let closing = tokens.get(open..)?.iter().find(|token| {
+        matches!(
+            token.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        )
+        .then(|| depth = depth.saturating_add(1));
+        matches!(
+            token.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+        ) && {
+            depth = depth.saturating_sub(1);
+            depth == 0
+        }
+    })?;
+    (start.span().source() == closing.span().source())
+        .then(|| {
+            SourceSpan::from_portable_parts(
+                start.span().source().package_path().as_str(),
+                start.span().bytes().start(),
+                closing.span().bytes().end(),
+            )
+            .ok()
+        })
+        .flatten()
+}
+
+fn postfix_called_member(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+) -> Option<(Arc<str>, NodeId)> {
+    let mut tokens = Vec::new();
+    let mut work = node.children().iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let token = tree.node(id)?;
+        if matches!(token.form(), SyntaxForm::Token(_)) {
+            tokens.push((id, token));
+        } else {
+            work.extend(token.children().iter().rev().copied());
+        }
+    }
+    let dot = tokens.iter().rposition(|(_, token)| {
+        matches!(
+            token.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    })?;
+    let (member_id, member) = tokens.get(dot.saturating_add(1))?;
+    let SyntaxForm::Token(TokenKind::Identifier(member)) = member.form() else {
+        return None;
+    };
+    tokens
+        .get(dot.saturating_add(2)..)
+        .is_some_and(|tail| {
+            tail.iter().any(|(_, token)| {
+                matches!(
+                    token.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+                )
+            })
+        })
+        .then_some((member.clone(), *member_id))
+}
+
+fn struct_fields_for_descriptor(
+    context: &BodyContext,
+    descriptor: &TypeDescriptor,
+) -> Result<Option<BTreeMap<Arc<str>, TypeDescriptor>>, AnalysisError> {
+    if let Some(shape) = context
+        .structs
+        .values()
+        .find(|shape| shape.descriptor == *descriptor)
+    {
+        return Ok(Some(
+            shape
+                .fields
+                .iter()
+                .map(|(name, field)| (name.clone(), field.ty.clone()))
+                .collect(),
+        ));
+    }
+    let Some(path) = descriptor.declared_path() else {
         return Ok(None);
     };
-    let arguments = receiver.immediate_members();
+    let arguments = descriptor.immediate_members();
     let Some(shape) = context
         .generic_structs
         .values()
@@ -5372,15 +5882,34 @@ fn generic_field_type(
     else {
         return Ok(None);
     };
-    let Some(field) = shape.fields.get(member) else {
-        return Ok(None);
-    };
     let substitution = ExactTypeSubstitution::explicit(&shape.required, &arguments)
         .map_err(|_| AnalysisError::Invariant)?;
-    substitution
-        .apply(&field.ty)
+    shape
+        .fields
+        .iter()
+        .map(|(name, field)| {
+            substitution
+                .apply(&field.ty)
+                .map(|ty| (name.clone(), ty))
+                .map_err(|_| AnalysisError::Invariant)
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()
         .map(Some)
-        .map_err(|_| AnalysisError::Invariant)
+}
+
+fn generic_field_type(
+    receiver: &TypeDescriptor,
+    member: &str,
+    context: &BodyContext,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let fields = struct_fields_for_descriptor(context, receiver)?;
+    if let Some(fields) = &fields {
+        context
+            .resolved_struct_fields
+            .borrow_mut()
+            .insert(receiver.clone(), fields.clone());
+    }
+    Ok(fields.and_then(|fields| fields.get(member).cloned()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6352,15 +6881,23 @@ fn infer_call_sequence(
         }
         return Ok(None);
     };
-    if let Some(source) = context.callable_sources.get(&target).cloned() {
-        record_effect_call(context, EffectNode::Source(source));
-    }
     let close = children
         .iter()
         .enumerate()
         .skip(open.saturating_add(1))
         .find(|(_, child)| node_is_punctuation(tree, **child, Punctuation::RightParenthesis))
         .map_or(children.len(), |(index, _)| index);
+    if let Some(source) = context.callable_sources.get(&target).cloned() {
+        if let Some(caller) = context.current_effect_owner.borrow().clone() {
+            let call_site =
+                call_sequence_span(tree, children, path).unwrap_or_else(|| path.span().clone());
+            context.resolved_calls.borrow_mut().insert(
+                (caller, call_site, EffectNode::Source(source.clone())),
+                None,
+            );
+        }
+        record_effect_call(context, EffectNode::Source(source));
+    }
     let arguments = children
         .get(open.saturating_add(1)..close)
         .unwrap_or_default()
@@ -7267,6 +7804,7 @@ fn infer_match(
         }
         covered.extend(keys);
         let mut arm_environment = environment.clone();
+        let payload_roots = pattern_payload_binding_names(tree, pattern, &bindings)?;
         arm_environment.extend(bindings);
         let body = arm_node
             .children()
@@ -7278,31 +7816,33 @@ fn infer_match(
                 })
             })
             .ok_or(AnalysisError::Invariant)?;
-        let actual = if tree
-            .node(body)
-            .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
-        {
-            check_block(
-                tree,
-                body,
-                facts,
-                &arm_environment,
-                expected.unwrap_or(&TypeDescriptor::UNIT),
-                context,
-                diagnostics,
-            )?
-            .trailing
-        } else {
-            infer_expression(
-                tree,
-                body,
-                facts,
-                &arm_environment,
-                expected,
-                context,
-                diagnostics,
-            )?
-        };
+        let actual = with_shared_receiver_payload_roots(context, payload_roots, || {
+            if tree
+                .node(body)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
+            {
+                Ok(check_block(
+                    tree,
+                    body,
+                    facts,
+                    &arm_environment,
+                    expected.unwrap_or(&TypeDescriptor::UNIT),
+                    context,
+                    diagnostics,
+                )?
+                .trailing)
+            } else {
+                infer_expression(
+                    tree,
+                    body,
+                    facts,
+                    &arm_environment,
+                    expected,
+                    context,
+                    diagnostics,
+                )
+            }
+        })?;
         if let Some(actual) = actual {
             if let Some(previous) = &result_type {
                 require_type(previous, &actual, arm_node.span().clone(), diagnostics)?;
@@ -7448,10 +7988,8 @@ fn pattern_coverage(
             .into_iter()
             .next()
             .unwrap_or(TypeDescriptor::UNIT);
-        if let Some(nested) = direct_child_form(tree, node, SyntaxForm::Pattern)
-            && let Some(name) = direct_identifier(tree, nested)?
-        {
-            bindings.insert(name, member);
+        if let Some(nested) = direct_child_form(tree, node, SyntaxForm::Pattern) {
+            bindings.extend(pattern_type_bindings(tree, nested, &member)?);
         }
         return Ok((["some".to_owned()].into_iter().collect(), bindings));
     }

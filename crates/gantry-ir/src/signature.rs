@@ -82,11 +82,12 @@ impl ReceiverMode {
         }
     }
 
-    const fn v1_signature_spelling(self) -> Option<&'static str> {
+    const fn signature_spelling(self) -> Option<&'static str> {
         match self {
             Self::LocalCopy => Some("self"),
             Self::MutableLocalCopy => Some("mut self"),
-            Self::Owned | Self::SharedPlace | Self::ExclusivePlace => None,
+            Self::SharedPlace => Some("shared self"),
+            Self::Owned | Self::ExclusivePlace => None,
         }
     }
 }
@@ -175,7 +176,7 @@ impl CanonicalSignature {
         let mut output = format!("fn <{}>::{}(", receiver_type.as_str(), method);
         output.push_str(
             receiver_mode
-                .v1_signature_spelling()
+                .signature_spelling()
                 .ok_or(SignatureError::UnsupportedReceiverMode)?,
         );
         if !parameters.is_empty() {
@@ -310,6 +311,17 @@ mod tests {
                 "fn <crate::domain::Report>::revise(mut self,String)->crate::domain::Report"
                     .to_owned()
             )
+        );
+        assert_eq!(
+            CanonicalSignature::method(
+                &report,
+                "inspect",
+                ReceiverMode::SharedPlace,
+                &[],
+                &TypeDescriptor::INT,
+            )
+            .map(|signature| signature.to_string()),
+            Ok("fn <crate::domain::Report>::inspect(shared self)->Int".to_owned())
         );
         assert_eq!(
             ReceiverMode::from_v1_mutability(false),

@@ -8,8 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use gantry_core::numeric::{GantryFloat, GantryInt};
+use gantry_core::source::SourceSpan;
 use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValuePathSegment};
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
+use gantry_ir::generated::TypeKind;
 use gantry_ir::{
     ActionInventory, AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison,
     EffectSet, EntryInventory, ExecutableAction, ExecutableOperation, ExecutableTaskBody,
@@ -78,6 +80,18 @@ pub(crate) fn lower_executable_program(
         targets.sort();
         targets.dedup();
     }
+    let mut callable_results = body
+        .source_callables
+        .iter()
+        .map(|callable| (callable.identity.clone(), callable.result.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for callable in &body.concrete_callables {
+        let identity = concrete_identities
+            .get(&callable.key)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        callable_results.insert(identity, callable.result.clone());
+    }
     let mut edges = BTreeMap::<CanonicalCallableIdentity, Vec<CanonicalCallableIdentity>>::new();
     for callable in &body.source_callables {
         edges.insert(
@@ -103,6 +117,12 @@ pub(crate) fn lower_executable_program(
                 .collect::<Result<Vec<_>, _>>()?,
         );
     }
+    let shared_receivers = body
+        .source_callables
+        .iter()
+        .filter(|callable| callable.receiver_mode == Some(gantry_ir::ReceiverMode::SharedPlace))
+        .map(|callable| callable.identity.clone())
+        .collect::<BTreeSet<_>>();
     let root_identity = CanonicalCallableIdentity::free(&entry.path, &[]);
     let mut reachable = BTreeSet::new();
     let mut pending = vec![root_identity.clone()];
@@ -138,6 +158,7 @@ pub(crate) fn lower_executable_program(
             body_types: body_types
                 .get(source_index)
                 .ok_or(AnalysisError::Invariant)?,
+            struct_fields: &body.struct_fields,
             facts,
             receiver_type: metadata.receiver.as_ref(),
             result: &metadata.result,
@@ -146,9 +167,12 @@ pub(crate) fn lower_executable_program(
                 .get(&metadata.identity)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
+            callable_results: &callable_results,
+            shared_receivers: &shared_receivers,
             operation_results: None,
             closed_enums: &body.closed_enums,
             actions,
+            binding_types: BTreeMap::new(),
             instructions: Vec::new(),
             identity: &metadata.identity,
             spawn_captures: body
@@ -185,6 +209,7 @@ pub(crate) fn lower_executable_program(
             tree,
             declaration_types: &metadata.declaration_types,
             body_types: &metadata.expression_types,
+            struct_fields: &body.struct_fields,
             facts,
             receiver_type: metadata.receiver.as_ref(),
             result: &metadata.result,
@@ -193,9 +218,12 @@ pub(crate) fn lower_executable_program(
                 .get(&identity)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
+            callable_results: &callable_results,
+            shared_receivers: &shared_receivers,
             operation_results: Some(&metadata.operation_results),
             closed_enums: &body.closed_enums,
             actions,
+            binding_types: BTreeMap::new(),
             instructions: Vec::new(),
             identity: &identity,
             spawn_captures: body
@@ -242,14 +270,18 @@ struct Compiler<'a> {
     tree: &'a SyntaxTree,
     declaration_types: &'a BTreeMap<NodeId, TypeFact>,
     body_types: &'a BTreeMap<NodeId, TypeDescriptor>,
+    struct_fields: &'a BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, TypeDescriptor>>,
     facts: &'a WorkflowFacts,
     receiver_type: Option<&'a TypeDescriptor>,
     result: &'a TypeDescriptor,
     effects: EffectSet,
     direct_targets: &'a [(gantry_core::source::SourceSpan, CanonicalCallableIdentity)],
+    callable_results: &'a BTreeMap<CanonicalCallableIdentity, TypeDescriptor>,
+    shared_receivers: &'a BTreeSet<CanonicalCallableIdentity>,
     operation_results: Option<&'a BTreeMap<gantry_core::source::SourceSpan, TypeDescriptor>>,
     closed_enums: &'a BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
     actions: &'a [ActionInventory],
+    binding_types: BTreeMap<Arc<str>, TypeDescriptor>,
     instructions: Vec<Instruction>,
     identity: &'a CanonicalCallableIdentity,
     spawn_captures:
@@ -270,6 +302,10 @@ struct LoopTarget {
 impl Compiler<'_> {
     fn compile_callable(&mut self, callable: NodeId) -> Result<Workflow, AnalysisError> {
         let parameters = self.compile_parameters(callable)?;
+        self.binding_types = parameters
+            .iter()
+            .map(|parameter| (parameter.name.clone(), parameter.ty.clone()))
+            .collect();
         let node = self.node(callable)?;
         let block = direct_child_form(self.tree, node, SyntaxForm::Block)
             .ok_or(AnalysisError::Invariant)?;
@@ -308,14 +344,18 @@ impl Compiler<'_> {
             tree: self.tree,
             declaration_types: self.declaration_types,
             body_types: self.body_types,
+            struct_fields: self.struct_fields,
             facts: self.facts,
             receiver_type: self.receiver_type,
             result: &result,
             effects: self.effects,
             direct_targets: self.direct_targets,
+            callable_results: self.callable_results,
+            shared_receivers: self.shared_receivers,
             operation_results: self.operation_results,
             closed_enums: self.closed_enums,
             actions: self.actions,
+            binding_types: self.binding_types.clone(),
             instructions: Vec::new(),
             identity: self.identity,
             spawn_captures: self.spawn_captures,
@@ -385,6 +425,10 @@ impl Compiler<'_> {
                 InstructionKind::Load(name) | InstructionKind::Assign { name, .. } => {
                     vec![name.clone()]
                 }
+                InstructionKind::ReceiverCall {
+                    source: gantry_ir::ReceiverSource::CallerPlace { root, .. },
+                    ..
+                } => vec![root.clone()],
                 InstructionKind::Spawn { body, .. } => self
                     .task_bodies
                     .iter()
@@ -495,6 +539,7 @@ impl Compiler<'_> {
                 .receiver_type
                 .cloned()
                 .ok_or(AnalysisError::Invariant)?;
+            let receiver_mode = method_receiver_mode(self.tree, callable)?;
             let mutable = semantic_children(self.tree, callable)?
                 .into_iter()
                 .any(|parameter| {
@@ -508,7 +553,7 @@ impl Compiler<'_> {
                 name: Arc::from("self"),
                 ty: receiver,
                 mutable,
-                receiver_mode: Some(gantry_ir::ReceiverMode::from_v1_mutability(mutable)),
+                receiver_mode: Some(receiver_mode),
             });
         }
         for parameter in semantic_children(self.tree, callable)? {
@@ -635,7 +680,22 @@ impl Compiler<'_> {
             .ok_or(AnalysisError::Invariant)?;
         let mutable = node_has_word(self.tree, &node, "mut");
         let ty = self.compile_expression(expression)?;
+        if let Some(pattern) = direct_child_form(self.tree, &node, SyntaxForm::Pattern) {
+            let temporary = self.compiler_temporary("tuple");
+            self.emit(
+                ty.clone(),
+                InstructionKind::Bind {
+                    name: temporary.clone(),
+                    ty: ty.clone(),
+                    mutable: false,
+                },
+            )?;
+            self.binding_types.insert(temporary.clone(), ty.clone());
+            self.compile_pattern_bindings(pattern, ty, &temporary, mutable)?;
+            return Ok(());
+        }
         let name = direct_identifier(self.tree, statement).ok_or(AnalysisError::Invariant)?;
+        self.binding_types.insert(name.clone(), ty.clone());
         self.emit(ty.clone(), InstructionKind::Bind { name, ty, mutable })?;
         Ok(())
     }
@@ -688,10 +748,13 @@ impl Compiler<'_> {
     }
 
     fn compile_if(&mut self, statement: NodeId) -> Result<(), AnalysisError> {
-        let node = self.node(statement)?;
-        let condition = direct_child_form(self.tree, node, SyntaxForm::Expression)
+        let node = self.node(statement)?.clone();
+        let condition = direct_child_form(self.tree, &node, SyntaxForm::Expression)
             .ok_or(AnalysisError::Invariant)?;
         let condition_type = self.compile_expression(condition)?;
+        if let Some(pattern) = direct_child_form(self.tree, &node, SyntaxForm::Pattern) {
+            return self.compile_pattern_if(statement, pattern, condition_type);
+        }
         let branch = self.emit(
             condition_type,
             InstructionKind::Branch {
@@ -711,10 +774,12 @@ impl Compiler<'_> {
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
+        let true_bindings = self.binding_types.clone();
         self.compile_block(
             *blocks.first().ok_or(AnalysisError::Invariant)?,
             BlockMode::Statement,
         )?;
+        self.binding_types = true_bindings;
         self.cleanup.pop();
         self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
@@ -724,9 +789,11 @@ impl Compiler<'_> {
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
+        let false_bindings = self.binding_types.clone();
         if let Some(otherwise) = blocks.get(1) {
             self.compile_block(*otherwise, BlockMode::Statement)?;
         }
+        self.binding_types = false_bindings;
         self.cleanup.pop();
         self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
@@ -738,6 +805,263 @@ impl Compiler<'_> {
         };
         self.instructions[jump].kind = InstructionKind::Jump(end);
         Ok(())
+    }
+
+    /// Lowers a refutable `if let` using the runtime's exact value discriminants.
+    fn compile_pattern_if(
+        &mut self,
+        statement: NodeId,
+        pattern: NodeId,
+        scrutinee_type: TypeDescriptor,
+    ) -> Result<(), AnalysisError> {
+        let blocks = semantic_children(self.tree, statement)?
+            .into_iter()
+            .filter(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
+            })
+            .collect::<Vec<_>>();
+        let branch = match scrutinee_type.kind() {
+            TypeKind::Option => self.emit(
+                scrutinee_type.clone(),
+                InstructionKind::BranchOption {
+                    when_some: 0,
+                    when_none: 0,
+                },
+            )?,
+            TypeKind::Result => self.emit(
+                scrutinee_type.clone(),
+                InstructionKind::BranchResult {
+                    when_ok: 0,
+                    when_err: 0,
+                },
+            )?,
+            TypeKind::Declared => self.emit(
+                scrutinee_type.clone(),
+                InstructionKind::BranchEnum { arms: Vec::new() },
+            )?,
+            _ => return Err(AnalysisError::Invariant),
+        };
+        let when_true = self.instructions.len();
+        let payload_type =
+            pattern_payload_type(self.tree, pattern, &scrutinee_type, self.closed_enums)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+        self.cleanup.push(InstructionKind::LeaveOccurrence);
+        self.cleanup.push(InstructionKind::ExitScope);
+        let true_bindings = self.binding_types.clone();
+        if let Some(payload_type) = payload_type {
+            let payload_root = self.compiler_temporary("payload");
+            self.emit(
+                payload_type.clone(),
+                InstructionKind::Bind {
+                    name: payload_root.clone(),
+                    ty: payload_type.clone(),
+                    mutable: false,
+                },
+            )?;
+            self.binding_types
+                .insert(payload_root.clone(), payload_type.clone());
+            self.compile_pattern_bindings(
+                pattern_payload_pattern(self.tree, pattern)?,
+                payload_type,
+                &payload_root,
+                false,
+            )?;
+        }
+        self.compile_block(
+            *blocks.first().ok_or(AnalysisError::Invariant)?,
+            BlockMode::Statement,
+        )?;
+        self.binding_types = true_bindings;
+        self.cleanup.pop();
+        self.cleanup.pop();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
+        let when_false = self.instructions.len();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+        self.cleanup.push(InstructionKind::LeaveOccurrence);
+        self.cleanup.push(InstructionKind::ExitScope);
+        let false_bindings = self.binding_types.clone();
+        if let Some(otherwise) = blocks.get(1) {
+            self.compile_block(*otherwise, BlockMode::Statement)?;
+        }
+        self.binding_types = false_bindings;
+        self.cleanup.pop();
+        self.cleanup.pop();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        let false_jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
+        let false_shims = match scrutinee_type.kind() {
+            TypeKind::Option => {
+                let mut shims = BTreeMap::new();
+                if pattern_word_at(self.tree, pattern, "None") {
+                    let shim = self.instructions.len();
+                    self.emit(
+                        scrutinee_type
+                            .immediate_members()
+                            .first()
+                            .cloned()
+                            .ok_or(AnalysisError::Invariant)?,
+                        InstructionKind::Pop,
+                    )?;
+                    self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(when_false))?;
+                    shims.insert(Arc::from("Some"), shim);
+                }
+                shims
+            }
+            TypeKind::Result => {
+                let mut shims = BTreeMap::new();
+                let members = scrutinee_type.immediate_members();
+                for (variant, payload) in [("Ok", members.first()), ("Err", members.get(1))] {
+                    if !pattern_word_at(self.tree, pattern, variant) {
+                        let shim = self.instructions.len();
+                        self.emit(
+                            payload.cloned().ok_or(AnalysisError::Invariant)?,
+                            InstructionKind::Pop,
+                        )?;
+                        self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(when_false))?;
+                        shims.insert(Arc::from(variant), shim);
+                    }
+                }
+                shims
+            }
+            TypeKind::Declared => {
+                let mut shims = BTreeMap::new();
+                let variants = self
+                    .closed_enums
+                    .get(&scrutinee_type)
+                    .ok_or(AnalysisError::Invariant)?;
+                let selected = pattern_variant(self.tree, pattern, variants)?;
+                for (variant, payload) in variants {
+                    if variant != &selected
+                        && let Some(payload) = payload
+                    {
+                        let shim = self.instructions.len();
+                        self.emit(payload.clone(), InstructionKind::Pop)?;
+                        self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(when_false))?;
+                        shims.insert(variant.clone(), shim);
+                    }
+                }
+                shims
+            }
+            _ => return Err(AnalysisError::Invariant),
+        };
+        let end = self.instructions.len();
+        self.instructions[jump].kind = InstructionKind::Jump(end);
+        self.instructions[false_jump].kind = InstructionKind::Jump(end);
+        self.instructions[branch].kind = match scrutinee_type.kind() {
+            TypeKind::Option => InstructionKind::BranchOption {
+                when_some: if pattern_word_at(self.tree, pattern, "Some") {
+                    when_true
+                } else {
+                    false_shims.get("Some").copied().unwrap_or(when_false)
+                },
+                when_none: if pattern_word_at(self.tree, pattern, "None") {
+                    when_true
+                } else {
+                    false_shims.get("None").copied().unwrap_or(when_false)
+                },
+            },
+            TypeKind::Result => InstructionKind::BranchResult {
+                when_ok: if pattern_word_at(self.tree, pattern, "Ok") {
+                    when_true
+                } else {
+                    false_shims.get("Ok").copied().unwrap_or(when_false)
+                },
+                when_err: if pattern_word_at(self.tree, pattern, "Err") {
+                    when_true
+                } else {
+                    false_shims.get("Err").copied().unwrap_or(when_false)
+                },
+            },
+            TypeKind::Declared => InstructionKind::BranchEnum {
+                arms: enum_if_arms(
+                    self.tree,
+                    pattern,
+                    &scrutinee_type,
+                    self.closed_enums,
+                    when_true,
+                    when_false,
+                    &false_shims,
+                )?,
+            },
+            _ => return Err(AnalysisError::Invariant),
+        };
+        Ok(())
+    }
+
+    /// Returns an internal binding identity that source text cannot spell.
+    fn compiler_temporary(&self, purpose: &str) -> Arc<str> {
+        Arc::from(format!("\0gantry_{purpose}_{}", self.instructions.len()))
+    }
+
+    /// Binds a pattern from an already-evaluated value, recursively projecting tuple members.
+    fn compile_pattern_bindings(
+        &mut self,
+        pattern: NodeId,
+        ty: TypeDescriptor,
+        root: &Arc<str>,
+        mutable: bool,
+    ) -> Result<(), AnalysisError> {
+        let bindings = pattern_binding_paths(self.tree, pattern, ty)?;
+        for (name, binding_type, path) in bindings {
+            let Some(name) = name else {
+                continue;
+            };
+            let mut current = self
+                .binding_types
+                .get(root)
+                .cloned()
+                .ok_or(AnalysisError::Invariant)?;
+            self.emit(current.clone(), InstructionKind::Load(root.clone()))?;
+            for index in path {
+                let members = current.immediate_members();
+                current = members
+                    .get(index)
+                    .cloned()
+                    .ok_or(AnalysisError::Invariant)?;
+                self.emit(
+                    current.clone(),
+                    InstructionKind::Project(Projection::Member(index)),
+                )?;
+            }
+            self.binding_types
+                .insert(name.clone(), binding_type.clone());
+            self.emit(
+                binding_type.clone(),
+                InstructionKind::Bind {
+                    name,
+                    ty: binding_type,
+                    mutable,
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Names the payload already exposed by a branch, then recursively binds its pattern.
+    fn bind_pattern_payload(
+        &mut self,
+        arm: NodeId,
+        payload_type: TypeDescriptor,
+    ) -> Result<(), AnalysisError> {
+        let pattern = direct_child_form(self.tree, self.node(arm)?, SyntaxForm::Pattern)
+            .ok_or(AnalysisError::Invariant)?;
+        let payload_pattern = pattern_payload_pattern(self.tree, pattern)?;
+        let root = self.compiler_temporary("payload");
+        self.emit(
+            payload_type.clone(),
+            InstructionKind::Bind {
+                name: root.clone(),
+                ty: payload_type.clone(),
+                mutable: false,
+            },
+        )?;
+        self.binding_types
+            .insert(root.clone(), payload_type.clone());
+        self.compile_pattern_bindings(payload_pattern, payload_type, &root, false)
     }
 
     fn compile_while(&mut self, statement: NodeId) -> Result<(), AnalysisError> {
@@ -788,7 +1112,9 @@ impl Compiler<'_> {
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+        let body_bindings = self.binding_types.clone();
         self.compile_block(body, BlockMode::Statement)?;
+        self.binding_types = body_bindings;
         self.cleanup.pop();
         self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
@@ -846,7 +1172,9 @@ impl Compiler<'_> {
         } else {
             InstructionKind::ExitSession
         });
+        let body_bindings = self.binding_types.clone();
         self.compile_block(body, BlockMode::Statement)?;
+        self.binding_types = body_bindings;
         self.cleanup.pop();
         self.emit(
             TypeDescriptor::UNIT,
@@ -941,24 +1269,49 @@ impl Compiler<'_> {
         }
         if let Some(callee) = self.direct_target(&node) {
             let receiver_type = callee.receiver_type();
+            let shared_receiver = self.shared_receivers.contains(&callee);
             let constructed_receiver = receiver_type.as_ref().and_then(|_| {
                 descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
             });
-            let named_receiver = receiver_type
+            let receiver_place = receiver_type
                 .as_ref()
-                .and_then(|_| postfix_method_receiver(self.tree, &node));
-            let has_implicit_receiver = constructed_receiver.is_some() || named_receiver.is_some();
+                .and_then(|_| postfix_method_receiver_place(self.tree, &node));
+            let has_implicit_receiver = constructed_receiver.is_some() || receiver_place.is_some();
+            let caller_place = if shared_receiver {
+                postfix_method_receiver_place(self.tree, &node)
+            } else {
+                None
+            };
             if let (Some(struct_expression), Some(receiver_type)) =
                 (constructed_receiver, receiver_type.as_ref())
             {
+                if shared_receiver {
+                    return Err(AnalysisError::Invariant);
+                }
                 self.compile_struct(expression, struct_expression, receiver_type.clone())?;
-            } else if let (Some(receiver), Some(receiver_type)) =
-                (&named_receiver, receiver_type.as_ref())
+            } else if let (Some((root, path)), Some(_)) = (&receiver_place, receiver_type.as_ref())
+                && !shared_receiver
             {
+                let mut projection_types =
+                    receiver_place_types(root, path, &self.binding_types, self.struct_fields)
+                        .ok_or(AnalysisError::Invariant)?
+                        .into_iter();
                 self.emit(
-                    receiver_type.clone(),
-                    InstructionKind::Load(receiver.clone()),
+                    projection_types.next().ok_or(AnalysisError::Invariant)?,
+                    InstructionKind::Load(root.clone()),
                 )?;
+                for field in path {
+                    let ValuePathSegment::StructField(field) = field else {
+                        return Err(AnalysisError::Invariant);
+                    };
+                    self.emit(
+                        projection_types.next().ok_or(AnalysisError::Invariant)?,
+                        InstructionKind::Project(Projection::Field(Arc::from(field.as_str()))),
+                    )?;
+                }
+                if projection_types.next().is_some() {
+                    return Err(AnalysisError::Invariant);
+                }
             }
             let arguments = direct_expressions(self.tree, &node);
             for argument in &arguments {
@@ -973,7 +1326,12 @@ impl Compiler<'_> {
                     InstructionKind::ReceiverCall {
                         callee,
                         arguments,
-                        source: gantry_ir::ReceiverSource::CopiedValue,
+                        source: if shared_receiver {
+                            let (root, path) = caller_place.ok_or(AnalysisError::Invariant)?;
+                            gantry_ir::ReceiverSource::CallerPlace { root, path }
+                        } else {
+                            gantry_ir::ReceiverSource::CopiedValue
+                        },
                     }
                 } else {
                     InstructionKind::Call { callee, arguments }
@@ -988,7 +1346,11 @@ impl Compiler<'_> {
             .find(|call| &call.source == node.span())
         {
             let receiver = postfix_method_receiver(self.tree, &node);
-            if let Some(receiver) = &receiver {
+            let callee = CanonicalCallableIdentity::free(&call.callee, &[]);
+            let shared_receiver = self.shared_receivers.contains(&callee);
+            if let Some(receiver) = &receiver
+                && !shared_receiver
+            {
                 let receiver_type = method_receiver_type(&call.callee)?;
                 self.emit(receiver_type, InstructionKind::Load(receiver.clone()))?;
             }
@@ -999,14 +1361,19 @@ impl Compiler<'_> {
             let arguments = arguments
                 .len()
                 .saturating_add(usize::from(receiver.is_some()));
-            let callee = CanonicalCallableIdentity::free(&call.callee, &[]);
             self.emit(
                 ty.clone(),
                 if receiver.is_some() {
                     InstructionKind::ReceiverCall {
                         callee,
                         arguments,
-                        source: gantry_ir::ReceiverSource::CopiedValue,
+                        source: if shared_receiver {
+                            let (root, path) = postfix_method_receiver_place(self.tree, &node)
+                                .ok_or(AnalysisError::Invariant)?;
+                            gantry_ir::ReceiverSource::CallerPlace { root, path }
+                        } else {
+                            gantry_ir::ReceiverSource::CopiedValue
+                        },
                     }
                 } else {
                     InstructionKind::Call { callee, arguments }
@@ -1118,6 +1485,11 @@ impl Compiler<'_> {
             self.emit(ty.clone(), InstructionKind::Load(Arc::from("self")))?;
             return Ok(ty);
         }
+        if matches!(node.form(), SyntaxForm::Path) {
+            let name = direct_identifier(self.tree, expression).ok_or(AnalysisError::Invariant)?;
+            self.emit(ty.clone(), InstructionKind::Load(name))?;
+            return Ok(ty);
+        }
         if let Some(path) = direct_child_form(self.tree, &node, SyntaxForm::Path) {
             let name = direct_identifier(self.tree, path).ok_or(AnalysisError::Invariant)?;
             self.emit(ty.clone(), InstructionKind::Load(name))?;
@@ -1219,18 +1591,25 @@ impl Compiler<'_> {
         if self.closed_enums.contains_key(&scrutinee_type) {
             return self.compile_enum_match(match_expression, scrutinee_type, ty);
         }
-        let member_type = scrutinee_type
-            .immediate_members()
-            .into_iter()
-            .next()
-            .ok_or(AnalysisError::Invariant)?;
-        let branch = self.emit(
-            scrutinee_type,
-            InstructionKind::BranchOption {
-                when_some: 0,
-                when_none: 0,
-            },
-        )?;
+        let members = scrutinee_type.immediate_members();
+        let is_result = scrutinee_type.kind() == TypeKind::Result;
+        let branch = if is_result {
+            self.emit(
+                scrutinee_type,
+                InstructionKind::BranchResult {
+                    when_ok: 0,
+                    when_err: 0,
+                },
+            )?
+        } else {
+            self.emit(
+                scrutinee_type,
+                InstructionKind::BranchOption {
+                    when_some: 0,
+                    when_none: 0,
+                },
+            )?
+        };
         let arms = semantic_children(self.tree, match_expression)?
             .into_iter()
             .filter(|child| {
@@ -1242,39 +1621,51 @@ impl Compiler<'_> {
         let some = arms
             .iter()
             .copied()
-            .find(|arm| pattern_word(self.tree, *arm, "Some"))
+            .find(|arm| pattern_word(self.tree, *arm, if is_result { "Ok" } else { "Some" }))
             .ok_or(AnalysisError::Invariant)?;
         let none = arms
             .iter()
             .copied()
-            .find(|arm| pattern_word(self.tree, *arm, "None"))
+            .find(|arm| pattern_word(self.tree, *arm, if is_result { "Err" } else { "None" }))
             .ok_or(AnalysisError::Invariant)?;
 
         let when_some = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
-        let binding = pattern_binding(self.tree, some).ok_or(AnalysisError::Invariant)?;
-        self.emit(
-            member_type.clone(),
-            InstructionKind::Bind {
-                name: binding,
-                ty: member_type,
-                mutable: false,
-            },
+        let some_bindings = self.binding_types.clone();
+        self.bind_pattern_payload(
+            some,
+            members.first().cloned().ok_or(AnalysisError::Invariant)?,
         )?;
         self.compile_match_arm(some)?;
+        self.binding_types = some_bindings;
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
         let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
 
         let when_none = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+        let none_bindings = self.binding_types.clone();
+        if is_result {
+            self.bind_pattern_payload(
+                none,
+                members.get(1).cloned().ok_or(AnalysisError::Invariant)?,
+            )?;
+        }
         self.compile_match_arm(none)?;
+        self.binding_types = none_bindings;
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
         let end = self.instructions.len();
-        self.instructions[branch].kind = InstructionKind::BranchOption {
-            when_some,
-            when_none,
+        self.instructions[branch].kind = if is_result {
+            InstructionKind::BranchResult {
+                when_ok: when_some,
+                when_err: when_none,
+            }
+        } else {
+            InstructionKind::BranchOption {
+                when_some,
+                when_none,
+            }
         };
         self.instructions[jump].kind = InstructionKind::Jump(end);
         Ok(ty)
@@ -1312,21 +1703,12 @@ impl Compiler<'_> {
             let target = self.instructions.len();
             lowered_arms.push((variant, target));
             self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+            let arm_bindings = self.binding_types.clone();
             if let Some(payload) = payload {
-                if let Some(binding) = enum_pattern_binding(self.tree, arm) {
-                    self.emit(
-                        payload.clone(),
-                        InstructionKind::Bind {
-                            name: binding,
-                            ty: payload.clone(),
-                            mutable: false,
-                        },
-                    )?;
-                } else {
-                    self.emit(payload.clone(), InstructionKind::Pop)?;
-                }
+                self.bind_pattern_payload(arm, payload.clone())?;
             }
             self.compile_match_arm(arm)?;
+            self.binding_types = arm_bindings;
             self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
             self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
             jumps.push(self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?);
@@ -1473,6 +1855,28 @@ impl Compiler<'_> {
     }
 
     fn compile_sequence(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
+        if let Some((callee, result)) = self.direct_sequence_target(children) {
+            let arguments = children
+                .iter()
+                .copied()
+                .filter(|child| {
+                    self.tree
+                        .node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+                })
+                .collect::<Vec<_>>();
+            for argument in &arguments {
+                self.compile_expression(*argument)?;
+            }
+            self.emit(
+                result,
+                InstructionKind::Call {
+                    callee,
+                    arguments: arguments.len(),
+                },
+            )?;
+            return Ok(());
+        }
         for child in children {
             let node = self.node(*child)?;
             if matches!(node.form(), SyntaxForm::Token(_)) {
@@ -1506,13 +1910,34 @@ impl Compiler<'_> {
             .collect::<Vec<_>>();
         self.direct_targets
             .iter()
-            .find(|(source, _)| {
-                source_span_contains(expression.span(), source)
-                    && !arguments
-                        .iter()
-                        .any(|argument| source_span_contains(argument, source))
+            .filter(|(source, callee)| {
+                if self.shared_receivers.contains(callee) {
+                    source == expression.span()
+                } else {
+                    source_span_contains(expression.span(), source)
+                        && !arguments
+                            .iter()
+                            .any(|argument| source_span_contains(argument, source))
+                }
             })
+            .min_by_key(|(source, _)| source.bytes().end().saturating_sub(source.bytes().start()))
             .map(|(_, target)| target.clone())
+    }
+
+    fn direct_sequence_target(
+        &self,
+        children: &[NodeId],
+    ) -> Option<(CanonicalCallableIdentity, TypeDescriptor)> {
+        let source = sequence_call_site_span(self.tree, children)?;
+        self.direct_targets
+            .iter()
+            .find(|(candidate, callee)| candidate == &source && callee.receiver_type().is_none())
+            .and_then(|(_, callee)| {
+                self.callable_results
+                    .get(callee)
+                    .cloned()
+                    .map(|result| (callee.clone(), result))
+            })
     }
 }
 
@@ -1588,6 +2013,128 @@ fn direct_identifiers(tree: &SyntaxTree, id: NodeId) -> Vec<Arc<str>> {
         .collect()
 }
 
+fn pattern_payload_type(
+    tree: &SyntaxTree,
+    pattern: NodeId,
+    scrutinee: &TypeDescriptor,
+    closed_enums: &BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let members = scrutinee.immediate_members();
+    match scrutinee.kind() {
+        TypeKind::Option => Ok(pattern_word_at(tree, pattern, "Some").then(|| members[0].clone())),
+        TypeKind::Result => Ok(if pattern_word_at(tree, pattern, "Ok") {
+            Some(members[0].clone())
+        } else {
+            Some(members[1].clone())
+        }),
+        TypeKind::Declared => {
+            let variants = closed_enums
+                .get(scrutinee)
+                .ok_or(AnalysisError::Invariant)?;
+            let variant = pattern_variant(tree, pattern, variants)?;
+            Ok(variants
+                .get(&variant)
+                .cloned()
+                .ok_or(AnalysisError::Invariant)?)
+        }
+        _ => Err(AnalysisError::Invariant),
+    }
+}
+
+fn pattern_payload_pattern(tree: &SyntaxTree, pattern: NodeId) -> Result<NodeId, AnalysisError> {
+    direct_child_form(
+        tree,
+        tree.node(pattern).ok_or(AnalysisError::Invariant)?,
+        SyntaxForm::Pattern,
+    )
+    .ok_or(AnalysisError::Invariant)
+}
+
+type PatternBindingPath = (Option<Arc<str>>, TypeDescriptor, Vec<usize>);
+
+fn pattern_binding_paths(
+    tree: &SyntaxTree,
+    pattern: NodeId,
+    ty: TypeDescriptor,
+) -> Result<Vec<PatternBindingPath>, AnalysisError> {
+    let mut bindings = Vec::new();
+    let mut work = vec![(pattern, ty, Vec::new())];
+    while let Some((pattern, ty, path)) = work.pop() {
+        let node = tree.node(pattern).ok_or(AnalysisError::Invariant)?;
+        let nested = node
+            .children()
+            .iter()
+            .copied()
+            .filter(|child| {
+                tree.node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Pattern))
+            })
+            .collect::<Vec<_>>();
+        if nested.is_empty() {
+            bindings.push((direct_identifier(tree, pattern), ty, path));
+            continue;
+        }
+        let members = ty.immediate_members();
+        if nested.len() != members.len() {
+            return Err(AnalysisError::Invariant);
+        }
+        for (index, (nested, member)) in nested.into_iter().zip(members).enumerate().rev() {
+            let mut nested_path = path.clone();
+            nested_path.push(index);
+            work.push((nested, member, nested_path));
+        }
+    }
+    Ok(bindings)
+}
+
+fn enum_if_arms(
+    tree: &SyntaxTree,
+    pattern: NodeId,
+    scrutinee: &TypeDescriptor,
+    closed_enums: &BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
+    when_true: usize,
+    when_false: usize,
+    false_shims: &BTreeMap<Arc<str>, usize>,
+) -> Result<Vec<(Arc<str>, usize)>, AnalysisError> {
+    let variants = closed_enums
+        .get(scrutinee)
+        .ok_or(AnalysisError::Invariant)?;
+    let selected = pattern_variant(tree, pattern, variants)?;
+    Ok(variants
+        .keys()
+        .map(|variant| {
+            (
+                variant.clone(),
+                if variant == &selected {
+                    when_true
+                } else {
+                    false_shims.get(variant).copied().unwrap_or(when_false)
+                },
+            )
+        })
+        .collect())
+}
+
+fn pattern_variant(
+    tree: &SyntaxTree,
+    pattern: NodeId,
+    variants: &BTreeMap<Arc<str>, Option<TypeDescriptor>>,
+) -> Result<Arc<str>, AnalysisError> {
+    direct_identifiers(tree, pattern)
+        .into_iter()
+        .rev()
+        .find(|name| variants.contains_key(name))
+        .ok_or(AnalysisError::Invariant)
+}
+
+fn pattern_word_at(tree: &SyntaxTree, pattern: NodeId, expected: &str) -> bool {
+    tree.node(pattern)
+        .into_iter()
+        .flat_map(gantry_frontend::SyntaxNode::children)
+        .filter_map(|child| tree.node(*child))
+        .any(|node| matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == expected))
+}
+
 fn direct_expressions(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Vec<NodeId> {
     node.children()
         .iter()
@@ -1597,6 +2144,64 @@ fn direct_expressions(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> 
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
         })
         .collect()
+}
+
+fn sequence_call_site_span(tree: &SyntaxTree, children: &[NodeId]) -> Option<SourceSpan> {
+    let mut local_tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            local_tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let callee = local_tokens.first()?;
+    let mut tokens = tree
+        .nodes()
+        .iter()
+        .filter(|node| {
+            matches!(node.form(), SyntaxForm::Token(_))
+                && node.span().source() == callee.span().source()
+        })
+        .collect::<Vec<_>>();
+    tokens.sort_by_key(|token| token.span().bytes());
+    let callee_index = tokens
+        .iter()
+        .position(|token| token.span() == callee.span())?;
+    let open = tokens
+        .get(callee_index.saturating_add(1)..)?
+        .iter()
+        .position(|token| {
+            matches!(
+                token.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+            )
+        })?
+        .saturating_add(callee_index.saturating_add(1));
+    let mut depth = 0_u64;
+    let closing = tokens.get(open..)?.iter().find(|token| {
+        if matches!(
+            token.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        ) {
+            depth = depth.saturating_add(1);
+        }
+        if matches!(
+            token.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+        ) {
+            depth = depth.saturating_sub(1);
+        }
+        depth == 0
+    })?;
+    SourceSpan::from_portable_parts(
+        callee.span().source().package_path().as_str(),
+        callee.span().bytes().start(),
+        closing.span().bytes().end(),
+    )
+    .ok()
 }
 
 fn source_span_contains(
@@ -1643,6 +2248,74 @@ fn postfix_method_receiver(
             }
             _ => None,
         })
+}
+
+fn postfix_method_receiver_place(
+    tree: &SyntaxTree,
+    expression: &gantry_frontend::SyntaxNode,
+) -> Option<(Arc<str>, Vec<ValuePathSegment>)> {
+    let mut tokens = Vec::new();
+    let mut work = expression
+        .children()
+        .iter()
+        .rev()
+        .copied()
+        .collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let method_dot = tokens.iter().rposition(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    })?;
+    let root = match tokens.first()?.form() {
+        SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+            Arc::from("self")
+        }
+        _ => return None,
+    };
+    let mut path = Vec::new();
+    let mut cursor = 1;
+    while cursor < method_dot {
+        if !matches!(
+            tokens.get(cursor)?.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        ) {
+            return None;
+        }
+        let SyntaxForm::Token(TokenKind::Identifier(field)) = tokens.get(cursor + 1)?.form() else {
+            return None;
+        };
+        path.push(ValuePathSegment::StructField(field.to_string()));
+        cursor += 2;
+    }
+    Some((root, path))
+}
+
+fn receiver_place_types(
+    root: &Arc<str>,
+    path: &[ValuePathSegment],
+    binding_types: &BTreeMap<Arc<str>, TypeDescriptor>,
+    struct_fields: &BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, TypeDescriptor>>,
+) -> Option<Vec<TypeDescriptor>> {
+    let mut current = binding_types.get(root)?.clone();
+    let mut types = vec![current.clone()];
+    for segment in path {
+        let ValuePathSegment::StructField(field) = segment else {
+            return None;
+        };
+        current = struct_fields.get(&current)?.get(field.as_str())?.clone();
+        types.push(current.clone());
+    }
+    Some(types)
 }
 
 fn postfix_field_projection(
@@ -1786,6 +2459,29 @@ fn node_id(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Option<Node
 
 fn node_has_word(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode, expected: &str) -> bool {
     direct_word(tree, node, &[expected]).is_some()
+}
+
+fn method_receiver_mode(
+    tree: &SyntaxTree,
+    callable: NodeId,
+) -> Result<gantry_ir::ReceiverMode, AnalysisError> {
+    let callable = tree.node(callable).ok_or(AnalysisError::Invariant)?;
+    let receiver = callable
+        .children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .find(|node| matches!(node.form(), SyntaxForm::Parameter))
+        .ok_or(AnalysisError::Invariant)?;
+    let shared = receiver.children().iter().filter_map(|child| tree.node(*child)).any(|node| {
+        matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(value)) if value.as_ref() == "shared")
+    });
+    if shared {
+        Ok(gantry_ir::ReceiverMode::SharedPlace)
+    } else {
+        Ok(gantry_ir::ReceiverMode::from_v1_mutability(node_has_word(
+            tree, receiver, "mut",
+        )))
+    }
 }
 
 fn direct_word(
@@ -2023,25 +2719,9 @@ fn enum_pattern_variant(
         .find(|candidate| variants.contains_key(candidate))
 }
 
-fn enum_pattern_binding(tree: &SyntaxTree, arm: NodeId) -> Option<Arc<str>> {
-    let pattern = tree.node(arm)?.children().iter().copied().find(|child| {
-        tree.node(*child)
-            .is_some_and(|node| matches!(node.form(), SyntaxForm::Pattern))
-    })?;
-    let nested = direct_child_form(tree, tree.node(pattern)?, SyntaxForm::Pattern)?;
-    direct_identifier(tree, nested)
-}
-
 fn pattern_word(tree: &SyntaxTree, arm: NodeId, expected: &str) -> bool {
     descendant_pattern_tokens(tree, arm).any(|node| {
         matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == expected)
-    })
-}
-
-fn pattern_binding(tree: &SyntaxTree, arm: NodeId) -> Option<Arc<str>> {
-    descendant_pattern_tokens(tree, arm).find_map(|node| match node.form() {
-        SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.clone()),
-        _ => None,
     })
 }
 

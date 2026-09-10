@@ -2243,6 +2243,9 @@ impl Machine {
                 when_some,
                 when_none,
             } => self.branch_option(&workflow, &site, when_some, when_none, &mut budget_state),
+            InstructionKind::BranchResult { when_ok, when_err } => {
+                self.branch_result(&workflow, &site, when_ok, when_err, &mut budget_state)
+            }
             InstructionKind::BranchEnum { arms } => {
                 self.branch_enum(&workflow, &site, &arms, &mut budget_state)
             }
@@ -2666,6 +2669,41 @@ impl Machine {
         if let Some(payload) = payload {
             self.values.push(payload);
         }
+        self.occurrences.push(occurrence);
+        self.frames
+            .last_mut()
+            .ok_or(RuntimeCode::InternalInvariant)?
+            .pc = target;
+        Ok(())
+    }
+
+    fn branch_result(
+        &mut self,
+        workflow: &CanonicalPath,
+        site: &StructuralPosition,
+        when_ok: usize,
+        when_err: usize,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
+        let value = self
+            .values
+            .last()
+            .cloned()
+            .ok_or(RuntimeCode::InternalInvariant)?;
+        let LogicalValueView::Result { is_ok } = value.view() else {
+            return Err(RuntimeCode::InternalInvariant);
+        };
+        let payload = value.payload().ok_or(RuntimeCode::InternalInvariant)?;
+        let arm = usize::from(!is_ok);
+        let target = if is_ok { when_ok } else { when_err };
+        let occurrence = Arc::from(format!(
+            "branch:{}:{}:{arm}",
+            workflow.as_str(),
+            position_key(site)
+        ));
+        self.charge_transition(budget_state)?;
+        self.values.pop();
+        self.values.push(payload);
         self.occurrences.push(occurrence);
         self.frames
             .last_mut()
@@ -3925,6 +3963,7 @@ fn instruction_name(instruction: &InstructionKind) -> Arc<str> {
         InstructionKind::Jump(_) => "jump",
         InstructionKind::Branch { .. }
         | InstructionKind::BranchOption { .. }
+        | InstructionKind::BranchResult { .. }
         | InstructionKind::BranchEnum { .. } => "branch",
         InstructionKind::EnterLoop { .. } => "loop",
         InstructionKind::LeaveOccurrence => "occurrence-exit",

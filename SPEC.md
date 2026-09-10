@@ -2566,15 +2566,16 @@ identifier policy, canonical paths, and immutable source snapshots.
     free-function signature is `fn PATH(P1,P2,...)->R`; an action signature is
     `action[CLASS] PATH(N1:P1,N2:P2,...)->R`; and a method signature is
     `fn METHOD_PATH(RECEIVER[,P1,P2,...])->R`. `RECEIVER` is exactly `self` or
-    `mut self`. Each function or method parameter descriptor is its type
-    descriptor, prefixed by `mut ` when the source parameter is mutable.
+    `mut self`, or the scoped `shared self` form in item 2a. Each function or
+    method parameter descriptor is its type descriptor, prefixed by `mut ` when
+    the source parameter is mutable.
     Each action parameter descriptor is its exact NFC parameter name, a colon,
     and its unmodified type descriptor; action declarations have no mutable
     parameters. Parameter names are part of action identity because the action
     fulfiller receives them as semantic input. `R` is the declared result
     descriptor or `Unit` when the annotation is omitted. The encoding contains
-    no whitespace except the one space in `mut ` or `mut self`; function and
-    method descriptors omit parameter names, while action descriptors include
+    no whitespace except the one space in `mut `, `mut self`, or `shared self`;
+    function and method descriptors omit parameter names, while action descriptors include
     them and preserve declaration order. Examples are
     `fn crate::main(String)->crate::domain::Report`,
     `fn crate::quality::is_complete(crate::domain::Report)->Decision`,
@@ -3406,6 +3407,16 @@ defined here and in Section 7 cross the integration boundary.
 <a id="GNT-6.2"></a>
 
 2. Methods MUST support `self` and `mut self` receivers.
+<a id="GNT-6.2a"></a>
+
+2a. A zero-argument monomorphic inherent method MAY instead declare `shared self`.
+Its call receiver MUST be an addressable binding root or a finite sequence of
+struct-field projections from one. This is the sole exception to item 4's
+deep-copy receiver rule: the caller place is admitted directly, the receiver is
+not materialized on the operand stack, the callee's `self` is immutable, and no
+write-back occurs. `shared self` is not available
+to trait methods, generic methods or implementations, constructed values, indexed
+places, enum payloads, owned receivers, or any exclusive or general loan form.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
@@ -3432,7 +3443,8 @@ defined here and in Section 7 cross the integration boundary.
 4. Functions and methods are interpreter-managed workflows. Calling one MUST
    create an interpreter call frame and execute its body; the call itself MUST
    NOT invoke an operation hook.
-   Arguments and receivers use deep-copy value semantics. There are no aliases,
+   Arguments and receivers use deep-copy value semantics except for the narrow
+   `shared self` caller-place admission in item 2a. There are no aliases,
    references, moves, or borrowed values in v1. A `self` or `mut self` receiver
    is therefore a local receiver copy. `mut self` permits mutation of that copy
    but never changes the caller's value implicitly; callers MUST assign a
@@ -7094,7 +7106,7 @@ method_declaration      = [ "pure" ], "fn", identifier_token,
                           [ type_parameter_list ], "(", receiver,
                           [ ",", parameter, { ",", parameter } ], [ "," ], ")",
                           [ result_annotation ], [ where_clause ], block ;
-receiver                = "self" | "mut", "self" ;
+receiver                = "self" | "mut", "self" | "shared", "self" ;
 ```
 
 A function signature without a result annotation returns `Unit`, exactly as

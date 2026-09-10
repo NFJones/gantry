@@ -189,3 +189,31 @@ fn public_parser_handles_adversarial_nesting_without_native_recursion() {
     let outcome = parse(&source, 40_000, 4);
     assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
 }
+
+/// `shared` is contextual only at an inherent-method receiver and remains an identifier elsewhere.
+#[test]
+fn public_parser_accepts_contextual_shared_receiver_without_reserving_shared() {
+    let source = r#"
+struct Counter { value: Int }
+impl Counter { pure fn value(shared self) -> Int { self.value } }
+fn main(shared: Int, counter: Counter) -> Int { counter.value() + shared }
+"#;
+    let outcome = parse(source, 256, 8);
+    assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+}
+
+/// The contextual receiver form rejects incomplete and parameter-like malformed spellings.
+#[test]
+fn public_parser_rejects_malformed_shared_receiver_forms() {
+    for source in [
+        "struct Counter { value: Int } impl Counter { fn read(shared) -> Int { 1 } }",
+        "struct Counter { value: Int } impl Counter { fn read(shared mut self) -> Int { 1 } }",
+        "struct Counter { value: Int } impl Counter { fn read(shared self: Counter) -> Int { 1 } }",
+    ] {
+        let outcome = parse(source, 256, 8);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        assert!(outcome.diagnostics().iter().all(|diagnostic| {
+            diagnostic.code.as_str() == "unexpected-token" && diagnostic.primary.is_some()
+        }));
+    }
+}

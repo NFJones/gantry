@@ -43,10 +43,11 @@ fn program_uses_successor_wire(program: &MachineProgram) -> bool {
             .any(|instruction| {
                 matches!(
                     instruction.kind,
-                    InstructionKind::ReceiverCall {
-                        source: ReceiverSource::CallerPlace { .. },
-                        ..
-                    }
+                    InstructionKind::BranchResult { .. }
+                        | InstructionKind::ReceiverCall {
+                            source: ReceiverSource::CallerPlace { .. },
+                            ..
+                        }
                 )
             })
 }
@@ -261,6 +262,11 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
             writer.usize(*when_some);
             writer.usize(*when_none);
         }
+        InstructionKind::BranchResult { when_ok, when_err } => {
+            writer.u8(33);
+            writer.usize(*when_ok);
+            writer.usize(*when_err);
+        }
         InstructionKind::BranchEnum { arms } => {
             writer.u8(25);
             writer.count(arms.len());
@@ -391,6 +397,11 @@ fn read_instruction(
             when_some: reader.usize()?,
             when_none: reader.usize()?,
         },
+        33 if successor => InstructionKind::BranchResult {
+            when_ok: reader.usize()?,
+            when_err: reader.usize()?,
+        },
+        33 => return Err(MachineRecoveryError::InvalidEncoding),
         13 => InstructionKind::EnterLoop {
             phase: match reader.u8()? {
                 0 => LoopPhase::Condition,
@@ -932,6 +943,87 @@ mod tests {
             Err(MachineRecoveryError::InvalidEncoding)
         );
         let _ = Arc::<[u8]>::from(trailing);
+    }
+
+    #[test]
+    fn executable_program_codec_uses_v3_for_branch_result_in_workflows_and_task_bodies() {
+        let path = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("path failed: {error}"));
+        let caller = CanonicalCallableIdentity::free(&path, &[]);
+        let result = TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::INT);
+        let body_identity = TaskBodyIdentity::new(
+            caller.clone(),
+            StructuralPosition::new(vec![1])
+                .unwrap_or_else(|error| panic!("spawn site failed: {error}")),
+        );
+        let instruction = |site, ty, kind| Instruction {
+            site: StructuralPosition::new(site)
+                .unwrap_or_else(|error| panic!("instruction site failed: {error}")),
+            ty,
+            kind,
+        };
+        let body = ExecutableTaskBody::new(
+            body_identity.clone(),
+            result.clone(),
+            Vec::new(),
+            ExecutableTaskContext::v1(),
+            vec![
+                instruction(
+                    vec![1, 0],
+                    result.clone(),
+                    InstructionKind::BranchResult {
+                        when_ok: 1,
+                        when_err: 1,
+                    },
+                ),
+                instruction(vec![1, 1], result.clone(), InstructionKind::TaskComplete),
+            ],
+        )
+        .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
+        let program = MachineProgram::with_task_bodies(
+            vec![(
+                caller,
+                Workflow {
+                    path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        instruction(
+                            vec![0],
+                            result.clone(),
+                            InstructionKind::BranchResult {
+                                when_ok: 1,
+                                when_err: 1,
+                            },
+                        ),
+                        instruction(
+                            vec![1],
+                            TypeDescriptor::UNIT,
+                            InstructionKind::Spawn {
+                                handle: ExecutableTaskHandle::new(Arc::from("child"), result)
+                                    .unwrap_or_else(|error| panic!("handle failed: {error:?}")),
+                                body: body_identity,
+                            },
+                        ),
+                        instruction(vec![2], TypeDescriptor::UNIT, InstructionKind::Return),
+                    ],
+                },
+            )],
+            vec![body],
+        )
+        .unwrap_or_else(|error| panic!("branch-result program failed: {error:?}"));
+
+        let encoded = encode_machine_program(&program);
+        assert_eq!(encoded.get(..8), Some(b"GNTPRG03".as_slice()));
+        assert!(encoded.contains(&33));
+        assert_eq!(decode_machine_program(&encoded), Ok(program));
+        let mut v2 = encoded;
+        v2[..8].copy_from_slice(b"GNTPRG02");
+        assert_eq!(
+            decode_machine_program(&v2),
+            Err(MachineRecoveryError::InvalidEncoding)
+        );
     }
 
     #[test]

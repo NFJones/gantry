@@ -310,17 +310,22 @@ fn analyze_callable(
         .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone());
     let signature = if let Some(receiver) = receiver {
         let name = direct_identifier(tree, node).ok_or(AnalysisError::Invariant)?;
-        let mutable_receiver = node.children().iter().copied().any(|child| {
-            tree.node(child).is_some_and(|parameter| {
-                matches!(parameter.form(), SyntaxForm::Parameter)
-                    && has_direct_word(tree, parameter, "self")
-                    && has_direct_word(tree, parameter, "mut")
+        let receiver_mode = node.children().iter().copied().find_map(|child| {
+            let parameter = tree.node(child)?;
+            (matches!(parameter.form(), SyntaxForm::Parameter)
+                && has_direct_word(tree, parameter, "self"))
+            .then(|| {
+                if direct_identifier(tree, parameter).as_deref() == Some("shared") {
+                    ReceiverMode::SharedPlace
+                } else {
+                    ReceiverMode::from_v1_mutability(has_direct_word(tree, parameter, "mut"))
+                }
             })
         });
         CanonicalSignature::method(
             receiver,
             &name,
-            ReceiverMode::from_v1_mutability(mutable_receiver),
+            receiver_mode.ok_or(AnalysisError::Invariant)?,
             &parameters,
             &result,
         )

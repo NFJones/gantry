@@ -135,6 +135,12 @@ impl TempDirectory {
         fs::write(&path, source)
             .unwrap_or_else(|error| panic!("could not write {}: {error}", path.display()));
     }
+
+    fn write_named(&self, name: &str, source: &str) {
+        let path = self.0.join(name);
+        fs::write(&path, source)
+            .unwrap_or_else(|error| panic!("could not write {}: {error}", path.display()));
+    }
 }
 
 impl Drop for TempDirectory {
@@ -242,6 +248,306 @@ fn main() {}
             .iter()
             .any(|diagnostic| diagnostic.code.as_str() == "duplicate-member")
     );
+}
+
+/// Shared receivers are restricted to monomorphic zero-argument inherent methods.
+#[test]
+fn public_shared_receiver_admission_is_scoped_to_monomorphic_zero_argument_inherent_methods() {
+    let accepted = analyze(
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(counter: Counter) -> Int { counter.read() }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    for source in [
+        "struct Counter { value: Int } impl Counter { fn read(shared self, extra: Int) -> Int { extra } } fn main() {}",
+        "struct Box<T> { value: T } impl Box<Int> { fn read(shared self) -> Int { self.value } } fn main() {}",
+        "struct Counter<T> { value: T } impl<T> Counter<T> { fn read(shared self) -> T { self.value } } fn main() {}",
+        "struct Counter { value: Int } impl Counter { fn read<T>(shared self) -> Int { self.value } } fn main() {}",
+        "trait Value { pure fn read(shared self) -> Int; } fn main() {}",
+        "struct Counter { value: Int } trait Value { pure fn read(self) -> Int; } impl Value for Counter { pure fn read(shared self) -> Int { self.value } } fn main() {}",
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main() -> Int { Counter { value: 1 }.read() }",
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(items: List<Counter>) -> Int { items[0].read() }",
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(items: Tuple<Counter, Int>) -> Int { items[0].read() }",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected.diagnostics().iter().any(|diagnostic| matches!(
+                diagnostic.code.as_str(),
+                "shared-receiver-scope" | "shared-receiver-place"
+            )),
+            "source: {source}; diagnostics: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(rejected.executable_program().is_none());
+    }
+}
+
+/// A shared receiver exposes an immutable callee-local `self` binding.
+#[test]
+fn public_shared_receiver_is_immutable() {
+    let rejected = analyze(
+        "struct Counter { value: Int } impl Counter { fn replace(shared self) { self.value = 2; } } fn main(counter: Counter) { counter.replace(); }",
+    );
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "immutable-assignment"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(rejected.executable_program().is_none());
+}
+
+/// Tuple-index receivers are rejected at the public shared-place boundary.
+#[test]
+fn public_shared_receiver_rejects_tuple_index_places() {
+    let rejected = analyze(
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(items: Tuple<Counter, Int>) -> Int { items[0].read() }",
+    );
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "shared-receiver-place"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(rejected.executable_program().is_none());
+}
+
+/// Pattern payloads are values, not caller-owned shared receiver places.
+#[test]
+fn public_shared_receiver_rejects_pattern_payload_roots() {
+    for source in [
+        "struct Counter { value: Int } enum State { Ready(Counter), Empty } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(state: State) -> Int { match state { State::Ready(counter) => counter.read(), State::Empty => 0 } }",
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(state: Option<Counter>) -> Int { match state { Some(counter) => counter.read(), None => 0 } }",
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(state: Result<Counter, Int>) -> Int { match state { Ok(counter) => counter.read(), Err(_) => 0 } }",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert_eq!(
+            rejected
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == "shared-receiver-place")
+                .count(),
+            1,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        let diagnostic = rejected
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "shared-receiver-place")
+            .unwrap_or_else(|| panic!("{source}: {:?}", rejected.diagnostics()));
+        let primary = diagnostic
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("{source}: missing primary span"));
+        let call_start = source
+            .rfind("read()")
+            .unwrap_or_else(|| panic!("{source}: missing method call"))
+            as u64;
+        assert_eq!(primary.bytes().start(), call_start, "{source}");
+        assert_eq!(primary.bytes().end(), call_start + 4, "{source}");
+        assert!(rejected.executable_program().is_none());
+    }
+}
+
+/// Refutable payload bindings are never admitted as shared caller-place roots.
+#[test]
+fn public_shared_receiver_rejects_if_let_payload_roots_exactly() {
+    for source in [
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(state: Option<Counter>) { if let Some(counter) = state { discard counter.read(); } }",
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(state: Result<Counter, Int>) { if let Ok(counter) = state { discard counter.read(); } }",
+        "struct Counter { value: Int } enum State { Ready(Counter), Empty } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(state: State) { if let State::Ready(counter) = state { discard counter.read(); } }",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert_eq!(
+            rejected
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == "shared-receiver-place")
+                .count(),
+            1,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .all(|diagnostic| diagnostic.code.as_str() != "invariant")
+        );
+        let diagnostic = rejected
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "shared-receiver-place")
+            .unwrap_or_else(|| panic!("{source}: {:?}", rejected.diagnostics()));
+        let primary = diagnostic
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("{source}: missing primary span"));
+        let call_start = source
+            .rfind("read()")
+            .unwrap_or_else(|| panic!("{source}: missing method call"))
+            as u64;
+        assert_eq!(primary.bytes().start(), call_start, "{source}");
+        assert_eq!(primary.bytes().end(), call_start + 4, "{source}");
+        assert!(rejected.executable_program().is_none());
+    }
+}
+
+/// Payload provenance ends with the `if let` branch, permitting a later ordinary root with the same name.
+#[test]
+fn public_shared_receiver_payload_provenance_does_not_leak_from_if_let_scope() {
+    let accepted = analyze(
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn main(state: Option<Counter>) -> Int { if let Some(counter) = state { discard counter.value; } let counter: Counter = Counter { value: 7 }; counter.read() }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+    assert!(accepted.executable_program().is_some());
+}
+
+/// Call-produced receiver values cannot be lowered as caller-owned shared places.
+#[test]
+fn public_shared_receiver_rejects_call_produced_temporary_roots() {
+    for source in [
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn make() -> Counter { Counter { value: 1 } } fn main() -> Int { make().read() }",
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn make() -> Counter { Counter { value: 1 } } fn main() -> Int { (make()).read() }",
+        "struct Counter { value: Int } impl Counter { pure fn read(shared self) -> Int { self.value } } fn make() -> Counter { Counter { value: 1 } } fn main() -> Int { make().read() + 1 }",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert_eq!(
+            rejected
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == "shared-receiver-place")
+                .count(),
+            1,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        let diagnostic = rejected
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "shared-receiver-place")
+            .unwrap_or_else(|| panic!("{source}: {:?}", rejected.diagnostics()));
+        let primary = diagnostic
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("{source}: missing primary span"));
+        let call_start = source
+            .rfind("read()")
+            .unwrap_or_else(|| panic!("{source}: missing method call"))
+            as u64;
+        assert_eq!(primary.bytes().start(), call_start, "{source}");
+        assert_eq!(primary.bytes().end(), call_start + 4, "{source}");
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .all(|diagnostic| diagnostic.code.as_str() != "type-mismatch"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(rejected.executable_program().is_none());
+    }
+}
+
+/// Shared receiver place admission follows resolved method metadata across package sources.
+#[test]
+fn public_shared_receiver_places_are_validated_across_sources() {
+    let root = TempDirectory::new();
+    root.write_named(
+        "counter.gnt",
+        "struct Counter { value: Int } struct Holder { counter: Counter } impl Counter { pure fn read(shared self) -> Int { self.value } }",
+    );
+    root.write_named(
+        "main.gnt",
+        "mod counter; fn read_root(item: crate::counter::Counter) -> Int { item.read() } fn main(holder: crate::counter::Holder) -> Int { read_root(holder.counter) + holder.counter.read() }",
+    );
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let accepted = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    for source in [
+        "mod counter; fn main() -> Int { crate::counter::Counter { value: 1 }.read() }",
+        "mod counter; fn main(items: List<crate::counter::Counter>) -> Int { items[0].read() }",
+        "mod counter; enum State { Ready(Int) } fn main() -> State { State::Ready(crate::counter::Counter { value: 1 }.read()) }",
+    ] {
+        root.write_named("main.gnt", source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+        let rejected = analyze_package_types(&syntax)
+            .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| { diagnostic.code.as_str() == "shared-receiver-place" }),
+            "source: {source}; diagnostics: {:?}",
+            rejected.diagnostics()
+        );
+    }
 }
 
 #[test]
