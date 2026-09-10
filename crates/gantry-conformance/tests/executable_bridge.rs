@@ -3368,6 +3368,36 @@ fn run_single_entry(root: &TempDirectory) -> i64 {
     }
 }
 
+/// A plain assignment whose right-hand side reads the same exclusive receiver subplace is accepted
+/// and writes back to the caller place, exactly like the compound form.
+#[test]
+fn exclusive_receiver_plain_assignment_evaluates_and_writes_back() {
+    for body in ["self.value = self.value + 1", "self.value += 1"] {
+        let source = format!(
+            "struct Counter {{ value: Int }}\n\
+             impl Counter {{ fn bump(exclusive self) -> Int {{ {body}; self.value }} }}\n\
+             fn main() -> Int {{\n\
+                 let mut counter: Counter = Counter {{ value: 1 }};\n\
+                 discard counter.bump();\n\
+                 counter.value\n\
+             }}\n"
+        );
+        let root = TempDirectory::new(&source);
+        assert_eq!(
+            run_single_entry(&root),
+            2,
+            "exclusive receiver assignment `{body}` did not write back"
+        );
+    }
+    // A `mut self` receiver is an independent local copy, so the caller place is unchanged.
+    let root = TempDirectory::new(
+        "struct Counter { value: Int }\n\
+         impl Counter { fn bump(mut self) -> Int { self.value = self.value + 1; self.value } }\n\
+         fn main() -> Int { let mut counter: Counter = Counter { value: 1 }; discard counter.bump(); counter.value }\n",
+    );
+    assert_eq!(run_single_entry(&root), 1);
+}
+
 fn run_entry(package: &gantry::analysis::TypedPackage) -> LogicalValue {
     let entry = package
         .entry()
