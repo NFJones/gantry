@@ -87,7 +87,8 @@ impl ReceiverMode {
             Self::LocalCopy => Some("self"),
             Self::MutableLocalCopy => Some("mut self"),
             Self::SharedPlace => Some("shared self"),
-            Self::Owned | Self::ExclusivePlace => None,
+            Self::ExclusivePlace => Some("exclusive self"),
+            Self::Owned => None,
         }
     }
 }

@@ -14,8 +14,8 @@ use gantry_core::value::{
 use gantry_ir::generated::Effect;
 use gantry_ir::{
     AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison, ExecutableOperation,
-    Instruction, InstructionKind, LoopPhase, MachineProgram, Primitive, Projection, ReceiverSource,
-    StructuralPosition, TypeDescriptor,
+    Instruction, InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, Projection,
+    ReceiverMode, ReceiverSource, StructuralPosition, TypeDescriptor,
 };
 #[cfg(feature = "concurrent")]
 use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
@@ -2396,26 +2396,110 @@ impl Machine {
         target_type: &TypeDescriptor,
         budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
-        let replacement = self.values.last().ok_or(RuntimeCode::InternalInvariant)?;
-        let binding = self.binding(name).ok_or(RuntimeCode::InternalInvariant)?;
+        let replacement = self
+            .values
+            .last()
+            .cloned()
+            .ok_or(RuntimeCode::InternalInvariant)?;
+        let binding = self
+            .binding(name)
+            .cloned()
+            .ok_or(RuntimeCode::InternalInvariant)?;
         if !binding.mutable {
             return Err(RuntimeCode::InternalInvariant);
         }
-        if !value_matches_type(replacement, target_type) {
+        if !value_matches_type(&replacement, target_type) {
             return Err(RuntimeCode::InternalInvariant);
         }
         let candidate = binding
             .value
-            .replaced(path, replacement, self.limits.value_limits)
+            .replaced(path, &replacement, self.limits.value_limits)
             .map_err(map_value_error)?;
         if !value_matches_type(&candidate, &binding.ty) {
             return Err(RuntimeCode::InternalInvariant);
+        }
+        let mut caller_candidates = Vec::new();
+        if name == "self" {
+            let mut frame_index = self.frames.len().checked_sub(1);
+            let mut updated_receiver = candidate.clone();
+            while let Some(index) = frame_index {
+                let frame = self
+                    .frames
+                    .get(index)
+                    .ok_or(RuntimeCode::InternalInvariant)?;
+                let workflow = self
+                    .program
+                    .workflows()
+                    .get(frame.workflow)
+                    .ok_or(RuntimeCode::InternalInvariant)?;
+                if workflow
+                    .parameters
+                    .first()
+                    .and_then(Parameter::receiver_mode)
+                    != Some(ReceiverMode::ExclusivePlace)
+                {
+                    break;
+                }
+                let admission = frame
+                    .receiver_admission
+                    .as_ref()
+                    .ok_or(RuntimeCode::InternalInvariant)?;
+                if admission
+                    .path
+                    .iter()
+                    .any(|segment| !matches!(segment, ValuePathSegment::StructField(_)))
+                {
+                    return Err(RuntimeCode::InternalInvariant);
+                }
+                let parent_index = index.checked_sub(1).ok_or(RuntimeCode::InternalInvariant)?;
+                let parent = self
+                    .frames
+                    .get(parent_index)
+                    .ok_or(RuntimeCode::InternalInvariant)?;
+                let caller = parent
+                    .scopes
+                    .iter()
+                    .rev()
+                    .find_map(|scope| scope.get(admission.root.as_ref()))
+                    .cloned()
+                    .ok_or(RuntimeCode::InternalInvariant)?;
+                if !caller.mutable {
+                    return Err(RuntimeCode::InternalInvariant);
+                }
+                let updated = caller
+                    .value
+                    .replaced(&admission.path, &updated_receiver, self.limits.value_limits)
+                    .map_err(map_value_error)?;
+                if !value_matches_type(&updated, &caller.ty) {
+                    return Err(RuntimeCode::InternalInvariant);
+                }
+                let continues = admission.root.as_ref() == "self";
+                caller_candidates.push((parent_index, admission.root.clone(), updated.clone()));
+                if !continues {
+                    break;
+                }
+                updated_receiver = updated;
+                frame_index = Some(parent_index);
+            }
         }
         self.charge_transition(budget_state)?;
         self.values.pop();
         self.binding_mut(name)
             .ok_or(RuntimeCode::InternalInvariant)?
             .value = candidate;
+        for (parent_index, root, candidate) in caller_candidates {
+            let parent = self
+                .frames
+                .get_mut(parent_index)
+                .ok_or(RuntimeCode::InternalInvariant)?;
+            parent
+                .scopes
+                .iter_mut()
+                .rev()
+                .find_map(|scope| scope.get_mut(root.as_ref()))
+                .ok_or(RuntimeCode::InternalInvariant)?
+                .value = candidate;
+        }
         self.advance_pc();
         Ok(())
     }
@@ -2805,15 +2889,15 @@ impl Machine {
                 site,
             );
         }
-        let (values, stack_arguments, receiver_admission) = match receiver_source {
+        let (values, stack_arguments, receiver_admission) = match receiver_source.as_ref() {
             Some(ReceiverSource::CallerPlace { root, path }) => {
                 let Some(stack_arguments) = arguments.checked_sub(1) else {
                     return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
                 };
-                let Some(binding) = self.binding(&root) else {
+                let Some(binding) = self.binding(root) else {
                     return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
                 };
-                let Some(receiver) = value_at_path(&binding.value, &path) else {
+                let Some(receiver) = value_at_path(&binding.value, path) else {
                     return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
                 };
                 let operands = match self.peek_operands(stack_arguments) {
@@ -2826,7 +2910,10 @@ impl Machine {
                 (
                     values,
                     stack_arguments,
-                    Some(SharedPlaceAdmission { root, path }),
+                    Some(SharedPlaceAdmission {
+                        root: root.clone(),
+                        path: path.clone(),
+                    }),
                 )
             }
             Some(ReceiverSource::CopiedValue) | None => match self.peek_operands(arguments) {
@@ -2840,6 +2927,31 @@ impl Machine {
         let callee_workflow = &self.program.workflows()[callee_index];
         let parameters = callee_workflow.parameters.clone();
         if parameters.len() != values.len() {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        }
+        if let Some(ReceiverSource::CallerPlace { root, path }) = receiver_source.as_ref()
+            && parameters.first().and_then(Parameter::receiver_mode)
+                == Some(ReceiverMode::ExclusivePlace)
+            && (self.binding(root).is_none_or(|binding| !binding.mutable)
+                || path
+                    .iter()
+                    .any(|segment| !matches!(segment, ValuePathSegment::StructField(_))))
+        {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        }
+        if let Some(ReceiverSource::CallerPlace { root, path }) = receiver_source.as_ref()
+            && parameters.first().and_then(Parameter::receiver_mode)
+                == Some(ReceiverMode::ExclusivePlace)
+            && root.as_ref() == "self"
+            && path.is_empty()
+            && self
+                .frames
+                .last()
+                .and_then(|frame| self.program.workflows().get(frame.workflow))
+                .and_then(|workflow| workflow.parameters.first())
+                .and_then(Parameter::receiver_mode)
+                == Some(ReceiverMode::ExclusivePlace)
+        {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
         if parameters

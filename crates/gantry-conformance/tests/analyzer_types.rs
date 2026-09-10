@@ -293,6 +293,48 @@ fn public_shared_receiver_admission_is_scoped_to_monomorphic_zero_argument_inher
     }
 }
 
+/// Exclusive receivers are restricted to mutable ordinary binding-root and struct-field places.
+#[test]
+fn public_exclusive_receiver_admission_is_scoped_to_mutable_monomorphic_inherent_places() {
+    let accepted = analyze(
+        "struct Counter { value: Int } struct Holder { counter: Counter } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main() -> Int { let mut holder: Holder = Holder { counter: Counter { value: 1 } }; holder.counter.increment(); holder.counter.value }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    for source in [
+        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(counter: Counter) { counter.increment(); }",
+        "struct Counter { value: Int } impl Counter { fn increment(exclusive self, extra: Int) { self.value += extra; } } fn main() {}",
+        "struct Counter { value: Int } impl Counter { fn increment<T>(exclusive self) { self.value += 1; } } fn main() {}",
+        "struct Box<T> { value: T } impl Box<Int> { fn increment(exclusive self) { self.value += 1; } } fn main() {}",
+        "struct Counter { value: Int } trait Value { pure fn increment(self); } impl Value for Counter { pure fn increment(exclusive self) { self.value += 1; } } fn main() {}",
+        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main() { Counter { value: 1 }.increment(); }",
+        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(items: List<Counter>) { discard items[0].increment(); }",
+        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected.diagnostics().iter().any(|diagnostic| matches!(
+                diagnostic.code.as_str(),
+                "exclusive-receiver-scope" | "exclusive-receiver-place"
+            )),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(rejected.executable_program().is_none());
+    }
+}
+
 /// A shared receiver exposes an immutable callee-local `self` binding.
 #[test]
 fn public_shared_receiver_is_immutable() {

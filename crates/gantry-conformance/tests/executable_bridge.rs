@@ -663,6 +663,183 @@ fn main(holder: Holder) -> Int { holder.counter.read() }
     ));
 }
 
+/// An exclusive inherent receiver lowers a mutable caller place and writes its completed receiver back.
+#[test]
+fn exclusive_inherent_method_lowers_caller_place_and_writes_through() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+impl Counter { fn increment(exclusive self) { self.value += 1; } }
+fn main() -> Int {
+    let mut holder: Holder = Holder { counter: Counter { value: 7 } };
+    holder.counter.increment();
+    holder.counter.value
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let main = entry_workflow(&package);
+    assert!(program.workflows().iter().any(|workflow| {
+        workflow.path.as_str() == "<crate::Counter>::increment"
+            && matches!(
+                workflow.parameters.as_slice(),
+                [gantry::ir::Parameter {
+                    name,
+                    mutable: true,
+                    receiver_mode: Some(gantry::ir::ReceiverMode::ExclusivePlace),
+                    ..
+                }] if name.as_ref() == "self"
+            )
+    }));
+    assert!(main.instructions.iter().any(|instruction| matches!(
+        &instruction.kind,
+        InstructionKind::ReceiverCall {
+            callee,
+            arguments: 1,
+            source: ReceiverSource::CallerPlace { root, path },
+        } if callee.as_str() == "<crate::Counter>::increment"
+            && root.as_ref() == "holder"
+            && matches!(path.as_slice(),
+                [gantry::value::ValuePathSegment::StructField(field)] if field == "counter")
+    )));
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x4e; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("exclusive source program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 8)
+    ));
+}
+
+/// Exclusive subplace reborrows propagate mutations to their caller while shared reborrows observe the updated value.
+#[test]
+fn exclusive_inherent_methods_propagate_strict_reborrows_and_allow_shared_reborrows() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+impl Counter {
+    fn increment(exclusive self) { self.value += 1; }
+    pure fn read(shared self) -> Int { self.value }
+}
+impl Holder { fn increment_counter(exclusive self) { self.counter.increment(); } }
+fn main() -> Int {
+    let mut holder: Holder = Holder { counter: Counter { value: 7 } };
+    holder.increment_counter();
+    holder.counter.read()
+}
+"#,
+    );
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let mut machine = Machine::new(
+        Arc::new(executable(&package).clone()),
+        &entry.path,
+        Vec::new(),
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x4f; 32])
+            .unwrap_or_else(|error| panic!("identity failed: {error}")),
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("nested exclusive source program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 8)
+    ));
+}
+
+/// Source-lowered exclusive calls retain and validate their caller-place checkpoint before write-through.
+#[test]
+fn source_exclusive_call_recovers_and_rejects_tampered_mid_call_checkpoint() {
+    use gantry::runtime::{ExecutionBudget, MachineCheckpointV3};
+
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+impl Counter { fn increment(exclusive self) { self.value += 1; } }
+fn main(mut holder: Holder) -> Int { holder.counter.increment(); holder.counter.value }
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let holder = LogicalValue::structure(
+        "crate::Holder",
+        vec![(
+            "counter".to_owned(),
+            LogicalValue::structure(
+                "crate::Counter",
+                vec![(
+                    "value".to_owned(),
+                    LogicalValue::integer(
+                        GantryInt::new(7)
+                            .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                    ),
+                )],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}")),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x50; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![holder],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("exclusive source program did not start: {error:?}"));
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP05".as_slice()));
+    let checkpoint = MachineCheckpointV3::decode(program, &bytes)
+        .unwrap_or_else(|error| panic!("exclusive checkpoint did not decode: {error:?}"));
+    assert_eq!(checkpoint.canonical_bytes(), bytes);
+    let mut altered = bytes.clone();
+    let root = altered
+        .windows(b"holder".len())
+        .rposition(|window| window == b"holder")
+        .unwrap_or_else(|| panic!("checkpoint omitted exclusive admission root"));
+    altered[root..root + b"holder".len()].copy_from_slice(b"absent");
+    assert_eq!(
+        MachineCheckpointV3::decode(program, &altered),
+        Err(gantry::runtime::MachineRecoveryError::ProgramMismatch)
+    );
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("exclusive budget recovery failed: {error:?}"));
+    let mut recovered =
+        Machine::recover_from_checkpoint(Arc::new(program.clone()), checkpoint, budget)
+            .unwrap_or_else(|error| panic!("exclusive checkpoint recovery failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 8)
+    ));
+}
+
 /// Shared caller places preserve every nested field projection in aggregate and assignment RHSs.
 #[test]
 fn shared_calls_preserve_nested_places_in_aggregate_and_assignment_rhs() {

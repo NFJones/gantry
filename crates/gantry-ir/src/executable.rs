@@ -873,6 +873,7 @@ fn validate_workflow(
                         (Some(crate::ReceiverMode::LocalCopy), false)
                             | (Some(crate::ReceiverMode::MutableLocalCopy), true)
                             | (Some(crate::ReceiverMode::SharedPlace), false)
+                            | (Some(crate::ReceiverMode::ExclusivePlace), true)
                     ))
         })
     {
@@ -1035,7 +1036,7 @@ fn validate_instruction(
                     !root.is_empty()
                         && receiver
                             .receiver_mode()
-                            .is_some_and(crate::ReceiverMode::borrows_shared_place)
+                            .is_some_and(crate::ReceiverMode::requires_caller_place)
                 }
             };
             if *arguments != callee_workflow.parameters.len()
@@ -1204,6 +1205,34 @@ mod tests {
                     ty: TypeDescriptor::INT,
                     mutable: false,
                     receiver_mode: Some(crate::ReceiverMode::SharedPlace),
+                }),
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn receiver_calls_admit_exclusive_caller_place_sources() {
+        let method_identity =
+            CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "increment", &[])
+                .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+
+        assert!(
+            call_program(
+                InstructionKind::ReceiverCall {
+                    callee: method_identity.clone(),
+                    arguments: 1,
+                    source: ReceiverSource::CallerPlace {
+                        root: Arc::from("counter"),
+                        path: Vec::new(),
+                    },
+                },
+                method_identity,
+                Some(Parameter {
+                    name: Arc::from("self"),
+                    ty: TypeDescriptor::INT,
+                    mutable: true,
+                    receiver_mode: Some(crate::ReceiverMode::ExclusivePlace),
                 }),
             )
             .is_ok()

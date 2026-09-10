@@ -120,7 +120,11 @@ pub(crate) fn lower_executable_program(
     let shared_receivers = body
         .source_callables
         .iter()
-        .filter(|callable| callable.receiver_mode == Some(gantry_ir::ReceiverMode::SharedPlace))
+        .filter(|callable| {
+            callable
+                .receiver_mode
+                .is_some_and(gantry_ir::ReceiverMode::requires_caller_place)
+        })
         .map(|callable| callable.identity.clone())
         .collect::<BTreeSet<_>>();
     let root_identity = CanonicalCallableIdentity::free(&entry.path, &[]);
@@ -540,15 +544,10 @@ impl Compiler<'_> {
                 .cloned()
                 .ok_or(AnalysisError::Invariant)?;
             let receiver_mode = method_receiver_mode(self.tree, callable)?;
-            let mutable = semantic_children(self.tree, callable)?
-                .into_iter()
-                .any(|parameter| {
-                    self.tree.node(parameter).is_some_and(|parameter| {
-                        matches!(parameter.form(), SyntaxForm::Parameter)
-                            && node_has_word(self.tree, parameter, "self")
-                            && node_has_word(self.tree, parameter, "mut")
-                    })
-                });
+            let mutable = matches!(
+                receiver_mode,
+                gantry_ir::ReceiverMode::MutableLocalCopy | gantry_ir::ReceiverMode::ExclusivePlace
+            );
             parameters.push(Parameter {
                 name: Arc::from("self"),
                 ty: receiver,
@@ -2477,6 +2476,10 @@ fn method_receiver_mode(
     });
     if shared {
         Ok(gantry_ir::ReceiverMode::SharedPlace)
+    } else if receiver.children().iter().filter_map(|child| tree.node(*child)).any(|node| {
+        matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(value)) if value.as_ref() == "exclusive")
+    }) {
+        Ok(gantry_ir::ReceiverMode::ExclusivePlace)
     } else {
         Ok(gantry_ir::ReceiverMode::from_v1_mutability(node_has_word(
             tree, receiver, "mut",

@@ -317,6 +317,8 @@ fn analyze_callable(
             .then(|| {
                 if direct_identifier(tree, parameter).as_deref() == Some("shared") {
                     ReceiverMode::SharedPlace
+                } else if direct_identifier(tree, parameter).as_deref() == Some("exclusive") {
+                    ReceiverMode::ExclusivePlace
                 } else {
                     ReceiverMode::from_v1_mutability(has_direct_word(tree, parameter, "mut"))
                 }

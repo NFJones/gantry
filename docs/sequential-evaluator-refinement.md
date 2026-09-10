@@ -208,12 +208,15 @@ signature; no runtime state contains its source placeholder. Ordinary dispatch
 adds no effect or semantic label beyond effects and operations reached in the
 selected body.
 
-The scoped `shared self` inherent-method slice is distinct from copied
-receivers: the analyzer lowers only a binding root or struct-field receiver
-place to the validated `CallerPlace` receiver-call transition. The evaluator
-reuses its existing admission, nested reborrow, failure, and recovery behavior;
-it adds no write-back, owned transfer, temporary, index, payload, or general
-loan semantics.
+The scoped `shared self` and `exclusive self` inherent-method slices are
+distinct from copied receivers: the analyzer lowers only a binding root or
+struct-field receiver place to the validated `CallerPlace` receiver-call
+transition. `shared self` remains immutable and has no write-back. `exclusive
+self` requires a mutable root and atomically propagates each completed receiver
+assignment through that caller place; strict struct-field exclusive reborrows
+propagate outward, while shared reborrows remain observational. The evaluator
+reuses the compatible admission, failure, and recovery representation and adds
+no owned transfer, temporary, index, payload, or general-loan semantics.
 
 **Value, effect, operation, and failure preservation.** Parameters, mutable
 and immutable bindings, receivers, returns, operation requests and results,

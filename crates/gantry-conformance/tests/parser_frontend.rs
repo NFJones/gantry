@@ -202,6 +202,18 @@ fn main(shared: Int, counter: Counter) -> Int { counter.value() + shared }
     assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
 }
 
+/// `exclusive` is contextual only at an inherent-method receiver and remains an identifier elsewhere.
+#[test]
+fn public_parser_accepts_contextual_exclusive_receiver_without_reserving_exclusive() {
+    let source = r#"
+struct Counter { value: Int }
+impl Counter { fn increment(exclusive self) { self.value += 1; } }
+fn main(exclusive: Int, counter: Counter) -> Int { counter.increment(); exclusive }
+"#;
+    let outcome = parse(source, 256, 8);
+    assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+}
+
 /// The contextual receiver form rejects incomplete and parameter-like malformed spellings.
 #[test]
 fn public_parser_rejects_malformed_shared_receiver_forms() {

@@ -982,7 +982,10 @@ impl<'a> Machine<'a> {
         }
         if method {
             self.begin(SyntaxForm::Parameter);
-            if self.at_identifier_named("shared") || self.at_word("mut") {
+            if self.at_identifier_named("shared")
+                || self.at_identifier_named("exclusive")
+                || self.at_word("mut")
+            {
                 self.consume_current()?;
             }
             self.expect_word("self")?;

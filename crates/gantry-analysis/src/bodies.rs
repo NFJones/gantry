@@ -1678,7 +1678,8 @@ fn source_callable_parameters(
     let mut parameters = Vec::new();
     if let Some(receiver) = receiver {
         parameters.push(WorkflowParameter {
-            mutable: node_has_reserved_word(tree, node, "mut"),
+            mutable: node_has_reserved_word(tree, node, "mut")
+                || node_has_identifier(tree, node, "exclusive"),
             ty: receiver.clone(),
         });
     }
@@ -1720,9 +1721,24 @@ fn validate_shared_receiver_declarations(
             }) else {
                 continue;
             };
-            if !node_has_identifier(source.tree(), receiver, "shared") {
+            let receiver_kind = if node_has_identifier(source.tree(), receiver, "shared") {
+                Some((
+                    "shared",
+                    "shared-receiver-scope",
+                    "`shared self` is limited to zero-argument monomorphic inherent methods",
+                ))
+            } else if node_has_identifier(source.tree(), receiver, "exclusive") {
+                Some((
+                    "exclusive",
+                    "exclusive-receiver-scope",
+                    "`exclusive self` is limited to zero-argument monomorphic inherent methods",
+                ))
+            } else {
+                None
+            };
+            let Some((_kind, diagnostic_code, diagnostic_message)) = receiver_kind else {
                 continue;
-            }
+            };
             let inherent = matches!(method.form(), SyntaxForm::MethodDeclaration)
                 && source.tree().nodes().iter().any(|implementation| {
                     matches!(implementation.form(), SyntaxForm::ImplDeclaration)
@@ -1761,9 +1777,9 @@ fn validate_shared_receiver_declarations(
                 .count();
             if !inherent || !method_is_monomorphic || argument_count != 0 {
                 diagnostics.push(body_diagnostic(
-                    "shared-receiver-scope",
+                    diagnostic_code,
                     DiagnosticCategory::Type,
-                    "`shared self` is limited to zero-argument monomorphic inherent methods",
+                    diagnostic_message,
                     receiver.span().clone(),
                     [] as [(&str, &str); 0],
                 )?);
@@ -1787,6 +1803,8 @@ fn method_receiver_mode(
     };
     if node_has_identifier(tree, receiver, "shared") {
         Ok(ReceiverMode::SharedPlace)
+    } else if node_has_identifier(tree, receiver, "exclusive") {
+        Ok(ReceiverMode::ExclusivePlace)
     } else {
         Ok(ReceiverMode::from_v1_mutability(node_has_reserved_word(
             tree, receiver, "mut",
@@ -3104,7 +3122,8 @@ fn assignment_root_is_mutable(
             tree.node(child).is_some_and(|parameter| {
                 matches!(parameter.form(), SyntaxForm::Parameter)
                     && node_has_reserved_word(tree, parameter, "self")
-                    && node_has_reserved_word(tree, parameter, "mut")
+                    && (node_has_reserved_word(tree, parameter, "mut")
+                        || node_has_identifier(tree, parameter, "exclusive"))
             })
         }));
     }
@@ -5173,12 +5192,23 @@ fn diagnose_projected_shared_receiver_place(
         && let Some(metadata) = context
             .inherent_method_sources
             .get(&(receiver.clone(), member.clone()))
-        && metadata.receiver_mode == ReceiverMode::SharedPlace
+        && metadata.receiver_mode.requires_caller_place()
     {
+        let (code, message) = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
+            (
+                "exclusive-receiver-place",
+                "`exclusive self` requires a mutable binding root or struct-field receiver place",
+            )
+        } else {
+            (
+                "shared-receiver-place",
+                "`shared self` requires a binding root or struct-field receiver place",
+            )
+        };
         diagnostics.push(body_diagnostic(
-            "shared-receiver-place",
+            code,
             DiagnosticCategory::Type,
-            "`shared self` requires a binding root or struct-field receiver place",
+            message,
             tree.node(member_id)
                 .ok_or(AnalysisError::Invariant)?
                 .span()
@@ -5548,13 +5578,27 @@ fn infer_member_sequence(
             return Ok(None);
         };
         if let Some(metadata) = inherent_source.flatten() {
-            if metadata.receiver_mode == ReceiverMode::SharedPlace
-                && !postfix_shared_receiver_place(tree, children, context)
-            {
+            let caller_place_is_valid = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
+                postfix_exclusive_receiver_place(tree, children, context, member_node.span())?
+            } else {
+                postfix_shared_receiver_place(tree, children, context)
+            };
+            if metadata.receiver_mode.requires_caller_place() && !caller_place_is_valid {
+                let (code, message) = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
+                    (
+                        "exclusive-receiver-place",
+                        "`exclusive self` requires a mutable binding root or struct-field receiver place",
+                    )
+                } else {
+                    (
+                        "shared-receiver-place",
+                        "`shared self` requires a binding root or struct-field receiver place",
+                    )
+                };
                 diagnostics.push(body_diagnostic(
-                    "shared-receiver-place",
+                    code,
                     DiagnosticCategory::Type,
-                    "`shared self` requires a binding root or struct-field receiver place",
+                    message,
                     member_node.span().clone(),
                     [] as [(&str, &str); 0],
                 )?);
@@ -5750,6 +5794,48 @@ fn postfix_shared_receiver_place(
                     ) | (0, SyntaxForm::Token(TokenKind::Identifier(_)))
                 )
             })
+}
+
+fn postfix_exclusive_receiver_place(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    context: &BodyContext,
+    call: &SourceSpan,
+) -> Result<bool, AnalysisError> {
+    if !postfix_shared_receiver_place(tree, children, context) {
+        return Ok(false);
+    }
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+            continue;
+        }
+        work.extend(node.children().iter().rev().copied());
+    }
+    let method_dot = tokens.iter().rposition(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    });
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if let SyntaxForm::Token(TokenKind::Identifier(root)) = node.form() {
+            return assignment_root_is_mutable(tree, call, root, false);
+        }
+        if matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self")
+        {
+            let strict_subplace = method_dot.is_some_and(|dot| dot > 1);
+            let mutable = assignment_root_is_mutable(tree, call, &Arc::from("self"), true)?;
+            return Ok(mutable && strict_subplace);
+        }
+        work.extend(node.children().iter().rev().copied());
+    }
+    Ok(false)
 }
 
 fn call_sequence_span(
