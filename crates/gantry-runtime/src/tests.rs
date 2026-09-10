@@ -1999,6 +1999,249 @@ fn shared_receiver_calls_resolve_nested_caller_places_and_recover() {
 }
 
 #[cfg(feature = "durable")]
+fn place_initialization_program() -> Arc<MachineProgram> {
+    let main_path = path("crate::main");
+    let callee_path = path("crate::callee");
+    let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let callee_identity = CanonicalCallableIdentity::free(&callee_path, &[]);
+    let mut callables = vec![
+        (
+            main_identity,
+            Workflow {
+                path: main_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("item"),
+                    ty: TypeDescriptor::declared(path("crate::Item")),
+                    mutable: false,
+                    receiver_mode: None,
+                }],
+                result: TypeDescriptor::UNIT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::UNIT,
+                        InstructionKind::Call {
+                            callee: callee_identity.clone(),
+                            arguments: 0,
+                        },
+                    ),
+                    instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            callee_identity,
+            Workflow {
+                path: callee_path,
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::UNIT,
+                        InstructionKind::Push(LogicalValue::unit()),
+                    ),
+                    instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+                ],
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    Arc::new(
+        MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("place-initialization program failed: {error:?}")),
+    )
+}
+
+fn place_initialization_fixture() -> (Arc<MachineProgram>, Machine) {
+    let program = place_initialization_program();
+    let item = LogicalValue::structure(
+        "crate::Item",
+        vec![(
+            "field".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture struct failed: {error:?}"));
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![item],
+        limits(8, 1, 1, 2, 8),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    (program, machine)
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn place_initialization_round_trips_through_checkpoint_codec() {
+    let (program, machine) = place_initialization_fixture();
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(
+        1,
+        "item",
+        vec![ValuePathSegment::StructField("field".to_owned())],
+    ));
+    let bytes = checkpoint.canonical_bytes();
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("place-initialization decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    assert_eq!(decoded.canonical_bytes(), bytes);
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn checkpoint_without_place_initialization_keeps_existing_magic() {
+    let (_, machine) = place_initialization_fixture();
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP03".as_slice()));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn checkpoint_with_place_initialization_uses_gntmcp06() {
+    let (_, machine) = place_initialization_fixture();
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(1, "item", Vec::new()));
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP06".as_slice()));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn validate_rejects_initialized_true_place_entry() {
+    let (program, machine) = place_initialization_fixture();
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(1, "item", Vec::new()));
+    assert!(checkpoint.test_set_place_initialization_initialized(1, 0, true));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn validate_rejects_duplicate_place_initialization() {
+    let (program, machine) = place_initialization_fixture();
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(1, "item", Vec::new()));
+    assert!(checkpoint.test_add_place_initialization(1, "item", Vec::new()));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn validate_rejects_unresolvable_place_initialization() {
+    let (program, machine) = place_initialization_fixture();
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(1, "missing", Vec::new()));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn validate_rejects_place_initialization_on_root_frame() {
+    let (program, machine) = place_initialization_fixture();
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(0, "item", Vec::new()));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn validate_rejects_place_initialization_with_unknown_struct_field() {
+    let (program, machine) = place_initialization_fixture();
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(
+        1,
+        "item",
+        vec![ValuePathSegment::StructField("absent".to_owned())],
+    ));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn validate_rejects_place_initialization_with_cross_kind_segment() {
+    let (program, machine) = place_initialization_fixture();
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(
+        1,
+        "item",
+        vec![ValuePathSegment::TupleMember(0)],
+    ));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn validate_accepts_place_initialization_with_nested_declared_field_path() {
+    let program = place_initialization_program();
+    let inner = LogicalValue::structure(
+        "crate::Inner",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(9).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture inner struct failed: {error:?}"));
+    let item = LogicalValue::structure(
+        "crate::Item",
+        vec![("inner".to_owned(), inner)],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture struct failed: {error:?}"));
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![item],
+        limits(8, 1, 1, 2, 8),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_add_place_initialization(
+        1,
+        "item",
+        vec![
+            ValuePathSegment::StructField("inner".to_owned()),
+            ValuePathSegment::StructField("value".to_owned()),
+        ],
+    ));
+    assert!(crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()).is_ok());
+}
+
+#[cfg(feature = "durable")]
 #[test]
 fn owned_receiver_call_checkpoint_recovers_without_admission_extension() {
     let main_path = path("crate::main");

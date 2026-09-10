@@ -714,6 +714,7 @@ struct WorkflowFrame {
     session_stack_base: usize,
     session_at_entry: Option<ProtocolIdentity>,
     receiver_admission: Option<SharedPlaceAdmission>,
+    place_initialization: Vec<PlaceInitialization>,
 }
 
 /// Durable evidence that a callee frame was admitted through a shared caller place.
@@ -721,6 +722,14 @@ struct WorkflowFrame {
 struct SharedPlaceAdmission {
     root: Arc<str>,
     path: Vec<ValuePathSegment>,
+}
+
+/// Durable evidence that a caller-place move left one subplace uninitialized.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PlaceInitialization {
+    root: Arc<str>,
+    path: Vec<ValuePathSegment>,
+    initialized: bool,
 }
 
 /// Resolves an immutable logical subvalue through an admitted caller-place path.
@@ -1053,6 +1062,40 @@ impl MachineCheckpointV3 {
         };
         binding.value = value;
         true
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_add_place_initialization(
+        &mut self,
+        frame_index: usize,
+        root: &str,
+        path: Vec<ValuePathSegment>,
+    ) -> bool {
+        let Some(frame) = self.frames.get_mut(frame_index) else {
+            return false;
+        };
+        frame.place_initialization.push(PlaceInitialization {
+            root: Arc::from(root),
+            path,
+            initialized: false,
+        });
+        true
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_place_initialization_initialized(
+        &mut self,
+        frame_index: usize,
+        entry_index: usize,
+        initialized: bool,
+    ) -> bool {
+        self.frames
+            .get_mut(frame_index)
+            .and_then(|frame| frame.place_initialization.get_mut(entry_index))
+            .is_some_and(|entry| {
+                entry.initialized = initialized;
+                true
+            })
     }
 
     #[cfg(all(test, feature = "concurrent"))]
@@ -1527,6 +1570,7 @@ impl Machine {
                 session_stack_base: 0,
                 session_at_entry: None,
                 receiver_admission: None,
+                place_initialization: Vec::new(),
             }],
             values: Vec::new(),
             occurrences: Vec::new(),
@@ -1629,6 +1673,7 @@ impl Machine {
                 session_stack_base: 0,
                 session_at_entry: None,
                 receiver_admission: None,
+                place_initialization: Vec::new(),
             }],
             values: Vec::new(),
             occurrences: Vec::new(),
@@ -3177,6 +3222,7 @@ impl Machine {
             session_stack_base: self.session_stack.len(),
             session_at_entry: self.session,
             receiver_admission,
+            place_initialization: Vec::new(),
         });
         self.finish_deterministic(workflow, site, Arc::from("call"))
     }
@@ -4006,6 +4052,35 @@ fn validate_machine_checkpoint(
                             == Some(ReceiverMode::ExclusivePlace)))
             {
                 return Err(MachineRecoveryError::ProgramMismatch);
+            }
+        }
+        for (entry_index, entry) in frame.place_initialization.iter().enumerate() {
+            if entry.initialized {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
+            }
+            if entry.root.is_empty()
+                || frame.place_initialization[..entry_index]
+                    .iter()
+                    .any(|prior| prior.root == entry.root && prior.path == entry.path)
+            {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
+            }
+            let Some(parent) = frame_index
+                .checked_sub(1)
+                .and_then(|index| checkpoint.frames.get(index))
+            else {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
+            };
+            let Some(binding) = parent
+                .scopes
+                .iter()
+                .rev()
+                .find_map(|scope| scope.get(entry.root.as_ref()))
+            else {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            };
+            if value_at_path(&binding.value, &entry.path).is_none() {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
             }
         }
     }
