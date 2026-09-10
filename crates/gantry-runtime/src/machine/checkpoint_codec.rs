@@ -8,6 +8,7 @@ use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind, RuntimeErrorCategory};
 use gantry_core::value::{
     LogicalValue, LogicalValueView, OperationErrorValue, OperationErrorView, ValueLimits,
+    ValuePathSegment,
 };
 #[cfg(feature = "concurrent")]
 use gantry_ir::{CanonicalCallableIdentity, ExecutableTaskHandle, TaskBodyIdentity};
@@ -19,7 +20,8 @@ use super::{
     Binding, ExecutionBudgetSnapshot, MachineCheckpointV3, MachineFailure, MachineLabel,
     MachineLimits, MachineOutcome, MachineRecoveryError, MachineStatus, OperationOccurrence,
     PendingOperation, RuntimeCode, Scope, SessionCreationModeV1, SessionScopeOccurrence,
-    WorkflowFrame, validate_execution_budget_snapshot, validate_machine_checkpoint,
+    SharedPlaceAdmission, WorkflowFrame, validate_execution_budget_snapshot,
+    validate_machine_checkpoint,
 };
 #[cfg(feature = "concurrent")]
 use super::{
@@ -38,11 +40,13 @@ use crate::task::{
 
 const MACHINE_MAGIC_V3: &[u8; 8] = b"GNTMCP03";
 const MACHINE_MAGIC_V4: &[u8; 8] = b"GNTMCP04";
+const MACHINE_MAGIC_V5: &[u8; 8] = b"GNTMCP05";
 const EXECUTION_BUDGET_MAGIC: &[u8; 8] = b"GNTBGT01";
 #[cfg(feature = "concurrent")]
 const TASK_CONTROL_EXTENSION_MAGIC: &[u8; 8] = b"GNTMTC01";
 #[cfg(feature = "concurrent")]
 const TASK_CONTROL_EXTENSION_MAGIC_V2: &[u8; 8] = b"GNTMTC02";
+const SHARED_RECEIVER_EXTENSION_MAGIC: &[u8; 8] = b"GNTSRA01";
 
 pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapshot) -> Vec<u8> {
     let mut writer = Writer::default();
@@ -84,7 +88,13 @@ pub(super) fn decode_execution_budget_snapshot(
 pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec<u8> {
     let mut writer = Writer::default();
     let successor = machine_checkpoint_uses_successor_wire(checkpoint);
-    writer.raw(if successor {
+    let shared_receiver = checkpoint
+        .frames
+        .iter()
+        .any(|frame| frame.receiver_admission.is_some());
+    writer.raw(if shared_receiver {
+        MACHINE_MAGIC_V5
+    } else if successor {
         MACHINE_MAGIC_V4
     } else {
         MACHINE_MAGIC_V3
@@ -136,8 +146,16 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         checkpoint.limits.value_limits,
     );
     #[cfg(feature = "concurrent")]
-    if successor {
+    if successor && !shared_receiver {
         write_task_control_extension(&mut writer, checkpoint);
+    }
+    if shared_receiver {
+        writer.count(usize::from(successor) + 1);
+        #[cfg(feature = "concurrent")]
+        if successor {
+            write_task_control_extension(&mut writer, checkpoint);
+        }
+        write_shared_receiver_extension(&mut writer, checkpoint);
     }
     writer.finish()
 }
@@ -164,9 +182,10 @@ pub(super) fn decode_machine_checkpoint(
     bytes: &[u8],
 ) -> Result<MachineCheckpointV3, MachineRecoveryError> {
     let mut reader = Reader::new(bytes);
-    let successor = match reader.raw(MACHINE_MAGIC_V3.len())? {
-        magic if magic == MACHINE_MAGIC_V3 => false,
-        magic if magic == MACHINE_MAGIC_V4 => true,
+    let (successor, shared_receiver) = match reader.raw(MACHINE_MAGIC_V3.len())? {
+        magic if magic == MACHINE_MAGIC_V3 => (false, false),
+        magic if magic == MACHINE_MAGIC_V4 => (true, false),
+        magic if magic == MACHINE_MAGIC_V5 => (true, true),
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     };
     let execution = reader.identity(Some(IdentityKind::Execution))?;
@@ -211,17 +230,53 @@ pub(super) fn decode_machine_checkpoint(
     let status = read_status(&mut reader)?;
     let outcome = read_optional_outcome(&mut reader, limits.value_limits)?;
     #[cfg(feature = "concurrent")]
-    let (task_body, pending_task_control) = if successor {
+    let (mut task_body, mut pending_task_control) = if successor && !shared_receiver {
         if reader.is_empty() {
             return Err(MachineRecoveryError::InvalidEncoding);
         }
-        read_task_control_extension(&mut reader, &mut frames, limits.value_limits)?
+        let magic = reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())?;
+        read_task_control_extension(&mut reader, magic, &mut frames, limits.value_limits)?
     } else {
         (None, None)
     };
     #[cfg(not(feature = "concurrent"))]
-    if successor {
+    if successor && !shared_receiver {
         return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    if shared_receiver {
+        let extension_count = reader.count()?;
+        let mut saw_shared_receiver = false;
+        for _ in 0..extension_count {
+            let magic = reader.raw(SHARED_RECEIVER_EXTENSION_MAGIC.len())?;
+            if magic == SHARED_RECEIVER_EXTENSION_MAGIC {
+                if saw_shared_receiver {
+                    return Err(MachineRecoveryError::InvalidEncoding);
+                }
+                read_shared_receiver_extension(&mut reader, &mut frames)?;
+                saw_shared_receiver = true;
+            } else {
+                #[cfg(feature = "concurrent")]
+                if magic == TASK_CONTROL_EXTENSION_MAGIC || magic == TASK_CONTROL_EXTENSION_MAGIC_V2
+                {
+                    if task_body.is_some() || pending_task_control.is_some() {
+                        return Err(MachineRecoveryError::InvalidEncoding);
+                    }
+                    (task_body, pending_task_control) = read_task_control_extension(
+                        &mut reader,
+                        magic,
+                        &mut frames,
+                        limits.value_limits,
+                    )?;
+                } else {
+                    return Err(MachineRecoveryError::InvalidEncoding);
+                }
+                #[cfg(not(feature = "concurrent"))]
+                return Err(MachineRecoveryError::InvalidEncoding);
+            }
+        }
+        if !saw_shared_receiver {
+            return Err(MachineRecoveryError::InvalidEncoding);
+        }
     }
     #[cfg(feature = "concurrent")]
     if frames.len() == 1
@@ -356,7 +411,85 @@ fn read_frame(
         agent_at_entry: reader.optional_string()?.map(Arc::from),
         session_stack_base: reader.usize()?,
         session_at_entry: reader.optional_identity(Some(IdentityKind::Session))?,
+        receiver_admission: None,
     })
+}
+
+fn write_shared_receiver_extension(writer: &mut Writer, checkpoint: &MachineCheckpointV3) {
+    writer.raw(SHARED_RECEIVER_EXTENSION_MAGIC);
+    writer.count(checkpoint.frames.len());
+    for frame in &checkpoint.frames {
+        writer.boolean(frame.receiver_admission.is_some());
+        if let Some(admission) = &frame.receiver_admission {
+            writer.string(&admission.root);
+            write_shared_receiver_path(writer, &admission.path);
+        }
+    }
+}
+
+fn read_shared_receiver_extension(
+    reader: &mut Reader<'_>,
+    frames: &mut [WorkflowFrame],
+) -> Result<(), MachineRecoveryError> {
+    if reader.count()? != frames.len() {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    for frame in frames {
+        frame.receiver_admission = reader
+            .boolean()?
+            .then(|| {
+                let root: Arc<str> = Arc::from(reader.string()?);
+                let path = read_shared_receiver_path(reader)?;
+                if root.is_empty() {
+                    return Err(MachineRecoveryError::InvalidEncoding);
+                }
+                Ok(SharedPlaceAdmission { root, path })
+            })
+            .transpose()?;
+    }
+    Ok(())
+}
+
+fn write_shared_receiver_path(writer: &mut Writer, path: &[ValuePathSegment]) {
+    writer.count(path.len());
+    for segment in path {
+        match segment {
+            ValuePathSegment::ListItem(index) => {
+                writer.u8(0);
+                writer.usize(*index);
+            }
+            ValuePathSegment::TupleMember(index) => {
+                writer.u8(1);
+                writer.usize(*index);
+            }
+            ValuePathSegment::StructField(name) => {
+                writer.u8(2);
+                writer.string(name);
+            }
+            ValuePathSegment::EnumPayload => writer.u8(3),
+            ValuePathSegment::OptionValue => writer.u8(4),
+            ValuePathSegment::ResultValue => writer.u8(5),
+        }
+    }
+}
+
+fn read_shared_receiver_path(
+    reader: &mut Reader<'_>,
+) -> Result<Vec<ValuePathSegment>, MachineRecoveryError> {
+    let count = reader.count()?;
+    let mut path = Vec::with_capacity(count);
+    for _ in 0..count {
+        path.push(match reader.u8()? {
+            0 => ValuePathSegment::ListItem(reader.usize()?),
+            1 => ValuePathSegment::TupleMember(reader.usize()?),
+            2 => ValuePathSegment::StructField(reader.string()?),
+            3 => ValuePathSegment::EnumPayload,
+            4 => ValuePathSegment::OptionValue,
+            5 => ValuePathSegment::ResultValue,
+            _ => return Err(MachineRecoveryError::InvalidEncoding),
+        });
+    }
+    Ok(path)
 }
 
 #[cfg(feature = "concurrent")]
@@ -402,10 +535,11 @@ fn write_task_control_extension(writer: &mut Writer, checkpoint: &MachineCheckpo
 #[cfg(feature = "concurrent")]
 fn read_task_control_extension(
     reader: &mut Reader<'_>,
+    magic: &[u8],
     frames: &mut [WorkflowFrame],
     limits: ValueLimits,
 ) -> Result<(Option<TaskBodyIdentity>, Option<PendingTaskControl>), MachineRecoveryError> {
-    let generalized = match reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())? {
+    let generalized = match magic {
         magic if magic == TASK_CONTROL_EXTENSION_MAGIC => false,
         magic if magic == TASK_CONTROL_EXTENSION_MAGIC_V2 => true,
         _ => return Err(MachineRecoveryError::InvalidEncoding),

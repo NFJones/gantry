@@ -454,7 +454,11 @@ pure fn main() -> Tuple<Int, Int, String> {
         .iter()
         .flat_map(|workflow| &workflow.instructions)
         .filter_map(|instruction| match &instruction.kind {
-            InstructionKind::ReceiverCall { callee, arguments } => Some((callee, arguments)),
+            InstructionKind::ReceiverCall {
+                callee,
+                arguments,
+                source,
+            } => Some((callee, arguments, source)),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -464,7 +468,7 @@ pure fn main() -> Tuple<Int, Int, String> {
         ("<crate::Counter<Int> as crate::Label>::label", vec![1]),
     ]);
     let mut observed_receiver_calls = BTreeMap::<&str, Vec<usize>>::new();
-    for (callee, arguments) in &receiver_calls {
+    for (callee, arguments, _) in &receiver_calls {
         observed_receiver_calls
             .entry(callee.as_str())
             .or_default()
@@ -475,10 +479,11 @@ pure fn main() -> Tuple<Int, Int, String> {
     }
     assert_eq!(observed_receiver_calls, expected_receiver_calls);
     assert!(
-        receiver_calls
-            .iter()
-            .all(|(callee, _)| callee.receiver_type().is_some()),
-        "ReceiverCall must target a callable with a receiver"
+        receiver_calls.iter().all(|(callee, _, source)| {
+            callee.receiver_type().is_some()
+                && matches!(source, gantry::ir::ReceiverSource::CopiedValue)
+        }),
+        "source lowering must emit copied receiver calls for receiver callables"
     );
     assert!(
         program
@@ -536,6 +541,117 @@ pure fn main() -> Tuple<Int, Int, String> {
     assert!(matches!(original.view(), LogicalValueView::Int(value) if value.get() == 1));
     assert!(matches!(changed.view(), LogicalValueView::Int(value) if value.get() == 7));
     assert!(matches!(label.view(), LogicalValueView::String("counter")));
+}
+
+/// Explicit IR caller-place admission executes without asserting source syntax or mutations.
+#[test]
+fn explicit_ir_shared_place_admission_executes_without_copy_or_mutation_claims() {
+    use gantry::ir::{
+        CanonicalCallableIdentity, CanonicalPath, EffectSet, Parameter, ReceiverMode,
+        ReceiverSource, StructuralPosition, TypeDescriptor, Workflow,
+    };
+    use gantry::numeric::GantryInt;
+
+    let main_path = CanonicalPath::new("crate::main")
+        .unwrap_or_else(|error| panic!("main path failed: {error}"));
+    let main = CanonicalCallableIdentity::free(&main_path, &[]);
+    let method = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+        .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+    let outer = TypeDescriptor::declared(
+        CanonicalPath::new("crate::Outer")
+            .unwrap_or_else(|error| panic!("outer type path failed: {error}")),
+    );
+    let instruction = |index, ty, kind| gantry::ir::Instruction {
+        site: StructuralPosition::new(vec![index])
+            .unwrap_or_else(|error| panic!("instruction site failed: {error}")),
+        ty,
+        kind,
+    };
+    let mut callables = vec![
+        (
+            main,
+            Workflow {
+                path: main_path.clone(),
+                parameters: vec![Parameter {
+                    name: Arc::from("item"),
+                    ty: outer,
+                    mutable: false,
+                    receiver_mode: None,
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::ReceiverCall {
+                            callee: method.clone(),
+                            arguments: 1,
+                            source: ReceiverSource::CallerPlace {
+                                root: Arc::from("item"),
+                                path: vec![gantry::value::ValuePathSegment::StructField(
+                                    "value".to_owned(),
+                                )],
+                            },
+                        },
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            method,
+            Workflow {
+                path: CanonicalPath::new("crate::Outer::value")
+                    .unwrap_or_else(|error| panic!("method path failed: {error}")),
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: TypeDescriptor::INT,
+                    mutable: false,
+                    receiver_mode: Some(ReceiverMode::SharedPlace),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::Load(Arc::from("self")),
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    let program = gantry::ir::MachineProgram::with_callable_identities(callables)
+        .unwrap_or_else(|error| panic!("explicit shared-place IR was rejected: {error:?}"));
+    let item = LogicalValue::structure(
+        "crate::Outer",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture outer value failed: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x5a; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &main_path,
+        vec![item],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("explicit shared-place IR did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
 }
 
 #[test]

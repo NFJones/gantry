@@ -14,7 +14,8 @@ use gantry_core::value::{
 };
 use gantry_ir::generated::Effect;
 use gantry_ir::{
-    CanonicalCallableIdentity, CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor,
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, ReceiverMode, ReceiverSource,
+    StructuralPosition, TypeDescriptor,
 };
 #[cfg(feature = "concurrent")]
 use gantry_ir::{
@@ -114,6 +115,7 @@ fn spawn_program_with_body(
             name: Arc::from("count"),
             ty: TypeDescriptor::INT,
             mutable: false,
+            receiver_mode: None,
         }],
         TypeDescriptor::UNIT,
         EffectSet::default(),
@@ -912,6 +914,7 @@ fn mutable_roots_publish_atomically_without_aliasing_arguments() {
             name: Arc::from("item"),
             ty: TypeDescriptor::declared(path("crate::Item")),
             mutable: true,
+            receiver_mode: None,
         }],
         TypeDescriptor::declared(path("crate::Item")),
         EffectSet::default(),
@@ -1692,6 +1695,7 @@ fn root_and_call_arguments_preserve_analyzed_types() {
         name: Arc::from("value"),
         ty: TypeDescriptor::INT,
         mutable: false,
+        receiver_mode: None,
     };
     let callee = workflow(
         "crate::callee",
@@ -1752,6 +1756,335 @@ fn root_and_call_arguments_preserve_analyzed_types() {
         root_mismatch,
         Err(MachineBuildError::ArgumentType)
     ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn shared_receiver_calls_resolve_nested_caller_places_and_recover() {
+    let main_path = path("crate::main");
+    let method_path = path("crate::Outer::value");
+    let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let method_identity = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+        .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+    let outer_type = TypeDescriptor::declared(path("crate::Outer"));
+    let mut callables = vec![
+        (
+            main_identity,
+            Workflow {
+                path: main_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("item"),
+                    ty: outer_type.clone(),
+                    mutable: false,
+                    receiver_mode: None,
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::ReceiverCall {
+                            callee: method_identity.clone(),
+                            arguments: 1,
+                            source: ReceiverSource::CallerPlace {
+                                root: Arc::from("item"),
+                                path: vec![
+                                    ValuePathSegment::StructField("values".to_owned()),
+                                    ValuePathSegment::TupleMember(0),
+                                ],
+                            },
+                        },
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            method_identity,
+            Workflow {
+                path: method_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: TypeDescriptor::INT,
+                    mutable: false,
+                    receiver_mode: Some(ReceiverMode::SharedPlace),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::Load(Arc::from("self")),
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    let program = Arc::new(
+        MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("shared receiver program failed: {error:?}")),
+    );
+    let item = LogicalValue::structure(
+        "crate::Outer",
+        vec![(
+            "values".to_owned(),
+            LogicalValue::tuple(
+                vec![
+                    LogicalValue::integer(
+                        GantryInt::new(7)
+                            .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                    ),
+                    LogicalValue::integer(
+                        GantryInt::new(8)
+                            .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                    ),
+                ],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("fixture tuple failed: {error:?}")),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture value failed: {error:?}"));
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![item],
+        limits(8, 1, 1, 2, 8),
+    );
+
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP05".as_slice()));
+    let checkpoint = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("shared receiver checkpoint decode failed: {error:?}"));
+    assert_eq!(checkpoint.canonical_bytes(), bytes);
+    let mut stripped_admission = checkpoint.clone();
+    assert!(stripped_admission.test_clear_receiver_admission());
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &stripped_admission.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+    let mut injected_root_admission = checkpoint.clone();
+    assert!(injected_root_admission.test_add_receiver_admission_to_root());
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &injected_root_admission.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+    let mut relabeled_old_checkpoint = bytes.clone();
+    relabeled_old_checkpoint[..8].copy_from_slice(b"GNTMCP03");
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &relabeled_old_checkpoint),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+            | Err(crate::MachineRecoveryError::InvalidEncoding)
+    ));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("shared receiver budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("shared receiver recovery failed: {error:?}"));
+    assert_eq!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted"))
+        ))
+    );
+}
+
+#[test]
+fn shared_receiver_admission_rejections_preserve_the_pre_call_instruction_state() {
+    let main_path = path("crate::main");
+    let method_path = path("crate::Outer::value");
+    let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let method_identity = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+        .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+    let outer_type = TypeDescriptor::declared(path("crate::Outer"));
+    let item = LogicalValue::structure(
+        "crate::Outer",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture outer value failed: {error:?}"));
+    let string = LogicalValue::structure(
+        "crate::Outer",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::string("wrong", DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("fixture string failed: {error:?}")),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture outer value failed: {error:?}"));
+    let program_for = |source: ReceiverSource, arguments: usize, prefix: bool| {
+        let mut instructions = Vec::new();
+        if prefix {
+            instructions.push(instruction(
+                0,
+                TypeDescriptor::UNIT,
+                InstructionKind::Push(LogicalValue::unit()),
+            ));
+        }
+        let call_site = u64::from(prefix);
+        instructions.push(instruction(
+            call_site,
+            TypeDescriptor::INT,
+            InstructionKind::ReceiverCall {
+                callee: method_identity.clone(),
+                arguments,
+                source,
+            },
+        ));
+        instructions.push(instruction(
+            call_site + 1,
+            TypeDescriptor::INT,
+            InstructionKind::Return,
+        ));
+        let mut callables = vec![
+            (
+                main_identity.clone(),
+                Workflow {
+                    path: main_path.clone(),
+                    parameters: vec![Parameter {
+                        name: Arc::from("item"),
+                        ty: outer_type.clone(),
+                        mutable: false,
+                        receiver_mode: None,
+                    }],
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions,
+                },
+            ),
+            (
+                method_identity.clone(),
+                Workflow {
+                    path: method_path.clone(),
+                    parameters: {
+                        let mut parameters = vec![Parameter {
+                            name: Arc::from("self"),
+                            ty: TypeDescriptor::INT,
+                            mutable: false,
+                            receiver_mode: Some(ReceiverMode::SharedPlace),
+                        }];
+                        if arguments == 2 {
+                            parameters.push(Parameter {
+                                name: Arc::from("other"),
+                                ty: TypeDescriptor::INT,
+                                mutable: false,
+                                receiver_mode: None,
+                            });
+                        }
+                        parameters
+                    },
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        instruction(
+                            0,
+                            TypeDescriptor::INT,
+                            InstructionKind::Load(Arc::from("self")),
+                        ),
+                        instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                    ],
+                },
+            ),
+        ];
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        Arc::new(
+            MachineProgram::with_callable_identities(callables)
+                .unwrap_or_else(|error| panic!("shared receiver program failed: {error:?}")),
+        )
+    };
+    let reject = |source, arguments, value, limits, prefix| {
+        let program = program_for(source, arguments, prefix);
+        let mut machine = new_machine(program, "crate::main", vec![value], limits);
+        if prefix {
+            assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        }
+        let before = machine.test_instruction_state();
+        assert!(matches!(
+            machine.step(),
+            MachineStep::Transition(MachineLabel::Failure(ref failure))
+                if failure.code == RuntimeCode::InternalInvariant
+                    || failure.code == RuntimeCode::DeterministicTransitionBudget
+                    || failure.code
+                        == RuntimeCode::Deterministic(
+                            DeterministicEvaluationCode::WorkflowCallDepthLimit
+                        )
+        ));
+        assert_eq!(machine.test_instruction_state(), before);
+    };
+    reject(
+        ReceiverSource::CallerPlace {
+            root: Arc::from("missing"),
+            path: Vec::new(),
+        },
+        1,
+        item.clone(),
+        limits(8, 1, 1, 2, 8),
+        false,
+    );
+    reject(
+        ReceiverSource::CallerPlace {
+            root: Arc::from("item"),
+            path: vec![ValuePathSegment::TupleMember(0)],
+        },
+        1,
+        item.clone(),
+        limits(8, 1, 1, 2, 8),
+        false,
+    );
+    reject(
+        ReceiverSource::CallerPlace {
+            root: Arc::from("item"),
+            path: vec![ValuePathSegment::StructField("value".to_owned())],
+        },
+        1,
+        string,
+        limits(8, 1, 1, 2, 8),
+        false,
+    );
+    reject(
+        ReceiverSource::CallerPlace {
+            root: Arc::from("item"),
+            path: vec![ValuePathSegment::StructField("value".to_owned())],
+        },
+        2,
+        item.clone(),
+        limits(8, 1, 1, 2, 8),
+        false,
+    );
+    reject(
+        ReceiverSource::CallerPlace {
+            root: Arc::from("item"),
+            path: vec![ValuePathSegment::StructField("value".to_owned())],
+        },
+        1,
+        item.clone(),
+        limits(8, 1, 1, 1, 8),
+        false,
+    );
+    reject(
+        ReceiverSource::CallerPlace {
+            root: Arc::from("item"),
+            path: vec![ValuePathSegment::StructField("value".to_owned())],
+        },
+        1,
+        item,
+        limits(1, 1, 1, 2, 8),
+        true,
+    );
 }
 
 #[cfg(feature = "concurrent")]
@@ -2389,6 +2722,144 @@ fn task_control_checkpoint_recovers_pending_and_published_handle_state() {
         Some(handle)
     );
     assert!(published.pending_spawn().is_none());
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn task_body_shared_receiver_checkpoint_uses_the_task_body_parent_instruction() {
+    let root_path = path("crate::main");
+    let method_path = path("crate::Outer::value");
+    let root = CanonicalCallableIdentity::free(&root_path, &[]);
+    let method = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+        .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+    let outer = TypeDescriptor::declared(path("crate::Outer"));
+    let body_identity = TaskBodyIdentity::new(root.clone(), site(0));
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::INT,
+        vec![
+            ExecutableTaskCapture::new(Arc::from("item"), outer.clone(), false)
+                .unwrap_or_else(|error| panic!("capture failed: {error:?}")),
+        ],
+        ExecutableTaskContext::v1(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::INT,
+                InstructionKind::ReceiverCall {
+                    callee: method.clone(),
+                    arguments: 1,
+                    source: ReceiverSource::CallerPlace {
+                        root: Arc::from("item"),
+                        path: vec![ValuePathSegment::StructField("value".to_owned())],
+                    },
+                },
+            ),
+            instruction(1, TypeDescriptor::INT, InstructionKind::TaskComplete),
+        ],
+    )
+    .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
+    let mut callables = vec![
+        (
+            root,
+            Workflow {
+                path: root_path,
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::UNIT,
+                        InstructionKind::Spawn {
+                            handle: ExecutableTaskHandle::new(
+                                Arc::from("child"),
+                                TypeDescriptor::INT,
+                            )
+                            .unwrap_or_else(|error| panic!("handle failed: {error:?}")),
+                            body: body_identity.clone(),
+                        },
+                    ),
+                    instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            method,
+            Workflow {
+                path: method_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: TypeDescriptor::INT,
+                    mutable: false,
+                    receiver_mode: Some(ReceiverMode::SharedPlace),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::Load(Arc::from("self")),
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(callables, vec![body])
+            .unwrap_or_else(|error| panic!("task-body shared receiver program failed: {error:?}")),
+    );
+    let item = LogicalValue::structure(
+        "crate::Outer",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture outer value failed: {error:?}"));
+    let capture = TaskCaptureV1::new(Arc::from("item"), outer, false, &item, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|error| panic!("fixture capture failed: {error:?}"));
+    let machine_limits = limits(16, 1, 1, 2, 16);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let (child_task_id, child_task_path) = child_task_coordinate();
+    let mut child = Machine::new_concurrent_task_body_with_context(
+        Arc::clone(&program),
+        &body_identity,
+        &[capture],
+        execution(),
+        child_task_id,
+        child_task_path,
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("child machine construction failed: {error:?}"));
+    assert!(matches!(
+        child.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    let bytes = child.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP05".as_slice()));
+    let checkpoint = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("task-body shared checkpoint decode failed: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(child.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("task-body budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("task-body shared recovery failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(ref value)
+            if value == &LogicalValue::integer(
+                GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            )
+    ));
 }
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]

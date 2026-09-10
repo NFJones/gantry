@@ -230,6 +230,7 @@ fn public_deterministic_values_and_failures_match_the_machine_contract() {
             name: Arc::from("item"),
             ty: TypeDescriptor::declared(path("crate::Item")),
             mutable: true,
+            receiver_mode: None,
         }],
         TypeDescriptor::declared(path("crate::Item")),
         EffectSet::default(),

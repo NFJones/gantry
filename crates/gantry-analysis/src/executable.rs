@@ -508,6 +508,7 @@ impl Compiler<'_> {
                 name: Arc::from("self"),
                 ty: receiver,
                 mutable,
+                receiver_mode: Some(gantry_ir::ReceiverMode::from_v1_mutability(mutable)),
             });
         }
         for parameter in semantic_children(self.tree, callable)? {
@@ -529,6 +530,7 @@ impl Compiler<'_> {
                 name,
                 ty,
                 mutable: node_has_word(self.tree, parameter_node, "mut"),
+                receiver_mode: None,
             });
         }
         Ok(parameters)
@@ -968,7 +970,11 @@ impl Compiler<'_> {
             self.emit(
                 ty.clone(),
                 if has_implicit_receiver {
-                    InstructionKind::ReceiverCall { callee, arguments }
+                    InstructionKind::ReceiverCall {
+                        callee,
+                        arguments,
+                        source: gantry_ir::ReceiverSource::CopiedValue,
+                    }
                 } else {
                     InstructionKind::Call { callee, arguments }
                 },
@@ -997,7 +1003,11 @@ impl Compiler<'_> {
             self.emit(
                 ty.clone(),
                 if receiver.is_some() {
-                    InstructionKind::ReceiverCall { callee, arguments }
+                    InstructionKind::ReceiverCall {
+                        callee,
+                        arguments,
+                        source: gantry_ir::ReceiverSource::CopiedValue,
+                    }
                 } else {
                     InstructionKind::Call { callee, arguments }
                 },

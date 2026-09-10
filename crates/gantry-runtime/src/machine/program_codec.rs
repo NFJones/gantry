@@ -8,14 +8,73 @@ use gantry_ir::{
     ActionParameter, AggregateKind, CanonicalCallableIdentity, CanonicalPath, CanonicalSignature,
     Comparison, EffectSet, ExecutableAction, ExecutableOperation, ExecutableTaskBody,
     ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
-    InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, Projection, TaskBodyIdentity,
-    TypeDescriptor, Workflow,
+    InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, Projection, ReceiverMode,
+    ReceiverSource, TaskBodyIdentity, TypeDescriptor, Workflow,
 };
 
 use super::MachineRecoveryError;
 use super::checkpoint_codec::{Reader, Writer};
 
-const MAGIC: &[u8; 8] = b"GNTPRG02";
+const MAGIC_V2: &[u8; 8] = b"GNTPRG02";
+const MAGIC_V3: &[u8; 8] = b"GNTPRG03";
+
+fn program_uses_successor_wire(program: &MachineProgram) -> bool {
+    let has_non_v2_receiver_metadata = program.workflows().iter().any(|workflow| {
+        workflow.parameters.iter().any(|parameter| {
+            parameter.receiver_mode()
+                != if parameter.name.as_ref() == "self" {
+                    Some(ReceiverMode::from_v1_mutability(parameter.mutable))
+                } else {
+                    None
+                }
+        })
+    });
+    has_non_v2_receiver_metadata
+        || program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .chain(
+                program
+                    .task_bodies()
+                    .iter()
+                    .flat_map(|body| body.instructions().iter()),
+            )
+            .any(|instruction| {
+                matches!(
+                    instruction.kind,
+                    InstructionKind::ReceiverCall {
+                        source: ReceiverSource::CallerPlace { .. },
+                        ..
+                    }
+                )
+            })
+}
+
+fn write_receiver_mode(writer: &mut Writer, mode: Option<ReceiverMode>) {
+    writer.u8(match mode {
+        None => 0,
+        Some(ReceiverMode::LocalCopy) => 1,
+        Some(ReceiverMode::MutableLocalCopy) => 2,
+        Some(ReceiverMode::Owned) => 3,
+        Some(ReceiverMode::SharedPlace) => 4,
+        Some(ReceiverMode::ExclusivePlace) => 5,
+    });
+}
+
+fn read_receiver_mode(
+    reader: &mut Reader<'_>,
+) -> Result<Option<ReceiverMode>, MachineRecoveryError> {
+    Ok(match reader.u8()? {
+        0 => None,
+        1 => Some(ReceiverMode::LocalCopy),
+        2 => Some(ReceiverMode::MutableLocalCopy),
+        3 => Some(ReceiverMode::Owned),
+        4 => Some(ReceiverMode::SharedPlace),
+        5 => Some(ReceiverMode::ExclusivePlace),
+        _ => return Err(MachineRecoveryError::InvalidEncoding),
+    })
+}
 
 fn codec_limits() -> ValueLimits {
     ValueLimits::new(u64::MAX, u64::MAX, u64::MAX, u64::MAX)
@@ -24,7 +83,8 @@ fn codec_limits() -> ValueLimits {
 
 pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
     let mut writer = Writer::default();
-    writer.raw(MAGIC);
+    let successor = program_uses_successor_wire(program);
+    writer.raw(if successor { MAGIC_V3 } else { MAGIC_V2 });
     writer.count(program.workflows().len());
     for (identity, workflow) in program
         .callable_identities()
@@ -38,6 +98,9 @@ pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
             writer.string(&parameter.name);
             writer.string(&parameter.ty.canonical_string());
             writer.boolean(parameter.mutable);
+            if successor {
+                write_receiver_mode(&mut writer, parameter.receiver_mode());
+            }
         }
         writer.string(&workflow.result.canonical_string());
         let effects = workflow.effects.iter().collect::<Vec<_>>();
@@ -61,9 +124,11 @@ pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
 
 pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, MachineRecoveryError> {
     let mut reader = Reader::new(bytes);
-    if reader.raw(MAGIC.len())? != MAGIC {
-        return Err(MachineRecoveryError::InvalidEncoding);
-    }
+    let successor = match reader.raw(MAGIC_V2.len())? {
+        magic if magic == MAGIC_V2 => false,
+        magic if magic == MAGIC_V3 => true,
+        _ => return Err(MachineRecoveryError::InvalidEncoding),
+    };
     let workflow_count = reader.count()?;
     let mut callables = Vec::with_capacity(workflow_count);
     for _ in 0..workflow_count {
@@ -74,10 +139,20 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
         let parameter_count = reader.count()?;
         let mut parameters = Vec::with_capacity(parameter_count);
         for _ in 0..parameter_count {
+            let name: Arc<str> = Arc::from(reader.string()?);
+            let ty = ty(&reader.string()?)?;
+            let mutable = reader.boolean()?;
             parameters.push(Parameter {
-                name: Arc::from(reader.string()?),
-                ty: ty(&reader.string()?)?,
-                mutable: reader.boolean()?,
+                receiver_mode: if successor {
+                    read_receiver_mode(&mut reader)?
+                } else if name.as_ref() == "self" {
+                    Some(ReceiverMode::from_v1_mutability(mutable))
+                } else {
+                    None
+                },
+                name,
+                ty,
+                mutable,
             });
         }
         let result = ty(&reader.string()?)?;
@@ -94,7 +169,7 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
             instructions.push(Instruction {
                 site: reader.position()?,
                 ty: ty(&reader.string()?)?,
-                kind: read_instruction(&mut reader)?,
+                kind: read_instruction(&mut reader, successor)?,
             });
         }
         callables.push((
@@ -111,7 +186,7 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
     let body_count = reader.count()?;
     let mut task_bodies = Vec::with_capacity(body_count);
     for _ in 0..body_count {
-        task_bodies.push(read_task_body(&mut reader)?);
+        task_bodies.push(read_task_body(&mut reader, successor)?);
     }
     if !reader.is_empty() {
         return Err(MachineRecoveryError::InvalidEncoding);
@@ -214,10 +289,25 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
             writer.string(callee.as_str());
             writer.usize(*arguments);
         }
-        InstructionKind::ReceiverCall { callee, arguments } => {
+        InstructionKind::ReceiverCall {
+            callee,
+            arguments,
+            source: ReceiverSource::CopiedValue,
+        } => {
             writer.u8(31);
             writer.string(callee.as_str());
             writer.usize(*arguments);
+        }
+        InstructionKind::ReceiverCall {
+            callee,
+            arguments,
+            source: ReceiverSource::CallerPlace { root, path },
+        } => {
+            writer.u8(32);
+            writer.string(callee.as_str());
+            writer.usize(*arguments);
+            writer.string(root);
+            write_value_path(writer, path);
         }
         InstructionKind::Return => writer.u8(16),
         InstructionKind::Operation => writer.u8(17),
@@ -266,7 +356,10 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
     }
 }
 
-fn read_instruction(reader: &mut Reader<'_>) -> Result<InstructionKind, MachineRecoveryError> {
+fn read_instruction(
+    reader: &mut Reader<'_>,
+    successor: bool,
+) -> Result<InstructionKind, MachineRecoveryError> {
     Ok(match reader.u8()? {
         0 => InstructionKind::Push(reader.value(codec_limits())?),
         1 => InstructionKind::Load(Arc::from(reader.string()?)),
@@ -316,7 +409,18 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<InstructionKind, MachineR
             callee: CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
                 .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
             arguments: reader.usize()?,
+            source: ReceiverSource::CopiedValue,
         },
+        32 if successor => InstructionKind::ReceiverCall {
+            callee: CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
+                .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
+            arguments: reader.usize()?,
+            source: ReceiverSource::CallerPlace {
+                root: Arc::from(reader.string()?),
+                path: read_value_path(reader)?,
+            },
+        },
+        32 => return Err(MachineRecoveryError::InvalidEncoding),
         16 => InstructionKind::Return,
         17 => InstructionKind::Operation,
         18 => InstructionKind::OperationWithOperands {
@@ -381,7 +485,10 @@ fn write_task_body(writer: &mut Writer, body: &ExecutableTaskBody) {
     }
 }
 
-fn read_task_body(reader: &mut Reader<'_>) -> Result<ExecutableTaskBody, MachineRecoveryError> {
+fn read_task_body(
+    reader: &mut Reader<'_>,
+    successor: bool,
+) -> Result<ExecutableTaskBody, MachineRecoveryError> {
     let identity = read_task_body_identity(reader)?;
     let result_type = ty(&reader.string()?)?;
     let capture_count = reader.count()?;
@@ -410,7 +517,7 @@ fn read_task_body(reader: &mut Reader<'_>) -> Result<ExecutableTaskBody, Machine
         instructions.push(Instruction {
             site: reader.position()?,
             ty: ty(&reader.string()?)?,
-            kind: read_instruction(reader)?,
+            kind: read_instruction(reader, successor)?,
         });
     }
     ExecutableTaskBody::new(
@@ -773,8 +880,8 @@ mod tests {
     use gantry_ir::{
         CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody,
         ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
-        InstructionKind, MachineProgram, Parameter, StructuralPosition, TaskBodyIdentity,
-        TypeDescriptor, Workflow,
+        InstructionKind, MachineProgram, Parameter, ReceiverMode, ReceiverSource,
+        StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow,
     };
 
     use super::{decode_machine_program, encode_machine_program};
@@ -880,6 +987,7 @@ mod tests {
                         name: Arc::from("value"),
                         ty: TypeDescriptor::STRING,
                         mutable: false,
+                        receiver_mode: None,
                     }],
                     result: TypeDescriptor::STRING,
                     effects: EffectSet::default(),
@@ -945,6 +1053,7 @@ mod tests {
                             kind: InstructionKind::ReceiverCall {
                                 callee: method_identity.clone(),
                                 arguments: 1,
+                                source: ReceiverSource::CopiedValue,
                             },
                         },
                         Instruction {
@@ -964,6 +1073,7 @@ mod tests {
                         name: Arc::from("self"),
                         ty: TypeDescriptor::INT,
                         mutable: false,
+                        receiver_mode: Some(ReceiverMode::LocalCopy),
                     }],
                     result: TypeDescriptor::INT,
                     effects: EffectSet::default(),
@@ -994,6 +1104,7 @@ mod tests {
             &InstructionKind::ReceiverCall {
                 callee: method_identity.clone(),
                 arguments: 1,
+                source: ReceiverSource::CopiedValue,
             },
         );
         assert_eq!(instruction_writer.finish()[0], 31);
@@ -1048,6 +1159,7 @@ mod tests {
                         name: Arc::from("self"),
                         ty: TypeDescriptor::INT,
                         mutable: false,
+                        receiver_mode: Some(ReceiverMode::LocalCopy),
                     }],
                     result: TypeDescriptor::UNIT,
                     effects: EffectSet::default(),
@@ -1078,6 +1190,262 @@ mod tests {
             .unwrap_or_else(|error| panic!("legacy-call decode failed: {error:?}"));
         assert_eq!(decoded, program);
         assert_eq!(encode_machine_program(&decoded), encoded);
+    }
+
+    #[test]
+    fn executable_program_codec_selects_v3_for_shared_caller_places_and_rejects_v2_opcode_32() {
+        let caller_path = CanonicalPath::new("crate::caller")
+            .unwrap_or_else(|error| panic!("caller path failed: {error}"));
+        let method_path = CanonicalPath::new("crate::Outer::value")
+            .unwrap_or_else(|error| panic!("method path failed: {error}"));
+        let caller = CanonicalCallableIdentity::free(&caller_path, &[]);
+        let method = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+            .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+        let outer = TypeDescriptor::declared(
+            CanonicalPath::new("crate::Outer")
+                .unwrap_or_else(|error| panic!("outer path failed: {error}")),
+        );
+        let instruction = |site: u64, ty, kind| Instruction {
+            site: StructuralPosition::new(vec![site])
+                .unwrap_or_else(|error| panic!("instruction site failed: {error}")),
+            ty,
+            kind,
+        };
+        let mut callables = vec![
+            (
+                caller,
+                Workflow {
+                    path: caller_path,
+                    parameters: vec![Parameter {
+                        name: Arc::from("item"),
+                        ty: outer,
+                        mutable: false,
+                        receiver_mode: None,
+                    }],
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        instruction(
+                            0,
+                            TypeDescriptor::INT,
+                            InstructionKind::ReceiverCall {
+                                callee: method.clone(),
+                                arguments: 1,
+                                source: ReceiverSource::CallerPlace {
+                                    root: Arc::from("item"),
+                                    path: vec![gantry_core::value::ValuePathSegment::StructField(
+                                        "value".to_owned(),
+                                    )],
+                                },
+                            },
+                        ),
+                        instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                    ],
+                },
+            ),
+            (
+                method,
+                Workflow {
+                    path: method_path,
+                    parameters: vec![Parameter {
+                        name: Arc::from("self"),
+                        ty: TypeDescriptor::INT,
+                        mutable: false,
+                        receiver_mode: Some(ReceiverMode::SharedPlace),
+                    }],
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        instruction(
+                            0,
+                            TypeDescriptor::INT,
+                            InstructionKind::Load(Arc::from("self")),
+                        ),
+                        instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                    ],
+                },
+            ),
+        ];
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let program = MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("shared receiver program failed: {error:?}"));
+        let encoded = encode_machine_program(&program);
+        assert_eq!(encoded.get(..8), Some(b"GNTPRG03".as_slice()));
+        assert!(encoded.contains(&32));
+        assert_eq!(decode_machine_program(&encoded), Ok(program.clone()));
+        let mut v2 = encoded;
+        v2[..8].copy_from_slice(b"GNTPRG02");
+        assert_eq!(
+            decode_machine_program(&v2),
+            Err(MachineRecoveryError::InvalidEncoding)
+        );
+    }
+
+    #[test]
+    fn executable_program_codec_selects_v3_for_an_unused_shared_receiver() {
+        let main_path = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("main path failed: {error}"));
+        let method_path = CanonicalPath::new("crate::Counter::value")
+            .unwrap_or_else(|error| panic!("method path failed: {error}"));
+        let main = CanonicalCallableIdentity::free(&main_path, &[]);
+        let method = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+            .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+        let mut callables = vec![
+            (
+                main,
+                Workflow {
+                    path: main_path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![Instruction {
+                        site: StructuralPosition::new(vec![0])
+                            .unwrap_or_else(|error| panic!("main site failed: {error}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    }],
+                },
+            ),
+            (
+                method,
+                Workflow {
+                    path: method_path,
+                    parameters: vec![Parameter {
+                        name: Arc::from("self"),
+                        ty: TypeDescriptor::INT,
+                        mutable: false,
+                        receiver_mode: Some(ReceiverMode::SharedPlace),
+                    }],
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![Instruction {
+                        site: StructuralPosition::new(vec![0])
+                            .unwrap_or_else(|error| panic!("method site failed: {error}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    }],
+                },
+            ),
+        ];
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let program = MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("unused shared receiver program failed: {error:?}"));
+        let encoded = encode_machine_program(&program);
+        assert_eq!(encoded.get(..8), Some(b"GNTPRG03".as_slice()));
+        assert_eq!(decode_machine_program(&encoded), Ok(program));
+    }
+
+    #[test]
+    fn executable_program_codec_scans_task_bodies_for_shared_caller_places() {
+        let caller_path = CanonicalPath::new("crate::caller")
+            .unwrap_or_else(|error| panic!("caller path failed: {error}"));
+        let method_path = CanonicalPath::new("crate::Outer::value")
+            .unwrap_or_else(|error| panic!("method path failed: {error}"));
+        let caller = CanonicalCallableIdentity::free(&caller_path, &[]);
+        let method = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+            .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+        let body_identity = TaskBodyIdentity::new(
+            caller.clone(),
+            StructuralPosition::new(vec![0])
+                .unwrap_or_else(|error| panic!("spawn site failed: {error}")),
+        );
+        let outer = TypeDescriptor::declared(
+            CanonicalPath::new("crate::Outer")
+                .unwrap_or_else(|error| panic!("outer path failed: {error}")),
+        );
+        let body = ExecutableTaskBody::new(
+            body_identity.clone(),
+            TypeDescriptor::INT,
+            vec![
+                ExecutableTaskCapture::new(Arc::from("item"), outer, false)
+                    .unwrap_or_else(|error| panic!("capture failed: {error:?}")),
+            ],
+            ExecutableTaskContext::v1(),
+            vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0, 0])
+                        .unwrap_or_else(|error| panic!("body call site failed: {error}")),
+                    ty: TypeDescriptor::INT,
+                    kind: InstructionKind::ReceiverCall {
+                        callee: method.clone(),
+                        arguments: 1,
+                        source: ReceiverSource::CallerPlace {
+                            root: Arc::from("item"),
+                            path: vec![gantry_core::value::ValuePathSegment::StructField(
+                                "value".to_owned(),
+                            )],
+                        },
+                    },
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![0, 1])
+                        .unwrap_or_else(|error| panic!("body completion site failed: {error}")),
+                    ty: TypeDescriptor::INT,
+                    kind: InstructionKind::TaskComplete,
+                },
+            ],
+        )
+        .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
+        let instruction = |site: u64, ty, kind| Instruction {
+            site: StructuralPosition::new(vec![site])
+                .unwrap_or_else(|error| panic!("instruction site failed: {error}")),
+            ty,
+            kind,
+        };
+        let mut callables = vec![
+            (
+                caller,
+                Workflow {
+                    path: caller_path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        instruction(
+                            0,
+                            TypeDescriptor::UNIT,
+                            InstructionKind::Spawn {
+                                handle: ExecutableTaskHandle::new(
+                                    Arc::from("child"),
+                                    TypeDescriptor::INT,
+                                )
+                                .unwrap_or_else(|error| panic!("handle failed: {error:?}")),
+                                body: body_identity,
+                            },
+                        ),
+                        instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+                    ],
+                },
+            ),
+            (
+                method,
+                Workflow {
+                    path: method_path,
+                    parameters: vec![Parameter {
+                        name: Arc::from("self"),
+                        ty: TypeDescriptor::INT,
+                        mutable: false,
+                        receiver_mode: Some(ReceiverMode::SharedPlace),
+                    }],
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        instruction(
+                            0,
+                            TypeDescriptor::INT,
+                            InstructionKind::Load(Arc::from("self")),
+                        ),
+                        instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                    ],
+                },
+            ),
+        ];
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let program = MachineProgram::with_task_bodies(callables, vec![body])
+            .unwrap_or_else(|error| panic!("task-body shared receiver program failed: {error:?}"));
+        let encoded = encode_machine_program(&program);
+        assert_eq!(encoded.get(..8), Some(b"GNTPRG03".as_slice()));
+        assert_eq!(decode_machine_program(&encoded), Ok(program));
     }
 
     #[test]

@@ -8,11 +8,13 @@ use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind};
 use gantry_core::strict_json::{JsonLimits, JsonNode, StrictJsonDocument};
 use gantry_core::unicode::{is_white_space, to_full_lowercase, to_full_uppercase};
-use gantry_core::value::{LogicalValue, LogicalValueView, ValueError, ValueLimitKind, ValueLimits};
+use gantry_core::value::{
+    LogicalValue, LogicalValueView, ValueError, ValueLimitKind, ValueLimits, ValuePathSegment,
+};
 use gantry_ir::generated::Effect;
 use gantry_ir::{
     AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison, ExecutableOperation,
-    Instruction, InstructionKind, LoopPhase, MachineProgram, Primitive, Projection,
+    Instruction, InstructionKind, LoopPhase, MachineProgram, Primitive, Projection, ReceiverSource,
     StructuralPosition, TypeDescriptor,
 };
 #[cfg(feature = "concurrent")]
@@ -711,6 +713,61 @@ struct WorkflowFrame {
     agent_at_entry: Option<Arc<str>>,
     session_stack_base: usize,
     session_at_entry: Option<ProtocolIdentity>,
+    receiver_admission: Option<SharedPlaceAdmission>,
+}
+
+/// Durable evidence that a callee frame was admitted through a shared caller place.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SharedPlaceAdmission {
+    root: Arc<str>,
+    path: Vec<ValuePathSegment>,
+}
+
+/// Resolves an immutable logical subvalue through an admitted caller-place path.
+fn value_at_path(value: &LogicalValue, path: &[ValuePathSegment]) -> Option<LogicalValue> {
+    let mut current = value.clone();
+    for segment in path {
+        current = match segment {
+            ValuePathSegment::ListItem(index)
+                if matches!(current.view(), LogicalValueView::List(_)) =>
+            {
+                current.member(*index)?
+            }
+            ValuePathSegment::TupleMember(index)
+                if matches!(current.view(), LogicalValueView::Tuple(_)) =>
+            {
+                current.member(*index)?
+            }
+            ValuePathSegment::StructField(name)
+                if matches!(current.view(), LogicalValueView::Struct { .. }) =>
+            {
+                current.field(name)?
+            }
+            ValuePathSegment::EnumPayload
+                if matches!(
+                    current.view(),
+                    LogicalValueView::Enum {
+                        has_payload: true,
+                        ..
+                    }
+                ) =>
+            {
+                current.payload()?
+            }
+            ValuePathSegment::OptionValue
+                if matches!(current.view(), LogicalValueView::Option { is_some: true }) =>
+            {
+                current.payload()?
+            }
+            ValuePathSegment::ResultValue
+                if matches!(current.view(), LogicalValueView::Result { .. }) =>
+            {
+                current.payload()?
+            }
+            _ => return None,
+        };
+    }
+    Some(current)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -915,6 +972,29 @@ impl MachineCheckpointV3 {
     #[must_use]
     pub const fn remaining_loop_iterations(&self) -> u64 {
         self.remaining_loop_iterations
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_clear_receiver_admission(&mut self) -> bool {
+        self.frames
+            .last_mut()
+            .and_then(|frame| frame.receiver_admission.take())
+            .is_some()
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_add_receiver_admission_to_root(&mut self) -> bool {
+        let Some(frame) = self.frames.first_mut() else {
+            return false;
+        };
+        if frame.receiver_admission.is_some() {
+            return false;
+        }
+        frame.receiver_admission = Some(SharedPlaceAdmission {
+            root: Arc::from("item"),
+            path: Vec::new(),
+        });
+        true
     }
 
     #[cfg(all(test, feature = "concurrent"))]
@@ -1289,6 +1369,7 @@ impl Machine {
                 agent_at_entry: None,
                 session_stack_base: 0,
                 session_at_entry: None,
+                receiver_admission: None,
             }],
             values: Vec::new(),
             occurrences: Vec::new(),
@@ -1390,6 +1471,7 @@ impl Machine {
                 agent_at_entry: None,
                 session_stack_base: 0,
                 session_at_entry: None,
+                receiver_admission: None,
             }],
             values: Vec::new(),
             occurrences: Vec::new(),
@@ -2169,9 +2251,22 @@ impl Machine {
                 source_limit,
             } => self.enter_loop(&workflow, &site, phase, source_limit, &mut budget_state),
             InstructionKind::LeaveOccurrence => self.leave_occurrence(&mut budget_state),
-            InstructionKind::Call { callee, arguments }
-            | InstructionKind::ReceiverCall { callee, arguments } => {
-                return self.call(workflow, site, callee, arguments, &mut budget_state);
+            InstructionKind::Call { callee, arguments } => {
+                return self.call(workflow, site, callee, arguments, None, &mut budget_state);
+            }
+            InstructionKind::ReceiverCall {
+                callee,
+                arguments,
+                source,
+            } => {
+                return self.call(
+                    workflow,
+                    site,
+                    callee,
+                    arguments,
+                    Some(source),
+                    &mut budget_state,
+                );
             }
             InstructionKind::Return => {
                 return self.return_value(workflow, site, &mut budget_state);
@@ -2660,6 +2755,7 @@ impl Machine {
         site: StructuralPosition,
         callee: CanonicalCallableIdentity,
         arguments: usize,
+        receiver_source: Option<ReceiverSource>,
         budget_state: &mut ExecutionBudgetState,
     ) -> MachineStep {
         if u64::try_from(self.frames.len()).map_or(true, |depth| {
@@ -2671,9 +2767,34 @@ impl Machine {
                 site,
             );
         }
-        let values = match self.peek_operands(arguments) {
-            Ok(values) => values.to_vec(),
-            Err(code) => return self.fail_at(code, workflow, site),
+        let (values, stack_arguments, receiver_admission) = match receiver_source {
+            Some(ReceiverSource::CallerPlace { root, path }) => {
+                let Some(stack_arguments) = arguments.checked_sub(1) else {
+                    return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+                };
+                let Some(binding) = self.binding(&root) else {
+                    return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+                };
+                let Some(receiver) = value_at_path(&binding.value, &path) else {
+                    return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+                };
+                let operands = match self.peek_operands(stack_arguments) {
+                    Ok(values) => values,
+                    Err(code) => return self.fail_at(code, workflow, site),
+                };
+                let mut values = Vec::with_capacity(arguments);
+                values.push(receiver);
+                values.extend_from_slice(operands);
+                (
+                    values,
+                    stack_arguments,
+                    Some(SharedPlaceAdmission { root, path }),
+                )
+            }
+            Some(ReceiverSource::CopiedValue) | None => match self.peek_operands(arguments) {
+                Ok(values) => (values.to_vec(), arguments, None),
+                Err(code) => return self.fail_at(code, workflow, site),
+            },
         };
         let Some(callee_index) = self.program.callable_index(&callee) else {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
@@ -2694,7 +2815,7 @@ impl Machine {
             return self.fail_at(code, workflow, site);
         }
         let occurrence = self.next_occurrence("call", &workflow, &site, None);
-        self.truncate_operands(arguments);
+        self.truncate_operands(stack_arguments);
         self.advance_pc();
         self.occurrences.push(occurrence);
         let mut scope = Scope::new();
@@ -2720,6 +2841,7 @@ impl Machine {
             agent_at_entry: self.agent.clone(),
             session_stack_base: self.session_stack.len(),
             session_at_entry: self.session,
+            receiver_admission,
         });
         self.finish_deterministic(workflow, site, Arc::from("call"))
     }
@@ -3378,13 +3500,13 @@ fn validate_machine_checkpoint(
         return Err(MachineRecoveryError::InvalidCheckpoint);
     }
 
-    for (_frame_index, frame) in checkpoint.frames.iter().enumerate() {
+    for (frame_index, frame) in checkpoint.frames.iter().enumerate() {
         let workflow = program
             .workflows()
             .get(frame.workflow)
             .ok_or(MachineRecoveryError::ProgramMismatch)?;
         #[cfg(feature = "concurrent")]
-        let instructions = if _frame_index == 0 {
+        let instructions = if frame_index == 0 {
             task_body.map_or(workflow.instructions.as_slice(), |body| body.instructions())
         } else {
             workflow.instructions.as_slice()
@@ -3426,6 +3548,76 @@ fn validate_machine_checkpoint(
                 {
                     return Err(MachineRecoveryError::InvalidCheckpoint);
                 }
+            }
+        }
+        let parent_instruction = frame_index.checked_sub(1).and_then(|parent_index| {
+            let parent = checkpoint.frames.get(parent_index)?;
+            let parent_workflow = program.workflows().get(parent.workflow)?;
+            #[cfg(feature = "concurrent")]
+            let instructions = if parent_index == 0 {
+                task_body.map_or(parent_workflow.instructions.as_slice(), |body| {
+                    body.instructions()
+                })
+            } else {
+                parent_workflow.instructions.as_slice()
+            };
+            #[cfg(not(feature = "concurrent"))]
+            let instructions = parent_workflow.instructions.as_slice();
+            parent
+                .pc
+                .checked_sub(1)
+                .and_then(|index| instructions.get(index))
+        });
+        let parent_requires_admission = matches!(
+            parent_instruction.map(|instruction| &instruction.kind),
+            Some(InstructionKind::ReceiverCall {
+                source: ReceiverSource::CallerPlace { .. },
+                ..
+            })
+        );
+        if parent_requires_admission != frame.receiver_admission.is_some() {
+            return Err(MachineRecoveryError::ProgramMismatch);
+        }
+        if let Some(admission) = &frame.receiver_admission {
+            let Some(parent) = frame_index
+                .checked_sub(1)
+                .and_then(|index| checkpoint.frames.get(index))
+            else {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
+            };
+            let Some(receiver) = frame.scopes.first().and_then(|scope| scope.get("self")) else {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            };
+            let Some(caller_value) = parent
+                .scopes
+                .iter()
+                .rev()
+                .find_map(|scope| scope.get(admission.root.as_ref()))
+                .and_then(|binding| value_at_path(&binding.value, &admission.path))
+            else {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            };
+            let Some(parent_instruction) = parent_instruction else {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            };
+            let Some(callee) = program.callable_identities().get(frame.workflow) else {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            };
+            let admission_matches_call = matches!(
+                &parent_instruction.kind,
+                InstructionKind::ReceiverCall {
+                    callee: instruction_callee,
+                    source: ReceiverSource::CallerPlace { root, path },
+                    ..
+                } if instruction_callee == callee
+                    && root.as_ref() == admission.root.as_ref()
+                    && path == &admission.path
+            );
+            if !admission_matches_call
+                || !value_matches_type(&caller_value, &receiver.ty)
+                || caller_value != receiver.value
+            {
+                return Err(MachineRecoveryError::ProgramMismatch);
             }
         }
     }
