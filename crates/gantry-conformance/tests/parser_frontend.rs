@@ -246,11 +246,28 @@ fn public_parser_rejects_malformed_exclusive_receiver_forms() {
     }
 }
 
-/// The owned/consuming receiver is a ratification proposal, not an admitted v1 form.
+/// `owned self` is an admitted receiver spelling, while `owned` stays a usable identifier.
 #[test]
-fn public_parser_rejects_owned_receiver_forms() {
-    for source in [
+fn public_parser_admits_owned_receiver_and_keeps_owned_contextual() {
+    let admitted = parse(
         "struct Counter { value: Int } impl Counter { fn take(owned self) -> Int { self.value } }",
+        256,
+        8,
+    );
+    assert!(admitted.is_valid(), "{:?}", admitted.diagnostics());
+
+    let identifier_use = parse(
+        "fn main(owned: Int) -> Int { let owned: Int = 1; owned }",
+        256,
+        8,
+    );
+    assert!(
+        identifier_use.is_valid(),
+        "{:?}",
+        identifier_use.diagnostics()
+    );
+
+    for source in [
         "struct Counter { value: Int } impl Counter { fn take(move self) -> Int { self.value } }",
         "struct Counter { value: Int } impl Counter { fn take(consuming self) -> Int { self.value } }",
         "struct Counter { value: Int } impl Counter { fn take(owned mut self) { } }",

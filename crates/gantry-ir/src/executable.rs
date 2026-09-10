@@ -872,6 +872,7 @@ fn validate_workflow(
                         (parameter.receiver_mode(), parameter.mutable),
                         (Some(crate::ReceiverMode::LocalCopy), false)
                             | (Some(crate::ReceiverMode::MutableLocalCopy), true)
+                            | (Some(crate::ReceiverMode::Owned), true)
                             | (Some(crate::ReceiverMode::SharedPlace), false)
                             | (Some(crate::ReceiverMode::ExclusivePlace), true)
                     ))
@@ -1029,9 +1030,9 @@ fn validate_instruction(
                 return Err(ProgramError::InvalidCall(workflow.clone()));
             };
             let source_matches_mode = match source {
-                ReceiverSource::CopiedValue => receiver
-                    .receiver_mode()
-                    .is_some_and(crate::ReceiverMode::copies_receiver),
+                ReceiverSource::CopiedValue => receiver.receiver_mode().is_some_and(|mode| {
+                    mode.copies_receiver() || matches!(mode, crate::ReceiverMode::Owned)
+                }),
                 ReceiverSource::CallerPlace { root, .. } => {
                     !root.is_empty()
                         && receiver
@@ -1386,6 +1387,49 @@ mod tests {
                 }),
             ),
             Err(ProgramError::InvalidCall(caller_path))
+        );
+    }
+
+    #[test]
+    fn receiver_parameters_admit_owned_mutable_and_reject_owned_immutable() {
+        let method_identity =
+            CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "bump", &[])
+                .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+
+        assert!(
+            call_program(
+                InstructionKind::ReceiverCall {
+                    callee: method_identity.clone(),
+                    arguments: 1,
+                    source: ReceiverSource::CopiedValue,
+                },
+                method_identity.clone(),
+                Some(Parameter {
+                    name: Arc::from("self"),
+                    ty: TypeDescriptor::INT,
+                    mutable: true,
+                    receiver_mode: Some(crate::ReceiverMode::Owned),
+                }),
+            )
+            .is_ok()
+        );
+
+        assert_eq!(
+            call_program(
+                InstructionKind::ReceiverCall {
+                    callee: method_identity.clone(),
+                    arguments: 1,
+                    source: ReceiverSource::CopiedValue,
+                },
+                method_identity,
+                Some(Parameter {
+                    name: Arc::from("self"),
+                    ty: TypeDescriptor::INT,
+                    mutable: false,
+                    receiver_mode: Some(crate::ReceiverMode::Owned),
+                }),
+            ),
+            Err(ProgramError::InvalidBinding(path("crate::callee")))
         );
     }
 }

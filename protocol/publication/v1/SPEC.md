@@ -3424,11 +3424,10 @@ payloads, owned receivers, or general loan forms.
 <a id="GNT-6.2b"></a>
 
 2b. A zero-argument monomorphic inherent method MAY declare `owned self` as the
-owned/consuming receiver. This is a ratification proposal, and the spelling is
-reserved but not admitted by the v1 parser or analyzer; its wire name MUST match
-the IR `Owned` receiver-mode variant when ratified. For a `Copyable` receiver,
-an owned admission MUST produce an independent logical copy and leave the source
-place valid. For a future `AffineDroppable` or `MustConsume` receiver, the value
+owned receiver. Its wire name MUST match the IR `Owned` receiver-mode variant.
+For a `Copyable` receiver, an owned receiver is an independent mutable local
+copy; the source value remains valid and no move or staging occurs in this
+increment. For a future `AffineDroppable` or `MustConsume` receiver, the value
 MUST be staged in the evaluation frame at a move transfer point and the source
 place marked uninitialized. Admission is left to right: the receiver is admitted
 first, then the remaining arguments, then arity, mode, depth, cancellation, and
@@ -3465,8 +3464,8 @@ type declarations, and task or channel transfer are excluded.
    external hook side effects and earlier successful assignments are not
    rolled back. This assignment-level atomicity is the v1 transaction
    boundary. The root binding of any assignment target MUST be declared `mut`,
-   except that receiver-field assignment is permitted through `mut self` or
-   `exclusive self`. Assigning a nested field constructs and commits one updated root value; it
+   except that receiver-field assignment is permitted through `mut self`,
+   `exclusive self`, or `owned self`. Assigning a nested field constructs and commits one updated root value; it
    does not create aliases to intermediate structs.
 <a id="GNT-6.4"></a>
 

@@ -1208,6 +1208,93 @@ mod tests {
     }
 
     #[test]
+    fn executable_program_codec_round_trips_owned_receiver_via_v3() {
+        let main_path = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("main path failed: {error}"));
+        let method_path = CanonicalPath::new("crate::Counter::bump")
+            .unwrap_or_else(|error| panic!("method path failed: {error}"));
+        let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+        let method_identity =
+            CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "bump", &[])
+                .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+        let mut callables = vec![
+            (
+                main_identity,
+                Workflow {
+                    path: main_path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: StructuralPosition::new(vec![0])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::Push(LogicalValue::integer(
+                                GantryInt::new(1)
+                                    .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                            )),
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::ReceiverCall {
+                                callee: method_identity.clone(),
+                                arguments: 1,
+                                source: ReceiverSource::CopiedValue,
+                            },
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![2])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            ),
+            (
+                method_identity.clone(),
+                Workflow {
+                    path: method_path,
+                    parameters: vec![Parameter {
+                        name: Arc::from("self"),
+                        ty: TypeDescriptor::INT,
+                        mutable: true,
+                        receiver_mode: Some(ReceiverMode::Owned),
+                    }],
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: StructuralPosition::new(vec![0])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::Load(Arc::from("self")),
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            ),
+        ];
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let program = MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("owned receiver program failed: {error:?}"));
+        let encoded = encode_machine_program(&program);
+        assert_eq!(encoded.get(..8), Some(b"GNTPRG03".as_slice()));
+        let decoded = decode_machine_program(&encoded)
+            .unwrap_or_else(|error| panic!("owned receiver decode failed: {error:?}"));
+        assert_eq!(decoded, program);
+        assert_eq!(encode_machine_program(&decoded), encoded);
+    }
+
+    #[test]
     fn executable_program_codec_preserves_legacy_call_opcode_programs() {
         let method_path = CanonicalPath::new("crate::Counter::value")
             .unwrap_or_else(|error| panic!("callee path failed: {error}"));

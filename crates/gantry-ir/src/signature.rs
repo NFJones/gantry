@@ -88,7 +88,7 @@ impl ReceiverMode {
             Self::MutableLocalCopy => Some("mut self"),
             Self::SharedPlace => Some("shared self"),
             Self::ExclusivePlace => Some("exclusive self"),
-            Self::Owned => None,
+            Self::Owned => Some("owned self"),
         }
     }
 }
@@ -325,6 +325,17 @@ mod tests {
             Ok("fn <crate::domain::Report>::inspect(shared self)->Int".to_owned())
         );
         assert_eq!(
+            CanonicalSignature::method(
+                &report,
+                "take",
+                ReceiverMode::Owned,
+                &[],
+                &TypeDescriptor::INT,
+            )
+            .map(|signature| signature.to_string()),
+            Ok("fn <crate::domain::Report>::take(owned self)->Int".to_owned())
+        );
+        assert_eq!(
             ReceiverMode::from_v1_mutability(false),
             ReceiverMode::LocalCopy
         );
@@ -337,6 +348,7 @@ mod tests {
         assert!(ReceiverMode::ExclusivePlace.mutates_caller_place());
         assert_eq!(ReceiverMode::Owned.wire_name(), "owned");
         assert_eq!(ReceiverMode::SharedPlace.wire_name(), "shared-place");
+        assert_eq!(ReceiverMode::Owned.signature_spelling(), Some("owned self"));
         let preserve = CanonicalPath::new("crate::preserve")
             .unwrap_or_else(|_| unreachable!("constant path is canonical"));
         let concrete =

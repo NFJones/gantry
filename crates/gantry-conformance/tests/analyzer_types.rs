@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use gantry::analysis::{
     AnalysisError, AnalysisStatus, analyze_package_types, analyze_package_types_with_limits,
 };
-use gantry::frontend::{PackageSyntaxStatus, validate_package_syntax};
+use gantry::frontend::validate_package_syntax;
 use gantry::portable::FrontendResourceCode;
 use gantry::source::{FrontendLimits, SourceLimits};
 use serde::Deserialize;
@@ -339,31 +339,88 @@ fn public_exclusive_receiver_admission_is_scoped_to_mutable_monomorphic_inherent
     }
 }
 
-/// The owned/consuming receiver is rejected by the parser and never reaches lowering.
+/// Owned receivers are mutable independent local copies scoped to zero-argument monomorphic inherent methods.
 #[test]
-fn analyzer_rejects_owned_receiver() {
-    let root = TempDirectory::new();
-    root.write(
-        "struct Counter { value: Int } impl Counter { fn take(owned self) -> Int { self.value } } fn main(counter: Counter) -> Int { counter.take() }",
+fn analyzer_admits_and_scopes_owned_receiver() {
+    let accepted = analyze(
+        "struct Counter { value: Int } impl Counter { fn bump(owned self) { self.value += 1; } } fn main(counter: Counter) { counter.bump(); }",
     );
-    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
-        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     assert_eq!(
-        syntax.status(),
-        PackageSyntaxStatus::Invalid,
+        accepted.status(),
+        AnalysisStatus::Valid,
         "{:?}",
-        syntax.diagnostics()
+        accepted.diagnostics()
+    );
+    assert!(accepted.executable_program().is_some());
+
+    for source in [
+        "struct Counter { value: Int } impl Counter { fn bump(owned self, extra: Int) -> Int { extra } } fn main() {}",
+        "struct Box<T> { value: T } impl Box<Int> { fn read(owned self) -> Int { self.value } } fn main() {}",
+        "struct Counter<T> { value: T } impl<T> Counter<T> { fn read(owned self) -> T { self.value } } fn main() {}",
+        "struct Counter { value: Int } impl Counter { fn read<T>(owned self) -> Int { self.value } } fn main() {}",
+        "trait Value { pure fn read(owned self) -> Int; } fn main() {}",
+        "struct Counter { value: Int } trait Value { pure fn read(self) -> Int; } impl Value for Counter { pure fn read(owned self) -> Int { self.value } } fn main() {}",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "owned-receiver-scope"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(rejected.executable_program().is_none());
+    }
+}
+
+/// Owned receivers render a mutable receiver in the closed callable signature, distinct from
+/// immutable `self` and `shared self`, while the workflow signature keeps the `owned self` spelling.
+#[test]
+fn owned_receiver_closed_signature_marks_the_receiver_mutable() {
+    let package = analyze(
+        "fn identity<T>(value: T) -> T { value } struct Counter { value: Int } impl Counter { fn bump(owned self) { self.value += 1; } fn read(self) -> Int { self.value } fn peek(shared self) -> Int { self.value } } fn main(counter: Counter) { counter.bump(); discard identity::<Int>(1); }",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    let signatures = package
+        .canonical_ir()
+        .unwrap_or_else(|| unreachable!("valid package has canonical IR"))
+        .generic_facts()
+        .executable()
+        .callables()
+        .iter()
+        .map(|callable| callable.signature().as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        signatures.contains(&"fn <crate::Counter>::bump(mut crate::Counter)->Unit"),
+        "{signatures:?}"
     );
     assert!(
-        syntax
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "unexpected-token"
-                && diagnostic.primary.is_some()),
-        "{:?}",
-        syntax.diagnostics()
+        signatures.contains(&"fn <crate::Counter>::read(crate::Counter)->Int"),
+        "{signatures:?}"
     );
-    assert!(syntax.parsed_sources().is_empty());
+    assert!(
+        signatures.contains(&"fn <crate::Counter>::peek(crate::Counter)->Int"),
+        "{signatures:?}"
+    );
+    assert!(
+        package.workflows().iter().any(|workflow| {
+            workflow.signature.as_str() == "fn <crate::Counter>::bump(owned self)->Unit"
+        }),
+        "{:#?}",
+        package.workflows()
+    );
 }
 
 /// A shared receiver exposes an immutable callee-local `self` binding.

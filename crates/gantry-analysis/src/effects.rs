@@ -319,6 +319,8 @@ fn analyze_callable(
                     ReceiverMode::SharedPlace
                 } else if direct_identifier(tree, parameter).as_deref() == Some("exclusive") {
                     ReceiverMode::ExclusivePlace
+                } else if direct_identifier(tree, parameter).as_deref() == Some("owned") {
+                    ReceiverMode::Owned
                 } else {
                     ReceiverMode::from_v1_mutability(has_direct_word(tree, parameter, "mut"))
                 }

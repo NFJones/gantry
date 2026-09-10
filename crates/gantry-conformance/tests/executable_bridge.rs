@@ -724,6 +724,64 @@ fn main() -> Int {
     ));
 }
 
+/// An owned receiver is an independent mutable local copy: it mutates without changing the caller.
+#[test]
+fn owned_inherent_method_is_a_mutable_local_copy_that_leaves_the_caller_unchanged() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn bump(owned self) { self.value += 1; } }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 7 };
+    counter.bump();
+    counter.value
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let owned_signature = "fn <crate::Counter>::bump(owned self)->Unit";
+    assert!(
+        package
+            .workflows()
+            .iter()
+            .any(|workflow| workflow.signature.to_string() == owned_signature),
+        "{:#?}",
+        package.workflows()
+    );
+    assert!(program.workflows().iter().any(|workflow| {
+        workflow.path.as_str() == "<crate::Counter>::bump"
+            && matches!(
+                workflow.parameters.as_slice(),
+                [gantry::ir::Parameter {
+                    name,
+                    mutable: true,
+                    receiver_mode: Some(gantry::ir::ReceiverMode::Owned),
+                    ..
+                }] if name.as_ref() == "self"
+            )
+    }));
+
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x5f; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("owned source program did not start: {error:?}"));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
 /// Exclusive subplace reborrows propagate mutations to their caller while shared reborrows observe the updated value.
 #[test]
 fn exclusive_inherent_methods_propagate_strict_reborrows_and_allow_shared_reborrows() {

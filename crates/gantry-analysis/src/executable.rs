@@ -546,7 +546,9 @@ impl Compiler<'_> {
             let receiver_mode = method_receiver_mode(self.tree, callable)?;
             let mutable = matches!(
                 receiver_mode,
-                gantry_ir::ReceiverMode::MutableLocalCopy | gantry_ir::ReceiverMode::ExclusivePlace
+                gantry_ir::ReceiverMode::MutableLocalCopy
+                    | gantry_ir::ReceiverMode::Owned
+                    | gantry_ir::ReceiverMode::ExclusivePlace
             );
             parameters.push(Parameter {
                 name: Arc::from("self"),
@@ -2480,6 +2482,10 @@ fn method_receiver_mode(
         matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(value)) if value.as_ref() == "exclusive")
     }) {
         Ok(gantry_ir::ReceiverMode::ExclusivePlace)
+    } else if receiver.children().iter().filter_map(|child| tree.node(*child)).any(|node| {
+        matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(value)) if value.as_ref() == "owned")
+    }) {
+        Ok(gantry_ir::ReceiverMode::Owned)
     } else {
         Ok(gantry_ir::ReceiverMode::from_v1_mutability(node_has_word(
             tree, receiver, "mut",

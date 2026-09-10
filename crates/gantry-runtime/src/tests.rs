@@ -2000,6 +2000,104 @@ fn shared_receiver_calls_resolve_nested_caller_places_and_recover() {
 
 #[cfg(feature = "durable")]
 #[test]
+fn owned_receiver_call_checkpoint_recovers_without_admission_extension() {
+    let main_path = path("crate::main");
+    let method_path = path("crate::Counter::bump");
+    let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let method_identity = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "bump", &[])
+        .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+    let mut callables = vec![
+        (
+            main_identity,
+            Workflow {
+                path: main_path,
+                parameters: Vec::new(),
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::Push(LogicalValue::integer(
+                            GantryInt::new(7)
+                                .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                        )),
+                    ),
+                    instruction(
+                        1,
+                        TypeDescriptor::INT,
+                        InstructionKind::ReceiverCall {
+                            callee: method_identity.clone(),
+                            arguments: 1,
+                            source: ReceiverSource::CopiedValue,
+                        },
+                    ),
+                    instruction(2, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            method_identity.clone(),
+            Workflow {
+                path: method_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: TypeDescriptor::INT,
+                    mutable: true,
+                    receiver_mode: Some(ReceiverMode::Owned),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::Load(Arc::from("self")),
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    let program = Arc::new(
+        MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("owned receiver program failed: {error:?}")),
+    );
+
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        Vec::new(),
+        limits(8, 1, 1, 2, 8),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP03".as_slice()));
+    let checkpoint = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("owned receiver checkpoint decode failed: {error:?}"));
+    assert_eq!(checkpoint.canonical_bytes(), bytes);
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("owned receiver budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("owned receiver recovery failed: {error:?}"));
+    assert_eq!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted"))
+        ))
+    );
+}
+
+#[cfg(feature = "durable")]
+#[test]
 fn first_scope_parameters_coexist_with_let_locals_across_checkpoint_round_trip() {
     let root = workflow(
         "crate::main",

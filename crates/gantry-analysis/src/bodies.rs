@@ -1677,9 +1677,22 @@ fn source_callable_parameters(
     let node = tree.node(callable).ok_or(AnalysisError::Invariant)?;
     let mut parameters = Vec::new();
     if let Some(receiver) = receiver {
+        let receiver_mutable = node
+            .children()
+            .iter()
+            .copied()
+            .find(|child| {
+                tree.node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Parameter))
+            })
+            .and_then(|child| tree.node(child))
+            .is_some_and(|parameter| {
+                node_has_reserved_word(tree, parameter, "mut")
+                    || node_has_identifier(tree, parameter, "exclusive")
+                    || node_has_identifier(tree, parameter, "owned")
+            });
         parameters.push(WorkflowParameter {
-            mutable: node_has_reserved_word(tree, node, "mut")
-                || node_has_identifier(tree, node, "exclusive"),
+            mutable: receiver_mutable,
             ty: receiver.clone(),
         });
     }
@@ -1732,6 +1745,12 @@ fn validate_shared_receiver_declarations(
                     "exclusive",
                     "exclusive-receiver-scope",
                     "`exclusive self` is limited to zero-argument monomorphic inherent methods",
+                ))
+            } else if node_has_identifier(source.tree(), receiver, "owned") {
+                Some((
+                    "owned",
+                    "owned-receiver-scope",
+                    "`owned self` is limited to zero-argument monomorphic inherent methods",
                 ))
             } else {
                 None
@@ -1805,6 +1824,8 @@ fn method_receiver_mode(
         Ok(ReceiverMode::SharedPlace)
     } else if node_has_identifier(tree, receiver, "exclusive") {
         Ok(ReceiverMode::ExclusivePlace)
+    } else if node_has_identifier(tree, receiver, "owned") {
+        Ok(ReceiverMode::Owned)
     } else {
         Ok(ReceiverMode::from_v1_mutability(node_has_reserved_word(
             tree, receiver, "mut",
@@ -3123,7 +3144,8 @@ fn assignment_root_is_mutable(
                 matches!(parameter.form(), SyntaxForm::Parameter)
                     && node_has_reserved_word(tree, parameter, "self")
                     && (node_has_reserved_word(tree, parameter, "mut")
-                        || node_has_identifier(tree, parameter, "exclusive"))
+                        || node_has_identifier(tree, parameter, "exclusive")
+                        || node_has_identifier(tree, parameter, "owned"))
             })
         }));
     }

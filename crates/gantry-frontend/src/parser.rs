@@ -984,6 +984,7 @@ impl<'a> Machine<'a> {
             self.begin(SyntaxForm::Parameter);
             if self.at_identifier_named("shared")
                 || self.at_identifier_named("exclusive")
+                || self.at_identifier_named("owned")
                 || self.at_word("mut")
             {
                 self.consume_current()?;
