@@ -5,6 +5,8 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 #[cfg(feature = "evaluator")]
 use std::sync::Arc;
+#[cfg(feature = "frontend")]
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "frontend")]
 use std::future::Future;
@@ -48,6 +50,9 @@ const EXIT_SUCCESS: u8 = 0;
 const EXIT_SOURCE_INVALID: u8 = 1;
 const EXIT_OPERATIONAL_FAILURE: u8 = 2;
 const EXIT_USAGE: u8 = 64;
+/// Upper bound on how long the CLI waits for one coordinator future to settle.
+#[cfg(feature = "frontend")]
+const BLOCKING_WAIT_LIMIT: Duration = Duration::from_secs(300);
 const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantry (check|analyze [--json]) [PACKAGE_ROOT]\n       gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]\n\n`run` owns a multithread Tokio runtime. An omitted worker count uses Tokio's CPU-derived default; `--workers` accepts only a positive integer. Generic declarations and static traits are checked by `analyze`; `--json` emits inferred substitutions, selected calls, effects, concrete schemas, and structured diagnostics. Every package activity uses twelve finite frontend-policy fields; see docs/frontend-resource-policy.md and docs/generics-and-traits.md.";
 
 /// Starts the Gantry command-line application.
@@ -131,12 +136,18 @@ fn check_command(
         .unwrap_or_else(|_| unreachable!("fixed CLI blocking capacities are valid"));
     let coordinator =
         ValidatePackageCoordinator::new(&allocator, &identity_source, &clock, &blocking);
-    let result = block_on(coordinator.validate(ValidatePackageRequest {
-        package_root,
-        protocol_selection: &selection,
-        frontend_limits: limits,
-        event_delivery: None,
-    }));
+    let result = match block_on(
+        coordinator.validate(ValidatePackageRequest {
+            package_root,
+            protocol_selection: &selection,
+            frontend_limits: limits,
+            event_delivery: None,
+        }),
+        BLOCKING_WAIT_LIMIT,
+    ) {
+        Ok(result) => result,
+        Err(BlockingStall) => return report_blocking_stall(stderr),
+    };
     match result {
         Ok(result) if result.phase.status() == PackageSyntaxStatus::Valid => {
             write_line(stdout, "syntax-valid", stderr)
@@ -215,13 +226,19 @@ fn analyze_command_with_format(
         .unwrap_or_else(|_| unreachable!("fixed CLI blocking capacities are valid"));
     let coordinator =
         AnalyzePackageCoordinator::new(&allocator, &identity_source, &clock, &blocking);
-    let result = block_on(coordinator.analyze(AnalyzePackageRequest {
-        package_root,
-        protocol_selection: &selection,
-        semantic_mode: gantry::mode::SemanticMode::Portable,
-        frontend_limits: limits,
-        event_delivery: None,
-    }));
+    let result = match block_on(
+        coordinator.analyze(AnalyzePackageRequest {
+            package_root,
+            protocol_selection: &selection,
+            semantic_mode: gantry::mode::SemanticMode::Portable,
+            frontend_limits: limits,
+            event_delivery: None,
+        }),
+        BLOCKING_WAIT_LIMIT,
+    ) {
+        Ok(result) => result,
+        Err(BlockingStall) => return report_blocking_stall(stderr),
+    };
     match result {
         Ok(result) => {
             if json_output {
@@ -586,16 +603,33 @@ fn published_selection() -> ProtocolSelection {
 }
 
 #[cfg(feature = "frontend")]
-fn block_on<F: Future>(future: F) -> F::Output {
+/// Drives one coordinator future with a bounded wait.
+///
+/// A blocking job publishes through shared state rather than a waker, so the loop parks briefly
+/// between polls instead of spinning, and a job that never settles reports [`BlockingStall`] once
+/// `wait_limit` elapses instead of spinning forever.
+fn block_on<F: Future>(future: F, wait_limit: Duration) -> Result<F::Output, BlockingStall> {
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
     let mut future = pin!(future);
+    let started = Instant::now();
     loop {
         match future.as_mut().poll(&mut context) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
+            Poll::Ready(output) => return Ok(output),
+            Poll::Pending if started.elapsed() >= wait_limit => return Err(BlockingStall),
+            Poll::Pending => std::thread::park_timeout(Duration::from_millis(1)),
         }
     }
+}
+
+/// Reports that a coordinator future did not settle inside the CLI wait limit.
+#[derive(Debug)]
+struct BlockingStall;
+
+/// Reports one stalled coordinator future and returns the operational-failure exit code.
+fn report_blocking_stall(stderr: &mut dyn Write) -> u8 {
+    let _ = writeln!(stderr, "operational-failure[blocking-stall]");
+    EXIT_OPERATIONAL_FAILURE
 }
 
 #[cfg(test)]
@@ -950,5 +984,32 @@ mod tests {
         );
         assert!(stdout.is_empty());
         assert!(String::from_utf8_lossy(&stderr).contains("usage: gantry"));
+    }
+}
+
+/// Bounded-wait checks for the CLI coordinator driver.
+#[cfg(all(test, feature = "frontend"))]
+mod blocking_wait_tests {
+    use std::future;
+    use std::time::{Duration, Instant};
+
+    use super::block_on;
+
+    #[test]
+    fn block_on_returns_a_ready_result() {
+        assert!(matches!(
+            block_on(future::ready(7_u8), Duration::from_secs(1)),
+            Ok(7)
+        ));
+    }
+
+    #[test]
+    fn block_on_reports_a_stalled_job_within_the_wait_limit() {
+        let started = Instant::now();
+        assert!(
+            block_on(future::pending::<u8>(), Duration::from_millis(20)).is_err(),
+            "a job that never settles must report a stall"
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 }
