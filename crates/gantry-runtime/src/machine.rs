@@ -1,5 +1,6 @@
 //! Explicit-frame transition machine implementation.
 
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -715,6 +716,7 @@ struct WorkflowFrame {
     session_at_entry: Option<ProtocolIdentity>,
     receiver_admission: Option<SharedPlaceAdmission>,
     place_initialization: Vec<PlaceInitialization>,
+    moved_out: Vec<MovedPlace>,
 }
 
 /// Durable evidence that a callee frame was admitted through a shared caller place.
@@ -729,7 +731,119 @@ struct SharedPlaceAdmission {
 struct PlaceInitialization {
     root: Arc<str>,
     path: Vec<ValuePathSegment>,
+    /// Reserved bit: the wire layout keeps it so a checkpoint that claims an initialized staging
+    /// entry is rejected, and every valid checkpoint must carry `false`, because a staging entry
+    /// only exists while the moved-out subplace has not been reinitialized.
     initialized: bool,
+}
+
+/// Durable evidence that a completed owned call moved one caller place out.
+///
+/// The entry is recorded in the frame that owned the place, not in the callee frame that staged
+/// the move, so the mark survives the callee-frame pop. The analyzer is the source-level guard
+/// that rejects a read or admission of a moved-out place, and the machine enforces the same guard
+/// dynamically as a defence in depth: a read of the moved-out place, a receiver or capture
+/// admission of it, and a projection of an enclosing loaded value into one of its subplaces are
+/// reported as an internal invariant violation rather than as a recoverable evaluation failure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MovedPlace {
+    root: Arc<str>,
+    path: Vec<ValuePathSegment>,
+}
+
+/// Two places intersect when they share one root and one path is a prefix of the other.
+fn places_intersect(
+    left_root: &str,
+    left_path: &[ValuePathSegment],
+    right_root: &str,
+    right_path: &[ValuePathSegment],
+) -> bool {
+    left_root == right_root
+        && (left_path.starts_with(right_path) || right_path.starts_with(left_path))
+}
+
+/// Ranks one path segment by the canonical wire tag of the checkpoint codec.
+fn value_path_segment_rank(segment: &ValuePathSegment) -> u8 {
+    match segment {
+        ValuePathSegment::ListItem(_) => 0,
+        ValuePathSegment::TupleMember(_) => 1,
+        ValuePathSegment::StructField(_) => 2,
+        ValuePathSegment::EnumPayload => 3,
+        ValuePathSegment::OptionValue => 4,
+        ValuePathSegment::ResultValue => 5,
+    }
+}
+
+/// Orders two path segments by canonical tag and then by tag payload.
+fn value_path_segment_cmp(left: &ValuePathSegment, right: &ValuePathSegment) -> Ordering {
+    value_path_segment_rank(left)
+        .cmp(&value_path_segment_rank(right))
+        .then_with(|| match (left, right) {
+            (ValuePathSegment::ListItem(left), ValuePathSegment::ListItem(right))
+            | (ValuePathSegment::TupleMember(left), ValuePathSegment::TupleMember(right)) => {
+                left.cmp(right)
+            }
+            (ValuePathSegment::StructField(left), ValuePathSegment::StructField(right)) => {
+                left.cmp(right)
+            }
+            _ => Ordering::Equal,
+        })
+}
+
+/// Orders two canonical path segments by their canonical segment order.
+fn canonical_path_cmp(left: &[ValuePathSegment], right: &[ValuePathSegment]) -> Ordering {
+    for (left, right) in left.iter().zip(right) {
+        let ordering = value_path_segment_cmp(left, right);
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+    }
+    left.len().cmp(&right.len())
+}
+
+impl MovedPlace {
+    /// Orders two moved-out entries by root and then by canonical path segments.
+    fn canonical_cmp(&self, other: &Self) -> Ordering {
+        self.root
+            .cmp(&other.root)
+            .then_with(|| canonical_path_cmp(&self.path, &other.path))
+    }
+}
+
+/// Place origin of one staged value.
+///
+/// `Load` records the place it read and every `Project` extends that record, so a projection into
+/// a moved-out subplace of an enclosing place can be detected even though reading the enclosing
+/// place itself stays legal. The stack runs in lockstep with the staged value stack.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LoadedPlace {
+    root: Arc<str>,
+    path: Vec<ValuePathSegment>,
+}
+
+impl LoadedPlace {
+    /// Returns this place extended by one projected path segment.
+    fn extended(&self, segment: ValuePathSegment) -> Self {
+        let mut path = Vec::with_capacity(self.path.len() + 1);
+        path.extend_from_slice(&self.path);
+        path.push(segment);
+        Self {
+            root: Arc::clone(&self.root),
+            path,
+        }
+    }
+}
+
+/// Records one completed owned move in the frame that owned the caller place.
+///
+/// Every existing intersecting entry is replaced by the transferred one, so a frame never records
+/// two intersecting moved-out places and the resulting vector stays in canonical order.
+fn record_moved_out(frame: &mut WorkflowFrame, root: Arc<str>, path: Vec<ValuePathSegment>) {
+    frame
+        .moved_out
+        .retain(|entry| !places_intersect(&entry.root, &entry.path, &root, &path));
+    frame.moved_out.push(MovedPlace { root, path });
+    frame.moved_out.sort_by(MovedPlace::canonical_cmp);
 }
 
 /// Resolves an immutable logical subvalue through an admitted caller-place path.
@@ -777,6 +891,24 @@ fn value_at_path(value: &LogicalValue, path: &[ValuePathSegment]) -> Option<Logi
         };
     }
     Some(current)
+}
+
+/// Returns the canonical path segment one list or tuple member projection addresses.
+fn member_path_segment(source: &LogicalValue, index: usize) -> ValuePathSegment {
+    match source.view() {
+        LogicalValueView::Tuple(_) => ValuePathSegment::TupleMember(index),
+        _ => ValuePathSegment::ListItem(index),
+    }
+}
+
+/// Returns the canonical path segment one payload projection addresses.
+fn payload_path_segment(source: &LogicalValue) -> ValuePathSegment {
+    match source.view() {
+        LogicalValueView::Enum { .. } => ValuePathSegment::EnumPayload,
+        LogicalValueView::Option { .. } => ValuePathSegment::OptionValue,
+        LogicalValueView::Result { .. } => ValuePathSegment::ResultValue,
+        _ => ValuePathSegment::EnumPayload,
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1123,6 +1255,23 @@ impl MachineCheckpointV3 {
             })
     }
 
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_add_moved_out(
+        &mut self,
+        frame_index: usize,
+        root: &str,
+        path: Vec<ValuePathSegment>,
+    ) -> bool {
+        let Some(frame) = self.frames.get_mut(frame_index) else {
+            return false;
+        };
+        frame.moved_out.push(MovedPlace {
+            root: Arc::from(root),
+            path,
+        });
+        true
+    }
+
     #[cfg(all(test, feature = "concurrent"))]
     pub(crate) fn test_set_pending_spawn_capture_value(
         &mut self,
@@ -1303,7 +1452,7 @@ impl MachineCheckpointV3 {
         encode_machine_checkpoint(self)
     }
 
-    /// Decodes one exact `GNTMCP03` through `GNTMCP06` checkpoint.
+    /// Decodes one exact `GNTMCP03` through `GNTMCP07` checkpoint.
     pub fn decode(program: &MachineProgram, bytes: &[u8]) -> Result<Self, MachineRecoveryError> {
         decode_machine_checkpoint(program, bytes)
     }
@@ -1337,6 +1486,7 @@ pub struct Machine {
     execution_budget: ExecutionBudget,
     frames: Vec<WorkflowFrame>,
     values: Vec<LogicalValue>,
+    values_places: Vec<Option<LoadedPlace>>,
     occurrences: Vec<Arc<str>>,
     counters: BTreeMap<String, u64>,
     source_loop_entries: BTreeMap<String, u64>,
@@ -1596,8 +1746,10 @@ impl Machine {
                 session_at_entry: None,
                 receiver_admission: None,
                 place_initialization: Vec::new(),
+                moved_out: Vec::new(),
             }],
             values: Vec::new(),
+            values_places: Vec::new(),
             occurrences: Vec::new(),
             counters: BTreeMap::new(),
             source_loop_entries: BTreeMap::new(),
@@ -1699,8 +1851,10 @@ impl Machine {
                 session_at_entry: None,
                 receiver_admission: None,
                 place_initialization: Vec::new(),
+                moved_out: Vec::new(),
             }],
             values: Vec::new(),
+            values_places: Vec::new(),
             occurrences: Vec::new(),
             counters: BTreeMap::new(),
             source_loop_entries: BTreeMap::new(),
@@ -1832,6 +1986,11 @@ impl Machine {
             self.values.len(),
             self.pending_operation.is_some(),
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_value_stack_alignment(&self) -> (usize, usize) {
+        (self.values.len(), self.values_places.len())
     }
 
     #[cfg(test)]
@@ -1970,6 +2129,10 @@ impl Machine {
             limits: checkpoint.limits,
             execution_budget,
             frames: checkpoint.frames,
+            // A checkpoint does not carry place origins, so every staged value resumes without a
+            // recorded origin: the projection guard then behaves exactly as it does for a value
+            // that never came from a place.
+            values_places: vec![None; checkpoint.values.len()],
             values: checkpoint.values,
             occurrences: checkpoint.occurrences,
             counters: checkpoint.counters,
@@ -2111,7 +2274,7 @@ impl Machine {
                 if !value_matches_type(&value, &suspension.expected_type) {
                     return Err(TaskControlCompletionError::TypeMismatch);
                 }
-                self.values.push(value);
+                self.push_staged(value, None);
                 self.finish_task_control(
                     suspension.workflow.clone(),
                     suspension.site.clone(),
@@ -2152,7 +2315,7 @@ impl Machine {
         if self.cancellation.is_some() {
             return Err(TaskControlCompletionError::Cancelled);
         }
-        self.values.push(LogicalValue::unit());
+        self.push_staged(LogicalValue::unit(), None);
         self.finish_task_control(
             suspension.workflow.clone(),
             suspension.site.clone(),
@@ -2276,8 +2439,8 @@ impl Machine {
         if operands > self.values.len() {
             return Err(OperationCompletionError::NotWaiting);
         }
-        self.values.truncate(self.values.len() - operands);
-        self.values.push(value);
+        self.truncate_staged(self.values.len() - operands);
+        self.push_staged(value, None);
         self.pending_operation = None;
         self.status = MachineStatus::Running;
         self.consecutive_transitions = 0;
@@ -2587,7 +2750,7 @@ impl Machine {
             .validate(self.limits.value_limits)
             .map_err(map_value_error)?;
         self.charge_transition(budget_state)?;
-        self.values.push(value);
+        self.push_staged(value, None);
         self.advance_pc();
         Ok(())
     }
@@ -2597,12 +2760,23 @@ impl Machine {
         name: &str,
         budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
+        // Reading the moved-out place, or one of its subplaces, cannot occur in an analyzed program,
+        // so reaching one is an internal invariant violation rather than an evaluation failure.
+        if self.current_place_reads_moved_out(name, &[]) {
+            return Err(RuntimeCode::InternalInvariant);
+        }
         let value = self
             .binding(name)
             .map(|binding| binding.value.clone())
             .ok_or(RuntimeCode::InternalInvariant)?;
         self.charge_transition(budget_state)?;
-        self.values.push(value);
+        self.push_staged(
+            value,
+            Some(LoadedPlace {
+                root: Arc::from(name),
+                path: Vec::new(),
+            }),
+        );
         self.advance_pc();
         Ok(())
     }
@@ -2626,7 +2800,7 @@ impl Machine {
             return Err(RuntimeCode::InternalInvariant);
         }
         self.charge_transition(budget_state)?;
-        self.values.pop();
+        self.pop_staged();
         self.frames
             .last_mut()
             .and_then(|frame| frame.scopes.last_mut())
@@ -2753,7 +2927,7 @@ impl Machine {
             }
         }
         self.charge_transition(budget_state)?;
-        self.values.pop();
+        self.pop_staged();
         self.binding_mut(name)
             .ok_or(RuntimeCode::InternalInvariant)?
             .value = candidate;
@@ -2770,6 +2944,7 @@ impl Machine {
                 .ok_or(RuntimeCode::InternalInvariant)?
                 .value = candidate;
         }
+        self.clear_moved_out(name, path);
         self.advance_pc();
         Ok(())
     }
@@ -2779,7 +2954,7 @@ impl Machine {
             return Err(RuntimeCode::InternalInvariant);
         }
         self.charge_transition(budget_state)?;
-        self.values.pop();
+        self.pop_staged();
         self.advance_pc();
         Ok(())
     }
@@ -2821,7 +2996,7 @@ impl Machine {
         .map_err(map_value_error)?;
         self.charge_transition(budget_state)?;
         self.truncate_operands(operands);
-        self.values.push(candidate);
+        self.push_staged(candidate, None);
         self.advance_pc();
         Ok(())
     }
@@ -2832,20 +3007,48 @@ impl Machine {
         budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
         let source = self.values.last().ok_or(RuntimeCode::InternalInvariant)?;
-        let projected = match projection {
-            Projection::Member(index) => source.member(index).ok_or_else(|| {
-                if matches!(source.view(), LogicalValueView::List(_)) {
-                    RuntimeCode::Deterministic(DeterministicEvaluationCode::ListIndexOutOfBounds)
-                } else {
-                    RuntimeCode::InternalInvariant
+        let source_place = self
+            .values_places
+            .last()
+            .ok_or(RuntimeCode::InternalInvariant)?
+            .clone();
+        let (projected, segment) = match projection {
+            Projection::Member(index) => (
+                source.member(index).ok_or_else(|| {
+                    if matches!(source.view(), LogicalValueView::List(_)) {
+                        RuntimeCode::Deterministic(
+                            DeterministicEvaluationCode::ListIndexOutOfBounds,
+                        )
+                    } else {
+                        RuntimeCode::InternalInvariant
+                    }
+                })?,
+                member_path_segment(source, index),
+            ),
+            Projection::Field(name) => (
+                source.field(&name).ok_or(RuntimeCode::InternalInvariant)?,
+                ValuePathSegment::StructField(name.to_string()),
+            ),
+            Projection::Payload => (
+                source.payload().ok_or(RuntimeCode::InternalInvariant)?,
+                payload_path_segment(source),
+            ),
+        };
+        // Reading the enclosing place stays legal, but projecting one of its moved-out subplaces
+        // must fail closed, and only the recorded place origin tells the two apart at run time.
+        let projected_place = match source_place {
+            Some(place) => {
+                let place = place.extended(segment);
+                if self.current_place_moved_out(&place.root, &place.path) {
+                    return Err(RuntimeCode::InternalInvariant);
                 }
-            })?,
-            Projection::Field(name) => source.field(&name).ok_or(RuntimeCode::InternalInvariant)?,
-            Projection::Payload => source.payload().ok_or(RuntimeCode::InternalInvariant)?,
+                Some(place)
+            }
+            None => None,
         };
         self.charge_transition(budget_state)?;
-        self.values.pop();
-        self.values.push(projected);
+        self.pop_staged();
+        self.push_staged(projected, projected_place);
         self.advance_pc();
         Ok(())
     }
@@ -2860,7 +3063,7 @@ impl Machine {
         let result = evaluate_primitive(primitive, operands, self.limits.value_limits)?;
         self.charge_transition(budget_state)?;
         self.truncate_operands(arity);
-        self.values.push(result);
+        self.push_staged(result, None);
         self.advance_pc();
         Ok(())
     }
@@ -2933,7 +3136,7 @@ impl Machine {
             position_key(site)
         ));
         self.charge_transition(budget_state)?;
-        self.values.pop();
+        self.pop_staged();
         self.occurrences.push(occurrence);
         self.frames
             .last_mut()
@@ -2955,6 +3158,11 @@ impl Machine {
             .last()
             .cloned()
             .ok_or(RuntimeCode::InternalInvariant)?;
+        let place = self
+            .values_places
+            .last()
+            .cloned()
+            .ok_or(RuntimeCode::InternalInvariant)?;
         let LogicalValueView::Option { is_some } = value.view() else {
             return Err(RuntimeCode::InternalInvariant);
         };
@@ -2971,9 +3179,12 @@ impl Machine {
             position_key(site)
         ));
         self.charge_transition(budget_state)?;
-        self.values.pop();
+        self.pop_staged();
         if let Some(payload) = payload {
-            self.values.push(payload);
+            self.push_staged(
+                payload,
+                place.map(|place| place.extended(ValuePathSegment::OptionValue)),
+            );
         }
         self.occurrences.push(occurrence);
         self.frames
@@ -2992,6 +3203,11 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let value = self
             .values
+            .last()
+            .cloned()
+            .ok_or(RuntimeCode::InternalInvariant)?;
+        let place = self
+            .values_places
             .last()
             .cloned()
             .ok_or(RuntimeCode::InternalInvariant)?;
@@ -3019,9 +3235,12 @@ impl Machine {
             position_key(site)
         ));
         self.charge_transition(budget_state)?;
-        self.values.pop();
+        self.pop_staged();
         if let Some(payload) = payload {
-            self.values.push(payload);
+            self.push_staged(
+                payload,
+                place.map(|place| place.extended(ValuePathSegment::EnumPayload)),
+            );
         }
         self.occurrences.push(occurrence);
         self.frames
@@ -3044,6 +3263,11 @@ impl Machine {
             .last()
             .cloned()
             .ok_or(RuntimeCode::InternalInvariant)?;
+        let place = self
+            .values_places
+            .last()
+            .cloned()
+            .ok_or(RuntimeCode::InternalInvariant)?;
         let LogicalValueView::Result { is_ok } = value.view() else {
             return Err(RuntimeCode::InternalInvariant);
         };
@@ -3056,8 +3280,11 @@ impl Machine {
             position_key(site)
         ));
         self.charge_transition(budget_state)?;
-        self.values.pop();
-        self.values.push(payload);
+        self.pop_staged();
+        self.push_staged(
+            payload,
+            place.map(|place| place.extended(ValuePathSegment::ResultValue)),
+        );
         self.occurrences.push(occurrence);
         self.frames
             .last_mut()
@@ -3164,6 +3391,11 @@ impl Machine {
                 let Some(stack_arguments) = arguments.checked_sub(1) else {
                     return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
                 };
+                // A caller place that this frame already moved out cannot be admitted again, so a
+                // re-admission is an internal invariant violation rather than an evaluation error.
+                if self.current_place_moved_out(root, path) {
+                    return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+                }
                 let Some(binding) = self.binding(root) else {
                     return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
                 };
@@ -3280,6 +3512,7 @@ impl Machine {
             session_at_entry: self.session,
             receiver_admission,
             place_initialization,
+            moved_out: Vec::new(),
         });
         self.finish_deterministic(workflow, site, Arc::from("call"))
     }
@@ -3300,6 +3533,10 @@ impl Machine {
         }
         let mut captures = Vec::with_capacity(body.captures().len());
         for expected in body.captures() {
+            // A task capture reads the caller-frame place, so a moved-out place cannot be captured.
+            if self.current_place_moved_out(expected.name(), &[]) {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            }
             let Some(binding) = self.binding(expected.name()) else {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
             };
@@ -3352,7 +3589,7 @@ impl Machine {
             if expected_type != TypeDescriptor::UNIT {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
             }
-            self.values.push(LogicalValue::unit());
+            self.push_staged(LogicalValue::unit(), None);
             self.advance_pc();
             self.consecutive_transitions = 0;
             return MachineStep::Transition(MachineLabel::Deterministic {
@@ -3466,7 +3703,7 @@ impl Machine {
         if let Err(code) = self.charge_transition(budget_state) {
             return self.fail_at(code, workflow, site);
         }
-        self.values.pop();
+        self.pop_staged();
         self.finish_outcome(MachineOutcome::Succeeded(value))
     }
 
@@ -3491,7 +3728,7 @@ impl Machine {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
         if self.frames.len() == 1 {
-            self.values.pop();
+            self.pop_staged();
             let outcome = MachineOutcome::Succeeded(value);
             return self.finish_outcome(outcome);
         }
@@ -3502,14 +3739,25 @@ impl Machine {
             .frames
             .pop()
             .unwrap_or_else(|| unreachable!("nonroot return retains frame"));
-        self.values.truncate(frame.stack_base);
-        self.values.push(value);
+        self.truncate_staged(frame.stack_base);
+        self.push_staged(value, None);
         self.occurrences
             .truncate(frame.occurrence_base.saturating_sub(1));
         self.agent_stack.truncate(frame.agent_stack_base);
         self.agent = frame.agent_at_entry;
         self.session_stack.truncate(frame.session_stack_base);
         self.session = frame.session_at_entry;
+        // A normal return of an owned callee transfers its single staging entry into the caller
+        // frame, so the moved-out place stays durably marked after the callee frame is gone. The
+        // caller binding keeps its value; the transfer is a logical discard. Failure and
+        // cancellation paths never reach this transfer.
+        let mut staged = frame.place_initialization;
+        if staged.len() == 1
+            && let Some(entry) = staged.pop()
+            && let Some(caller) = self.frames.last_mut()
+        {
+            record_moved_out(caller, entry.root, entry.path);
+        }
         self.finish_deterministic(workflow, site, Arc::from("return"))
     }
 
@@ -3785,6 +4033,41 @@ impl Machine {
             .find_map(|scope| scope.get_mut(name))
     }
 
+    /// Reports whether the current frame recorded an intersecting moved-out place.
+    fn current_place_moved_out(&self, root: &str, path: &[ValuePathSegment]) -> bool {
+        self.frames.last().is_some_and(|frame| {
+            frame
+                .moved_out
+                .iter()
+                .any(|entry| places_intersect(&entry.root, &entry.path, root, path))
+        })
+    }
+
+    /// Reports whether reading the place `root`/`path` would expose a moved-out place.
+    ///
+    /// A read of the moved-out place itself, or of one of its subplaces, is impossible for an
+    /// analyzed program. Reading an *enclosing* place is not: the lowering loads the enclosing
+    /// aggregate and then projects the surviving sibling subplace, which is how
+    /// `holder.token.consume(); moved + holder.marker` reads `holder.marker` after the partial
+    /// move of `holder.token`.
+    fn current_place_reads_moved_out(&self, root: &str, path: &[ValuePathSegment]) -> bool {
+        self.frames.last().is_some_and(|frame| {
+            frame
+                .moved_out
+                .iter()
+                .any(|entry| entry.root.as_ref() == root && path.starts_with(&entry.path))
+        })
+    }
+
+    /// Clears every moved-out entry of the current frame intersecting a freshly written place.
+    fn clear_moved_out(&mut self, root: &str, path: &[ValuePathSegment]) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame
+                .moved_out
+                .retain(|entry| !places_intersect(&entry.root, &entry.path, root, path));
+        }
+    }
+
     fn peek_operands(&self, count: usize) -> Result<&[LogicalValue], RuntimeCode> {
         let start = self
             .values
@@ -3796,7 +4079,32 @@ impl Machine {
 
     fn truncate_operands(&mut self, count: usize) {
         let length = self.values.len().saturating_sub(count);
+        self.truncate_staged(length);
+    }
+
+    /// Pushes one staged value together with the place it was loaded from, when known.
+    ///
+    /// The place stack always holds exactly one entry per staged value, so every push, pop, and
+    /// truncation goes through these helpers and asserts the invariant in debug builds.
+    fn push_staged(&mut self, value: LogicalValue, place: Option<LoadedPlace>) {
+        self.values.push(value);
+        self.values_places.push(place);
+        debug_assert_eq!(self.values.len(), self.values_places.len());
+    }
+
+    /// Pops one staged value together with its recorded place origin.
+    fn pop_staged(&mut self) -> Option<(LogicalValue, Option<LoadedPlace>)> {
+        let value = self.values.pop()?;
+        let place = self.values_places.pop().flatten();
+        debug_assert_eq!(self.values.len(), self.values_places.len());
+        Some((value, place))
+    }
+
+    /// Truncates the staged value stack, and its place origins, to `length` entries.
+    fn truncate_staged(&mut self, length: usize) {
         self.values.truncate(length);
+        self.values_places.truncate(length);
+        debug_assert_eq!(self.values.len(), self.values_places.len());
     }
 
     fn advance_pc(&mut self) {
@@ -4172,6 +4480,47 @@ fn validate_machine_checkpoint(
                 return Err(MachineRecoveryError::ProgramMismatch);
             };
             if !value_matches_type(staged, &receiver.ty) {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            }
+        }
+        // Every moved-out entry must be justified by an earlier owned caller-place call in this
+        // frame's own workflow, and the entries must stay canonical and pairwise non-intersecting.
+        // The justification is an existence check over instructions strictly before `pc`, and it
+        // keeps runtime-produced checkpoints consistent rather than verifying integrity: an
+        // adversary who can rewrite checkpoint bytes can also forge a mark. A forged mark can only
+        // be rejected here, fail closed on a later read, or lose the guard optimization; it never
+        // changes the caller binding, which recovery reproduces from this frame's own scopes.
+        for (entry_index, entry) in frame.moved_out.iter().enumerate() {
+            if entry.root.is_empty() {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
+            }
+            if frame.moved_out[..entry_index].iter().any(|prior| {
+                prior.canonical_cmp(entry) != Ordering::Less
+                    || places_intersect(&prior.root, &prior.path, &entry.root, &entry.path)
+            }) {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
+            }
+            let justified =
+                instructions[..frame.pc]
+                    .iter()
+                    .any(|instruction| match &instruction.kind {
+                        InstructionKind::ReceiverCall {
+                            callee,
+                            source: ReceiverSource::CallerPlace { root, path },
+                            ..
+                        } => {
+                            root.as_ref() == entry.root.as_ref()
+                                && path == &entry.path
+                                && program
+                                    .callable_index(callee)
+                                    .and_then(|index| program.workflows().get(index))
+                                    .and_then(|workflow| workflow.parameters.first())
+                                    .and_then(Parameter::receiver_mode)
+                                    == Some(ReceiverMode::Owned)
+                        }
+                        _ => false,
+                    });
+            if !justified {
                 return Err(MachineRecoveryError::ProgramMismatch);
             }
         }

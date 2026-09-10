@@ -4573,3 +4573,1060 @@ fn owned_move_cancellation_retains_consistent_staging_without_write_back() {
     assert_eq!(bytes.get(..8), Some(b"GNTMCP06".as_slice()));
     assert!(crate::MachineCheckpointV3::decode(&program, &bytes).is_ok());
 }
+
+/// The body shared by the owned fixture callees: push `7` and return it.
+#[cfg(feature = "durable")]
+fn owned_consume_body() -> Vec<Instruction> {
+    vec![
+        int_push(0, 7),
+        instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+    ]
+}
+
+/// One fixture caller-place receiver call into the fixture `crate::Token` method.
+#[cfg(feature = "durable")]
+fn receiver_call(site_index: u64, callee: &CanonicalCallableIdentity, root: &str) -> Instruction {
+    receiver_call_at_path(site_index, callee, root, Vec::new())
+}
+
+/// One fixture caller-place receiver call with an explicit subplace path.
+#[cfg(feature = "durable")]
+fn receiver_call_at_path(
+    site_index: u64,
+    callee: &CanonicalCallableIdentity,
+    root: &str,
+    path: Vec<ValuePathSegment>,
+) -> Instruction {
+    instruction(
+        site_index,
+        TypeDescriptor::INT,
+        InstructionKind::ReceiverCall {
+            callee: callee.clone(),
+            arguments: 1,
+            source: ReceiverSource::CallerPlace {
+                root: Arc::from(root),
+                path,
+            },
+        },
+    )
+}
+
+/// Builds a program whose `crate::main` drives caller-place receiver calls into fixture
+/// `crate::Token` methods, so caller-frame moved-out marks can be exercised end to end.
+#[cfg(feature = "durable")]
+fn affine_call_program<F>(
+    main_parameters: Vec<Parameter>,
+    main_result: TypeDescriptor,
+    methods: Vec<(&str, ReceiverMode, Vec<Instruction>)>,
+    build_main: F,
+) -> Arc<MachineProgram>
+where
+    F: FnOnce(&[CanonicalCallableIdentity]) -> Vec<Instruction>,
+{
+    let main_path = path("crate::main");
+    let token_type = TypeDescriptor::declared(path("crate::Token"));
+    let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let identities = methods
+        .iter()
+        .map(|(name, _, _)| {
+            CanonicalCallableIdentity::inherent(&token_type, name, &[])
+                .unwrap_or_else(|error| panic!("fixture method identity failed: {error}"))
+        })
+        .collect::<Vec<_>>();
+    let mut callables = vec![(
+        main_identity,
+        Workflow {
+            path: main_path,
+            parameters: main_parameters,
+            result: main_result,
+            effects: EffectSet::default(),
+            instructions: build_main(&identities),
+        },
+    )];
+    for ((name, mode, body), identity) in methods.into_iter().zip(identities) {
+        callables.push((
+            identity,
+            Workflow {
+                path: path(&format!("crate::Token::{name}")),
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: token_type.clone(),
+                    mutable: matches!(mode, ReceiverMode::Owned | ReceiverMode::ExclusivePlace),
+                    receiver_mode: Some(mode),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: body,
+            },
+        ));
+    }
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    Arc::new(
+        MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("fixture affine call program failed: {error:?}")),
+    )
+}
+
+/// `crate::main` moves out `token` and then `other`, then reads the moved-out place.
+#[cfg(feature = "durable")]
+fn two_place_owned_program() -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![token_parameter("token"), token_parameter("other")],
+        TypeDescriptor::INT,
+        vec![("consume", ReceiverMode::Owned, owned_consume_body())],
+        |identities| {
+            vec![
+                receiver_call(0, &identities[0], "token"),
+                receiver_call(1, &identities[0], "other"),
+                instruction(
+                    2,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Load(Arc::from("token")),
+                ),
+                instruction(
+                    3,
+                    TypeDescriptor::INT,
+                    InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                ),
+                instruction(4, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// `crate::main` moves out `token` and then reads it without writing it back.
+#[cfg(feature = "durable")]
+fn owned_then_load_program() -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![token_parameter("token")],
+        TypeDescriptor::INT,
+        vec![("consume", ReceiverMode::Owned, owned_consume_body())],
+        |identities| {
+            vec![
+                receiver_call(0, &identities[0], "token"),
+                instruction(
+                    1,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Load(Arc::from("token")),
+                ),
+                instruction(
+                    2,
+                    TypeDescriptor::INT,
+                    InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                ),
+                instruction(3, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// `crate::main` reinitializes the moved-out place before reading it again.
+#[cfg(feature = "durable")]
+fn assign_after_owned_move_program() -> Arc<MachineProgram> {
+    let token_type = TypeDescriptor::declared(path("crate::Token"));
+    affine_call_program(
+        vec![Parameter {
+            name: Arc::from("token"),
+            ty: token_type.clone(),
+            mutable: true,
+            receiver_mode: None,
+        }],
+        TypeDescriptor::INT,
+        vec![("consume", ReceiverMode::Owned, owned_consume_body())],
+        |identities| {
+            vec![
+                receiver_call(0, &identities[0], "token"),
+                instruction(
+                    1,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Push(token_value(3)),
+                ),
+                instruction(
+                    2,
+                    TypeDescriptor::UNIT,
+                    InstructionKind::Assign {
+                        name: Arc::from("token"),
+                        path: Vec::new(),
+                        target_type: TypeDescriptor::declared(path("crate::Token")),
+                    },
+                ),
+                instruction(
+                    3,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Load(Arc::from("token")),
+                ),
+                instruction(
+                    4,
+                    TypeDescriptor::INT,
+                    InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                ),
+                instruction(5, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// `crate::main` moves out `token` twice through the same owned method.
+#[cfg(feature = "durable")]
+fn repeat_owned_call_program() -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![token_parameter("token")],
+        TypeDescriptor::INT,
+        vec![("consume", ReceiverMode::Owned, owned_consume_body())],
+        |identities| {
+            vec![
+                receiver_call(0, &identities[0], "token"),
+                receiver_call(1, &identities[0], "token"),
+                instruction(2, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// `crate::main` moves out `token` and then admits it again as a shared receiver place.
+#[cfg(feature = "durable")]
+fn shared_after_owned_call_program() -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![token_parameter("token")],
+        TypeDescriptor::INT,
+        vec![
+            ("consume", ReceiverMode::Owned, owned_consume_body()),
+            (
+                "inspect",
+                ReceiverMode::SharedPlace,
+                vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::declared(path("crate::Token")),
+                        InstructionKind::Load(Arc::from("self")),
+                    ),
+                    instruction(
+                        1,
+                        TypeDescriptor::INT,
+                        InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                    ),
+                    instruction(2, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            ),
+        ],
+        |identities| {
+            vec![
+                receiver_call(0, &identities[0], "token"),
+                receiver_call(1, &identities[1], "token"),
+                instruction(2, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// `crate::main` moves out `token` and is then interrupted while staging the move of `other`.
+#[cfg(feature = "durable")]
+fn staged_after_moved_out_program() -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![token_parameter("token"), token_parameter("other")],
+        TypeDescriptor::INT,
+        vec![("consume", ReceiverMode::Owned, owned_consume_body())],
+        |identities| {
+            vec![
+                receiver_call(0, &identities[0], "token"),
+                receiver_call(1, &identities[0], "other"),
+                instruction(2, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// Advances a fixture machine through `count` successful deterministic transitions.
+#[cfg(feature = "durable")]
+fn step_deterministic(machine: &mut Machine, count: usize) {
+    for _ in 0..count {
+        assert!(matches!(
+            machine.step(),
+            MachineStep::Transition(MachineLabel::Deterministic { .. })
+        ));
+    }
+}
+
+/// The V7 moved-out section is written last, so the bytes from its magic to the end of the
+/// checkpoint are exactly that section. These helpers rebuild it byte for byte so the codec
+/// negatives below exercise real encodings; every fixture uses empty canonical paths, which keeps
+/// the test-local section writer trivial.
+#[cfg(feature = "durable")]
+const MOVED_OUT_SECTION_MAGIC: &[u8] = b"GNTRMO01";
+
+#[cfg(feature = "durable")]
+fn section_offset(bytes: &[u8], magic: &[u8]) -> usize {
+    bytes
+        .windows(magic.len())
+        .position(|window| window == magic)
+        .unwrap_or_else(|| panic!("checkpoint must carry the {magic:?} section"))
+}
+
+#[cfg(feature = "durable")]
+fn moved_out_section(frame_count: u64, frames: &[Vec<&str>]) -> Vec<u8> {
+    let mut section = MOVED_OUT_SECTION_MAGIC.to_vec();
+    section.extend_from_slice(&frame_count.to_be_bytes());
+    for frame in frames {
+        section.extend_from_slice(&(frame.len() as u64).to_be_bytes());
+        for root in frame {
+            section.extend_from_slice(&(root.len() as u64).to_be_bytes());
+            section.extend_from_slice(root.as_bytes());
+            section.extend_from_slice(&0_u64.to_be_bytes());
+        }
+    }
+    section
+}
+
+#[cfg(feature = "durable")]
+fn resplice_moved_out_section(bytes: &[u8], section: &[u8]) -> Vec<u8> {
+    let offset = section_offset(bytes, MOVED_OUT_SECTION_MAGIC);
+    let mut rewritten = bytes[..offset].to_vec();
+    rewritten.extend_from_slice(section);
+    rewritten
+}
+
+/// A normal owned return marks the caller place durably, and the mark survives recovery.
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_return_marks_caller_place_and_recovers() {
+    let program = two_place_owned_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5), token_value(9)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 3);
+    let checkpoint = machine.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP07".as_slice()));
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("moved-out checkpoint decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    assert_eq!(decoded.canonical_bytes(), bytes);
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("moved-out budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(Arc::clone(&program), decoded, budget)
+        .unwrap_or_else(|error| panic!("moved-out recovery failed: {error:?}"));
+    // An owned call on the untouched affine place still succeeds, and the following read of the
+    // moved-out place is refused as an internal invariant violation.
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Failed(failure)
+            if failure.code == RuntimeCode::InternalInvariant && failure.site == site(2)
+    ));
+    // The transfer is a logical discard: the caller bindings keep their original values.
+    assert_eq!(
+        machine.test_frame_binding_value(0, "token"),
+        Some(token_value(5))
+    );
+    assert_eq!(
+        machine.test_frame_binding_value(0, "other"),
+        Some(token_value(9))
+    );
+    assert_eq!(
+        recovered.test_frame_binding_value(0, "token"),
+        Some(token_value(5))
+    );
+    assert_eq!(
+        recovered.test_frame_binding_value(0, "other"),
+        Some(token_value(9))
+    );
+}
+
+/// A read of the moved-out place fails until an assignment makes it readable again.
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_blocks_load_until_the_place_is_assigned() {
+    let program = owned_then_load_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 3);
+    assert_eq!(
+        machine.checkpoint().canonical_bytes().get(..8),
+        Some(b"GNTMCP07".as_slice())
+    );
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Failed(failure)
+            if failure.code == RuntimeCode::InternalInvariant && failure.site == site(1)
+    ));
+
+    // Reassigning the place clears the mark, so the read succeeds and the checkpoint no longer
+    // selects the moved-out wire form.
+    let program = assign_after_owned_move_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 5);
+    assert_eq!(
+        machine.test_frame_binding_value(0, "token"),
+        Some(token_value(3))
+    );
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_ne!(
+        bytes.get(..8),
+        Some(b"GNTMCP07".as_slice()),
+        "an assigned place is no longer moved out"
+    );
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("reinitialized checkpoint decode failed: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("reinitialized budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(Arc::clone(&program), decoded, budget)
+        .unwrap_or_else(|error| panic!("reinitialized recovery failed: {error:?}"));
+    let expected = MachineOutcome::Succeeded(LogicalValue::integer(
+        GantryInt::new(3).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    ));
+    assert_eq!(drive(&mut recovered), expected);
+    assert_eq!(drive(&mut machine), expected);
+}
+
+/// A second owned call, or a shared receiver call, on the moved-out place fails closed.
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_blocks_second_admission_of_the_moved_out_place() {
+    let program = repeat_owned_call_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 3);
+    assert_eq!(
+        machine.checkpoint().canonical_bytes().get(..8),
+        Some(b"GNTMCP07".as_slice())
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Failure(failure))
+            if failure.code == RuntimeCode::InternalInvariant && failure.site == site(1)
+    ));
+
+    let program = shared_after_owned_call_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 3);
+    assert_eq!(
+        machine.checkpoint().canonical_bytes().get(..8),
+        Some(b"GNTMCP07".as_slice())
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Failure(failure))
+            if failure.code == RuntimeCode::InternalInvariant && failure.site == site(1)
+    ));
+}
+
+/// The moved-out section round-trips deterministically and rejects malformed encodings.
+#[cfg(feature = "durable")]
+#[test]
+fn moved_out_section_rejects_malformed_encodings() {
+    let program = two_place_owned_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5), token_value(9)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 6);
+    let checkpoint = machine.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP07".as_slice()));
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("moved-out section decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    assert_eq!(decoded.canonical_bytes(), bytes);
+    let offset = section_offset(&bytes, MOVED_OUT_SECTION_MAGIC);
+    assert_eq!(&bytes[offset..offset + 8], MOVED_OUT_SECTION_MAGIC);
+
+    // Truncated section.
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &bytes[..offset + 12]),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Missing section.
+    let mut missing = bytes.clone();
+    missing[offset..offset + MOVED_OUT_SECTION_MAGIC.len()].copy_from_slice(b"GNTRMO02");
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &missing),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Corrupted frame count.
+    let miscounted =
+        resplice_moved_out_section(&bytes, &moved_out_section(2, &[vec!["other", "token"]]));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &miscounted),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Corrupted entry count.
+    let mut bogus = MOVED_OUT_SECTION_MAGIC.to_vec();
+    bogus.extend_from_slice(&1_u64.to_be_bytes());
+    bogus.extend_from_slice(&u64::MAX.to_be_bytes());
+    let bogus = resplice_moved_out_section(&bytes, &bogus);
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &bogus),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Duplicated entry.
+    let duplicated = resplice_moved_out_section(
+        &bytes,
+        &moved_out_section(1, &[vec!["other", "token", "token"]]),
+    );
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &duplicated),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Reordered entries.
+    let reordered =
+        resplice_moved_out_section(&bytes, &moved_out_section(1, &[vec!["token", "other"]]));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &reordered),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Empty root.
+    let empty_root =
+        resplice_moved_out_section(&bytes, &moved_out_section(1, &[vec!["", "other"]]));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &empty_root),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Duplicated section.
+    let mut doubled = moved_out_section(1, &[vec!["other", "token"]]);
+    let copy = doubled.clone();
+    doubled.extend_from_slice(&copy);
+    let doubled = resplice_moved_out_section(&bytes, &doubled);
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &doubled),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+}
+
+/// A well-formed moved-out entry without a justifying executed owned call is a program mismatch.
+#[cfg(feature = "durable")]
+#[test]
+fn moved_out_entry_without_owned_call_is_program_mismatch() {
+    let (program, machine) = place_initialization_fixture();
+    let mut forged = machine.checkpoint();
+    assert!(forged.test_add_moved_out(0, "item", Vec::new()));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &forged.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+}
+
+/// The moved-out mark takes precedence over a live staging entry and keeps its section last.
+#[cfg(feature = "durable")]
+#[test]
+fn moved_out_section_follows_the_staged_move_section() {
+    let program = staged_after_moved_out_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5), token_value(9)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 4);
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(
+        bytes.get(..8),
+        Some(b"GNTMCP07".as_slice()),
+        "a moved-out mark takes precedence over a live staging entry"
+    );
+    let staged = section_offset(&bytes, b"GNTSTG01");
+    let moved = section_offset(&bytes, MOVED_OUT_SECTION_MAGIC);
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes);
+    assert!(
+        decoded.is_ok(),
+        "staged and moved-out checkpoint must decode: {:?}",
+        decoded.err()
+    );
+    assert!(staged < moved);
+    let mut swapped = bytes[..staged].to_vec();
+    swapped.extend_from_slice(&bytes[moved..]);
+    swapped.extend_from_slice(&bytes[staged..moved]);
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &swapped),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+}
+
+/// A `crate::Holder` fixture value with the given `token.value` and `marker`.
+#[cfg(feature = "durable")]
+fn holder_value(token: i64, marker: i64) -> LogicalValue {
+    LogicalValue::structure(
+        "crate::Holder",
+        vec![
+            ("token".to_owned(), token_value(token)),
+            (
+                "marker".to_owned(),
+                LogicalValue::integer(
+                    GantryInt::new(marker)
+                        .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                ),
+            ),
+        ],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture holder value failed: {error:?}"))
+}
+
+/// `crate::main` partially moves `holder.token` out, then reads the surviving sibling `marker`.
+#[cfg(feature = "durable")]
+fn partial_move_program() -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![Parameter {
+            name: Arc::from("holder"),
+            ty: TypeDescriptor::declared(path("crate::Holder")),
+            mutable: false,
+            receiver_mode: None,
+        }],
+        TypeDescriptor::INT,
+        vec![(
+            "consume",
+            ReceiverMode::Owned,
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Load(Arc::from("self")),
+                ),
+                instruction(
+                    1,
+                    TypeDescriptor::INT,
+                    InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                ),
+                instruction(2, TypeDescriptor::INT, InstructionKind::Return),
+            ],
+        )],
+        |identities| {
+            vec![
+                receiver_call_at_path(
+                    0,
+                    &identities[0],
+                    "holder",
+                    vec![ValuePathSegment::StructField("token".to_owned())],
+                ),
+                instruction(
+                    1,
+                    TypeDescriptor::declared(path("crate::Holder")),
+                    InstructionKind::Load(Arc::from("holder")),
+                ),
+                instruction(
+                    2,
+                    TypeDescriptor::INT,
+                    InstructionKind::Project(Projection::Field(Arc::from("marker"))),
+                ),
+                instruction(
+                    3,
+                    TypeDescriptor::INT,
+                    InstructionKind::Primitive(Primitive::Add),
+                ),
+                instruction(4, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// A partial move keeps the enclosing place readable for its surviving sibling subplaces.
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_allows_reading_surviving_siblings_of_a_partial_move() {
+    let program = partial_move_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    // The fixture callee loads, projects, and returns, so the caller place is marked by step four.
+    step_deterministic(&mut machine, 4);
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP07".as_slice()));
+    assert!(crate::MachineCheckpointV3::decode(&program, &bytes).is_ok());
+    assert_eq!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(10).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        ))
+    );
+}
+
+/// Builds a spawn fixture whose root first moves the captured place out through an owned call.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+fn moved_out_capture_program() -> Arc<MachineProgram> {
+    let root_path = path("crate::main");
+    let caller = CanonicalCallableIdentity::free(&root_path, &[]);
+    let body_identity = TaskBodyIdentity::new(caller.clone(), site(1));
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::INT,
+        vec![
+            ExecutableTaskCapture::new(Arc::from("count"), TypeDescriptor::INT, false)
+                .unwrap_or_else(|error| panic!("invalid fixture capture: {error:?}")),
+        ],
+        ExecutableTaskContext::v1(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::INT,
+                InstructionKind::Load(Arc::from("count")),
+            ),
+            instruction(1, TypeDescriptor::INT, InstructionKind::TaskComplete),
+        ],
+    )
+    .unwrap_or_else(|error| panic!("invalid fixture task body: {error:?}"));
+    let handle = ExecutableTaskHandle::new(Arc::from("child"), TypeDescriptor::INT)
+        .unwrap_or_else(|error| panic!("invalid fixture handle: {error:?}"));
+    let consume = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "consume", &[])
+        .unwrap_or_else(|error| panic!("fixture method identity failed: {error}"));
+    let root = Workflow {
+        path: root_path,
+        parameters: vec![Parameter {
+            name: Arc::from("count"),
+            ty: TypeDescriptor::INT,
+            mutable: false,
+            receiver_mode: None,
+        }],
+        result: TypeDescriptor::UNIT,
+        effects: EffectSet::default(),
+        instructions: vec![
+            instruction(
+                0,
+                TypeDescriptor::INT,
+                InstructionKind::ReceiverCall {
+                    callee: consume.clone(),
+                    arguments: 1,
+                    source: ReceiverSource::CallerPlace {
+                        root: Arc::from("count"),
+                        path: Vec::new(),
+                    },
+                },
+            ),
+            instruction(
+                1,
+                TypeDescriptor::UNIT,
+                InstructionKind::Spawn {
+                    handle,
+                    body: body_identity.clone(),
+                },
+            ),
+            instruction(
+                2,
+                TypeDescriptor::UNIT,
+                InstructionKind::Push(LogicalValue::unit()),
+            ),
+            instruction(3, TypeDescriptor::UNIT, InstructionKind::Return),
+        ],
+    };
+    let callee = Workflow {
+        path: path("crate::Int::consume"),
+        parameters: vec![Parameter {
+            name: Arc::from("self"),
+            ty: TypeDescriptor::INT,
+            mutable: true,
+            receiver_mode: Some(ReceiverMode::Owned),
+        }],
+        result: TypeDescriptor::INT,
+        effects: EffectSet::default(),
+        instructions: vec![
+            instruction(
+                0,
+                TypeDescriptor::INT,
+                InstructionKind::Push(LogicalValue::integer(
+                    GantryInt::new(7)
+                        .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                )),
+            ),
+            instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    };
+    let mut callables = vec![(caller, root), (consume, callee)];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    Arc::new(
+        MachineProgram::with_task_bodies(callables, vec![body])
+            .unwrap_or_else(|error| panic!("moved-out capture program failed: {error:?}")),
+    )
+}
+
+/// A task capture reads the caller frame, so capturing a moved-out place fails closed.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn capture_of_a_moved_out_place_is_an_invariant_violation() {
+    let program = moved_out_capture_program();
+    let token = LogicalValue::integer(
+        GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    );
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token.clone()],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 3);
+    assert_eq!(
+        machine.checkpoint().canonical_bytes().get(..8),
+        Some(b"GNTMCP07".as_slice())
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Failure(failure))
+            if failure.code == RuntimeCode::InternalInvariant && failure.site == site(1)
+    ));
+    assert_eq!(machine.test_frame_binding_value(0, "count"), Some(token));
+}
+
+/// `crate::main` partially moves `holder.token` out and then projects that very subplace.
+#[cfg(feature = "durable")]
+fn partial_move_token_program() -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![Parameter {
+            name: Arc::from("holder"),
+            ty: TypeDescriptor::declared(path("crate::Holder")),
+            mutable: false,
+            receiver_mode: None,
+        }],
+        TypeDescriptor::declared(path("crate::Token")),
+        vec![(
+            "consume",
+            ReceiverMode::Owned,
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Load(Arc::from("self")),
+                ),
+                instruction(
+                    1,
+                    TypeDescriptor::INT,
+                    InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                ),
+                instruction(2, TypeDescriptor::INT, InstructionKind::Return),
+            ],
+        )],
+        |identities| {
+            vec![
+                receiver_call_at_path(
+                    0,
+                    &identities[0],
+                    "holder",
+                    vec![ValuePathSegment::StructField("token".to_owned())],
+                ),
+                instruction(
+                    1,
+                    TypeDescriptor::declared(path("crate::Holder")),
+                    InstructionKind::Load(Arc::from("holder")),
+                ),
+                instruction(
+                    2,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Project(Projection::Field(Arc::from("token"))),
+                ),
+                instruction(
+                    3,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Return,
+                ),
+            ]
+        },
+    )
+}
+
+/// A projection into a moved-out subplace of an enclosing loaded place fails closed, while the
+/// projection of a surviving sibling of the same partial move keeps working.
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_rejects_projection_into_a_moved_out_subplace() {
+    let program = partial_move_token_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    // The fixture callee loads, projects, and returns, so the caller place is marked by step four.
+    step_deterministic(&mut machine, 4);
+    assert_eq!(
+        machine.checkpoint().canonical_bytes().get(..8),
+        Some(b"GNTMCP07".as_slice())
+    );
+    // The enclosing place still loads without complaint, and the projection of its moved-out
+    // subplace is then refused instead of serving the stale pre-move value.
+    assert_eq!(machine.test_value_stack_alignment(), (1, 1));
+    step_deterministic(&mut machine, 1);
+    assert_eq!(machine.test_value_stack_alignment(), (2, 2));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Failed(failure)
+            if failure.code == RuntimeCode::InternalInvariant && failure.site == site(2)
+    ));
+
+    // The surviving sibling of the same enclosing place stays readable.
+    let program = partial_move_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 4);
+    assert_eq!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(10).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        ))
+    );
+}
+
+/// `crate::main` admits `token` as a shared receiver place without moving anything out.
+#[cfg(feature = "durable")]
+fn shared_caller_place_program() -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![token_parameter("token")],
+        TypeDescriptor::INT,
+        vec![(
+            "inspect",
+            ReceiverMode::SharedPlace,
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::declared(path("crate::Token")),
+                    InstructionKind::Load(Arc::from("self")),
+                ),
+                instruction(
+                    1,
+                    TypeDescriptor::INT,
+                    InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                ),
+                instruction(2, TypeDescriptor::INT, InstructionKind::Return),
+            ],
+        )],
+        |identities| {
+            vec![
+                receiver_call(0, &identities[0], "token"),
+                instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// No legacy version can carry a moved-out mark, so a downgraded V7 checkpoint is rejected
+/// instead of silently re-enabling a read of the moved-out place.
+#[cfg(feature = "durable")]
+#[test]
+fn legacy_magic_rejects_a_checkpoint_that_carries_a_moved_out_mark() {
+    let program = two_place_owned_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5), token_value(9)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 3);
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP07".as_slice()));
+    for magic in [b"GNTMCP03", b"GNTMCP04", b"GNTMCP05", b"GNTMCP06"] {
+        let mut downgraded = bytes.clone();
+        downgraded[..8].copy_from_slice(magic);
+        assert!(
+            matches!(
+                crate::MachineCheckpointV3::decode(&program, &downgraded),
+                Err(crate::MachineRecoveryError::ProgramMismatch)
+            ),
+            "a {magic:?} relabel of a marked checkpoint must be a program mismatch"
+        );
+    }
+}
+
+/// Programs without an executed owned caller-place call keep decoding under the legacy formats.
+#[cfg(feature = "durable")]
+#[test]
+fn legacy_magic_still_decodes_without_an_executed_owned_caller_place_call() {
+    // A shared receiver admission never moves a place out, so no mark can be dropped.
+    let program = shared_caller_place_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 1);
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP05".as_slice()));
+    assert!(crate::MachineCheckpointV3::decode(&program, &bytes).is_ok());
+
+    // An owned caller-place call that has not executed yet is still legacy-representable.
+    let program = two_place_owned_program();
+    let machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5), token_value(9)],
+        limits(16, 1, 1, 2, 16),
+    );
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP03".as_slice()));
+    assert!(crate::MachineCheckpointV3::decode(&program, &bytes).is_ok());
+}
+
+/// The staged value stack and its place-origin stack stay aligned across a call that stages,
+/// projects, and pops values, and across a later assignment that pops a loaded value.
+#[cfg(feature = "durable")]
+#[test]
+fn staged_value_stack_keeps_its_place_origins_aligned() {
+    for (program, initial, steps) in [
+        (partial_move_program(), vec![holder_value(7, 3)], 4_usize),
+        (assign_after_owned_move_program(), vec![token_value(5)], 5),
+    ] {
+        let mut machine = new_machine(
+            Arc::clone(&program),
+            "crate::main",
+            initial,
+            limits(16, 1, 1, 2, 16),
+        );
+        assert_eq!(machine.test_value_stack_alignment(), (0, 0));
+        for step in 1..=steps {
+            assert!(matches!(
+                machine.step(),
+                MachineStep::Transition(MachineLabel::Deterministic { .. })
+            ));
+            let (values, places) = machine.test_value_stack_alignment();
+            assert_eq!(
+                values, places,
+                "the staged value and place stacks desynchronized after step {step}"
+            );
+        }
+    }
+
+    // A value loaded from the enclosing place stays paired with exactly one origin entry while
+    // its surviving sibling is projected out of it.
+    let program = partial_move_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 5);
+    assert_eq!(machine.test_value_stack_alignment(), (2, 2));
+    step_deterministic(&mut machine, 1);
+    assert_eq!(machine.test_value_stack_alignment(), (2, 2));
+    assert_eq!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(10).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        ))
+    );
+    assert_eq!(machine.test_value_stack_alignment(), (0, 0));
+}

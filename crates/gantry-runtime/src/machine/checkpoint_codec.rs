@@ -13,14 +13,15 @@ use gantry_core::value::{
 #[cfg(feature = "concurrent")]
 use gantry_ir::{CanonicalCallableIdentity, ExecutableTaskHandle, TaskBodyIdentity};
 use gantry_ir::{
-    CanonicalPath, InstructionKind, MachineProgram, StructuralPosition, TypeDescriptor,
+    CanonicalPath, InstructionKind, MachineProgram, Parameter, ReceiverMode, ReceiverSource,
+    StructuralPosition, TypeDescriptor,
 };
 
 use super::{
     Binding, ExecutionBudgetSnapshot, MachineCheckpointV3, MachineFailure, MachineLabel,
-    MachineLimits, MachineOutcome, MachineRecoveryError, MachineStatus, OperationOccurrence,
-    PendingOperation, PlaceInitialization, RuntimeCode, Scope, SessionCreationModeV1,
-    SessionScopeOccurrence, SharedPlaceAdmission, WorkflowFrame,
+    MachineLimits, MachineOutcome, MachineRecoveryError, MachineStatus, MovedPlace,
+    OperationOccurrence, PendingOperation, PlaceInitialization, RuntimeCode, Scope,
+    SessionCreationModeV1, SessionScopeOccurrence, SharedPlaceAdmission, WorkflowFrame,
     validate_execution_budget_snapshot, validate_machine_checkpoint,
 };
 #[cfg(feature = "concurrent")]
@@ -42,6 +43,13 @@ const MACHINE_MAGIC_V3: &[u8; 8] = b"GNTMCP03";
 const MACHINE_MAGIC_V4: &[u8; 8] = b"GNTMCP04";
 const MACHINE_MAGIC_V5: &[u8; 8] = b"GNTMCP05";
 const MACHINE_MAGIC_V6: &[u8; 8] = b"GNTMCP06";
+/// The V7 wire form and its moved-out section stay private for now.
+///
+/// Neither `GNTMCP07` nor `GNTRMO01` is registered in
+/// `protocol/catalogs/public-formats-v1.json`, which also omits V5 and V6, so the deferral is
+/// deliberate rather than accidental: the format is published once the durable projection
+/// registers it.
+const MACHINE_MAGIC_V7: &[u8; 8] = b"GNTMCP07";
 const EXECUTION_BUDGET_MAGIC: &[u8; 8] = b"GNTBGT01";
 #[cfg(feature = "concurrent")]
 const TASK_CONTROL_EXTENSION_MAGIC: &[u8; 8] = b"GNTMTC01";
@@ -49,6 +57,7 @@ const TASK_CONTROL_EXTENSION_MAGIC: &[u8; 8] = b"GNTMTC01";
 const TASK_CONTROL_EXTENSION_MAGIC_V2: &[u8; 8] = b"GNTMTC02";
 const SHARED_RECEIVER_EXTENSION_MAGIC: &[u8; 8] = b"GNTSRA01";
 const PLACE_INITIALIZATION_EXTENSION_MAGIC: &[u8; 8] = b"GNTSTG01";
+const MOVED_OUT_EXTENSION_MAGIC: &[u8; 8] = b"GNTRMO01";
 
 pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapshot) -> Vec<u8> {
     let mut writer = Writer::default();
@@ -98,7 +107,13 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         .frames
         .iter()
         .any(|frame| !frame.place_initialization.is_empty());
-    writer.raw(if place_initialization {
+    let moved_out = checkpoint
+        .frames
+        .iter()
+        .any(|frame| !frame.moved_out.is_empty());
+    writer.raw(if moved_out {
+        MACHINE_MAGIC_V7
+    } else if place_initialization {
         MACHINE_MAGIC_V6
     } else if shared_receiver {
         MACHINE_MAGIC_V5
@@ -153,7 +168,31 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         checkpoint.outcome.as_ref(),
         checkpoint.limits.value_limits,
     );
-    if place_initialization {
+    if moved_out {
+        let mut extension_count = 1_usize;
+        #[cfg(feature = "concurrent")]
+        if successor {
+            extension_count += 1;
+        }
+        if shared_receiver {
+            extension_count += 1;
+        }
+        if place_initialization {
+            extension_count += 1;
+        }
+        writer.count(extension_count);
+        #[cfg(feature = "concurrent")]
+        if successor {
+            write_task_control_extension(&mut writer, checkpoint);
+        }
+        if shared_receiver {
+            write_shared_receiver_extension(&mut writer, checkpoint);
+        }
+        if place_initialization {
+            write_place_initialization_extension(&mut writer, checkpoint);
+        }
+        write_moved_out_extension(&mut writer, checkpoint);
+    } else if place_initialization {
         let mut extension_count = 1_usize;
         #[cfg(feature = "concurrent")]
         if successor {
@@ -214,6 +253,7 @@ pub(super) fn decode_machine_checkpoint(
         magic if magic == MACHINE_MAGIC_V4 => 4_u8,
         magic if magic == MACHINE_MAGIC_V5 => 5_u8,
         magic if magic == MACHINE_MAGIC_V6 => 6_u8,
+        magic if magic == MACHINE_MAGIC_V7 => 7_u8,
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     };
     let execution = reader.identity(Some(IdentityKind::Execution))?;
@@ -261,105 +301,167 @@ pub(super) fn decode_machine_checkpoint(
     let mut task_body = None;
     #[cfg(feature = "concurrent")]
     let mut pending_task_control = None;
-    match version {
-        3 => {}
-        4 => {
-            #[cfg(feature = "concurrent")]
-            {
-                if reader.is_empty() {
+    // The legacy versions 3 through 6 cannot carry the moved-out mark: a completed owned move is
+    // always encoded as V7. A stream whose sections do not parse as the version it claims therefore
+    // cannot be a checkpoint this runtime produced for a frame that already executed an owned
+    // caller-place call, so such a downgrade is a program mismatch rather than an encoding error.
+    let sections = (|| -> Result<(), MachineRecoveryError> {
+        match version {
+            3 => {}
+            4 => {
+                #[cfg(feature = "concurrent")]
+                {
+                    if reader.is_empty() {
+                        return Err(MachineRecoveryError::InvalidEncoding);
+                    }
+                    let magic = reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())?;
+                    (task_body, pending_task_control) = read_task_control_extension(
+                        &mut reader,
+                        magic,
+                        &mut frames,
+                        limits.value_limits,
+                    )?;
+                }
+                #[cfg(not(feature = "concurrent"))]
+                return Err(MachineRecoveryError::InvalidEncoding);
+            }
+            5 => {
+                let extension_count = reader.count()?;
+                let mut saw_shared_receiver = false;
+                for _ in 0..extension_count {
+                    let magic = reader.raw(SHARED_RECEIVER_EXTENSION_MAGIC.len())?;
+                    if magic == SHARED_RECEIVER_EXTENSION_MAGIC {
+                        if saw_shared_receiver {
+                            return Err(MachineRecoveryError::InvalidEncoding);
+                        }
+                        read_shared_receiver_extension(&mut reader, &mut frames)?;
+                        saw_shared_receiver = true;
+                    } else {
+                        #[cfg(feature = "concurrent")]
+                        if magic == TASK_CONTROL_EXTENSION_MAGIC
+                            || magic == TASK_CONTROL_EXTENSION_MAGIC_V2
+                        {
+                            if task_body.is_some() || pending_task_control.is_some() {
+                                return Err(MachineRecoveryError::InvalidEncoding);
+                            }
+                            (task_body, pending_task_control) = read_task_control_extension(
+                                &mut reader,
+                                magic,
+                                &mut frames,
+                                limits.value_limits,
+                            )?;
+                        } else {
+                            return Err(MachineRecoveryError::InvalidEncoding);
+                        }
+                        #[cfg(not(feature = "concurrent"))]
+                        return Err(MachineRecoveryError::InvalidEncoding);
+                    }
+                }
+                if !saw_shared_receiver {
                     return Err(MachineRecoveryError::InvalidEncoding);
                 }
-                let magic = reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())?;
-                (task_body, pending_task_control) = read_task_control_extension(
-                    &mut reader,
-                    magic,
-                    &mut frames,
-                    limits.value_limits,
-                )?;
             }
-            #[cfg(not(feature = "concurrent"))]
+            6 => {
+                let extension_count = reader.count()?;
+                let mut saw_shared_receiver = false;
+                let mut saw_place_initialization = false;
+                for _ in 0..extension_count {
+                    let magic = reader.raw(PLACE_INITIALIZATION_EXTENSION_MAGIC.len())?;
+                    if magic == PLACE_INITIALIZATION_EXTENSION_MAGIC {
+                        if saw_place_initialization {
+                            return Err(MachineRecoveryError::InvalidEncoding);
+                        }
+                        read_place_initialization_extension(&mut reader, &mut frames)?;
+                        saw_place_initialization = true;
+                    } else if magic == SHARED_RECEIVER_EXTENSION_MAGIC {
+                        if saw_shared_receiver {
+                            return Err(MachineRecoveryError::InvalidEncoding);
+                        }
+                        read_shared_receiver_extension(&mut reader, &mut frames)?;
+                        saw_shared_receiver = true;
+                    } else {
+                        #[cfg(feature = "concurrent")]
+                        if magic == TASK_CONTROL_EXTENSION_MAGIC
+                            || magic == TASK_CONTROL_EXTENSION_MAGIC_V2
+                        {
+                            if task_body.is_some() || pending_task_control.is_some() {
+                                return Err(MachineRecoveryError::InvalidEncoding);
+                            }
+                            (task_body, pending_task_control) = read_task_control_extension(
+                                &mut reader,
+                                magic,
+                                &mut frames,
+                                limits.value_limits,
+                            )?;
+                        } else {
+                            return Err(MachineRecoveryError::InvalidEncoding);
+                        }
+                        #[cfg(not(feature = "concurrent"))]
+                        return Err(MachineRecoveryError::InvalidEncoding);
+                    }
+                }
+                if !saw_place_initialization {
+                    return Err(MachineRecoveryError::InvalidEncoding);
+                }
+            }
+            7 => {
+                // V7 sections are canonically ordered, each appears at most once, and the mandatory
+                // moved-out section is last. A missing, duplicated, or reordered section is therefore
+                // a structurally impossible encoding rather than a recoverable mismatch.
+                let extension_count = reader.count()?;
+                let mut seen = 0_usize;
+                #[cfg(feature = "concurrent")]
+                {
+                    let magic = reader.peek(TASK_CONTROL_EXTENSION_MAGIC.len());
+                    if magic == TASK_CONTROL_EXTENSION_MAGIC
+                        || magic == TASK_CONTROL_EXTENSION_MAGIC_V2
+                    {
+                        let magic = reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())?;
+                        (task_body, pending_task_control) = read_task_control_extension(
+                            &mut reader,
+                            magic,
+                            &mut frames,
+                            limits.value_limits,
+                        )?;
+                        seen += 1;
+                    }
+                }
+                if reader.peek(SHARED_RECEIVER_EXTENSION_MAGIC.len())
+                    == SHARED_RECEIVER_EXTENSION_MAGIC
+                {
+                    reader.raw(SHARED_RECEIVER_EXTENSION_MAGIC.len())?;
+                    read_shared_receiver_extension(&mut reader, &mut frames)?;
+                    seen += 1;
+                }
+                if reader.peek(PLACE_INITIALIZATION_EXTENSION_MAGIC.len())
+                    == PLACE_INITIALIZATION_EXTENSION_MAGIC
+                {
+                    reader.raw(PLACE_INITIALIZATION_EXTENSION_MAGIC.len())?;
+                    read_place_initialization_extension(&mut reader, &mut frames)?;
+                    seen += 1;
+                }
+                if reader.peek(MOVED_OUT_EXTENSION_MAGIC.len()) != MOVED_OUT_EXTENSION_MAGIC {
+                    return Err(MachineRecoveryError::InvalidCheckpoint);
+                }
+                reader.raw(MOVED_OUT_EXTENSION_MAGIC.len())?;
+                read_moved_out_extension(&mut reader, &mut frames)?;
+                seen += 1;
+                if seen != extension_count || !reader.is_empty() {
+                    return Err(MachineRecoveryError::InvalidCheckpoint);
+                }
+            }
+            _ => unreachable!("machine checkpoint version is bounded"),
+        }
+        if !reader.is_empty() {
             return Err(MachineRecoveryError::InvalidEncoding);
         }
-        5 => {
-            let extension_count = reader.count()?;
-            let mut saw_shared_receiver = false;
-            for _ in 0..extension_count {
-                let magic = reader.raw(SHARED_RECEIVER_EXTENSION_MAGIC.len())?;
-                if magic == SHARED_RECEIVER_EXTENSION_MAGIC {
-                    if saw_shared_receiver {
-                        return Err(MachineRecoveryError::InvalidEncoding);
-                    }
-                    read_shared_receiver_extension(&mut reader, &mut frames)?;
-                    saw_shared_receiver = true;
-                } else {
-                    #[cfg(feature = "concurrent")]
-                    if magic == TASK_CONTROL_EXTENSION_MAGIC
-                        || magic == TASK_CONTROL_EXTENSION_MAGIC_V2
-                    {
-                        if task_body.is_some() || pending_task_control.is_some() {
-                            return Err(MachineRecoveryError::InvalidEncoding);
-                        }
-                        (task_body, pending_task_control) = read_task_control_extension(
-                            &mut reader,
-                            magic,
-                            &mut frames,
-                            limits.value_limits,
-                        )?;
-                    } else {
-                        return Err(MachineRecoveryError::InvalidEncoding);
-                    }
-                    #[cfg(not(feature = "concurrent"))]
-                    return Err(MachineRecoveryError::InvalidEncoding);
-                }
-            }
-            if !saw_shared_receiver {
-                return Err(MachineRecoveryError::InvalidEncoding);
-            }
+        Ok(())
+    })();
+    if let Err(error) = sections {
+        if version < 7 && has_executed_owned_caller_place_call(program, &frames) {
+            return Err(MachineRecoveryError::ProgramMismatch);
         }
-        6 => {
-            let extension_count = reader.count()?;
-            let mut saw_shared_receiver = false;
-            let mut saw_place_initialization = false;
-            for _ in 0..extension_count {
-                let magic = reader.raw(PLACE_INITIALIZATION_EXTENSION_MAGIC.len())?;
-                if magic == PLACE_INITIALIZATION_EXTENSION_MAGIC {
-                    if saw_place_initialization {
-                        return Err(MachineRecoveryError::InvalidEncoding);
-                    }
-                    read_place_initialization_extension(&mut reader, &mut frames)?;
-                    saw_place_initialization = true;
-                } else if magic == SHARED_RECEIVER_EXTENSION_MAGIC {
-                    if saw_shared_receiver {
-                        return Err(MachineRecoveryError::InvalidEncoding);
-                    }
-                    read_shared_receiver_extension(&mut reader, &mut frames)?;
-                    saw_shared_receiver = true;
-                } else {
-                    #[cfg(feature = "concurrent")]
-                    if magic == TASK_CONTROL_EXTENSION_MAGIC
-                        || magic == TASK_CONTROL_EXTENSION_MAGIC_V2
-                    {
-                        if task_body.is_some() || pending_task_control.is_some() {
-                            return Err(MachineRecoveryError::InvalidEncoding);
-                        }
-                        (task_body, pending_task_control) = read_task_control_extension(
-                            &mut reader,
-                            magic,
-                            &mut frames,
-                            limits.value_limits,
-                        )?;
-                    } else {
-                        return Err(MachineRecoveryError::InvalidEncoding);
-                    }
-                    #[cfg(not(feature = "concurrent"))]
-                    return Err(MachineRecoveryError::InvalidEncoding);
-                }
-            }
-            if !saw_place_initialization {
-                return Err(MachineRecoveryError::InvalidEncoding);
-            }
-        }
-        _ => unreachable!("machine checkpoint version is bounded"),
+        return Err(error);
     }
     #[cfg(feature = "concurrent")]
     if frames.len() == 1
@@ -368,9 +470,6 @@ pub(super) fn decode_machine_checkpoint(
     {
         pending.occurrence.metadata =
             task_body_operation_metadata(program, body_identity, &pending.occurrence.site);
-    }
-    if !reader.is_empty() {
-        return Err(MachineRecoveryError::InvalidEncoding);
     }
     let checkpoint = MachineCheckpointV3 {
         execution,
@@ -405,6 +504,44 @@ pub(super) fn decode_machine_checkpoint(
         return Err(MachineRecoveryError::InvalidEncoding);
     }
     Ok(checkpoint)
+}
+
+/// Reports whether one frame already executed an owned caller-place receiver call.
+///
+/// Such a frame could have completed the owned move, or still be performing it, so its state may
+/// need the moved-out mark that only the V7 section carries. A stream that does not parse as the
+/// legacy version it claims cannot be a checkpoint this runtime produced for that state, so the
+/// downgrade is reported as a program mismatch instead of a recoverable encoding error. This is a
+/// fail-closed compatibility guard rather than an integrity mechanism: bytes can be rewritten, and
+/// a rewritten checkpoint can still only be rejected or lose the guard optimization.
+fn has_executed_owned_caller_place_call(
+    program: &MachineProgram,
+    frames: &[WorkflowFrame],
+) -> bool {
+    frames.iter().any(|frame| {
+        let Some(workflow) = program.workflows().get(frame.workflow) else {
+            return false;
+        };
+        let Some(executed) = workflow.instructions.get(..frame.pc) else {
+            return false;
+        };
+        executed.iter().any(|instruction| {
+            let InstructionKind::ReceiverCall {
+                callee,
+                source: ReceiverSource::CallerPlace { .. },
+                ..
+            } = &instruction.kind
+            else {
+                return false;
+            };
+            program
+                .callable_index(callee)
+                .and_then(|index| program.workflows().get(index))
+                .and_then(|workflow| workflow.parameters.first())
+                .and_then(Parameter::receiver_mode)
+                == Some(ReceiverMode::Owned)
+        })
+    })
 }
 
 fn write_limits(writer: &mut Writer, limits: MachineLimits) {
@@ -496,6 +633,7 @@ fn read_frame(
         session_at_entry: reader.optional_identity(Some(IdentityKind::Session))?,
         receiver_admission: None,
         place_initialization: Vec::new(),
+        moved_out: Vec::new(),
     })
 }
 
@@ -610,6 +748,60 @@ fn read_place_initialization_extension(
             });
         }
         frame.place_initialization = entries;
+    }
+    Ok(())
+}
+
+/// Writes the deterministic moved-out section.
+///
+/// Entries are deduplicated and sorted by root and then by canonical path segments, so equal
+/// machine state always yields identical bytes.
+fn write_moved_out_extension(writer: &mut Writer, checkpoint: &MachineCheckpointV3) {
+    writer.raw(MOVED_OUT_EXTENSION_MAGIC);
+    writer.count(checkpoint.frames.len());
+    for frame in &checkpoint.frames {
+        let mut entries = frame.moved_out.clone();
+        entries.sort_by(MovedPlace::canonical_cmp);
+        entries.dedup_by(|left, right| left.canonical_cmp(right) == std::cmp::Ordering::Equal);
+        writer.count(entries.len());
+        for entry in &entries {
+            writer.string(&entry.root);
+            write_shared_receiver_path(writer, &entry.path);
+        }
+    }
+}
+
+/// Reads the V7 moved-out section.
+///
+/// The section is mandatory and self-describing, so any truncation, count mismatch, or bogus
+/// length inside it is reported as a structurally impossible checkpoint.
+fn read_moved_out_extension(
+    reader: &mut Reader<'_>,
+    frames: &mut [WorkflowFrame],
+) -> Result<(), MachineRecoveryError> {
+    let frame_count = reader
+        .usize()
+        .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+    if frame_count != frames.len() {
+        return Err(MachineRecoveryError::InvalidCheckpoint);
+    }
+    for frame in frames {
+        let entry_count = reader
+            .usize()
+            .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+        let mut entries = Vec::with_capacity(entry_count.min(reader.remaining()));
+        for _ in 0..entry_count {
+            let root = reader
+                .string()
+                .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+            let path = read_shared_receiver_path(reader)
+                .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+            entries.push(MovedPlace {
+                root: Arc::from(root),
+                path,
+            });
+        }
+        frame.moved_out = entries;
     }
     Ok(())
 }
@@ -1499,6 +1691,12 @@ impl<'a> Reader<'a> {
         let value = &self.bytes[self.cursor..end];
         self.cursor = end;
         Ok(value)
+    }
+
+    /// Borrows up to `length` bytes at the cursor without consuming them.
+    fn peek(&self, length: usize) -> &'a [u8] {
+        let end = self.cursor.saturating_add(length).min(self.bytes.len());
+        &self.bytes[self.cursor..end]
     }
 
     pub(crate) fn u8(&mut self) -> Result<u8, MachineRecoveryError> {
