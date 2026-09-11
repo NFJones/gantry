@@ -9,6 +9,8 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const MANIFEST_PATH: &str = "protocol/conformance/generics-traits-analyzer-gate-v1.json";
+/// The analyzer profile's own gate manifest records the same profile-wide reviewed counts.
+const PROFILE_GATE_PATH: &str = "protocol/conformance/analyzer-gate-v1.json";
 const PREREQUISITES: [&str; 6] = [
     "GNT-GEN-AN-001",
     "GNT-GEN-AN-002",
@@ -167,6 +169,17 @@ fn checked_in_analyzer_profile_gate_is_current() {
     assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
+/// The analyzer profile gate records the reviewed applicability the ledger computes.
+#[test]
+fn checked_in_analyzer_profile_summary_matches_the_reviewed_ledger() {
+    let root = workspace_root();
+    let manifest: Manifest = read_json(&root.join(PROFILE_GATE_PATH));
+    assert_eq!(manifest.format, "gantry.analyzer-gate-evidence/v1");
+    assert_eq!(manifest.gate, "GNT-GATE-300");
+    assert_eq!(manifest.profile, "analyzer");
+    assert_eq!(validate_review_summary(&root, &manifest), Ok(()));
+}
+
 #[test]
 fn analyzer_profile_gate_rejects_stale_artifacts_and_overclaiming() {
     let root = workspace_root();
@@ -252,15 +265,75 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         validate_file_digest(root, artifact, "artifact")?;
     }
 
-    let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
     let section14: Section14Review =
         read_json(&root.join("protocol/requirements/section14-v1.json"));
-    if review.specification_sha256 != manifest.specification.sha256
-        || section14.specification_sha256 != manifest.specification.sha256
-    {
+    if section14.specification_sha256 != manifest.specification.sha256 {
         return Err("analyzer evidence uses another specification revision".to_owned());
     }
+    validate_review_summary(root, manifest)?;
 
+    if manifest.section14_excerpt_count != section14.excerpts.len()
+        || section14
+            .excerpts
+            .iter()
+            .any(|excerpt| excerpt.state != "covered" || excerpt.evidence.is_empty())
+    {
+        return Err("Section 14 authoring evidence is incomplete".to_owned());
+    }
+
+    let validity: ValidityManifest =
+        read_json(&root.join("protocol/conformance/analyzer-validity-v1.json"));
+    if validity.specification_sha256 != manifest.specification.sha256
+        || validity.issue != "GNT-GEN-PROOF-001"
+        || validity.profile != "analyzer"
+        || !root.join(&validity.argument).is_file()
+        || !root.join(&validity.model).is_file()
+        || validity.evidence_manifests.len() != 6
+        || validity.lemmas.len() != 9
+        || validity
+            .evidence_manifests
+            .iter()
+            .any(|path| !root.join(path).is_file())
+    {
+        return Err("analyzer validity evidence is incomplete".to_owned());
+    }
+    validate_sorted_unique(
+        "validation commands",
+        manifest.validation_commands.iter().map(String::as_str),
+    )?;
+    if manifest.environment_gaps
+        != [
+            "The analyzer and frontend claims are qualified on the recorded Linux cells; hosted macOS qualification is not claimed by this evidence gate.",
+        ]
+    {
+        return Err("validation commands or environment gaps are incomplete".to_owned());
+    }
+    Ok(())
+}
+
+/// Compares one gate manifest's recorded counts with the reviewed analyzer applicability.
+fn validate_review_summary(root: &Path, manifest: &Manifest) -> Result<(), String> {
+    let (applicable, covered, not_applicable) =
+        reviewed_analyzer_counts(root, &manifest.specification.sha256)?;
+    if manifest.review_summary.applicable_clause_count != applicable
+        || manifest.review_summary.covered_count != covered
+        || manifest.review_summary.not_applicable_count != not_applicable
+        || applicable != covered + not_applicable
+    {
+        return Err("analyzer review summary differs from reviewed applicability".to_owned());
+    }
+    Ok(())
+}
+
+/// Recomputes the analyzer-profile clause counts and closure from the reviewed ledger.
+fn reviewed_analyzer_counts(
+    root: &Path,
+    specification_sha256: &str,
+) -> Result<(usize, usize, usize), String> {
+    let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
+    if review.specification_sha256 != specification_sha256 {
+        return Err("analyzer evidence uses another specification revision".to_owned());
+    }
     let mut applicable_clause_count = 0_usize;
     let mut covered_count = 0_usize;
     let mut not_applicable_count = 0_usize;
@@ -305,51 +378,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
             }
         }
     }
-    if manifest.review_summary.applicable_clause_count != applicable_clause_count
-        || manifest.review_summary.covered_count != covered_count
-        || manifest.review_summary.not_applicable_count != not_applicable_count
-        || applicable_clause_count != covered_count + not_applicable_count
-    {
-        return Err("analyzer review summary differs from reviewed applicability".to_owned());
-    }
-
-    if manifest.section14_excerpt_count != section14.excerpts.len()
-        || section14
-            .excerpts
-            .iter()
-            .any(|excerpt| excerpt.state != "covered" || excerpt.evidence.is_empty())
-    {
-        return Err("Section 14 authoring evidence is incomplete".to_owned());
-    }
-
-    let validity: ValidityManifest =
-        read_json(&root.join("protocol/conformance/analyzer-validity-v1.json"));
-    if validity.specification_sha256 != manifest.specification.sha256
-        || validity.issue != "GNT-GEN-PROOF-001"
-        || validity.profile != "analyzer"
-        || !root.join(&validity.argument).is_file()
-        || !root.join(&validity.model).is_file()
-        || validity.evidence_manifests.len() != 6
-        || validity.lemmas.len() != 9
-        || validity
-            .evidence_manifests
-            .iter()
-            .any(|path| !root.join(path).is_file())
-    {
-        return Err("analyzer validity evidence is incomplete".to_owned());
-    }
-    validate_sorted_unique(
-        "validation commands",
-        manifest.validation_commands.iter().map(String::as_str),
-    )?;
-    if manifest.environment_gaps
-        != [
-            "The analyzer and frontend claims are qualified on the recorded Linux cells; hosted macOS qualification is not claimed by this evidence gate.",
-        ]
-    {
-        return Err("validation commands or environment gaps are incomplete".to_owned());
-    }
-    Ok(())
+    Ok((applicable_clause_count, covered_count, not_applicable_count))
 }
 
 fn validate_evidence_anchor(root: &Path, evidence: &str) -> Result<(), String> {
