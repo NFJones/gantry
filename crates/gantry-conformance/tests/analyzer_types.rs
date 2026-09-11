@@ -2933,6 +2933,78 @@ fn must_consume_live_place_cannot_be_replaced() {
     }
 }
 
+/// An implementation method must stay within the effect contract its trait method declares,
+/// because that declared set is the conservative summary parametric callers rely on
+/// (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).
+#[test]
+fn public_trait_implementation_effects_stay_within_the_declared_contract() {
+    let pure_contract = analyze(
+        "trait Render { pure fn render(self); }\n\
+         struct Item {}\n\
+         impl Render for Item { fn render(self) { discard prompt \"Generate.\" -> String; } }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        pure_contract.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        pure_contract.diagnostics()
+    );
+    assert!(
+        pure_contract.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "effect-contract-violation"
+                && diagnostic
+                    .fields
+                    .get("inferred")
+                    .is_some_and(|inferred| inferred.as_ref() == "prompt")
+                && diagnostic
+                    .fields
+                    .get("declared")
+                    .is_some_and(|declared| declared.as_ref().is_empty())
+        }),
+        "{:?}",
+        pure_contract.diagnostics()
+    );
+    assert!(pure_contract.executable_program().is_none());
+
+    let wider_template = analyze(
+        "trait Render { fn render(self) effects { prompt }; }\n\
+         struct Envelope<T> { value: T }\n\
+         impl<T> Render for Envelope<T> { fn render(self) { discard prompt \"Generate.\" -> String; spawn background { return; } detach(background); } }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        wider_template.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        wider_template.diagnostics()
+    );
+    assert!(
+        wider_template.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "effect-contract-violation"
+                && diagnostic
+                    .fields
+                    .get("inferred")
+                    .is_some_and(|inferred| inferred.as_ref().contains("background"))
+        }),
+        "{:?}",
+        wider_template.diagnostics()
+    );
+
+    let matching = analyze(
+        "trait Render { fn render(self) effects { prompt }; }\n\
+         struct Item {}\n\
+         impl Render for Item { fn render(self) { discard prompt \"Generate.\" -> String; } }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        matching.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        matching.diagnostics()
+    );
+}
+
 /// A pattern payload that binds a `MustConsume` value owes consumption like any other binding
 /// introduction, in `match` arms and in `if let` chains (D5).
 #[test]

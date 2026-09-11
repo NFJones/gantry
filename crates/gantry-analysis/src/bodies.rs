@@ -2294,6 +2294,26 @@ fn finish_effect_graph(
                 [("effects", effect_names(effects))],
             )?);
         }
+        // A trait implementation method is valid only under the contract its trait method
+        // declares: the exact inferred effect set must stay within that contract, because
+        // parametric callers use the declared set as their conservative summary
+        // (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).
+        if let Some((declared, callable)) = trait_contract_effects(context, node)
+            && !effects.iter().all(|effect| declared.contains(effect))
+            && let Some(span) = draft.source.clone()
+        {
+            diagnostics.push(body_diagnostic(
+                "effect-contract-violation",
+                DiagnosticCategory::Type,
+                "an implementation method infers effects outside its trait method contract",
+                span,
+                [
+                    ("callable", callable),
+                    ("inferred", effect_names(effects)),
+                    ("declared", effect_names(declared)),
+                ],
+            )?);
+        }
     }
     let templates = summaries
         .iter()
@@ -2325,6 +2345,50 @@ fn effect_names(effects: EffectSet) -> String {
         .map(Effect::wire_name)
         .collect::<Vec<_>>()
         .join(",")
+}
+
+/// Returns the declared trait-method effect contract one drafted callable must stay within, with
+/// the canonical callable name for diagnostics.
+///
+/// Inherent methods, concrete instantiations, and implementations whose trait or method has no
+/// retained contract have no declared contract to check (`GNT-3-T-PARAMETRIC-PACKAGE`).
+fn trait_contract_effects(context: &BodyContext, node: &EffectNode) -> Option<(EffectSet, String)> {
+    let (trait_path, method_name) = match node {
+        EffectNode::Source(span) => {
+            let ((identity, name), _) = context
+                .method_sources
+                .iter()
+                .find(|(_, source)| *source == span)?;
+            let head = context
+                .implementation_heads
+                .iter()
+                .find(|head| head.identity() == identity)?;
+            let trait_reference = head.trait_reference()?;
+            (trait_reference.path().clone(), name.clone())
+        }
+        EffectNode::Template(template) => {
+            let signature = context.generic_methods.iter().find(|signature| {
+                signature.kind == TemplateKind::TraitMethod && signature.template == *template
+            })?;
+            (
+                signature.trait_reference.as_ref()?.path().clone(),
+                signature.method_name.clone()?,
+            )
+        }
+        EffectNode::Concrete(_) => return None,
+    };
+    let contract = context
+        .trait_contracts
+        .iter()
+        .find(|contract| contract.path() == &trait_path)?;
+    let method = contract
+        .methods()
+        .iter()
+        .find(|method| method.name() == method_name.as_ref())?;
+    Some((
+        *method.effects(),
+        format!("{}::{}", trait_path.as_str(), method_name),
+    ))
 }
 
 fn record_effect_call(context: &BodyContext, callee: EffectNode) {
