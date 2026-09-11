@@ -20,7 +20,7 @@ use gantry_ir::{
     Projection, StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow, WorkflowFacts,
 };
 
-use crate::bodies::{BodyAnalysis, EffectNode, SpawnCaptureMetadata};
+use crate::bodies::{BodyAnalysis, BoolFact, EffectNode, SpawnCaptureMetadata, bool_fact};
 use crate::generics::{GenericDeclarationShape, prove_ownership_class};
 use crate::{AnalysisError, TypeFact};
 
@@ -205,6 +205,7 @@ pub(crate) fn lower_executable_program(
             task_sites: BTreeMap::new(),
             loops: Vec::new(),
             cleanup: Vec::new(),
+            infeasible: 0,
         };
         let compiled = compiler.compile_callable(callable)?;
         lowered.push((metadata.identity.clone(), compiled));
@@ -257,6 +258,7 @@ pub(crate) fn lower_executable_program(
             task_sites: BTreeMap::new(),
             loops: Vec::new(),
             cleanup: Vec::new(),
+            infeasible: 0,
         };
         let compiled = compiler.compile_callable(callable)?;
         lowered.push((identity, compiled));
@@ -315,6 +317,10 @@ struct Compiler<'a> {
     task_sites: BTreeMap<usize, StructuralPosition>,
     loops: Vec<LoopTarget>,
     cleanup: Vec<InstructionKind>,
+    /// Nonzero while lowering a branch that a compile-time `Bool` fact excludes, so
+    /// that unreachable loop transfers keep their shape without completing the loop
+    /// (`GNT-3-T-BRANCH`).
+    infeasible: usize,
 }
 
 /// Pending lexical loop transfers, isolated from enclosing callable/task bodies.
@@ -389,6 +395,7 @@ impl Compiler<'_> {
             task_sites: BTreeMap::new(),
             loops: Vec::new(),
             cleanup: Vec::new(),
+            infeasible: self.infeasible,
         };
         child.compile_block(block, BlockMode::Callable)?;
         child.finish_sites()?;
@@ -604,10 +611,11 @@ impl Compiler<'_> {
         Ok(parameters)
     }
 
-    fn compile_block(&mut self, block: NodeId, mode: BlockMode) -> Result<(), AnalysisError> {
+    fn compile_block(&mut self, block: NodeId, mode: BlockMode) -> Result<bool, AnalysisError> {
         let children = semantic_children(self.tree, block)?;
         let mut cursor = 0_usize;
         let mut produced_value = false;
+        let mut falls_through = true;
         while cursor < children.len() {
             let child = children[cursor];
             let node = self.node(child)?;
@@ -637,18 +645,23 @@ impl Compiler<'_> {
                         )?;
                         self.emit(TypeDescriptor::UNIT, InstructionKind::Return)?;
                     }
-                    return Ok(());
+                    return Ok(false);
                 }
-                SyntaxForm::IfStatement => self.compile_if(child)?,
+                SyntaxForm::IfStatement => {
+                    falls_through = self.compile_if(child)?;
+                }
                 SyntaxForm::WhileStatement | SyntaxForm::LoopStatement => {
-                    self.compile_while(child)?
+                    falls_through = self.compile_while(child)?;
                 }
                 SyntaxForm::BreakStatement | SyntaxForm::ContinueStatement => {
                     self.compile_loop_transfer(matches!(node.form(), SyntaxForm::BreakStatement))?;
-                    return Ok(());
+                    return Ok(false);
                 }
                 SyntaxForm::WithStatement | SyntaxForm::SessionStatement => {
-                    self.compile_context_statement(child)?;
+                    falls_through = self.compile_context_statement(child)?;
+                }
+                SyntaxForm::MatchStatement => {
+                    falls_through = self.compile_statement_match(child)?;
                 }
                 SyntaxForm::Expression => {
                     let ty = self.compile_expression(child)?;
@@ -665,9 +678,9 @@ impl Compiler<'_> {
                         match mode {
                             BlockMode::Callable => {
                                 self.emit(ty, InstructionKind::Return)?;
-                                return Ok(());
+                                return Ok(false);
                             }
-                            BlockMode::Value => return Ok(()),
+                            BlockMode::Value => return Ok(true),
                             BlockMode::Statement => {
                                 self.emit(ty, InstructionKind::Pop)?;
                             }
@@ -680,21 +693,25 @@ impl Compiler<'_> {
             cursor = cursor.saturating_add(1);
         }
         if mode == BlockMode::Callable {
-            if self.result != &TypeDescriptor::UNIT {
+            if self.result == &TypeDescriptor::UNIT {
+                self.emit(
+                    TypeDescriptor::UNIT,
+                    InstructionKind::Push(LogicalValue::unit()),
+                )?;
+                self.emit(TypeDescriptor::UNIT, InstructionKind::Return)?;
+            } else if falls_through {
+                // A value-returning body must produce its result on every reachable normal
+                // completion; an unreachable end needs no implicit return
+                // (`GNT-3-T-COMPLETION`).
                 return Err(AnalysisError::Invariant);
             }
-            self.emit(
-                TypeDescriptor::UNIT,
-                InstructionKind::Push(LogicalValue::unit()),
-            )?;
-            self.emit(TypeDescriptor::UNIT, InstructionKind::Return)?;
         } else if mode == BlockMode::Value && !produced_value {
             self.emit(
                 TypeDescriptor::UNIT,
                 InstructionKind::Push(LogicalValue::unit()),
             )?;
         }
-        Ok(())
+        Ok(falls_through)
     }
 
     fn compile_let(&mut self, statement: NodeId) -> Result<(), AnalysisError> {
@@ -770,14 +787,52 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    fn compile_if(&mut self, statement: NodeId) -> Result<(), AnalysisError> {
+    fn compile_if(&mut self, statement: NodeId) -> Result<bool, AnalysisError> {
         let node = self.node(statement)?.clone();
-        let condition = direct_child_form(self.tree, &node, SyntaxForm::Expression)
-            .ok_or(AnalysisError::Invariant)?;
-        let condition_type = self.compile_expression(condition)?;
         if let Some(pattern) = direct_child_form(self.tree, &node, SyntaxForm::Pattern) {
+            let condition = direct_child_form(self.tree, &node, SyntaxForm::Expression)
+                .ok_or(AnalysisError::Invariant)?;
+            let condition_type = self.compile_expression(condition)?;
             return self.compile_pattern_if(statement, pattern, condition_type);
         }
+        let children = semantic_children(self.tree, statement)?;
+        self.compile_if_chain(&children)
+    }
+
+    /// Lowers one condition of an `if`/`else if` chain from the flattened sibling children the
+    /// parser produces, recursing into the remaining chain for the `else` position.
+    ///
+    /// Every condition of a chain must be folded, because the selected arm and the completion
+    /// verdict both depend on all of them (`GNT-3-T-BRANCH`). A branch excluded by a compile-time
+    /// fact is still lowered so the program keeps one shape, but it contributes neither a join
+    /// transfer nor a completing loop transfer: a join label that no feasible path reaches may
+    /// not exist, and `validate_workflow` rejects a target at or past the instruction length.
+    fn compile_if_chain(&mut self, children: &[NodeId]) -> Result<bool, AnalysisError> {
+        let condition = children
+            .iter()
+            .copied()
+            .find(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+            })
+            .ok_or(AnalysisError::Invariant)?;
+        let block = children
+            .iter()
+            .copied()
+            .find(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
+            })
+            .ok_or(AnalysisError::Invariant)?;
+        let rest = children
+            .iter()
+            .position(|child| *child == block)
+            .map(|index| &children[index + 1..])
+            .unwrap_or_default();
+        let condition_type = self.compile_expression(condition)?;
+        let condition_fact = bool_fact(self.tree, condition)?;
         let branch = self.emit(
             condition_type,
             InstructionKind::Branch {
@@ -785,37 +840,55 @@ impl Compiler<'_> {
                 when_false: 0,
             },
         )?;
-        let blocks = semantic_children(self.tree, statement)?
-            .into_iter()
-            .filter(|child| {
-                self.tree
-                    .node(*child)
-                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
-            })
-            .collect::<Vec<_>>();
         let when_true = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
         let true_bindings = self.binding_types.clone();
-        self.compile_block(
-            *blocks.first().ok_or(AnalysisError::Invariant)?,
-            BlockMode::Statement,
-        )?;
+        let true_infeasible = condition_fact == BoolFact::False;
+        self.infeasible += usize::from(true_infeasible);
+        let true_falls_through = self.compile_block(block, BlockMode::Statement);
+        self.infeasible -= usize::from(true_infeasible);
+        let true_falls_through = true_falls_through?;
         self.binding_types = true_bindings;
         self.cleanup.pop();
         self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
-        let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
+        // A branch that cannot complete normally never reaches the join, so it needs no
+        // transfer; an infeasible branch contributes no transfer either, because the join
+        // label it would name may not exist yet (`validate_workflow` rejects a target at or
+        // past the instruction length).
+        let jump = if !true_infeasible && true_falls_through {
+            Some(self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?)
+        } else {
+            None
+        };
         let when_false = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
         let false_bindings = self.binding_types.clone();
-        if let Some(otherwise) = blocks.get(1) {
-            self.compile_block(*otherwise, BlockMode::Statement)?;
-        }
+        let false_infeasible = condition_fact == BoolFact::True;
+        self.infeasible += usize::from(false_infeasible);
+        let has_further_condition = rest.iter().any(|child| {
+            self.tree
+                .node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+        });
+        let false_falls_through = if has_further_condition {
+            self.compile_if_chain(rest)
+        } else if let Some(otherwise) = rest.iter().copied().find(|child| {
+            self.tree
+                .node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
+        }) {
+            self.compile_block(otherwise, BlockMode::Statement)
+        } else {
+            Ok(true)
+        };
+        self.infeasible -= usize::from(false_infeasible);
+        let false_falls_through = false_falls_through?;
         self.binding_types = false_bindings;
         self.cleanup.pop();
         self.cleanup.pop();
@@ -826,8 +899,14 @@ impl Compiler<'_> {
             when_true,
             when_false,
         };
-        self.instructions[jump].kind = InstructionKind::Jump(end);
-        Ok(())
+        if let Some(jump) = jump {
+            self.instructions[jump].kind = InstructionKind::Jump(end);
+        }
+        Ok(match condition_fact {
+            BoolFact::True => true_falls_through,
+            BoolFact::False => false_falls_through,
+            BoolFact::Unknown => true_falls_through || false_falls_through,
+        })
     }
 
     /// Lowers a refutable `if let` using the runtime's exact value discriminants.
@@ -836,7 +915,7 @@ impl Compiler<'_> {
         statement: NodeId,
         pattern: NodeId,
         scrutinee_type: TypeDescriptor,
-    ) -> Result<(), AnalysisError> {
+    ) -> Result<bool, AnalysisError> {
         let blocks = semantic_children(self.tree, statement)?
             .into_iter()
             .filter(|child| {
@@ -892,7 +971,7 @@ impl Compiler<'_> {
                 false,
             )?;
         }
-        self.compile_block(
+        let true_falls_through = self.compile_block(
             *blocks.first().ok_or(AnalysisError::Invariant)?,
             BlockMode::Statement,
         )?;
@@ -901,21 +980,31 @@ impl Compiler<'_> {
         self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
-        let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
+        let jump = if true_falls_through {
+            Some(self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?)
+        } else {
+            None
+        };
         let when_false = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
         let false_bindings = self.binding_types.clone();
-        if let Some(otherwise) = blocks.get(1) {
-            self.compile_block(*otherwise, BlockMode::Statement)?;
-        }
+        let false_falls_through = if let Some(otherwise) = blocks.get(1) {
+            self.compile_block(*otherwise, BlockMode::Statement)?
+        } else {
+            true
+        };
         self.binding_types = false_bindings;
         self.cleanup.pop();
         self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
-        let false_jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
+        let false_jump = if false_falls_through {
+            Some(self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?)
+        } else {
+            None
+        };
         let false_shims = match scrutinee_type.kind() {
             TypeKind::Option => {
                 let mut shims = BTreeMap::new();
@@ -972,8 +1061,12 @@ impl Compiler<'_> {
             _ => return Err(AnalysisError::Invariant),
         };
         let end = self.instructions.len();
-        self.instructions[jump].kind = InstructionKind::Jump(end);
-        self.instructions[false_jump].kind = InstructionKind::Jump(end);
+        if let Some(jump) = jump {
+            self.instructions[jump].kind = InstructionKind::Jump(end);
+        }
+        if let Some(false_jump) = false_jump {
+            self.instructions[false_jump].kind = InstructionKind::Jump(end);
+        }
         self.instructions[branch].kind = match scrutinee_type.kind() {
             TypeKind::Option => InstructionKind::BranchOption {
                 when_some: if pattern_word_at(self.tree, pattern, "Some") {
@@ -1012,7 +1105,7 @@ impl Compiler<'_> {
             },
             _ => return Err(AnalysisError::Invariant),
         };
-        Ok(())
+        Ok(true_falls_through || false_falls_through)
     }
 
     /// Returns an internal binding identity that source text cannot spell.
@@ -1087,7 +1180,7 @@ impl Compiler<'_> {
         self.compile_pattern_bindings(payload_pattern, payload_type, &root, false)
     }
 
-    fn compile_while(&mut self, statement: NodeId) -> Result<(), AnalysisError> {
+    fn compile_while(&mut self, statement: NodeId) -> Result<bool, AnalysisError> {
         let node = self.node(statement)?.clone();
         let condition = direct_child_form(self.tree, &node, SyntaxForm::Expression);
         let body = direct_child_form(self.tree, &node, SyntaxForm::Block)
@@ -1136,7 +1229,14 @@ impl Compiler<'_> {
         self.cleanup.push(InstructionKind::ExitScope);
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         let body_bindings = self.binding_types.clone();
-        self.compile_block(body, BlockMode::Statement)?;
+        let body_infeasible = condition
+            .map(|condition| bool_fact(self.tree, condition))
+            .transpose()?
+            .is_some_and(|fact| fact == BoolFact::False);
+        self.infeasible += usize::from(body_infeasible);
+        let body_result = self.compile_block(body, BlockMode::Statement);
+        self.infeasible -= usize::from(body_infeasible);
+        body_result?;
         self.binding_types = body_bindings;
         self.cleanup.pop();
         self.cleanup.pop();
@@ -1152,10 +1252,19 @@ impl Compiler<'_> {
         };
         let end = self.instructions.len();
         let target = self.loops.pop().ok_or(AnalysisError::Invariant)?;
+        let breaks = !target.breaks.is_empty();
         for jump in target.breaks {
             self.instructions[jump].kind = InstructionKind::Jump(end);
         }
-        Ok(())
+        let condition_fact = condition
+            .map(|condition| bool_fact(self.tree, condition))
+            .transpose()?
+            .unwrap_or(BoolFact::Unknown);
+        Ok(match node.form() {
+            SyntaxForm::LoopStatement => breaks,
+            SyntaxForm::WhileStatement => breaks || condition_fact != BoolFact::True,
+            _ => return Err(AnalysisError::Invariant),
+        })
     }
 
     /// Leaves nested lexical scopes before transferring to the nearest loop.
@@ -1166,18 +1275,21 @@ impl Compiler<'_> {
         for kind in cleanup.into_iter().rev() {
             self.emit(TypeDescriptor::UNIT, kind)?;
         }
+        // A transfer on a path that a compile-time fact excludes keeps its cleanup shape but
+        // emits no jump: its target label may not exist, and an unreachable transfer must not
+        // make the loop look like it can complete (`GNT-3-T-BRANCH`, `GNT-3-T-LOOP`).
+        if self.infeasible > 0 {
+            return Ok(());
+        }
         let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(start))?;
         if is_break {
-            self.loops
-                .last_mut()
-                .ok_or(AnalysisError::Invariant)?
-                .breaks
-                .push(jump);
+            let target = self.loops.last_mut().ok_or(AnalysisError::Invariant)?;
+            target.breaks.push(jump);
         }
         Ok(())
     }
 
-    fn compile_context_statement(&mut self, statement: NodeId) -> Result<(), AnalysisError> {
+    fn compile_context_statement(&mut self, statement: NodeId) -> Result<bool, AnalysisError> {
         let node = self.node(statement)?.clone();
         let is_with = matches!(node.form(), SyntaxForm::WithStatement);
         let body = direct_child_form(self.tree, &node, SyntaxForm::Block)
@@ -1196,7 +1308,7 @@ impl Compiler<'_> {
             InstructionKind::ExitSession
         });
         let body_bindings = self.binding_types.clone();
-        self.compile_block(body, BlockMode::Statement)?;
+        let body_falls_through = self.compile_block(body, BlockMode::Statement)?;
         self.binding_types = body_bindings;
         self.cleanup.pop();
         self.emit(
@@ -1207,7 +1319,7 @@ impl Compiler<'_> {
                 InstructionKind::ExitSession
             },
         )?;
-        Ok(())
+        Ok(body_falls_through)
     }
 
     fn compile_expression(&mut self, expression: NodeId) -> Result<TypeDescriptor, AnalysisError> {
@@ -1243,7 +1355,8 @@ impl Compiler<'_> {
         if let Some(match_expression) =
             descendant_form(self.tree, expression, &[SyntaxForm::MatchExpression])
         {
-            return self.compile_match(match_expression, ty);
+            self.compile_match(match_expression)?;
+            return Ok(ty);
         }
         // One node that carries its own operator tokens is an operator chain whose operands may
         // hold an operation, so the chain decides whether an operand is reached at all.
@@ -1646,17 +1759,13 @@ impl Compiler<'_> {
         Ok(Some(ty.clone()))
     }
 
-    fn compile_match(
-        &mut self,
-        match_expression: NodeId,
-        ty: TypeDescriptor,
-    ) -> Result<TypeDescriptor, AnalysisError> {
+    fn compile_match(&mut self, match_expression: NodeId) -> Result<bool, AnalysisError> {
         let node = self.node(match_expression)?.clone();
         let scrutinee = direct_child_form(self.tree, &node, SyntaxForm::Expression)
             .ok_or(AnalysisError::Invariant)?;
         let scrutinee_type = self.compile_expression(scrutinee)?;
         if self.closed_enums.contains_key(&scrutinee_type) {
-            return self.compile_enum_match(match_expression, scrutinee_type, ty);
+            return self.compile_enum_match(match_expression, scrutinee_type);
         }
         let members = scrutinee_type.immediate_members();
         let is_result = scrutinee_type.kind() == TypeKind::Result;
@@ -1685,40 +1794,54 @@ impl Compiler<'_> {
                     .is_some_and(|node| matches!(node.form(), SyntaxForm::MatchArm))
             })
             .collect::<Vec<_>>();
+        // A `_` arm covers whichever alternative the explicit arm does not name, so it stands in
+        // for the missing `None`/`Err` arm (`GNT-3-T-BRANCH`).
+        let wildcard = arms
+            .iter()
+            .copied()
+            .find(|arm| is_wildcard_arm(self.tree, *arm));
         let some = arms
             .iter()
             .copied()
             .find(|arm| pattern_word(self.tree, *arm, if is_result { "Ok" } else { "Some" }))
+            .or(wildcard)
             .ok_or(AnalysisError::Invariant)?;
         let none = arms
             .iter()
             .copied()
             .find(|arm| pattern_word(self.tree, *arm, if is_result { "Err" } else { "None" }))
+            .or(wildcard)
             .ok_or(AnalysisError::Invariant)?;
 
         let when_some = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         let some_bindings = self.binding_types.clone();
-        self.bind_pattern_payload(
-            some,
-            members.first().cloned().ok_or(AnalysisError::Invariant)?,
-        )?;
-        self.compile_match_arm(some)?;
+        if !is_wildcard_arm(self.tree, some) {
+            self.bind_pattern_payload(
+                some,
+                members.first().cloned().ok_or(AnalysisError::Invariant)?,
+            )?;
+        }
+        let some_falls_through = self.compile_match_arm(some)?;
         self.binding_types = some_bindings;
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
-        let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
+        let jump = if some_falls_through {
+            Some(self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?)
+        } else {
+            None
+        };
 
         let when_none = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         let none_bindings = self.binding_types.clone();
-        if is_result {
+        if is_result && !is_wildcard_arm(self.tree, none) {
             self.bind_pattern_payload(
                 none,
                 members.get(1).cloned().ok_or(AnalysisError::Invariant)?,
             )?;
         }
-        self.compile_match_arm(none)?;
+        let none_falls_through = self.compile_match_arm(none)?;
         self.binding_types = none_bindings;
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
@@ -1734,16 +1857,17 @@ impl Compiler<'_> {
                 when_none,
             }
         };
-        self.instructions[jump].kind = InstructionKind::Jump(end);
-        Ok(ty)
+        if let Some(jump) = jump {
+            self.instructions[jump].kind = InstructionKind::Jump(end);
+        }
+        Ok(some_falls_through || none_falls_through)
     }
 
     fn compile_enum_match(
         &mut self,
         match_expression: NodeId,
         scrutinee_type: TypeDescriptor,
-        ty: TypeDescriptor,
-    ) -> Result<TypeDescriptor, AnalysisError> {
+    ) -> Result<bool, AnalysisError> {
         let variants = self
             .closed_enums
             .get(&scrutinee_type)
@@ -1763,40 +1887,87 @@ impl Compiler<'_> {
         )?;
         let mut lowered_arms = Vec::with_capacity(source_arms.len());
         let mut jumps = Vec::with_capacity(source_arms.len());
+        let mut falls_through = false;
+        let mut named = BTreeSet::new();
+        for arm in source_arms.iter().copied() {
+            if is_wildcard_arm(self.tree, arm) {
+                continue;
+            }
+            named.insert(
+                enum_pattern_variant(self.tree, arm, &variants).ok_or(AnalysisError::Invariant)?,
+            );
+        }
         for arm in source_arms {
-            let variant =
-                enum_pattern_variant(self.tree, arm, &variants).ok_or(AnalysisError::Invariant)?;
-            let payload = variants.get(&variant).ok_or(AnalysisError::Invariant)?;
+            // A `_` arm is the default target: it runs for every variant the explicit arms do not
+            // name (`GNT-3-T-BRANCH`), and it cannot bind a payload.
+            let variant = if is_wildcard_arm(self.tree, arm) {
+                None
+            } else {
+                Some(
+                    enum_pattern_variant(self.tree, arm, &variants)
+                        .ok_or(AnalysisError::Invariant)?,
+                )
+            };
+            let payload = variant
+                .as_ref()
+                .and_then(|variant| variants.get(variant))
+                .cloned()
+                .flatten();
             let target = self.instructions.len();
-            lowered_arms.push((variant, target));
+            if let Some(variant) = &variant {
+                lowered_arms.push((variant.clone(), target));
+            } else {
+                for candidate in variants.keys() {
+                    if !named.contains(candidate) {
+                        lowered_arms.push((candidate.clone(), target));
+                    }
+                }
+            }
             self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
             let arm_bindings = self.binding_types.clone();
             if let Some(payload) = payload {
                 self.bind_pattern_payload(arm, payload.clone())?;
             }
-            self.compile_match_arm(arm)?;
+            let arm_falls_through = self.compile_match_arm(arm)?;
+            falls_through |= arm_falls_through;
             self.binding_types = arm_bindings;
             self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
             self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
-            jumps.push(self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?);
+            if arm_falls_through {
+                jumps.push(self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?);
+            }
         }
         let end = self.instructions.len();
         for jump in jumps {
             self.instructions[jump].kind = InstructionKind::Jump(end);
         }
         self.instructions[branch].kind = InstructionKind::BranchEnum { arms: lowered_arms };
-        Ok(ty)
+        Ok(falls_through)
     }
 
-    fn compile_match_arm(&mut self, arm: NodeId) -> Result<(), AnalysisError> {
+    fn compile_match_arm(&mut self, arm: NodeId) -> Result<bool, AnalysisError> {
         let node = self.node(arm)?.clone();
         if let Some(expression) = direct_child_form(self.tree, &node, SyntaxForm::Expression) {
             self.compile_expression(expression)?;
-            return Ok(());
+            return Ok(true);
         }
         let block = direct_child_form(self.tree, &node, SyntaxForm::Block)
             .ok_or(AnalysisError::Invariant)?;
         self.compile_block(block, BlockMode::Value)
+    }
+
+    /// Lowers an effect-only `match` statement.
+    ///
+    /// Every statement arm completes with `Unit` when it can complete normally, so the
+    /// value merged at the arm join is discarded exactly when some arm falls through
+    /// (`GNT-3-T-BRANCH`). A match whose arms all diverge leaves the enclosing block with
+    /// no reachable normal completion, exactly as the analyzer reports.
+    fn compile_statement_match(&mut self, statement: NodeId) -> Result<bool, AnalysisError> {
+        let falls_through = self.compile_match(statement)?;
+        if falls_through {
+            self.emit(TypeDescriptor::UNIT, InstructionKind::Pop)?;
+        }
+        Ok(falls_through)
     }
 
     fn compile_operation(
@@ -3422,6 +3593,15 @@ fn enum_pattern_variant(
 fn pattern_word(tree: &SyntaxTree, arm: NodeId, expected: &str) -> bool {
     descendant_pattern_tokens(tree, arm).any(|node| {
         matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == expected)
+    })
+}
+
+fn is_wildcard_arm(tree: &SyntaxTree, arm: NodeId) -> bool {
+    descendant_pattern_tokens(tree, arm).any(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Underscore))
+        )
     })
 }
 

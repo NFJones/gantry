@@ -3607,6 +3607,154 @@ fn exclusive_receiver_plain_assignment_evaluates_and_writes_back() {
     assert_eq!(run_single_entry(&root), 1);
 }
 
+/// The filed reproduction: a statement `match` whose block arms all `return` is accepted and
+/// runs, returning the matching arm's value (`GNT-3-T-BRANCH`, `GNT-3-T-COMPLETION`).
+#[test]
+fn reported_diverging_match_statement_executes() {
+    let root = TempDirectory::new(
+        "enum Flag { On, Off }\n\
+         fn make() -> Flag { Flag::On }\n\
+         fn pick(flag: Flag) -> Int { match flag { Flag::On => { return 1; }, Flag::Off => { return 2; } } }\n\
+         fn main() -> Int { pick(make()) }\n",
+    );
+    assert_eq!(run_single_entry(&root), 1);
+}
+
+/// Every arm of a diverging statement `match` returns through its own arm.
+#[test]
+fn diverging_statement_match_selects_the_matching_arm() {
+    for (flag, expected) in [("Flag::On", 1), ("Flag::Off", 2)] {
+        let root = TempDirectory::new(&format!(
+            "enum Flag {{ On, Off }}\n\
+             fn pick(flag: Flag) -> Int {{ match flag {{ Flag::On => {{ return 1; }}, Flag::Off => {{ return 2; }} }} }}\n\
+             fn main() -> Int {{ pick({flag}) }}\n"
+        ));
+        assert_eq!(run_single_entry(&root), expected, "{flag}");
+    }
+}
+
+/// When only some arms diverge, the match falls through to the following statement.
+#[test]
+fn mixed_diverging_match_statement_continues_after_the_match() {
+    let root = TempDirectory::new(
+        "enum Flag { On, Off }\n\
+         fn pick(flag: Flag) -> Int { let mut result: Int = 0; match flag { Flag::On => { return 1; }, Flag::Off => { result = 2; } } result }\n\
+         fn main() -> Int { pick(Flag::Off) }\n",
+    );
+    assert_eq!(run_single_entry(&root), 2);
+}
+
+/// `break` and `continue` inside match arms target the enclosing loop.
+#[test]
+fn loop_transfers_inside_match_arms_reach_the_loop() {
+    let root = TempDirectory::new(
+        "enum Flag { On, Off }\n\
+         fn pick(flag: Flag) -> Int { let mut x: Int = 0; loop { match flag { Flag::On => { break; }, Flag::Off => { continue; } } } x }\n\
+         fn main() -> Int { pick(Flag::On) }\n",
+    );
+    assert_eq!(run_single_entry(&root), 0);
+}
+
+/// A nested all-diverging match and a payload carrier both complete through their arms.
+#[test]
+fn nested_and_payload_diverging_matches_execute() {
+    let nested = TempDirectory::new(
+        "enum Flag { On, Off }\n\
+         enum Box { Wrapped(Flag), Empty }\n\
+         fn pick(value: Box) -> Int { match value { Box::Wrapped(flag) => { match flag { Flag::On => { return 1; }, Flag::Off => { return 2; } } }, Box::Empty => { return 3; } } }\n\
+         fn main() -> Int { pick(Box::Empty) }\n",
+    );
+    assert_eq!(run_single_entry(&nested), 3);
+
+    let payload = TempDirectory::new(
+        "enum Box { Wrapped(Int), Empty }\n\
+         fn pick(value: Box) -> Int { match value { Box::Wrapped(item) => { return item; }, Box::Empty => { return 0; } } }\n\
+         fn main() -> Int { pick(Box::Wrapped(7)) }\n",
+    );
+    assert_eq!(run_single_entry(&payload), 7);
+}
+
+/// An `if`/`else` whose branches both return is the same completion shape and also needs no
+/// trailing result.
+#[test]
+fn diverging_if_else_still_returns_through_its_branches() {
+    let root = TempDirectory::new(
+        "fn pick(flag: Bool) -> Int { if flag { return 1; } else { return 2; } }\n\
+         fn main() -> Int { pick(false) }\n",
+    );
+    assert_eq!(run_single_entry(&root), 2);
+}
+
+/// An ordinary value-producing `match` expression still returns its arm value.
+#[test]
+fn value_producing_match_still_returns_its_arm_value() {
+    let root = TempDirectory::new(
+        "enum Flag { On, Off }\n\
+         fn pick(flag: Flag) -> Int { match flag { Flag::On => 1, Flag::Off => 2 } }\n\
+         fn main() -> Int { pick(Flag::Off) }\n",
+    );
+    assert_eq!(run_single_entry(&root), 2);
+}
+
+/// A statement `match` may name one variant and cover the rest with `_`; the catch-all arm
+/// runs for every variant the explicit arms do not name (`GNT-3-T-BRANCH`).
+#[test]
+fn wildcard_statement_match_arms_execute() {
+    let root = TempDirectory::new(
+        "enum Flag { On, Off }\n\
+         fn pick(flag: Flag) -> Int { match flag { Flag::On => { return 1; }, _ => { return 2; } } }\n\
+         fn main() -> Int { pick(Flag::Off) }\n",
+    );
+    assert_eq!(run_single_entry(&root), 2);
+
+    let only_wildcard = TempDirectory::new(
+        "enum Flag { On, Off }\n\
+         fn pick(flag: Flag) -> Int { match flag { _ => { return 1; } } }\n\
+         fn main() -> Int { pick(Flag::Off) }\n",
+    );
+    assert_eq!(run_single_entry(&only_wildcard), 1);
+}
+
+/// `Option` and `Result` statement matches accept `_` as the absent/error alternative.
+#[test]
+fn wildcard_statement_match_alternatives_execute() {
+    let option = TempDirectory::new(
+        "fn pick(value: Option<Int>) -> Int { match value { Some(item) => { return item; }, _ => { return 0; } } }\n\
+         fn main() -> Int { pick(None) }\n",
+    );
+    assert_eq!(run_single_entry(&option), 0);
+
+    let result = TempDirectory::new(
+        "fn pick(value: Result<Int,String>) -> Int { match value { Ok(item) => { return item; }, _ => { return 0; } } }\n\
+         fn main() -> Int { pick(Err(\"failed\")) }\n",
+    );
+    assert_eq!(run_single_entry(&result), 0);
+}
+
+/// An `else if` chain selects the first reachable condition's arm, not the first `else` block.
+#[test]
+fn else_if_chain_selects_the_first_true_condition() {
+    for (chain, expected) in [
+        (
+            "if false { return 1; } else if false { return 2; } else { return 3; }",
+            3,
+        ),
+        (
+            "if false { return 1; } else if true { return 2; } else { return 3; }",
+            2,
+        ),
+        (
+            "if true { return 1; } else if true { return 2; } else { return 3; }",
+            1,
+        ),
+    ] {
+        let root = TempDirectory::new(&format!(
+            "fn pick() -> Int {{ {chain} }}\nfn main() -> Int {{ pick() }}\n"
+        ));
+        assert_eq!(run_single_entry(&root), expected, "{chain}");
+    }
+}
+
 fn run_entry(package: &gantry::analysis::TypedPackage) -> LogicalValue {
     let entry = package
         .entry()

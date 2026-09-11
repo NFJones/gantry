@@ -2990,3 +2990,146 @@ fn must_consume_guard_clause_paths_are_accepted() {
         );
     }
 }
+
+/// A statement `match` analyzes every arm as a command, so a value-returning body whose every
+/// arm diverges has no reachable normal completion and needs no trailing result, while the
+/// merged completion keeps each arm's loop transfer visible to the enclosing loop
+/// (`GNT-3-T-BRANCH`, `GNT-3-T-SEQUENCE`, `GNT-3-T-COMPLETION`).
+#[test]
+fn statement_match_completion_merges_every_arm() {
+    const DECLARATIONS: &str = "enum Flag { On, Off }\n\
+         enum Box { Wrapped(Flag), Empty }\n\
+         fn main() {}\n";
+
+    for source in [
+        "fn pick(flag: Flag) -> Int { match flag { Flag::On => { return 1; }, Flag::Off => { return 2; } } }",
+        "fn pick(flag: Flag) -> Int { let mut result: Int = 0; match flag { Flag::On => { return 1; }, Flag::Off => { result = 2; } } result }",
+        "fn run(flag: Flag) { match flag { Flag::On => { discard 1; }, Flag::Off => { discard 2; } } }",
+        "fn pick(flag: Flag) -> Int { let mut x: Int = 0; loop { match flag { Flag::On => { break; }, Flag::Off => { continue; } } } x }",
+        "fn pick(value: Box) -> Int { match value { Box::Wrapped(flag) => { match flag { Flag::On => { return 1; }, Flag::Off => { return 2; } } }, Box::Empty => { return 3; } } }",
+    ] {
+        let accepted = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+    }
+}
+
+/// A statement or trailing expression after a `match` with no reachable normal completion is
+/// still an unreachable-source analysis error (`GNT-9.11`), not an operational failure.
+#[test]
+fn statements_after_a_diverging_match_remain_unreachable() {
+    let rejected = analyze(
+        "enum Flag { On, Off }\n\
+         fn pick(flag: Flag) -> Int { match flag { Flag::On => { return 1; }, Flag::Off => { return 2; } } 9 }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "unreachable-source"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
+/// A value-producing `match` expression still infers its single arm result type.
+#[test]
+fn value_producing_match_still_infers_one_result_type() {
+    let package = analyze(
+        "enum Flag { On, Off }\n\
+         fn pick(flag: Flag) -> Int { match flag { Flag::On => 1, Flag::Off => 2 } }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+}
+
+/// A value-producing `match` arm is a value block and therefore requires a trailing value
+/// (`GNT-3-F-CORE`); a diverging statement cannot stand in for one, and the restriction is
+/// reported as a precise syntax diagnostic rather than an operational failure.
+#[test]
+fn value_match_arm_without_a_trailing_value_is_a_syntax_error() {
+    let phase = syntax(
+        "enum Flag { On, Off }\n\
+         fn pick(flag: Flag) -> Int { match flag { Flag::On => { return 1; }, Flag::Off => { 2 } } }",
+    );
+    assert!(
+        phase.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "unexpected-token"
+                && diagnostic.fields.get("expected").is_some_and(|expected| {
+                    expected.as_ref() == "value-producing trailing expression"
+                })
+        }),
+        "{:?}",
+        phase.diagnostics()
+    );
+}
+
+/// A loop whose only `break` sits in a fact-excluded branch never completes, so a
+/// value-returning body needs no trailing result and lowering must not diverge
+/// (`GNT-3-T-BRANCH`, `GNT-3-T-LOOP`, `GNT-3-T-COMPLETION`).
+#[test]
+fn loop_transfers_in_fact_excluded_branches_do_not_complete_the_loop() {
+    for source in [
+        "fn f() -> Int { loop { if false { break; } } } fn main() { discard f(); }",
+        "fn f() -> Int { while true { if false { break; } } } fn main() { discard f(); }",
+        "fn f() -> Int { loop { if true { continue; } else { break; } } } fn main() { discard f(); }",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            package.diagnostics()
+        );
+    }
+}
+
+/// An `if` whose feasible branch returns needs no implicit result even when the
+/// fact-excluded branch falls through (`GNT-3-T-BRANCH`, `GNT-3-T-COMPLETION`).
+#[test]
+fn fact_excluded_falling_through_branch_needs_no_result() {
+    for source in [
+        "fn f() -> Int { if false { } else { return 2; } } fn main() -> Int { f() }",
+        "fn f() -> Int { if true { return 2; } else { } } fn main() -> Int { f() }",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            package.diagnostics()
+        );
+    }
+}
+
+/// Every condition of an `else if` chain contributes to the completion verdict, so a
+/// chain whose only completing path is the final `else` needs no trailing result
+/// (`GNT-3-T-BRANCH`, `GNT-3-T-COMPLETION`).
+#[test]
+fn else_if_chain_completion_folds_every_condition() {
+    let package = analyze(
+        "fn f() -> Int { if false { } else if false { } else { return 3; } } fn main() -> Int { f() }",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+}

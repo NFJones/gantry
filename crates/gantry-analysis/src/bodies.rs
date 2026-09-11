@@ -47,8 +47,17 @@ struct BlockResult {
     continues_loop: bool,
 }
 
+/// Completion of one statement `match`: `GNT-3-T-BRANCH` merges every feasible
+/// arm's completion map, so a normal exit is reachable only when some arm falls
+/// through and each loop transfer is reachable from some arm.
+struct StatementCompletion {
+    falls_through: bool,
+    breaks_loop: bool,
+    continues_loop: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BoolFact {
+pub(crate) enum BoolFact {
     True,
     False,
     Unknown,
@@ -2629,7 +2638,7 @@ fn check_block(
                 continues_loop |= result.continues_loop;
             }
             SyntaxForm::MatchStatement => {
-                reachable = check_match_statement(
+                let completion = check_match_statement(
                     tree,
                     child_node,
                     facts,
@@ -2638,6 +2647,9 @@ fn check_block(
                     context,
                     diagnostics,
                 )?;
+                reachable = completion.falls_through;
+                breaks_loop |= completion.breaks_loop;
+                continues_loop |= completion.continues_loop;
             }
             SyntaxForm::IfStatement => {
                 let has_pattern = child_node.children().iter().copied().any(|nested| {
@@ -3096,7 +3108,7 @@ fn check_match_statement(
     expected_result: &TypeDescriptor,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<bool, AnalysisError> {
+) -> Result<StatementCompletion, AnalysisError> {
     let scrutinee = direct_child_form(tree, statement, SyntaxForm::Expression)
         .ok_or(AnalysisError::Invariant)?;
     let Some(scrutinee_type) = infer_expression(
@@ -3109,7 +3121,11 @@ fn check_match_statement(
         diagnostics,
     )?
     else {
-        return Ok(true);
+        return Ok(StatementCompletion {
+            falls_through: true,
+            breaks_loop: false,
+            continues_loop: false,
+        });
     };
     if scrutinee_type == TypeDescriptor::DECISION {
         diagnostics.push(body_diagnostic(
@@ -3124,6 +3140,8 @@ fn check_match_statement(
     let saved = ObligationSnapshot::capture(context);
     let mut covered = BTreeSet::new();
     let mut any_fallthrough = false;
+    let mut any_break = false;
+    let mut any_continue = false;
     let mut branch_states = Vec::new();
     for arm in statement.children().iter().copied().filter(|child| {
         tree.node(*child)
@@ -3180,6 +3198,8 @@ fn check_match_statement(
         leave_obligation_scope(context, diagnostics)?;
         branch_states.push(ObligationSnapshot::capture(context));
         any_fallthrough |= result.falls_through;
+        any_break |= result.breaks_loop;
+        any_continue |= result.continues_loop;
     }
     let exhaustive = !universe.is_empty() && universe.is_subset(&covered);
     merge_obligation_states(&saved, &branch_states, !exhaustive, context);
@@ -3192,7 +3212,11 @@ fn check_match_statement(
             [] as [(&str, &str); 0],
         )?);
     }
-    Ok(!exhaustive || any_fallthrough)
+    Ok(StatementCompletion {
+        falls_through: !exhaustive || any_fallthrough,
+        breaks_loop: any_break,
+        continues_loop: any_continue,
+    })
 }
 
 fn check_let(
@@ -4439,7 +4463,7 @@ fn span_width(span: &SourceSpan) -> u64 {
     span.bytes().end().saturating_sub(span.bytes().start())
 }
 
-fn bool_fact(tree: &SyntaxTree, root: NodeId) -> Result<BoolFact, AnalysisError> {
+pub(crate) fn bool_fact(tree: &SyntaxTree, root: NodeId) -> Result<BoolFact, AnalysisError> {
     let mut facts = BTreeMap::<NodeId, BoolFact>::new();
     let mut work = vec![(root, false)];
     while let Some((id, expanded)) = work.pop() {

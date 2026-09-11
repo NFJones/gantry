@@ -6,18 +6,18 @@
   "specification_sha256": "5ce48d9140573f60a59a8833510a60abcbc47c3298a7260a50dbc1a56a9f811e",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "475b2841422592e39e2064c5d059f65e4ad7f927e59cb0240da0c129d1ce61cf",
+    "publication_set_identity": "b05c70c7a9197e5963efc82496b3226587622a36e5b4d6d35212c1271c0d1166",
     "verification_path": "protocol/publication/verification-v1.json",
     "verification_sha256": "03f7cd214cbea139e96d3489c53aa30ca22a93b534a9966d0839062abb4b0ae1"
   },
   "conformance": {
     "requirement_registry": {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "38c59eab320fe76424d103a3c7ccde9ba59817be7c63c94e5a8025aa49ba8058"
+      "sha256": "ad3571bdca62d80ee38492745f57768d455b0dbb6d99c44d7917c3e32a10a762"
     },
     "manifest": {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "2933448703bab4e663f7c2e184b1f4f4f9a5e61b9d3301ba1b5d2ce189dc0f57"
+      "sha256": "9ba7d491f203da3b22df48f682fd7234abb45ddbe6177082d83335b51210d544"
     },
     "profile_results": [
       {
@@ -65,7 +65,7 @@
     ],
     "combined_gate": {
       "path": "protocol/conformance/combined-gate-v1.json",
-      "sha256": "45aef3b5c3b2531009193fa60aea8058ff5aeaf02106d9eaf9ce6ab3c260a6d1",
+      "sha256": "09f3d438b13838ceb05e76f4e9316fa4246812254cf3ced3cbb544a83861385f",
       "gate": "GNT-COMB-001",
       "status": "verified",
       "advertises_profiles": [
@@ -79,7 +79,7 @@
     },
     "adoption_gate": {
       "path": "protocol/conformance/async-execution-adoption-v1.json",
-      "sha256": "b409f282acafb9847d0593d0c4f2214cf49f074fd2b35436d2293c7d53c44f41",
+      "sha256": "5db7324258613e08bb2e1757b2af5fa2213f479ed719a1f27cd339cb81473fcb",
       "gate": "GNT-ASYNC-GATE-000"
     },
     "adoption_validator": {
@@ -126,7 +126,7 @@
   },
   "matrix": {
     "path": "release/release-matrix-v1.json",
-    "sha256": "8b741272240629e92c7fbfd905de14ee146f93081f88bd4feb20723ce31e0984",
+    "sha256": "73a81ece99f5cc268504c17086bfb1bc6ac00fab9e2538bcbcc28d9002d6899a",
     "verifier_path": "release/verify-release-matrix.py",
     "verifier_sha256": "0d7f31fe8f607b0db86b6c2e292e06254dacaddaf2205c2f1a3af7348e9d66ee",
     "status": "qualified-passed",
