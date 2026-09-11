@@ -3531,6 +3531,54 @@ fn public_reinitialized_subplace_of_a_consumed_place_owes_consumption() {
     }
 }
 
+/// The obligation fold uses the same constant-condition facts as the reachability analysis: a
+/// statically decided branch cannot make a fully consumed value look path-dependent, and an
+/// `else if` chain that can fall through without running a branch keeps the value live
+/// (`GNT-6.2d`).
+#[test]
+fn public_constant_conditions_select_the_reaching_obligation_paths() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    // A statically true condition runs its branch on every path, and a statically false leading
+    // condition leaves the following branch as the only outcome.
+    for accepted in [
+        "fn run() { let t: Token = Token { value: 1 }; if true { t.consume(); } } fn main() {}",
+        "fn run() { let t: Token = Token { value: 1 }; if true { t.consume(); } else { t.consume(); } } fn main() {}",
+        "fn run() { let t: Token = Token { value: 1 }; if false { t.consume(); } else { t.consume(); } } fn main() {}",
+        "fn run() { let t: Token = Token { value: 1 }; if false { } else if true { t.consume(); } } fn main() {}",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    for (source, code) in [
+        // The statically false branch never runs, so its discharge is not a reaching path and
+        // the value is still owed at the region exit.
+        (
+            "fn run() { let t: Token = Token { value: 1 }; if false { t.consume(); } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // A statically true condition runs its live branch on every path.
+        (
+            "fn run() { let t: Token = Token { value: 1 }; if true { } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // An `else if` chain without a final else can fall through without running a branch, so
+        // two consumers do not discharge the value.
+        (
+            "fn run(flag: Bool, other: Bool) { let t: Token = Token { value: 1 }; if flag { t.consume(); } else if other { t.consume(); } } fn main() {}",
+            "must-consume-path-dependent",
+        ),
+        // A runtime condition keeps the partial-consume verdict.
+        (
+            "fn run(flag: Bool) { let t: Token = Token { value: 1 }; if flag { t.consume(); } } fn main() {}",
+            "must-consume-path-dependent",
+        ),
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{source}"), code);
+    }
+}
+
 /// An implementation method must stay within the effect contract its trait method declares,
 /// because that declared set is the conservative summary parametric callers rely on
 /// (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).

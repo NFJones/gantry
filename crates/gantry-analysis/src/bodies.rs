@@ -2928,22 +2928,60 @@ fn check_block(
                         .last()
                         .is_some_and(|result| result.falls_through)
                     {
-                        branch_states.push(ObligationSnapshot::capture(context));
+                        branch_states.push((
+                            blocks.saturating_sub(1),
+                            ObligationSnapshot::capture(context),
+                        ));
                     }
                 }
                 // A consuming admission on only some paths leaves the obligation live: a discharge
-                // survives the fold only when every analysed path discharges it, and the report is
-                // deferred to the region exit that a path still leaves without the discharge.
-                let has_else_clause = child_node.children().iter().any(|nested| {
-                    tree.node(*nested).is_some_and(|node| {
-                        matches!(
-                            node.form(),
-                            SyntaxForm::Token(TokenKind::ReservedWord(word))
-                                if word.spelling() == "else"
-                        )
-                    })
-                });
-                merge_obligation_states(&saved, &branch_states, !has_else_clause, context);
+                // survives the fold only when every reaching path discharges it, and the report is
+                // deferred to the region exit that a path still leaves without the discharge. The
+                // same constant facts the reachability analysis uses select the reaching paths: a
+                // branch guarded by a statically false condition never runs, a branch after a
+                // statically true condition is unreachable, and the pre-conditional state is a
+                // reaching path exactly when the chain can fall through without taking a branch.
+                let has_final_else = blocks > conditions.len();
+                let mut reaching_states = Vec::new();
+                let mut no_branch_possible = true;
+                if has_pattern {
+                    // A pattern match can always fail to select, so every analysed branch reaches
+                    // the join and an elseless chain keeps the pre-conditional state.
+                    reaching_states.extend(branch_states.iter().map(|(_, state)| state.clone()));
+                } else {
+                    for (index, condition) in conditions.iter().copied().enumerate() {
+                        match bool_fact(tree, condition)? {
+                            BoolFact::True => {
+                                if let Some((_, state)) =
+                                    branch_states.iter().find(|(branch, _)| *branch == index)
+                                {
+                                    reaching_states.push(state.clone());
+                                }
+                                no_branch_possible = false;
+                                break;
+                            }
+                            BoolFact::False => {}
+                            BoolFact::Unknown => {
+                                if let Some((_, state)) =
+                                    branch_states.iter().find(|(branch, _)| *branch == index)
+                                {
+                                    reaching_states.push(state.clone());
+                                }
+                            }
+                        }
+                    }
+                    // A final else block covers the not-taken path whenever no condition is
+                    // statically true.
+                    if no_branch_possible
+                        && let Some((_, state)) = branch_states
+                            .iter()
+                            .find(|(branch, _)| *branch == conditions.len())
+                    {
+                        reaching_states.push(state.clone());
+                    }
+                }
+                let include_fallthrough = !has_final_else && no_branch_possible;
+                merge_obligation_states(&saved, &reaching_states, include_fallthrough, context);
                 if has_pattern {
                     let has_else = child_node.children().iter().any(|nested| {
                         tree.node(*nested).is_some_and(|node| {
