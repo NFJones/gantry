@@ -3869,3 +3869,101 @@ fn else_if_chain_completion_folds_every_condition() {
         package.diagnostics()
     );
 }
+
+/// A value position — a call argument, constructor field, binding initializer, assignment
+/// right-hand side, `return` operand, or `discard` operand — reads the place it names. That read
+/// is the place's one admitted use and records the place under item 2e's containment rules, uses
+/// linearize in the mandated source order so the later use is the reported one, and an assignment
+/// destination is never a use and never clears a recorded place (`GNT-6.2h`).
+#[test]
+fn affine_value_positions_use_each_place_once() {
+    const DECLARATIONS: &str = "affine struct Token { value: Int }\n\
+         struct Pair { a: Token, b: Token }\n\
+         fn pair(x: Token, y: Token) {}\n\
+         fn mix(x: Int, y: Token) -> Int { 0 }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n";
+
+    // Distinct places at distinct value positions are each read once.
+    for accepted in [
+        "fn drive(t: Token, u: Token) { pair(t, u); }\nfn main() { }",
+        "fn drive(t: Token, u: Token) -> Pair { Pair { a: t, b: u } }\nfn main() { }",
+        "fn drive(mut a: Token, b: Token) -> Token { a = b; a }\nfn main() { }",
+        "fn drive(p: Pair) -> Token { let x: Token = p.a; p.b }\nfn main() { }",
+        "fn drive(mut p: Pair, b: Token, c: Token) { let x: Token = p.a; p = Pair { a: b, b: c }; }\nfn main() { }",
+        "fn drive(t: Token) { discard t; }\nfn main() { }",
+        "fn pass(t: Token) -> Token { return t; }\nfn main() { }",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    // A second use of the same place at any value position is a reuse, and an assignment
+    // destination neither uses the destination nor clears the place recorded for it.
+    for rejected in [
+        "fn drive(t: Token) { pair(t, t); }\nfn main() { }",
+        "fn drive(t: Token) -> Pair { Pair { a: t, b: t } }\nfn main() { }",
+        "fn drive(mut a: Token, b: Token) -> Token { let x: Token = a; a = b; a }\nfn main() { }",
+        "fn drive(mut p: Pair, b: Token) -> Token { let x: Token = p.a; p.a = b; p.a }\nfn main() { }",
+        "fn drive(p: Pair) -> Pair { let x: Token = p.a; p }\nfn main() { }",
+        "fn drive(p: Pair) -> Token { let x: Pair = p; p.a }\nfn main() { }",
+        "fn drive(t: Token) { discard t; discard t; }\nfn main() { }",
+        "fn drive(t: Token) -> Token { discard t; return t; }\nfn main() { }",
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{rejected}"), "affine-value-reuse");
+    }
+
+    // Uses linearize in source order: the earlier operand is admitted and the later one is the
+    // reported reuse, including after the earlier `owned self` receiver admission of item 2b.
+    assert_affine_rejected_at(
+        &format!("{DECLARATIONS}fn drive(t: Token) {{ pair(t, t); }}\nfn main() {{ }}"),
+        "affine-value-reuse",
+        "t);",
+    );
+    assert_affine_rejected_at(
+        &format!(
+            "{DECLARATIONS}fn drive(t: Token) -> Int {{ mix(t.consume(), t) }}\nfn main() {{ }}"
+        ),
+        "affine-value-reuse",
+        "t) }",
+    );
+    assert_affine_rejected_at(
+        &format!(
+            "{DECLARATIONS}fn drive(t: Token) -> Token {{ discard t; return t; }}\nfn main() {{ }}"
+        ),
+        "affine-value-reuse",
+        "t; }",
+    );
+}
+
+/// Rejects `source` with `code` and requires the primary span to start at the single `marker`
+/// occurrence, which pins the value position the report blames.
+fn assert_affine_rejected_at(source: &str, code: &str, marker: &str) {
+    assert_eq!(
+        source.matches(marker).count(),
+        1,
+        "{source}: marker {marker:?} is not unique"
+    );
+    let expected = source
+        .find(marker)
+        .unwrap_or_else(|| panic!("{source}: missing marker {marker:?}"));
+    let rejected = analyze(source);
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{source}: {:?}",
+        rejected.diagnostics()
+    );
+    let diagnostic = rejected
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == code)
+        .unwrap_or_else(|| panic!("{source}: {:?}", rejected.diagnostics()));
+    let primary = diagnostic
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("{source}: missing primary span"));
+    assert_eq!(
+        usize::try_from(primary.bytes().start()).unwrap_or_default(),
+        expected,
+        "{source}"
+    );
+}

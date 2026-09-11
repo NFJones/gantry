@@ -3562,6 +3562,36 @@ item 2d lists.
 Struct and tuple patterns, rest patterns, pattern guards, and task or channel
 transfer remain excluded, as do the unwind, cancellation, and suspension duties
 that the other items of this section own.
+<a id="GNT-6.2h"></a>
+2h. A **value position** is a source position that takes a value: a call argument,
+a constructor or aggregate field, a binding initializer, an assignment
+right-hand side, a `return` operand, and a `discard` operand. A value position
+reads the place it names, and that read is the one use item 2c admits for an
+`AffineDroppable` place. The read records the place exactly as a transfer marks
+one, so item 2e's containment rule applies to it: the place, every place
+containing it, and every place contained in it MUST NOT be used again while the
+binding root of the place is in scope. A value position is not a transfer point:
+it requires no staging, it does not mark its place uninitialized, and the
+staging and transfer rules of item 2b apply only to the owned receiver admission
+they describe.
+
+Value positions are evaluated in the source order `GNT-3-M-CONTEXT` mandates,
+and the receiver admission of a call precedes its remaining arguments as item 2b
+requires. When two value positions use the same place, the earlier one in that
+order is the admitted use and the later one MUST be rejected as a reuse.
+
+An assignment destination is not a value position. Assignment is admitted for
+every place under item 2e, commits the complete right-hand side item 3 requires,
+and never clears a place the ledger has already recorded, so a later read of a
+destination that was already used, or of a destination that contains or is
+contained in a used place, MUST be rejected exactly as item 2e requires.
+
+A value position naming a `MustConsume` place is a copy and MUST be rejected by
+item 2d's copy rule, which admits only its two consumption dispositions.
+
+Loans taken as arguments, task or channel transfer, resources, and the unwind,
+cancellation, and suspension duties the other items of this section own remain
+excluded.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
