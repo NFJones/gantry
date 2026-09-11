@@ -62,6 +62,7 @@
     - [15.9 Thread safety](#159-thread-safety)
     - [15.10 Protected data](#1510-protected-data)
   - [16. Packages, Manifests, and Public Interfaces](#16-packages-manifests-and-public-interfaces)
+  - [17. Targets, Features, and Conditional Compilation](#17-targets-features-and-conditional-compilation)
 
 <!-- In all code blocks rust syntax highlighting is used deliberately. Eventually, these can be changed to gantry -->
 
@@ -802,6 +803,7 @@ than one block.
 | Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10`, `GNT-15.1-automatic-execution`, `GNT-15.2-runtime-sessions`, `GNT-15.4-owned-work` |
 | Packages, manifests, and public interfaces | `GNT-16.0`, `GNT-16.1-package-identity`, `GNT-16.2-package-instances`, `GNT-16.3-dependency-aliases`, `GNT-16.4-visibility`, `GNT-16.5-reexports`, `GNT-16.6-target-kinds`, `GNT-16.7-public-interface-manifest`, `GNT-16.8-compatibility-axes`, `GNT-16.9-resolution-order-independence` |
+| Targets, features, and conditional compilation | `GNT-17.0`, `GNT-17.1-target-descriptor`, `GNT-17.2-descriptor-normalization-and-target-facts`, `GNT-17.3-sealed-predicates`, `GNT-17.4-feature-declaration`, `GNT-17.5-feature-unification`, `GNT-17.6-conditional-selection-rule`, `GNT-17.7-inactive-code-policy`, `GNT-17.8-target-matrix`, `GNT-17.9-build-host-authority`, `GNT-17.10-target-selected-mode-admission`, `GNT-17.11-target-artifact-binding`, `GNT-17.12-target-resolution-failure`, `GNT-17.13-runtime-availability-separation` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -11357,3 +11359,231 @@ dependency of another package. v1 remains unaffected by this block, and the
 block MUST NOT be read as introducing that machinery into v1 or as altering the
 landed v1 treatment of `const`, of package contents, or of the single immutable
 source snapshot per package activity.
+
+## 17. Targets, Features, and Conditional Compilation
+
+<a id="GNT-17.0"></a>
+
+This section defines execution targets, build hosts, target descriptors, sealed
+predicates, declared features and their unification, the conditional selection
+rule, the inactive-code policy, the target matrix, build-host authority,
+target-selected mode admission, and target artifact binding. It extends the
+target-kind rules of `GNT-16.6-target-kinds` and the mode contract of
+`GNT-3.1` rather than replacing them, and it states no obligation that a check
+cannot decide.
+
+The closed vocabulary of this section is exactly the following terms. A clause
+here MUST NOT use a target term outside this vocabulary, and a term listed
+below MUST NOT be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| execution target | The platform one build, artifact, or execution is produced for, named by exactly one target descriptor. |
+| build host | The platform that runs the toolchain. It is never the execution target and grants no target authority. |
+| target descriptor | The versioned closed record of one execution target under `GNT-17.1-target-descriptor`. |
+| descriptor version | The version of the descriptor record, never the version of the platform it names. |
+| normalized descriptor digest | The digest over the canonical encoding of one target descriptor. |
+| target facts | The `GNT-16.1-package-identity` identity input that records the selected target of one package instance. |
+| target predicate | One member of the sealed predicate vocabulary of `GNT-17.3-sealed-predicates`. |
+| sealed predicate | A predicate whose vocabulary is closed and whose inputs are exactly the listed descriptor fields and declared features. |
+| declared feature | A feature a package manifest declares under `GNT-17.4-feature-declaration`. |
+| selected feature solution | The single deterministic result of feature unification for one package instance. |
+| feature unification | The deterministic computation of one selected feature solution per package instance, under `GNT-17.5-feature-unification`. |
+| retained closure | The declared facts conditional selection keeps: types, implementations, operations, capability requirements, agent tools, and durable state. |
+| inactive branch | Conditional source or a conditional dependency edge that the selection rule does not retain. |
+| target matrix | The explicit set of target descriptors for which analysis and evidence are produced. |
+| build-host authority | Declared capabilities and declared data a generator receives. It is never execution-target authority. |
+| runner capability | An explicit capability that lets a build run a produced executable for the execution target. |
+| target-selected mode admission | The rule that admits exactly one `GNT-3.1` semantic mode for a selected target and target kind. |
+| target artifact binding | The record of the descriptor, feature, predicate, generator, toolchain, and mode inputs one artifact was produced from. |
+| toolchain identity | The opaque identity of the toolchain that produced an artifact; its content is owned by TOOLCHAIN-001. |
+| ambient environment fact | Any environment variable, host path, clock, locale, or discovered service that no descriptor field records. |
+
+**Applicability.** The clauses of this section govern a source-language edition
+that admits more than one execution target, a predicate language, or a
+lockfile. The v1 edition described by Sections 1 through 15 does not:
+`GNT-13.3` admits no conditional-compilation form, `GNT-16.6-target-kinds`
+records one `targets[]` collection whose entries name a kind, a name, a root,
+and an entry, and v1 has no lockfile. An implementation that supports only that
+single-target model MUST record each clause of this section as a profile-based
+`not-applicable` justification in the sense of Sections 2 and 15. It MUST NOT
+report a clause here as satisfied, partially satisfied, conditionally
+satisfied, or satisfied for a subset of its rules, because the behavior those
+rules constrain is not defined for that model and a partial claim would assert
+conformance to behavior this specification does not define. Non-applicability
+is a property of the claimed edition and profile, not of a particular package,
+feature selection, or build.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+closed five-kind vocabulary, the `targets[]` manifest vocabulary, the target
+kind entry rules, and the physical-layout nonsemanticity of
+`GNT-16.6-target-kinds`; the identity inputs, canonical identity,
+instance deduplication, and public interface manifest of
+`GNT-16.1-package-identity`, `GNT-16.2-package-instances`, and
+`GNT-16.7-public-interface-manifest`; the reportable compatibility axes of
+`GNT-16.8-compatibility-axes`, to which this section adds no axis and no class;
+the closed `portable`, `application`, and `durable` mode vocabulary of
+`GNT-3.1`, which this section cites and never extends; the operation-site and
+effect-summary rules of Section 7 and the preflight closure of Section 15; and
+the v1 grammar of `GNT-13.3`, which admits no conditional-compilation form.
+Nothing here introduces a second identity, a second mode, a sixth target kind,
+a new manifest property, a grammar production, or ambient authority into an
+edition that does not already define it, and no clause here may be read as
+amending any of the sections listed above. Lockfile format, interface and
+artifact linking, toolchain identity content, standard-library contract
+content, and package acquisition remain owned by PACKAGE-001, LINK-001,
+TOOLCHAIN-001, STDLIB-SPEC-001, and REGISTRY-SPEC-001 respectively.
+
+<a id="GNT-17.1-target-descriptor"></a>
+
+**[GNT-17.1-target-descriptor] Target descriptor.** Exactly one target
+descriptor is selected for one build, and it is a versioned closed record that
+names at least the architecture, the operating-system family, the ABI or
+environment, the language edition, the standard-library contract version, and
+the `GNT-3.1` semantic mode the build targets. A descriptor version this
+implementation does not support, or a field value outside the closed
+vocabulary of its version, is invalid rather than ignored, and an
+implementation MUST NOT infer a missing field from an ambient environment fact.
+The build host is never the execution target by default, and a build that does
+not name an execution target MUST NOT be represented as having selected one.
+
+<a id="GNT-17.2-descriptor-normalization-and-target-facts"></a>
+
+**[GNT-17.2-descriptor-normalization-and-target-facts] Descriptor
+normalization.** A target descriptor MUST have exactly one canonical byte
+encoding and one normalized descriptor digest over that encoding, and two
+descriptors are the same target if and only if those canonical bytes are
+identical. The target facts of one package instance are exactly the descriptor
+version, the normalized descriptor digest, and the digest of the selected
+feature solution, composed with the declared kind and entry-point facts of
+`GNT-16.6-target-kinds`; they are the identity input named by
+`GNT-16.1-package-identity` and MUST NOT be derived from a host path, a
+directory or file name, a filesystem layout, an environment variable, a clock,
+a locale, a discovered service, or a display name.
+
+<a id="GNT-17.3-sealed-predicates"></a>
+
+**[GNT-17.3-sealed-predicates] Sealed predicates.** The predicate vocabulary is
+a closed sealed table. Each predicate reads only descriptor fields and the
+declared features of the declaring package instance, and MUST NOT observe the
+module or package graph path that reached a declaration, the identity of the
+requesting package, another package's features, an environment variable, a
+host path, the filesystem, the clock, or a discovered service. A predicate name
+outside the table is an error rather than an extension point, and a predicate
+MUST NOT be defined by source, by a dependency, or by a build script.
+
+<a id="GNT-17.4-feature-declaration"></a>
+
+**[GNT-17.4-feature-declaration] Feature declaration.** Features are manifest
+declarations over a closed vocabulary: each declaration names a feature, states
+whether the default selection includes it, and lists the features it enables;
+the enabling relation MUST be acyclic, and a declaration with an unknown
+feature name or a cycle is invalid rather than ignored. Contradictory or
+unsatisfiable feature constraints are invalid rather than preferred, and no
+feature value may come from ambient state or from a dependency's private
+selection.
+
+<a id="GNT-17.5-feature-unification"></a>
+
+**[GNT-17.5-feature-unification] Feature unification.** Exactly one selected
+feature solution is produced per package instance: the scope of unification is
+the package instance, and two simultaneous selections that differ produce two
+distinct package instances under `GNT-16.2-package-instances` rather than one
+instance with two solutions. The selected feature solution MUST NOT depend on
+the graph path that reached the instance, on traversal or enumeration order, on
+which dependency requested a feature, or on discovery order, and a dependency
+MUST NOT detect which requesting package selected a feature. Unification that
+cannot produce exactly one solution is a static error under
+`GNT-17.12-target-resolution-failure`.
+
+<a id="GNT-17.6-conditional-selection-rule"></a>
+
+**[GNT-17.6-conditional-selection-rule] Conditional selection.** Conditional
+source and conditional dependency edges are selected by one published,
+versioned, structural rule that reads the selected descriptor and the selected
+feature solution and nothing else. Every conditional form MUST parse and be
+structurally validated under that rule whether or not it is retained, and the
+retained set is a pure function of the selected descriptor and the selected
+feature solution. Where several predicates match one declaration, resolution
+follows exactly one stated total rule; first-match, last-match, declaration
+order, and preference ordering MUST NOT decide which branch is retained.
+
+<a id="GNT-17.7-inactive-code-policy"></a>
+
+**[GNT-17.7-inactive-code-policy] Inactive code.** An inactive branch MUST parse
+and be structurally validated but MUST NOT contribute to the retained closure:
+it contributes no type, no implementation, no operation, no capability
+requirement, no agent tool, and no durable state, and it does not enter any
+identity-bearing record. Conditional selection MUST NOT widen or narrow an
+analyzed authority closure except through the retained closure it computes, and
+it MUST NOT turn an ordinary call into a hidden host dispatch or bypass the
+operation-site and effect-summary rules of Section 7.
+
+<a id="GNT-17.8-target-matrix"></a>
+
+**[GNT-17.8-target-matrix] Target matrix.** Tooling and evidence MUST cover an
+explicit target matrix: every supported combination of target descriptor, target
+kind, feature solution, and semantic mode is analyzed, and every unsupported
+combination is recorded as unsupported rather than left unattested. A
+combination that is not supported MUST fail before an executable begins rather
+than being silently substituted by another target, and an unanalyzed
+combination MUST NOT be reported as supported or as producing an equivalent
+artifact.
+
+<a id="GNT-17.9-build-host-authority"></a>
+
+**[GNT-17.9-build-host-authority] Build-host authority.** The build host and the
+execution target are strictly distinct. A generator receives declared
+build-host authority and declared generator input under
+`GNT-16.9-resolution-order-independence` and never execution-target authority,
+and running a produced executable during the build requires an explicit runner
+capability and becomes a recorded build input. A build-host fact MUST NOT
+participate in source retention, descriptor normalization, feature
+unification, or artifact identity except as a recorded build input.
+
+<a id="GNT-17.10-target-selected-mode-admission"></a>
+
+**[GNT-17.10-target-selected-mode-admission] Mode admission.** Exactly one mode
+of the closed `GNT-3.1` vocabulary is admitted for one selected target and
+target kind, the admitted mode is an input to the retained-closure analysis,
+and it participates in artifact identity as the landed mode contract requires.
+A mode that the selected target or target kind does not admit fails before
+semantic analysis of an executable begins. This clause adds no mode, makes
+embedding no mode, and MUST NOT redefine durable admission, the rejection of an
+application-only workflow, or the durable-recovery mode check of `GNT-3.1` and
+Section 11.
+
+<a id="GNT-17.11-target-artifact-binding"></a>
+
+**[GNT-17.11-target-artifact-binding] Artifact binding.** The lockfile and the
+analyzed artifact MUST bind the descriptor version, the normalized descriptor
+digest, the selected feature solution, every evaluated predicate outcome, the
+target-dependent generated outputs and their hashes, the toolchain identity,
+and the admitted semantic mode. Changing any bound input MUST change artifact
+identity. A binding that omits a bound input, or that names an unsupported
+version, MUST be reported as unproven or rejected rather than repaired, and
+binding MUST NOT depend on discovery, enumeration, or graph order. Lockfile
+format and artifact linking remain owned by PACKAGE-001 and LINK-001.
+
+<a id="GNT-17.12-target-resolution-failure"></a>
+
+**[GNT-17.12-target-resolution-failure] Resolution failure.** An unsupported
+predicate name, an unknown descriptor field value, an unsupported descriptor
+version, a contradictory or unsatisfiable feature constraint, a feature cycle,
+and an unresolvable conditional selection MUST fail before semantic analysis of
+an executable begins, and each MUST be reported as a diagnostic that names the
+declaring package instance and the offending declaration. Such a failure MUST
+NOT be resolved by fallback, by preference, by another target, or by silently
+discarding the declaration.
+
+<a id="GNT-17.13-runtime-availability-separation"></a>
+
+**[GNT-17.13-runtime-availability-separation] Runtime availability.** Runtime
+capability availability is a separate deployment fact. Discovering a host
+service at runtime MUST NOT activate source that the analyzed target did not
+retain and MUST NOT widen an executable's authority closure. A static
+requirement such as a network listener is satisfied by preflight and binding
+under Section 15 and never by a descriptor field, and an optional runtime
+service is declared statically as an optional binding or behind an explicit
+dynamic-authorization boundary, with absence handled as a typed preflight or
+application outcome. A target fact grants no authority.
