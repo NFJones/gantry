@@ -3003,6 +3003,68 @@ fn public_trait_implementation_effects_stay_within_the_declared_contract() {
         "{:?}",
         matching.diagnostics()
     );
+
+    // A helper call contributes transitively, so an implementation that reaches an effect through
+    // another callable still violates a narrower contract.
+    let transitive_violation = analyze(
+        "trait Render { pure fn render(self); }\n\
+         struct Item {}\n\
+         fn helper() { discard prompt \"Generate.\" -> String; }\n\
+         impl Render for Item { fn render(self) { helper(); } }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        transitive_violation.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        transitive_violation.diagnostics()
+    );
+    assert!(
+        transitive_violation
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "effect-contract-violation"),
+        "{:?}",
+        transitive_violation.diagnostics()
+    );
+
+    // A contract strictly wider than the inferred set stays accepted.
+    let wider_contract = analyze(
+        "trait Render { fn render(self) effects { prompt, background }; }\n\
+         struct Item {}\n\
+         impl Render for Item { fn render(self) { discard prompt \"Generate.\" -> String; } }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        wider_contract.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        wider_contract.diagnostics()
+    );
+
+    // A pure method that breaks its own contract reports the contract violation, not the generic
+    // purity report, which would describe a method as a workflow and duplicate the finding.
+    let pure_method = analyze(
+        "trait Render { pure fn render(self); }\n\
+         struct Item {}\n\
+         impl Render for Item { pure fn render(self) { discard prompt \"Generate.\" -> String; } }\n\
+         fn main() {}",
+    );
+    let codes = pure_method
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| diagnostic.code.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        codes.contains(&"effect-contract-violation"),
+        "{:?}",
+        pure_method.diagnostics()
+    );
+    assert!(
+        !codes.contains(&"impure-workflow"),
+        "{:?}",
+        pure_method.diagnostics()
+    );
 }
 
 /// A pattern payload that binds a `MustConsume` value owes consumption like any other binding

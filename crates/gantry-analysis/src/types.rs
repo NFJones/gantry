@@ -260,6 +260,7 @@ fn analyze_package_types_with_policy(
         phase.parsed_sources(),
         &facts_by_source,
         &structure,
+        &trait_contracts,
         &mut type_diagnostics,
     )?;
     let (mut generic_templates, generic_concrete_effects) =

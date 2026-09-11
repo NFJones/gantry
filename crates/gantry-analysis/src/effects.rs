@@ -12,7 +12,7 @@ use gantry_ir::generated::{Effect, OperationSiteKind, RecoveryClass, TaskControl
 use gantry_ir::{
     ActionEffectContributor, ActionInventory, ActionParameter, CallEdge, CanonicalPath,
     CanonicalSignature, EffectSet, OperationSite, ReceiverMode, StaticSiteId, StructuralPosition,
-    TaskControlSite, TypeDescriptor, WorkflowFacts, WorkflowParameter,
+    TaskControlSite, TraitContract, TypeDescriptor, WorkflowFacts, WorkflowParameter,
 };
 
 use crate::{AnalysisError, PackageStructure, Symbol, SymbolId, SymbolKind, TypeFact};
@@ -71,6 +71,7 @@ pub(crate) fn analyze_workflow_facts(
     sources: &[ParsedSource],
     facts: &[BTreeMap<NodeId, TypeFact>],
     structure: &PackageStructure,
+    trait_contracts: &[TraitContract],
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(Vec<WorkflowFacts>, Vec<ActionInventory>), AnalysisError> {
     let symbols_by_span = structure
@@ -97,6 +98,7 @@ pub(crate) fn analyze_workflow_facts(
         methods: &methods,
     };
     let mut drafts = Vec::new();
+    let mut declared_contracts = BTreeMap::<SourceSpan, EffectSet>::new();
 
     for (source_index, source) in sources.iter().enumerate() {
         let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
@@ -135,14 +137,13 @@ pub(crate) fn analyze_workflow_facts(
                 &references,
                 &symbols_by_id,
             );
-            let owner = receiver.clone().or_else(|| {
-                implementation_trait_path(
-                    source.tree(),
-                    implementation,
-                    &references,
-                    &symbols_by_id,
-                )
-            });
+            let trait_path = implementation_trait_path(
+                source.tree(),
+                implementation,
+                &references,
+                &symbols_by_id,
+            );
+            let owner = receiver.clone().or_else(|| trait_path.clone());
             let Some(owner) = owner else {
                 continue;
             };
@@ -157,6 +158,19 @@ pub(crate) fn analyze_workflow_facts(
                     .ok_or(AnalysisError::Invariant)?;
                 let path =
                     CanonicalPath::method(&owner, &name).map_err(|_| AnalysisError::Invariant)?;
+                if let Some(trait_path) = trait_path.as_ref()
+                    && let Some(declared) = trait_contracts
+                        .iter()
+                        .find(|contract| contract.path() == trait_path)
+                        .and_then(|contract| {
+                            contract
+                                .methods()
+                                .iter()
+                                .find(|contract| contract.name() == name.as_ref())
+                        })
+                {
+                    declared_contracts.insert(method_node.span().clone(), *declared.effects());
+                }
                 drafts.push(analyze_callable(
                     source.tree(),
                     method,
@@ -233,7 +247,13 @@ pub(crate) fn analyze_workflow_facts(
             .get(&draft.span)
             .cloned()
             .ok_or(AnalysisError::Invariant)?;
-        if draft.pure && !effects.is_empty() {
+        // The body analysis reports a precise contract violation for a trait implementation method
+        // whose inferred effects exceed its declared contract, so this generic purity report is
+        // suppressed for exactly those declarations (`GNT-3-T-PARAMETRIC-PACKAGE`).
+        let violates_contract = declared_contracts
+            .get(&draft.span)
+            .is_some_and(|declared| !effects.iter().all(|effect| declared.contains(effect)));
+        if draft.pure && !effects.is_empty() && !violates_contract {
             diagnostics.push(effect_diagnostic(
                 "impure-workflow",
                 "a pure workflow has a nonempty transitive inferred effect set",

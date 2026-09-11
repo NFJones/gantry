@@ -2285,19 +2285,12 @@ fn finish_effect_graph(
     }
     for (node, draft) in &drafts {
         let effects = summaries.get(node).copied().unwrap_or_default();
-        if draft.pure && !effects.is_empty() {
-            diagnostics.push(body_diagnostic(
-                "impure-workflow",
-                DiagnosticCategory::Type,
-                "a pure generic workflow has a nonempty transitive inferred effect set",
-                draft.source.clone().ok_or(AnalysisError::Invariant)?,
-                [("effects", effect_names(effects))],
-            )?);
-        }
         // A trait implementation method is valid only under the contract its trait method
         // declares: the exact inferred effect set must stay within that contract, because
         // parametric callers use the declared set as their conservative summary
-        // (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).
+        // (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`). This report names the
+        // contract, so a violating declaration reports it instead of the generic purity report
+        // below, which would describe a method as a workflow and duplicate the finding.
         if let Some((declared, callable)) = trait_contract_effects(context, node)
             && !effects.iter().all(|effect| declared.contains(effect))
             && let Some(span) = draft.source.clone()
@@ -2312,6 +2305,16 @@ fn finish_effect_graph(
                     ("inferred", effect_names(effects)),
                     ("declared", effect_names(declared)),
                 ],
+            )?);
+            continue;
+        }
+        if draft.pure && !effects.is_empty() {
+            diagnostics.push(body_diagnostic(
+                "impure-workflow",
+                DiagnosticCategory::Type,
+                "a pure generic workflow has a nonempty transitive inferred effect set",
+                draft.source.clone().ok_or(AnalysisError::Invariant)?,
+                [("effects", effect_names(effects))],
             )?);
         }
     }

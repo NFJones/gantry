@@ -1207,6 +1207,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A where clause repeats one authored predicate.",
     },
     DiagnosticCodeDefinition {
+        code: "effect-contract-violation",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An implementation method infers effects outside its trait method contract.",
+    },
+    DiagnosticCodeDefinition {
         code: "expected-type",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
