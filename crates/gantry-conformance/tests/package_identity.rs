@@ -19,14 +19,15 @@ use gantry::ir::{
     ConstructionPolicy, DeclaredCeiling, DeclaredNamespaces, DeclaredSurface,
     DeclaringPackageScope, DependencyAlias, DependencyInterfacePin, DurableArtifactRelation,
     DurableArtifactReport, DurableArtifactSubReport, EffectSet, ExhaustivenessPolicy, ExportEntry,
-    GeneratorInput, GeneratorInputRole, GeneratorInputs, IdentityProof, Import, ImportSet,
-    InterfaceDigest, InterfaceItem, InterfaceMetadata, InterfaceProof, InterfaceSeal, ItemKind,
-    NominalFacts, PackageDiagnosticCode, PackageError, PackageGraph, PackageIdentity,
-    PackageIdentityInputs, PackageIdentityRecord, PackageInstance, PackageName,
+    FeatureSolutionDigest, GeneratorInput, GeneratorInputRole, GeneratorInputs, IdentityProof,
+    Import, ImportSet, InterfaceDigest, InterfaceItem, InterfaceMetadata, InterfaceProof,
+    InterfaceSeal, ItemKind, NominalFacts, PackageDiagnosticCode, PackageError, PackageGraph,
+    PackageIdentity, PackageIdentityInputs, PackageIdentityRecord, PackageInstance, PackageName,
     PackageSourceIdentity, PackageVersion, PublicInterfaceManifest, QualifiedPath,
     RequirementDemand, ResolvedName, SelectedFeatureSet, SourceManifestDigest, TargetCondition,
-    TargetDescriptor, TargetFactSet, TargetFacts, TargetKind, TargetSet, TraitFacts,
-    TypeDescriptor, UnprovenReason, UnqualifiedResolution, Visibility, check_ceiling,
+    TargetDescriptor, TargetDescriptorDigest, TargetFactSet, TargetFacts, TargetFactsRecord,
+    TargetKind, TargetSet, TraitFacts, TypeDescriptor, UnprovenReason, UnqualifiedResolution,
+    Visibility, check_ceiling,
 };
 use gantry::portable::DiagnosticCategory;
 use gantry::protocol::ProtocolVersion;
@@ -165,6 +166,18 @@ fn library_facts() -> TargetFactSet {
     TargetFactSet::new(&[library])
 }
 
+/// Returns the selected target and feature-solution facts of one fixture instance.
+fn target_selection(seed: &str) -> TargetFactsRecord {
+    TargetFactsRecord::new(
+        1,
+        TargetDescriptorDigest::from_hex(&hex(&format!("{seed}-descriptor")))
+            .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal")),
+        FeatureSolutionDigest::from_hex(&hex(&format!("{seed}-solution")))
+            .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal")),
+    )
+    .unwrap_or_else(|_| unreachable!("fixture selection names its version"))
+}
+
 /// Derives one identity over an explicitly supplied interface digest.
 fn identity_with_interface(
     name: &str,
@@ -180,6 +193,7 @@ fn identity_with_interface(
         PackageSourceIdentity::new(manifest_digest(source_seed), ir_digest(ir_seed)),
         features(feature_names),
         library_facts(),
+        target_selection("selection"),
         interface.clone(),
         GeneratorInputs::empty(),
     ))
@@ -367,6 +381,7 @@ fn package_identity_reports_missing_inputs_as_unproven_and_rejects_unknown_recor
     let source_hex = hex("manifest");
     let ir_hex = hex("ir");
     let interface_hex = hex("interface");
+    let selection_text = format!("1:{}:{}", hex("descriptor"), hex("solution"));
     let complete = [
         ("name", "token"),
         ("version", "1.0.0"),
@@ -374,6 +389,7 @@ fn package_identity_reports_missing_inputs_as_unproven_and_rejects_unknown_recor
         ("canonical_ir_sha256", ir_hex.as_str()),
         ("features", "fast,std"),
         ("target_facts", "library"),
+        ("target_selection", selection_text.as_str()),
         ("interface_sha256", interface_hex.as_str()),
         ("generator_inputs", ""),
     ];
@@ -423,6 +439,40 @@ fn package_identity_reports_missing_inputs_as_unproven_and_rejects_unknown_recor
 // ---------------------------------------------------------------------------
 // GNT-16.2-package-instances
 // ---------------------------------------------------------------------------
+#[test]
+fn target_selection_participates_in_package_identity() {
+    let manifest = nominal_interface("Token");
+    let build = |descriptor_seed: &str, solution_seed: &str| {
+        PackageIdentity::derive(PackageIdentityInputs::new(
+            PackageName::new("app").unwrap_or_else(|_| unreachable!("fixture name is valid")),
+            PackageVersion::new("1.0.0")
+                .unwrap_or_else(|_| unreachable!("fixture version is valid")),
+            PackageSourceIdentity::new(manifest_digest("source"), ir_digest("ir")),
+            features(&[]),
+            library_facts(),
+            TargetFactsRecord::new(
+                1,
+                TargetDescriptorDigest::from_hex(&hex(descriptor_seed))
+                    .unwrap_or_else(|_| unreachable!("fixture digest is hexadecimal")),
+                FeatureSolutionDigest::from_hex(&hex(solution_seed))
+                    .unwrap_or_else(|_| unreachable!("fixture digest is hexadecimal")),
+            )
+            .unwrap_or_else(|_| unreachable!("fixture selection names its version")),
+            manifest.digest().clone(),
+            GeneratorInputs::empty(),
+        ))
+    };
+    let linux = build("linux-x86_64-gnu", "solution");
+    let macos = build("macos-aarch64-msvc", "solution");
+    let fast = build("linux-x86_64-gnu", "fast-solution");
+    // The selected target and the selected feature solution are identity inputs,
+    // so two builds that differ only in either one are different instances.
+    assert_ne!(linux, macos);
+    assert_ne!(linux, fast);
+    assert_eq!(build("linux-x86_64-gnu", "solution"), linux);
+    assert_ne!(linux.inputs().selection(), macos.inputs().selection());
+    assert_eq!(linux.inputs().selection().descriptor_version(), 1);
+}
 
 #[test]
 fn distinct_versions_and_feature_distinct_instances_are_distinct_nominal_universes() {
@@ -1898,6 +1948,7 @@ fn physical_layout_host_paths_and_target_names_do_not_affect_identity() {
             PackageSourceIdentity::new(manifest_digest("source"), ir_digest("ir")),
             features(feature_names),
             facts,
+            target_selection("selection"),
             manifest.digest().clone(),
             GeneratorInputs::empty(),
         ))
@@ -2974,6 +3025,7 @@ fn generator_declared_inputs_outputs_and_hashes_participate_in_identity() {
             PackageSourceIdentity::new(manifest_digest("source"), ir_digest("ir")),
             features(&[]),
             library_facts(),
+            target_selection("selection"),
             manifest.digest().clone(),
             generators,
         ))

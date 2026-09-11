@@ -25,6 +25,7 @@ mod primitive;
 mod protected;
 mod schema;
 mod signature;
+mod target;
 mod type_expression;
 mod type_properties;
 mod types;
@@ -102,6 +103,15 @@ pub use protected::{
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
 pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
+};
+pub use target::{
+    AbiEnvironment, Architecture, ExecutionTargetDescriptor, ExpectedInputs, FeatureDeclaration,
+    FeatureDeclarations, FeatureSolution, FeatureSolutionDigest, GeneratedOutput,
+    GeneratedOutputHash, GeneratedOutputSet, ModeAdmission, OperatingSystemFamily,
+    PredicateOutcome, PredicateOutcomeDigest, PredicateOutcomeSet, TargetArtifactBinding,
+    TargetArtifactBindingDigest, TargetArtifactBindingRecord, TargetDescriptorDigest,
+    TargetDescriptorField, TargetDescriptorRecord, TargetDiagnosticCode, TargetError,
+    TargetFactsDigest, TargetFactsRecord, TargetPredicate, TargetPredicateName, ToolchainIdentity,
 };
 pub use type_expression::{TypeExpression, TypeExpressionError};
 pub use type_properties::{

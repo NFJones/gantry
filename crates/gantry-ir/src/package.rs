@@ -43,6 +43,7 @@ use gantry_core::unicode::{is_nfc, is_xid_continue, is_xid_start};
 use crate::authority::digest_fields;
 use crate::generated::RecoveryClass;
 use crate::manifest::encode_hex;
+use crate::target::TargetFactsRecord;
 use crate::{CanonicalPath, CanonicalSignature, EffectSet};
 
 /// Domain separator for canonical package-identity derivation.
@@ -1175,6 +1176,7 @@ pub struct PackageIdentityInputs {
     source: PackageSourceIdentity,
     features: SelectedFeatureSet,
     targets: TargetFactSet,
+    selection: TargetFactsRecord,
     interface: InterfaceDigest,
     generators: GeneratorInputs,
 }
@@ -1182,12 +1184,17 @@ pub struct PackageIdentityInputs {
 impl PackageIdentityInputs {
     /// Constructs one complete, fully established input record.
     #[must_use]
+    // The inputs are the closed identity vocabulary of `GNT-16.1`, so the
+    // constructor is kept explicit rather than collapsed into a builder that
+    // could omit an input.
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         name: PackageName,
         version: PackageVersion,
         source: PackageSourceIdentity,
         features: SelectedFeatureSet,
         targets: TargetFactSet,
+        selection: TargetFactsRecord,
         interface: InterfaceDigest,
         generators: GeneratorInputs,
     ) -> Self {
@@ -1197,6 +1204,7 @@ impl PackageIdentityInputs {
             source,
             features,
             targets,
+            selection,
             interface,
             generators,
         }
@@ -1230,6 +1238,16 @@ impl PackageIdentityInputs {
     #[must_use]
     pub const fn targets(&self) -> &TargetFactSet {
         &self.targets
+    }
+
+    /// Returns the selected target and feature-solution facts of the instance.
+    ///
+    /// These are the `GNT-17.2-descriptor-normalization-and-target-facts` facts
+    /// named by `GNT-16.1-package-identity`: the descriptor version, the
+    /// normalized descriptor digest, and the selected feature-solution digest.
+    #[must_use]
+    pub const fn selection(&self) -> &TargetFactsRecord {
+        &self.selection
     }
 
     /// Returns the public-interface digest of the instance.
@@ -1357,13 +1375,14 @@ impl PackageIdentityRecord {
     pub const VERSION: u32 = 1;
 
     /// The closed property vocabulary of an identity record.
-    pub const PROPERTIES: [&'static str; 8] = [
+    pub const PROPERTIES: [&'static str; 9] = [
         "name",
         "version",
         "source_manifest_sha256",
         "canonical_ir_sha256",
         "features",
         "target_facts",
+        "target_selection",
         "interface_sha256",
         "generator_inputs",
     ];
@@ -1471,6 +1490,13 @@ impl PackageIdentityRecord {
         }
         let targets = TargetFactSet::new(&declared);
 
+        // The selected target and feature-solution facts are recorded as the
+        // canonical `version:descriptor:features` text of
+        // `GNT-17.2-descriptor-normalization-and-target-facts`; a record that
+        // cannot name them is unproven rather than assumed.
+        let selection = TargetFactsRecord::from_text(self.required("target_selection")?)
+            .map_err(|_| UnprovenReason::InvalidInput("target_selection"))?;
+
         let generator_text = self.required("generator_inputs")?;
         let mut generator_entries = Vec::new();
         if !generator_text.is_empty() {
@@ -1502,6 +1528,7 @@ impl PackageIdentityRecord {
             PackageSourceIdentity::new(manifest, canonical_ir),
             features,
             targets,
+            selection,
             interface,
             generators,
         )))
@@ -2260,6 +2287,10 @@ impl PublicInterfaceManifest {
 
 /// The outcome of a versioned interface seal.
 #[derive(Clone, Debug, Eq, PartialEq)]
+// Each variant carries the full outcome: the proved manifest, the unproven
+// reason, or the rejecting diagnostic. Boxing the diagnostic would hide the
+// exact package error a caller matches on.
+#[allow(clippy::large_enum_variant)]
 pub enum InterfaceProof {
     /// The manifest is proved and carries its canonical encoding.
     Proved(Box<PublicInterfaceManifest>),
@@ -4238,6 +4269,8 @@ fn encode_identity(inputs: &PackageIdentityInputs) -> Vec<u8> {
         output.push('}');
     }
     output.push(']');
+    output.push_str(",\"target_selection\":");
+    push_json_string(&mut output, &inputs.selection.text());
     output.push_str(",\"version\":");
     push_json_string(&mut output, inputs.version.as_str());
     output.push_str(",\"version_of_record\":1}");
@@ -4414,6 +4447,7 @@ mod tests {
         TargetFactSet, TargetFacts, TargetKind, collision_condition, digest_fields,
         push_json_string, synthesize_alias,
     };
+    use crate::target::{FeatureSolutionDigest, TargetDescriptorDigest, TargetFactsRecord};
 
     /// Returns one deterministic fixture digest.
     fn fixture(seed: &str) -> [u8; 32] {
@@ -4441,6 +4475,12 @@ mod tests {
             ),
             SelectedFeatureSet::empty(),
             TargetFactSet::new(facts),
+            TargetFactsRecord::new(
+                1,
+                TargetDescriptorDigest::from_digest(fixture("descriptor")),
+                FeatureSolutionDigest::from_digest(fixture("solution")),
+            )
+            .unwrap_or_else(|_| unreachable!("fixture selection names its version")),
             InterfaceDigest::from_digest(fixture("interface")),
             GeneratorInputs::empty(),
         ))
