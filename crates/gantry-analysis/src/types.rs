@@ -1732,6 +1732,68 @@ mod tests {
             .unwrap_or_else(|error| panic!("syntax failed: {error:?}"))
     }
 
+    /// The published workflow-facts summary and the body analysis must describe the same callable
+    /// with the same effect set, so a callable whose inferred effects are empty is exactly one that
+    /// may be declared `pure` (`GNT-3-T-EFFECTS`, `GNT-3-T-PARAMETRIC-PACKAGE`).
+    #[test]
+    fn effect_summaries_agree_between_workflow_facts_and_purity_checks() {
+        const DECLARATIONS: &str = "agents { worker }\n\
+             default agent = worker;\n\
+             action read_only inspect(value: Int) -> Int;\n";
+
+        for (body, expected) in [
+            ("discard prompt \"Generate.\" -> String;", "prompt"),
+            (
+                "spawn background { return; } detach(background);",
+                "background,spawn",
+            ),
+            (
+                "discard attempt action inspect(1);",
+                "action(read_only),attempt",
+            ),
+            ("with worker { session(fork) { } }", "session"),
+            ("loop { with worker { session(fork) { } } }", "session"),
+            ("discard 1;", ""),
+        ] {
+            let plain = analyze(&format!(
+                "{DECLARATIONS}fn f() {{ {body} }}\nfn main() {{}}"
+            ));
+            let actual = plain
+                .workflows()
+                .iter()
+                .find(|facts| facts.path.as_str() == "crate::f")
+                .map(|facts| {
+                    facts
+                        .effects
+                        .iter()
+                        .map(|effect| effect.wire_name().to_owned())
+                        .collect::<std::collections::BTreeSet<_>>()
+                })
+                .unwrap_or_default();
+            let expected = expected
+                .split(',')
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(
+                actual,
+                expected,
+                "{body}: published workflow effects differ: {:?}",
+                plain.diagnostics()
+            );
+
+            let pure = analyze(&format!(
+                "{DECLARATIONS}pure fn f() {{ {body} }}\nfn main() {{}}"
+            ));
+            assert_eq!(
+                pure.status() == AnalysisStatus::Invalid,
+                !expected.is_empty(),
+                "{body}: purity enforcement disagrees with the published effects: {:?}",
+                pure.diagnostics()
+            );
+        }
+    }
+
     #[test]
     fn valid_packages_include_bounded_ir_source_map_and_manifest_artifacts() {
         let package = analyze("fn main() {}");
