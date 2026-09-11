@@ -3414,6 +3414,7 @@ fn public_must_consume_obligations_are_judged_per_place() {
         "fn main(wrap: Wrap) { wrap.consume(); }",
         "fn main(mut holder: Holder) { holder.token.consume(); holder.token = Token { value: 1 }; holder.token.consume(); }",
         "fn main(mut holder: Holder) { holder.marker = 5; holder.consume(); }",
+        "fn run(token: Token, flag: Bool) -> Int { if flag { token.consume(); return 1; } else { token.consume(); return 0; } } fn main() {}",
     ] {
         assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
     }
@@ -3439,6 +3440,14 @@ fn public_must_consume_obligations_are_judged_per_place() {
         (
             "fn run(token: Token, flag: Bool) { if flag { token.consume(); } token.consume(); } fn main() {}",
             "affine-value-reuse",
+        ),
+        // A return operand that produces a value instead of naming a place stays a copied
+        // argument, which the copy rule rejects as the trailing form already does.
+        (
+            "fn size(token: Token) -> Int { token.consume(); 0 }\n\
+             fn run(token: Token) -> Int { return size(token); }\n\
+             fn main() {}",
+            "must-consume-copy",
         ),
     ] {
         assert_affine_rejected(&format!("{DECLARATIONS}{source}"), code);

@@ -3521,8 +3521,8 @@ and a use of a place a reaching path has already consumed MUST be rejected as
 a repeated use, even when another reaching path left that place live.
 Assignment to a place whose value is already gone re-initializes exactly that
 place and the places contained in it, so the value it receives owes its own
-consumption like any other binding, while a consumed containing place stays
-gone.
+consumption like any other binding; re-initializing a place whose containing
+place is already consumed remains excluded.
 
 <a id="GNT-6.2e"></a>
 

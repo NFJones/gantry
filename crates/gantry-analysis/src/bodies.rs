@@ -2700,8 +2700,11 @@ fn check_block(
                         [] as [(&str, &str); 0],
                     )?);
                 }
-                // Returning the place transfers it to the caller, which discharges the obligation.
-                context.must_consume_consuming.set(true);
+                // Returning a place transfers it to the caller, which discharges the obligation;
+                // a produced value or a nested read is a copy rather than the returned place.
+                context
+                    .must_consume_consuming
+                    .set(expression.is_some_and(|id| expression_names_a_place(tree, id)));
                 let actual = expression
                     .map(|id| {
                         infer_expression(
@@ -4411,9 +4414,12 @@ fn merge_obligation_states(
                     consumed_somewhere = true;
                 }
             }
-            // A join with no reaching branch has nothing to fold: leaving the places out keeps
-            // the obligation live rather than reporting a discharge no path performed.
+            // No path reaches this join, so nothing can be left owing on one: every exiting
+            // branch reported its own obligation, and the fold is vacuous rather than live.
             if reaching == 0 {
+                merged
+                    .discharged
+                    .insert(AffinePlace::root_only(root.clone()));
                 continue;
             }
             if discharged_everywhere {
@@ -4494,10 +4500,14 @@ fn record_affine_place(
     }
     let must_consume = place_class == Some(OwnershipClass::MustConsume)
         || root_class == Some(OwnershipClass::MustConsume);
-    // A return hands the owned value back to the caller, which is the declared disposition for one
-    // `MustConsume` place rather than an unaccounted copy.
+    // A `return` hands one `MustConsume` place back to the caller rather than copying it. Only a
+    // read of the value itself is that transfer: reading a `Copyable` member inside such a value
+    // stays a copy, which item 2d rejects.
     let access = match access {
-        AffineAccess::Read if must_consume && context.must_consume_consuming.take() => {
+        AffineAccess::Read
+            if place_class == Some(OwnershipClass::MustConsume)
+                && context.must_consume_consuming.take() =>
+        {
             AffineAccess::Consume
         }
         access => access,
@@ -4805,6 +4815,33 @@ fn expression_is_whole_place(tree: &SyntaxTree, id: NodeId) -> bool {
         };
         match node.form() {
             SyntaxForm::Token(TokenKind::Identifier(_)) => *identifier = true,
+            SyntaxForm::Token(TokenKind::Punctuation(_)) => *disqualified = true,
+            SyntaxForm::Token(_) => {}
+            _ => {
+                for child in node.children() {
+                    walk(tree, *child, identifier, disqualified);
+                }
+            }
+        }
+    }
+    let mut identifier = false;
+    let mut disqualified = false;
+    walk(tree, id, &mut identifier, &mut disqualified);
+    identifier && !disqualified
+}
+
+/// Returns whether one expression names a place: a binding root with struct-field projections.
+///
+/// A `return` operand is a consumption transfer only when it names the `MustConsume` place
+/// itself, so a call, index, literal, or operator expression is not one and stays a copy.
+fn expression_names_a_place(tree: &SyntaxTree, id: NodeId) -> bool {
+    fn walk(tree: &SyntaxTree, id: NodeId, identifier: &mut bool, disqualified: &mut bool) {
+        let Some(node) = tree.node(id) else {
+            return;
+        };
+        match node.form() {
+            SyntaxForm::Token(TokenKind::Identifier(_)) => *identifier = true,
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)) => {}
             SyntaxForm::Token(TokenKind::Punctuation(_)) => *disqualified = true,
             SyntaxForm::Token(_) => {}
             _ => {
