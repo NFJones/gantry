@@ -6,7 +6,7 @@
   "specification_sha256": "5ce48d9140573f60a59a8833510a60abcbc47c3298a7260a50dbc1a56a9f811e",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "b7b96c31b85180be5505e2e7c03dc00134c539c430f0bbeab447cfa7a0aaf26e",
+    "publication_set_identity": "4f7aefea76a9644d3e5b21741b75f531b1ab6f05f7ced7fa746c24d0e4e972dd",
     "verification_path": "protocol/publication/verification-v1.json",
     "verification_sha256": "03f7cd214cbea139e96d3489c53aa30ca22a93b534a9966d0839062abb4b0ae1"
   },
@@ -17,7 +17,7 @@
     },
     "manifest": {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "c291827e6457662d12d17d52fd45f4fc419edf134421d0f99b89aebf17c3c0ed"
+      "sha256": "2ffe2bf51472f7b57c6555a65a36fd55efe2da3132296c273a9a4be23f533597"
     },
     "profile_results": [
       {
@@ -126,7 +126,7 @@
   },
   "matrix": {
     "path": "release/release-matrix-v1.json",
-    "sha256": "06d03f9c803dd754466cc58da1341d1e3d628c71b19bcc70f219c15ebd5448ac",
+    "sha256": "34b0ca72fe533c1d443df105c4084171da3894f87efbdf242588a89e14eb7528",
     "verifier_path": "release/verify-release-matrix.py",
     "verifier_sha256": "0d7f31fe8f607b0db86b6c2e292e06254dacaddaf2205c2f1a3af7348e9d66ee",
     "status": "qualified-passed",

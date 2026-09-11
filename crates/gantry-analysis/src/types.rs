@@ -1794,6 +1794,107 @@ mod tests {
         }
     }
 
+    /// The effect summary is one deterministic least fixed point over the call graph, so every
+    /// callable in a recursive cycle shares the effects any member can reach, declaration order
+    /// does not matter, and a `pure` member of a cycle that reaches an effect is rejected
+    /// (`GNT-3-T-EFFECTS`, `GNT-3-T-PARAMETRIC-PACKAGE`).
+    #[test]
+    fn effect_summaries_converge_over_recursive_call_graphs() {
+        fn effects_of(
+            package: &crate::TypedPackage,
+            name: &str,
+        ) -> std::collections::BTreeSet<String> {
+            package
+                .workflows()
+                .iter()
+                .find(|facts| facts.path.as_str() == name)
+                .map(|facts| {
+                    facts
+                        .effects
+                        .iter()
+                        .map(|effect| effect.wire_name().to_owned())
+                        .collect::<std::collections::BTreeSet<_>>()
+                })
+                .unwrap_or_default()
+        }
+
+        let cyclic = analyze(
+            "fn a() { b(); }\n\
+             fn b() { c(); }\n\
+             fn c() { a(); discard prompt \"Generate.\" -> String; }\n\
+             fn main() {}",
+        );
+        assert_eq!(
+            cyclic.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            cyclic.diagnostics()
+        );
+        let expected = ["prompt".to_owned()]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        for name in ["crate::a", "crate::b", "crate::c"] {
+            assert_eq!(
+                effects_of(&cyclic, name),
+                expected,
+                "{name}: {:?}",
+                cyclic.diagnostics()
+            );
+        }
+
+        // The same cycle declared in the opposite order reaches the same fixed point.
+        let reordered = analyze(
+            "fn c() { a(); discard prompt \"Generate.\" -> String; }\n\
+             fn b() { c(); }\n\
+             fn a() { b(); }\n\
+             fn main() {}",
+        );
+        assert_eq!(
+            reordered.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            reordered.diagnostics()
+        );
+        for name in ["crate::a", "crate::b", "crate::c"] {
+            assert_eq!(
+                effects_of(&reordered, name),
+                effects_of(&cyclic, name),
+                "{name}: {:?}",
+                reordered.diagnostics()
+            );
+        }
+
+        // A cycle that reaches no effect stays effect-free and admits `pure` members.
+        let pure_cycle = analyze("pure fn a() { b(); }\npure fn b() { a(); }\nfn main() {}");
+        assert_eq!(
+            pure_cycle.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            pure_cycle.diagnostics()
+        );
+
+        // A `pure` member of a cycle that reaches an effect is rejected.
+        let impure_cycle = analyze(
+            "pure fn a() { b(); }\n\
+             fn b() { a(); discard prompt \"Generate.\" -> String; }\n\
+             fn main() {}",
+        );
+        assert_eq!(
+            impure_cycle.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            impure_cycle.diagnostics()
+        );
+        assert!(
+            impure_cycle
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "impure-workflow"),
+            "{:?}",
+            impure_cycle.diagnostics()
+        );
+    }
+
     #[test]
     fn valid_packages_include_bounded_ir_source_map_and_manifest_artifacts() {
         let package = analyze("fn main() {}");
