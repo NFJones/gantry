@@ -3065,6 +3065,39 @@ fn public_trait_implementation_effects_stay_within_the_declared_contract() {
         "{:?}",
         pure_method.diagnostics()
     );
+
+    // Two implementations of one trait method stay distinguishable by their implementing identity.
+    let two_impls = analyze(
+        "trait Render { pure fn render(self); }\n\
+         struct First {}\n\
+         struct Second {}\n\
+         impl Render for First { fn render(self) { discard prompt \"a\" -> String; } }\n\
+         impl Render for Second { fn render(self) { discard prompt \"b\" -> String; } }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        two_impls.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        two_impls.diagnostics()
+    );
+    let implementations = two_impls
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "effect-contract-violation")
+        .filter_map(|diagnostic| {
+            diagnostic
+                .fields
+                .get("implementation")
+                .map(std::string::ToString::to_string)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(implementations.len(), 2, "{:?}", two_impls.diagnostics());
+    assert!(
+        implementations.iter().any(|value| value.contains("First"))
+            && implementations.iter().any(|value| value.contains("Second")),
+        "{implementations:?}"
+    );
 }
 
 /// A pattern payload that binds a `MustConsume` value owes consumption like any other binding
