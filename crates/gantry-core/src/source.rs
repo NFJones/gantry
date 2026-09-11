@@ -1237,6 +1237,30 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An implementation method infers effects outside its trait method contract.",
     },
     DiagnosticCodeDefinition {
+        code: "exclusive-reborrow-subplace",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A nested `exclusive self` reborrow does not select a strict struct-field subplace.",
+    },
+    DiagnosticCodeDefinition {
+        code: "exclusive-receiver-immutable",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An `exclusive self` receiver place has a root that is not mutable.",
+    },
+    DiagnosticCodeDefinition {
+        code: "exclusive-receiver-place",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An `exclusive self` call receiver is not a mutable binding root or struct-field receiver place.",
+    },
+    DiagnosticCodeDefinition {
+        code: "exclusive-receiver-scope",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An `exclusive self` declaration is outside zero-argument monomorphic inherent methods.",
+    },
+    DiagnosticCodeDefinition {
         code: "expected-type",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1519,6 +1543,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A structural match does not cover every value of its scrutinee type.",
     },
     DiagnosticCodeDefinition {
+        code: "owned-receiver-scope",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An `owned self` receiver is outside zero-argument monomorphic inherent methods, or a consumption-requiring owned receiver lacks a binding-root or struct-field caller place.",
+    },
+    DiagnosticCodeDefinition {
         code: "pattern-type-mismatch",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1589,6 +1619,18 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
         meaning: "A lexical declaration duplicates or shadows a visible name.",
+    },
+    DiagnosticCodeDefinition {
+        code: "shared-receiver-place",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A `shared self` call receiver is not a binding root or struct-field receiver place.",
+    },
+    DiagnosticCodeDefinition {
+        code: "shared-receiver-scope",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A `shared self` declaration is outside zero-argument monomorphic inherent methods.",
     },
     DiagnosticCodeDefinition {
         code: "tuple-index-out-of-range",

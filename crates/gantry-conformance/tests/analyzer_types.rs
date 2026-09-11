@@ -293,7 +293,8 @@ fn public_shared_receiver_admission_is_scoped_to_monomorphic_zero_argument_inher
     }
 }
 
-/// Exclusive receivers are restricted to mutable ordinary binding-root and struct-field places.
+/// Exclusive receivers are restricted to mutable ordinary binding-root and struct-field
+/// places, and each rejected fixture reports its precise admission cause code.
 #[test]
 fn public_exclusive_receiver_admission_is_scoped_to_mutable_monomorphic_inherent_places() {
     let accepted = analyze(
@@ -306,19 +307,55 @@ fn public_exclusive_receiver_admission_is_scoped_to_mutable_monomorphic_inherent
         accepted.diagnostics()
     );
 
-    for source in [
-        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(counter: Counter) { counter.increment(); }",
-        "struct Counter { value: Int } impl Counter { fn increment(exclusive self, extra: Int) { self.value += extra; } } fn main() {}",
-        "struct Counter { value: Int } impl Counter { fn increment<T>(exclusive self) { self.value += 1; } } fn main() {}",
-        "struct Box<T> { value: T } impl Box<Int> { fn increment(exclusive self) { self.value += 1; } } fn main() {}",
-        "struct Counter { value: Int } trait Value { pure fn increment(self); } impl Value for Counter { pure fn increment(exclusive self) { self.value += 1; } } fn main() {}",
-        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main() { Counter { value: 1 }.increment(); }",
-        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(items: List<Counter>) { discard items[0].increment(); }",
-        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(items: Tuple<Counter, Int>) { discard items[0].increment(); }",
-        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: Option<Counter>) { if let Some(counter) = state { discard counter.increment(); } }",
-        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: Result<Counter, Int>) { if let Ok(counter) = state { discard counter.increment(); } }",
-        "struct Counter { value: Int } enum State { Ready(Counter), Empty } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: State) { if let State::Ready(counter) = state { discard counter.increment(); } }",
-        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
+    for (source, expected_code) in [
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(counter: Counter) { counter.increment(); }",
+            "exclusive-receiver-immutable",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self, extra: Int) { self.value += extra; } } fn main() {}",
+            "exclusive-receiver-scope",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment<T>(exclusive self) { self.value += 1; } } fn main() {}",
+            "exclusive-receiver-scope",
+        ),
+        (
+            "struct Box<T> { value: T } impl Box<Int> { fn increment(exclusive self) { self.value += 1; } } fn main() {}",
+            "exclusive-receiver-scope",
+        ),
+        (
+            "struct Counter { value: Int } trait Value { pure fn increment(self); } impl Value for Counter { pure fn increment(exclusive self) { self.value += 1; } } fn main() {}",
+            "exclusive-receiver-scope",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main() { Counter { value: 1 }.increment(); }",
+            "exclusive-receiver-place",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(items: List<Counter>) { discard items[0].increment(); }",
+            "exclusive-receiver-place",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(items: Tuple<Counter, Int>) { discard items[0].increment(); }",
+            "exclusive-receiver-place",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: Option<Counter>) { if let Some(counter) = state { discard counter.increment(); } }",
+            "exclusive-receiver-place",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: Result<Counter, Int>) { if let Ok(counter) = state { discard counter.increment(); } }",
+            "exclusive-receiver-place",
+        ),
+        (
+            "struct Counter { value: Int } enum State { Ready(Counter), Empty } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: State) { if let State::Ready(counter) = state { discard counter.increment(); } }",
+            "exclusive-receiver-place",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
+            "exclusive-reborrow-subplace",
+        ),
     ] {
         let rejected = analyze(source);
         assert_eq!(
@@ -327,11 +364,65 @@ fn public_exclusive_receiver_admission_is_scoped_to_mutable_monomorphic_inherent
             "{source}: {:?}",
             rejected.diagnostics()
         );
-        assert!(
-            rejected.diagnostics().iter().any(|diagnostic| matches!(
-                diagnostic.code.as_str(),
-                "exclusive-receiver-scope" | "exclusive-receiver-place"
-            )),
+        assert_eq!(
+            receiver_family_codes(rejected.diagnostics()),
+            [expected_code],
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(rejected.executable_program().is_none());
+    }
+}
+
+/// A nested `exclusive self` reborrow must select a strict struct-field subplace of the
+/// enclosing admitted place, and each exclusive admission failure keeps its own code
+/// (item 2f).
+#[test]
+fn public_exclusive_reborrow_requires_a_strict_struct_field_subplace() {
+    let accepted = analyze(
+        "struct Counter { value: Int } struct Holder { counter: Counter } impl Counter { fn increment(exclusive self) { self.value += 1; } } impl Holder { fn bump(exclusive self) { self.counter.increment(); } } fn main() -> Int { let mut holder: Holder = Holder { counter: Counter { value: 1 } }; holder.bump(); holder.counter.value }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+    assert!(
+        accepted.diagnostics().is_empty(),
+        "{:?}",
+        accepted.diagnostics()
+    );
+    assert!(accepted.executable_program().is_some());
+
+    for (source, expected_code) in [
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(counter: Counter) { counter.increment(); }",
+            "exclusive-receiver-immutable",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
+            "exclusive-reborrow-subplace",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main() { Counter { value: 1 }.increment(); }",
+            "exclusive-receiver-place",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: Option<Counter>) { if let Some(counter) = state { discard counter.increment(); } }",
+            "exclusive-receiver-place",
+        ),
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert_eq!(
+            receiver_family_codes(rejected.diagnostics()),
+            [expected_code],
             "{source}: {:?}",
             rejected.diagnostics()
         );
@@ -2171,6 +2262,20 @@ fn analysis_limits(depth: u64, trait_steps: u64) -> FrontendLimits {
 fn limits() -> SourceLimits {
     SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
         .unwrap_or_else(|_| unreachable!("positive limits"))
+}
+
+/// Every receiver-family diagnostic code reported for one analyzed package.
+fn receiver_family_codes(diagnostics: &[gantry::source::StructuredDiagnostic]) -> Vec<&str> {
+    diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code.as_str())
+        .filter(|code| {
+            code.starts_with("exclusive-receiver-")
+                || code.starts_with("exclusive-reborrow-")
+                || code.starts_with("shared-receiver-")
+                || code.starts_with("owned-receiver-")
+        })
+        .collect()
 }
 
 fn workspace_root() -> PathBuf {

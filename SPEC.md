@@ -3498,6 +3498,28 @@ by itself: a mark remains in force for the lifetime of its binding root, an
 analysis MAY clear a mark only when it proves the place re-initialized, and
 MUST reject any read it cannot prove initialized. A transfer inside a loop
 body is potentially repeated and MUST be rejected as a repeated transfer.
+
+<a id="GNT-6.2f"></a>
+
+2f. A **loan** is one caller place admitted for the duration of one call. A shared
+loan admits an immutable caller place for a `shared self` callee, while an
+exclusive loan admits a mutable caller place for an `exclusive self` callee, whose
+each completed assignment through its mutable callee `self` MUST atomically replace
+the admitted caller place as item 2a requires. Every loan requires a caller place
+admitted by item 2a, and an exclusive loan additionally requires that place to have
+a mutable root. A **reborrow** is a loan whose place lies inside a place that is
+already loaned. A nested exclusive reborrow MUST select a strict struct-field
+subplace of the enclosing admitted place and MUST NOT select that admitted place
+itself, while a shared reborrow MAY observe an exclusive receiver place. Two loans
+held by one call MUST NOT overlap: a loan whose place equals or contains an
+already-loaned place MUST be rejected at analysis time, while a loan whose place
+neither equals nor contains an already-loaned place remains permitted. A loan is
+acquired only by a call whose receiver place is admitted: a failed admission
+changes nothing and acquires no loan. Every admitted loan is released when its call
+completes or fails, including when the callee returns, faults, unwinds, or is
+cancelled. Live-resource loans, general argument loans, and the loan rules that
+suspension, cancellation, and task or channel affinity add remain excluded, and the
+exclusions of items 2b and 2d continue to apply to every other position.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field

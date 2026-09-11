@@ -6237,6 +6237,8 @@ fn diagnose_projected_shared_receiver_place(
             || (metadata.receiver_mode == ReceiverMode::Owned
                 && requires_consumption(receiver, context)))
     {
+        // Projection here never yields a caller place, so this site only reports
+        // the not-a-caller-place case of an `exclusive self` admission failure.
         let (code, message) = match metadata.receiver_mode {
             ReceiverMode::ExclusivePlace => (
                 "exclusive-receiver-place",
@@ -6714,20 +6716,39 @@ fn infer_member_sequence(
             return Ok(None);
         };
         if let Some(metadata) = inherent_source.flatten() {
-            let caller_place_is_valid = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
-                postfix_exclusive_receiver_place(tree, receiver_scope, context, member_node.span())?
+            let exclusive_admission = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
+                Some(postfix_exclusive_receiver_place(
+                    tree,
+                    receiver_scope,
+                    context,
+                    member_node.span(),
+                )?)
             } else {
-                postfix_shared_receiver_place(tree, receiver_scope, context)
+                None
+            };
+            let caller_place_is_valid = match exclusive_admission {
+                Some(admission) => admission.is_admitted(),
+                None => postfix_shared_receiver_place(tree, receiver_scope, context),
             };
             let requires_place = metadata.receiver_mode.requires_caller_place()
                 || (metadata.receiver_mode == ReceiverMode::Owned
                     && requires_consumption(&receiver, context));
             if requires_place && !caller_place_is_valid {
                 let (code, message) = match metadata.receiver_mode {
-                    ReceiverMode::ExclusivePlace => (
-                        "exclusive-receiver-place",
-                        "`exclusive self` requires a mutable binding root or struct-field receiver place",
-                    ),
+                    ReceiverMode::ExclusivePlace => match exclusive_admission {
+                        Some(ExclusiveReceiverAdmission::ImmutableRoot) => (
+                            "exclusive-receiver-immutable",
+                            "`exclusive self` requires a mutable binding root: the receiver place root is not mutable",
+                        ),
+                        Some(ExclusiveReceiverAdmission::NotAStrictStructFieldSubplace) => (
+                            "exclusive-reborrow-subplace",
+                            "a nested `exclusive self` reborrow must select a strict struct-field subplace of the enclosing admitted place, not the admitted place itself",
+                        ),
+                        _ => (
+                            "exclusive-receiver-place",
+                            "`exclusive self` requires a mutable binding root or struct-field receiver place",
+                        ),
+                    },
                     ReceiverMode::Owned => (
                         "owned-receiver-scope",
                         "`owned self` on a consumption-requiring receiver requires a binding root or struct-field receiver place",
@@ -7033,14 +7054,39 @@ fn postfix_shared_receiver_place(
             })
 }
 
+/// Admission outcome for one `exclusive self` call receiver place.
+///
+/// Item 2f admits a caller place only for a mutable binding root or, inside an
+/// `exclusive self` method, a strict struct-field reborrow of the enclosing
+/// admitted place. Each failure cause is retained so the call site can report it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExclusiveReceiverAdmission {
+    /// The receiver is an admitted caller place.
+    Admitted,
+    /// The receiver expression is not a caller place at all.
+    NotACallerPlace,
+    /// The receiver place root is not a mutable binding.
+    ImmutableRoot,
+    /// The receiver is the enclosing admitted place rather than a strict struct-field
+    /// subplace of it.
+    NotAStrictStructFieldSubplace,
+}
+
+impl ExclusiveReceiverAdmission {
+    /// Whether this outcome admits the receiver as a caller place.
+    const fn is_admitted(self) -> bool {
+        matches!(self, Self::Admitted)
+    }
+}
+
 fn postfix_exclusive_receiver_place(
     tree: &SyntaxTree,
     children: &[NodeId],
     context: &BodyContext,
     call: &SourceSpan,
-) -> Result<bool, AnalysisError> {
+) -> Result<ExclusiveReceiverAdmission, AnalysisError> {
     if !postfix_shared_receiver_place(tree, children, context) {
-        return Ok(false);
+        return Ok(ExclusiveReceiverAdmission::NotACallerPlace);
     }
     let mut tokens = Vec::new();
     let mut work = children.iter().rev().copied().collect::<Vec<_>>();
@@ -7062,17 +7108,26 @@ fn postfix_exclusive_receiver_place(
     while let Some(id) = work.pop() {
         let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
         if let SyntaxForm::Token(TokenKind::Identifier(root)) = node.form() {
-            return assignment_root_is_mutable(tree, call, root, false);
+            return Ok(if assignment_root_is_mutable(tree, call, root, false)? {
+                ExclusiveReceiverAdmission::Admitted
+            } else {
+                ExclusiveReceiverAdmission::ImmutableRoot
+            });
         }
         if matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self")
         {
-            let strict_subplace = method_dot.is_some_and(|dot| dot > 1);
-            let mutable = assignment_root_is_mutable(tree, call, &Arc::from("self"), true)?;
-            return Ok(mutable && strict_subplace);
+            if !assignment_root_is_mutable(tree, call, &Arc::from("self"), true)? {
+                return Ok(ExclusiveReceiverAdmission::ImmutableRoot);
+            }
+            return Ok(if method_dot.is_some_and(|dot| dot > 1) {
+                ExclusiveReceiverAdmission::Admitted
+            } else {
+                ExclusiveReceiverAdmission::NotAStrictStructFieldSubplace
+            });
         }
         work.extend(node.children().iter().rev().copied());
     }
-    Ok(false)
+    Ok(ExclusiveReceiverAdmission::NotACallerPlace)
 }
 
 fn call_sequence_span(

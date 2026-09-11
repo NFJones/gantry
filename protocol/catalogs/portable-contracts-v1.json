@@ -2,7 +2,7 @@
   "catalog": "gantry.portable-contracts",
   "major": 1,
   "minor": 0,
-  "specification_revision": "ba29104ed054cdd1d9901f2423ed2e76f5235d108d0d7660fb73a5fd537a3adc",
+  "specification_revision": "ee6c1717f69d4a5f883b457dcf183f875ddc5ca4d8c881a4f6da8d5ecadbb696",
   "maximum_directive_integer": "9223372036854775807",
   "identity_kinds": [
     {
