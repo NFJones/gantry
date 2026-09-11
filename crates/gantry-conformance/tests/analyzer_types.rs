@@ -4015,6 +4015,108 @@ fn affine_value_positions_use_each_place_once() {
     );
 }
 
+/// A spawned block captures the outer bindings it references, and item 10.3 captures them by
+/// copy, so a value whose ownership class prohibits copying has no task-transfer contract: the
+/// referencing expression is rejected instead of copied. A binding the block never references is
+/// not a capture, so the parent keeps its own place, use record, and consumption obligation
+/// (`GNT-6.2i`).
+#[test]
+fn spawned_block_captures_require_a_task_transfer_contract() {
+    const DECLARATIONS: &str = "affine struct Token { value: Int }\n\
+         must_consume struct Guard { value: Int }\n\
+         struct Holder { token: Token }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         impl Guard { fn release(owned self) -> Int { self.value } }\n";
+
+    // A copyable capture is an independent copy, and a binding the block never references is not a
+    // capture at all, so the parent still reads or consumes its own place after the join.
+    for accepted in [
+        "fn main() -> Int { let shared: Int = 1; spawn child -> Int { shared } let seen: Int = join(child); discard seen; shared }",
+        "fn main() -> Int { let token: Token = Token { value: 1 }; spawn child -> Int { 1 } let seen: Int = join(child); discard seen; discard token; 0 }",
+        "fn main() -> Int { let guard: Guard = Guard { value: 1 }; spawn child -> Int { 1 } let seen: Int = join(child); discard seen; guard.release() }",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    // Every reference to an outer owned binding is a capture: a projection read, an `owned self`
+    // admission, a `return` of the value, a projection through a containing aggregate, and a
+    // reference made by a nested spawned block.
+    for rejected in [
+        "fn main() -> Int { let token: Token = Token { value: 1 }; spawn child -> Int { token.value } let seen: Int = join(child); seen }",
+        "fn main() -> Int { let token: Token = Token { value: 1 }; spawn child -> Int { token.consume() } let seen: Int = join(child); seen }",
+        "fn main() -> Int { let token: Token = Token { value: 1 }; spawn child -> Token { token } let seen: Token = join(child); seen.consume() }",
+        "fn main() -> Int { let guard: Guard = Guard { value: 1 }; spawn child -> Int { guard.release() } let seen: Int = join(child); seen }",
+        "fn main() -> Int { let holder: Holder = Holder { token: Token { value: 1 } }; spawn child -> Int { holder.token.value } let seen: Int = join(child); seen }",
+        "fn main() -> Int { let token: Token = Token { value: 1 }; spawn outer -> Int { spawn inner -> Int { token.value } let seen: Int = join(inner); seen } let seen: Int = join(outer); seen }",
+    ] {
+        assert_affine_rejected(
+            &format!("{DECLARATIONS}{rejected}"),
+            "task-capture-ineligible",
+        );
+    }
+
+    // The report blames the referencing expression, not the spawn statement or the declaration.
+    assert_affine_rejected_at(
+        &format!(
+            "{DECLARATIONS}fn main() -> Int {{ let token: Token = Token {{ value: 1 }}; spawn child -> Int {{ token.value }} let seen: Int = join(child); seen }}"
+        ),
+        "task-capture-ineligible",
+        "token.value",
+    );
+    assert_affine_rejected_at(
+        &format!(
+            "{DECLARATIONS}fn main() -> Int {{ let guard: Guard = Guard {{ value: 1 }}; spawn child -> Int {{ guard.release() }} let seen: Int = join(child); seen }}"
+        ),
+        "task-capture-ineligible",
+        "guard.release()",
+    );
+}
+
+/// The task-transfer axis classifies ownership, not just copying: an `affine struct`, a
+/// `must_consume struct`, and any aggregate storing one have no isolated task-capture contract,
+/// so `is_task_capturable` is false and eligibility is `Ineligible`, while a copyable aggregate
+/// stays capturable (`GNT-6.2i`).
+#[test]
+fn owned_classes_have_no_isolated_task_capture_contract() {
+    use gantry::ir::{OwnershipClass, TransferEligibility, TypeDescriptor};
+    use gantry::source::FrontendLimits;
+
+    let package = analyze(
+        "affine struct Token { value: Int }\n\
+         must_consume struct Guard { value: Int }\n\
+         struct Plain { value: Int }\n\
+         struct Holder { token: Token }\n\
+         fn main() { }",
+    );
+    let policy = FrontendLimits::new(
+        4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, 100,
+    )
+    .unwrap_or_else(|error| panic!("query policy failed: {error:?}"));
+    for (name, ownership, capturable) in [
+        ("crate::Token", OwnershipClass::AffineDroppable, false),
+        ("crate::Guard", OwnershipClass::MustConsume, false),
+        ("crate::Holder", OwnershipClass::AffineDroppable, false),
+        ("crate::Plain", OwnershipClass::Copyable, true),
+    ] {
+        let ty = TypeDescriptor::from_canonical_string(name)
+            .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+        let properties = package
+            .type_capabilities(&ty, policy)
+            .unwrap_or_else(|error| panic!("query failed: {error:?}"));
+        assert_eq!(properties.ownership_class(), ownership, "{name}");
+        assert_eq!(properties.is_task_capturable(), capturable, "{name}");
+        assert_eq!(
+            properties.transfer_eligibility(),
+            if capturable {
+                TransferEligibility::IsolatedTaskCapture
+            } else {
+                TransferEligibility::Ineligible
+            },
+            "{name}"
+        );
+    }
+}
+
 /// Rejects `source` with `code` and requires the primary span to start at the single `marker`
 /// occurrence, which pins the value position the report blames.
 fn assert_affine_rejected_at(source: &str, code: &str, marker: &str) {

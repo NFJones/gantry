@@ -3606,6 +3606,28 @@ item 2d's copy rule, which admits only its two consumption dispositions.
 Loans taken as arguments, task or channel transfer, resources, and the unwind,
 cancellation, and suspension duties the other items of this section own remain
 excluded.
+
+<a id="GNT-6.2i"></a>
+2i. A **capture** of a spawned block is one free outer binding that the block
+references, as item 10.3 derives it. Capturing a `Copyable` binding is item
+10.3's deep snapshot copy taken when `spawn` executes: the child owns an
+independent value, the parent place stays readable and owned, and a mutation of
+that capture inside the child never reaches the parent.
+
+A capture of a value whose source-task transfer eligibility is not
+`IsolatedTaskCapture` MUST be rejected at analysis time at the referencing
+expression, because the only task transfer a spawned block admits is that
+independent copy and an `AffineDroppable` or `MustConsume` value admits no
+copy. A projection read of the outer place, an `owned self` admission whose
+receiver is that place, and a use of it as a call argument, constructor field,
+binding initializer, assignment right-hand side, `return` operand, or `discard`
+operand are each such a reference. A binding the block never references is not
+a capture, so the parent keeps its own place, its item 2h use record, and its
+item 2d consumption obligation.
+
+Moving a captured owned value into a child task, channel transfer, and the
+unwind, cancellation, and suspension duties the other items of this section own
+remain excluded.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
@@ -5288,6 +5310,9 @@ owner. It MUST NOT be described as a structured child after transfer.
    a captured `mut self` remain child-local. Module items and agent names are
    resolved package-wide and are not captures; task handles owned by another
    task are prohibited by item 2.
+   A capture of a value that is not eligible for isolated task capture MUST be
+   rejected under item 2i of Section 6, because the independent copy this item
+   takes is the only task transfer a spawned block admits.
    Gantry MUST snapshot every captured value and its binding mutability before
    the child becomes runnable. Evaluation of a `spawn` therefore cannot observe
    a mixture of parent values from before and after child submission. With the

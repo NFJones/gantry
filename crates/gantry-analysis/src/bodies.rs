@@ -23,8 +23,8 @@ use gantry_ir::{
     CanonicalCallableIdentity, CanonicalImplementationIdentity, CanonicalPath,
     CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, EffectSet, GenericTemplate,
     ImplementationHead, OwnershipClass, Predicate, ReceiverMode, TraitContract,
-    TraitMethodContract, TraitReference, TypeDescriptor, TypeDescriptorError, TypeExpression,
-    WorkflowParameter,
+    TraitMethodContract, TraitReference, TransferEligibility, TypeDescriptor, TypeDescriptorError,
+    TypeExpression, WorkflowParameter,
 };
 
 use crate::generics::{
@@ -32,7 +32,7 @@ use crate::generics::{
     TypeInferenceFailure, TypeParameterKey, collect_capability_predicates,
     collect_type_parameter_keys, collect_where_predicates,
     invalid_generic_option_member_declaration, prove_ownership_class, prove_sealed_capability,
-    substitute_self_type,
+    prove_transfer_eligibility, substitute_self_type,
 };
 use crate::{
     AnalysisError, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind, TypeBinder,
@@ -3155,6 +3155,75 @@ fn check_block(
     })
 }
 
+/// Rejects a spawned block's reference to an outer binding that admits no task transfer.
+///
+/// A spawned block captures the outer bindings it references, and that capture is an independent
+/// copy, so a value of an ownership class that prohibits copying has no task-transfer contract and
+/// the reference is rejected where it appears. Declaration names, type syntax, and patterns name
+/// bindings or types rather than reading a captured value, and a nested spawned block reports its
+/// own captures.
+fn check_spawn_capture_eligibility(
+    tree: &SyntaxTree,
+    block: NodeId,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let mut reported = BTreeSet::new();
+    let mut work = vec![block];
+    while let Some(id) = work.pop() {
+        let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if id != block
+            && matches!(
+                node.form(),
+                SyntaxForm::SpawnStatement
+                    | SyntaxForm::Parameter
+                    | SyntaxForm::StructField
+                    | SyntaxForm::Pattern
+                    | SyntaxForm::ValueType
+                    | SyntaxForm::TypeParameterList
+                    | SyntaxForm::TypeArgumentList
+                    | SyntaxForm::TraitReference
+            )
+        {
+            continue;
+        }
+        let declares = matches!(
+            node.form(),
+            SyntaxForm::LetStatement | SyntaxForm::ForStatement
+        );
+        let mut identifiers = 0;
+        for child in node.children() {
+            let Some(child_node) = tree.node(*child) else {
+                continue;
+            };
+            let SyntaxForm::Token(TokenKind::Identifier(name)) = child_node.form() else {
+                continue;
+            };
+            let declared = identifiers == 0;
+            identifiers += 1;
+            if declares && declared {
+                continue;
+            }
+            let Some(ty) = environment.get(name) else {
+                continue;
+            };
+            if task_capture_eligible(ty, context) || !reported.insert(name.clone()) {
+                continue;
+            }
+            diagnostics.push(body_diagnostic(
+                "task-capture-ineligible",
+                DiagnosticCategory::Type,
+                "a spawned block cannot capture a value with no task-transfer contract",
+                child_node.span().clone(),
+                [("binding", name.as_ref())],
+            )?);
+        }
+        work.extend(node.children().iter().rev().copied());
+    }
+    Ok(())
+}
+
 fn check_spawned_block(
     tree: &SyntaxTree,
     statement: &gantry_frontend::SyntaxNode,
@@ -3168,6 +3237,7 @@ fn check_spawned_block(
         .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone());
     let block =
         direct_child_form(tree, statement, SyntaxForm::Block).ok_or(AnalysisError::Invariant)?;
+    check_spawn_capture_eligibility(tree, block, environment, context, diagnostics)?;
     let captures = environment
         .iter()
         .map(|(name, ty)| {
@@ -3811,6 +3881,18 @@ fn with_shared_receiver_payload_roots<T>(
 /// Returns the proved ownership class of one analysed type.
 fn ownership_class(ty: &TypeDescriptor, context: &BodyContext) -> Option<OwnershipClass> {
     prove_ownership_class(ty, &context.capability_declarations).ok()
+}
+
+/// Returns whether a spawned block may capture an independent copy of one analysed type.
+///
+/// A type whose eligibility cannot be proven here is an open generic parameter or an unproven
+/// declaration shape, so the reference stays admitted: the same conservative reading the
+/// ownership predicate uses, and the instantiated body is checked again for its concrete types.
+fn task_capture_eligible(ty: &TypeDescriptor, context: &BodyContext) -> bool {
+    match prove_transfer_eligibility(ty, &context.capability_declarations) {
+        Ok(eligibility) => eligibility == TransferEligibility::IsolatedTaskCapture,
+        Err(_) => true,
+    }
 }
 
 /// Returns whether the type's ownership class requires the move ledger to account for uses.

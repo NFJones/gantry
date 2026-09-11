@@ -20,7 +20,7 @@ use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
 use gantry_ir::{
     EFFECT_ORDER, EffectSet, ImplementationHead, IndependentTypeProperties, OwnershipClass,
     Predicate, PrimitiveTypeProperties, ReceiverMode, TraitContract, TraitMethodContract,
-    TraitReference, TypeDescriptor, TypeExpression,
+    TraitReference, TransferEligibility, TypeDescriptor, TypeExpression,
 };
 
 use crate::{
@@ -2191,6 +2191,16 @@ pub(crate) fn prove_ownership_class(
     let mut memo = BTreeMap::new();
     prove_independent_type_properties(root, declarations, &mut None, &mut memo)
         .map(IndependentTypeProperties::ownership_class)
+}
+
+/// Proves source-task transfer eligibility for one retained closed type with an uncounted fold.
+pub(crate) fn prove_transfer_eligibility(
+    root: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+) -> Result<TransferEligibility, AnalysisError> {
+    let mut memo = BTreeMap::new();
+    prove_independent_type_properties(root, declarations, &mut None, &mut memo)
+        .map(IndependentTypeProperties::transfer_eligibility)
 }
 
 /// Algebra and cache policy for one proof over the retained stored-member graph.

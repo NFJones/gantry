@@ -187,10 +187,19 @@ impl IndependentTypeProperties {
     }
 
     /// Seed contributed by an ownership-modifier declaration independent of its members.
+    ///
+    /// The only task transfer a spawned block admits is an independent logical copy, so an
+    /// ownership class that prohibits copying has no source-task transfer contract.
     #[must_use]
     pub const fn ownership_seed(ownership: OwnershipClass) -> Self {
+        let transfer = if ownership.requires_consumption() {
+            TransferEligibility::Ineligible
+        } else {
+            TransferEligibility::IsolatedTaskCapture
+        };
         Self {
             ownership,
+            transfer,
             ..Self::empty_aggregate()
         }
     }

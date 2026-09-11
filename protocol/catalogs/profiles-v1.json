@@ -1,47 +1,47 @@
 {
-  "catalog": "gantry.profiles",
-  "claims_enabled": true,
-  "major": 1,
-  "minor": 0,
-  "specification_revision": "9fea9d4a28fc7c09752e2cf308e3069823abded9bbd5061aae14bcdf034f161b",
-  "profiles": [
-    {
-      "name": "analyzer",
-      "requires": [
-        "frontend"
-      ],
-      "rust_name": "Analyzer"
-    },
-    {
-      "name": "concurrent-evaluator",
-      "requires": [
-        "evaluator"
-      ],
-      "rust_name": "ConcurrentEvaluator"
-    },
-    {
-      "name": "durable-runtime",
-      "requires": [
-        "evaluator"
-      ],
-      "rust_name": "DurableRuntime"
-    },
-    {
-      "name": "embedding",
-      "requires": [],
-      "rust_name": "Embedding"
-    },
-    {
-      "name": "evaluator",
-      "requires": [
-        "analyzer"
-      ],
-      "rust_name": "Evaluator"
-    },
-    {
-      "name": "frontend",
-      "requires": [],
-      "rust_name": "Frontend"
-    }
-  ]
+ "catalog": "gantry.profiles",
+ "claims_enabled": true,
+ "major": 1,
+ "minor": 0,
+ "specification_revision": "21a2f4d7d7f94393280547973852b372e18a7d2913c151efcc9c8f3958c14ad1",
+ "profiles": [
+  {
+   "name": "analyzer",
+   "requires": [
+    "frontend"
+   ],
+   "rust_name": "Analyzer"
+  },
+  {
+   "name": "concurrent-evaluator",
+   "requires": [
+    "evaluator"
+   ],
+   "rust_name": "ConcurrentEvaluator"
+  },
+  {
+   "name": "durable-runtime",
+   "requires": [
+    "evaluator"
+   ],
+   "rust_name": "DurableRuntime"
+  },
+  {
+   "name": "embedding",
+   "requires": [],
+   "rust_name": "Embedding"
+  },
+  {
+   "name": "evaluator",
+   "requires": [
+    "analyzer"
+   ],
+   "rust_name": "Evaluator"
+  },
+  {
+   "name": "frontend",
+   "requires": [],
+   "rust_name": "Frontend"
+  }
+ ]
 }

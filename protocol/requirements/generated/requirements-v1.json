@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "9fea9d4a28fc7c09752e2cf308e3069823abded9bbd5061aae14bcdf034f161b",
-  "byte_length": 593383,
-  "line_count": 10212,
+  "specification_sha256": "21a2f4d7d7f94393280547973852b372e18a7d2913c151efcc9c8f3958c14ad1",
+  "byte_length": 594875,
+  "line_count": 10237,
   "regions": [
     {
       "kind": "excluded",
@@ -29,21 +29,21 @@
     {
       "kind": "normative",
       "start_line": 663,
-      "end_line": 7862,
-      "sha256": "8aefbdf66f43218ba2fb4124258e77564e8fb2ee78bdb3bd960efb9f44393e4d",
+      "end_line": 7887,
+      "sha256": "313d91c911c5699b5028ed9a01d1e0775a0be11e35d9564a194bf9cfad48dc25",
       "rationale": null
     },
     {
       "kind": "excluded",
-      "start_line": 7863,
-      "end_line": 9065,
+      "start_line": 7888,
+      "end_line": 9090,
       "sha256": "7174233830848c05046db997b9a80832e0b465a1403f8079a474a1c0dcc9454b",
       "rationale": "Section 14 is a non-normative authoring aid under GNT-1.0; its source excerpts are classified separately."
     },
     {
       "kind": "normative",
-      "start_line": 9066,
-      "end_line": 10212,
+      "start_line": 9091,
+      "end_line": 10237,
       "sha256": "27d10d2bc8be3cc5f0db36d931e9d0cef05cd4776f3d90f2a0680079c8db35ea",
       "rationale": null
     }
@@ -14452,13 +14452,96 @@
       ]
     },
     {
-      "id": "GNT-6.3",
+      "id": "GNT-6.2i",
       "span_start_line": 3609,
-      "span_end_line": 3629,
+      "span_end_line": 3630,
+      "span_sha256": "de5edaa28c18dd47f8b380a097c441bf20c06956cd82549fbf14f0313222d43f",
+      "anchor_line": 3610,
+      "body_start_line": 3611,
+      "body_end_line": 3630,
+      "body_sha256": "10f091f7d0e47b83ce66c89d0b197f2793a41d53c7be5e444bcc01d83b982c31",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 3611,
+          "end_line": 3615,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#spawned_block_captures_require_a_task_transfer_contract"
+              ],
+              "rationale": null
+            }
+          ]
+        },
+        {
+          "key": "clause-002",
+          "start_line": 3616,
+          "end_line": 3626,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#spawned_block_captures_require_a_task_transfer_contract"
+              ],
+              "rationale": null
+            }
+          ]
+        },
+        {
+          "key": "clause-003",
+          "start_line": 3627,
+          "end_line": 3630,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Moving a captured owned value into a child task and channel transfer are not admitted by this increment, so the clause has no analyzer surface."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-6.3",
+      "span_start_line": 3631,
+      "span_end_line": 3651,
       "span_sha256": "ff86ea7fb85f0a6eee5c394bd327a29fa3e511e600e0084a18dfd449b117e306",
-      "anchor_line": 3609,
-      "body_start_line": 3610,
-      "body_end_line": 3629,
+      "anchor_line": 3631,
+      "body_start_line": 3632,
+      "body_end_line": 3651,
       "body_sha256": "2da8988a12f70314663a21bdbf900c8798ab093ae33034679cca5eb23834fc4f",
       "profiles": [
         "analyzer",
@@ -14473,8 +14556,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3610,
-          "end_line": 3629,
+          "start_line": 3632,
+          "end_line": 3651,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14526,12 +14609,12 @@
     },
     {
       "id": "GNT-6.4",
-      "span_start_line": 3630,
-      "span_end_line": 3645,
+      "span_start_line": 3652,
+      "span_end_line": 3667,
       "span_sha256": "19a307713d4e2147d00cf5d334c9139ee0e3b31d9a8efa541254ebd254d580e4",
-      "anchor_line": 3630,
-      "body_start_line": 3631,
-      "body_end_line": 3645,
+      "anchor_line": 3652,
+      "body_start_line": 3653,
+      "body_end_line": 3667,
       "body_sha256": "8288440a6cf5c50d393eda451a6e500326d6b05c6a85188a3447c96d1b48cf9b",
       "profiles": [
         "analyzer",
@@ -14546,8 +14629,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3631,
-          "end_line": 3645,
+          "start_line": 3653,
+          "end_line": 3667,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14601,12 +14684,12 @@
     },
     {
       "id": "GNT-6.5",
-      "span_start_line": 3646,
-      "span_end_line": 3720,
+      "span_start_line": 3668,
+      "span_end_line": 3742,
       "span_sha256": "c8af246104d7646c047c7450a3db3357391cbaea7d37f59e121944f77a7009f4",
-      "anchor_line": 3646,
-      "body_start_line": 3647,
-      "body_end_line": 3720,
+      "anchor_line": 3668,
+      "body_start_line": 3669,
+      "body_end_line": 3742,
       "body_sha256": "bce5de7318b7ffd771161299bba90118d66aa10ae9ffe2e5ed729ba469c6d7ec",
       "profiles": [
         "analyzer",
@@ -14621,8 +14704,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3647,
-          "end_line": 3720,
+          "start_line": 3669,
+          "end_line": 3742,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14672,12 +14755,12 @@
     },
     {
       "id": "GNT-6.6",
-      "span_start_line": 3721,
-      "span_end_line": 3738,
+      "span_start_line": 3743,
+      "span_end_line": 3760,
       "span_sha256": "48d5cf50185bbe5526376c55720cf83969b87083b179138d0393558dcb1c9423",
-      "anchor_line": 3721,
-      "body_start_line": 3722,
-      "body_end_line": 3738,
+      "anchor_line": 3743,
+      "body_start_line": 3744,
+      "body_end_line": 3760,
       "body_sha256": "1a7c58b3bbb07e2b565c776928ff1be005a4ff960ea36096e090ff1bda69ff61",
       "profiles": [
         "analyzer",
@@ -14692,8 +14775,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3722,
-          "end_line": 3738,
+          "start_line": 3744,
+          "end_line": 3760,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14743,12 +14826,12 @@
     },
     {
       "id": "GNT-6.7",
-      "span_start_line": 3739,
-      "span_end_line": 3775,
+      "span_start_line": 3761,
+      "span_end_line": 3797,
       "span_sha256": "1478714f09b478f7465e3d46fe9ebee98096c9d796d7b17272d02295e3d983ff",
-      "anchor_line": 3739,
-      "body_start_line": 3740,
-      "body_end_line": 3775,
+      "anchor_line": 3761,
+      "body_start_line": 3762,
+      "body_end_line": 3797,
       "body_sha256": "0f5d3df614ddf902fed050d7ef8ff3e74f2bc57d2d307e8f72d9d560c37eafb3",
       "profiles": [
         "analyzer",
@@ -14763,8 +14846,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3740,
-          "end_line": 3775,
+          "start_line": 3762,
+          "end_line": 3797,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14814,12 +14897,12 @@
     },
     {
       "id": "GNT-6.8",
-      "span_start_line": 3776,
-      "span_end_line": 3802,
+      "span_start_line": 3798,
+      "span_end_line": 3824,
       "span_sha256": "2a0fa2bc95a54b5ecdf19774203ce96d57e200362ea1697ea6c771ead5090d77",
-      "anchor_line": 3776,
-      "body_start_line": 3777,
-      "body_end_line": 3802,
+      "anchor_line": 3798,
+      "body_start_line": 3799,
+      "body_end_line": 3824,
       "body_sha256": "d343130608d42b7ae1d520dd9b4e5c74acd088fbf5315e034c37f19936c8c5e1",
       "profiles": [
         "analyzer",
@@ -14834,8 +14917,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3777,
-          "end_line": 3802,
+          "start_line": 3799,
+          "end_line": 3824,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14885,12 +14968,12 @@
     },
     {
       "id": "GNT-6.9",
-      "span_start_line": 3803,
-      "span_end_line": 3807,
+      "span_start_line": 3825,
+      "span_end_line": 3829,
       "span_sha256": "acd1d443dafd0a0ecabbd9f7dab0c592481f96018e718b5efde022f893c927cb",
-      "anchor_line": 3803,
-      "body_start_line": 3804,
-      "body_end_line": 3807,
+      "anchor_line": 3825,
+      "body_start_line": 3826,
+      "body_end_line": 3829,
       "body_sha256": "c7e27dec16e741a51fc8bc0f9b134aa3f870b9051f4f0d4106a780de7104286c",
       "profiles": [
         "analyzer",
@@ -14905,8 +14988,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3804,
-          "end_line": 3807,
+          "start_line": 3826,
+          "end_line": 3829,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14956,12 +15039,12 @@
     },
     {
       "id": "GNT-6.10",
-      "span_start_line": 3808,
-      "span_end_line": 3820,
+      "span_start_line": 3830,
+      "span_end_line": 3842,
       "span_sha256": "8ebd01108f5142c7881925c930ba45753fc6464f99cc1b37997e1da7d43225c8",
-      "anchor_line": 3808,
-      "body_start_line": 3809,
-      "body_end_line": 3820,
+      "anchor_line": 3830,
+      "body_start_line": 3831,
+      "body_end_line": 3842,
       "body_sha256": "fca6cf25d9f3463175f80ac3c345f43b9b4577cd0f136fba1a31f48985486ffe",
       "profiles": [
         "analyzer",
@@ -14976,8 +15059,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3809,
-          "end_line": 3820,
+          "start_line": 3831,
+          "end_line": 3842,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15027,12 +15110,12 @@
     },
     {
       "id": "GNT-6.11",
-      "span_start_line": 3821,
-      "span_end_line": 3836,
+      "span_start_line": 3843,
+      "span_end_line": 3858,
       "span_sha256": "041ef3dcdd3dcbf7087fc0b98cfc10bb93d3c8b29ef19f7c99f6432a9b37b7d3",
-      "anchor_line": 3821,
-      "body_start_line": 3822,
-      "body_end_line": 3836,
+      "anchor_line": 3843,
+      "body_start_line": 3844,
+      "body_end_line": 3858,
       "body_sha256": "31aa9d0c65992198f140f5aa80cebfe9a9a18ab98d294101663583e97c07672e",
       "profiles": [
         "analyzer",
@@ -15047,8 +15130,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3822,
-          "end_line": 3836,
+          "start_line": 3844,
+          "end_line": 3858,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15098,12 +15181,12 @@
     },
     {
       "id": "GNT-6.12",
-      "span_start_line": 3837,
-      "span_end_line": 3867,
+      "span_start_line": 3859,
+      "span_end_line": 3889,
       "span_sha256": "b25b8710b35dd17ae6ac46802b242eeb123b834d870eb1281db88eed07ffae37",
-      "anchor_line": 3837,
-      "body_start_line": 3838,
-      "body_end_line": 3867,
+      "anchor_line": 3859,
+      "body_start_line": 3860,
+      "body_end_line": 3889,
       "body_sha256": "6385c8668fb5fbdd47eb0272f6e5da4a521dcf0fdf666af8d1aba4f52ec7b5aa",
       "profiles": [
         "analyzer",
@@ -15118,8 +15201,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3838,
-          "end_line": 3867,
+          "start_line": 3860,
+          "end_line": 3889,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15169,12 +15252,12 @@
     },
     {
       "id": "GNT-6.12-static-traits",
-      "span_start_line": 3868,
-      "span_end_line": 3928,
+      "span_start_line": 3890,
+      "span_end_line": 3950,
       "span_sha256": "d4a0a6b31e4982616a1e970cf69f463bb71f79c3b95f67bb4ace48d7b4a05ab7",
-      "anchor_line": 3868,
-      "body_start_line": 3869,
-      "body_end_line": 3928,
+      "anchor_line": 3890,
+      "body_start_line": 3891,
+      "body_end_line": 3950,
       "body_sha256": "990498a117c12e457b75d2ab46bc2d9a0f284f3b35c413954503a4219e701b04",
       "profiles": [
         "analyzer",
@@ -15190,8 +15273,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3869,
-          "end_line": 3928,
+          "start_line": 3891,
+          "end_line": 3950,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15252,12 +15335,12 @@
     },
     {
       "id": "GNT-7.0",
-      "span_start_line": 3929,
-      "span_end_line": 3938,
+      "span_start_line": 3951,
+      "span_end_line": 3960,
       "span_sha256": "f427e90bc4920223a136119fd54f0e53e5c7211d6d795bbd0f72f090a221f2b5",
-      "anchor_line": 3931,
-      "body_start_line": 3932,
-      "body_end_line": 3938,
+      "anchor_line": 3953,
+      "body_start_line": 3954,
+      "body_end_line": 3960,
       "body_sha256": "c8b102dab1d4dce6fdb801fe07839c6dee78fd777637b0a989bebafe8835f060",
       "profiles": [
         "analyzer",
@@ -15274,8 +15357,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3932,
-          "end_line": 3938,
+          "start_line": 3954,
+          "end_line": 3960,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15337,12 +15420,12 @@
     },
     {
       "id": "GNT-7.1",
-      "span_start_line": 3939,
-      "span_end_line": 3978,
+      "span_start_line": 3961,
+      "span_end_line": 4000,
       "span_sha256": "89bceee4b9bd461573eef46475633801eca48009b6df8474cdd7631dcee8e014",
-      "anchor_line": 3939,
-      "body_start_line": 3940,
-      "body_end_line": 3978,
+      "anchor_line": 3961,
+      "body_start_line": 3962,
+      "body_end_line": 4000,
       "body_sha256": "51e99c9bac407852f400379744e9c88bc6bffff5f24285af61784bf4de0ca3b1",
       "profiles": [
         "analyzer",
@@ -15359,8 +15442,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3940,
-          "end_line": 3978,
+          "start_line": 3962,
+          "end_line": 4000,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15420,12 +15503,12 @@
     },
     {
       "id": "GNT-7.2",
-      "span_start_line": 3979,
-      "span_end_line": 4000,
+      "span_start_line": 4001,
+      "span_end_line": 4022,
       "span_sha256": "7240f8b3e1567ccfc20879b6901a6556ee8c019b37e05a82434911bb014605ad",
-      "anchor_line": 3979,
-      "body_start_line": 3980,
-      "body_end_line": 4000,
+      "anchor_line": 4001,
+      "body_start_line": 4002,
+      "body_end_line": 4022,
       "body_sha256": "5f33aeaad69c7e17c141d8a7f618c99b399e48254dbaa9c42e4e54180c149946",
       "profiles": [
         "analyzer",
@@ -15442,8 +15525,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3980,
-          "end_line": 4000,
+          "start_line": 4002,
+          "end_line": 4022,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15505,12 +15588,12 @@
     },
     {
       "id": "GNT-7.3",
-      "span_start_line": 4001,
-      "span_end_line": 4030,
+      "span_start_line": 4023,
+      "span_end_line": 4052,
       "span_sha256": "4a784ff2809869dcc857a52d60092091f47eee92d5fa0681957bc5e30bcd63a3",
-      "anchor_line": 4001,
-      "body_start_line": 4002,
-      "body_end_line": 4030,
+      "anchor_line": 4023,
+      "body_start_line": 4024,
+      "body_end_line": 4052,
       "body_sha256": "8d40f72dad6257e38732ba0231e3c939840c4853b57d04753969c13005738730",
       "profiles": [
         "analyzer",
@@ -15527,8 +15610,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4002,
-          "end_line": 4030,
+          "start_line": 4024,
+          "end_line": 4052,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15588,12 +15671,12 @@
     },
     {
       "id": "GNT-7.4",
-      "span_start_line": 4031,
-      "span_end_line": 4090,
+      "span_start_line": 4053,
+      "span_end_line": 4112,
       "span_sha256": "517281f316c601a884ee974a3f158c3005534c624fa5c29e8b0caa8261bee9d1",
-      "anchor_line": 4031,
-      "body_start_line": 4032,
-      "body_end_line": 4090,
+      "anchor_line": 4053,
+      "body_start_line": 4054,
+      "body_end_line": 4112,
       "body_sha256": "e30aa5f7420e3647999ed61cb55fcb22dc19a42121708d9bb1c51dfecf2ab93c",
       "profiles": [
         "analyzer",
@@ -15610,8 +15693,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4032,
-          "end_line": 4090,
+          "start_line": 4054,
+          "end_line": 4112,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15677,12 +15760,12 @@
     },
     {
       "id": "GNT-7.5",
-      "span_start_line": 4091,
-      "span_end_line": 4187,
+      "span_start_line": 4113,
+      "span_end_line": 4209,
       "span_sha256": "7508b4c2c7d3bc4ac646a1729af74d8ab61d3c801c7b96b1d9a540599bd336b0",
-      "anchor_line": 4091,
-      "body_start_line": 4092,
-      "body_end_line": 4187,
+      "anchor_line": 4113,
+      "body_start_line": 4114,
+      "body_end_line": 4209,
       "body_sha256": "520dcfba2ee780bca7d7fcb14fdffa03a55737e7ad262a87a2505b1181c1e210",
       "profiles": [
         "analyzer",
@@ -15699,8 +15782,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4092,
-          "end_line": 4119,
+          "start_line": 4114,
+          "end_line": 4141,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15764,8 +15847,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4120,
-          "end_line": 4146,
+          "start_line": 4142,
+          "end_line": 4168,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15829,8 +15912,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 4147,
-          "end_line": 4187,
+          "start_line": 4169,
+          "end_line": 4209,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15896,12 +15979,12 @@
     },
     {
       "id": "GNT-7.6",
-      "span_start_line": 4188,
-      "span_end_line": 4222,
+      "span_start_line": 4210,
+      "span_end_line": 4244,
       "span_sha256": "4397279795ae7e5d8b747b2d84db4cd5832f60110d5c0c6d103797dd777a527d",
-      "anchor_line": 4188,
-      "body_start_line": 4189,
-      "body_end_line": 4222,
+      "anchor_line": 4210,
+      "body_start_line": 4211,
+      "body_end_line": 4244,
       "body_sha256": "768d6bc3c048119e3196f47b1eaf9628f35f4d481173b810d7666259cdf24398",
       "profiles": [
         "analyzer",
@@ -15918,8 +16001,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4189,
-          "end_line": 4198,
+          "start_line": 4211,
+          "end_line": 4220,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15975,8 +16058,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4199,
-          "end_line": 4208,
+          "start_line": 4221,
+          "end_line": 4230,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16032,8 +16115,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 4209,
-          "end_line": 4222,
+          "start_line": 4231,
+          "end_line": 4244,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16091,12 +16174,12 @@
     },
     {
       "id": "GNT-7.7",
-      "span_start_line": 4223,
-      "span_end_line": 4241,
+      "span_start_line": 4245,
+      "span_end_line": 4263,
       "span_sha256": "4b979021a9c41defb6c34d38a6ffa9998806412e45d997d47b93aad1755cf7dd",
-      "anchor_line": 4223,
-      "body_start_line": 4224,
-      "body_end_line": 4241,
+      "anchor_line": 4245,
+      "body_start_line": 4246,
+      "body_end_line": 4263,
       "body_sha256": "b490ffade7c40e8bed549aa23718f4316da441bdc9ad820e861eb3220eed599c",
       "profiles": [
         "analyzer",
@@ -16113,8 +16196,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4224,
-          "end_line": 4241,
+          "start_line": 4246,
+          "end_line": 4263,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16174,12 +16257,12 @@
     },
     {
       "id": "GNT-7.8",
-      "span_start_line": 4242,
-      "span_end_line": 4257,
+      "span_start_line": 4264,
+      "span_end_line": 4279,
       "span_sha256": "affca49b08c36d5e1ffd6dd6f073bd84293fcf318ed997551990930c9b78856e",
-      "anchor_line": 4242,
-      "body_start_line": 4243,
-      "body_end_line": 4257,
+      "anchor_line": 4264,
+      "body_start_line": 4265,
+      "body_end_line": 4279,
       "body_sha256": "4d56db00ec6762455a3b0b3390cdc193294259e2b5e78a2c04ec170276e694cf",
       "profiles": [
         "analyzer",
@@ -16196,8 +16279,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4243,
-          "end_line": 4257,
+          "start_line": 4265,
+          "end_line": 4279,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16257,12 +16340,12 @@
     },
     {
       "id": "GNT-7.9",
-      "span_start_line": 4258,
-      "span_end_line": 4275,
+      "span_start_line": 4280,
+      "span_end_line": 4297,
       "span_sha256": "192885baa09b53d94754cc5f2dd177edb88e688f9d765ee7028e7ad6bf3d1529",
-      "anchor_line": 4258,
-      "body_start_line": 4259,
-      "body_end_line": 4275,
+      "anchor_line": 4280,
+      "body_start_line": 4281,
+      "body_end_line": 4297,
       "body_sha256": "b0fb9c4efcff86c7fc9b5bf04e7f646e5b5f21cfeda24a5b46c71f215bbf4064",
       "profiles": [
         "analyzer",
@@ -16279,8 +16362,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4259,
-          "end_line": 4275,
+          "start_line": 4281,
+          "end_line": 4297,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16338,12 +16421,12 @@
     },
     {
       "id": "GNT-7.10",
-      "span_start_line": 4276,
-      "span_end_line": 4285,
+      "span_start_line": 4298,
+      "span_end_line": 4307,
       "span_sha256": "34cc005319ca934e434d8f438fef928607e646b2caf508e47ad622b7a11b3598",
-      "anchor_line": 4276,
-      "body_start_line": 4277,
-      "body_end_line": 4285,
+      "anchor_line": 4298,
+      "body_start_line": 4299,
+      "body_end_line": 4307,
       "body_sha256": "e3534ba86c528dda81d740bb8b29f7296249f96226f7f76cdfce9593bc40a7b5",
       "profiles": [
         "analyzer",
@@ -16360,8 +16443,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4277,
-          "end_line": 4285,
+          "start_line": 4299,
+          "end_line": 4307,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16427,12 +16510,12 @@
     },
     {
       "id": "GNT-7.11",
-      "span_start_line": 4286,
-      "span_end_line": 4315,
+      "span_start_line": 4308,
+      "span_end_line": 4337,
       "span_sha256": "c7e6aa0d449faef7880c73af8ab3336a03137c060a6e78d73ba5e161152d2c40",
-      "anchor_line": 4286,
-      "body_start_line": 4287,
-      "body_end_line": 4315,
+      "anchor_line": 4308,
+      "body_start_line": 4309,
+      "body_end_line": 4337,
       "body_sha256": "decf42d0c9a2d3494451ae56e98e584e4e4bb1b6d6d42ad6e787c7f9a4cdb30b",
       "profiles": [
         "analyzer",
@@ -16449,8 +16532,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4287,
-          "end_line": 4315,
+          "start_line": 4309,
+          "end_line": 4337,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16516,12 +16599,12 @@
     },
     {
       "id": "GNT-7.12",
-      "span_start_line": 4316,
-      "span_end_line": 4360,
+      "span_start_line": 4338,
+      "span_end_line": 4382,
       "span_sha256": "968081dfeaf0dab1ccccebe3c8cba5811e830032d79cf69f7133c723e7116725",
-      "anchor_line": 4316,
-      "body_start_line": 4317,
-      "body_end_line": 4360,
+      "anchor_line": 4338,
+      "body_start_line": 4339,
+      "body_end_line": 4382,
       "body_sha256": "2f3d2c8d380905cfc5f74e50db5885de8b0581f0a66f7481bfa108deffdff800",
       "profiles": [
         "analyzer",
@@ -16538,8 +16621,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4317,
-          "end_line": 4346,
+          "start_line": 4339,
+          "end_line": 4368,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16603,8 +16686,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4347,
-          "end_line": 4360,
+          "start_line": 4369,
+          "end_line": 4382,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16670,12 +16753,12 @@
     },
     {
       "id": "GNT-7.13",
-      "span_start_line": 4361,
-      "span_end_line": 4372,
+      "span_start_line": 4383,
+      "span_end_line": 4394,
       "span_sha256": "0ee3684217fe967dcad0e54e48b0fc53cf663cb71de87458a55ef0505fd6c668",
-      "anchor_line": 4361,
-      "body_start_line": 4362,
-      "body_end_line": 4372,
+      "anchor_line": 4383,
+      "body_start_line": 4384,
+      "body_end_line": 4394,
       "body_sha256": "baad1e7e4107def7dd00243f746b8cc7fbd0c966491ecdecde1fb4524a04eb20",
       "profiles": [
         "analyzer",
@@ -16692,8 +16775,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4362,
-          "end_line": 4372,
+          "start_line": 4384,
+          "end_line": 4394,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16755,12 +16838,12 @@
     },
     {
       "id": "GNT-7.14",
-      "span_start_line": 4373,
-      "span_end_line": 4382,
+      "span_start_line": 4395,
+      "span_end_line": 4404,
       "span_sha256": "04627e4c275d41c47763f0a562e178716e408262b1f4d4c96696a6f7e7eda614",
-      "anchor_line": 4373,
-      "body_start_line": 4374,
-      "body_end_line": 4382,
+      "anchor_line": 4395,
+      "body_start_line": 4396,
+      "body_end_line": 4404,
       "body_sha256": "6db61067eac0d8049cd3893df8f3c945f4ef46cc4ae25480366500508ee3f32a",
       "profiles": [
         "analyzer",
@@ -16777,8 +16860,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4374,
-          "end_line": 4382,
+          "start_line": 4396,
+          "end_line": 4404,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16838,12 +16921,12 @@
     },
     {
       "id": "GNT-7.15",
-      "span_start_line": 4383,
-      "span_end_line": 4400,
+      "span_start_line": 4405,
+      "span_end_line": 4422,
       "span_sha256": "6b4cbc98a862fdeea7c41e81d03ff9001cb8db38ef42ec8a151bae0f44584543",
-      "anchor_line": 4383,
-      "body_start_line": 4384,
-      "body_end_line": 4400,
+      "anchor_line": 4405,
+      "body_start_line": 4406,
+      "body_end_line": 4422,
       "body_sha256": "e70cdfbf564ddd7d37bfb664e918b1d925877ad03352a8b90d33519c81e82e7e",
       "profiles": [
         "analyzer",
@@ -16860,8 +16943,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4384,
-          "end_line": 4400,
+          "start_line": 4406,
+          "end_line": 4422,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16921,12 +17004,12 @@
     },
     {
       "id": "GNT-7.16",
-      "span_start_line": 4401,
-      "span_end_line": 4432,
+      "span_start_line": 4423,
+      "span_end_line": 4454,
       "span_sha256": "1f73434d250fbd4f081c737981d615ef3108b9472b80ac6dfacac13168453a36",
-      "anchor_line": 4401,
-      "body_start_line": 4402,
-      "body_end_line": 4432,
+      "anchor_line": 4423,
+      "body_start_line": 4424,
+      "body_end_line": 4454,
       "body_sha256": "91623e41030e5003b2e1a8bdd9eb4d4d2ded863e15f1556f018c5b4c382ca0a3",
       "profiles": [
         "analyzer",
@@ -16943,8 +17026,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4402,
-          "end_line": 4432,
+          "start_line": 4424,
+          "end_line": 4454,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17004,12 +17087,12 @@
     },
     {
       "id": "GNT-7.16-protocol-identities",
-      "span_start_line": 4433,
-      "span_end_line": 4560,
+      "span_start_line": 4455,
+      "span_end_line": 4582,
       "span_sha256": "32cc43fc8ac1bff001f73f0f18ca3c1bbe40492c2c03f19f56a8ca50c624adaa",
-      "anchor_line": 4433,
-      "body_start_line": 4434,
-      "body_end_line": 4560,
+      "anchor_line": 4455,
+      "body_start_line": 4456,
+      "body_end_line": 4582,
       "body_sha256": "22c056895db5324750cdb7154a0926ad8e847edbd91962b2c3bf33e95f9515df",
       "profiles": [
         "analyzer",
@@ -17026,8 +17109,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4434,
-          "end_line": 4444,
+          "start_line": 4456,
+          "end_line": 4466,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17085,8 +17168,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4445,
-          "end_line": 4452,
+          "start_line": 4467,
+          "end_line": 4474,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17144,8 +17227,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 4453,
-          "end_line": 4455,
+          "start_line": 4475,
+          "end_line": 4477,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17203,8 +17286,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 4456,
-          "end_line": 4465,
+          "start_line": 4478,
+          "end_line": 4487,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17262,8 +17345,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 4466,
-          "end_line": 4475,
+          "start_line": 4488,
+          "end_line": 4497,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17321,8 +17404,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 4476,
-          "end_line": 4486,
+          "start_line": 4498,
+          "end_line": 4508,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17380,8 +17463,8 @@
         },
         {
           "key": "clause-007",
-          "start_line": 4487,
-          "end_line": 4498,
+          "start_line": 4509,
+          "end_line": 4520,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17439,8 +17522,8 @@
         },
         {
           "key": "clause-008",
-          "start_line": 4499,
-          "end_line": 4515,
+          "start_line": 4521,
+          "end_line": 4537,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17498,8 +17581,8 @@
         },
         {
           "key": "clause-009",
-          "start_line": 4516,
-          "end_line": 4531,
+          "start_line": 4538,
+          "end_line": 4553,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17557,8 +17640,8 @@
         },
         {
           "key": "clause-010",
-          "start_line": 4532,
-          "end_line": 4544,
+          "start_line": 4554,
+          "end_line": 4566,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17616,8 +17699,8 @@
         },
         {
           "key": "clause-011",
-          "start_line": 4545,
-          "end_line": 4560,
+          "start_line": 4567,
+          "end_line": 4582,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17677,12 +17760,12 @@
     },
     {
       "id": "GNT-7.17",
-      "span_start_line": 4561,
-      "span_end_line": 4634,
+      "span_start_line": 4583,
+      "span_end_line": 4656,
       "span_sha256": "f74a632712903351c51bb50392127c11f23aea0bd57d9bdec755434cb3a93bab",
-      "anchor_line": 4561,
-      "body_start_line": 4562,
-      "body_end_line": 4634,
+      "anchor_line": 4583,
+      "body_start_line": 4584,
+      "body_end_line": 4656,
       "body_sha256": "951cdffdba7d0cdf3f91df467edeceaeeb5db292a52a56e98120df4687d56b1b",
       "profiles": [
         "analyzer",
@@ -17699,8 +17782,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4562,
-          "end_line": 4581,
+          "start_line": 4584,
+          "end_line": 4603,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17760,8 +17843,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4582,
-          "end_line": 4596,
+          "start_line": 4604,
+          "end_line": 4618,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17829,8 +17912,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 4597,
-          "end_line": 4634,
+          "start_line": 4619,
+          "end_line": 4656,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17900,12 +17983,12 @@
     },
     {
       "id": "GNT-7.18",
-      "span_start_line": 4635,
-      "span_end_line": 4649,
+      "span_start_line": 4657,
+      "span_end_line": 4671,
       "span_sha256": "0b502323f7519d3dbfb077c975a2e5f90c283280d1f1bea624347fafa13e8c8b",
-      "anchor_line": 4635,
-      "body_start_line": 4636,
-      "body_end_line": 4649,
+      "anchor_line": 4657,
+      "body_start_line": 4658,
+      "body_end_line": 4671,
       "body_sha256": "d5c77f22add7b8b4e675a159bf9210842674c6ca862e6e549ec7055f90da3f7f",
       "profiles": [
         "analyzer",
@@ -17922,8 +18005,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4636,
-          "end_line": 4649,
+          "start_line": 4658,
+          "end_line": 4671,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17989,12 +18072,12 @@
     },
     {
       "id": "GNT-8.0",
-      "span_start_line": 4650,
-      "span_end_line": 4659,
+      "span_start_line": 4672,
+      "span_end_line": 4681,
       "span_sha256": "3f0b80ad3f1ee05c88954f9e49709a448935659216ab643128155dc574ea6bcf",
-      "anchor_line": 4652,
-      "body_start_line": 4653,
-      "body_end_line": 4659,
+      "anchor_line": 4674,
+      "body_start_line": 4675,
+      "body_end_line": 4681,
       "body_sha256": "36af757b6bdf0020ac4123c39c78c5b17b6a9ccd839990efc5eca58f64cc19f9",
       "profiles": [
         "analyzer",
@@ -18011,8 +18094,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4653,
-          "end_line": 4659,
+          "start_line": 4675,
+          "end_line": 4681,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18078,12 +18161,12 @@
     },
     {
       "id": "GNT-8.1",
-      "span_start_line": 4660,
-      "span_end_line": 4702,
+      "span_start_line": 4682,
+      "span_end_line": 4724,
       "span_sha256": "b38c9de1c51ed7c0c9ba774175f66ddae67b4d5cf7697eb0e6511353313ae91a",
-      "anchor_line": 4660,
-      "body_start_line": 4661,
-      "body_end_line": 4702,
+      "anchor_line": 4682,
+      "body_start_line": 4683,
+      "body_end_line": 4724,
       "body_sha256": "9c229391ed98b4e409b2e994bd53edfe4d74474dd93c80804865f4ceeb5f5540",
       "profiles": [
         "analyzer",
@@ -18100,8 +18183,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4661,
-          "end_line": 4692,
+          "start_line": 4683,
+          "end_line": 4714,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18163,8 +18246,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4693,
-          "end_line": 4699,
+          "start_line": 4715,
+          "end_line": 4721,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18222,8 +18305,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 4700,
-          "end_line": 4702,
+          "start_line": 4722,
+          "end_line": 4724,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18283,12 +18366,12 @@
     },
     {
       "id": "GNT-8.2",
-      "span_start_line": 4703,
-      "span_end_line": 4760,
+      "span_start_line": 4725,
+      "span_end_line": 4782,
       "span_sha256": "92e276f1cdd6dc28c8e0db3ee575d8e7c3cf22782355943c2252039f68d7757f",
-      "anchor_line": 4703,
-      "body_start_line": 4704,
-      "body_end_line": 4760,
+      "anchor_line": 4725,
+      "body_start_line": 4726,
+      "body_end_line": 4782,
       "body_sha256": "756fe152d22d1a04df47f5f0e3464d726a79c9533e75d208c77ad91e2f9a17e1",
       "profiles": [
         "analyzer",
@@ -18305,8 +18388,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4704,
-          "end_line": 4760,
+          "start_line": 4726,
+          "end_line": 4782,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18366,12 +18449,12 @@
     },
     {
       "id": "GNT-8.3",
-      "span_start_line": 4761,
-      "span_end_line": 4765,
+      "span_start_line": 4783,
+      "span_end_line": 4787,
       "span_sha256": "df48487006683fcb29fe6063555c54893ed5c5e05e70d5f5ef38b80bda9d8c45",
-      "anchor_line": 4761,
-      "body_start_line": 4762,
-      "body_end_line": 4765,
+      "anchor_line": 4783,
+      "body_start_line": 4784,
+      "body_end_line": 4787,
       "body_sha256": "f618f7187c5eecf4b33552c37e2bd39bccaf8292249b5d00e8cb77fcae0bb6be",
       "profiles": [
         "analyzer",
@@ -18388,8 +18471,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4762,
-          "end_line": 4765,
+          "start_line": 4784,
+          "end_line": 4787,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18449,12 +18532,12 @@
     },
     {
       "id": "GNT-8.4",
-      "span_start_line": 4766,
-      "span_end_line": 4772,
+      "span_start_line": 4788,
+      "span_end_line": 4794,
       "span_sha256": "722def034ed91dba4d6b97c60bb5a1cf19e0bc3363e2b4dc06a03f3d9a462375",
-      "anchor_line": 4766,
-      "body_start_line": 4767,
-      "body_end_line": 4772,
+      "anchor_line": 4788,
+      "body_start_line": 4789,
+      "body_end_line": 4794,
       "body_sha256": "e9e0de073ed5444a72c8aa433ccffab21bb4ce8e6db27e4fa708bef3fc125353",
       "profiles": [
         "analyzer",
@@ -18471,8 +18554,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4767,
-          "end_line": 4772,
+          "start_line": 4789,
+          "end_line": 4794,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18532,12 +18615,12 @@
     },
     {
       "id": "GNT-8.5",
-      "span_start_line": 4773,
-      "span_end_line": 4811,
+      "span_start_line": 4795,
+      "span_end_line": 4833,
       "span_sha256": "199320b37b6a0f1d118157b9d02f9cd54a092d2a1adae39c8992666c0112c63b",
-      "anchor_line": 4773,
-      "body_start_line": 4774,
-      "body_end_line": 4811,
+      "anchor_line": 4795,
+      "body_start_line": 4796,
+      "body_end_line": 4833,
       "body_sha256": "54767234bf4afc149b283358a569a41845079996e23677fbb957793d513bd928",
       "profiles": [
         "analyzer",
@@ -18554,8 +18637,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4774,
-          "end_line": 4794,
+          "start_line": 4796,
+          "end_line": 4816,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18613,8 +18696,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4795,
-          "end_line": 4811,
+          "start_line": 4817,
+          "end_line": 4833,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18674,12 +18757,12 @@
     },
     {
       "id": "GNT-8.6",
-      "span_start_line": 4812,
-      "span_end_line": 4902,
+      "span_start_line": 4834,
+      "span_end_line": 4924,
       "span_sha256": "0253e5a802f774e442136531932489b944c420b33e9c67787ea82df775dfbdb1",
-      "anchor_line": 4812,
-      "body_start_line": 4813,
-      "body_end_line": 4902,
+      "anchor_line": 4834,
+      "body_start_line": 4835,
+      "body_end_line": 4924,
       "body_sha256": "4b64e46bf98b97a4f92baaa14965eb3776759d32ffbee111e8774444ee7a4572",
       "profiles": [
         "analyzer",
@@ -18696,8 +18779,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4813,
-          "end_line": 4902,
+          "start_line": 4835,
+          "end_line": 4924,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18761,12 +18844,12 @@
     },
     {
       "id": "GNT-8.7",
-      "span_start_line": 4903,
-      "span_end_line": 4929,
+      "span_start_line": 4925,
+      "span_end_line": 4951,
       "span_sha256": "7848e7482bb8fefa5f895c902008f425875b9346cb59a75bd8341d4d674492dc",
-      "anchor_line": 4903,
-      "body_start_line": 4904,
-      "body_end_line": 4929,
+      "anchor_line": 4925,
+      "body_start_line": 4926,
+      "body_end_line": 4951,
       "body_sha256": "4860676fc3425121dd9ed940b6ee50c6d3a2680422f8cb2b8e4b3fa4f1c02880",
       "profiles": [
         "analyzer",
@@ -18783,8 +18866,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4904,
-          "end_line": 4929,
+          "start_line": 4926,
+          "end_line": 4951,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18844,12 +18927,12 @@
     },
     {
       "id": "GNT-8.8",
-      "span_start_line": 4930,
-      "span_end_line": 4938,
+      "span_start_line": 4952,
+      "span_end_line": 4960,
       "span_sha256": "c6cf05a1c8f4a252693b6cfd76fc4d4d255f22d0c9518f4bdeb7cb2b133c9445",
-      "anchor_line": 4930,
-      "body_start_line": 4931,
-      "body_end_line": 4938,
+      "anchor_line": 4952,
+      "body_start_line": 4953,
+      "body_end_line": 4960,
       "body_sha256": "37caa0b5bb1fd2ed051515723d29da34a240cef4a1c3ea17dc00c1fa8666452b",
       "profiles": [
         "analyzer",
@@ -18866,8 +18949,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4931,
-          "end_line": 4938,
+          "start_line": 4953,
+          "end_line": 4960,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18927,12 +19010,12 @@
     },
     {
       "id": "GNT-8.9",
-      "span_start_line": 4939,
-      "span_end_line": 4974,
+      "span_start_line": 4961,
+      "span_end_line": 4996,
       "span_sha256": "6a0723cc13682e7efe31312b5d25e87f38ef513091c20bfd88339c203206a1bd",
-      "anchor_line": 4939,
-      "body_start_line": 4940,
-      "body_end_line": 4974,
+      "anchor_line": 4961,
+      "body_start_line": 4962,
+      "body_end_line": 4996,
       "body_sha256": "d4e959b6e219d52bf4ddbb138e2f0ff29efa764b8b0d119e99f92ca42e0e6b1e",
       "profiles": [
         "analyzer",
@@ -18949,8 +19032,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4940,
-          "end_line": 4974,
+          "start_line": 4962,
+          "end_line": 4996,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19016,12 +19099,12 @@
     },
     {
       "id": "GNT-8.10",
-      "span_start_line": 4975,
-      "span_end_line": 5003,
+      "span_start_line": 4997,
+      "span_end_line": 5025,
       "span_sha256": "c81f625587f6ec3f678670c6a149d716000e50b7972441a2756b44a525257e51",
-      "anchor_line": 4975,
-      "body_start_line": 4976,
-      "body_end_line": 5003,
+      "anchor_line": 4997,
+      "body_start_line": 4998,
+      "body_end_line": 5025,
       "body_sha256": "9a7daced071db2a756e915971d41d2bdb714abbc9b42206b082c86d0c1259714",
       "profiles": [
         "analyzer",
@@ -19038,8 +19121,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4976,
-          "end_line": 5003,
+          "start_line": 4998,
+          "end_line": 5025,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19105,12 +19188,12 @@
     },
     {
       "id": "GNT-8.11",
-      "span_start_line": 5004,
-      "span_end_line": 5010,
+      "span_start_line": 5026,
+      "span_end_line": 5032,
       "span_sha256": "0c4c15b6f469364509a2c495b69f4c3577c8c2a52143f40549e00f60e04b53b0",
-      "anchor_line": 5004,
-      "body_start_line": 5005,
-      "body_end_line": 5010,
+      "anchor_line": 5026,
+      "body_start_line": 5027,
+      "body_end_line": 5032,
       "body_sha256": "b95af81d300ab7549c4378ddd609b26263029f4f0e21ba4deaa99233e32bbdd8",
       "profiles": [
         "analyzer",
@@ -19127,8 +19210,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5005,
-          "end_line": 5010,
+          "start_line": 5027,
+          "end_line": 5032,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19194,12 +19277,12 @@
     },
     {
       "id": "GNT-8.12",
-      "span_start_line": 5011,
-      "span_end_line": 5014,
+      "span_start_line": 5033,
+      "span_end_line": 5036,
       "span_sha256": "6411fd6fb2e52aa8fbcb6d143fd91618f5fc60fdedb04e57ac7f8a4d6981d400",
-      "anchor_line": 5011,
-      "body_start_line": 5012,
-      "body_end_line": 5014,
+      "anchor_line": 5033,
+      "body_start_line": 5034,
+      "body_end_line": 5036,
       "body_sha256": "d3119efcc20c35513850dc4e4ad0368be09ca41f4952c04a240d4cb666d13f87",
       "profiles": [
         "analyzer",
@@ -19216,8 +19299,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5012,
-          "end_line": 5014,
+          "start_line": 5034,
+          "end_line": 5036,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19279,12 +19362,12 @@
     },
     {
       "id": "GNT-8.13",
-      "span_start_line": 5015,
-      "span_end_line": 5022,
+      "span_start_line": 5037,
+      "span_end_line": 5044,
       "span_sha256": "a8b2fd2af1a70af01311eaa1ddee4278b653e3d0705c6d204fb307ed774578ff",
-      "anchor_line": 5015,
-      "body_start_line": 5016,
-      "body_end_line": 5022,
+      "anchor_line": 5037,
+      "body_start_line": 5038,
+      "body_end_line": 5044,
       "body_sha256": "c5e37e3368cb3d48bea98fe8698d26ee146a0880b1cfcdbb8b386c504fec7e3f",
       "profiles": [
         "analyzer",
@@ -19301,8 +19384,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5016,
-          "end_line": 5022,
+          "start_line": 5038,
+          "end_line": 5044,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19362,12 +19445,12 @@
     },
     {
       "id": "GNT-8.13-concrete-generic-schemas",
-      "span_start_line": 5023,
-      "span_end_line": 5041,
+      "span_start_line": 5045,
+      "span_end_line": 5063,
       "span_sha256": "26781a99a52066811e648614397500d89622d6786b8813ff8f33622c976c5d33",
-      "anchor_line": 5023,
-      "body_start_line": 5024,
-      "body_end_line": 5041,
+      "anchor_line": 5045,
+      "body_start_line": 5046,
+      "body_end_line": 5063,
       "body_sha256": "11dc520069a4402fddeff9a90c0e050d6c8c99c4f7349150b2259b32e149a817",
       "profiles": [
         "analyzer",
@@ -19383,8 +19466,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5024,
-          "end_line": 5041,
+          "start_line": 5046,
+          "end_line": 5063,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19446,12 +19529,12 @@
     },
     {
       "id": "GNT-9.0",
-      "span_start_line": 5042,
-      "span_end_line": 5048,
+      "span_start_line": 5064,
+      "span_end_line": 5070,
       "span_sha256": "38f5f02bd18f0733f65bcbe774f9718820cf961b6115e67b6b17d825d7fea8ad",
-      "anchor_line": 5044,
-      "body_start_line": 5045,
-      "body_end_line": 5048,
+      "anchor_line": 5066,
+      "body_start_line": 5067,
+      "body_end_line": 5070,
       "body_sha256": "160332de89145ef8313b5ea004fcafc02f77b9407b5e1247e6581c1ffb482414",
       "profiles": [
         "analyzer",
@@ -19466,8 +19549,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5045,
-          "end_line": 5048,
+          "start_line": 5067,
+          "end_line": 5070,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19517,12 +19600,12 @@
     },
     {
       "id": "GNT-9.1",
-      "span_start_line": 5049,
-      "span_end_line": 5055,
+      "span_start_line": 5071,
+      "span_end_line": 5077,
       "span_sha256": "7cd2a64a29b690d56fcdac460424f0afe053faacb35f72476326e4b86a760c72",
-      "anchor_line": 5049,
-      "body_start_line": 5050,
-      "body_end_line": 5055,
+      "anchor_line": 5071,
+      "body_start_line": 5072,
+      "body_end_line": 5077,
       "body_sha256": "603a51ad6f96230b99d14ffc21428175155c119bc1bff84813c45817d381fd1b",
       "profiles": [
         "analyzer",
@@ -19537,8 +19620,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5050,
-          "end_line": 5055,
+          "start_line": 5072,
+          "end_line": 5077,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19588,12 +19671,12 @@
     },
     {
       "id": "GNT-9.2",
-      "span_start_line": 5056,
-      "span_end_line": 5081,
+      "span_start_line": 5078,
+      "span_end_line": 5103,
       "span_sha256": "1ceabd5588563885127708f7db790337c1fc298fdb1e2d95f0392c466e605e1d",
-      "anchor_line": 5056,
-      "body_start_line": 5057,
-      "body_end_line": 5081,
+      "anchor_line": 5078,
+      "body_start_line": 5079,
+      "body_end_line": 5103,
       "body_sha256": "15e6cc7d16177417fe265b40f473ac78cabdaff5cff79c6a6dd5c0ff52256058",
       "profiles": [
         "analyzer",
@@ -19608,8 +19691,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5057,
-          "end_line": 5062,
+          "start_line": 5079,
+          "end_line": 5084,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19657,8 +19740,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 5063,
-          "end_line": 5074,
+          "start_line": 5085,
+          "end_line": 5096,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19706,8 +19789,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 5075,
-          "end_line": 5081,
+          "start_line": 5097,
+          "end_line": 5103,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19757,12 +19840,12 @@
     },
     {
       "id": "GNT-9.3",
-      "span_start_line": 5082,
-      "span_end_line": 5094,
+      "span_start_line": 5104,
+      "span_end_line": 5116,
       "span_sha256": "65ebcfb1eff57d7acc064798467dd10058044d0a6d4cbeb3ed3e06da78334fe2",
-      "anchor_line": 5082,
-      "body_start_line": 5083,
-      "body_end_line": 5094,
+      "anchor_line": 5104,
+      "body_start_line": 5105,
+      "body_end_line": 5116,
       "body_sha256": "2bf9c0c00970b71d14e35000286ef52bc1bfcc169f431506c5fdc2fbdccdd1ed",
       "profiles": [
         "analyzer",
@@ -19777,8 +19860,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5083,
-          "end_line": 5094,
+          "start_line": 5105,
+          "end_line": 5116,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19828,12 +19911,12 @@
     },
     {
       "id": "GNT-9.4",
-      "span_start_line": 5095,
-      "span_end_line": 5108,
+      "span_start_line": 5117,
+      "span_end_line": 5130,
       "span_sha256": "eee244a4665f1c0bc4676f1e470b97d62c66dc3a96948990d5ec85a3001c7380",
-      "anchor_line": 5095,
-      "body_start_line": 5096,
-      "body_end_line": 5108,
+      "anchor_line": 5117,
+      "body_start_line": 5118,
+      "body_end_line": 5130,
       "body_sha256": "2c47821de41ae7c90b292e49e46bd5699cf0ddd7e3dad468e619cd5fd1882b8e",
       "profiles": [
         "analyzer",
@@ -19848,8 +19931,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5096,
-          "end_line": 5108,
+          "start_line": 5118,
+          "end_line": 5130,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19899,12 +19982,12 @@
     },
     {
       "id": "GNT-9.5",
-      "span_start_line": 5109,
-      "span_end_line": 5120,
+      "span_start_line": 5131,
+      "span_end_line": 5142,
       "span_sha256": "2d8af044cdf82307e8c9b94a9bc106bc37e14b80734c4eb7424186529e440255",
-      "anchor_line": 5109,
-      "body_start_line": 5110,
-      "body_end_line": 5120,
+      "anchor_line": 5131,
+      "body_start_line": 5132,
+      "body_end_line": 5142,
       "body_sha256": "0772eefdf878d091e84125e2e7144194f172760ae32fc25dd932bbec4f795b29",
       "profiles": [
         "analyzer",
@@ -19919,78 +20002,7 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5110,
-          "end_line": 5120,
-          "profiles": [
-            "analyzer",
-            "concurrent-evaluator",
-            "durable-runtime",
-            "evaluator"
-          ],
-          "roles": [
-            "harness",
-            "implementation"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "concurrent-evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "durable-runtime",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "GNT-9.6",
-      "span_start_line": 5121,
-      "span_end_line": 5142,
-      "span_sha256": "1b0870b2c7de35c7f431933449ff0bee4e76fac3cdde5760f2cda00459f5c6fa",
-      "anchor_line": 5121,
-      "body_start_line": 5122,
-      "body_end_line": 5142,
-      "body_sha256": "b53d122e38ab622453cded68e4a797624227ce69f22eb82dfb2f5b05b2233665",
-      "profiles": [
-        "analyzer",
-        "concurrent-evaluator",
-        "durable-runtime",
-        "evaluator"
-      ],
-      "roles": [
-        "harness",
-        "implementation"
-      ],
-      "clauses": [
-        {
-          "key": "clause-001",
-          "start_line": 5122,
+          "start_line": 5132,
           "end_line": 5142,
           "profiles": [
             "analyzer",
@@ -20040,14 +20052,14 @@
       ]
     },
     {
-      "id": "GNT-9.7",
+      "id": "GNT-9.6",
       "span_start_line": 5143,
-      "span_end_line": 5162,
-      "span_sha256": "3a04cbb2a478eccb2af85a562adb1165bb0d69c01bd84b750d14aa1a76754f49",
+      "span_end_line": 5164,
+      "span_sha256": "1b0870b2c7de35c7f431933449ff0bee4e76fac3cdde5760f2cda00459f5c6fa",
       "anchor_line": 5143,
       "body_start_line": 5144,
-      "body_end_line": 5162,
-      "body_sha256": "f6b9618d8a97659b9477b84b4244b6f2b9192e283f72fd0b17058bece2a11a66",
+      "body_end_line": 5164,
+      "body_sha256": "b53d122e38ab622453cded68e4a797624227ce69f22eb82dfb2f5b05b2233665",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -20062,7 +20074,78 @@
         {
           "key": "clause-001",
           "start_line": 5144,
-          "end_line": 5162,
+          "end_line": 5164,
+          "profiles": [
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "evaluator"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "durable-runtime",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-9.7",
+      "span_start_line": 5165,
+      "span_end_line": 5184,
+      "span_sha256": "3a04cbb2a478eccb2af85a562adb1165bb0d69c01bd84b750d14aa1a76754f49",
+      "anchor_line": 5165,
+      "body_start_line": 5166,
+      "body_end_line": 5184,
+      "body_sha256": "f6b9618d8a97659b9477b84b4244b6f2b9192e283f72fd0b17058bece2a11a66",
+      "profiles": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "evaluator"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 5166,
+          "end_line": 5184,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20110,12 +20193,12 @@
     },
     {
       "id": "GNT-9.8",
-      "span_start_line": 5163,
-      "span_end_line": 5169,
+      "span_start_line": 5185,
+      "span_end_line": 5191,
       "span_sha256": "452066ea3f05b7180d6c98fca6283756121f18b1ad8b1c678aed514896628b64",
-      "anchor_line": 5163,
-      "body_start_line": 5164,
-      "body_end_line": 5169,
+      "anchor_line": 5185,
+      "body_start_line": 5186,
+      "body_end_line": 5191,
       "body_sha256": "ef8b6a205faee9a89e76a1b2c2f63acb9c6531b60cf89339b466630865e2d5b4",
       "profiles": [
         "analyzer",
@@ -20130,8 +20213,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5164,
-          "end_line": 5169,
+          "start_line": 5186,
+          "end_line": 5191,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20181,12 +20264,12 @@
     },
     {
       "id": "GNT-9.9",
-      "span_start_line": 5170,
-      "span_end_line": 5176,
+      "span_start_line": 5192,
+      "span_end_line": 5198,
       "span_sha256": "bf7ae95c3f5597cfaa1eb7619874a6fcc1c69f0267ee26c8269f715002a3722c",
-      "anchor_line": 5170,
-      "body_start_line": 5171,
-      "body_end_line": 5176,
+      "anchor_line": 5192,
+      "body_start_line": 5193,
+      "body_end_line": 5198,
       "body_sha256": "b5162379163b0d0d9c13f148743defb0c2631c44c5a36fe0435994997ad81f0c",
       "profiles": [
         "analyzer",
@@ -20201,8 +20284,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5171,
-          "end_line": 5176,
+          "start_line": 5193,
+          "end_line": 5198,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20253,12 +20336,12 @@
     },
     {
       "id": "GNT-9.10",
-      "span_start_line": 5177,
-      "span_end_line": 5185,
+      "span_start_line": 5199,
+      "span_end_line": 5207,
       "span_sha256": "e723db97ea4c69095c5bd069c736c20328526fa0f47e6e35284f18a7e3f74b56",
-      "anchor_line": 5177,
-      "body_start_line": 5178,
-      "body_end_line": 5185,
+      "anchor_line": 5199,
+      "body_start_line": 5200,
+      "body_end_line": 5207,
       "body_sha256": "d6de56c0eb6eca28213bb08cecf1c5b68cc1b358a283ad0ef68cd8a55f400f7a",
       "profiles": [
         "analyzer",
@@ -20273,8 +20356,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5178,
-          "end_line": 5185,
+          "start_line": 5200,
+          "end_line": 5207,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20324,12 +20407,12 @@
     },
     {
       "id": "GNT-9.11",
-      "span_start_line": 5186,
-      "span_end_line": 5205,
+      "span_start_line": 5208,
+      "span_end_line": 5227,
       "span_sha256": "e8c43fba985258b1e3d16b435d34382f6ef8a1b346a12056ef887b4ac1a7705c",
-      "anchor_line": 5186,
-      "body_start_line": 5187,
-      "body_end_line": 5205,
+      "anchor_line": 5208,
+      "body_start_line": 5209,
+      "body_end_line": 5227,
       "body_sha256": "0062f5ea5a901001ad8bec5a438e146a2611d7df2797cbd2e2f977a5202919f7",
       "profiles": [
         "analyzer",
@@ -20344,8 +20427,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5187,
-          "end_line": 5205,
+          "start_line": 5209,
+          "end_line": 5227,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20395,12 +20478,12 @@
     },
     {
       "id": "GNT-9.12",
-      "span_start_line": 5206,
-      "span_end_line": 5211,
+      "span_start_line": 5228,
+      "span_end_line": 5233,
       "span_sha256": "f008843735e61682bb49b09055a78380dc9a08ba35e14065732d0b153387cfad",
-      "anchor_line": 5206,
-      "body_start_line": 5207,
-      "body_end_line": 5211,
+      "anchor_line": 5228,
+      "body_start_line": 5229,
+      "body_end_line": 5233,
       "body_sha256": "95dc76709632c44976976e25860e48e6d37ed72084cfc4839d859455323f8c42",
       "profiles": [
         "analyzer",
@@ -20415,8 +20498,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5207,
-          "end_line": 5211,
+          "start_line": 5229,
+          "end_line": 5233,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20467,12 +20550,12 @@
     },
     {
       "id": "GNT-10.0",
-      "span_start_line": 5212,
-      "span_end_line": 5225,
+      "span_start_line": 5234,
+      "span_end_line": 5247,
       "span_sha256": "55bb6398828787f2ff1a37657e2db39a4abcb6fc0021acbc15133a8a1b0e3174",
-      "anchor_line": 5214,
-      "body_start_line": 5215,
-      "body_end_line": 5225,
+      "anchor_line": 5236,
+      "body_start_line": 5237,
+      "body_end_line": 5247,
       "body_sha256": "94cd97d11e31c83815ac7e14e6bbfccc7422039af54a2bbab2195aaf23d81acc",
       "profiles": [
         "analyzer",
@@ -20489,8 +20572,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5215,
-          "end_line": 5225,
+          "start_line": 5237,
+          "end_line": 5247,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20550,12 +20633,12 @@
     },
     {
       "id": "GNT-10.1",
-      "span_start_line": 5226,
-      "span_end_line": 5232,
+      "span_start_line": 5248,
+      "span_end_line": 5254,
       "span_sha256": "877053fab34cb7a644236cfeca6bbbbefcda01c9ebdf25ee332f5fff3deabcfb",
-      "anchor_line": 5226,
-      "body_start_line": 5227,
-      "body_end_line": 5232,
+      "anchor_line": 5248,
+      "body_start_line": 5249,
+      "body_end_line": 5254,
       "body_sha256": "f1cd8c28542db2bbd7ae788d0e1190d72b784785f409af0af7da136865ca2a4e",
       "profiles": [
         "analyzer",
@@ -20572,8 +20655,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5227,
-          "end_line": 5232,
+          "start_line": 5249,
+          "end_line": 5254,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20633,12 +20716,12 @@
     },
     {
       "id": "GNT-10.2",
-      "span_start_line": 5233,
-      "span_end_line": 5268,
+      "span_start_line": 5255,
+      "span_end_line": 5290,
       "span_sha256": "1af33c7a61704d0550101adf13553231887438f8a204f18747ad4c01cf76e124",
-      "anchor_line": 5233,
-      "body_start_line": 5234,
-      "body_end_line": 5268,
+      "anchor_line": 5255,
+      "body_start_line": 5256,
+      "body_end_line": 5290,
       "body_sha256": "4abfc8aaa747fb7b4e6258a37b3f084423d65bcf2e482b17a955b0978d32e00a",
       "profiles": [
         "analyzer",
@@ -20655,8 +20738,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5234,
-          "end_line": 5268,
+          "start_line": 5256,
+          "end_line": 5290,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20716,13 +20799,13 @@
     },
     {
       "id": "GNT-10.3",
-      "span_start_line": 5269,
-      "span_end_line": 5295,
-      "span_sha256": "c3c7e8f3ddfbdd1609a87e69738a56964b251877dcc01dc16986c0af8695f152",
-      "anchor_line": 5269,
-      "body_start_line": 5270,
-      "body_end_line": 5295,
-      "body_sha256": "643420dbb779a5bbb318c9637d1fcaa1fc1d2bef4b724e946e3693dff49d6137",
+      "span_start_line": 5291,
+      "span_end_line": 5320,
+      "span_sha256": "fab7488f8766e601ec3f6c26bed40ac7abfb4d22bbde6b3531a9b33a0017c9bb",
+      "anchor_line": 5291,
+      "body_start_line": 5292,
+      "body_end_line": 5320,
+      "body_sha256": "ae1eedfa94c70ae31d6eeb944686bcd969e7b5e6ae07d430ce30d9aa5f289850",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -20738,8 +20821,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5270,
-          "end_line": 5295,
+          "start_line": 5292,
+          "end_line": 5320,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20800,12 +20883,12 @@
     },
     {
       "id": "GNT-10.4",
-      "span_start_line": 5296,
-      "span_end_line": 5308,
+      "span_start_line": 5321,
+      "span_end_line": 5333,
       "span_sha256": "745f0e4aed31a0540687ff4c668721116641251b1484831ed98c9e59c8e699be",
-      "anchor_line": 5296,
-      "body_start_line": 5297,
-      "body_end_line": 5308,
+      "anchor_line": 5321,
+      "body_start_line": 5322,
+      "body_end_line": 5333,
       "body_sha256": "27bb41fd72a2310c3f2d54082cc8a1889b0e526cb38e16329b3c49a9fb9ad05e",
       "profiles": [
         "analyzer",
@@ -20822,8 +20905,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5297,
-          "end_line": 5308,
+          "start_line": 5322,
+          "end_line": 5333,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20883,12 +20966,12 @@
     },
     {
       "id": "GNT-10.5",
-      "span_start_line": 5309,
-      "span_end_line": 5345,
+      "span_start_line": 5334,
+      "span_end_line": 5370,
       "span_sha256": "dc16ab788fce9f2abed0d8c1e2c421447d6bd23dae3c1345cd8118485eb3506a",
-      "anchor_line": 5309,
-      "body_start_line": 5310,
-      "body_end_line": 5345,
+      "anchor_line": 5334,
+      "body_start_line": 5335,
+      "body_end_line": 5370,
       "body_sha256": "fb57c394b606216c7b5a65c8a06ef75ba64e9f59f8d22e4288e78527bd0600e0",
       "profiles": [
         "analyzer",
@@ -20905,8 +20988,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5310,
-          "end_line": 5345,
+          "start_line": 5335,
+          "end_line": 5370,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20966,12 +21049,12 @@
     },
     {
       "id": "GNT-10.6",
-      "span_start_line": 5346,
-      "span_end_line": 5397,
+      "span_start_line": 5371,
+      "span_end_line": 5422,
       "span_sha256": "81759de6317c2c6eb5075a36cf4587dd95ec3914fce0049da2fcdfe4c7ef89ef",
-      "anchor_line": 5346,
-      "body_start_line": 5347,
-      "body_end_line": 5397,
+      "anchor_line": 5371,
+      "body_start_line": 5372,
+      "body_end_line": 5422,
       "body_sha256": "c5676e541ae050eed40aafffbbbac6c9e2b2155b43d53cda83fc32b11606b410",
       "profiles": [
         "analyzer",
@@ -20988,8 +21071,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5347,
-          "end_line": 5397,
+          "start_line": 5372,
+          "end_line": 5422,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21049,12 +21132,12 @@
     },
     {
       "id": "GNT-10.7",
-      "span_start_line": 5398,
-      "span_end_line": 5402,
+      "span_start_line": 5423,
+      "span_end_line": 5427,
       "span_sha256": "f37540918b8939b45e468bb244bbb81a03e634f4d2e657a93ece712cd4c2e95e",
-      "anchor_line": 5398,
-      "body_start_line": 5399,
-      "body_end_line": 5402,
+      "anchor_line": 5423,
+      "body_start_line": 5424,
+      "body_end_line": 5427,
       "body_sha256": "43bccf591cc3d4ecd0a5d034651ee1253d602aa43a7b96f18562ada0e13e322c",
       "profiles": [
         "analyzer",
@@ -21071,8 +21154,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5399,
-          "end_line": 5402,
+          "start_line": 5424,
+          "end_line": 5427,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21124,12 +21207,12 @@
     },
     {
       "id": "GNT-10.8",
-      "span_start_line": 5403,
-      "span_end_line": 5445,
+      "span_start_line": 5428,
+      "span_end_line": 5470,
       "span_sha256": "3a32705f6905f18bbe835bb23f86bf84aff67f85b69a981ccd06bdedf1765bc6",
-      "anchor_line": 5403,
-      "body_start_line": 5404,
-      "body_end_line": 5445,
+      "anchor_line": 5428,
+      "body_start_line": 5429,
+      "body_end_line": 5470,
       "body_sha256": "2bf40a7174a4aba40995f413addcb390ef776f615e93ffd8ff74024d49dd2a0d",
       "profiles": [
         "analyzer",
@@ -21146,8 +21229,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5404,
-          "end_line": 5445,
+          "start_line": 5429,
+          "end_line": 5470,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21207,12 +21290,12 @@
     },
     {
       "id": "GNT-10.9",
-      "span_start_line": 5446,
-      "span_end_line": 5486,
+      "span_start_line": 5471,
+      "span_end_line": 5511,
       "span_sha256": "ed11f38e699e58bc1f1ee6dcb7ca4fbac0bfa16dda8b20333c4b413616757a10",
-      "anchor_line": 5446,
-      "body_start_line": 5447,
-      "body_end_line": 5486,
+      "anchor_line": 5471,
+      "body_start_line": 5472,
+      "body_end_line": 5511,
       "body_sha256": "e032afa7a0cf1396d30dc8180e040eeef931296252d3caba31457b40c9e1fb8c",
       "profiles": [
         "analyzer",
@@ -21229,8 +21312,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5447,
-          "end_line": 5486,
+          "start_line": 5472,
+          "end_line": 5511,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21283,12 +21366,12 @@
     },
     {
       "id": "GNT-10.10",
-      "span_start_line": 5487,
-      "span_end_line": 5522,
+      "span_start_line": 5512,
+      "span_end_line": 5547,
       "span_sha256": "882d4848825ccaa25782d36a196e30fa306edcd292590561dfd57709dcd3eb83",
-      "anchor_line": 5487,
-      "body_start_line": 5488,
-      "body_end_line": 5522,
+      "anchor_line": 5512,
+      "body_start_line": 5513,
+      "body_end_line": 5547,
       "body_sha256": "75d58f664c8656e1c52315d1af69c7e649e07cecd2062a68c2eb30c90344e597",
       "profiles": [
         "analyzer",
@@ -21305,8 +21388,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5488,
-          "end_line": 5522,
+          "start_line": 5513,
+          "end_line": 5547,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21368,12 +21451,12 @@
     },
     {
       "id": "GNT-10.11",
-      "span_start_line": 5523,
-      "span_end_line": 5529,
+      "span_start_line": 5548,
+      "span_end_line": 5554,
       "span_sha256": "4b4901650c93b658cb6a199216f213b1d70f6d77eaf9128ee9904254533b04f6",
-      "anchor_line": 5523,
-      "body_start_line": 5524,
-      "body_end_line": 5529,
+      "anchor_line": 5548,
+      "body_start_line": 5549,
+      "body_end_line": 5554,
       "body_sha256": "ec8a4f11b68d86392cadb3b887c96da2fdf880e72e8d6de0c134c6f3c431dea1",
       "profiles": [
         "analyzer",
@@ -21390,8 +21473,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5524,
-          "end_line": 5529,
+          "start_line": 5549,
+          "end_line": 5554,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21444,12 +21527,12 @@
     },
     {
       "id": "GNT-10.12",
-      "span_start_line": 5530,
-      "span_end_line": 5568,
+      "span_start_line": 5555,
+      "span_end_line": 5593,
       "span_sha256": "0c7d0168c521e6f154c9243c0f084a94d3e5fff452441ae1aa38eb60fd8a0496",
-      "anchor_line": 5530,
-      "body_start_line": 5531,
-      "body_end_line": 5568,
+      "anchor_line": 5555,
+      "body_start_line": 5556,
+      "body_end_line": 5593,
       "body_sha256": "517ef7d7d3ea1c27828f7f54b2ea4bc0e4c02558865f1adb8788775f9262987d",
       "profiles": [
         "analyzer",
@@ -21466,8 +21549,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5531,
-          "end_line": 5568,
+          "start_line": 5556,
+          "end_line": 5593,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21533,12 +21616,12 @@
     },
     {
       "id": "GNT-10.13",
-      "span_start_line": 5569,
-      "span_end_line": 5586,
+      "span_start_line": 5594,
+      "span_end_line": 5611,
       "span_sha256": "63b99fcf6a685f1daed60df2fed2a25377c4243e1d53cb7fa9e28c82ea944cb9",
-      "anchor_line": 5569,
-      "body_start_line": 5570,
-      "body_end_line": 5586,
+      "anchor_line": 5594,
+      "body_start_line": 5595,
+      "body_end_line": 5611,
       "body_sha256": "8461253408b7090cff4207f5b91db739d4927f390380dad38b0dd1146fcd8d55",
       "profiles": [
         "analyzer",
@@ -21555,8 +21638,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5570,
-          "end_line": 5586,
+          "start_line": 5595,
+          "end_line": 5611,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21618,12 +21701,12 @@
     },
     {
       "id": "GNT-10.14",
-      "span_start_line": 5587,
-      "span_end_line": 5609,
+      "span_start_line": 5612,
+      "span_end_line": 5634,
       "span_sha256": "7936a49884d6f5a5836ba2654dd50dad589bf78d4c1ad2fa3e8723e5acb350aa",
-      "anchor_line": 5587,
-      "body_start_line": 5588,
-      "body_end_line": 5609,
+      "anchor_line": 5612,
+      "body_start_line": 5613,
+      "body_end_line": 5634,
       "body_sha256": "895ebd1ca16ba971417f4bd585f48c95c63735c1a2c2a8f98e0cf939319905ec",
       "profiles": [
         "analyzer",
@@ -21640,8 +21723,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5588,
-          "end_line": 5609,
+          "start_line": 5613,
+          "end_line": 5634,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21702,12 +21785,12 @@
     },
     {
       "id": "GNT-11.0",
-      "span_start_line": 5610,
-      "span_end_line": 5619,
+      "span_start_line": 5635,
+      "span_end_line": 5644,
       "span_sha256": "a3a4100c52dd62b492de733ca68ffea4386e08d50f3e59d53069600646b0d0b2",
-      "anchor_line": 5612,
-      "body_start_line": 5613,
-      "body_end_line": 5619,
+      "anchor_line": 5637,
+      "body_start_line": 5638,
+      "body_end_line": 5644,
       "body_sha256": "49d76995fdbe3c1725f9bcfd006e979dcd63de63f2e675e2db1a8359110bbd4d",
       "profiles": [
         "durable-runtime",
@@ -21721,8 +21804,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5613,
-          "end_line": 5619,
+          "start_line": 5638,
+          "end_line": 5644,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21755,12 +21838,12 @@
     },
     {
       "id": "GNT-11.1",
-      "span_start_line": 5620,
-      "span_end_line": 5638,
+      "span_start_line": 5645,
+      "span_end_line": 5663,
       "span_sha256": "8dad3ab91c902628d34a4bc67da9f32a49a1ae62abdb556a64027a046ed6183a",
-      "anchor_line": 5620,
-      "body_start_line": 5621,
-      "body_end_line": 5638,
+      "anchor_line": 5645,
+      "body_start_line": 5646,
+      "body_end_line": 5663,
       "body_sha256": "6af2c4e63c6d014301f735ca5c1c9ffce3174bdbc7bbf23097a65e0c3500e5a5",
       "profiles": [
         "durable-runtime",
@@ -21774,8 +21857,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5621,
-          "end_line": 5638,
+          "start_line": 5646,
+          "end_line": 5663,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21809,12 +21892,12 @@
     },
     {
       "id": "GNT-11.2",
-      "span_start_line": 5639,
-      "span_end_line": 5720,
+      "span_start_line": 5664,
+      "span_end_line": 5745,
       "span_sha256": "5ca199bfdbcf17d1b709d68ef4c1c00a02876902c713e6274432ed8101ce87f1",
-      "anchor_line": 5639,
-      "body_start_line": 5640,
-      "body_end_line": 5720,
+      "anchor_line": 5664,
+      "body_start_line": 5665,
+      "body_end_line": 5745,
       "body_sha256": "00dabc7b6811ebfea21de27528a550fe6396ae30f1f8eb4ef5da8a1e7828fac5",
       "profiles": [
         "durable-runtime",
@@ -21828,8 +21911,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5640,
-          "end_line": 5720,
+          "start_line": 5665,
+          "end_line": 5745,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21863,12 +21946,12 @@
     },
     {
       "id": "GNT-11.3",
-      "span_start_line": 5721,
-      "span_end_line": 5769,
+      "span_start_line": 5746,
+      "span_end_line": 5794,
       "span_sha256": "1a3a38dbdee8c247627b0ca92a768194da0318b4e1f7dd132dd374cbbcb59021",
-      "anchor_line": 5721,
-      "body_start_line": 5722,
-      "body_end_line": 5769,
+      "anchor_line": 5746,
+      "body_start_line": 5747,
+      "body_end_line": 5794,
       "body_sha256": "66751e5e611165dd371b1e7c0ba6b8e2428e166631eafdbee608d8db3456770d",
       "profiles": [
         "durable-runtime",
@@ -21882,8 +21965,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5722,
-          "end_line": 5769,
+          "start_line": 5747,
+          "end_line": 5794,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21914,12 +21997,12 @@
     },
     {
       "id": "GNT-11.4",
-      "span_start_line": 5770,
-      "span_end_line": 5784,
+      "span_start_line": 5795,
+      "span_end_line": 5809,
       "span_sha256": "654b0793d467c544e8769165bb479c3f2af44a65f37497bf42b4a5cbe73c4a99",
-      "anchor_line": 5770,
-      "body_start_line": 5771,
-      "body_end_line": 5784,
+      "anchor_line": 5795,
+      "body_start_line": 5796,
+      "body_end_line": 5809,
       "body_sha256": "cc335cbbcae1fe3cfe1d4f06c4a42afbfe68fca8573229f61e150adfd9f9361b",
       "profiles": [
         "durable-runtime",
@@ -21933,8 +22016,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5771,
-          "end_line": 5784,
+          "start_line": 5796,
+          "end_line": 5809,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21965,12 +22048,12 @@
     },
     {
       "id": "GNT-11.5",
-      "span_start_line": 5785,
-      "span_end_line": 5795,
+      "span_start_line": 5810,
+      "span_end_line": 5820,
       "span_sha256": "5459b044bd3128c18dc627abfa1a59b6f9ee7cc77dc073be6698300b3557999e",
-      "anchor_line": 5785,
-      "body_start_line": 5786,
-      "body_end_line": 5795,
+      "anchor_line": 5810,
+      "body_start_line": 5811,
+      "body_end_line": 5820,
       "body_sha256": "4ef8e36755dcfbccc527f61583fc6d00f07db42ed2e3cc03bef343e0da6967a4",
       "profiles": [
         "durable-runtime",
@@ -21984,8 +22067,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5786,
-          "end_line": 5795,
+          "start_line": 5811,
+          "end_line": 5820,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22016,12 +22099,12 @@
     },
     {
       "id": "GNT-11.6",
-      "span_start_line": 5796,
-      "span_end_line": 5822,
+      "span_start_line": 5821,
+      "span_end_line": 5847,
       "span_sha256": "194c8c7947335020ffd49b7acef9173a4262ea0e858563ad4776c7b7aeeb6b2e",
-      "anchor_line": 5796,
-      "body_start_line": 5797,
-      "body_end_line": 5822,
+      "anchor_line": 5821,
+      "body_start_line": 5822,
+      "body_end_line": 5847,
       "body_sha256": "50a5a80f5adc7aaf62aed82d3c41e5da7b9c1d3940c462eff4399b4d207b4bd0",
       "profiles": [
         "durable-runtime",
@@ -22035,8 +22118,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5797,
-          "end_line": 5813,
+          "start_line": 5822,
+          "end_line": 5838,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22065,8 +22148,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 5814,
-          "end_line": 5822,
+          "start_line": 5839,
+          "end_line": 5847,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22097,12 +22180,12 @@
     },
     {
       "id": "GNT-11.6-package-source-manifest",
-      "span_start_line": 5823,
-      "span_end_line": 5909,
+      "span_start_line": 5848,
+      "span_end_line": 5934,
       "span_sha256": "3a50e53bc4c2c45eec92df3f7ec1006c46cfb4e9b501bd656bcdea6e69fc2334",
-      "anchor_line": 5823,
-      "body_start_line": 5824,
-      "body_end_line": 5909,
+      "anchor_line": 5848,
+      "body_start_line": 5849,
+      "body_end_line": 5934,
       "body_sha256": "40f70e901b09e75f77d79ec7ded38ac2f9b109c331b30b0c407f5772e8f50ee1",
       "profiles": [
         "durable-runtime",
@@ -22116,8 +22199,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5824,
-          "end_line": 5836,
+          "start_line": 5849,
+          "end_line": 5861,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22150,8 +22233,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 5837,
-          "end_line": 5851,
+          "start_line": 5862,
+          "end_line": 5876,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22183,8 +22266,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 5852,
-          "end_line": 5864,
+          "start_line": 5877,
+          "end_line": 5889,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22216,8 +22299,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 5865,
-          "end_line": 5875,
+          "start_line": 5890,
+          "end_line": 5900,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22249,8 +22332,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 5876,
-          "end_line": 5885,
+          "start_line": 5901,
+          "end_line": 5910,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22279,8 +22362,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 5886,
-          "end_line": 5902,
+          "start_line": 5911,
+          "end_line": 5927,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22309,8 +22392,8 @@
         },
         {
           "key": "clause-007",
-          "start_line": 5903,
-          "end_line": 5909,
+          "start_line": 5928,
+          "end_line": 5934,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22344,12 +22427,12 @@
     },
     {
       "id": "GNT-11.7",
-      "span_start_line": 5910,
-      "span_end_line": 5936,
+      "span_start_line": 5935,
+      "span_end_line": 5961,
       "span_sha256": "b89b581876a903e58992768c34865c9dd3c1830b6be4591b625830c94e23c77a",
-      "anchor_line": 5910,
-      "body_start_line": 5911,
-      "body_end_line": 5936,
+      "anchor_line": 5935,
+      "body_start_line": 5936,
+      "body_end_line": 5961,
       "body_sha256": "7c1e05975c8c270a0fa692449f007cb554c80d3b8af0eccb8f739d3f7297fa89",
       "profiles": [
         "durable-runtime",
@@ -22363,8 +22446,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5911,
-          "end_line": 5936,
+          "start_line": 5936,
+          "end_line": 5961,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22396,12 +22479,12 @@
     },
     {
       "id": "GNT-11.8",
-      "span_start_line": 5937,
-      "span_end_line": 5974,
+      "span_start_line": 5962,
+      "span_end_line": 5999,
       "span_sha256": "2eabdf4390ab85c8908753fcefb2c9850e41e7d3de8528de423a9a6fe2c4f9dd",
-      "anchor_line": 5937,
-      "body_start_line": 5938,
-      "body_end_line": 5974,
+      "anchor_line": 5962,
+      "body_start_line": 5963,
+      "body_end_line": 5999,
       "body_sha256": "3843b25e196c6a733ed669080e5141286d97652c30f32ce8483d13481efb12a4",
       "profiles": [
         "durable-runtime",
@@ -22415,8 +22498,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5938,
-          "end_line": 5974,
+          "start_line": 5963,
+          "end_line": 5999,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22445,12 +22528,12 @@
     },
     {
       "id": "GNT-11.9",
-      "span_start_line": 5975,
-      "span_end_line": 5995,
+      "span_start_line": 6000,
+      "span_end_line": 6020,
       "span_sha256": "2714f8ed7849e00e67a1993d09d660417cac60d5d4614b34ccaad900ec9683dd",
-      "anchor_line": 5975,
-      "body_start_line": 5976,
-      "body_end_line": 5995,
+      "anchor_line": 6000,
+      "body_start_line": 6001,
+      "body_end_line": 6020,
       "body_sha256": "91c07dd3664222ee839c1f07e0dd00a73a914310e3c74827b27a51fe0d10a78e",
       "profiles": [
         "durable-runtime",
@@ -22464,8 +22547,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5976,
-          "end_line": 5995,
+          "start_line": 6001,
+          "end_line": 6020,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22498,12 +22581,12 @@
     },
     {
       "id": "GNT-11.10",
-      "span_start_line": 5996,
-      "span_end_line": 6216,
+      "span_start_line": 6021,
+      "span_end_line": 6241,
       "span_sha256": "90884f49f555ccfeef031f8e0a5b53450ca7fe7d839407e3ae061b74df9fc594",
-      "anchor_line": 5996,
-      "body_start_line": 5997,
-      "body_end_line": 6216,
+      "anchor_line": 6021,
+      "body_start_line": 6022,
+      "body_end_line": 6241,
       "body_sha256": "65c936ce30b358155f149247f13d48494bd33afc4c4d3702fab0ec7c68265344",
       "profiles": [
         "durable-runtime",
@@ -22517,8 +22600,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5997,
-          "end_line": 6009,
+          "start_line": 6022,
+          "end_line": 6034,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22547,8 +22630,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6010,
-          "end_line": 6033,
+          "start_line": 6035,
+          "end_line": 6058,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22577,8 +22660,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6034,
-          "end_line": 6047,
+          "start_line": 6059,
+          "end_line": 6072,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22607,8 +22690,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 6048,
-          "end_line": 6112,
+          "start_line": 6073,
+          "end_line": 6137,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22637,8 +22720,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 6113,
-          "end_line": 6174,
+          "start_line": 6138,
+          "end_line": 6199,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22667,8 +22750,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 6175,
-          "end_line": 6216,
+          "start_line": 6200,
+          "end_line": 6241,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22699,12 +22782,12 @@
     },
     {
       "id": "GNT-11.11",
-      "span_start_line": 6217,
-      "span_end_line": 6221,
+      "span_start_line": 6242,
+      "span_end_line": 6246,
       "span_sha256": "e64d4c1ab5e9e2ec9d3e243818e46e48935a7a8b44a76126b99ae9492c385658",
-      "anchor_line": 6217,
-      "body_start_line": 6218,
-      "body_end_line": 6221,
+      "anchor_line": 6242,
+      "body_start_line": 6243,
+      "body_end_line": 6246,
       "body_sha256": "3ef420d4731aa540eb9c9037d675b9fa4967515cc9ce0d20fe491355860f3764",
       "profiles": [
         "durable-runtime",
@@ -22718,8 +22801,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6218,
-          "end_line": 6221,
+          "start_line": 6243,
+          "end_line": 6246,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22750,12 +22833,12 @@
     },
     {
       "id": "GNT-11.11-generic-artifact-recovery",
-      "span_start_line": 6222,
-      "span_end_line": 6242,
+      "span_start_line": 6247,
+      "span_end_line": 6267,
       "span_sha256": "275f718f9f0fd12775964d5e6fb3c3fadec0d5970c0e3f46356887ce524d1638",
-      "anchor_line": 6222,
-      "body_start_line": 6223,
-      "body_end_line": 6242,
+      "anchor_line": 6247,
+      "body_start_line": 6248,
+      "body_end_line": 6267,
       "body_sha256": "4e8954d6f39fc6598bee778521728269221b2ae1ccde82a1d0b8564d1d388daa",
       "profiles": [
         "durable-runtime",
@@ -22768,8 +22851,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6223,
-          "end_line": 6242,
+          "start_line": 6248,
+          "end_line": 6267,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -22801,12 +22884,12 @@
     },
     {
       "id": "GNT-12.0",
-      "span_start_line": 6243,
-      "span_end_line": 6309,
+      "span_start_line": 6268,
+      "span_end_line": 6334,
       "span_sha256": "468558fbfefe7c334d5c2fb8be73b02fd29a6f67f89355595a762b02a3e56bfd",
-      "anchor_line": 6245,
-      "body_start_line": 6246,
-      "body_end_line": 6309,
+      "anchor_line": 6270,
+      "body_start_line": 6271,
+      "body_end_line": 6334,
       "body_sha256": "6b07fdcb702c4834240646179b0678467ffacabcc92ee705cb5d6e2410f9c511",
       "profiles": [
         "analyzer",
@@ -22824,8 +22907,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6246,
-          "end_line": 6251,
+          "start_line": 6271,
+          "end_line": 6276,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22895,8 +22978,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6252,
-          "end_line": 6271,
+          "start_line": 6277,
+          "end_line": 6296,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22966,8 +23049,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6272,
-          "end_line": 6275,
+          "start_line": 6297,
+          "end_line": 6300,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23037,8 +23120,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 6276,
-          "end_line": 6298,
+          "start_line": 6301,
+          "end_line": 6323,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23109,8 +23192,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 6299,
-          "end_line": 6309,
+          "start_line": 6324,
+          "end_line": 6334,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23175,12 +23258,12 @@
     },
     {
       "id": "GNT-12.1",
-      "span_start_line": 6310,
-      "span_end_line": 6390,
+      "span_start_line": 6335,
+      "span_end_line": 6415,
       "span_sha256": "a6076f38fe87bcc19dedf050672aaf51046f0fc7075cab0d810fa94c4632a8ac",
-      "anchor_line": 6310,
-      "body_start_line": 6311,
-      "body_end_line": 6390,
+      "anchor_line": 6335,
+      "body_start_line": 6336,
+      "body_end_line": 6415,
       "body_sha256": "4d90266534c1db4cf1bd78bb23139c8ef12a52e137aaa661de645ea788e8149d",
       "profiles": [
         "analyzer",
@@ -23198,8 +23281,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6311,
-          "end_line": 6390,
+          "start_line": 6336,
+          "end_line": 6415,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23272,12 +23355,12 @@
     },
     {
       "id": "GNT-12.2",
-      "span_start_line": 6391,
-      "span_end_line": 6427,
+      "span_start_line": 6416,
+      "span_end_line": 6452,
       "span_sha256": "027c853e10aac827b8de32da4ca0c1e6dfd3556cdc7d39a9cbe7030459e840b1",
-      "anchor_line": 6391,
-      "body_start_line": 6392,
-      "body_end_line": 6427,
+      "anchor_line": 6416,
+      "body_start_line": 6417,
+      "body_end_line": 6452,
       "body_sha256": "401bb0729191f0bdafa719f29a15608ff3968e7c552ec2beaf2718f4f7124fc2",
       "profiles": [
         "analyzer",
@@ -23295,8 +23378,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6392,
-          "end_line": 6427,
+          "start_line": 6417,
+          "end_line": 6452,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23372,12 +23455,12 @@
     },
     {
       "id": "GNT-12.3",
-      "span_start_line": 6428,
-      "span_end_line": 6461,
+      "span_start_line": 6453,
+      "span_end_line": 6486,
       "span_sha256": "174995dad25e0d3283073b7f04552a12543c0dcd4ae84a20e9d44bfecd4ded8c",
-      "anchor_line": 6428,
-      "body_start_line": 6429,
-      "body_end_line": 6461,
+      "anchor_line": 6453,
+      "body_start_line": 6454,
+      "body_end_line": 6486,
       "body_sha256": "813af9a7d414f3c897831d7da86b419f866dd9edb54153a53e09b05e5245679b",
       "profiles": [
         "analyzer",
@@ -23395,8 +23478,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6429,
-          "end_line": 6445,
+          "start_line": 6454,
+          "end_line": 6470,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23466,8 +23549,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6446,
-          "end_line": 6461,
+          "start_line": 6471,
+          "end_line": 6486,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23533,12 +23616,12 @@
     },
     {
       "id": "GNT-12.4",
-      "span_start_line": 6462,
-      "span_end_line": 6501,
+      "span_start_line": 6487,
+      "span_end_line": 6526,
       "span_sha256": "a674a0245e65002e062f1deed7eb04a5b7ff660c0de8da6e83b12b6ff290d1fd",
-      "anchor_line": 6462,
-      "body_start_line": 6463,
-      "body_end_line": 6501,
+      "anchor_line": 6487,
+      "body_start_line": 6488,
+      "body_end_line": 6526,
       "body_sha256": "a3f964fd910686110fa0a0bf45e1ee392d11472bc186475a1a48dd28dbf81a64",
       "profiles": [
         "analyzer",
@@ -23556,8 +23639,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6463,
-          "end_line": 6482,
+          "start_line": 6488,
+          "end_line": 6507,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23621,8 +23704,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6483,
-          "end_line": 6501,
+          "start_line": 6508,
+          "end_line": 6526,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23689,12 +23772,12 @@
     },
     {
       "id": "GNT-12.5",
-      "span_start_line": 6502,
-      "span_end_line": 6581,
+      "span_start_line": 6527,
+      "span_end_line": 6606,
       "span_sha256": "9f0e5e391a16850a6fd2d55a8f4b3daf87e10c74352aabd283b7bf97de4e95dd",
-      "anchor_line": 6502,
-      "body_start_line": 6503,
-      "body_end_line": 6581,
+      "anchor_line": 6527,
+      "body_start_line": 6528,
+      "body_end_line": 6606,
       "body_sha256": "5c5e22ccea19e4e658986540e62fde1602397f73cc33e0d3ea5fe2d552840eee",
       "profiles": [
         "analyzer",
@@ -23712,8 +23795,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6503,
-          "end_line": 6522,
+          "start_line": 6528,
+          "end_line": 6547,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23787,8 +23870,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6523,
-          "end_line": 6535,
+          "start_line": 6548,
+          "end_line": 6560,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23845,8 +23928,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6536,
-          "end_line": 6546,
+          "start_line": 6561,
+          "end_line": 6571,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23903,8 +23986,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 6547,
-          "end_line": 6581,
+          "start_line": 6572,
+          "end_line": 6606,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23964,12 +24047,12 @@
     },
     {
       "id": "GNT-12.6",
-      "span_start_line": 6582,
-      "span_end_line": 6656,
+      "span_start_line": 6607,
+      "span_end_line": 6681,
       "span_sha256": "be3a4947ee4ea9f9e99f003df30ac87cdb1316189fd1153015e689f223a570a6",
-      "anchor_line": 6582,
-      "body_start_line": 6583,
-      "body_end_line": 6656,
+      "anchor_line": 6607,
+      "body_start_line": 6608,
+      "body_end_line": 6681,
       "body_sha256": "d0aa7ff73ee15129fcfeb2d01a34024301ddc2eff5c2c3eea924c51c10327290",
       "profiles": [
         "analyzer",
@@ -23987,8 +24070,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6583,
-          "end_line": 6634,
+          "start_line": 6608,
+          "end_line": 6659,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24056,8 +24139,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6635,
-          "end_line": 6643,
+          "start_line": 6660,
+          "end_line": 6668,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24121,8 +24204,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6644,
-          "end_line": 6656,
+          "start_line": 6669,
+          "end_line": 6681,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24188,12 +24271,12 @@
     },
     {
       "id": "GNT-12.7",
-      "span_start_line": 6657,
-      "span_end_line": 6682,
+      "span_start_line": 6682,
+      "span_end_line": 6707,
       "span_sha256": "ca61e59679d6869f16bd79c85a5e137f5e6d7f2eb0ef99183e6e3f21c44fe8f7",
-      "anchor_line": 6657,
-      "body_start_line": 6658,
-      "body_end_line": 6682,
+      "anchor_line": 6682,
+      "body_start_line": 6683,
+      "body_end_line": 6707,
       "body_sha256": "e30d004f9c60b084ea9c5556cf6f55d5183b7c8c321b930e8d84b3285329c11f",
       "profiles": [
         "analyzer",
@@ -24211,8 +24294,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6658,
-          "end_line": 6682,
+          "start_line": 6683,
+          "end_line": 6707,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24285,12 +24368,12 @@
     },
     {
       "id": "GNT-12.8",
-      "span_start_line": 6683,
-      "span_end_line": 6751,
+      "span_start_line": 6708,
+      "span_end_line": 6776,
       "span_sha256": "5be493551008ff41b3d7b7a0c854dfcbf33726f945cb13c2ac6543628e846422",
-      "anchor_line": 6683,
-      "body_start_line": 6684,
-      "body_end_line": 6751,
+      "anchor_line": 6708,
+      "body_start_line": 6709,
+      "body_end_line": 6776,
       "body_sha256": "2ebc94ef36f54ce22edb224257efd3bf9b8f19e11c3031e472ecc409010a7b09",
       "profiles": [
         "analyzer",
@@ -24308,8 +24391,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6684,
-          "end_line": 6751,
+          "start_line": 6709,
+          "end_line": 6776,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24378,12 +24461,12 @@
     },
     {
       "id": "GNT-12.9",
-      "span_start_line": 6752,
-      "span_end_line": 6789,
+      "span_start_line": 6777,
+      "span_end_line": 6814,
       "span_sha256": "8a6a793f833468f78832e09e2700276b1562da7f0dcc0fc97e258de8efbfa7f4",
-      "anchor_line": 6752,
-      "body_start_line": 6753,
-      "body_end_line": 6789,
+      "anchor_line": 6777,
+      "body_start_line": 6778,
+      "body_end_line": 6814,
       "body_sha256": "640d78f7b651bb067d3f5333b18ac35e284fb1a2293de3461d6cad796fa677aa",
       "profiles": [
         "analyzer",
@@ -24401,8 +24484,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6753,
-          "end_line": 6789,
+          "start_line": 6778,
+          "end_line": 6814,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24474,12 +24557,12 @@
     },
     {
       "id": "GNT-12.10",
-      "span_start_line": 6790,
-      "span_end_line": 6793,
+      "span_start_line": 6815,
+      "span_end_line": 6818,
       "span_sha256": "c60203eb5980e5f6ffab67d401fe73d2cd1238ca59f7d94d120c53debbc4b34a",
-      "anchor_line": 6790,
-      "body_start_line": 6791,
-      "body_end_line": 6793,
+      "anchor_line": 6815,
+      "body_start_line": 6816,
+      "body_end_line": 6818,
       "body_sha256": "b34b678b21445c72e84077357c4680922bf2930f1df74522a73d21164ae79541",
       "profiles": [
         "analyzer",
@@ -24497,8 +24580,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6791,
-          "end_line": 6793,
+          "start_line": 6816,
+          "end_line": 6818,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24567,12 +24650,12 @@
     },
     {
       "id": "GNT-12.11",
-      "span_start_line": 6794,
-      "span_end_line": 6829,
+      "span_start_line": 6819,
+      "span_end_line": 6854,
       "span_sha256": "babd047fe1d43937a6907dd2c9556e533d896828435d53f165e90f262af021da",
-      "anchor_line": 6794,
-      "body_start_line": 6795,
-      "body_end_line": 6829,
+      "anchor_line": 6819,
+      "body_start_line": 6820,
+      "body_end_line": 6854,
       "body_sha256": "695b11d53b0846fc0309833d1cb575b2a0f1f51c98cc52ac42b786f8f92e48fd",
       "profiles": [
         "analyzer",
@@ -24590,8 +24673,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6795,
-          "end_line": 6809,
+          "start_line": 6820,
+          "end_line": 6834,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24677,8 +24760,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6810,
-          "end_line": 6829,
+          "start_line": 6835,
+          "end_line": 6854,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24762,12 +24845,12 @@
     },
     {
       "id": "GNT-12.11-generic-diagnostics",
-      "span_start_line": 6830,
-      "span_end_line": 6869,
+      "span_start_line": 6855,
+      "span_end_line": 6894,
       "span_sha256": "245da948160bb9b95dc98035b2c12324b04d2824e4e634141bbd83c10771c007",
-      "anchor_line": 6830,
-      "body_start_line": 6831,
-      "body_end_line": 6869,
+      "anchor_line": 6855,
+      "body_start_line": 6856,
+      "body_end_line": 6894,
       "body_sha256": "a2f8b8ba65751ef090ccc06824efdb8660af94c7dbf3fe05c5d0af6561606aca",
       "profiles": [
         "analyzer",
@@ -24783,8 +24866,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6831,
-          "end_line": 6869,
+          "start_line": 6856,
+          "end_line": 6894,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24846,12 +24929,12 @@
     },
     {
       "id": "GNT-13.0",
-      "span_start_line": 6870,
-      "span_end_line": 6883,
+      "span_start_line": 6895,
+      "span_end_line": 6908,
       "span_sha256": "f27159d8381952e62de50db47eb76441c4fddf287aed659d1462edcd4a80ed54",
-      "anchor_line": 6872,
-      "body_start_line": 6873,
-      "body_end_line": 6883,
+      "anchor_line": 6897,
+      "body_start_line": 6898,
+      "body_end_line": 6908,
       "body_sha256": "b1d1846b9821b7dd41a8e8f2065b2f65b511de542806fbfb44d81d49a7688d0d",
       "profiles": [
         "analyzer",
@@ -24867,8 +24950,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6873,
-          "end_line": 6883,
+          "start_line": 6898,
+          "end_line": 6908,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24932,12 +25015,12 @@
     },
     {
       "id": "GNT-13.1",
-      "span_start_line": 6884,
-      "span_end_line": 6923,
+      "span_start_line": 6909,
+      "span_end_line": 6948,
       "span_sha256": "63808f7199e72135c8bf10c0f3f9455cd81cfda8cc14ee899e6380d38b8f3a08",
-      "anchor_line": 6886,
-      "body_start_line": 6887,
-      "body_end_line": 6923,
+      "anchor_line": 6911,
+      "body_start_line": 6912,
+      "body_end_line": 6948,
       "body_sha256": "384e974fb04768d334cdb33494cc1b5b93e172c5b48d1e8c923902a57076cc59",
       "profiles": [
         "analyzer",
@@ -24953,8 +25036,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6887,
-          "end_line": 6889,
+          "start_line": 6912,
+          "end_line": 6914,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25011,8 +25094,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6890,
-          "end_line": 6907,
+          "start_line": 6915,
+          "end_line": 6932,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25069,8 +25152,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6908,
-          "end_line": 6915,
+          "start_line": 6933,
+          "end_line": 6940,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25127,8 +25210,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 6916,
-          "end_line": 6923,
+          "start_line": 6941,
+          "end_line": 6948,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25187,12 +25270,12 @@
     },
     {
       "id": "GNT-13.2",
-      "span_start_line": 6924,
-      "span_end_line": 7150,
+      "span_start_line": 6949,
+      "span_end_line": 7175,
       "span_sha256": "0669d8e056330c6fccaa0c11371f68c1841a897f40563fcee8349e7e1ff51488",
-      "anchor_line": 6926,
-      "body_start_line": 6927,
-      "body_end_line": 7150,
+      "anchor_line": 6951,
+      "body_start_line": 6952,
+      "body_end_line": 7175,
       "body_sha256": "3e9fbf0ab92799b461b587018ac072625f5a133fdb2f6c56d7e640a9674ba452",
       "profiles": [
         "analyzer",
@@ -25208,8 +25291,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6927,
-          "end_line": 7150,
+          "start_line": 6952,
+          "end_line": 7175,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25268,12 +25351,12 @@
     },
     {
       "id": "GNT-13.3",
-      "span_start_line": 7151,
-      "span_end_line": 7280,
+      "span_start_line": 7176,
+      "span_end_line": 7305,
       "span_sha256": "b6d62a7dfec9d3355bfbc220691d7fcf60300aa6f7f915367a1e90488f89404b",
-      "anchor_line": 7153,
-      "body_start_line": 7154,
-      "body_end_line": 7280,
+      "anchor_line": 7178,
+      "body_start_line": 7179,
+      "body_end_line": 7305,
       "body_sha256": "431d85722262b4d18dab87790797bcf3e5e7168328a00c7a7c28ce02a5ffaadf",
       "profiles": [
         "analyzer",
@@ -25289,8 +25372,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7154,
-          "end_line": 7280,
+          "start_line": 7179,
+          "end_line": 7305,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25349,12 +25432,12 @@
     },
     {
       "id": "GNT-13.4",
-      "span_start_line": 7281,
-      "span_end_line": 7331,
+      "span_start_line": 7306,
+      "span_end_line": 7356,
       "span_sha256": "8c1985ea9d524603f0fa47a9d1d1cbbe35a0c515b3e384d24e8feb0e7c86e1a8",
-      "anchor_line": 7283,
-      "body_start_line": 7284,
-      "body_end_line": 7331,
+      "anchor_line": 7308,
+      "body_start_line": 7309,
+      "body_end_line": 7356,
       "body_sha256": "c379d6783faf66649befd2b6800de4cab8b710937df306938a4aca0914c1e031",
       "profiles": [
         "analyzer",
@@ -25370,8 +25453,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7284,
-          "end_line": 7331,
+          "start_line": 7309,
+          "end_line": 7356,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25430,12 +25513,12 @@
     },
     {
       "id": "GNT-13.5",
-      "span_start_line": 7332,
-      "span_end_line": 7404,
+      "span_start_line": 7357,
+      "span_end_line": 7429,
       "span_sha256": "a22793a6af9ff47b1e607e35390d72e36d101b131d23bc547dbc9d38d09cc575",
-      "anchor_line": 7334,
-      "body_start_line": 7335,
-      "body_end_line": 7404,
+      "anchor_line": 7359,
+      "body_start_line": 7360,
+      "body_end_line": 7429,
       "body_sha256": "555043c267da32cb178a242602459b2b4680168b6b24c1a0473aef84bfecd18f",
       "profiles": [
         "analyzer",
@@ -25451,8 +25534,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7335,
-          "end_line": 7383,
+          "start_line": 7360,
+          "end_line": 7408,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25509,8 +25592,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 7384,
-          "end_line": 7404,
+          "start_line": 7409,
+          "end_line": 7429,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25574,12 +25657,12 @@
     },
     {
       "id": "GNT-13.6",
-      "span_start_line": 7405,
-      "span_end_line": 7649,
+      "span_start_line": 7430,
+      "span_end_line": 7674,
       "span_sha256": "f4550d44d9629ebf73f02cfc71c6394dc1dcd6ce742fd8249a3170d3c150b4c2",
-      "anchor_line": 7407,
-      "body_start_line": 7408,
-      "body_end_line": 7649,
+      "anchor_line": 7432,
+      "body_start_line": 7433,
+      "body_end_line": 7674,
       "body_sha256": "84af94097f82846710b94a506b88e4c74f2cabbc33b9f624649a4518e8a73c7a",
       "profiles": [
         "analyzer",
@@ -25595,8 +25678,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7408,
-          "end_line": 7649,
+          "start_line": 7433,
+          "end_line": 7674,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25655,12 +25738,12 @@
     },
     {
       "id": "GNT-13.7",
-      "span_start_line": 7650,
-      "span_end_line": 7800,
+      "span_start_line": 7675,
+      "span_end_line": 7825,
       "span_sha256": "bfc1f5a7dc0f139015cc2d70cef9f3518ce4720cb3816a39387abb02ec5e143e",
-      "anchor_line": 7652,
-      "body_start_line": 7653,
-      "body_end_line": 7800,
+      "anchor_line": 7677,
+      "body_start_line": 7678,
+      "body_end_line": 7825,
       "body_sha256": "1b537f22941cf70be2181f37c20c9fca65ec43113a68eb41cec537522fa2944f",
       "profiles": [
         "analyzer",
@@ -25676,8 +25759,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7653,
-          "end_line": 7800,
+          "start_line": 7678,
+          "end_line": 7825,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25736,12 +25819,12 @@
     },
     {
       "id": "GNT-13.8",
-      "span_start_line": 7801,
-      "span_end_line": 7839,
+      "span_start_line": 7826,
+      "span_end_line": 7864,
       "span_sha256": "00fa2d5c04e8898eb091b5413bb20f2015d9f59ccdc9fa70b353f27cea7b8261",
-      "anchor_line": 7803,
-      "body_start_line": 7804,
-      "body_end_line": 7839,
+      "anchor_line": 7828,
+      "body_start_line": 7829,
+      "body_end_line": 7864,
       "body_sha256": "5d83690b192f5de75412c3f8646f8b049e3c58cae8dc212e0adeb7fb51719d29",
       "profiles": [
         "analyzer",
@@ -25757,8 +25840,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7804,
-          "end_line": 7829,
+          "start_line": 7829,
+          "end_line": 7854,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25815,8 +25898,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 7830,
-          "end_line": 7839,
+          "start_line": 7855,
+          "end_line": 7864,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25880,12 +25963,12 @@
     },
     {
       "id": "GNT-13.9",
-      "span_start_line": 7840,
-      "span_end_line": 7862,
+      "span_start_line": 7865,
+      "span_end_line": 7887,
       "span_sha256": "68dfce6d2d91001fa55552f3c81baf9af239d4b8e88f975901763a2352dd99dd",
-      "anchor_line": 7842,
-      "body_start_line": 7843,
-      "body_end_line": 7862,
+      "anchor_line": 7867,
+      "body_start_line": 7868,
+      "body_end_line": 7887,
       "body_sha256": "9504170807370b261518734fe4f7b3dd5bbe8ffa0dffcff61e2b77371818a94f",
       "profiles": [
         "analyzer",
@@ -25901,8 +25984,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7843,
-          "end_line": 7852,
+          "start_line": 7868,
+          "end_line": 7877,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -25959,8 +26042,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 7853,
-          "end_line": 7862,
+          "start_line": 7878,
+          "end_line": 7887,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -26024,12 +26107,12 @@
     },
     {
       "id": "GNT-15.0",
-      "span_start_line": 9066,
-      "span_end_line": 9105,
+      "span_start_line": 9091,
+      "span_end_line": 9130,
       "span_sha256": "281c7fdf41484ef13533010ab3b83d350750ee9d4cc5ee81aef1a3ba98f07ce6",
-      "anchor_line": 9068,
-      "body_start_line": 9069,
-      "body_end_line": 9105,
+      "anchor_line": 9093,
+      "body_start_line": 9094,
+      "body_end_line": 9130,
       "body_sha256": "79c4681f6b0717f2567841b3871ac2f45067538a685c23ed42250b9814874506",
       "profiles": [
         "embedding"
@@ -26042,8 +26125,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9069,
-          "end_line": 9071,
+          "start_line": 9094,
+          "end_line": 9096,
           "profiles": [
             "embedding"
           ],
@@ -26067,8 +26150,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 9072,
-          "end_line": 9077,
+          "start_line": 9097,
+          "end_line": 9102,
           "profiles": [
             "embedding"
           ],
@@ -26092,8 +26175,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 9078,
-          "end_line": 9085,
+          "start_line": 9103,
+          "end_line": 9110,
           "profiles": [
             "embedding"
           ],
@@ -26117,8 +26200,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 9086,
-          "end_line": 9089,
+          "start_line": 9111,
+          "end_line": 9114,
           "profiles": [
             "embedding"
           ],
@@ -26142,8 +26225,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 9090,
-          "end_line": 9105,
+          "start_line": 9115,
+          "end_line": 9130,
           "profiles": [
             "embedding"
           ],
@@ -26172,12 +26255,12 @@
     },
     {
       "id": "GNT-15.1",
-      "span_start_line": 9106,
-      "span_end_line": 9216,
+      "span_start_line": 9131,
+      "span_end_line": 9241,
       "span_sha256": "217c9aaddbad129dc6abb315d432b45afb5b580cab4ffe032ca2dbd23a870524",
-      "anchor_line": 9108,
-      "body_start_line": 9109,
-      "body_end_line": 9216,
+      "anchor_line": 9133,
+      "body_start_line": 9134,
+      "body_end_line": 9241,
       "body_sha256": "6c8f863d24e775c86a20cfec65f9556e8d65d13984d1cf5da6f0a5a1aca18acc",
       "profiles": [
         "embedding"
@@ -26190,8 +26273,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9109,
-          "end_line": 9216,
+          "start_line": 9134,
+          "end_line": 9241,
           "profiles": [
             "embedding"
           ],
@@ -26217,12 +26300,12 @@
     },
     {
       "id": "GNT-15.1-automatic-execution",
-      "span_start_line": 9217,
-      "span_end_line": 9287,
+      "span_start_line": 9242,
+      "span_end_line": 9312,
       "span_sha256": "20aa74ba4503c0439650945c8eb6106573de63f9fd0868e392b0087aa6a92322",
-      "anchor_line": 9217,
-      "body_start_line": 9218,
-      "body_end_line": 9287,
+      "anchor_line": 9242,
+      "body_start_line": 9243,
+      "body_end_line": 9312,
       "body_sha256": "3a2fbdffcceb392bc3e1fc2aad492a92ebd5a42658c7adfe27b86972770c6f16",
       "profiles": [
         "embedding"
@@ -26235,8 +26318,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9218,
-          "end_line": 9287,
+          "start_line": 9243,
+          "end_line": 9312,
           "profiles": [
             "embedding"
           ],
@@ -26261,12 +26344,12 @@
     },
     {
       "id": "GNT-15.1-concurrency-and-reentrancy",
-      "span_start_line": 9288,
-      "span_end_line": 9530,
+      "span_start_line": 9313,
+      "span_end_line": 9555,
       "span_sha256": "fe583b2e479cdbf610dcc2cd7fc23ffaae962f59652ebfa7ac288380df3f3b9a",
-      "anchor_line": 9288,
-      "body_start_line": 9289,
-      "body_end_line": 9530,
+      "anchor_line": 9313,
+      "body_start_line": 9314,
+      "body_end_line": 9555,
       "body_sha256": "39819c54f1f40225b8a9699829a218e870757232943721b901e06d87b5363043",
       "profiles": [
         "embedding"
@@ -26279,8 +26362,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9289,
-          "end_line": 9305,
+          "start_line": 9314,
+          "end_line": 9330,
           "profiles": [
             "embedding"
           ],
@@ -26305,8 +26388,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 9306,
-          "end_line": 9324,
+          "start_line": 9331,
+          "end_line": 9349,
           "profiles": [
             "embedding"
           ],
@@ -26331,8 +26414,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 9325,
-          "end_line": 9334,
+          "start_line": 9350,
+          "end_line": 9359,
           "profiles": [
             "embedding"
           ],
@@ -26357,8 +26440,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 9335,
-          "end_line": 9353,
+          "start_line": 9360,
+          "end_line": 9378,
           "profiles": [
             "embedding"
           ],
@@ -26383,8 +26466,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 9354,
-          "end_line": 9367,
+          "start_line": 9379,
+          "end_line": 9392,
           "profiles": [
             "embedding"
           ],
@@ -26409,8 +26492,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 9368,
-          "end_line": 9369,
+          "start_line": 9393,
+          "end_line": 9394,
           "profiles": [
             "embedding"
           ],
@@ -26435,8 +26518,8 @@
         },
         {
           "key": "clause-007",
-          "start_line": 9370,
-          "end_line": 9438,
+          "start_line": 9395,
+          "end_line": 9463,
           "profiles": [
             "embedding"
           ],
@@ -26461,8 +26544,8 @@
         },
         {
           "key": "clause-008",
-          "start_line": 9439,
-          "end_line": 9440,
+          "start_line": 9464,
+          "end_line": 9465,
           "profiles": [
             "embedding"
           ],
@@ -26487,8 +26570,8 @@
         },
         {
           "key": "clause-009",
-          "start_line": 9441,
-          "end_line": 9492,
+          "start_line": 9466,
+          "end_line": 9517,
           "profiles": [
             "embedding"
           ],
@@ -26513,8 +26596,8 @@
         },
         {
           "key": "clause-010",
-          "start_line": 9493,
-          "end_line": 9494,
+          "start_line": 9518,
+          "end_line": 9519,
           "profiles": [
             "embedding"
           ],
@@ -26539,8 +26622,8 @@
         },
         {
           "key": "clause-011",
-          "start_line": 9495,
-          "end_line": 9530,
+          "start_line": 9520,
+          "end_line": 9555,
           "profiles": [
             "embedding"
           ],
@@ -26567,12 +26650,12 @@
     },
     {
       "id": "GNT-15.2",
-      "span_start_line": 9531,
-      "span_end_line": 9558,
+      "span_start_line": 9556,
+      "span_end_line": 9583,
       "span_sha256": "0120fd182e8147bf7115baeb9be21fa3d97418eea08d84f02dffc603701c53f7",
-      "anchor_line": 9533,
-      "body_start_line": 9534,
-      "body_end_line": 9558,
+      "anchor_line": 9558,
+      "body_start_line": 9559,
+      "body_end_line": 9583,
       "body_sha256": "0b7edff94b0f5ddfc698e9c44643df8859cec57de6b8f5cb79ea4230b0a967f9",
       "profiles": [
         "embedding"
@@ -26585,8 +26668,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9534,
-          "end_line": 9558,
+          "start_line": 9559,
+          "end_line": 9583,
           "profiles": [
             "embedding"
           ],
@@ -26612,12 +26695,12 @@
     },
     {
       "id": "GNT-15.2-runtime-sessions",
-      "span_start_line": 9559,
-      "span_end_line": 9640,
+      "span_start_line": 9584,
+      "span_end_line": 9665,
       "span_sha256": "4a8a3eb6926ec6666a9f7add0e89a760e9425cf146bf9cc31d8ba3bfe1ce3588",
-      "anchor_line": 9559,
-      "body_start_line": 9560,
-      "body_end_line": 9640,
+      "anchor_line": 9584,
+      "body_start_line": 9585,
+      "body_end_line": 9665,
       "body_sha256": "30f8cbb19777d652dbc8c8787122681bdd3a88bc2169c55852a74a182560c42b",
       "profiles": [
         "embedding"
@@ -26630,8 +26713,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9560,
-          "end_line": 9640,
+          "start_line": 9585,
+          "end_line": 9665,
           "profiles": [
             "embedding"
           ],
@@ -26656,12 +26739,12 @@
     },
     {
       "id": "GNT-15.3",
-      "span_start_line": 9641,
-      "span_end_line": 9656,
+      "span_start_line": 9666,
+      "span_end_line": 9681,
       "span_sha256": "8a8200d39990b639b0ca37791b142aa8ebccb97253e54fef0d1047eca13e660a",
-      "anchor_line": 9643,
-      "body_start_line": 9644,
-      "body_end_line": 9656,
+      "anchor_line": 9668,
+      "body_start_line": 9669,
+      "body_end_line": 9681,
       "body_sha256": "c9dc4ce51b6c55673ccb7a6ce5ad473a603d6f07c6e93082e5669a9f0b6d7237",
       "profiles": [
         "embedding"
@@ -26674,8 +26757,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9644,
-          "end_line": 9656,
+          "start_line": 9669,
+          "end_line": 9681,
           "profiles": [
             "embedding"
           ],
@@ -26700,12 +26783,12 @@
     },
     {
       "id": "GNT-15.4",
-      "span_start_line": 9657,
-      "span_end_line": 9685,
+      "span_start_line": 9682,
+      "span_end_line": 9710,
       "span_sha256": "abcb7ea95a592ad239240509a510ec74712e13695becd7634a6aea33417af4a2",
-      "anchor_line": 9659,
-      "body_start_line": 9660,
-      "body_end_line": 9685,
+      "anchor_line": 9684,
+      "body_start_line": 9685,
+      "body_end_line": 9710,
       "body_sha256": "adb15ad5bad0796c022bc06916d37250e15790de5f13bad2fe1eed8f9f1be34e",
       "profiles": [
         "embedding"
@@ -26718,8 +26801,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9660,
-          "end_line": 9685,
+          "start_line": 9685,
+          "end_line": 9710,
           "profiles": [
             "embedding"
           ],
@@ -26745,12 +26828,12 @@
     },
     {
       "id": "GNT-15.4-owned-work",
-      "span_start_line": 9686,
-      "span_end_line": 9762,
+      "span_start_line": 9711,
+      "span_end_line": 9787,
       "span_sha256": "d7e55eeb48c40b3b1fcd7cb6cb8f56cde7cf67db93a97e5cfb66deff137525da",
-      "anchor_line": 9686,
-      "body_start_line": 9687,
-      "body_end_line": 9762,
+      "anchor_line": 9711,
+      "body_start_line": 9712,
+      "body_end_line": 9787,
       "body_sha256": "26f243e7322bc5de16adac893db208ac7489d4d4372fe9cd4dbacb06ded154a2",
       "profiles": [
         "embedding"
@@ -26763,8 +26846,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9687,
-          "end_line": 9762,
+          "start_line": 9712,
+          "end_line": 9787,
           "profiles": [
             "embedding"
           ],
@@ -26790,12 +26873,12 @@
     },
     {
       "id": "GNT-15.5",
-      "span_start_line": 9763,
-      "span_end_line": 9809,
+      "span_start_line": 9788,
+      "span_end_line": 9834,
       "span_sha256": "19c81777f1e4a2f37cb548bb615feec9d849fb3f7a39702ccf1793ab3100c773",
-      "anchor_line": 9765,
-      "body_start_line": 9766,
-      "body_end_line": 9809,
+      "anchor_line": 9790,
+      "body_start_line": 9791,
+      "body_end_line": 9834,
       "body_sha256": "d0432640c0d682aa9c54ad3b0b72fbf4d3f3648fb3d4309679dceef769ecfdc1",
       "profiles": [
         "embedding"
@@ -26808,8 +26891,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9766,
-          "end_line": 9809,
+          "start_line": 9791,
+          "end_line": 9834,
           "profiles": [
             "embedding"
           ],
@@ -26831,12 +26914,12 @@
     },
     {
       "id": "GNT-15.6",
-      "span_start_line": 9810,
-      "span_end_line": 9849,
+      "span_start_line": 9835,
+      "span_end_line": 9874,
       "span_sha256": "8377d652727f317b5a24aec6ba220078cac33fa3bd220b4619b5b79a7a5d587f",
-      "anchor_line": 9812,
-      "body_start_line": 9813,
-      "body_end_line": 9849,
+      "anchor_line": 9837,
+      "body_start_line": 9838,
+      "body_end_line": 9874,
       "body_sha256": "17fc7cf8295885c669bb11df63da4bd2548e9ec0e4cbc28dc17b02ee67eaff68",
       "profiles": [
         "embedding"
@@ -26849,8 +26932,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9813,
-          "end_line": 9849,
+          "start_line": 9838,
+          "end_line": 9874,
           "profiles": [
             "embedding"
           ],
@@ -26876,12 +26959,12 @@
     },
     {
       "id": "GNT-15.7",
-      "span_start_line": 9850,
-      "span_end_line": 9909,
+      "span_start_line": 9875,
+      "span_end_line": 9934,
       "span_sha256": "841187102e0e8dd3497d38772290e65f24ce11c6dcec5a371a5624a7e44f72de",
-      "anchor_line": 9852,
-      "body_start_line": 9853,
-      "body_end_line": 9909,
+      "anchor_line": 9877,
+      "body_start_line": 9878,
+      "body_end_line": 9934,
       "body_sha256": "f16abc8f803ce9e26d0dfd3d5c6f3429c614b366ad9335bf5f5146280fbfd09b",
       "profiles": [
         "embedding"
@@ -26894,8 +26977,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9853,
-          "end_line": 9909,
+          "start_line": 9878,
+          "end_line": 9934,
           "profiles": [
             "embedding"
           ],
@@ -26920,12 +27003,12 @@
     },
     {
       "id": "GNT-15.8",
-      "span_start_line": 9910,
-      "span_end_line": 9997,
+      "span_start_line": 9935,
+      "span_end_line": 10022,
       "span_sha256": "fd48e84ab354f8660d3b4ecf1e9ede141d79c0101445bb6b4fe2026ae235c552",
-      "anchor_line": 9912,
-      "body_start_line": 9913,
-      "body_end_line": 9997,
+      "anchor_line": 9937,
+      "body_start_line": 9938,
+      "body_end_line": 10022,
       "body_sha256": "8e70e263faedf9c766376563454340ddeab3774d13c7b3923950c036c5d5696b",
       "profiles": [
         "embedding"
@@ -26938,8 +27021,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9913,
-          "end_line": 9997,
+          "start_line": 9938,
+          "end_line": 10022,
           "profiles": [
             "embedding"
           ],
@@ -26965,12 +27048,12 @@
     },
     {
       "id": "GNT-15.8-publication-integrity",
-      "span_start_line": 9998,
-      "span_end_line": 10078,
+      "span_start_line": 10023,
+      "span_end_line": 10103,
       "span_sha256": "fb3fb4352f2610cd75b793caf4a06029f1fc0aea60ec2f6cdf06f0c38cd9dfbc",
-      "anchor_line": 9998,
-      "body_start_line": 9999,
-      "body_end_line": 10078,
+      "anchor_line": 10023,
+      "body_start_line": 10024,
+      "body_end_line": 10103,
       "body_sha256": "a1b45e31b9741a3dce8d551c9f1a6e35e21223bfbae259c648ee459583cd1a95",
       "profiles": [
         "embedding"
@@ -26983,8 +27066,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9999,
-          "end_line": 10026,
+          "start_line": 10024,
+          "end_line": 10051,
           "profiles": [
             "embedding"
           ],
@@ -27004,8 +27087,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 10027,
-          "end_line": 10044,
+          "start_line": 10052,
+          "end_line": 10069,
           "profiles": [
             "embedding"
           ],
@@ -27025,8 +27108,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 10045,
-          "end_line": 10053,
+          "start_line": 10070,
+          "end_line": 10078,
           "profiles": [
             "embedding"
           ],
@@ -27046,8 +27129,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 10054,
-          "end_line": 10067,
+          "start_line": 10079,
+          "end_line": 10092,
           "profiles": [
             "embedding"
           ],
@@ -27067,8 +27150,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 10068,
-          "end_line": 10078,
+          "start_line": 10093,
+          "end_line": 10103,
           "profiles": [
             "embedding"
           ],
@@ -27090,12 +27173,12 @@
     },
     {
       "id": "GNT-15.9",
-      "span_start_line": 10079,
-      "span_end_line": 10100,
+      "span_start_line": 10104,
+      "span_end_line": 10125,
       "span_sha256": "40706a5bf7164bdcc3d65fece3005014a8d99b0f533139483469e48c113279b5",
-      "anchor_line": 10081,
-      "body_start_line": 10082,
-      "body_end_line": 10100,
+      "anchor_line": 10106,
+      "body_start_line": 10107,
+      "body_end_line": 10125,
       "body_sha256": "5183ad451b4bcb618993f2c14ed9e539c27e2c881e066587e4fb62d9f51d4201",
       "profiles": [
         "embedding"
@@ -27108,8 +27191,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 10082,
-          "end_line": 10100,
+          "start_line": 10107,
+          "end_line": 10125,
           "profiles": [
             "embedding"
           ],
@@ -27134,12 +27217,12 @@
     },
     {
       "id": "GNT-15.9-boundary-failure-containment",
-      "span_start_line": 10101,
-      "span_end_line": 10184,
+      "span_start_line": 10126,
+      "span_end_line": 10209,
       "span_sha256": "682f435d433c7523d1c3f237e920dad15863d7641d9a27e951a366e5115f33fc",
-      "anchor_line": 10101,
-      "body_start_line": 10102,
-      "body_end_line": 10184,
+      "anchor_line": 10126,
+      "body_start_line": 10127,
+      "body_end_line": 10209,
       "body_sha256": "4e9836283b8cf2fe5713e209d263e28c7bd63db330259cd649d56ce67b7353e5",
       "profiles": [
         "embedding"
@@ -27152,8 +27235,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 10102,
-          "end_line": 10113,
+          "start_line": 10127,
+          "end_line": 10138,
           "profiles": [
             "embedding"
           ],
@@ -27177,8 +27260,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 10114,
-          "end_line": 10125,
+          "start_line": 10139,
+          "end_line": 10150,
           "profiles": [
             "embedding"
           ],
@@ -27202,8 +27285,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 10126,
-          "end_line": 10127,
+          "start_line": 10151,
+          "end_line": 10152,
           "profiles": [
             "embedding"
           ],
@@ -27227,8 +27310,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 10128,
-          "end_line": 10149,
+          "start_line": 10153,
+          "end_line": 10174,
           "profiles": [
             "embedding"
           ],
@@ -27252,8 +27335,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 10150,
-          "end_line": 10159,
+          "start_line": 10175,
+          "end_line": 10184,
           "profiles": [
             "embedding"
           ],
@@ -27277,8 +27360,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 10160,
-          "end_line": 10178,
+          "start_line": 10185,
+          "end_line": 10203,
           "profiles": [
             "embedding"
           ],
@@ -27302,8 +27385,8 @@
         },
         {
           "key": "clause-007",
-          "start_line": 10179,
-          "end_line": 10184,
+          "start_line": 10204,
+          "end_line": 10209,
           "profiles": [
             "embedding"
           ],
@@ -27329,12 +27412,12 @@
     },
     {
       "id": "GNT-15.10",
-      "span_start_line": 10185,
-      "span_end_line": 10212,
+      "span_start_line": 10210,
+      "span_end_line": 10237,
       "span_sha256": "d700b42127952cd489fdf03620dbf37544342459392db0b4a71a2888657e65dd",
-      "anchor_line": 10187,
-      "body_start_line": 10188,
-      "body_end_line": 10212,
+      "anchor_line": 10212,
+      "body_start_line": 10213,
+      "body_end_line": 10237,
       "body_sha256": "feecdefe7f8a2615c5a03e0be305a1bd8eebc9f693b076dfefa202df6df5a0e5",
       "profiles": [
         "embedding"
@@ -27347,8 +27430,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 10188,
-          "end_line": 10206,
+          "start_line": 10213,
+          "end_line": 10231,
           "profiles": [
             "embedding"
           ],
@@ -27371,8 +27454,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 10207,
-          "end_line": 10212,
+          "start_line": 10232,
+          "end_line": 10237,
           "profiles": [
             "embedding"
           ],
@@ -27400,8 +27483,8 @@
     {
       "key": "section14-excerpt-001",
       "section": "14.1 Minimal package entry point",
-      "start_line": 7922,
-      "end_line": 7930,
+      "start_line": 7947,
+      "end_line": 7955,
       "sha256": "ccbd99df5505e06f091ced81435a26122772e7c01bda867d160356df74de93ab",
       "classification": "complete-positive",
       "state": "covered",
@@ -27412,8 +27495,8 @@
     {
       "key": "section14-excerpt-002",
       "section": "14.1 Minimal package entry point",
-      "start_line": 7952,
-      "end_line": 7971,
+      "start_line": 7977,
+      "end_line": 7996,
       "sha256": "5f069a147cd7ee60ad98d82b033e4988db5084acaa106afd0575b688cf45bbbd",
       "classification": "complete-positive",
       "state": "covered",
@@ -27424,8 +27507,8 @@
     {
       "key": "section14-excerpt-003",
       "section": "14.2 Modules, imports, and package-wide agents",
-      "start_line": 7986,
-      "end_line": 7999,
+      "start_line": 8011,
+      "end_line": 8024,
       "sha256": "0deafc3f1d08320625eae2ee42e67a7e1038fa715384b9610f1e6e8aea6b9c5e",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27436,8 +27519,8 @@
     {
       "key": "section14-excerpt-004",
       "section": "14.2 Modules, imports, and package-wide agents",
-      "start_line": 8003,
-      "end_line": 8015,
+      "start_line": 8028,
+      "end_line": 8040,
       "sha256": "67e552cabff93dc691285c192b56c725e865539531b17c95a41e014d9454ed2a",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27448,8 +27531,8 @@
     {
       "key": "section14-excerpt-005",
       "section": "14.2 Modules, imports, and package-wide agents",
-      "start_line": 8019,
-      "end_line": 8029,
+      "start_line": 8044,
+      "end_line": 8054,
       "sha256": "6ca9a8c761d108094de2fca32dc05f8474e23c9ad1a6ed9a301d7f175b151dce",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27460,8 +27543,8 @@
     {
       "key": "section14-excerpt-006",
       "section": "14.3 Primitive values, structs, tagged values, and structural routing",
-      "start_line": 8038,
-      "end_line": 8073,
+      "start_line": 8063,
+      "end_line": 8098,
       "sha256": "ea640c13a9d7ee3e6c8149ff3304ac675a0c7197ef499bea13bf7e30919ed71e",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27472,8 +27555,8 @@
     {
       "key": "section14-excerpt-007",
       "section": "14.3 Primitive values, structs, tagged values, and structural routing",
-      "start_line": 8081,
-      "end_line": 8129,
+      "start_line": 8106,
+      "end_line": 8154,
       "sha256": "1591c75764f64f33eb60ae446d0cc32ddd9690d1f48795817a869324295b0c02",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27484,8 +27567,8 @@
     {
       "key": "section14-excerpt-008",
       "section": "14.3 Primitive values, structs, tagged values, and structural routing",
-      "start_line": 8142,
-      "end_line": 8156,
+      "start_line": 8167,
+      "end_line": 8181,
       "sha256": "53c54cbbf6ea5f13f59fd69ac43f9350c58f67db3a4b18ce0c18c39a6f018d9d",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27496,8 +27579,8 @@
     {
       "key": "section14-excerpt-009",
       "section": "14.3 Primitive values, structs, tagged values, and structural routing",
-      "start_line": 8164,
-      "end_line": 8184,
+      "start_line": 8189,
+      "end_line": 8209,
       "sha256": "3e2357a5dd9e980589e24fc7818e2d567f05f52e794bf8abc616b1763837bf63",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27508,8 +27591,8 @@
     {
       "key": "section14-excerpt-010",
       "section": "14.4 Inherent methods and scoped agent selection",
-      "start_line": 8191,
-      "end_line": 8219,
+      "start_line": 8216,
+      "end_line": 8244,
       "sha256": "e95a57f43e4c520ae9a98462f8d9e7e0f96a7acdf8494d946d666f680402517c",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27520,8 +27603,8 @@
     {
       "key": "section14-excerpt-011",
       "section": "14.4 Inherent methods and scoped agent selection",
-      "start_line": 8232,
-      "end_line": 8246,
+      "start_line": 8257,
+      "end_line": 8271,
       "sha256": "1c65be81490e8d98bbfdcb5f13751b8a9464ddabd2cff6da90965a0f6ccb3796",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27532,8 +27615,8 @@
     {
       "key": "section14-excerpt-012",
       "section": "14.5 Prompt strings, interpolation, and escaping",
-      "start_line": 8255,
-      "end_line": 8261,
+      "start_line": 8280,
+      "end_line": 8286,
       "sha256": "ed46314f10949b95752eecf7bf7e4a487f6d7c3fbb96b0396584fd756852ab00",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27544,8 +27627,8 @@
     {
       "key": "section14-excerpt-013",
       "section": "14.5 Prompt strings, interpolation, and escaping",
-      "start_line": 8267,
-      "end_line": 8271,
+      "start_line": 8292,
+      "end_line": 8296,
       "sha256": "c321569ead1a0e1bf99882244cc5ff521304850a7508ac6e9f44a33b3e8cb558",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27556,8 +27639,8 @@
     {
       "key": "section14-excerpt-014",
       "section": "14.5 Prompt strings, interpolation, and escaping",
-      "start_line": 8279,
-      "end_line": 8287,
+      "start_line": 8304,
+      "end_line": 8312,
       "sha256": "d26cd73479228151d9d2d45f75572ed4c85fb4bbd326a39b77a5fc919f37cd83",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27568,8 +27651,8 @@
     {
       "key": "section14-excerpt-015",
       "section": "14.5 Prompt strings, interpolation, and escaping",
-      "start_line": 8291,
-      "end_line": 8296,
+      "start_line": 8316,
+      "end_line": 8321,
       "sha256": "96e31c5cd1b65ed3abec3e59d0a5bfd4c318cf4311d9c9f6ed79651dfae2b152",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27580,8 +27663,8 @@
     {
       "key": "section14-excerpt-016",
       "section": "14.5 Prompt strings, interpolation, and escaping",
-      "start_line": 8301,
-      "end_line": 8306,
+      "start_line": 8326,
+      "end_line": 8331,
       "sha256": "ce540e51403d12077ffa23565d13d7b0ecd91de5d5156ea6ebaa92c2eded76bb",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27592,8 +27675,8 @@
     {
       "key": "section14-excerpt-017",
       "section": "14.5 Prompt strings, interpolation, and escaping",
-      "start_line": 8311,
-      "end_line": 8340,
+      "start_line": 8336,
+      "end_line": 8365,
       "sha256": "75b2c20cf74050ea2a637d7e15b5f6c2cf3e9ee467f999b29632ea0a403bd4ad",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27604,8 +27687,8 @@
     {
       "key": "section14-excerpt-018",
       "section": "14.5 Prompt strings, interpolation, and escaping",
-      "start_line": 8346,
-      "end_line": 8354,
+      "start_line": 8371,
+      "end_line": 8379,
       "sha256": "b27fa29af404ae5584c89ab6abee389359edab7cb015b01b01eea02b02b99996",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27616,8 +27699,8 @@
     {
       "key": "section14-excerpt-019",
       "section": "14.6 Reusable model judgments and conditional chains",
-      "start_line": 8358,
-      "end_line": 8376,
+      "start_line": 8383,
+      "end_line": 8401,
       "sha256": "eb3f5ac3af79ee9dc2f3120b3331bc010ea4dd376a0fc715299485d7965da83b",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27628,8 +27711,8 @@
     {
       "key": "section14-excerpt-020",
       "section": "14.6 Reusable model judgments and conditional chains",
-      "start_line": 8382,
-      "end_line": 8397,
+      "start_line": 8407,
+      "end_line": 8422,
       "sha256": "067f5413a5803ba1f178fc6b92b06d3a199b6f9a7aee4ccf168f766f9e411094",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27640,8 +27723,8 @@
     {
       "key": "section14-excerpt-021",
       "section": "14.6 Reusable model judgments and conditional chains",
-      "start_line": 8408,
-      "end_line": 8416,
+      "start_line": 8433,
+      "end_line": 8441,
       "sha256": "a8af207923b50eb7d63f3d274472881b3107dbd0717e37d36b2036c5ba4e47d4",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27652,8 +27735,8 @@
     {
       "key": "section14-excerpt-022",
       "section": "14.7 Finite, general, pre-test, and post-test loops",
-      "start_line": 8426,
-      "end_line": 8432,
+      "start_line": 8451,
+      "end_line": 8457,
       "sha256": "2db69ea9cefd1b9e45752fa0e406261c833fa0e3ca2501b605dd6f97ebca70a6",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27664,8 +27747,8 @@
     {
       "key": "section14-excerpt-023",
       "section": "14.7 Finite, general, pre-test, and post-test loops",
-      "start_line": 8438,
-      "end_line": 8450,
+      "start_line": 8463,
+      "end_line": 8475,
       "sha256": "c716af52c434849d32ec56cef71b015fdd240c6072745c066ecfa0beee363853",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27676,8 +27759,8 @@
     {
       "key": "section14-excerpt-024",
       "section": "14.7 Finite, general, pre-test, and post-test loops",
-      "start_line": 8452,
-      "end_line": 8467,
+      "start_line": 8477,
+      "end_line": 8492,
       "sha256": "952c04bf1e4d64c35dc6086ea072b5fe97aebdeef0153edc41d9263226ee9f80",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27688,8 +27771,8 @@
     {
       "key": "section14-excerpt-025",
       "section": "14.7 Finite, general, pre-test, and post-test loops",
-      "start_line": 8469,
-      "end_line": 8477,
+      "start_line": 8494,
+      "end_line": 8502,
       "sha256": "c9ad553bd7b532094c2cf9c2f739dd4db417b8757b43f3d32c8b51b30b847715",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27700,8 +27783,8 @@
     {
       "key": "section14-excerpt-026",
       "section": "14.8 Parallel homogeneous work and `List<T>` joins",
-      "start_line": 8487,
-      "end_line": 8504,
+      "start_line": 8512,
+      "end_line": 8529,
       "sha256": "579f32b958d3912c4f1b5bf232fe92e05657c153b646637956549eb868995b9e",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27712,8 +27795,8 @@
     {
       "key": "section14-excerpt-027",
       "section": "14.9 Parallel heterogeneous work and `Tuple<...>` joins",
-      "start_line": 8514,
-      "end_line": 8527,
+      "start_line": 8539,
+      "end_line": 8552,
       "sha256": "0a4d711a2df85fc48a70a3e955537711e0be27f52d65627334d66fdf09d69c9d",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27724,8 +27807,8 @@
     {
       "key": "section14-excerpt-028",
       "section": "14.9 Parallel heterogeneous work and `Tuple<...>` joins",
-      "start_line": 8532,
-      "end_line": 8535,
+      "start_line": 8557,
+      "end_line": 8560,
       "sha256": "5cec72c241e99cea752a297fff189f154222a63c4d132c21bbeb52108d58337d",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27736,8 +27819,8 @@
     {
       "key": "section14-excerpt-029",
       "section": "14.10 `joinall()`, Unit tasks, and detachment",
-      "start_line": 8555,
-      "end_line": 8568,
+      "start_line": 8580,
+      "end_line": 8593,
       "sha256": "76e7901ccffb172f6e731c418c14d521af36c9f141af2ba4315efd65f1d38b63",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27748,8 +27831,8 @@
     {
       "key": "section14-excerpt-030",
       "section": "14.10 `joinall()`, Unit tasks, and detachment",
-      "start_line": 8570,
-      "end_line": 8582,
+      "start_line": 8595,
+      "end_line": 8607,
       "sha256": "31352c931f92a3fb906d7ef835c91426e25d8f82926f2f69d4d32142cbbbbcc7",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27760,8 +27843,8 @@
     {
       "key": "section14-excerpt-031",
       "section": "14.10 `joinall()`, Unit tasks, and detachment",
-      "start_line": 8586,
-      "end_line": 8598,
+      "start_line": 8611,
+      "end_line": 8623,
       "sha256": "06ecc0abcdf0e25dfa344cc6eb65489d42c0c310e5eb8803b0ae7fb582b41fe0",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27772,8 +27855,8 @@
     {
       "key": "section14-excerpt-032",
       "section": "14.10 `joinall()`, Unit tasks, and detachment",
-      "start_line": 8606,
-      "end_line": 8616,
+      "start_line": 8631,
+      "end_line": 8641,
       "sha256": "d8c6a67fc95833306f7814dc7a5501b05f264847852dfc47079877150022a6ff",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27784,8 +27867,8 @@
     {
       "key": "section14-excerpt-033",
       "section": "14.10 `joinall()`, Unit tasks, and detachment",
-      "start_line": 8622,
-      "end_line": 8634,
+      "start_line": 8647,
+      "end_line": 8659,
       "sha256": "b49ee7c0491cd290d3b7fc34fa508baacb2106d2360c75c5cb2f8b3e306d1b19",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27796,8 +27879,8 @@
     {
       "key": "section14-excerpt-034",
       "section": "14.11 Nested modules and qualified paths",
-      "start_line": 8638,
-      "end_line": 8667,
+      "start_line": 8663,
+      "end_line": 8692,
       "sha256": "aa021fc82781956803dc864e46115ba44e3c3ea850cb34147c3c545ef20cda65",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27808,8 +27891,8 @@
     {
       "key": "section14-excerpt-035",
       "section": "14.11 Nested modules and qualified paths",
-      "start_line": 8675,
-      "end_line": 8682,
+      "start_line": 8700,
+      "end_line": 8707,
       "sha256": "b32c165dc7351212fc9e7756d10949d6284f9678b24eb99266c0ddfffb93283e",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27820,8 +27903,8 @@
     {
       "key": "section14-excerpt-036",
       "section": "14.12 Explicit harness actions and named prompt inputs",
-      "start_line": 8689,
-      "end_line": 8733,
+      "start_line": 8714,
+      "end_line": 8758,
       "sha256": "fa3e7c5a655f8ddcfd6c70380311747c8c8cab6b5fdfaca11b2ac9d4bab86d69",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27832,8 +27915,8 @@
     {
       "key": "section14-excerpt-037",
       "section": "14.13 Explicit operation failure handling with `attempt`",
-      "start_line": 8749,
-      "end_line": 8763,
+      "start_line": 8774,
+      "end_line": 8788,
       "sha256": "da1aefe2f64ebaa245d542b296026593ff3a6a5f46e49eb9befe9cad5dc5fe13",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27844,8 +27927,8 @@
     {
       "key": "section14-excerpt-038",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8786,
-      "end_line": 8793,
+      "start_line": 8811,
+      "end_line": 8818,
       "sha256": "80980ef3372c47cd1ba4b581ff559e6d0522029fb31fe6f93db0d389190e3e2b",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27856,8 +27939,8 @@
     {
       "key": "section14-excerpt-039",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8798,
-      "end_line": 8816,
+      "start_line": 8823,
+      "end_line": 8841,
       "sha256": "58c91f4f512bfc0a65b64da4d347e4c79f12b7ec95dd76bda10418db22812b42",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27868,8 +27951,8 @@
     {
       "key": "section14-excerpt-040",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8823,
-      "end_line": 8835,
+      "start_line": 8848,
+      "end_line": 8860,
       "sha256": "a8661d3d2736956ce2588ae879d0b17c26fb158b05e089d5db07077050d3484f",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27880,8 +27963,8 @@
     {
       "key": "section14-excerpt-041",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8840,
-      "end_line": 8851,
+      "start_line": 8865,
+      "end_line": 8876,
       "sha256": "5d38f98bf556c643f8376f2417ff5a19c6b9042070117d2b2c69204626b9a663",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27892,8 +27975,8 @@
     {
       "key": "section14-excerpt-042",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8857,
-      "end_line": 8867,
+      "start_line": 8882,
+      "end_line": 8892,
       "sha256": "2c89ee9b6f656903376fd2334b990b9967b7b8780ef07d382704bb54af69afc2",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27904,8 +27987,8 @@
     {
       "key": "section14-excerpt-043",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8872,
-      "end_line": 8880,
+      "start_line": 8897,
+      "end_line": 8905,
       "sha256": "1e97ca49c7a4736db4b090dab7401dbf81b4874374cc7492730eff86418913e1",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27916,8 +27999,8 @@
     {
       "key": "section14-excerpt-044",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8885,
-      "end_line": 8895,
+      "start_line": 8910,
+      "end_line": 8920,
       "sha256": "24b63e359c4506046c3d66e16c5d7768ddc1f6d9d4e1215074c28147f1b8d953",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27928,8 +28011,8 @@
     {
       "key": "section14-excerpt-045",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8901,
-      "end_line": 8911,
+      "start_line": 8926,
+      "end_line": 8936,
       "sha256": "179a0a57771f26b749110ef96df05acd9fa79fefd7a0a0a372f43dc029b5a868",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27940,8 +28023,8 @@
     {
       "key": "section14-excerpt-046",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8917,
-      "end_line": 8928,
+      "start_line": 8942,
+      "end_line": 8953,
       "sha256": "6d91fc305936df5ad9f0bd849f16bba6c85796cbb07e7a3f83bdfa80f99492c9",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27952,8 +28035,8 @@
     {
       "key": "section14-excerpt-047",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8933,
-      "end_line": 8948,
+      "start_line": 8958,
+      "end_line": 8973,
       "sha256": "34f0d5989a9986c5b744533d2f67233841b4f4ce72bd49fd58b4cc19367697e0",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27964,8 +28047,8 @@
     {
       "key": "section14-excerpt-048",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8953,
-      "end_line": 8971,
+      "start_line": 8978,
+      "end_line": 8996,
       "sha256": "e23a2620ec8b22b8b577d09ca162d82a7cea5f3ec540d15b207e149eeac0d88c",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27976,8 +28059,8 @@
     {
       "key": "section14-excerpt-049",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8976,
-      "end_line": 8986,
+      "start_line": 9001,
+      "end_line": 9011,
       "sha256": "b0e9d8ad162911a2e6c295f1e1ad49ce413b10ea62e4b167fb3254e123b3bbf3",
       "classification": "focused-fragment",
       "state": "covered",
@@ -27988,8 +28071,8 @@
     {
       "key": "section14-excerpt-050",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 8990,
-      "end_line": 9026,
+      "start_line": 9015,
+      "end_line": 9051,
       "sha256": "0d372b7dc1b33e688768b0d3b94ea6eaf8b07c111f6556f27f5aed6586e94836",
       "classification": "focused-fragment",
       "state": "covered",
@@ -28000,8 +28083,8 @@
     {
       "key": "section14-excerpt-051",
       "section": "14.14 Common invalid forms and their corrections",
-      "start_line": 9031,
-      "end_line": 9061,
+      "start_line": 9056,
+      "end_line": 9086,
       "sha256": "af907eff95ab270e6a41d1eb99d074d7522fca903931c2bd810f1c82f595a091",
       "classification": "focused-fragment",
       "state": "covered",

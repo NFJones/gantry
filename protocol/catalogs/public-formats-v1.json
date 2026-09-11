@@ -1,332 +1,332 @@
 {
-  "catalog": "gantry.public-formats",
-  "major": 1,
-  "minor": 0,
-  "specification_revision": "9fea9d4a28fc7c09752e2cf308e3069823abded9bbd5061aae14bcdf034f161b",
-  "formats": [
-    {
-      "format": "canonical-transcript/v1",
-      "family": "value",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "45",
-      "sha256": "b1e48950786bc87d367d993383011d037e4f4487db005a1213fe528deec3d3ee",
-      "schema": "protocol/schemas/canonical-transcript-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "concurrent-evaluator",
-        "durable-runtime",
-        "embedding",
-        "evaluator"
-      ],
-      "requirements": [
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "combined-checkpoint/v4",
-      "family": "recovery-projection",
-      "encoding": "canonical-binary",
-      "magic": "GNTCDP04",
-      "byte_length": "1176",
-      "sha256": "f69973666a7da63a74582f1a4cfc9136c7c8fea830309f0e789332e0f653946f",
-      "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "concurrent-evaluator",
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.8",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "combined-checkpoint/v5",
-      "family": "recovery-projection",
-      "encoding": "canonical-binary",
-      "magic": "GNTCDP05",
-      "byte_length": "1439",
-      "sha256": "ccc2112b1551f734377487d77883b79358cf17d717f8a3a94561087aabe718c1",
-      "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "concurrent-evaluator",
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.8",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "execution-budget-checkpoint/v1",
-      "family": "recovery-projection",
-      "encoding": "canonical-binary",
-      "magic": "GNTBGT01",
-      "byte_length": "130",
-      "sha256": "8aa6a16b1dff1e862a00d22f5cbd5270301f8a423020371444c64b9b8fbf6482",
-      "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "concurrent-evaluator",
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.2",
-        "GNT-11.8",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.cancellation/v3",
-      "family": "journal",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "4585",
-      "sha256": "45e070a93ec2ebaf45f29430c6cff7666c92e467d5dbf5744f85d120fa46f3dc",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime",
-        "embedding"
-      ],
-      "requirements": [
-        "GNT-11.2",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.concurrent-durable-evidence/v4",
-      "family": "journal",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "2611",
-      "sha256": "4fac363e4162e06895efec62c7cca6ef8bdb7ddd9b0043bbdb2729cafc59b3bf",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "concurrent-evaluator",
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.8",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.concurrent-durable-evidence/v5",
-      "family": "journal",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "5935",
-      "sha256": "c459f2269e21bf819f69ec5d70c989d419f03e26a5a435ed898e66ddbd27b9c2",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "concurrent-evaluator",
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.8",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.concurrent-recovery-snapshot/v1",
-      "family": "recovery-projection",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "21131",
-      "sha256": "85928d6dd3310e7e218244677f91e5204a7465c8480bddbdfb6f25ce53811c3e",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "concurrent-evaluator",
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.8",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.event-delivery-dispatched/v1",
-      "family": "event",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "265",
-      "sha256": "88a91b6415752f0e73a01d5c8e5aceae227d7c6e93f113c864323ef8d3fb7078",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime",
-        "embedding"
-      ],
-      "requirements": [
-        "GNT-12.5",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.event-delivery-settled/v1",
-      "family": "event",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "329",
-      "sha256": "5fbbae80945d5499777c875ed10127b1c572fa25db4549750422b4d696bf1a17",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime",
-        "embedding"
-      ],
-      "requirements": [
-        "GNT-12.5",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.event-occurrence/v1",
-      "family": "event",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "678",
-      "sha256": "9c29aefd9c364845b1e82bfca6261d73528ec4b01c9bba8d1c23c22bccb619d9",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime",
-        "embedding"
-      ],
-      "requirements": [
-        "GNT-12.5",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.execution-start/v3",
-      "family": "journal",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "4882",
-      "sha256": "439a26541a97ebe4076d3ff99c6b3741f2c35ecb388bf45c1bee6527cc19b579",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime",
-        "embedding"
-      ],
-      "requirements": [
-        "GNT-11.2",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.execution-state/v1",
-      "family": "journal",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "226",
-      "sha256": "b322d2a5ac10a393daf68c5af5e80d40164d8dd5b78ff2a26f338e3fbfe55544",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime",
-        "embedding"
-      ],
-      "requirements": [
-        "GNT-11.2",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.logical-evidence/v3",
-      "family": "journal",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "2149",
-      "sha256": "4148c8bf0b77792dec48a63263483d7e627d55ac1e786881a4e9bf3d3957d943",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime",
-        "embedding"
-      ],
-      "requirements": [
-        "GNT-11.2",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "gantry.recovery-snapshot/v3",
-      "family": "recovery-projection",
-      "encoding": "canonical-json",
-      "magic": null,
-      "byte_length": "14607",
-      "sha256": "4cf2674be142682b946e83b050a6901056bf6d8edb6c9e65e921dc2ce58b9639",
-      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime",
-        "embedding"
-      ],
-      "requirements": [
-        "GNT-11.2",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "machine-checkpoint/v3",
-      "family": "recovery-projection",
-      "encoding": "canonical-binary",
-      "magic": "GNTMCP03",
-      "byte_length": "481",
-      "sha256": "8d55b56c70b818024a94074d5d95b0cdfcbf553c5ed272139b742afb81855652",
-      "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.2",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "machine-checkpoint/v4",
-      "family": "recovery-projection",
-      "encoding": "canonical-binary",
-      "magic": "GNTMCP04",
-      "byte_length": "744",
-      "sha256": "58560bc7b8eae4b7447e0496cf9fd71cf3b311b26daa51d1179260858dd7bbec",
-      "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "concurrent-evaluator",
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.8",
-        "GNT-15.8"
-      ]
-    },
-    {
-      "format": "session-checkpoint/v1",
-      "family": "recovery-projection",
-      "encoding": "canonical-binary",
-      "magic": "GNTSSP01",
-      "byte_length": "318",
-      "sha256": "82053ea4d676ae94e65774601d232f7802132b9bce9743638a2ab84fc622c038",
-      "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
-      "golden": "protocol/goldens/public-formats-v1.json",
-      "profiles": [
-        "durable-runtime"
-      ],
-      "requirements": [
-        "GNT-11.2",
-        "GNT-15.8"
-      ]
-    }
-  ]
+ "catalog": "gantry.public-formats",
+ "major": 1,
+ "minor": 0,
+ "specification_revision": "21a2f4d7d7f94393280547973852b372e18a7d2913c151efcc9c8f3958c14ad1",
+ "formats": [
+  {
+   "format": "canonical-transcript/v1",
+   "family": "value",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "45",
+   "sha256": "b1e48950786bc87d367d993383011d037e4f4487db005a1213fe528deec3d3ee",
+   "schema": "protocol/schemas/canonical-transcript-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime",
+    "embedding",
+    "evaluator"
+   ],
+   "requirements": [
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "combined-checkpoint/v4",
+   "family": "recovery-projection",
+   "encoding": "canonical-binary",
+   "magic": "GNTCDP04",
+   "byte_length": "1176",
+   "sha256": "f69973666a7da63a74582f1a4cfc9136c7c8fea830309f0e789332e0f653946f",
+   "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.8",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "combined-checkpoint/v5",
+   "family": "recovery-projection",
+   "encoding": "canonical-binary",
+   "magic": "GNTCDP05",
+   "byte_length": "1439",
+   "sha256": "ccc2112b1551f734377487d77883b79358cf17d717f8a3a94561087aabe718c1",
+   "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.8",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "execution-budget-checkpoint/v1",
+   "family": "recovery-projection",
+   "encoding": "canonical-binary",
+   "magic": "GNTBGT01",
+   "byte_length": "130",
+   "sha256": "8aa6a16b1dff1e862a00d22f5cbd5270301f8a423020371444c64b9b8fbf6482",
+   "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.2",
+    "GNT-11.8",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.cancellation/v3",
+   "family": "journal",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "4585",
+   "sha256": "45e070a93ec2ebaf45f29430c6cff7666c92e467d5dbf5744f85d120fa46f3dc",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime",
+    "embedding"
+   ],
+   "requirements": [
+    "GNT-11.2",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.concurrent-durable-evidence/v4",
+   "family": "journal",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "2611",
+   "sha256": "4fac363e4162e06895efec62c7cca6ef8bdb7ddd9b0043bbdb2729cafc59b3bf",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.8",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.concurrent-durable-evidence/v5",
+   "family": "journal",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "5935",
+   "sha256": "c459f2269e21bf819f69ec5d70c989d419f03e26a5a435ed898e66ddbd27b9c2",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.8",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.concurrent-recovery-snapshot/v1",
+   "family": "recovery-projection",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "21131",
+   "sha256": "85928d6dd3310e7e218244677f91e5204a7465c8480bddbdfb6f25ce53811c3e",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.8",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.event-delivery-dispatched/v1",
+   "family": "event",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "265",
+   "sha256": "88a91b6415752f0e73a01d5c8e5aceae227d7c6e93f113c864323ef8d3fb7078",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime",
+    "embedding"
+   ],
+   "requirements": [
+    "GNT-12.5",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.event-delivery-settled/v1",
+   "family": "event",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "329",
+   "sha256": "5fbbae80945d5499777c875ed10127b1c572fa25db4549750422b4d696bf1a17",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime",
+    "embedding"
+   ],
+   "requirements": [
+    "GNT-12.5",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.event-occurrence/v1",
+   "family": "event",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "678",
+   "sha256": "9c29aefd9c364845b1e82bfca6261d73528ec4b01c9bba8d1c23c22bccb619d9",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime",
+    "embedding"
+   ],
+   "requirements": [
+    "GNT-12.5",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.execution-start/v3",
+   "family": "journal",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "4882",
+   "sha256": "439a26541a97ebe4076d3ff99c6b3741f2c35ecb388bf45c1bee6527cc19b579",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime",
+    "embedding"
+   ],
+   "requirements": [
+    "GNT-11.2",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.execution-state/v1",
+   "family": "journal",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "226",
+   "sha256": "b322d2a5ac10a393daf68c5af5e80d40164d8dd5b78ff2a26f338e3fbfe55544",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime",
+    "embedding"
+   ],
+   "requirements": [
+    "GNT-11.2",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.logical-evidence/v3",
+   "family": "journal",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "2149",
+   "sha256": "4148c8bf0b77792dec48a63263483d7e627d55ac1e786881a4e9bf3d3957d943",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime",
+    "embedding"
+   ],
+   "requirements": [
+    "GNT-11.2",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "gantry.recovery-snapshot/v3",
+   "family": "recovery-projection",
+   "encoding": "canonical-json",
+   "magic": null,
+   "byte_length": "14607",
+   "sha256": "4cf2674be142682b946e83b050a6901056bf6d8edb6c9e65e921dc2ce58b9639",
+   "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime",
+    "embedding"
+   ],
+   "requirements": [
+    "GNT-11.2",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "machine-checkpoint/v3",
+   "family": "recovery-projection",
+   "encoding": "canonical-binary",
+   "magic": "GNTMCP03",
+   "byte_length": "481",
+   "sha256": "8d55b56c70b818024a94074d5d95b0cdfcbf553c5ed272139b742afb81855652",
+   "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.2",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "machine-checkpoint/v4",
+   "family": "recovery-projection",
+   "encoding": "canonical-binary",
+   "magic": "GNTMCP04",
+   "byte_length": "744",
+   "sha256": "58560bc7b8eae4b7447e0496cf9fd71cf3b311b26daa51d1179260858dd7bbec",
+   "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.8",
+    "GNT-15.8"
+   ]
+  },
+  {
+   "format": "session-checkpoint/v1",
+   "family": "recovery-projection",
+   "encoding": "canonical-binary",
+   "magic": "GNTSSP01",
+   "byte_length": "318",
+   "sha256": "82053ea4d676ae94e65774601d232f7802132b9bce9743638a2ab84fc622c038",
+   "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
+   "golden": "protocol/goldens/public-formats-v1.json",
+   "profiles": [
+    "durable-runtime"
+   ],
+   "requirements": [
+    "GNT-11.2",
+    "GNT-15.8"
+   ]
+  }
+ ]
 }
