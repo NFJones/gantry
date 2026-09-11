@@ -2333,7 +2333,7 @@ fn finish_effect_graph(
             diagnostics.push(body_diagnostic(
                 "impure-workflow",
                 DiagnosticCategory::Type,
-                "a pure generic workflow has a nonempty transitive inferred effect set",
+                "a pure workflow has a nonempty transitive inferred effect set",
                 draft.source.clone().ok_or(AnalysisError::Invariant)?,
                 [("effects", effect_names(effects))],
             )?);

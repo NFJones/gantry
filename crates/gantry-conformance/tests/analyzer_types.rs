@@ -3151,6 +3151,21 @@ fn public_trait_implementation_effects_stay_within_the_declared_contract() {
         "{:?}",
         in_contract_pure.diagnostics()
     );
+
+    // The same holds for a pure free function, whose purity report both walkers used to emit with
+    // different message text, which defeated the diagnostic dedup.
+    let in_contract_function =
+        analyze("pure fn helper() { discard prompt \"a\" -> String; }\nfn main() {}");
+    assert_eq!(
+        in_contract_function
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_str() == "impure-workflow")
+            .count(),
+        1,
+        "{:?}",
+        in_contract_function.diagnostics()
+    );
 }
 
 /// A pattern payload that binds a `MustConsume` value owes consumption like any other binding
