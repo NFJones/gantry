@@ -3341,6 +3341,55 @@ fn must_consume_live_place_cannot_be_replaced() {
     }
 }
 
+/// Replacing a struct-field projection of a live `MustConsume` root discards the projected value
+/// exactly as replacing the root does, so the assignment is rejected while the root still owes
+/// consumption; a field that owes nothing and a discharged root stay assignable (`GNT-6.2d`).
+#[test]
+fn must_consume_initialized_projection_cannot_be_replaced() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         struct Holder { token: Token, other: Int }\n\
+         struct Outer { inner: Holder }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         impl Holder { fn consume(owned self) {} }\n\
+         impl Outer { fn consume(owned self) {} }\n";
+
+    for accepted in [
+        "fn main(mut holder: Holder) { holder.other = 5; holder.consume(); }",
+        "fn main(mut token: Token) { token.consume(); token = Token { value: 1 }; token.consume(); }",
+        // Assignment through a method receiver's field is excluded from the rule.
+        "impl Holder { fn swap(owned self) { self.token = Token { value: 1 }; } }\nfn main() -> Int { 0 }",
+    ] {
+        let package = analyze(&format!("{DECLARATIONS}{accepted}"));
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{accepted}: {:?}",
+            package.diagnostics()
+        );
+    }
+
+    for (source, marker) in [
+        (
+            "fn main(mut holder: Holder) { holder.token = Token { value: 1 }; holder.consume(); }",
+            "holder.token = Token { value: 1 }",
+        ),
+        (
+            "fn main(mut outer: Outer) { outer.inner.token = Token { value: 1 }; outer.consume(); }",
+            "outer.inner.token = Token { value: 1 }",
+        ),
+        (
+            "fn main(mut holder: Holder, flag: Bool) { if flag { holder.token.consume(); } holder.token = Token { value: 1 }; holder.consume(); }",
+            "holder.token = Token { value: 1 }",
+        ),
+    ] {
+        assert_affine_rejected_at(
+            &format!("{DECLARATIONS}{source}"),
+            "must-consume-replaced",
+            marker,
+        );
+    }
+}
+
 /// An implementation method must stay within the effect contract its trait method declares,
 /// because that declared set is the conservative summary parametric callers rely on
 /// (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).

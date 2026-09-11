@@ -3541,13 +3541,13 @@ fn check_assignment(
         }
     }
     // Replacing a place that still owes consumption would silently discard an initialized
-    // `MustConsume` value, which `GNT-6.2d` forbids: the place must be consumed first. A place
-    // whose obligation is already discharged may be reassigned, and the fresh value then owes its
-    // own consumption; the runtime clears the staged obligation for the assigned place the same
-    // way.
+    // `MustConsume` value, which `GNT-6.2d` forbids: the place must be consumed first. A projected
+    // struct field of a live root that owns such a value discards it in exactly the same way, so
+    // the rule covers a binding root and every struct-field projection of one. A binding root whose
+    // obligation is already discharged may be reassigned, and the fresh value then owes its own
+    // consumption; the runtime clears the staged obligation for the assigned place the same way.
     if operator == Punctuation::Equal
         && !receiver
-        && identifiers.len() == 1
         && assignment_target_type(&root, receiver, &identifiers, environment, context)
             .as_ref()
             .is_some_and(|target| is_must_consume_type(target, context))
@@ -3563,7 +3563,7 @@ fn check_assignment(
                 node.span().clone(),
                 [] as [(&str, &str); 0],
             )?);
-        } else {
+        } else if identifiers.len() == 1 {
             rebind_must_consume(&root, node.span().clone(), context);
         }
     }

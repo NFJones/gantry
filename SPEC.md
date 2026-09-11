@@ -3499,6 +3499,15 @@ rather than an item 2h value position: it is admitted once on each path that
 leaves the callable, it MUST NOT record an item 2h use, and it MAY name a finite
 struct-field projection of the callable's binding root.
 
+An assignment MUST NOT replace an initialized `MustConsume` place: the value the
+place holds would be discarded before it is consumed, so the replacement MUST be
+rejected at analysis time and the report MUST name the assignment. The rule covers
+a binding root and every struct-field projection of one, at any depth, and it is
+the exception item 2e's admission of assignment for every place carries. A binding
+root whose obligation is already discharged MAY be reassigned, and the value it
+receives then owes its own consumption under the rules above. Assignment through a
+method receiver's field remains excluded.
+
 <a id="GNT-6.2e"></a>
 
 2e. An affinity ledger **place** is identified by a binding root together with
