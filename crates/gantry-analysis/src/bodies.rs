@@ -4754,6 +4754,13 @@ fn merge_obligation_states(
             let place = AffinePlace::projected(root.clone(), leaf);
             let mut discharged_everywhere = true;
             let mut consumed_somewhere = false;
+            // Whether some reaching path discharged this leaf or a place containing it: only then
+            // is the leaf itself consumed on some paths. A mark strictly inside the leaf discharges
+            // a descendant, and a declared aggregate is still one atomic place that holds a value.
+            let mut leaf_consumed_somewhere = false;
+            // Marks a branch recorded against a place strictly inside this leaf: the leaf is the
+            // only place this join remembers, so it has to carry those marks across the join.
+            let mut carried: BTreeSet<AffinePlace> = BTreeSet::new();
             let mut reaching_count = 0_usize;
             for branch in &reaching {
                 reaching_count = reaching_count.saturating_add(1);
@@ -4763,15 +4770,21 @@ fn merge_obligation_states(
                     .any(|marked| marked.root == *root && place.path.starts_with(&marked.path))
                 {
                     consumed_somewhere = true;
+                    leaf_consumed_somewhere = true;
                     continue;
                 }
                 discharged_everywhere = false;
-                if branch
-                    .partial
+                for marked in branch
+                    .discharged
                     .iter()
-                    .any(|marked| marked.root == *root && place.path.starts_with(&marked.path))
+                    .chain(branch.partial.iter())
+                    .filter(|marked| marked.root == *root && marked.intersects(&place))
                 {
                     consumed_somewhere = true;
+                    if place.path.starts_with(&marked.path) {
+                        leaf_consumed_somewhere = true;
+                    }
+                    carried.insert(marked.clone());
                 }
             }
             // No path reaches this join, so nothing can be left owing on one: every exiting
@@ -4785,7 +4798,21 @@ fn merge_obligation_states(
             if discharged_everywhere {
                 merged.discharged.insert(place);
             } else if consumed_somewhere {
-                merged.partial.insert(place);
+                // The leaf is marked partial only when a reaching path discharged a place covering
+                // it. A carried mark that contains the leaf is represented by the leaf itself, so
+                // it is dropped, while one strictly inside it names a descendant place the leaf
+                // does not cover and is kept verbatim: the later whole-root use has to intersect
+                // it, while `ObligationSnapshot::state` keeps seeing the leaf and classifies an
+                // atomically owed aggregate as live rather than path-dependent.
+                if leaf_consumed_somewhere {
+                    merged.partial.insert(place.clone());
+                }
+                merged.partial.extend(
+                    carried
+                        .iter()
+                        .filter(|marked| !place.path.starts_with(&marked.path))
+                        .cloned(),
+                );
             }
         }
     }

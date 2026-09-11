@@ -3476,6 +3476,93 @@ fn public_must_consume_obligations_are_judged_per_place() {
     }
 }
 
+/// A partial move of a place inside a declared `MustConsume` aggregate survives a branch join. The
+/// only leaf such an aggregate has is the root itself, so a branch that moved a descendant recorded
+/// a mark strictly inside that leaf: the join has to carry the mark across, or the whole-root use
+/// after it stopped intersecting anything and was accepted.
+#[test]
+fn public_must_consume_descendant_discharge_survives_a_join() {
+    const DECLARATIONS: &str = "must_consume struct Inner { value: Int }\n\
+         must_consume struct Outer { inner: Inner }\n\
+         struct Bag { a: Inner, b: Inner }\n\
+         impl Inner { fn consume(owned self) {} }\n\
+         impl Outer { fn consume(owned self) {} }\n";
+
+    // A whole-root use after a descendant move is the repeated use of the partially moved
+    // aggregate, whether the move is straight line or only on one reaching path, and whether or not
+    // an admitted assignment re-initialized the root in between.
+    for (source, codes) in [
+        (
+            "fn run(mut o: Outer) { o.inner.consume(); o.consume(); } fn main() {}",
+            ["affine-value-reuse"],
+        ),
+        (
+            "fn run(mut o: Outer, flag: Bool) { o.inner.consume(); if flag { discard flag; } o.consume(); } fn main() {}",
+            ["affine-value-reuse"],
+        ),
+        (
+            "fn run(mut o: Outer, flag: Bool) { if flag { o.inner.consume(); } o.consume(); } fn main() {}",
+            ["affine-value-reuse"],
+        ),
+        (
+            "fn run(mut o: Outer, flag: Bool) { o.consume(); o = Outer { inner: Inner { value: 1 } }; if flag { o.inner.consume(); } o.consume(); } fn main() {}",
+            ["affine-value-reuse"],
+        ),
+        // Moving the descendant on every path still only partially moves the aggregate, so the
+        // whole-root use afterwards stays a repeated use.
+        (
+            "fn run(mut o: Outer, flag: Bool) { if flag { o.inner.consume(); } else { o.inner.consume(); } o.consume(); } fn main() {}",
+            ["affine-value-reuse"],
+        ),
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert_eq!(
+            diagnostic_codes(rejected.diagnostics()),
+            codes,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+
+    // Consuming the declared aggregate itself on every path discharges it, so the join holds no
+    // descendant mark to carry.
+    assert_affine_accepted(&format!(
+        "{DECLARATIONS}fn run(mut o: Outer, flag: Bool) {{ if flag {{ o.consume(); }} else {{ o.consume(); }} }} fn main() {{}}"
+    ));
+
+    // A sibling of the conditionally moved field stays usable: the carried mark names the descendant
+    // place, not the whole root, so the sibling's transfer is not a repeated use. The report is the
+    // sibling-less obligation the conditional field move leaves, exactly as it is without the fix.
+    let sibling = analyze(&format!(
+        "{DECLARATIONS}fn run(mut bag: Bag, flag: Bool) {{ if flag {{ bag.a.consume(); }} bag.b.consume(); }} fn main() {{}}"
+    ));
+    assert_eq!(
+        diagnostic_codes(sibling.diagnostics()),
+        ["must-consume-path-dependent"],
+        "{:?}",
+        sibling.diagnostics()
+    );
+
+    // The conditionally moved descendant leaves the aggregate owed rather than path-dependent: the
+    // aggregate is one atomic place, and the leaf the join kept is still live on the path that
+    // never moved it.
+    let conditional = analyze(&format!(
+        "{DECLARATIONS}fn run(mut o: Outer, flag: Bool) {{ if flag {{ o.inner.consume(); }} }} fn main() {{}}"
+    ));
+    assert_eq!(
+        diagnostic_codes(conditional.diagnostics()),
+        ["must-consume-unconsumed"],
+        "{:?}",
+        conditional.diagnostics()
+    );
+}
+
 /// An index projection reads the element it names rather than moving it out of the aggregate, so a
 /// `MustConsume` element is copied by that read exactly as a projected struct field is (2d).
 #[test]
