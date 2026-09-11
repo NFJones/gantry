@@ -94,7 +94,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         CONTRACT_PATH,
-        "f54637bff3f7b44239000eb98c5621691d725cd7360a19d901af8909971521a4",
+        "1a53c1379d177ea0b4277549c0c1b168b71bf00abab7a1f55fc5516b5b7699cd",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
@@ -102,7 +102,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         LOWER_MANIFEST_PATH,
-        "3fdcb9a73a1cecfe672168d8914dd8bb7f9c21be97fb36364cf5a7d2ecd331a3",
+        "1f50d2a62c07f21548334526f7b9a2114c1383b0116d7311d7aa940117ad88aa",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",

@@ -3473,6 +3473,290 @@ fn public_must_consume_obligations_are_judged_per_place() {
     }
 }
 
+/// A `for` statement binds a fresh item place per iteration, so the item owes its consumption at
+/// the iteration exit exactly as a `let` declaration does (`GNT-6.2d`, `GNT-9.4`).
+#[test]
+fn public_must_consume_for_item_bindings_owe_consumption() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         must_consume struct Wrap { inner: Token }\n\
+         struct Holder { token: Token }\n\
+         struct Plain { marker: Int }\n\
+         affine struct Droppable {}\n\
+         impl Token { fn consume(owned self) {} }\n\
+         impl Holder { fn consume(owned self) {} }\n\
+         impl Wrap { fn consume(owned self) {} }\n";
+
+    // The item is an ordinary binding introduction: consuming it inside the body discharges the
+    // iteration whether the body falls through, breaks, or continues, and an element whose type
+    // owes nothing needs no discharge.
+    for accepted in [
+        "fn run() { for t in [Token { value: 1 }] { t.consume(); } } fn main() {}",
+        "fn run() { for t in [Token { value: 1 }] { t.consume(); break; } } fn main() {}",
+        "fn run() { for t in [Token { value: 1 }] { t.consume(); continue; } } fn main() {}",
+        // A conditional `break`/`continue` retires the iteration scope on that path only, and the
+        // item stays consumed on every path that leaves the iteration.
+        "fn run(flag: Bool) { for t in [Token { value: 1 }] { t.consume(); if flag { break; } } } fn main() {}",
+        "fn run(flag: Bool) { for t in [Token { value: 1 }] { t.consume(); if flag { continue; } } } fn main() {}",
+        // A `let` the body introduced is retired by the same transfer, so registering the item must
+        // not resurrect it either.
+        "fn run(flag: Bool) { for v in [1] { let t: Token = Token { value: 1 }; t.consume(); if flag { break; } } } fn main() {}",
+        // A transfer inside a conditional branch retires the scopes that path leaves, including the
+        // loop body's scope the fall-through path still holds, so a declaration after the transfer
+        // is judged in the body rather than in the loop's enclosing scope.
+        "fn run(flag: Bool) { while flag { let b: Token = Token { value: 1 }; b.consume(); if flag { break; } } } fn main() {}",
+        "fn run(flag: Bool) { while flag { let b: Token = Token { value: 1 }; b.consume(); if flag { continue; } } } fn main() {}",
+        "fn run(flag: Bool) { while flag { if flag { break; } let b: Token = Token { value: 1 }; b.consume(); } } fn main() {}",
+        "fn run(flag: Bool) { while flag { if flag { break; } let b: Token = Token { value: 1 }; if flag { b.consume(); } else { b.consume(); } } } fn main() {}",
+        // The same restore covers a match arm, so a body declaration the arms consume on every path
+        // is discharged.
+        "fn run(flag: Bool, o: Option<Int>) { while flag { if flag { break; } let b: Token = Token { value: 1 }; match o { Some(_) => { b.consume(); }, None => { b.consume(); } } } } fn main() {}",
+        "fn run() { for h in [Holder { token: Token { value: 1 } }] { h.token.consume(); } } fn main() {}",
+        "fn run() { for v in [1, 2] { } } fn main() {}",
+        "fn run() { for p in [Plain { marker: 1 }] { } } fn main() {}",
+        "fn run() { for d in [Droppable {}] { } } fn main() {}",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    for (source, code) in [
+        // The item binding owes its consumption, so an empty body leaves it unconsumed ...
+        (
+            "fn run() { for t in [Token { value: 1 }] { } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // ... and a body that only leaves through `continue` retires the iteration scope with the
+        // item still live.
+        (
+            "fn run() { for t in [Token { value: 1 }] { continue; } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // A discharge on only one path leaves the item path-dependent, like a `let` binding.
+        (
+            "fn run(flag: Bool) { for t in [Token { value: 1 }] { if flag { t.consume(); } } } fn main() {}",
+            "must-consume-path-dependent",
+        ),
+        // A conditional `break` retires the item scope with the item still live on that path.
+        (
+            "fn run(flag: Bool) { for t in [Token { value: 1 }] { if flag { break; } } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // A `let` the body introduced is retired by the same transfer, so it owes its own
+        // consumption whether or not the item does.
+        (
+            "fn run(flag: Bool) { for v in [1] { let t: Token = Token { value: 1 }; if flag { break; } } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // An aggregate element that only inherits the class owns each stored place ...
+        (
+            "fn run() { for h in [Holder { token: Token { value: 1 } }] { } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // ... and a declared aggregate is one place, so consuming the stored value inside the item
+        // never discharges the item itself.
+        (
+            "fn run() { for w in [Wrap { inner: Token { value: 1 } }] { w.inner.consume(); } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // The conditional transfer retires the item scope with the atomic item still live.
+        (
+            "fn run(flag: Bool) { for w in [Wrap { inner: Token { value: 1 } }] { w.inner.consume(); if flag { break; } } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // A transfer inside a conditional branch retires the loop body's scope on that path only, so
+        // a declaration the fall-through path reaches afterwards still owes consumption.
+        (
+            "fn run(flag: Bool) { while flag { if flag { break; } let b: Token = Token { value: 1 }; } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        (
+            "fn run(flag: Bool) { while flag { if flag { continue; } let b: Token = Token { value: 1 }; } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        (
+            "fn run(flag: Bool) { loop { if flag { break; } let b: Token = Token { value: 1 }; } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        (
+            "fn run(flag: Bool) { for v in [1] { if flag { break; } let b: Token = Token { value: 1 }; } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        (
+            "fn run(flag: Bool) { for v in [1] { if flag { continue; } let b: Token = Token { value: 1 }; } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // A fresh assignment after the transfer re-initializes the place, so the reassigned value
+        // owes its own consumption rather than inheriting the discharge before the transfer.
+        (
+            "fn run(flag: Bool) { while flag { if flag { break; } let mut b: Token = Token { value: 1 }; b.consume(); b = Token { value: 2 }; } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // A match arm the body reaches after the transfer reports at the same body scope exit.
+        (
+            "fn run(flag: Bool, o: Option<Int>) { while flag { if flag { break; } let b: Token = Token { value: 1 }; match o { Some(_) => { }, None => { } } } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // An arm that leaves through a transfer retires the item scope on that path only.
+        (
+            "fn run(o: Option<Int>) { for t in [Token { value: 1 }] { match o { Some(_) => { t.consume(); }, None => { break; } } } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{source}"), code);
+    }
+
+    // `discard` of the item is rejected exactly as it is for a `let` binding, and it is not a
+    // discharge, so the item still reports its own unconsumed obligation.
+    let discarded = analyze(&format!(
+        "{DECLARATIONS}fn run() {{ for t in [Token {{ value: 1 }}] {{ discard t; }} }} fn main() {{}}"
+    ));
+    assert_eq!(
+        diagnostic_codes(discarded.diagnostics()),
+        ["must-consume-discard", "must-consume-unconsumed"],
+        "{:?}",
+        discarded.diagnostics()
+    );
+
+    // The empty-body repro reports the item itself: the primary span is the item identifier and
+    // the report names that binding.
+    let source = "fn run() { for t in [Token { value: 1 }] { } } fn main() {}";
+    let package = analyze(&format!("{DECLARATIONS}{source}"));
+    assert_eq!(package.status(), AnalysisStatus::Invalid, "{source}");
+    let diagnostic = package
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed")
+        .unwrap_or_else(|| panic!("{source}: {:?}", package.diagnostics()));
+    assert_eq!(
+        diagnostic.fields.get("binding").map(AsRef::as_ref),
+        Some("t"),
+        "{source}: {:?}",
+        package.diagnostics()
+    );
+    let primary = diagnostic
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("{source}: missing primary span"));
+    let item = format!("{DECLARATIONS}{source}");
+    let binding_start = item
+        .find("for t in")
+        .unwrap_or_else(|| panic!("{source}: missing the item binding"))
+        + "for ".len();
+    assert_eq!(
+        usize::try_from(primary.bytes().start()).unwrap_or_default(),
+        binding_start,
+        "{source}"
+    );
+    assert_eq!(
+        usize::try_from(primary.bytes().end()).unwrap_or_default(),
+        binding_start + "t".len(),
+        "{source}"
+    );
+    assert_eq!(
+        item.get(binding_start..binding_start + "t".len()),
+        Some("t"),
+        "{source}"
+    );
+
+    // The conditional-transfer repro reports the item the transfer retired: the primary span is the
+    // item identifier, and the report belongs to the iteration exit rather than the callable
+    // return.
+    let transferred =
+        "fn run(flag: Bool) { for t in [Token { value: 1 }] { if flag { break; } } } fn main() {}";
+    let program = format!("{DECLARATIONS}{transferred}");
+    let package = analyze(&program);
+    assert_eq!(package.status(), AnalysisStatus::Invalid, "{transferred}");
+    assert_eq!(
+        diagnostic_codes(package.diagnostics()),
+        ["must-consume-unconsumed"],
+        "{transferred}: the item is reported exactly once: {:?}",
+        package.diagnostics()
+    );
+    let diagnostic = package
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed")
+        .unwrap_or_else(|| panic!("{transferred}: {:?}", package.diagnostics()));
+    let primary = diagnostic
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("{transferred}: missing primary span"));
+    let binding_start = program
+        .find("t in [")
+        .unwrap_or_else(|| panic!("{transferred}: missing the item binding"));
+    assert_eq!(
+        usize::try_from(primary.bytes().start()).unwrap_or_default(),
+        binding_start,
+        "{transferred}: the report does not start at the item binding"
+    );
+    assert_eq!(
+        usize::try_from(primary.bytes().end()).unwrap_or_default(),
+        binding_start + "t".len(),
+        "{transferred}: the report does not end after the item binding"
+    );
+    assert_eq!(
+        program.get(binding_start..binding_start + "t".len()),
+        Some("t"),
+        "{transferred}: the item span does not slice to the binding"
+    );
+
+    // A `let` the loop body introduced is reported by its own declaration statement, so its span
+    // covers the statement the body introduced rather than the iteration.
+    let shadowed = "fn run(flag: Bool) { for v in [1] { let t: Token = Token { value: 1 }; if flag { break; } } } fn main() {}";
+    let program = format!("{DECLARATIONS}{shadowed}");
+    let package = analyze(&program);
+    assert_eq!(package.status(), AnalysisStatus::Invalid, "{shadowed}");
+    let diagnostic = package
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed")
+        .unwrap_or_else(|| panic!("{shadowed}: {:?}", package.diagnostics()));
+    let primary = diagnostic
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("{shadowed}: missing primary span"));
+    let declaration = "let t: Token = Token { value: 1 };";
+    let declaration_start = program
+        .find(declaration)
+        .unwrap_or_else(|| panic!("{shadowed}: missing the body binding"));
+    let start = usize::try_from(primary.bytes().start()).unwrap_or_default();
+    let end = usize::try_from(primary.bytes().end()).unwrap_or_default();
+    assert_eq!(start, declaration_start, "{shadowed}");
+    assert_eq!(end, declaration_start + declaration.len(), "{shadowed}");
+    assert_eq!(program.get(start..end), Some(declaration), "{shadowed}");
+
+    // A transfer retires the loop body's scope, and the fall-through path still holds the frame the
+    // transfer retired, so the declaration the body introduced is reported once rather than twice.
+    let retried = "fn run(flag: Bool) { while flag { if flag { break; } let b: Token = Token { value: 1 }; } } fn main() {}";
+    let program = format!("{DECLARATIONS}{retried}");
+    let package = analyze(&program);
+    assert_eq!(package.status(), AnalysisStatus::Invalid, "{retried}");
+    assert_eq!(
+        diagnostic_codes(package.diagnostics()),
+        ["must-consume-unconsumed"],
+        "{retried}: the body binding is reported exactly once: {:?}",
+        package.diagnostics()
+    );
+    let declaration = "let b: Token = Token { value: 1 };";
+    let declaration_start = program
+        .find(declaration)
+        .unwrap_or_else(|| panic!("{retried}: missing the body binding"));
+    let primary = package
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed")
+        .and_then(|diagnostic| diagnostic.primary.as_ref())
+        .unwrap_or_else(|| panic!("{retried}: missing primary span"));
+    let start = usize::try_from(primary.bytes().start()).unwrap_or_default();
+    let end = usize::try_from(primary.bytes().end()).unwrap_or_default();
+    assert_eq!(start, declaration_start, "{retried}");
+    assert_eq!(end, declaration_start + declaration.len(), "{retried}");
+    assert_eq!(program.get(start..end), Some(declaration), "{retried}");
+
+    // A place source copies the outer place, which the source span already reports.
+    let copied = "fn run(items: List<Token>) { for t in items { t.consume(); } } fn main() {}";
+    assert_affine_rejected(&format!("{DECLARATIONS}{copied}"), "must-consume-copy");
+}
+
 /// Re-initializing a place inside an already consumed containing place owes the fresh value's own
 /// consumption, while the containing place and the places it still contains stay gone
 /// (`GNT-6.2d`).

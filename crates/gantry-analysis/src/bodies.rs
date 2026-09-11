@@ -317,6 +317,7 @@ struct BodyContext {
     must_consume_fresh: RefCell<BTreeSet<AffinePlace>>,
     must_consume_fresh_all: RefCell<BTreeSet<AffinePlace>>,
     must_consume_scopes: RefCell<Vec<MustConsumeScope>>,
+    must_consume_reported: RefCell<BTreeMap<Arc<str>, BTreeSet<MustConsumeReportKey>>>,
     must_consume_loop_depths: RefCell<Vec<usize>>,
     must_consume_receiver: Cell<bool>,
     must_consume_consuming: Cell<bool>,
@@ -955,6 +956,7 @@ fn build_body_context(
         must_consume_fresh: RefCell::new(BTreeSet::new()),
         must_consume_fresh_all: RefCell::new(BTreeSet::new()),
         must_consume_scopes: RefCell::new(Vec::new()),
+        must_consume_reported: RefCell::new(BTreeMap::new()),
         must_consume_loop_depths: RefCell::new(Vec::new()),
         must_consume_receiver: Cell::new(false),
         must_consume_consuming: Cell::new(false),
@@ -2504,6 +2506,7 @@ fn check_callable(
     context.must_consume_fresh.borrow_mut().clear();
     context.must_consume_fresh_all.borrow_mut().clear();
     context.must_consume_scopes.borrow_mut().clear();
+    context.must_consume_reported.borrow_mut().clear();
     context.must_consume_loop_depths.borrow_mut().clear();
     context.must_consume_receiver.set(false);
     context.must_consume_consuming.set(false);
@@ -2901,6 +2904,10 @@ fn check_block(
                     };
                     blocks = blocks.saturating_add(1);
                     saved.restore(context);
+                    // A branch that leaves through `break`/`continue` retires the scopes it exits:
+                    // the frames it opened and the frames the enclosing region still holds on its
+                    // fall-through path. The branch analysis must not leave those frames retired.
+                    let branch_scopes = context.must_consume_scopes.borrow().clone();
                     let result = if has_pattern && blocks == 1 {
                         let pattern_span = pattern_span.clone().ok_or(AnalysisError::Invariant)?;
                         let scope_floor = context.must_consume_scopes.borrow().len();
@@ -2934,6 +2941,7 @@ fn check_block(
                             diagnostics,
                         )?
                     };
+                    *context.must_consume_scopes.borrow_mut() = branch_scopes;
                     branch_results.push(result);
                     // A branch that left the region without a normal completion never reaches the
                     // join. A settled transfer already reported what it owed, so it contributes no
@@ -3068,11 +3076,20 @@ fn check_block(
                     diagnostics,
                 )?;
                 let mut body_environment = environment.clone();
+                let mut item_binding = None;
                 if let Some(source_type) = source_type {
                     if source_type.kind() == TypeKind::List {
                         if let Some(name) = direct_identifier(tree, child)?
                             && let Some(member) = source_type.immediate_members().into_iter().next()
                         {
+                            // Every iteration binds a fresh item place, so a `MustConsume` item owes
+                            // its own consumption at the iteration exit like any other binding
+                            // introduction.
+                            if is_must_consume_type(&member, context)
+                                && let Some(span) = direct_identifier_span(tree, child_node)
+                            {
+                                item_binding = Some((name.clone(), member.clone(), span));
+                            }
                             body_environment.insert(name, member);
                         }
                     } else {
@@ -3095,7 +3112,16 @@ fn check_block(
                     .borrow_mut()
                     .push(loop_depth);
                 let checked = with_affine_loop_scope(context, &environment, || {
-                    check_block(
+                    // The item binding is registered above the pushed loop depth, so `break` and
+                    // `continue` retire it at the iteration exit and the scope exit reports an
+                    // unconsumed item.
+                    let item_scope = item_binding.map(|(name, ty, span)| {
+                        let scope_floor = context.must_consume_scopes.borrow().len();
+                        enter_obligation_scope(context);
+                        register_must_consume_binding(name, &ty, span, context);
+                        scope_floor
+                    });
+                    let checked = check_block(
                         tree,
                         body,
                         facts,
@@ -3103,7 +3129,12 @@ fn check_block(
                         expected_result,
                         context,
                         diagnostics,
-                    )
+                    );
+                    let checked = checked?;
+                    if let Some(scope_floor) = item_scope {
+                        leave_obligation_scope_above(scope_floor, context, diagnostics)?;
+                    }
+                    Ok(checked)
                 });
                 context.must_consume_loop_depths.borrow_mut().pop();
                 let _ = checked?;
@@ -3469,6 +3500,7 @@ fn check_match_statement(
             .span()
             .clone();
         saved.restore(context);
+        let arm_scopes = context.must_consume_scopes.borrow().clone();
         let scope_floor = context.must_consume_scopes.borrow().len();
         enter_obligation_bindings(context, &bindings, &pattern_span);
         let checked = with_shared_receiver_payload_roots(context, payload_roots, || {
@@ -3484,6 +3516,7 @@ fn check_match_statement(
         });
         let result = checked?;
         leave_obligation_scope_above(scope_floor, context, diagnostics)?;
+        *context.must_consume_scopes.borrow_mut() = arm_scopes;
         // A diverging arm never reaches the join and never settles through a transfer, so its
         // final state keeps the obligation visible at the enclosing scope exit.
         if result.falls_through || result.diverges {
@@ -4265,6 +4298,14 @@ impl ObligationSnapshot {
     }
 }
 
+/// One reported obligation diagnostic, keyed by the reported binding span bytes, code, and
+/// reporting-region reason.
+///
+/// The reason distinguishes the region that found the obligation still owed, so one binding
+/// reported at a block or loop exit and again at the callable exit keeps both reports, while the
+/// same reason for one binding instance is reported once.
+type MustConsumeReportKey = (usize, usize, &'static str, &'static str);
+
 /// One lexical block's `MustConsume` binding bookkeeping.
 ///
 /// Obligations are keyed by binding root, so a block that rebinds an outer root has to remember the
@@ -4352,6 +4393,9 @@ fn rebind_must_consume(root: &Arc<str>, binding: MustConsumeBinding, context: &B
         .must_consume_obligations
         .borrow_mut()
         .insert(root.clone(), binding);
+    // A new binding instance takes the root, so a report recorded for an earlier instance of that
+    // root no longer describes the value the root holds.
+    context.must_consume_reported.borrow_mut().remove(root);
     context
         .must_consume_discharged
         .borrow_mut()
@@ -4459,6 +4503,7 @@ fn leave_obligation_scope(
             &binding.span,
             current.state(root, context),
             "a MustConsume value is not consumed before its scope ends",
+            context,
             diagnostics,
         )?;
     }
@@ -4522,31 +4567,62 @@ fn leave_loop_obligation_scopes(
 }
 
 /// Reports one obligation that still owes consumption at a region exit.
+///
+/// A scope frame a `break`/`continue` retired can be restored and exited again on the region's
+/// fall-through path, so one binding instance reports each diagnostic code once.
 fn report_open_obligation(
     root: &Arc<str>,
     span: &SourceSpan,
     state: Option<ObligationState>,
     reason: &'static str,
+    context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    match state {
-        Some(ObligationState::Live) => diagnostics.push(body_diagnostic(
-            "must-consume-unconsumed",
-            DiagnosticCategory::Type,
-            reason,
-            span.clone(),
-            [("binding", root.as_ref())],
-        )?),
-        Some(ObligationState::Partial) => diagnostics.push(body_diagnostic(
+    let (code, message) = match state {
+        Some(ObligationState::Live) => ("must-consume-unconsumed", reason),
+        Some(ObligationState::Partial) => (
             "must-consume-path-dependent",
-            DiagnosticCategory::Type,
             "a MustConsume value is consumed on only some paths",
-            span.clone(),
-            [("binding", root.as_ref())],
-        )?),
-        Some(ObligationState::Discharged) | None => {}
+        ),
+        Some(ObligationState::Discharged) | None => return Ok(()),
+    };
+    if !record_must_consume_report(root, span, code, reason, context) {
+        return Ok(());
     }
+    diagnostics.push(body_diagnostic(
+        code,
+        DiagnosticCategory::Type,
+        message,
+        span.clone(),
+        [("binding", root.as_ref())],
+    )?);
     Ok(())
+}
+
+/// Records one obligation report and returns whether it had not been reported yet.
+///
+/// The ledger keys a report by the obligation root, the reported binding span, the diagnostic
+/// code, and the reporting-region reason, so distinct codes, distinct reasons, and distinct
+/// instances of one root all stay reportable.
+fn record_must_consume_report(
+    root: &Arc<str>,
+    span: &SourceSpan,
+    code: &'static str,
+    reason: &'static str,
+    context: &BodyContext,
+) -> bool {
+    let key = (
+        usize::try_from(span.bytes().start()).unwrap_or_default(),
+        usize::try_from(span.bytes().end()).unwrap_or_default(),
+        code,
+        reason,
+    );
+    context
+        .must_consume_reported
+        .borrow_mut()
+        .entry(root.clone())
+        .or_default()
+        .insert(key)
 }
 
 /// Reports every obligation that still owes consumption at a region exit.
@@ -4562,6 +4638,7 @@ fn report_open_obligations(
             &binding.span,
             snapshot.state(root, context),
             reason,
+            context,
             diagnostics,
         )?;
     }
@@ -4722,6 +4799,24 @@ fn report_loop_consumption(
             [("binding", place.root.as_ref())],
         )?);
     }
+    // A binding the loop body introduced cannot outlive the iteration that bound it: its report
+    // belongs to its own scope exit or to the transfer that retired that scope. A conditional
+    // `break`/`continue` restores a pre-transfer snapshot, which reinstates the retired binding, so
+    // the root has to be dropped here rather than trusted to be absent. Otherwise the restore below
+    // keeps that root live in the obligation map and the callable exit reports it again.
+    //   A root a still-live scope frame owns stays: that keeps a bookkeeping regression from
+    // silently dropping an obligation, at the cost of a redundant report rather than an unsound
+    // acceptance.
+    let live = context
+        .must_consume_scopes
+        .borrow()
+        .iter()
+        .flat_map(|scope| scope.introduced.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    context
+        .must_consume_obligations
+        .borrow_mut()
+        .retain(|root, _| entry.obligations.contains_key(root) || live.contains(root));
     // A loop body may run zero times, so nothing inside it settles an outer obligation.
     let mut restored = entry.clone();
     restored.obligations = context.must_consume_obligations.borrow().clone();
@@ -9909,6 +10004,7 @@ fn infer_match(
             .span()
             .clone();
         saved.restore(context);
+        let arm_scopes = context.must_consume_scopes.borrow().clone();
         let scope_floor = context.must_consume_scopes.borrow().len();
         enter_obligation_bindings(context, &bindings, &pattern_span);
         let checked = with_shared_receiver_payload_roots(context, payload_roots, || {
@@ -9940,6 +10036,7 @@ fn infer_match(
         });
         let actual = checked?;
         leave_obligation_scope_above(scope_floor, context, diagnostics)?;
+        *context.must_consume_scopes.borrow_mut() = arm_scopes;
         branch_states.push(ObligationSnapshot::capture(context));
         if let Some(actual) = actual {
             if let Some(previous) = &result_type {
