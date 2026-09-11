@@ -3511,21 +3511,22 @@ requires that place to have a mutable root. A **reborrow** is a loan whose
 place lies inside a place that is already loaned. A nested exclusive reborrow
 MUST select a strict struct-field subplace of the enclosing admitted place and
 MUST NOT select that admitted place itself, while a shared reborrow MAY observe
-an exclusive receiver place, as item 2a permits. The receiver binding of an
-`owned self`, `mut self`, or `self` callee is not an admitted caller place: a
-nested exclusive call whose receiver is that binding MUST be rejected, while a
-strict struct-field subplace of that binding is admitted only when the binding
-is mutable. Two loans live at the same program point MUST NOT overlap: a loan
-whose place equals or contains an already-loaned place MUST be rejected at
-analysis time, and a loan whose place neither equals nor contains an
-already-loaned place remains permitted. A loan is acquired only by a call whose
-receiver place is admitted: a failed admission changes nothing and acquires no
-loan. Every admitted loan is released when its call returns or fails; the loan
-rules that unwind, cancellation, suspension, and task or channel affinity add
-remain excluded, as do live-resource loans, general argument loans, partial
-moves and pattern commit, staging and transfer linearization outside the
-receiver positions above, and unwind disposition. The exclusions of items 2b
-and 2d continue to apply.
+an exclusive receiver place, as item 2a permits.
+The receiver binding of an `owned self`, `mut self`, or `self` callee is not an
+admitted caller place: a nested exclusive call whose receiver is that binding
+MUST be rejected, while a strict struct-field subplace of that binding is
+admitted only when the binding is mutable.
+Two loans live at the same program point MUST NOT overlap: a loan whose place
+equals or contains an already-loaned place MUST be rejected at analysis time,
+and a loan whose place neither equals nor contains an already-loaned place
+remains permitted. A loan is acquired only by a call whose receiver place is
+admitted: a failed admission changes nothing and acquires no loan. Every
+admitted loan is released when its call returns or fails; the loan rules that
+unwind, cancellation, suspension, and task or channel affinity add remain
+excluded, as do live-resource loans, general argument loans, partial moves and
+pattern commit, staging and transfer linearization outside the receiver
+positions above, and unwind disposition. The exclusions of items 2b and 2d
+continue to apply.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field

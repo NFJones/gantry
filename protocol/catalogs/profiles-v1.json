@@ -3,7 +3,7 @@
   "claims_enabled": true,
   "major": 1,
   "minor": 0,
-  "specification_revision": "0755322a5c38bc1d6722adad121183a30afcfa6814c1a8d7248f936ae7ccf6f5",
+  "specification_revision": "5b70cb5538f2563c00635618316427de179080caee16c1e6fc05a7604c255725",
   "profiles": [
     {
       "name": "analyzer",
