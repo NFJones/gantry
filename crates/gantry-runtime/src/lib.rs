@@ -100,9 +100,9 @@ pub use lifecycle::{
     ShutdownJournalOwnerReleaseStatus, ShutdownProgress, ShutdownReport, ShutdownWait,
 };
 pub use machine::{
-    ExecutionBudget, ExecutionBudgetSnapshot, ExecutionFailureProjection, Machine,
-    MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome, MachineStatus,
-    MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
+    ConsumptionObligation, ExecutionBudget, ExecutionBudgetSnapshot, ExecutionFailureProjection,
+    Machine, MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,
+    MachineStatus, MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
     SessionScopeCompletionError, SessionScopeOccurrence, root_task_identity,
 };
 #[cfg(feature = "durable")]

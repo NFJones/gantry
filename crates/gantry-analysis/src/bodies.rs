@@ -297,6 +297,9 @@ struct BodyContext {
     affine_loop_entry_roots: RefCell<Vec<BTreeSet<Arc<str>>>>,
     must_consume_obligations: RefCell<BTreeMap<Arc<str>, SourceSpan>>,
     must_consume_discharged: RefCell<BTreeSet<Arc<str>>>,
+    must_consume_partial: RefCell<BTreeSet<Arc<str>>>,
+    must_consume_scopes: RefCell<Vec<MustConsumeScope>>,
+    must_consume_loop_depths: RefCell<Vec<usize>>,
     must_consume_receiver: Cell<bool>,
     must_consume_consuming: Cell<bool>,
     must_consume_discarding: Cell<bool>,
@@ -930,6 +933,9 @@ fn build_body_context(
         affine_loop_entry_roots: RefCell::new(Vec::new()),
         must_consume_obligations: RefCell::new(BTreeMap::new()),
         must_consume_discharged: RefCell::new(BTreeSet::new()),
+        must_consume_partial: RefCell::new(BTreeSet::new()),
+        must_consume_scopes: RefCell::new(Vec::new()),
+        must_consume_loop_depths: RefCell::new(Vec::new()),
         must_consume_receiver: Cell::new(false),
         must_consume_consuming: Cell::new(false),
         must_consume_discarding: Cell::new(false),
@@ -2348,6 +2354,9 @@ fn check_callable(
     context.affine_loop_entry_roots.borrow_mut().clear();
     context.must_consume_obligations.borrow_mut().clear();
     context.must_consume_discharged.borrow_mut().clear();
+    context.must_consume_partial.borrow_mut().clear();
+    context.must_consume_scopes.borrow_mut().clear();
+    context.must_consume_loop_depths.borrow_mut().clear();
     context.must_consume_receiver.set(false);
     context.must_consume_consuming.set(false);
     context.must_consume_discarding.set(false);
@@ -2448,13 +2457,9 @@ fn check_callable(
             [("expected", result.canonical_string())],
         )?);
     }
-    let obligations = context.must_consume_obligations.borrow().clone();
-    let discharged = context.must_consume_discharged.borrow().clone();
-    report_unconsumed_obligations(
-        &obligations,
-        &discharged,
+    report_open_obligations(
+        &ObligationSnapshot::capture(context),
         "a MustConsume value is not consumed before the callable returns",
-        context,
         diagnostics,
     )?;
     Ok(())
@@ -2470,6 +2475,7 @@ fn check_block(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<BlockResult, AnalysisError> {
     let node = tree.node(block).ok_or(AnalysisError::Invariant)?;
+    enter_obligation_scope(context);
     let mut environment = inherited.clone();
     let mut reachable = true;
     let mut trailing = None;
@@ -2580,6 +2586,13 @@ fn check_block(
                     child_node.span().clone(),
                     diagnostics,
                 )?;
+                // A return exits the callable, so a value this path still owes is unconsumed on an
+                // exit unless the returned place transferred it to the caller.
+                report_open_obligations(
+                    &ObligationSnapshot::capture(context),
+                    "a MustConsume value is not consumed before the callable returns",
+                    diagnostics,
+                )?;
                 reachable = false;
             }
             SyntaxForm::BreakStatement | SyntaxForm::ContinueStatement => {
@@ -2592,6 +2605,9 @@ fn check_block(
                         [] as [(&str, &str); 0],
                     )?);
                 }
+                // A break or continue leaves every block opened inside the loop, so an obligation
+                // those blocks introduced is unconsumed on this exit.
+                leave_loop_obligation_scopes(context, diagnostics)?;
                 breaks_loop |= matches!(child_node.form(), SyntaxForm::BreakStatement);
                 continues_loop |= matches!(child_node.form(), SyntaxForm::ContinueStatement);
                 reachable = false;
@@ -2630,9 +2646,17 @@ fn check_block(
                 });
                 let mut pattern_environment = environment.clone();
                 let mut pattern_payload_roots = BTreeSet::new();
+                let mut pattern_bindings = BTreeMap::new();
+                let mut pattern_span = None;
                 if has_pattern {
                     let pattern = direct_child_form(tree, child_node, SyntaxForm::Pattern)
                         .ok_or(AnalysisError::Invariant)?;
+                    pattern_span = Some(
+                        tree.node(pattern)
+                            .ok_or(AnalysisError::Invariant)?
+                            .span()
+                            .clone(),
+                    );
                     let scrutinee = direct_child_form(tree, child_node, SyntaxForm::Expression)
                         .ok_or(AnalysisError::Invariant)?;
                     if let Some(scrutinee_type) = infer_expression(
@@ -2660,7 +2684,8 @@ fn check_block(
                             diagnostics,
                         )?;
                         pattern_payload_roots = bindings.keys().cloned().collect();
-                        pattern_environment.extend(bindings);
+                        pattern_environment.extend(bindings.clone());
+                        pattern_bindings = bindings;
                     }
                 }
                 let conditions = child_node
@@ -2697,10 +2722,8 @@ fn check_block(
                         }
                     }
                 }
-                let saved_obligations = context.must_consume_obligations.borrow().clone();
-                let saved_discharged = context.must_consume_discharged.borrow().clone();
-                let mut branch_obligations = Vec::new();
-                let mut branch_discharged = Vec::new();
+                let saved = ObligationSnapshot::capture(context);
+                let mut branch_states = Vec::new();
                 let mut branch_results = Vec::new();
                 let mut blocks = 0_usize;
                 for nested in child_node.children().iter().copied().filter(|nested| {
@@ -2713,16 +2736,11 @@ fn check_block(
                         &environment
                     };
                     blocks = blocks.saturating_add(1);
-                    context
-                        .must_consume_obligations
-                        .borrow_mut()
-                        .clone_from(&saved_obligations);
-                    context
-                        .must_consume_discharged
-                        .borrow_mut()
-                        .clone_from(&saved_discharged);
+                    saved.restore(context);
                     let result = if has_pattern && blocks == 1 {
-                        with_shared_receiver_payload_roots(
+                        let pattern_span = pattern_span.clone().ok_or(AnalysisError::Invariant)?;
+                        enter_obligation_bindings(context, &pattern_bindings, &pattern_span);
+                        let checked = with_shared_receiver_payload_roots(
                             context,
                             pattern_payload_roots.clone(),
                             || {
@@ -2736,7 +2754,10 @@ fn check_block(
                                     diagnostics,
                                 )
                             },
-                        )?
+                        );
+                        let checked = checked?;
+                        leave_obligation_scope(context, diagnostics)?;
+                        checked
                     } else {
                         check_block(
                             tree,
@@ -2749,11 +2770,11 @@ fn check_block(
                         )?
                     };
                     branch_results.push(result);
-                    branch_obligations.push(context.must_consume_obligations.borrow().clone());
-                    branch_discharged.push(context.must_consume_discharged.borrow().clone());
+                    branch_states.push(ObligationSnapshot::capture(context));
                 }
                 // A consuming admission on only some paths leaves the obligation live: a discharge
-                // survives the merge only when every analysed path discharges it.
+                // survives the fold only when every analysed path discharges it, and the report is
+                // deferred to the region exit that a path still leaves without the discharge.
                 let has_else_clause = child_node.children().iter().any(|nested| {
                     tree.node(*nested).is_some_and(|node| {
                         matches!(
@@ -2763,60 +2784,7 @@ fn check_block(
                         )
                     })
                 });
-                if !has_else_clause {
-                    // The implicit fall-through path leaves every obligation exactly as it was.
-                    branch_discharged.push(saved_discharged.clone());
-                }
-                let mut merged = saved_discharged.clone();
-                let mut first = true;
-                for branch in &branch_discharged {
-                    if first {
-                        merged.clone_from(branch);
-                        first = false;
-                    } else {
-                        merged.retain(|root| branch.contains(root));
-                    }
-                }
-                for (obligations, discharged) in branch_obligations.iter().zip(&branch_discharged) {
-                    let introduced = obligations
-                        .iter()
-                        .filter(|(root, _)| !saved_obligations.contains_key(*root))
-                        .map(|(root, span)| (root.clone(), span.clone()))
-                        .collect::<BTreeMap<_, _>>();
-                    report_unconsumed_obligations(
-                        &introduced,
-                        discharged,
-                        "a MustConsume value is not consumed before the branch completes",
-                        context,
-                        diagnostics,
-                    )?;
-                }
-                let path_dependent = branch_discharged
-                    .iter()
-                    .flat_map(|branch| branch.iter())
-                    .filter(|root| !merged.contains(*root))
-                    .cloned()
-                    .collect::<BTreeSet<_>>();
-                for root in path_dependent {
-                    let Some(span) = saved_obligations.get(&root) else {
-                        continue;
-                    };
-                    diagnostics.push(body_diagnostic(
-                        "must-consume-path-dependent",
-                        DiagnosticCategory::Type,
-                        "a MustConsume value is consumed on only some paths",
-                        span.clone(),
-                        [("binding", root.as_ref())],
-                    )?);
-                }
-                context
-                    .must_consume_obligations
-                    .borrow_mut()
-                    .clone_from(&saved_obligations);
-                context
-                    .must_consume_discharged
-                    .borrow_mut()
-                    .clone_from(&merged);
+                merge_obligation_states(&saved, &branch_states, !has_else_clause, context);
                 if has_pattern {
                     let has_else = child_node.children().iter().any(|nested| {
                         tree.node(*nested).is_some_and(|node| {
@@ -2896,9 +2864,13 @@ fn check_block(
                         )?);
                     }
                 }
-                let loop_obligations = context.must_consume_obligations.borrow().clone();
-                let loop_discharged = context.must_consume_discharged.borrow().clone();
-                let _ = with_affine_loop_scope(context, &environment, || {
+                let loop_entry = ObligationSnapshot::capture(context);
+                let loop_depth = context.must_consume_scopes.borrow().len();
+                context
+                    .must_consume_loop_depths
+                    .borrow_mut()
+                    .push(loop_depth);
+                let checked = with_affine_loop_scope(context, &environment, || {
                     check_block(
                         tree,
                         body,
@@ -2908,17 +2880,23 @@ fn check_block(
                         context,
                         diagnostics,
                     )
-                })?;
-                report_loop_consumption(&loop_obligations, &loop_discharged, context, diagnostics)?;
+                });
+                context.must_consume_loop_depths.borrow_mut().pop();
+                let _ = checked?;
+                report_loop_consumption(&loop_entry, context, diagnostics)?;
             }
             SyntaxForm::LoopStatement | SyntaxForm::WhileStatement | SyntaxForm::UntilStatement => {
                 check_loop_limit(tree, child_node, diagnostics)?;
                 let condition = direct_child_form(tree, child_node, SyntaxForm::Expression);
                 let body = direct_child_form(tree, child_node, SyntaxForm::Block)
                     .ok_or(AnalysisError::Invariant)?;
-                let loop_obligations = context.must_consume_obligations.borrow().clone();
-                let loop_discharged = context.must_consume_discharged.borrow().clone();
-                let body_result = with_affine_loop_scope(context, &environment, || {
+                let loop_entry = ObligationSnapshot::capture(context);
+                let loop_depth = context.must_consume_scopes.borrow().len();
+                context
+                    .must_consume_loop_depths
+                    .borrow_mut()
+                    .push(loop_depth);
+                let checked = with_affine_loop_scope(context, &environment, || {
                     for condition in condition.iter().copied() {
                         if let Some(actual) = infer_expression(
                             tree,
@@ -2951,8 +2929,10 @@ fn check_block(
                         context,
                         diagnostics,
                     )
-                })?;
-                report_loop_consumption(&loop_obligations, &loop_discharged, context, diagnostics)?;
+                });
+                context.must_consume_loop_depths.borrow_mut().pop();
+                let body_result = checked?;
+                report_loop_consumption(&loop_entry, context, diagnostics)?;
                 let fact = condition
                     .map(|condition| bool_fact(tree, condition))
                     .transpose()?
@@ -3026,6 +3006,7 @@ fn check_block(
             _ => {}
         }
     }
+    leave_obligation_scope(context, diagnostics)?;
     Ok(BlockResult {
         falls_through: reachable,
         trailing,
@@ -3140,8 +3121,10 @@ fn check_match_statement(
         )?);
     }
     let universe = coverage_universe(&scrutinee_type, context)?;
+    let saved = ObligationSnapshot::capture(context);
     let mut covered = BTreeSet::new();
     let mut any_fallthrough = false;
+    let mut branch_states = Vec::new();
     for arm in statement.children().iter().copied().filter(|child| {
         tree.node(*child)
             .is_some_and(|node| matches!(node.form(), SyntaxForm::MatchArm))
@@ -3172,10 +3155,17 @@ fn check_match_statement(
         covered.extend(keys);
         let mut arm_environment = environment.clone();
         let payload_roots = pattern_payload_binding_names(tree, pattern, &bindings)?;
-        arm_environment.extend(bindings);
+        arm_environment.extend(bindings.clone());
         let body =
             direct_child_form(tree, arm_node, SyntaxForm::Block).ok_or(AnalysisError::Invariant)?;
-        let result = with_shared_receiver_payload_roots(context, payload_roots, || {
+        let pattern_span = tree
+            .node(pattern)
+            .ok_or(AnalysisError::Invariant)?
+            .span()
+            .clone();
+        saved.restore(context);
+        enter_obligation_bindings(context, &bindings, &pattern_span);
+        let checked = with_shared_receiver_payload_roots(context, payload_roots, || {
             check_block(
                 tree,
                 body,
@@ -3185,10 +3175,14 @@ fn check_match_statement(
                 context,
                 diagnostics,
             )
-        })?;
+        });
+        let result = checked?;
+        leave_obligation_scope(context, diagnostics)?;
+        branch_states.push(ObligationSnapshot::capture(context));
         any_fallthrough |= result.falls_through;
     }
     let exhaustive = !universe.is_empty() && universe.is_subset(&covered);
+    merge_obligation_states(&saved, &branch_states, !exhaustive, context);
     if !universe.is_empty() && !exhaustive {
         diagnostics.push(body_diagnostic(
             "nonexhaustive-match",
@@ -3231,9 +3225,17 @@ fn check_let(
     if let Some(pattern) = direct_child_form(tree, node, SyntaxForm::Pattern) {
         if validate_pattern_shape(tree, pattern, &expected, false, context, diagnostics)? {
             let bindings = pattern_type_bindings(tree, pattern, &expected)?;
+            // A pattern that binds a name to a `MustConsume` value owes that payload's
+            // consumption like any other binding introduction.
+            for (name, ty) in &bindings {
+                register_must_consume_binding(name.clone(), ty, node.span().clone(), context);
+            }
             environment.extend(bindings);
         }
     } else if let Some(name) = direct_identifier(tree, statement)? {
+        // A declaration of a `MustConsume` value owes its consumption before the binding's scope
+        // ends, whether the value came from a struct literal, a call result, or a projection.
+        register_must_consume_binding(name.clone(), &expected, node.span().clone(), context);
         environment.insert(name, expected);
     }
     Ok(())
@@ -3315,6 +3317,18 @@ fn check_assignment(
             )?;
             require_type(&expected, &result, node.span().clone(), diagnostics)?;
         }
+    }
+    // Reassignment binds a fresh value: the earlier discharge no longer accounts for the place,
+    // and the new value owes its own consumption. The runtime clears the staged obligation for the
+    // assigned place the same way.
+    if operator == Punctuation::Equal
+        && !receiver
+        && identifiers.len() == 1
+        && assignment_target_type(&root, receiver, &identifiers, environment, context)
+            .as_ref()
+            .is_some_and(|target| is_must_consume_type(target, context))
+    {
+        rebind_must_consume(&root, node.span().clone(), context);
     }
     Ok(())
 }
@@ -3646,44 +3660,309 @@ enum AffineAccess {
     Consume,
 }
 
-/// Records one binding that owes consumption before the enclosing callable returns.
+/// Proved consumption state of one `MustConsume` obligation root.
+///
+/// The analyzer folds the state of every reaching path into one of three states, so a guard clause
+/// may discharge a value on an early exit and a joining statement may still consume it without a
+/// false path-dependence report.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ObligationState {
+    /// No reaching path consumed the place.
+    Live,
+    /// Some reaching paths consumed the place and some did not.
+    Partial,
+    /// Every reaching path consumed the place.
+    Discharged,
+}
+
+/// The consumption state of every obligation root at one region boundary.
+#[derive(Clone, Debug, Default)]
+struct ObligationSnapshot {
+    /// Declared binding span of every obligation root in scope at the boundary.
+    obligations: BTreeMap<Arc<str>, SourceSpan>,
+    /// Roots consumed on some but not all reaching paths.
+    partial: BTreeSet<Arc<str>>,
+    /// Roots consumed on every reaching path.
+    discharged: BTreeSet<Arc<str>>,
+}
+
+impl ObligationSnapshot {
+    /// Captures the current consumption state of every obligation root.
+    fn capture(context: &BodyContext) -> Self {
+        Self {
+            obligations: context.must_consume_obligations.borrow().clone(),
+            partial: context.must_consume_partial.borrow().clone(),
+            discharged: context.must_consume_discharged.borrow().clone(),
+        }
+    }
+
+    /// Makes this captured state the current consumption state.
+    fn restore(&self, context: &BodyContext) {
+        context
+            .must_consume_obligations
+            .borrow_mut()
+            .clone_from(&self.obligations);
+        context
+            .must_consume_partial
+            .borrow_mut()
+            .clone_from(&self.partial);
+        context
+            .must_consume_discharged
+            .borrow_mut()
+            .clone_from(&self.discharged);
+    }
+
+    /// Returns the proved state of one root, or `None` when the root owes nothing.
+    fn state(&self, root: &Arc<str>) -> Option<ObligationState> {
+        self.obligations.get(root)?;
+        Some(if self.discharged.contains(root) {
+            ObligationState::Discharged
+        } else if self.partial.contains(root) {
+            ObligationState::Partial
+        } else {
+            ObligationState::Live
+        })
+    }
+}
+
+/// One lexical block's `MustConsume` binding bookkeeping.
+///
+/// Obligations are keyed by binding root, so a block that rebinds an outer root has to remember the
+/// outer state and restore it when the block ends.
+#[derive(Clone, Debug, Default)]
+struct MustConsumeScope {
+    /// Roots whose binding was introduced inside this block.
+    introduced: BTreeSet<Arc<str>>,
+    /// The state each root had before this block first rebound its name.
+    shadowed: BTreeMap<Arc<str>, Option<(SourceSpan, ObligationState)>>,
+}
+
+/// Records that one root owes a fresh consumption of a `MustConsume` value.
+///
+/// Every binding introduction of a `MustConsume` value owes consumption: parameters, `let`
+/// declarations including pattern bindings, and pattern payloads. Rebinding a root drops any stale
+/// discharge and starts a fresh obligation, so a reassigned or shadowed value is never silently
+/// accounted for by an earlier consumption.
 fn register_must_consume_binding(
     name: Arc<str>,
     ty: &TypeDescriptor,
     span: SourceSpan,
     context: &BodyContext,
 ) {
-    if is_must_consume_type(ty, context) {
-        context
-            .must_consume_obligations
-            .borrow_mut()
-            .entry(name)
-            .or_insert(span);
+    if !is_must_consume_type(ty, context) {
+        return;
+    }
+    record_shadowed_binding(name.clone(), context);
+    rebind_must_consume(&name, span, context);
+}
+
+/// Remembers the obligation state one root had before the current block rebound its name.
+fn record_shadowed_binding(name: Arc<str>, context: &BodyContext) {
+    let span = context
+        .must_consume_obligations
+        .borrow()
+        .get(&name)
+        .cloned();
+    let previous = span.zip(obligation_state(&name, context));
+    let mut scopes = context.must_consume_scopes.borrow_mut();
+    let Some(scope) = scopes.last_mut() else {
+        return;
+    };
+    if !scope.introduced.insert(name.clone()) {
+        return;
+    }
+    scope.shadowed.insert(name, previous);
+}
+
+/// Returns the proved consumption state of one obligation root.
+fn obligation_state(root: &Arc<str>, context: &BodyContext) -> Option<ObligationState> {
+    if !context.must_consume_obligations.borrow().contains_key(root) {
+        return None;
+    }
+    if context.must_consume_discharged.borrow().contains(root) {
+        Some(ObligationState::Discharged)
+    } else if context.must_consume_partial.borrow().contains(root) {
+        Some(ObligationState::Partial)
+    } else {
+        Some(ObligationState::Live)
     }
 }
 
-/// Reports every obligation still live after the current region completes.
-fn report_unconsumed_obligations(
-    obligations: &BTreeMap<Arc<str>, SourceSpan>,
-    discharged: &BTreeSet<Arc<str>>,
-    expected_reason: &'static str,
+/// Marks one root as consumed on this reaching path.
+fn discharge_must_consume(root: &Arc<str>, context: &BodyContext) {
+    context
+        .must_consume_discharged
+        .borrow_mut()
+        .insert(root.clone());
+    context.must_consume_partial.borrow_mut().remove(root);
+}
+
+/// Binds a fresh obligation for one root, dropping every stale discharge.
+fn rebind_must_consume(root: &Arc<str>, span: SourceSpan, context: &BodyContext) {
+    context
+        .must_consume_obligations
+        .borrow_mut()
+        .insert(root.clone(), span);
+    context.must_consume_discharged.borrow_mut().remove(root);
+    context.must_consume_partial.borrow_mut().remove(root);
+}
+
+/// Enters one lexical block for `MustConsume` binding bookkeeping.
+fn enter_obligation_scope(context: &BodyContext) {
+    context
+        .must_consume_scopes
+        .borrow_mut()
+        .push(MustConsumeScope::default());
+}
+
+/// Binds pattern payload obligations inside one lexical scope, so the scope exit retires them.
+fn enter_obligation_bindings(
+    context: &BodyContext,
+    bindings: &BTreeMap<Arc<str>, TypeDescriptor>,
+    span: &SourceSpan,
+) {
+    enter_obligation_scope(context);
+    for (name, ty) in bindings {
+        register_must_consume_binding(name.clone(), ty, span.clone(), context);
+    }
+}
+
+/// Reports and retires the obligations one block introduced, restoring any shadowed outer state.
+fn leave_obligation_scope(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    for (root, span) in obligations {
-        if discharged.contains(root) {
+    let Some(scope) = context.must_consume_scopes.borrow_mut().pop() else {
+        return Ok(());
+    };
+    let current = ObligationSnapshot::capture(context);
+    for root in &scope.introduced {
+        let Some(span) = current.obligations.get(root) else {
             continue;
+        };
+        report_open_obligation(
+            root,
+            span,
+            current.state(root),
+            "a MustConsume value is not consumed before its scope ends",
+            diagnostics,
+        )?;
+    }
+    for (root, previous) in &scope.shadowed {
+        context.must_consume_obligations.borrow_mut().remove(root);
+        context.must_consume_partial.borrow_mut().remove(root);
+        context.must_consume_discharged.borrow_mut().remove(root);
+        let Some((span, state)) = previous else {
+            continue;
+        };
+        context
+            .must_consume_obligations
+            .borrow_mut()
+            .insert(root.clone(), span.clone());
+        match state {
+            ObligationState::Discharged => {
+                context
+                    .must_consume_discharged
+                    .borrow_mut()
+                    .insert(root.clone());
+            }
+            ObligationState::Partial => {
+                context
+                    .must_consume_partial
+                    .borrow_mut()
+                    .insert(root.clone());
+            }
+            ObligationState::Live => {}
         }
-        diagnostics.push(body_diagnostic(
+    }
+    Ok(())
+}
+
+/// Leaves every block scope opened inside the innermost loop, as `break` and `continue` do.
+fn leave_loop_obligation_scopes(
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let Some(depth) = context.must_consume_loop_depths.borrow().last().copied() else {
+        return Ok(());
+    };
+    while context.must_consume_scopes.borrow().len() > depth {
+        leave_obligation_scope(context, diagnostics)?;
+    }
+    Ok(())
+}
+
+/// Reports one obligation that still owes consumption at a region exit.
+fn report_open_obligation(
+    root: &Arc<str>,
+    span: &SourceSpan,
+    state: Option<ObligationState>,
+    reason: &'static str,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    match state {
+        Some(ObligationState::Live) => diagnostics.push(body_diagnostic(
             "must-consume-unconsumed",
             DiagnosticCategory::Type,
-            expected_reason,
+            reason,
             span.clone(),
             [("binding", root.as_ref())],
-        )?);
+        )?),
+        Some(ObligationState::Partial) => diagnostics.push(body_diagnostic(
+            "must-consume-path-dependent",
+            DiagnosticCategory::Type,
+            "a MustConsume value is consumed on only some paths",
+            span.clone(),
+            [("binding", root.as_ref())],
+        )?),
+        Some(ObligationState::Discharged) | None => {}
     }
-    let _ = context;
     Ok(())
+}
+
+/// Reports every obligation that still owes consumption at a region exit.
+fn report_open_obligations(
+    snapshot: &ObligationSnapshot,
+    reason: &'static str,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    for (root, span) in &snapshot.obligations {
+        report_open_obligation(root, span, snapshot.state(root), reason, diagnostics)?;
+    }
+    Ok(())
+}
+
+/// Folds the consumption states of every analysed path into one state and installs it.
+///
+/// A root stays discharged only when every reaching path discharged it, becomes partial when some
+/// paths discharged it and some did not, and stays live when none did. A root that one path never
+/// bound counts as live, which keeps the fold conservative and defers the report to a region exit
+/// where a path still lacks the discharge.
+fn merge_obligation_states(
+    saved: &ObligationSnapshot,
+    branches: &[ObligationSnapshot],
+    include_fallthrough: bool,
+    context: &BodyContext,
+) {
+    let mut merged = saved.clone();
+    merged.partial.clear();
+    merged.discharged.clear();
+    for root in saved.obligations.keys() {
+        let mut live = false;
+        let mut discharged = false;
+        for branch in branches.iter().chain(include_fallthrough.then_some(saved)) {
+            match branch.state(root) {
+                Some(ObligationState::Discharged) => discharged = true,
+                _ => live = true,
+            }
+        }
+        if discharged && !live {
+            merged.discharged.insert(root.clone());
+        } else if discharged {
+            merged.partial.insert(root.clone());
+        }
+    }
+    merged.restore(context);
 }
 
 /// Runs one loop body with the outer binding roots visible for repeated-execution checks.
@@ -3707,14 +3986,13 @@ fn with_affine_loop_scope<T>(
 /// A loop body may execute zero or many times, so a discharge recorded inside it is never a
 /// callable-wide discharge: the obligation stays live and the consumption is path-dependent.
 fn report_loop_consumption(
-    obligations: &BTreeMap<Arc<str>, SourceSpan>,
-    discharged: &BTreeSet<Arc<str>>,
+    entry: &ObligationSnapshot,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let after = context.must_consume_discharged.borrow().clone();
-    for root in after.difference(discharged) {
-        let Some(span) = obligations.get(root) else {
+    for root in after.difference(&entry.discharged) {
+        let Some(span) = entry.obligations.get(root) else {
             continue;
         };
         diagnostics.push(body_diagnostic(
@@ -3725,10 +4003,10 @@ fn report_loop_consumption(
             [("binding", root.as_ref())],
         )?);
     }
-    context
-        .must_consume_discharged
-        .borrow_mut()
-        .clone_from(discharged);
+    // A loop body may run zero times, so nothing inside it settles an outer obligation.
+    let mut restored = entry.clone();
+    restored.obligations = context.must_consume_obligations.borrow().clone();
+    restored.restore(context);
     Ok(())
 }
 
@@ -3813,10 +4091,7 @@ fn record_affine_place(
         )?);
     }
     if must_consume && access == AffineAccess::Consume {
-        context
-            .must_consume_discharged
-            .borrow_mut()
-            .insert(place.root.clone());
+        discharge_must_consume(&place.root, context);
     }
     context.affine_consumed.borrow_mut().insert(place);
     Ok(())
@@ -8748,8 +9023,10 @@ fn infer_match(
         )?);
     }
     let universe = coverage_universe(&scrutinee_type, context)?;
+    let saved = ObligationSnapshot::capture(context);
     let mut covered = BTreeSet::new();
     let mut result_type = None;
+    let mut branch_states = Vec::new();
     for arm in node.children().iter().copied().filter(|child| {
         tree.node(*child)
             .is_some_and(|node| matches!(node.form(), SyntaxForm::MatchArm))
@@ -8780,7 +9057,7 @@ fn infer_match(
         covered.extend(keys);
         let mut arm_environment = environment.clone();
         let payload_roots = pattern_payload_binding_names(tree, pattern, &bindings)?;
-        arm_environment.extend(bindings);
+        arm_environment.extend(bindings.clone());
         let body = arm_node
             .children()
             .iter()
@@ -8791,7 +9068,14 @@ fn infer_match(
                 })
             })
             .ok_or(AnalysisError::Invariant)?;
-        let actual = with_shared_receiver_payload_roots(context, payload_roots, || {
+        let pattern_span = tree
+            .node(pattern)
+            .ok_or(AnalysisError::Invariant)?
+            .span()
+            .clone();
+        saved.restore(context);
+        enter_obligation_bindings(context, &bindings, &pattern_span);
+        let checked = with_shared_receiver_payload_roots(context, payload_roots, || {
             if tree
                 .node(body)
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
@@ -8817,7 +9101,10 @@ fn infer_match(
                     diagnostics,
                 )
             }
-        })?;
+        });
+        let actual = checked?;
+        leave_obligation_scope(context, diagnostics)?;
+        branch_states.push(ObligationSnapshot::capture(context));
         if let Some(actual) = actual {
             if let Some(previous) = &result_type {
                 require_type(previous, &actual, arm_node.span().clone(), diagnostics)?;
@@ -8826,7 +9113,9 @@ fn infer_match(
             }
         }
     }
-    if !universe.is_empty() && !universe.is_subset(&covered) {
+    let exhaustive = !universe.is_empty() && universe.is_subset(&covered);
+    merge_obligation_states(&saved, &branch_states, !exhaustive, context);
+    if !exhaustive {
         diagnostics.push(body_diagnostic(
             "nonexhaustive-match",
             DiagnosticCategory::ControlFlow,

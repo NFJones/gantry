@@ -2750,3 +2750,243 @@ fn must_consume_owned_receiver_requires_addressable_caller_place() {
         rejected.diagnostics()
     );
 }
+
+/// Every binding introduction of a `MustConsume` value owes consumption: a declared local, a
+/// struct literal, and a call result are all rejected until the value is consumed once (D1).
+#[test]
+fn must_consume_declared_locals_acquire_obligations() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         fn make() -> Token { Token { value: 1 } }\n";
+
+    for source in [
+        "fn main() { let token: Token = Token { value: 7 }; token.consume(); }",
+        "fn main() { let token: Token = make(); token.consume(); }",
+    ] {
+        let accepted = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+    }
+
+    for source in [
+        "fn main() { let token: Token = Token { value: 7 }; }",
+        "fn main() { let token: Token = make(); }",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+}
+
+/// A `return`, `break`, or `continue` that leaves an obligation live exits the region that owes
+/// the consumption, so each early exit is rejected (D2).
+#[test]
+fn must_consume_early_exits_are_rejected() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    for source in [
+        "fn run(token: Token, flag: Bool) { if flag { return; } token.consume(); } fn main() {}",
+        "fn run(flag: Bool) { loop(limit = 1) { let token: Token = Token { value: 1 }; if flag { break; } token.consume(); } } fn main() {}",
+        "fn run(flag: Bool) { loop(limit = 1) { let token: Token = Token { value: 1 }; if flag { continue; } token.consume(); } } fn main() {}",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+}
+
+/// Every match arm is an analysed path, so one arm that leaves the obligation live is
+/// path-dependent while both arms consuming is accepted (D3).
+#[test]
+fn must_consume_match_arms_merge_obligations() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         enum Flag { On, Off }\n\
+         fn main() {}\n";
+
+    for source in [
+        "fn run(token: Token, flag: Flag) -> Int { match flag { Flag::On => token.consume(), Flag::Off => 0 } }",
+        "fn run(token: Token, flag: Flag) { match flag { Flag::On => { discard token.consume(); }, Flag::Off => { discard 0; } } }",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| { diagnostic.code.as_str() == "must-consume-path-dependent" }),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+
+    let accepted = analyze(&format!(
+        "{DECLARATIONS}fn run(token: Token, flag: Flag) -> Int {{ match flag {{ Flag::On => token.consume(), Flag::Off => token.consume() }} }}"
+    ));
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+}
+
+/// Reassignment binds a fresh `MustConsume` value: the stale discharge is dropped and the new
+/// value owes its own consumption (D4).
+#[test]
+fn must_consume_reassignment_rebinds_the_obligation() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    for source in [
+        "fn main(mut token: Token) { token = Token { value: 1 }; token.consume(); }",
+        "fn main(mut token: Token) { token.consume(); token = Token { value: 1 }; token.consume(); }",
+    ] {
+        let accepted = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+    }
+
+    let rejected = analyze(&format!(
+        "{DECLARATIONS}fn main(mut token: Token) {{ token.consume(); token = Token {{ value: 1 }}; }}"
+    ));
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
+/// A pattern payload that binds a `MustConsume` value owes consumption like any other binding
+/// introduction, in `match` arms and in `if let` chains (D5).
+#[test]
+fn must_consume_pattern_payloads_acquire_obligations() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         fn make() -> Option<Token> { None }\n\
+         fn make_result() -> Result<Token, Int> { Err(1) }\n";
+
+    for source in [
+        "fn main() -> Int { match make() { Some(token) => 1, None => 2 } }",
+        "fn main() { if let Some(token) = make() { discard 1; } }",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+
+    for source in [
+        "fn main() -> Token { if let Some(token) = make() { return token; } Token { value: 1 } }",
+        "fn main() -> Token { if let Ok(token) = make_result() { return token; } Token { value: 1 } }",
+    ] {
+        let accepted = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+    }
+}
+
+/// A guard clause that consumes on the early exit and again on the joining statement is accepted,
+/// while the genuinely path-dependent shapes stay rejected (D6).
+#[test]
+fn must_consume_guard_clause_paths_are_accepted() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         fn main() {}\n";
+
+    for source in [
+        "fn run(token: Token, flag: Bool) -> Int { if flag { return token.consume(); } token.consume() }",
+        "fn run(token: Token, flag: Bool) -> Token { if flag { return token; } token }",
+    ] {
+        let accepted = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+    }
+
+    for source in [
+        "fn run(token: Token, flag: Bool) -> Int { if flag { discard token.consume(); } 0 }",
+        "fn run(token: Token) { loop(limit = 1) { token.consume(); break; } }",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| { diagnostic.code.as_str() == "must-consume-path-dependent" }),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+}

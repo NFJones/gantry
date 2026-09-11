@@ -6002,7 +6002,7 @@ fn must_consume_admission_stages_and_transfers_the_obligation() {
         .unwrap_or_else(|| panic!("the caller frame owns the consumed place"));
     assert_eq!(transferred.len(), 1);
     assert_eq!(transferred[0].root.as_ref(), "token");
-    assert!(machine.test_settled_obligations().is_empty());
+    assert!(machine.settled_consumption_obligations().is_empty());
     assert_eq!(
         drive(&mut machine),
         MachineOutcome::Succeeded(LogicalValue::integer(
@@ -6035,13 +6035,82 @@ fn must_consume_obligation_survives_a_failure_cut() {
         drive(&mut machine),
         MachineOutcome::Failed(failure) if failure.code == RuntimeCode::InternalInvariant
     ));
-    let settled = machine.test_settled_obligations();
+    let settled = machine.settled_consumption_obligations();
     assert_eq!(settled.len(), 1);
-    assert_eq!(settled[0].root.as_ref(), "token");
-    assert!(settled[0].path.is_empty());
+    assert_eq!(settled[0].root(), "token");
+    assert!(settled[0].path().is_empty());
     // The frame-level record is drained rather than duplicated.
     assert_eq!(
         machine.test_consumption_obligations(1).map(<[_]>::len),
+        Some(0)
+    );
+}
+
+/// A cancellation discards the frames like a failure does, so the staged obligation is retained in
+/// the machine-level settled list instead of disappearing with them.
+#[cfg(feature = "durable")]
+#[test]
+fn must_consume_obligation_survives_a_cancellation_cut() {
+    let program = must_consume_program(owned_consume_body());
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 1);
+    assert!(matches!(
+        machine.cancel("caller"),
+        Some(MachineLabel::Cancellation { .. })
+    ));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Cancelled(ref reason) if reason.as_ref() == "caller"
+    ));
+    let settled = machine.settled_consumption_obligations();
+    assert_eq!(
+        settled.len(),
+        1,
+        "a cancellation settles the staged obligation exactly once"
+    );
+    assert_eq!(settled[0].root(), "token");
+    assert!(settled[0].path().is_empty());
+    // The frame-level record is drained rather than duplicated.
+    assert_eq!(
+        machine.test_consumption_obligations(1).map(<[_]>::len),
+        Some(0)
+    );
+}
+
+/// A successful root return settles the obligation its caller place left unaccounted for, so the
+/// evidence survives the terminal cut exactly once.
+#[cfg(feature = "durable")]
+#[test]
+fn must_consume_obligation_survives_a_successful_root_return() {
+    let program = must_consume_program(owned_consume_body());
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    assert_eq!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        ))
+    );
+    let settled = machine.settled_consumption_obligations();
+    assert_eq!(
+        settled.len(),
+        1,
+        "a successful root return settles the transferred obligation exactly once"
+    );
+    assert_eq!(settled[0].root(), "token");
+    assert!(settled[0].path().is_empty());
+    // The frame-level record is drained rather than duplicated.
+    assert_eq!(
+        machine.test_consumption_obligations(0).map(<[_]>::len),
         Some(0)
     );
 }
@@ -6092,7 +6161,7 @@ fn must_consume_obligation_checkpoint_round_trips_and_stays_absent_without_it() 
             .windows(CONSUMPTION_OBLIGATION_SECTION_MAGIC.len())
             .any(|window| window == CONSUMPTION_OBLIGATION_SECTION_MAGIC)
     );
-    assert!(machine.test_settled_obligations().is_empty());
+    assert!(machine.settled_consumption_obligations().is_empty());
 }
 
 /// Re-initializing the consumed place makes the obligation accounted for, so the newer wire form is

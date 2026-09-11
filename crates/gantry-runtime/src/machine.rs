@@ -757,14 +757,28 @@ struct MovedPlace {
 /// The obligation is recorded in the frame that owns the consumed caller place. A normal return
 /// transfers it to the caller frame exactly like the moved-out mark, and a failure cut drains it
 /// into the machine-level settled list so an unaccounted consumption is retained rather than
-/// silently discarded together with the frames.
+/// silently discarded together with the frames. A failure, a cancellation, and a successful root
+/// return all settle the same way, so the evidence stays observable through
+/// [`Machine::settled_consumption_obligations`].
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ConsumptionObligation {
+pub struct ConsumptionObligation {
     pub(crate) root: Arc<str>,
     pub(crate) path: Vec<ValuePathSegment>,
 }
 
 impl ConsumptionObligation {
+    /// Returns the binding root whose place staged an unaccounted `MustConsume` consumption.
+    #[must_use]
+    pub fn root(&self) -> &str {
+        self.root.as_ref()
+    }
+
+    /// Returns the value path inside that root, empty for a whole-binding place.
+    #[must_use]
+    pub fn path(&self) -> &[ValuePathSegment] {
+        &self.path
+    }
+
     /// Orders two obligations by root and then by canonical path segments.
     fn canonical_cmp(&self, other: &Self) -> Ordering {
         self.root
@@ -1577,9 +1591,16 @@ impl Machine {
             .map(|frame| frame.consumption_obligation.as_slice())
     }
 
-    /// Returns the obligations retained after a discarded frame.
-    #[cfg(all(test, feature = "durable"))]
-    pub(crate) fn test_settled_obligations(&self) -> &[ConsumptionObligation] {
+    /// Returns every `MustConsume` consumption obligation settled by a terminal cut.
+    ///
+    /// A terminal cut drains the obligations still live in the frames into this machine-level
+    /// list, so a staged [`ConsumptionObligation`] that no path accounted for stays observable
+    /// with the task's settled evidence instead of disappearing with the frames. A failure, a
+    /// cancellation, and a successful root return settle the same way, the settlement is
+    /// idempotent, and the list stays empty while the task is still running with only frame-level
+    /// obligations.
+    #[must_use]
+    pub fn settled_consumption_obligations(&self) -> &[ConsumptionObligation] {
         &self.settled_obligations
     }
 
@@ -4032,6 +4053,7 @@ impl Machine {
     }
 
     fn finish_outcome(&mut self, outcome: MachineOutcome) -> MachineStep {
+        self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,
             MachineOutcome::Failed(_) => MachineStatus::Failed,
@@ -4045,6 +4067,25 @@ impl Machine {
                 .push_back(MachineLabel::TerminalCompletion(outcome.clone()));
         }
         MachineStep::Transition(MachineLabel::TaskSettled(outcome))
+    }
+
+    /// Retains every live frame obligation in the machine-level settled list exactly once.
+    ///
+    /// Every terminal path funnels through [`Self::finish_outcome`], so a failure, a cancellation,
+    /// and a successful root return all settle their unaccounted `MustConsume` evidence the same
+    /// way rather than letting it disappear with the retired frames. The drain empties the frame
+    /// vectors, which makes the settlement idempotent: a second settlement finds nothing left to
+    /// retain.
+    fn settle_consumption_obligations(&mut self) {
+        for frame in &mut self.frames {
+            for entry in frame.consumption_obligation.drain(..) {
+                self.settled_obligations.push(entry);
+            }
+        }
+        self.settled_obligations
+            .sort_by(ConsumptionObligation::canonical_cmp);
+        self.settled_obligations
+            .dedup_by(|left, right| left.canonical_cmp(right) == Ordering::Equal);
     }
 
     fn fail_current(&mut self, code: RuntimeCode) -> MachineStep {
@@ -4101,32 +4142,17 @@ impl Machine {
     fn finish_failure(&mut self, failure: MachineFailure) -> MachineStep {
         self.pending_session_scope = None;
         self.pending_operation = None;
-        // A failure cut discards the frames, so every live obligation is retained in the
-        // machine-level settled list instead of disappearing with them.
-        for frame in &mut self.frames {
-            for entry in frame.consumption_obligation.drain(..) {
-                self.settled_obligations.push(entry);
-            }
-        }
-        self.settled_obligations
-            .sort_by(ConsumptionObligation::canonical_cmp);
-        self.settled_obligations
-            .dedup_by(|left, right| left.canonical_cmp(right) == Ordering::Equal);
         #[cfg(feature = "concurrent")]
         {
             self.pending_task_control = None;
         }
-        self.status = MachineStatus::Failed;
         let outcome = MachineOutcome::Failed(failure.clone());
-        self.outcome = Some(outcome.clone());
+        // A failure cut discards the frames, so the settled evidence order keeps the task
+        // settlement ahead of the foreground and terminal completions that `finish_outcome`
+        // queues. The settlement itself lives only in `finish_outcome`.
         self.pending_labels
             .push_back(MachineLabel::TaskSettled(outcome.clone()));
-        if self.execution_foreground {
-            self.pending_labels
-                .push_back(MachineLabel::ForegroundCompletion(outcome.clone()));
-            self.pending_labels
-                .push_back(MachineLabel::TerminalCompletion(outcome));
-        }
+        let _ = self.finish_outcome(outcome);
         MachineStep::Transition(MachineLabel::Failure(failure))
     }
 
