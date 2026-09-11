@@ -2,7 +2,7 @@
  "format": "gantry.async-execution-contract-gate/v1",
  "issue": "GNT-ASYNC-GATE-000",
  "status": "verified",
- "specification_sha256": "50c638c40884c5ffaf4dc800d526eace23a6e28d2be7e0e8a36f17c28717e98a",
+ "specification_sha256": "ec5c2081f6e08312c31c0fb4e4283b60dea268bb4873da5b2ed5bf8ba5f3efee",
  "adoption_gate": "protocol/conformance/async-execution-adoption-v1.json",
  "profile_claims": "enabled",
  "amended_profiles": [
@@ -38,35 +38,35 @@
  "contract_artifacts": [
   {
    "path": "crates/gantry-core/src/generated/portable.rs",
-   "sha256": "24603dda6410687821bfb10972703e3cb907686a7119d0edea333635db6d8f22"
+   "sha256": "81bbddfafaa411fef903946c44a035dcbaa94363b7a054fc676ceade4e8c539c"
   },
   {
    "path": "crates/gantry-core/src/generated/profiles.rs",
-   "sha256": "60c682951e1d01ad3c13f898b16239ac793c8ba42ca4745411b5aa5f18329ff2"
+   "sha256": "bb11ac91c5bf8fd031e981944dce4939a4dc59e36cc246c5c18e6f4263dd855c"
   },
   {
    "path": "crates/gantry-host/src/generated/embedding.rs",
-   "sha256": "5470f72ab1d38606bc4ba480b1c5286d1459be8e478a8314cb884f09dd5506b5"
+   "sha256": "25dee6ac1dbb3441a973b84a3a5832f8dbc58cc3bf60f07077cf247c12da64e7"
   },
   {
    "path": "protocol/catalogs/embedding-contracts-v1.json",
-   "sha256": "0f11f8c704abba603b940b2a8beec5f3d6a0d22f2a94add428587ef07dc9c362"
+   "sha256": "8e009bb417246f08bf445f4baa47aee595624f6b8bbdbdd4739bd51c46e40714"
   },
   {
    "path": "protocol/catalogs/portable-contracts-v1.json",
-   "sha256": "5402e8adc7e4de4b74efd521e56349902515be7c9677034dfc9afeb4a04c9c51"
+   "sha256": "f41975f9e0a1cbac89b52b71336fde3bb00dc9aea66fceb57a295650dd845ec9"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "fba5a357d5cba5d04a3c0f8d91e1d69cf811221ec869e8cf88d835d1a9e0e788"
+   "sha256": "9ca40e4bb68410759b2c447b8000d0d4925dc49b0e39e595d560514f60dd804e"
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "f471d2b9a0767a44b9c7499b64776d48aeb963a3379401199cfc7c7c372ed782"
+   "sha256": "ae31e8bbc38dc5a7fc645df90fb699240b2812d5070fe7516e969fddfffb7c1d"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "124f45e24f6d9f3ffe8a3928cce9a9e0cde465b64dddfb22f34eb35e0d3fefe7"
+   "sha256": "a884a5f69e76fbbaa944f413c5e099f8c0360d09644daf991973f853f40d7d90"
   },
   {
    "path": "protocol/schemas/embedding-contracts-v1.schema.json",

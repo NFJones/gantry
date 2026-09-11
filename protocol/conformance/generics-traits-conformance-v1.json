@@ -82,11 +82,11 @@
   },
   {
    "path": "protocol/conformance/generics-traits-adoption-v1.json",
-   "sha256": "f20528cecec1861aa45f0ebf4f3eb2a31969d35b0c0c628dd89ef5b388a7a1d4"
+   "sha256": "267d3cc7d5626e08cc70945a0a6a898c4dc31e2994e66278e5cb2aaa04d0ca12"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "124f45e24f6d9f3ffe8a3928cce9a9e0cde465b64dddfb22f34eb35e0d3fefe7"
+   "sha256": "a884a5f69e76fbbaa944f413c5e099f8c0360d09644daf991973f853f40d7d90"
   }
  ],
  "environment_gaps": [
@@ -141,32 +141,32 @@
  "profile_review_summary": [
   {
    "profile": "analyzer",
-   "covered_count": 245,
-   "not_applicable_count": 83,
+   "covered_count": 261,
+   "not_applicable_count": 88,
    "planned_count": 0
   },
   {
    "profile": "concurrent-evaluator",
-   "covered_count": 329,
-   "not_applicable_count": 6,
+   "covered_count": 330,
+   "not_applicable_count": 7,
    "planned_count": 0
   },
   {
    "profile": "durable-runtime",
-   "covered_count": 360,
-   "not_applicable_count": 12,
+   "covered_count": 363,
+   "not_applicable_count": 14,
    "planned_count": 0
   },
   {
    "profile": "embedding",
-   "covered_count": 256,
-   "not_applicable_count": 43,
+   "covered_count": 274,
+   "not_applicable_count": 49,
    "planned_count": 0
   },
   {
    "profile": "evaluator",
-   "covered_count": 322,
-   "not_applicable_count": 13,
+   "covered_count": 323,
+   "not_applicable_count": 14,
    "planned_count": 0
   },
   {
@@ -190,5 +190,5 @@
  "scale_evidence": [
   "crates/gantry-conformance/tests/generics_conformance.rs#generic_scale_envelopes_are_charged_and_deduplicated"
  ],
- "specification_sha256": "50c638c40884c5ffaf4dc800d526eace23a6e28d2be7e0e8a36f17c28717e98a"
+ "specification_sha256": "ec5c2081f6e08312c31c0fb4e4283b60dea268bb4873da5b2ed5bf8ba5f3efee"
 }

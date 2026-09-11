@@ -10,6 +10,7 @@
 //! outside this contract crate.
 
 mod artifact;
+mod authority;
 mod callable_identity;
 mod canonical;
 mod effects;
@@ -27,6 +28,14 @@ mod type_properties;
 mod types;
 
 pub use artifact::{ArtifactEncodingError, ArtifactLimits, BoundedArtifact};
+pub use authority::{
+    AUTHORITY_RIGHT_ORDER, Admission, AdmissionRequest, AncestorFences, AuthorityBindingId,
+    AuthorityChangeClass, AuthorityError, AuthorityFence, AuthorityGeneration, AuthorityInstance,
+    AuthorityInstanceId, AuthorityLeasePolicy, AuthorityRequirementId, AuthorityRight,
+    ExternalOutcome, FenceCategory, FenceLatches, FencePoint, FenceState, GenerationRelation,
+    InstanceComparison, LeaseRelation, LineageRecord, LineageRelation, RightsRelation, RightsSet,
+    SharedAuthorityInstance,
+};
 pub use callable_identity::{
     CallableIdentityError, CanonicalCallableIdentity, CanonicalTemplateIdentity,
 };

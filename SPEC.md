@@ -1893,6 +1893,121 @@ MUST declare an existential request and result type, a statically declared
 maximum authority and recovery envelope, and equally exact identity and resume
 rules.
 
+<a id="GNT-3-T-AUTHORITY-INSTANCES"></a>
+
+**[GNT-3-T-AUTHORITY-INSTANCES] Capability instances, rights, and attenuation.**
+A capability instance is an unforgeable runtime authority object. It is not the
+public capability requirement of `GNT-6.5-abstract-requirements` item 5a, which
+names what an exported signature requires, and it is not the analysis-side
+closure entry of `GNT-3-T-AUTHORITY-CLOSURE`, which pairs a public requirement
+with the selected implementation binding that satisfies it; that pairing is the
+closure's capability requirement instance, a different sense of instance from
+this runtime authority object.
+
+A capability instance arises only from integration binding of one closure entry
+at start or resume, from attenuation or delegation of an existing instance, or
+from derivation performed by the holder of an owned instance. Source code MUST
+NOT construct, cast, copy, serialize, or encode an instance, and no type,
+nominal name, or structural identity alone confers rights: holding a value of
+the instance type is never sufficient, and only the instance bound by the
+integration confers authority.
+
+Each instance carries one rights set for its requirement. An operation admits
+only when the declared right of the requirement it declares is a member of the
+rights set of the instance currently bound for that requirement; an instance
+whose rights omit the declared right MUST NOT admit the operation.
+
+Attenuation and delegation produce a descendant instance whose rights set is a
+subset of its parent's rights set. Narrowing is monotone: neither operation MAY
+amplify rights, add a right the parent lacks, or restore a right removed by an
+ancestor, and each descendant records the lineage of
+`GNT-3-T-AUTHORITY-LINEAGE`.
+
+Sharing one live instance across holders requires the instance to be declared
+sharable for its requirement. An instance that is not declared sharable is
+subject to the affine move rules of SPEC.md ownership items 2a-2i exactly as any
+other owned value is.
+
+An instance MAY carry a lease with an expiry and always carries a generation.
+Every admission validates the generation it used, and an admission that presents
+a stale generation MUST fail under `GNT-3-T-AUTHORITY-REVOCATION`.
+
+A live instance MUST NOT appear in durable state or in ordinary serialization. A
+durable run may hold only rebindable references, which
+`GNT-7.2-authority-rebinding` re-establishes on resume.
+
+<a id="GNT-3-T-AUTHORITY-LINEAGE"></a>
+
+**[GNT-3-T-AUTHORITY-LINEAGE] Authority lineage.**
+Every derived capability instance, including a derived resource, pool, split,
+wrapper, task transfer, or generic-protocol instance, has exactly one parent
+instance: the instance it was attenuated, delegated, or derived from. Lineage is
+the finite, acyclic chain of those parent edges, and every chain is rooted at
+the start or resume binding that first established the requirement's authority
+under `GNT-3-T-AUTHORITY-INSTANCES`. An instance with no such root cannot exist.
+
+A descendant MUST NOT outlive its root and MUST NOT out-right it: its rights set
+stays within its root's rights set, and its lease expiry MUST NOT exceed its
+root's. Revocation of an instance propagates to every descendant under
+`GNT-3-T-AUTHORITY-REVOCATION`, so a descendant whose ancestor is revoked cannot
+admit even when its own lease is unexpired and its rights set still contains the
+declared right.
+
+Lineage inspection and audit MUST be renderable from canonical instance
+identities and their parent edges alone, and MUST NOT expose protected payloads,
+authorization decisions, or the protected content a capability admits.
+
+<a id="GNT-3-T-AUTHORITY-REVOCATION"></a>
+
+**[GNT-3-T-AUTHORITY-REVOCATION] Revocation linearization.**
+Revoking an instance, or the subtree rooted at it, has exactly one linearization
+point per affected instance, and at that point new admission through the
+instance is fenced. Revocation MUST NOT be observable for one instance in more
+than one order with respect to that instance's admissions.
+
+Work already admitted at the linearization point settles under the recovery rule
+of its own recovery class exactly as if the revocation had not occurred:
+accepted external work is never rolled back and never redelivered, and an
+ambiguous external outcome stays ambiguous instead of being reclassified as
+revoked or cancelled.
+
+A descendant MUST NOT admit after an ancestor's revocation point without a fresh
+binding. Expiry uses the same fencing discipline at the instance's lease expiry,
+but expiry is a distinct category from revocation and MUST be reported
+distinctly.
+
+A revoked or expired generation MUST NOT be revived, whether by a mapping
+revision, by resume, or by re-binding: continued authority requires a new
+instance identity under `GNT-3-T-AUTHORITY-INSTANCES` and the rebinding rules of
+`GNT-7.2-authority-rebinding`.
+
+Sealed emergency cleanup, which reclaims authority and resources after
+revocation, requires no source callback and no live instance, and MUST be
+completable from durable state alone.
+
+<a id="GNT-3-T-AUTHORITY-ADMISSION"></a>
+
+**[GNT-3-T-AUTHORITY-ADMISSION] Admission-time authority revalidation.**
+The preflight resolution of `GNT-7.2` establishes the authorization scope of a
+run and nothing more. It is not a per-call authorization, and an implementation
+MUST NOT treat a resolved requirement as authority to dispatch any operation.
+
+At each operation admission the implementation MUST revalidate, against the
+requirement that site declares: the instance currently bound for that
+requirement, that instance's generation, and the membership of the declared
+right in that instance's rights set.
+
+Where the declared semantics of the operation require one, admission MUST also
+revalidate the approval and policy state, and it MUST check the dynamic
+arguments of the call (destination, path, and target) against those declared
+semantics.
+
+Admission is the single commit point before dispatch. A revalidation failure is
+fail-closed: Gantry MUST NOT dispatch the operation, MUST register a diagnostic
+identifying the check that failed, and MUST NOT report the operation, a
+cancellation, or any other pre-admission failure as an effect, an external
+outcome, or an applied change.
+
 ### 3.4 Dynamic semantics
 
 <a id="GNT-3-M-STATE"></a>
@@ -4206,6 +4321,27 @@ operation identity, failure categories, and propagation.
    recorded action-mapping revision. The integration MUST map one canonical
    signature and recovery class consistently for the complete run and MUST
    reject conflicting or ambiguous capability registrations during preflight.
+
+<a id="GNT-7.2-authority-rebinding"></a>
+
+**[GNT-7.2-authority-rebinding] Resume rebinds authority.**
+A durable run MUST NOT restore a live capability instance, because instances are
+not serializable under `GNT-3-T-AUTHORITY-INSTANCES`. Resume MUST re-establish
+every requirement of the executable authority closure of
+`GNT-3-T-AUTHORITY-CLOSURE` through integration preflight, MUST record the
+replacement binding and the mapping revision it used in committed
+execution-state evidence before recovered interpretation or dispatch continues,
+and MUST fail resume-start when any requirement cannot be rebound.
+
+Rebinding is not re-authorization. It MUST NOT widen the closure, MUST NOT
+resurrect a revoked or expired generation under
+`GNT-3-T-AUTHORITY-REVOCATION`, and MUST NOT confer rights the prior binding
+lacked. A replacement binding for a requirement whose rights, generation state,
+and lineage are unchanged is a rebinding and is not an authority-compatibility
+change; a rights widening, a generation reset, or a lineage change is an
+authority-compatibility change and MUST be reported under
+`GNT-11.6-authority-instance-compatibility`.
+
 <a id="GNT-7.3"></a>
 
 3. Agent selection is established by lexically delimited `with <name> { ... }`
@@ -6169,6 +6305,25 @@ compared inputs of each class — exported declarations and signatures; public
 requirements, closures, and retained slots; declared capability contract
 versions and conformance evidence; canonical artifact identities and recovery
 records — and MUST mark each class machine-checked or not.
+
+<a id="GNT-11.6-authority-instance-compatibility"></a>
+
+**[GNT-11.6-authority-instance-compatibility] Instance and rights compatibility.**
+Comparing the authority instances of two revisions MUST report four properties
+distinctly rather than as one verdict: the rights sets of the compared
+instances, their lineage roots under `GNT-3-T-AUTHORITY-LINEAGE`, their
+generation states under `GNT-3-T-AUTHORITY-REVOCATION`, and their lease policies
+under `GNT-3-T-AUTHORITY-INSTANCES`.
+
+These classes refine the four independent compatibility classes of item 6b and
+never replace them: an instance comparison informs the authority class and MUST
+NOT decide the source, declared-behavior, or artifact class.
+
+Rights widening, a generation reset, and lineage replanting are each an
+authority-compatibility change and MUST be reported distinctly from one another.
+Replacing a binding without any of those changes is a rebinding under
+`GNT-7.2-authority-rebinding` and MUST NOT be reported as an
+authority-compatibility change.
 
 <a id="GNT-11.7"></a>
 

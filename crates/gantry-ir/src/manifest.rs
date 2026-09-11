@@ -205,7 +205,7 @@ fn push_json_string(
     Ok(())
 }
 
-fn encode_hex(bytes: &[u8; 32]) -> String {
+pub(crate) fn encode_hex(bytes: &[u8; 32]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 

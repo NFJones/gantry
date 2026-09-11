@@ -2,7 +2,11 @@
  "artifacts": [
   {
    "path": "SPEC.md",
-   "sha256": "50c638c40884c5ffaf4dc800d526eace23a6e28d2be7e0e8a36f17c28717e98a"
+   "sha256": "ec5c2081f6e08312c31c0fb4e4283b60dea268bb4873da5b2ed5bf8ba5f3efee"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/authority_lineage.rs",
+   "sha256": "5f1383286bbd3bd0744885bc66b60bd5cc3ad37610828ae0bc6f3283f530781a"
   },
   {
    "path": "crates/gantry-conformance/tests/automatic_durable_root.rs",
@@ -58,31 +62,31 @@
   },
   {
    "path": "protocol/conformance/durable-events-v1.json",
-   "sha256": "982032d7831eab31f312c994378660f4876f6987e63e14ce962934755e55ef62"
+   "sha256": "733b7997734717521b84249dc6ba5379adb5c294fa40791beac1ee671265b30d"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",
-   "sha256": "3cd672a7ad556d353ef8cc61c7bdd07b1f8bc1699d97ec633d5b93b7ed6de324"
+   "sha256": "3e62a7e62404c5a4a8c219c3f078a7eb3a19b2db1e75a8c7e89cfedec21426aa"
   },
   {
    "path": "protocol/conformance/durable-refinement-v1.json",
-   "sha256": "526a992a49c4c9acd06d5803f8e041cb7e157f436a2b3fffa15c85b56d5844d5"
+   "sha256": "0e27f22ae09730050e07fd51e836009cf6c9a2ea7bea824d2be1b44abb9bafb2"
   },
   {
    "path": "protocol/conformance/durable-start-v1.json",
-   "sha256": "d10f5a38514b55def5081bc8d8a7124d5edae96f4063333f3dc6735a56e8e178"
+   "sha256": "65f495edeafb21480073cc31a3e7de6b1954acc656efaf9a99e6df4581e28225"
   },
   {
    "path": "protocol/conformance/journal-storage-v1.json",
-   "sha256": "476d610c3fcb68f13dd7a3bfd7ffa921e9d35ba3cd23405b34213001dd7eca9d"
+   "sha256": "8af6914752fc8a57a8052736f2346c817a4a6fd6409f297e49af3c12c74d34ec"
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "41ea6bad15a46aabf92213b92c932cbb1400f85df536265c63825d88bb239ec1"
+   "sha256": "3d1dcff1c217f4ca597d90488b7e6fbcb5d2d477faada4dccd7d07bb90f1ef97"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
-   "sha256": "e64a0a1ce3d52cc1513c0b2344654ea7426cda97d3ae963366c2d7371e2cc9ab"
+   "sha256": "ec763c4ceb1ca93ef0e03d46dedcf625560bbd8aa31028d8723d035ebf467fdf"
   },
   {
    "path": "protocol/conformance/sqlite-storage-v1.json",
@@ -114,15 +118,15 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "f471d2b9a0767a44b9c7499b64776d48aeb963a3379401199cfc7c7c372ed782"
+   "sha256": "ae31e8bbc38dc5a7fc645df90fb699240b2812d5070fe7516e969fddfffb7c1d"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "124f45e24f6d9f3ffe8a3928cce9a9e0cde465b64dddfb22f34eb35e0d3fefe7"
+   "sha256": "a884a5f69e76fbbaa944f413c5e099f8c0360d09644daf991973f853f40d7d90"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
-   "sha256": "9520b0e33bcdfa4f357365440c4b9d3f636bf32b9dd0299c71e6ff42fd2648a4"
+   "sha256": "1a0878805f85df5d9ba8bbd26d77511678a2566a677b7110ae6c3c994693a5ed"
   }
  ],
  "claim": {
@@ -150,7 +154,7 @@
  "environment_gaps": [
   "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result or a qualified stable-media power-loss environment."
  ],
- "evidence_anchor_count": 120,
+ "evidence_anchor_count": 124,
  "format": "gantry.durable-gate-evidence/v1",
  "gate": "GNT-GATE-600",
  "prerequisites": [
@@ -200,9 +204,9 @@
   "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_strict_power_loss_policy_matches_environment_qualification"
  ],
  "review_summary": {
-  "applicable_clause_count": 372,
-  "covered_count": 360,
-  "not_applicable_count": 12,
+  "applicable_clause_count": 377,
+  "covered_count": 363,
+  "not_applicable_count": 14,
   "profile": "durable-runtime"
  },
  "section14_excerpt_count": 51,
@@ -217,7 +221,7 @@
  },
  "specification": {
   "path": "SPEC.md",
-  "sha256": "50c638c40884c5ffaf4dc800d526eace23a6e28d2be7e0e8a36f17c28717e98a"
+  "sha256": "ec5c2081f6e08312c31c0fb4e4283b60dea268bb4873da5b2ed5bf8ba5f3efee"
  },
  "status": "verified",
  "validation_commands": [
