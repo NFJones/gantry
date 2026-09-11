@@ -3342,9 +3342,11 @@ fn check_assignment(
             require_type(&expected, &result, node.span().clone(), diagnostics)?;
         }
     }
-    // Reassignment binds a fresh value: the earlier discharge no longer accounts for the place,
-    // and the new value owes its own consumption. The runtime clears the staged obligation for the
-    // assigned place the same way.
+    // Replacing a place that still owes consumption would silently discard an initialized
+    // `MustConsume` value, which `GNT-6.2d` forbids: the place must be consumed first. A place
+    // whose obligation is already discharged may be reassigned, and the fresh value then owes its
+    // own consumption; the runtime clears the staged obligation for the assigned place the same
+    // way.
     if operator == Punctuation::Equal
         && !receiver
         && identifiers.len() == 1
@@ -3352,7 +3354,20 @@ fn check_assignment(
             .as_ref()
             .is_some_and(|target| is_must_consume_type(target, context))
     {
-        rebind_must_consume(&root, node.span().clone(), context);
+        let replacing = ObligationSnapshot::capture(context)
+            .state(&root)
+            .is_some_and(|state| matches!(state, ObligationState::Live | ObligationState::Partial));
+        if replacing {
+            diagnostics.push(body_diagnostic(
+                "must-consume-replaced",
+                DiagnosticCategory::Type,
+                "an initialized MustConsume place cannot be replaced without consuming it",
+                node.span().clone(),
+                [] as [(&str, &str); 0],
+            )?);
+        } else {
+            rebind_must_consume(&root, node.span().clone(), context);
+        }
     }
     Ok(())
 }

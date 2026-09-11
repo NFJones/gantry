@@ -2865,25 +2865,22 @@ fn must_consume_match_arms_merge_obligations() {
     );
 }
 
-/// Reassignment binds a fresh `MustConsume` value: the stale discharge is dropped and the new
-/// value owes its own consumption (D4).
+/// Reassignment of a discharged `MustConsume` place binds a fresh value: the stale discharge is
+/// dropped and the new value owes its own consumption (D4).
 #[test]
 fn must_consume_reassignment_rebinds_the_obligation() {
     const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
          impl Token { fn consume(owned self) {} }\n";
 
-    for source in [
-        "fn main(mut token: Token) { token = Token { value: 1 }; token.consume(); }",
-        "fn main(mut token: Token) { token.consume(); token = Token { value: 1 }; token.consume(); }",
-    ] {
-        let accepted = analyze(&format!("{DECLARATIONS}{source}"));
-        assert_eq!(
-            accepted.status(),
-            AnalysisStatus::Valid,
-            "{source}: {:?}",
-            accepted.diagnostics()
-        );
-    }
+    let accepted = analyze(&format!(
+        "{DECLARATIONS}fn main(mut token: Token) {{ token.consume(); token = Token {{ value: 1 }}; token.consume(); }}"
+    ));
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
 
     let rejected = analyze(&format!(
         "{DECLARATIONS}fn main(mut token: Token) {{ token.consume(); token = Token {{ value: 1 }}; }}"
@@ -2902,6 +2899,38 @@ fn must_consume_reassignment_rebinds_the_obligation() {
         "{:?}",
         rejected.diagnostics()
     );
+}
+
+/// Replacing a place that still owes consumption would silently discard an initialized
+/// `MustConsume` value, so the assignment is rejected by the ownership rule rather than by a
+/// later missing consumption (`GNT-6.2d`).
+#[test]
+fn must_consume_live_place_cannot_be_replaced() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    for source in [
+        "fn main(mut token: Token) { token = Token { value: 1 }; token.consume(); }",
+        "fn main(mut token: Token) { token = Token { value: 1 }; }",
+        "fn main(mut token: Token) { if token.value > 0 { token.consume(); } token = Token { value: 1 }; token.consume(); }",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "must-consume-replaced"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(rejected.executable_program().is_none());
+    }
 }
 
 /// A pattern payload that binds a `MustConsume` value owes consumption like any other binding
