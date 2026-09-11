@@ -1999,7 +1999,6 @@ fn shared_receiver_calls_resolve_nested_caller_places_and_recover() {
     );
 }
 
-#[cfg(feature = "durable")]
 fn place_initialization_program() -> Arc<MachineProgram> {
     let main_path = path("crate::main");
     let callee_path = path("crate::callee");
