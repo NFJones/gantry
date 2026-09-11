@@ -144,7 +144,7 @@ pub(crate) struct EffectDraft {
     pub(crate) calls: BTreeSet<EffectNode>,
     pub(crate) pure: bool,
     pub(crate) source: Option<SourceSpan>,
-    pub(crate) contributor: Option<SourceSpan>,
+    pub(crate) contributors: BTreeMap<Effect, SourceSpan>,
 }
 
 pub(crate) struct BodyAnalysis {
@@ -2171,7 +2171,7 @@ fn initialize_effect_draft(
     let block =
         direct_child_form(tree, callable, SyntaxForm::Block).ok_or(AnalysisError::Invariant)?;
     let mut direct = EffectSet::default();
-    let mut contributor = None;
+    let mut contributors = BTreeMap::new();
     let mut work = vec![block];
     while let Some(id) = work.pop() {
         let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
@@ -2229,8 +2229,12 @@ fn initialize_effect_draft(
             }
             _ => {}
         }
-        if direct != before && contributor.is_none() {
-            contributor = Some(node.span().clone());
+        for effect in direct.iter() {
+            if !before.contains(effect) {
+                contributors
+                    .entry(effect)
+                    .or_insert_with(|| node.span().clone());
+            }
         }
         work.extend(node.children().iter().rev().copied());
     }
@@ -2239,7 +2243,9 @@ fn initialize_effect_draft(
     draft.direct = draft.direct.union(direct);
     draft.pure = node_has_reserved_word(tree, callable, "pure");
     draft.source = Some(callable.span().clone());
-    draft.contributor = draft.contributor.clone().or(contributor);
+    for (effect, span) in contributors {
+        draft.contributors.entry(effect).or_insert(span);
+    }
     Ok(())
 }
 
@@ -2298,9 +2304,14 @@ fn finish_effect_graph(
         // (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`). This report names the
         // contract, so a violating declaration reports it instead of the generic purity report
         // below, which would describe a method as a workflow and duplicate the finding.
-        if let Some((declared, callable, implementation)) = trait_contract_effects(context, node)
-            && !effects.iter().all(|effect| declared.contains(effect))
-            && let Some(span) = draft.contributor.clone().or_else(|| draft.source.clone())
+        let contract = trait_contract_effects(context, node);
+        if let Some((declared, callable, implementation)) = &contract
+            && let Some(offending) = effects.iter().find(|effect| !declared.contains(*effect))
+            && let Some(span) = draft
+                .contributors
+                .get(&offending)
+                .cloned()
+                .or_else(|| draft.source.clone())
         {
             diagnostics.push(body_diagnostic(
                 "effect-contract-violation",
@@ -2308,15 +2319,17 @@ fn finish_effect_graph(
                 "an implementation method infers effects outside its trait method contract",
                 span,
                 [
-                    ("callable", callable),
-                    ("implementation", implementation),
+                    ("callable", callable.clone()),
+                    ("implementation", implementation.clone()),
                     ("inferred", effect_names(effects)),
-                    ("declared", effect_names(declared)),
+                    ("declared", effect_names(*declared)),
                 ],
             )?);
             continue;
         }
-        if draft.pure && !effects.is_empty() {
+        // The workflow walker already reports the purity violation of a trait implementation
+        // declaration, so this report covers callables that declare no contract at all.
+        if draft.pure && !effects.is_empty() && contract.is_none() {
             diagnostics.push(body_diagnostic(
                 "impure-workflow",
                 DiagnosticCategory::Type,
