@@ -3098,6 +3098,35 @@ fn public_trait_implementation_effects_stay_within_the_declared_contract() {
             && implementations.iter().any(|value| value.contains("Second")),
         "{implementations:?}"
     );
+
+    // The report points at the contributing operation rather than the whole declaration.
+    let located = analyze(
+        "trait Render { pure fn render(self); }\n\
+         struct Item {}\n\
+         impl Render for Item { fn render(self) { discard 1; discard prompt \"Generate.\" -> String; } }\n\
+         fn main() {}",
+    );
+    let diagnostic = located
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "effect-contract-violation")
+        .unwrap_or_else(|| panic!("{:?}", located.diagnostics()));
+    let primary = diagnostic
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("{:?}", located.diagnostics()));
+    let source = "trait Render { pure fn render(self); }\n\
+         struct Item {}\n\
+         impl Render for Item { fn render(self) { discard 1; discard prompt \"Generate.\" -> String; } }\n\
+         fn main() {}";
+    let start = usize::try_from(primary.bytes().start()).unwrap_or_default();
+    let end = usize::try_from(primary.bytes().end()).unwrap_or_default();
+    let located_text = source.get(start..end).unwrap_or_default();
+    assert!(
+        located_text.contains("prompt"),
+        "{located_text:?}: {:?}",
+        located.diagnostics()
+    );
 }
 
 /// A pattern payload that binds a `MustConsume` value owes consumption like any other binding

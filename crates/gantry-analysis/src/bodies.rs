@@ -144,6 +144,7 @@ pub(crate) struct EffectDraft {
     pub(crate) calls: BTreeSet<EffectNode>,
     pub(crate) pure: bool,
     pub(crate) source: Option<SourceSpan>,
+    pub(crate) contributor: Option<SourceSpan>,
 }
 
 pub(crate) struct BodyAnalysis {
@@ -2170,9 +2171,11 @@ fn initialize_effect_draft(
     let block =
         direct_child_form(tree, callable, SyntaxForm::Block).ok_or(AnalysisError::Invariant)?;
     let mut direct = EffectSet::default();
+    let mut contributor = None;
     let mut work = vec![block];
     while let Some(id) = work.pop() {
         let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        let before = direct;
         match node.form() {
             SyntaxForm::PromptExpression => {
                 direct.insert(Effect::Prompt);
@@ -2226,6 +2229,9 @@ fn initialize_effect_draft(
             }
             _ => {}
         }
+        if direct != before && contributor.is_none() {
+            contributor = Some(node.span().clone());
+        }
         work.extend(node.children().iter().rev().copied());
     }
     let mut drafts = context.effect_drafts.borrow_mut();
@@ -2233,6 +2239,7 @@ fn initialize_effect_draft(
     draft.direct = draft.direct.union(direct);
     draft.pure = node_has_reserved_word(tree, callable, "pure");
     draft.source = Some(callable.span().clone());
+    draft.contributor = draft.contributor.clone().or(contributor);
     Ok(())
 }
 
@@ -2293,7 +2300,7 @@ fn finish_effect_graph(
         // below, which would describe a method as a workflow and duplicate the finding.
         if let Some((declared, callable, implementation)) = trait_contract_effects(context, node)
             && !effects.iter().all(|effect| declared.contains(effect))
-            && let Some(span) = draft.source.clone()
+            && let Some(span) = draft.contributor.clone().or_else(|| draft.source.clone())
         {
             diagnostics.push(body_diagnostic(
                 "effect-contract-violation",

@@ -6,7 +6,7 @@
   "specification_sha256": "5ce48d9140573f60a59a8833510a60abcbc47c3298a7260a50dbc1a56a9f811e",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "467b17160bf9b69412fefd9a49d675a55c78b7112f89376f9818143c347ecd7b",
+    "publication_set_identity": "15466043a821175fc0c639d296ac6aca6997cbdeb6e998fecf004c77f37a078f",
     "verification_path": "protocol/publication/verification-v1.json",
     "verification_sha256": "03f7cd214cbea139e96d3489c53aa30ca22a93b534a9966d0839062abb4b0ae1"
   },
@@ -17,7 +17,7 @@
     },
     "manifest": {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "1d9e39bf4b66c2664e467d84579213168da21976034ad9cc24c25e531adf6fa1"
+      "sha256": "fdfb613f0e618828b75916fc6199f931356586cb8a0efcc4e842d1fed41814e1"
     },
     "profile_results": [
       {
@@ -65,7 +65,7 @@
     ],
     "combined_gate": {
       "path": "protocol/conformance/combined-gate-v1.json",
-      "sha256": "e2b0418681f550a6a065bd3093e81e65ddef36328535d4f7f6152a5a38ad4ded",
+      "sha256": "9dfb689c27d84bf5d1fe465411f05273d339d15a04a8017abe6c555ec08f94c1",
       "gate": "GNT-COMB-001",
       "status": "verified",
       "advertises_profiles": [
@@ -126,7 +126,7 @@
   },
   "matrix": {
     "path": "release/release-matrix-v1.json",
-    "sha256": "a796013d9bfb3e2ebc313e3e68596e611c5274e2037ee1536165a283995a4a1b",
+    "sha256": "40d500ff0259a3de3db7fa0bf172a0a8d341f729d746d8bff886657b03a28a20",
     "verifier_path": "release/verify-release-matrix.py",
     "verifier_sha256": "0d7f31fe8f607b0db86b6c2e292e06254dacaddaf2205c2f1a3af7348e9d66ee",
     "status": "qualified-passed",
