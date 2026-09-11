@@ -342,6 +342,8 @@ struct BodyContext {
     must_consume_scopes: RefCell<Vec<MustConsumeScope>>,
     must_consume_reported: RefCell<BTreeMap<Arc<str>, BTreeSet<MustConsumeReportKey>>>,
     must_consume_loop_depths: RefCell<Vec<usize>>,
+    /// Obligation state at each normal completion of the loop body being analyzed.
+    must_consume_break_states: RefCell<Vec<Vec<ObligationSnapshot>>>,
     must_consume_receiver: Cell<bool>,
     must_consume_consuming: Cell<bool>,
     must_consume_discarding: Cell<bool>,
@@ -981,6 +983,7 @@ fn build_body_context(
         must_consume_scopes: RefCell::new(Vec::new()),
         must_consume_reported: RefCell::new(BTreeMap::new()),
         must_consume_loop_depths: RefCell::new(Vec::new()),
+        must_consume_break_states: RefCell::new(Vec::new()),
         must_consume_receiver: Cell::new(false),
         must_consume_consuming: Cell::new(false),
         must_consume_discarding: Cell::new(false),
@@ -2531,6 +2534,7 @@ fn check_callable(
     context.must_consume_scopes.borrow_mut().clear();
     context.must_consume_reported.borrow_mut().clear();
     context.must_consume_loop_depths.borrow_mut().clear();
+    context.must_consume_break_states.borrow_mut().clear();
     context.must_consume_receiver.set(false);
     context.must_consume_consuming.set(false);
     context.must_consume_discarding.set(false);
@@ -2789,6 +2793,13 @@ fn check_block(
                 // A break or continue leaves every block opened inside the loop, so an obligation
                 // those blocks introduced is unconsumed on this exit.
                 leave_loop_obligation_scopes(context, diagnostics)?;
+                // A `break` is a normal completion of its loop, so the obligation state at that
+                // transfer is one of the exit states the loop fold joins (`GNT-3-T-LOOP`).
+                if matches!(child_node.form(), SyntaxForm::BreakStatement)
+                    && let Some(states) = context.must_consume_break_states.borrow_mut().last_mut()
+                {
+                    states.push(ObligationSnapshot::capture(context));
+                }
                 breaks_loop |= matches!(child_node.form(), SyntaxForm::BreakStatement);
                 continues_loop |= matches!(child_node.form(), SyntaxForm::ContinueStatement);
                 reachable = false;
@@ -3161,13 +3172,26 @@ fn check_block(
                 });
                 context.must_consume_loop_depths.borrow_mut().pop();
                 let _ = checked?;
-                report_loop_consumption(&loop_entry, context, diagnostics)?;
+                // A `for` over an empty list runs no body, so the zero-iteration path stays.
+                report_loop_consumption(&loop_entry, false, false, context, diagnostics)?;
             }
             SyntaxForm::LoopStatement | SyntaxForm::WhileStatement | SyntaxForm::UntilStatement => {
                 check_loop_limit(tree, child_node, diagnostics)?;
                 let condition = direct_child_form(tree, child_node, SyntaxForm::Expression);
                 let body = direct_child_form(tree, child_node, SyntaxForm::Block)
                     .ok_or(AnalysisError::Invariant)?;
+                let fact = condition
+                    .map(|condition| bool_fact(tree, condition))
+                    .transpose()?
+                    .unwrap_or(BoolFact::Unknown);
+                // `GNT-3-T-LOOP` excludes `while`'s zero-iteration path only when its condition is
+                // not statically true, runs an `until` body once before its post-test, and gives an
+                // unbroken `loop` no normal completion, while `GNT-9.5` makes a loop limit or an
+                // exhausted budget a dynamic failure rather than a static normal path.
+                let first_iteration_guaranteed = match child_node.form() {
+                    SyntaxForm::WhileStatement => fact == BoolFact::True,
+                    _ => true,
+                };
                 let loop_entry = ObligationSnapshot::capture(context);
                 let loop_depth = context.must_consume_scopes.borrow().len();
                 context
@@ -3210,11 +3234,18 @@ fn check_block(
                 });
                 context.must_consume_loop_depths.borrow_mut().pop();
                 let body_result = checked?;
-                report_loop_consumption(&loop_entry, context, diagnostics)?;
-                let fact = condition
-                    .map(|condition| bool_fact(tree, condition))
-                    .transpose()?
-                    .unwrap_or(BoolFact::Unknown);
+                // An `until` body that reaches its post-test completes the loop when that test
+                // admits the exit edge; a statically false post-test removes it (`GNT-3-T-LOOP`).
+                let until_exit = matches!(child_node.form(), SyntaxForm::UntilStatement)
+                    && (body_result.falls_through || body_result.continues_loop)
+                    && fact != BoolFact::False;
+                report_loop_consumption(
+                    &loop_entry,
+                    first_iteration_guaranteed,
+                    until_exit,
+                    context,
+                    diagnostics,
+                )?;
                 reachable = match child_node.form() {
                     SyntaxForm::LoopStatement => body_result.breaks_loop,
                     SyntaxForm::WhileStatement => fact != BoolFact::True || body_result.breaks_loop,
@@ -4753,6 +4784,9 @@ fn merge_obligation_states(
 }
 
 /// Runs one loop body with the outer binding roots visible for repeated-execution checks.
+///
+/// The break-state frame this pushes stays on the stack for `report_loop_consumption`, which turns
+/// it into the loop's normal-completion state.
 fn with_affine_loop_scope<T>(
     context: &BodyContext,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
@@ -4763,6 +4797,10 @@ fn with_affine_loop_scope<T>(
         .affine_loop_entry_roots
         .borrow_mut()
         .push(entry_roots);
+    context
+        .must_consume_break_states
+        .borrow_mut()
+        .push(Vec::new());
     let result = check();
     context.affine_loop_entry_roots.borrow_mut().pop();
     result
@@ -4773,15 +4811,33 @@ fn with_affine_loop_scope<T>(
 ///
 /// A loop body may execute zero or many times, so a discharge recorded inside it is never a
 /// callable-wide discharge: the obligation stays live and the consumption is path-dependent. A
-/// place an iteration re-initialized is path-dependent in the same way, because the fresh value may
-/// never be consumed when the body does not run.
+/// place an iteration re-initialized stays conditional in the same way, because the fresh value may
+/// never be consumed when a static path skips the body. `GNT-3-T-LOOP` guarantees the first
+/// iteration of an unbroken `loop`, an `until`, and a `while` whose condition is statically true,
+/// and `GNT-9.5` makes a loop limit or an exhausted budget a dynamic failure rather than a static
+/// normal path, so nothing inside those bodies is judged against an iteration that never happens.
 fn report_loop_consumption(
     entry: &ObligationSnapshot,
+    first_iteration_guaranteed: bool,
+    fallthrough_completes: bool,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    let after = context.must_consume_discharged.borrow().clone();
-    let after_fresh = context.must_consume_fresh.borrow().clone();
+    // A guaranteed first iteration runs its body on every static path, so the reports below stay
+    // vacuous for it.
+    // An `until` body that reaches its post-test completes the loop when that test admits the exit
+    // edge, so the state it leaves is one of the loop's normal completions (`GNT-3-T-LOOP`).
+    let fallthrough = fallthrough_completes.then(|| ObligationSnapshot::capture(context));
+    let after = if first_iteration_guaranteed {
+        BTreeSet::new()
+    } else {
+        context.must_consume_discharged.borrow().clone()
+    };
+    let after_fresh = if first_iteration_guaranteed {
+        BTreeSet::new()
+    } else {
+        context.must_consume_fresh.borrow().clone()
+    };
     let mut reported = BTreeSet::new();
     for place in after.difference(&entry.discharged) {
         // A place the entry already left gone belongs to a value an iteration re-initialized, not
@@ -4840,10 +4896,29 @@ fn report_loop_consumption(
         .must_consume_obligations
         .borrow_mut()
         .retain(|root, _| entry.obligations.contains_key(root) || live.contains(root));
-    // A loop body may run zero times, so nothing inside it settles an outer obligation.
-    let mut restored = entry.clone();
-    restored.obligations = context.must_consume_obligations.borrow().clone();
-    restored.restore(context);
+    // A loop body a static path can skip settles nothing, so its verdicts stay conditional.
+    let break_states = context
+        .must_consume_break_states
+        .borrow_mut()
+        .pop()
+        .unwrap_or_default();
+    if !first_iteration_guaranteed {
+        let mut restored = entry.clone();
+        restored.obligations = context.must_consume_obligations.borrow().clone();
+        restored.restore(context);
+    } else if !break_states.is_empty() || fallthrough.is_some() {
+        // A loop that always begins its body completes through its `break` transfers and, for an
+        // `until` whose post-test admits the exit edge, through the body's fall-through, so the
+        // state after it joins those completions rather than the state an iteration left.
+        let obligations = context.must_consume_obligations.borrow().clone();
+        let mut reaching = break_states;
+        reaching.extend(fallthrough);
+        merge_obligation_states(entry, &reaching, false, context);
+        context
+            .must_consume_obligations
+            .borrow_mut()
+            .clone_from(&obligations);
+    }
     Ok(())
 }
 

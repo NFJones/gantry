@@ -3051,7 +3051,10 @@ fn must_consume_places_require_an_owned_admission() {
         ),
         (
             "fn run(token: Token) { loop(limit = 1) { token.consume(); break; } } fn main() {}",
-            "must-consume-path-dependent",
+            // A loop limit is a dynamic failure rather than a static path (`GNT-9.5`), so a
+            // bounded `loop` still begins its body and the mandated rejection is the repeated
+            // transfer rather than a zero-iteration verdict.
+            "affine-value-reuse",
         ),
         (
             "fn main(token: Token) { token.consume(); token.consume(); }",
@@ -4398,6 +4401,114 @@ fn public_loop_transfers_retire_only_the_scopes_they_leave() {
     }
 }
 
+/// `GNT-3-T-LOOP` guarantees the first iteration of an unbroken `loop`, an `until`, and a `while`
+/// whose condition is statically true, and `GNT-9.5` makes a loop limit or an exhausted budget a
+/// dynamic failure rather than a static normal path. A transfer of an outer `MustConsume` place
+/// inside such a body is still potentially repeated (`GNT-6.2e`), so that repeated transfer is the
+/// only verdict; a runtime condition keeps the zero-iteration path and its conditional verdict.
+#[test]
+fn public_guaranteed_loop_iterations_leave_no_zero_iteration_path() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    for source in [
+        "fn run(token: Token) { loop { token.consume(); break; } } fn main() {}",
+        "fn run(token: Token) { loop(limit = 1) { token.consume(); break; } } fn main() {}",
+        "fn run(token: Token) { while true { token.consume(); break; } } fn main() {}",
+        "fn run(token: Token) { loop { token.consume(); return; } } fn main() {}",
+        "fn run(token: Token, flag: Bool) { until { token.consume(); break; } when flag; } fn main() {}",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert_eq!(
+            diagnostic_codes(rejected.diagnostics()),
+            ["affine-value-reuse"],
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+
+    // A runtime condition keeps the zero-iteration path, so the discharge stays conditional.
+    let conditional = analyze(&format!(
+        "{DECLARATIONS}fn run(token: Token, flag: Bool) {{ while flag {{ token.consume(); break; }} }} fn main() {{}}"
+    ));
+    assert_eq!(conditional.status(), AnalysisStatus::Invalid);
+    assert!(
+        diagnostic_codes(conditional.diagnostics()).contains(&"must-consume-path-dependent"),
+        "{:?}",
+        conditional.diagnostics()
+    );
+
+    // A root bound inside the body is admitted once per iteration, so those loops stay valid.
+    for accepted in [
+        "fn run() { loop { let u: Token = Token { value: 1 }; u.consume(); break; } } fn main() {}",
+        "fn run(flag: Bool) { while flag { let u: Token = Token { value: 1 }; u.consume(); if flag { break; } } } fn main() {}",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    // A guaranteed body completes only through its `break` transfers, so the state after the loop
+    // joins those transfers rather than the path its fall-through left (`GNT-3-T-LOOP`): a place
+    // re-initialized on one break path is still already gone on another.
+    for source in [
+        "fn run(mut token: Token, flag: Bool) { token.consume(); loop { if flag { break; } token = Token { value: 1 }; break; } token.consume(); } fn main() {}",
+        "fn run(mut token: Token, flag: Bool) { token.consume(); loop(limit = 1) { if flag { break; } token = Token { value: 1 }; break; } token.consume(); } fn main() {}",
+        "fn run(mut token: Token, flag: Bool) { token.consume(); until { if flag { break; } token = Token { value: 1 }; break; } when false; token.consume(); } fn main() {}",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            diagnostic_codes(rejected.diagnostics()).contains(&"affine-value-reuse"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+
+    // A `break` path that leaves the place live still owes it at the callable exit.
+    let live_break = analyze(&format!(
+        "{DECLARATIONS}fn run(token: Token, flag: Bool) {{ loop {{ if flag {{ token.consume(); }} else {{ break; }} break; }} }} fn main() {{}}"
+    ));
+    assert_eq!(live_break.status(), AnalysisStatus::Invalid);
+    assert!(
+        diagnostic_codes(live_break.diagnostics()).contains(&"must-consume-path-dependent"),
+        "{:?}",
+        live_break.diagnostics()
+    );
+
+    // Every normal completion re-initialized the place, so the replacement value is the one the
+    // trailing transfer consumes.
+    assert_affine_accepted(&format!(
+        "{DECLARATIONS}fn run(mut token: Token) {{ token.consume(); loop {{ token = Token {{ value: 1 }}; break; }} token.consume(); }} fn main() {{}}"
+    ));
+
+    // An `until` body that reaches its post-test also completes the loop, so its fall-through is
+    // one of the exit states the join must include (`GNT-3-T-LOOP`).
+    let until_fallthrough = analyze(&format!(
+        "{DECLARATIONS}fn run(mut token: Token, flag: Bool) {{ token.consume(); until {{ if flag {{ token = Token {{ value: 1 }}; break; }} }} when true; token.consume(); }} fn main() {{}}"
+    ));
+    assert_eq!(
+        diagnostic_codes(until_fallthrough.diagnostics()),
+        ["affine-value-reuse"],
+        "{:?}",
+        until_fallthrough.diagnostics()
+    );
+
+    // A statically false post-test removes that exit edge, so only the `break` path completes.
+    assert_affine_accepted(&format!(
+        "{DECLARATIONS}fn run(mut token: Token, flag: Bool) {{ token.consume(); until {{ if flag {{ token = Token {{ value: 1 }}; break; }} }} when false; token.consume(); }} fn main() {{}}"
+    ));
+}
+
 /// An implementation method must stay within the effect contract its trait method declares,
 /// because that declared set is the conservative summary parametric callers rely on
 /// (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).
@@ -4843,15 +4954,14 @@ fn must_consume_guard_clause_paths_are_accepted() {
         );
     }
 
-    for source in [
-        "fn run(token: Token, flag: Bool) -> Int { if flag { discard token.consume(); } 0 }",
-        "fn run(token: Token) { loop(limit = 1) { token.consume(); break; } }",
-    ] {
-        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+    {
+        let rejected = analyze(&format!(
+            "{DECLARATIONS}fn run(token: Token, flag: Bool) -> Int {{ if flag {{ discard token.consume(); }} 0 }}"
+        ));
         assert_eq!(
             rejected.status(),
             AnalysisStatus::Invalid,
-            "{source}: {:?}",
+            "{:?}",
             rejected.diagnostics()
         );
         assert!(
@@ -4859,10 +4969,29 @@ fn must_consume_guard_clause_paths_are_accepted() {
                 .diagnostics()
                 .iter()
                 .any(|diagnostic| { diagnostic.code.as_str() == "must-consume-path-dependent" }),
-            "{source}: {:?}",
+            "{:?}",
             rejected.diagnostics()
         );
     }
+
+    // A bounded `loop` still begins its body on every static path (`GNT-3-T-LOOP`), and its limit
+    // is a dynamic failure rather than a static path (`GNT-9.5`), so the only violation its body
+    // commits is the repeated transfer `GNT-6.2e` mandates.
+    let bounded = analyze(&format!(
+        "{DECLARATIONS}fn run(token: Token) {{ loop(limit = 1) {{ discard token.consume(); break; }} }}"
+    ));
+    assert_eq!(
+        bounded.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        bounded.diagnostics()
+    );
+    assert_eq!(
+        diagnostic_codes(bounded.diagnostics()),
+        ["affine-value-reuse"],
+        "{:?}",
+        bounded.diagnostics()
+    );
 }
 
 /// A statement `match` analyzes every arm as a command, so a value-returning body whose every

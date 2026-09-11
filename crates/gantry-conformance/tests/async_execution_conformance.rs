@@ -30,7 +30,7 @@ const PREREQUISITES: [(&str, &str, &str, &str, &str); 5] = [
         "a6915ef212b9e245da00fd383f79bc81f05c3556",
         "Close the native source concurrency evidence gate.",
         "protocol/conformance/native-source-concurrency-gate-v1.json",
-        "599eed89be1aa83554c8f44ad2b2d48b7ac0e9cd3495a12d24f07cedd78a9fa5",
+        "9dcb93143b99e0f578f61342a922924b3430b8f9feadf09d5b043bc3bcf5a3ac",
     ),
     (
         "GNT-ASYNC-PROOF-001",
