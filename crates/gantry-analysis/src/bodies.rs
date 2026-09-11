@@ -306,9 +306,9 @@ struct BodyContext {
     shared_receiver_value_roots: RefCell<BTreeSet<Arc<str>>>,
     affine_consumed: RefCell<BTreeSet<AffinePlace>>,
     affine_loop_entry_roots: RefCell<Vec<BTreeSet<Arc<str>>>>,
-    must_consume_obligations: RefCell<BTreeMap<Arc<str>, SourceSpan>>,
-    must_consume_discharged: RefCell<BTreeSet<Arc<str>>>,
-    must_consume_partial: RefCell<BTreeSet<Arc<str>>>,
+    must_consume_obligations: RefCell<BTreeMap<Arc<str>, MustConsumeBinding>>,
+    must_consume_discharged: RefCell<BTreeSet<AffinePlace>>,
+    must_consume_partial: RefCell<BTreeSet<AffinePlace>>,
     must_consume_scopes: RefCell<Vec<MustConsumeScope>>,
     must_consume_loop_depths: RefCell<Vec<usize>>,
     must_consume_receiver: Cell<bool>,
@@ -2540,7 +2540,7 @@ fn check_callable(
         context
             .must_consume_discharged
             .borrow_mut()
-            .insert(Arc::from("self"));
+            .insert(AffinePlace::root_only(Arc::from("self")));
     }
 
     let result = node
@@ -2597,6 +2597,7 @@ fn check_callable(
     report_open_obligations(
         &ObligationSnapshot::capture(context),
         "a MustConsume value is not consumed before the callable returns",
+        context,
         diagnostics,
     )?;
     Ok(())
@@ -2728,6 +2729,7 @@ fn check_block(
                 report_open_obligations(
                     &ObligationSnapshot::capture(context),
                     "a MustConsume value is not consumed before the callable returns",
+                    context,
                     diagnostics,
                 )?;
                 reachable = false;
@@ -2910,7 +2912,15 @@ fn check_block(
                         )?
                     };
                     branch_results.push(result);
-                    branch_states.push(ObligationSnapshot::capture(context));
+                    // A branch that left the region never reaches the join, so the discharge it
+                    // performed is already settled and cannot make a surviving path look
+                    // path-dependent.
+                    if branch_results
+                        .last()
+                        .is_some_and(|result| result.falls_through)
+                    {
+                        branch_states.push(ObligationSnapshot::capture(context));
+                    }
                 }
                 // A consuming admission on only some paths leaves the obligation live: a discharge
                 // survives the fold only when every analysed path discharges it, and the report is
@@ -3394,7 +3404,9 @@ fn check_match_statement(
         });
         let result = checked?;
         leave_obligation_scope(context, diagnostics)?;
-        branch_states.push(ObligationSnapshot::capture(context));
+        if result.falls_through {
+            branch_states.push(ObligationSnapshot::capture(context));
+        }
         any_fallthrough |= result.falls_through;
         any_break |= result.breaks_loop;
         any_continue |= result.continues_loop;
@@ -3543,19 +3555,22 @@ fn check_assignment(
     // Replacing a place that still owes consumption would silently discard an initialized
     // `MustConsume` value, which `GNT-6.2d` forbids: the place must be consumed first. A projected
     // struct field of a live root that owns such a value discards it in exactly the same way, so
-    // the rule covers a binding root and every struct-field projection of one. A binding root whose
-    // obligation is already discharged may be reassigned, and the fresh value then owes its own
-    // consumption; the runtime clears the staged obligation for the assigned place the same way.
+    // the rule covers a binding root and every struct-field projection of one. The answer is judged
+    // per obligation place rather than per root, so consuming one projected field never licenses
+    // replacing a sibling. A place whose value is already gone may be reassigned: a binding root
+    // binds a fresh obligation, and a projection re-initializes exactly its own subtree, so the
+    // fresh value owes its consumption like any other.
     if operator == Punctuation::Equal
         && !receiver
-        && assignment_target_type(&root, receiver, &identifiers, environment, context)
-            .as_ref()
-            .is_some_and(|target| is_must_consume_type(target, context))
+        && let Some(target) =
+            assignment_target_type(&root, receiver, &identifiers, environment, context)
+        && is_must_consume_type(&target, context)
     {
-        let replacing = ObligationSnapshot::capture(context)
-            .state(&root)
-            .is_some_and(|state| matches!(state, ObligationState::Live | ObligationState::Partial));
-        if replacing {
+        let place = AffinePlace::projected(
+            root.clone(),
+            identifiers.get(1..).unwrap_or_default().to_vec(),
+        );
+        if obligation_place_is_live(&place, context) {
             diagnostics.push(body_diagnostic(
                 "must-consume-replaced",
                 DiagnosticCategory::Type,
@@ -3564,7 +3579,16 @@ fn check_assignment(
                 [] as [(&str, &str); 0],
             )?);
         } else if identifiers.len() == 1 {
-            rebind_must_consume(&root, node.span().clone(), context);
+            rebind_must_consume(
+                &root,
+                MustConsumeBinding {
+                    span: node.span().clone(),
+                    ty: target,
+                },
+                context,
+            );
+        } else {
+            clear_must_consume_places(&place, context);
         }
     }
     Ok(())
@@ -3905,6 +3929,111 @@ fn is_must_consume_type(ty: &TypeDescriptor, context: &BodyContext) -> bool {
     ownership_class(ty, context) == Some(OwnershipClass::MustConsume)
 }
 
+/// Returns the atomic `MustConsume` places one binding value holds.
+///
+/// A `must_consume struct` declaration is atomic: its whole value is the obligation, so consuming
+/// one of its stored values does not discharge it. An aggregate that only inherits the class from a
+/// stored member decomposes into that member's places, so consuming every part discharges it while
+/// consuming one part leaves the rest owing. A type whose members cannot be enumerated stays
+/// atomic, which is the conservative reading.
+fn obligation_places(ty: &TypeDescriptor, context: &BodyContext) -> BTreeSet<Vec<Arc<str>>> {
+    let mut places = BTreeSet::new();
+    collect_obligation_places(ty, &mut Vec::new(), context, &mut places);
+    if places.is_empty() {
+        places.insert(Vec::new());
+    }
+    places
+}
+
+fn collect_obligation_places(
+    ty: &TypeDescriptor,
+    path: &mut Vec<Arc<str>>,
+    context: &BodyContext,
+    places: &mut BTreeSet<Vec<Arc<str>>>,
+) {
+    if !is_must_consume_type(ty, context) {
+        return;
+    }
+    if is_declared_must_consume(ty, context) {
+        places.insert(path.clone());
+        return;
+    }
+    let Some(fields) = struct_fields_for_descriptor(context, ty).ok().flatten() else {
+        places.insert(path.clone());
+        return;
+    };
+    let mut decomposed = false;
+    for (name, field) in fields {
+        if !is_must_consume_type(&field, context) {
+            continue;
+        }
+        decomposed = true;
+        path.push(name);
+        collect_obligation_places(&field, path, context, places);
+        path.pop();
+    }
+    if !decomposed {
+        places.insert(path.clone());
+    }
+}
+
+/// Returns whether one type declares the `must_consume` modifier itself.
+fn is_declared_must_consume(ty: &TypeDescriptor, context: &BodyContext) -> bool {
+    ty.declared_path()
+        .and_then(|path| context.capability_declarations.get(path.as_str()))
+        .is_some_and(|declaration| declaration.is_must_consume())
+}
+
+/// Returns whether every obligation place is covered by a consumed place.
+fn obligation_places_covered(
+    places: &BTreeSet<Vec<Arc<str>>>,
+    root: &Arc<str>,
+    consumed: &BTreeSet<AffinePlace>,
+) -> bool {
+    places.iter().all(|place| {
+        consumed
+            .iter()
+            .any(|marked| marked.root == *root && place.starts_with(&marked.path))
+    })
+}
+
+/// Returns whether one assignment target still holds an initialized `MustConsume` value.
+///
+/// The answer is judged per obligation place: a target that contains, or is contained in, a place
+/// that still holds a value would discard it, while a sibling place that owes nothing stays
+/// replaceable. Coverage by a consumed place is the proof that the value is already gone.
+fn obligation_place_is_live(place: &AffinePlace, context: &BodyContext) -> bool {
+    let Some(binding) = context
+        .must_consume_obligations
+        .borrow()
+        .get(&place.root)
+        .cloned()
+    else {
+        return false;
+    };
+    let places = obligation_places(&binding.ty, context);
+    let discharged = context.must_consume_discharged.borrow();
+    places.iter().any(|leaf| {
+        let leaf = AffinePlace::projected(place.root.clone(), leaf.clone());
+        leaf.intersects(place)
+            && !discharged
+                .iter()
+                .any(|marked| marked.root == place.root && leaf.path.starts_with(&marked.path))
+    })
+}
+
+/// Returns the places of one root inside a consumed-place set.
+fn obligation_places_for_root(
+    root: &Arc<str>,
+    places: &BTreeSet<AffinePlace>,
+) -> BTreeSet<AffinePlace> {
+    places
+        .iter()
+        .filter(|place| place.root == *root)
+        .cloned()
+        .collect()
+}
+
 /// Access kind recorded for one non-copyable place.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AffineAccess {
@@ -3931,15 +4060,31 @@ enum ObligationState {
     Discharged,
 }
 
-/// The consumption state of every obligation root at one region boundary.
+/// One binding root's obligation: where the value was bound and the type whose `MustConsume`
+/// places it holds.
+#[derive(Clone, Debug)]
+struct MustConsumeBinding {
+    span: SourceSpan,
+    ty: TypeDescriptor,
+}
+
+/// The obligation state one root had before a block rebound its name.
+#[derive(Clone, Debug)]
+struct MustConsumePrior {
+    binding: MustConsumeBinding,
+    discharged: BTreeSet<AffinePlace>,
+    partial: BTreeSet<AffinePlace>,
+}
+
+/// The consumption state of every obligation place at one region boundary.
 #[derive(Clone, Debug, Default)]
 struct ObligationSnapshot {
-    /// Declared binding span of every obligation root in scope at the boundary.
-    obligations: BTreeMap<Arc<str>, SourceSpan>,
-    /// Roots consumed on some but not all reaching paths.
-    partial: BTreeSet<Arc<str>>,
-    /// Roots consumed on every reaching path.
-    discharged: BTreeSet<Arc<str>>,
+    /// Binding of every obligation root in scope at the boundary.
+    obligations: BTreeMap<Arc<str>, MustConsumeBinding>,
+    /// Places consumed on some but not all reaching paths.
+    partial: BTreeSet<AffinePlace>,
+    /// Places consumed on every reaching path.
+    discharged: BTreeSet<AffinePlace>,
 }
 
 impl ObligationSnapshot {
@@ -3969,11 +4114,19 @@ impl ObligationSnapshot {
     }
 
     /// Returns the proved state of one root, or `None` when the root owes nothing.
-    fn state(&self, root: &Arc<str>) -> Option<ObligationState> {
-        self.obligations.get(root)?;
-        Some(if self.discharged.contains(root) {
-            ObligationState::Discharged
-        } else if self.partial.contains(root) {
+    ///
+    /// The state folds every `MustConsume` place the binding holds: the root is discharged only
+    /// when every place is consumed on every reaching path, path-dependent when every place is
+    /// consumed on some path but not all, and live when some place was never consumed.
+    fn state(&self, root: &Arc<str>, context: &BodyContext) -> Option<ObligationState> {
+        let binding = self.obligations.get(root)?;
+        let places = obligation_places(&binding.ty, context);
+        if obligation_places_covered(&places, root, &self.discharged) {
+            return Some(ObligationState::Discharged);
+        }
+        let mut consumed = self.discharged.clone();
+        consumed.extend(self.partial.iter().cloned());
+        Some(if obligation_places_covered(&places, root, &consumed) {
             ObligationState::Partial
         } else {
             ObligationState::Live
@@ -3990,7 +4143,7 @@ struct MustConsumeScope {
     /// Roots whose binding was introduced inside this block.
     introduced: BTreeSet<Arc<str>>,
     /// The state each root had before this block first rebound its name.
-    shadowed: BTreeMap<Arc<str>, Option<(SourceSpan, ObligationState)>>,
+    shadowed: BTreeMap<Arc<str>, Option<MustConsumePrior>>,
 }
 
 /// Records that one root owes a fresh consumption of a `MustConsume` value.
@@ -4009,17 +4162,28 @@ fn register_must_consume_binding(
         return;
     }
     record_shadowed_binding(name.clone(), context);
-    rebind_must_consume(&name, span, context);
+    rebind_must_consume(
+        &name,
+        MustConsumeBinding {
+            span,
+            ty: ty.clone(),
+        },
+        context,
+    );
 }
 
 /// Remembers the obligation state one root had before the current block rebound its name.
 fn record_shadowed_binding(name: Arc<str>, context: &BodyContext) {
-    let span = context
+    let binding = context
         .must_consume_obligations
         .borrow()
         .get(&name)
         .cloned();
-    let previous = span.zip(obligation_state(&name, context));
+    let previous = binding.map(|binding| MustConsumePrior {
+        binding,
+        discharged: obligation_places_for_root(&name, &context.must_consume_discharged.borrow()),
+        partial: obligation_places_for_root(&name, &context.must_consume_partial.borrow()),
+    });
     let mut scopes = context.must_consume_scopes.borrow_mut();
     let Some(scope) = scopes.last_mut() else {
         return;
@@ -4030,37 +4194,47 @@ fn record_shadowed_binding(name: Arc<str>, context: &BodyContext) {
     scope.shadowed.insert(name, previous);
 }
 
-/// Returns the proved consumption state of one obligation root.
-fn obligation_state(root: &Arc<str>, context: &BodyContext) -> Option<ObligationState> {
-    if !context.must_consume_obligations.borrow().contains_key(root) {
-        return None;
-    }
-    if context.must_consume_discharged.borrow().contains(root) {
-        Some(ObligationState::Discharged)
-    } else if context.must_consume_partial.borrow().contains(root) {
-        Some(ObligationState::Partial)
-    } else {
-        Some(ObligationState::Live)
-    }
-}
-
-/// Marks one root as consumed on this reaching path.
-fn discharge_must_consume(root: &Arc<str>, context: &BodyContext) {
+/// Marks one place as consumed on this reaching path.
+fn discharge_must_consume(place: &AffinePlace, context: &BodyContext) {
     context
         .must_consume_discharged
         .borrow_mut()
-        .insert(root.clone());
-    context.must_consume_partial.borrow_mut().remove(root);
+        .insert(place.clone());
 }
 
 /// Binds a fresh obligation for one root, dropping every stale discharge.
-fn rebind_must_consume(root: &Arc<str>, span: SourceSpan, context: &BodyContext) {
+fn rebind_must_consume(root: &Arc<str>, binding: MustConsumeBinding, context: &BodyContext) {
     context
         .must_consume_obligations
         .borrow_mut()
-        .insert(root.clone(), span);
-    context.must_consume_discharged.borrow_mut().remove(root);
-    context.must_consume_partial.borrow_mut().remove(root);
+        .insert(root.clone(), binding);
+    context
+        .must_consume_discharged
+        .borrow_mut()
+        .retain(|place| place.root != *root);
+    context
+        .must_consume_partial
+        .borrow_mut()
+        .retain(|place| place.root != *root);
+}
+
+/// Clears the marks of one re-initialized place subtree.
+///
+/// Assignment to a place whose value is already gone re-initializes exactly that place and the
+/// places contained in it, so the fresh value owes its own consumption under `GNT-6.2d`, while a
+/// containing place that was already consumed stays gone.
+fn clear_must_consume_places(place: &AffinePlace, context: &BodyContext) {
+    let contained = |candidate: &AffinePlace| {
+        candidate.root == place.root && candidate.path.starts_with(&place.path)
+    };
+    context
+        .must_consume_discharged
+        .borrow_mut()
+        .retain(|candidate| !contained(candidate));
+    context
+        .must_consume_partial
+        .borrow_mut()
+        .retain(|candidate| !contained(candidate));
 }
 
 /// Enters one lexical block for `MustConsume` binding bookkeeping.
@@ -4093,43 +4267,42 @@ fn leave_obligation_scope(
     };
     let current = ObligationSnapshot::capture(context);
     for root in &scope.introduced {
-        let Some(span) = current.obligations.get(root) else {
+        let Some(binding) = current.obligations.get(root) else {
             continue;
         };
         report_open_obligation(
             root,
-            span,
-            current.state(root),
+            &binding.span,
+            current.state(root, context),
             "a MustConsume value is not consumed before its scope ends",
             diagnostics,
         )?;
     }
     for (root, previous) in &scope.shadowed {
         context.must_consume_obligations.borrow_mut().remove(root);
-        context.must_consume_partial.borrow_mut().remove(root);
-        context.must_consume_discharged.borrow_mut().remove(root);
-        let Some((span, state)) = previous else {
+        context
+            .must_consume_discharged
+            .borrow_mut()
+            .retain(|place| place.root != *root);
+        context
+            .must_consume_partial
+            .borrow_mut()
+            .retain(|place| place.root != *root);
+        let Some(previous) = previous else {
             continue;
         };
         context
             .must_consume_obligations
             .borrow_mut()
-            .insert(root.clone(), span.clone());
-        match state {
-            ObligationState::Discharged => {
-                context
-                    .must_consume_discharged
-                    .borrow_mut()
-                    .insert(root.clone());
-            }
-            ObligationState::Partial => {
-                context
-                    .must_consume_partial
-                    .borrow_mut()
-                    .insert(root.clone());
-            }
-            ObligationState::Live => {}
-        }
+            .insert(root.clone(), previous.binding.clone());
+        context
+            .must_consume_discharged
+            .borrow_mut()
+            .extend(previous.discharged.iter().cloned());
+        context
+            .must_consume_partial
+            .borrow_mut()
+            .extend(previous.partial.iter().cloned());
     }
     Ok(())
 }
@@ -4180,10 +4353,17 @@ fn report_open_obligation(
 fn report_open_obligations(
     snapshot: &ObligationSnapshot,
     reason: &'static str,
+    context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    for (root, span) in &snapshot.obligations {
-        report_open_obligation(root, span, snapshot.state(root), reason, diagnostics)?;
+    for (root, binding) in &snapshot.obligations {
+        report_open_obligation(
+            root,
+            &binding.span,
+            snapshot.state(root, context),
+            reason,
+            diagnostics,
+        )?;
     }
     Ok(())
 }
@@ -4204,18 +4384,43 @@ fn merge_obligation_states(
     merged.partial.clear();
     merged.discharged.clear();
     for root in saved.obligations.keys() {
-        let mut live = false;
-        let mut discharged = false;
-        for branch in branches.iter().chain(include_fallthrough.then_some(saved)) {
-            match branch.state(root) {
-                Some(ObligationState::Discharged) => discharged = true,
-                _ => live = true,
+        let Some(binding) = saved.obligations.get(root) else {
+            continue;
+        };
+        for leaf in obligation_places(&binding.ty, context) {
+            let place = AffinePlace::projected(root.clone(), leaf);
+            let mut discharged_everywhere = true;
+            let mut consumed_somewhere = false;
+            let mut reaching = 0_usize;
+            for branch in branches.iter().chain(include_fallthrough.then_some(saved)) {
+                reaching = reaching.saturating_add(1);
+                if branch
+                    .discharged
+                    .iter()
+                    .any(|marked| marked.root == *root && place.path.starts_with(&marked.path))
+                {
+                    consumed_somewhere = true;
+                    continue;
+                }
+                discharged_everywhere = false;
+                if branch
+                    .partial
+                    .iter()
+                    .any(|marked| marked.root == *root && place.path.starts_with(&marked.path))
+                {
+                    consumed_somewhere = true;
+                }
             }
-        }
-        if discharged && !live {
-            merged.discharged.insert(root.clone());
-        } else if discharged {
-            merged.partial.insert(root.clone());
+            // A join with no reaching branch has nothing to fold: leaving the places out keeps
+            // the obligation live rather than reporting a discharge no path performed.
+            if reaching == 0 {
+                continue;
+            }
+            if discharged_everywhere {
+                merged.discharged.insert(place);
+            } else if consumed_somewhere {
+                merged.partial.insert(place);
+            }
         }
     }
     merged.restore(context);
@@ -4247,16 +4452,20 @@ fn report_loop_consumption(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let after = context.must_consume_discharged.borrow().clone();
-    for root in after.difference(&entry.discharged) {
-        let Some(span) = entry.obligations.get(root) else {
+    let mut reported = BTreeSet::new();
+    for place in after.difference(&entry.discharged) {
+        if !reported.insert(place.root.clone()) {
+            continue;
+        }
+        let Some(binding) = entry.obligations.get(&place.root) else {
             continue;
         };
         diagnostics.push(body_diagnostic(
             "must-consume-path-dependent",
             DiagnosticCategory::Type,
             "a MustConsume value is consumed inside a loop that may not execute",
-            span.clone(),
-            [("binding", root.as_ref())],
+            binding.span.clone(),
+            [("binding", place.root.as_ref())],
         )?);
     }
     // A loop body may run zero times, so nothing inside it settles an outer obligation.
@@ -4304,7 +4513,13 @@ fn record_affine_place(
         context
             .must_consume_discharged
             .borrow()
-            .contains(&place.root)
+            .iter()
+            .any(|consumed| consumed.intersects(&place))
+            || context
+                .must_consume_partial
+                .borrow()
+                .iter()
+                .any(|consumed| consumed.intersects(&place))
     } else {
         context
             .affine_consumed
@@ -4347,7 +4562,7 @@ fn record_affine_place(
         )?);
     }
     if must_consume && access == AffineAccess::Consume {
-        discharge_must_consume(&place.root, context);
+        discharge_must_consume(&place, context);
     }
     context.affine_consumed.borrow_mut().insert(place);
     Ok(())

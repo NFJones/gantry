@@ -3390,6 +3390,80 @@ fn must_consume_initialized_projection_cannot_be_replaced() {
     }
 }
 
+/// A `MustConsume` obligation is judged per place rather than per binding root (2d): a declared
+/// `must_consume struct` is one atomic place, an aggregate that only inherits the class decomposes
+/// into the places of its stored values, and re-initializing a consumed place re-exposes exactly
+/// that place's own obligation.
+#[test]
+fn public_must_consume_obligations_are_judged_per_place() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         must_consume struct Wrap { inner: Token }\n\
+         struct Holder { token: Token, marker: Int }\n\
+         struct Pair { left: Token, right: Token }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         impl Holder { fn consume(owned self) {} }\n\
+         impl Pair { fn consume(owned self) {} }\n\
+         impl Wrap { fn consume(owned self) {} }\n";
+
+    // Every stored value carries its own obligation: consuming each field once discharges the
+    // inherited aggregate, the same field consumed on both branches joins as definite, and a
+    // declared aggregate is discharged by consuming it whole.
+    for accepted in [
+        "fn main(pair: Pair) { pair.left.consume(); pair.right.consume(); }",
+        "fn run(pair: Pair, flag: Bool) { if flag { pair.left.consume(); } else { pair.left.consume(); } pair.right.consume(); } fn main() {}",
+        "fn main(wrap: Wrap) { wrap.consume(); }",
+        "fn main(mut holder: Holder) { holder.token.consume(); holder.token = Token { value: 1 }; holder.token.consume(); }",
+        "fn main(mut holder: Holder) { holder.marker = 5; holder.consume(); }",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    for (source, code) in [
+        // Consuming one stored value never discharges its sibling.
+        (
+            "fn main(pair: Pair) { pair.left.consume(); }",
+            "must-consume-unconsumed",
+        ),
+        // A declared aggregate is one place: dismantling a stored value leaves it unconsumed.
+        (
+            "fn main(wrap: Wrap) { wrap.inner.consume(); }",
+            "must-consume-unconsumed",
+        ),
+        // A re-initialized projection owes its own consumption rather than the stale discharge.
+        (
+            "fn main(mut holder: Holder) { holder.token.consume(); holder.token = Token { value: 1 }; holder.marker = 5; }",
+            "must-consume-unconsumed",
+        ),
+        // A path that consumed the place still owes exactly one consumption, so a later use is a
+        // repeated use even though the other path left the place live.
+        (
+            "fn run(token: Token, flag: Bool) { if flag { token.consume(); } token.consume(); } fn main() {}",
+            "affine-value-reuse",
+        ),
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{source}"), code);
+    }
+
+    // Replacing a place that still holds a value stays rejected per place, and the report names
+    // the assignment rather than the root.
+    for (source, marker) in [
+        (
+            "fn main(mut holder: Holder) { holder.token = Token { value: 1 }; holder.consume(); }",
+            "holder.token = Token { value: 1 }",
+        ),
+        (
+            "fn main(mut pair: Pair) { pair.left.consume(); pair.right = Token { value: 1 }; pair.consume(); }",
+            "pair.right = Token { value: 1 }",
+        ),
+    ] {
+        assert_affine_rejected_at(
+            &format!("{DECLARATIONS}{source}"),
+            "must-consume-replaced",
+            marker,
+        );
+    }
+}
+
 /// An implementation method must stay within the effect contract its trait method declares,
 /// because that declared set is the conservative summary parametric callers rely on
 /// (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).

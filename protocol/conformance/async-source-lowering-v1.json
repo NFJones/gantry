@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "crates/gantry-analysis/src/bodies.rs",
-   "sha256": "636500a37f1c8c1ca0a08183639eff995f73bb90bb2c979258d7591aedd23eea"
+   "sha256": "1daceb6256c9e4347c0c0ae3bbca015cee4b8d38010a773b2331bcfe2b79f183"
   },
   {
    "path": "crates/gantry-analysis/src/executable.rs",
@@ -14,7 +14,7 @@
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "41dfdb25103842795886101fd42c752a759f58f4c9c45b6fc841c47d5694b12b"
+   "sha256": "1b24b464698a69103839c0b17f32f332053783ed41fa3132d7937a4b034ccbc1"
   }
  ],
  "capabilities": [
@@ -77,5 +77,5 @@
    "requirement": "GNT-15.8"
   }
  ],
- "specification_sha256": "1c7305039a33b6367fb407085079b052d61f3ff5df32118d8509b96b3094c0e8"
+ "specification_sha256": "a0e5368d9d64e542171581c966dcc9b3dac9d420c4f12f1987b562b177a438d6"
 }

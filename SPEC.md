@@ -3508,6 +3508,22 @@ root whose obligation is already discharged MAY be reassigned, and the value it
 receives then owes its own consumption under the rules above. Assignment through a
 method receiver's field remains excluded.
 
+A `MustConsume` obligation is judged per place rather than per binding root.
+A `must_consume struct` declaration is one atomic place: consuming a value it
+stores MUST NOT discharge it, and only an admitted transfer of a place whose
+value is that declared struct satisfies the declaration. An aggregate that is
+`MustConsume` only because it stores such values decomposes into the places of
+those stored values: consuming every one of them once on every path discharges
+the aggregate, a path that leaves any of them unconsumed MUST be reported as an
+unconsumed place, and an admitted transfer of the aggregate itself transfers
+all of them at once. Consuming one place therefore never discharges a sibling,
+and a use of a place a reaching path has already consumed MUST be rejected as
+a repeated use, even when another reaching path left that place live.
+Assignment to a place whose value is already gone re-initializes exactly that
+place and the places contained in it, so the value it receives owes its own
+consumption like any other binding, while a consumed containing place stays
+gone.
+
 <a id="GNT-6.2e"></a>
 
 2e. An affinity ledger **place** is identified by a binding root together with
