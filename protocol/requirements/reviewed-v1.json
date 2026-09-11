@@ -13875,6 +13875,7 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/analyzer_types.rs#public_must_consume_for_item_bindings_owe_consumption",
+        "crates/gantry-conformance/tests/analyzer_types.rs#public_must_consume_indexed_element_reads_are_copies",
         "crates/gantry-conformance/tests/analyzer_types.rs#public_must_consume_obligations_are_judged_per_place",
         "crates/gantry-conformance/tests/analyzer_types.rs#public_reinitialized_subplace_of_a_consumed_place_owes_consumption"
        ],

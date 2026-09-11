@@ -104,7 +104,14 @@ pub(crate) type InstantiationKey = (CanonicalTemplateIdentity, Vec<TypeDescripto
 
 type PostfixFieldSequence = (Arc<str>, Vec<(Arc<str>, NodeId)>);
 
-/// One addressable place in the affine move ledger: a binding root plus projected struct fields.
+/// Projection segment for an index whose element the analyzer cannot statically name.
+///
+/// The key matches any single segment on the other side of a place comparison, so a dynamic list
+/// read overlaps every element place of that list while staying distinct from a struct field.
+const SEGMENT_ANY: &str = "[*]";
+
+/// One addressable place in the affine move ledger: a binding root plus projected struct fields and
+/// index segments.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct AffinePlace {
     root: Arc<str>,
@@ -124,9 +131,25 @@ impl AffinePlace {
     }
 
     /// Returns whether one place is an ancestor-or-equal projection of the other.
+    ///
+    /// Segments pair up position by position. An equal pair continues the walk, and a wildcard
+    /// segment on either side matches any single segment on the other side, so a dynamic list read
+    /// overlaps every element place of that list. A differing pair of concrete segments stops the
+    /// walk as disjoint, which keeps `[0]` and `[1]` distinct. A path that ends first is contained
+    /// in the longer one, so a segment left unpaired on the longer side keeps the places
+    /// intersecting.
+    ///
+    /// Obligation leaves are struct-field paths only, so an obligation comparison never pairs a
+    /// wildcard segment and this rule cannot weaken one.
     fn intersects(&self, other: &Self) -> bool {
         self.root == other.root
-            && (self.path.starts_with(&other.path) || other.path.starts_with(&self.path))
+            && self
+                .path
+                .iter()
+                .zip(other.path.iter())
+                .all(|(mine, theirs)| {
+                    mine == theirs || mine.as_ref() == SEGMENT_ANY || theirs.as_ref() == SEGMENT_ANY
+                })
     }
 }
 
@@ -6859,25 +6882,71 @@ fn infer_projection(
     let Some(base) = environment.get(&name).cloned() else {
         return Ok(None);
     };
+    // A field-chain receiver is not the binding itself. The parser flattens a dotted chain into
+    // sibling children, one dotted member node per projected field ahead of the index postfix, so
+    // the binding stays the projection root while the receiver type is the folded member type and
+    // the place path carries the field path ahead of its index segment. A shape the field walk
+    // cannot resolve keeps the receiver and the place path of a bare binding, which is the
+    // pre-existing behavior of every other projection shape.
+    let (receiver_type, fields) =
+        index_projection_receiver(tree, node.children(), path, &name, &base, context)?
+            .unwrap_or_else(|| (base.clone(), Vec::new()));
     let index_expression = node.children().iter().copied().find(|child| {
         tree.node(*child)
             .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
     });
+    // A literal index segment is keyed only when the index expression is exactly one integer-literal
+    // token: `items[2 - 2]` names the same element as `items[0]`, so every other index expression
+    // keys the wildcard segment rather than a second literal one.
     let literal_index = index_expression.and_then(|expression| {
-        tree.node(expression)?
-            .children()
-            .iter()
-            .find_map(|token| match tree.node(*token)?.form() {
-                SyntaxForm::Token(TokenKind::IntegerLiteral(value)) => value.parse::<usize>().ok(),
-                _ => None,
-            })
+        let mut literals = Vec::new();
+        let mut work = vec![expression];
+        while let Some(id) = work.pop() {
+            let node = tree.node(id)?;
+            match node.form() {
+                SyntaxForm::Token(TokenKind::IntegerLiteral(value)) => {
+                    literals.push(Arc::clone(value));
+                }
+                SyntaxForm::Token(_) => return None,
+                _ => work.extend(node.children().iter().copied()),
+            }
+        }
+        match literals.as_slice() {
+            [value] => value.parse::<usize>().ok(),
+            _ => None,
+        }
     });
-    if base.kind() == TypeKind::Tuple {
+    if receiver_type.kind() == TypeKind::Tuple {
         let Some(index) = literal_index else {
+            // `SPEC.md` requires a tuple projection index to be a nonnegative compile-time integer
+            // literal so its result type is statically known; leaving the projection untyped would
+            // also let a later `let` skip the type check of the element it reads.
+            diagnostics.push(body_diagnostic(
+                "tuple-index-not-literal",
+                DiagnosticCategory::Type,
+                "a tuple projection index must be a nonnegative compile-time integer literal",
+                projection_index_span(tree, node, index_expression),
+                [] as [(&str, &str); 0],
+            )?);
             return Ok(None);
         };
-        if let Some(member) = base.immediate_members().into_iter().nth(index) {
+        if let Some(member) = receiver_type.immediate_members().into_iter().nth(index) {
             diagnose_projected_shared_receiver_place(tree, node, &member, context, diagnostics)?;
+            // A projection never produces a caller place. A read of any element of a `MustConsume`
+            // aggregate is a projection read of that value under `GNT-6.2d`: a consumption-requiring
+            // element is a copied read and a `Copyable` element is a copy, matching the struct-field
+            // projection rule.
+            let mut place_path = fields.clone();
+            place_path.push(Arc::from(format!("[{index}]")));
+            record_affine_place(
+                AffinePlace::projected(name.clone(), place_path),
+                Some(&base),
+                &member,
+                projection_prefix_span(tree, path, index_expression)?,
+                AffineAccess::Read,
+                context,
+                diagnostics,
+            )?;
             return Ok(Some(member));
         }
         diagnostics.push(body_diagnostic(
@@ -6889,7 +6958,7 @@ fn infer_projection(
         )?);
         return Ok(None);
     }
-    if base.kind() == TypeKind::List {
+    if receiver_type.kind() == TypeKind::List {
         if let Some(index_expression) = index_expression
             && let Some(actual) = infer_expression(
                 tree,
@@ -6913,13 +6982,119 @@ fn infer_projection(
                 [("actual", actual.canonical_string())],
             )?);
         }
-        let projected = base.immediate_members().into_iter().next();
+        let projected = receiver_type.immediate_members().into_iter().next();
         if let Some(receiver) = &projected {
             diagnose_projected_shared_receiver_place(tree, node, receiver, context, diagnostics)?;
+            // A read of any element of a `MustConsume` aggregate is a projection read of that value
+            // under `GNT-6.2d`, matching the struct-field rule. A literal index keeps distinct
+            // elements distinct places, and every other index expression keys the wildcard segment
+            // so a dynamic read overlaps each element place of the same list. A field-chain receiver
+            // keeps its field path ahead of that index segment.
+            let segment: Arc<str> = match literal_index {
+                Some(index) => Arc::from(format!("[{index}]")),
+                None => Arc::from(SEGMENT_ANY),
+            };
+            let mut place_path = fields.clone();
+            place_path.push(segment);
+            record_affine_place(
+                AffinePlace::projected(name.clone(), place_path),
+                Some(&base),
+                receiver,
+                projection_prefix_span(tree, path, index_expression)?,
+                AffineAccess::Read,
+                context,
+                diagnostics,
+            )?;
         }
         return Ok(projected);
     }
     Ok(None)
+}
+
+/// One index projection's folded receiver type and the ordered field path reaching it.
+type ProjectionReceiver = (TypeDescriptor, Vec<Arc<str>>);
+
+/// Resolves the receiver type and ordered field path of one index projection.
+///
+/// The parser flattens a dotted chain into sibling children: the root `Path`, one dotted postfix and
+/// member token per projected field, then the index postfix and its index expression. The children
+/// ahead of the index postfix are the receiver part, so `bag.items[0]` folds
+/// [`projected_member_type`] over `items` to obtain the receiver type while the projection root stays
+/// the binding `bag`. Returns `None` for a shape the field walk cannot resolve — a call, a
+/// parenthesized receiver, a receiver part that does not open with the resolved root path, or a
+/// member the receiver does not declare — which leaves the projection on its pre-existing path.
+fn index_projection_receiver(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    path: NodeId,
+    name: &Arc<str>,
+    base: &TypeDescriptor,
+    context: &BodyContext,
+) -> Result<Option<ProjectionReceiver>, AnalysisError> {
+    let Some(index_postfix) = children.iter().position(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, *child, Punctuation::LeftBracket)
+        })
+    }) else {
+        return Ok(None);
+    };
+    let receiver_children = children.get(..index_postfix).unwrap_or_default();
+    if receiver_children.first() != Some(&path) {
+        return Ok(None);
+    }
+    let Some((root, fields)) = postfix_field_sequence(tree, receiver_children) else {
+        return Ok(None);
+    };
+    if root != *name {
+        return Ok(None);
+    }
+    let mut receiver = base.clone();
+    let mut place_path = Vec::with_capacity(fields.len());
+    for (member, _) in fields {
+        let Some(field) = projected_member_type(&receiver, member.as_ref(), context)? else {
+            return Ok(None);
+        };
+        receiver = field;
+        place_path.push(member);
+    }
+    Ok(Some((receiver, place_path)))
+}
+
+/// Returns the span of one projection's index expression, or of the projection node without one.
+fn projection_index_span(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    index_expression: Option<NodeId>,
+) -> SourceSpan {
+    index_expression
+        .and_then(|expression| tree.node(expression))
+        .map_or_else(
+            || node.span().clone(),
+            |expression| expression.span().clone(),
+        )
+}
+
+/// Returns the span of one projection prefix: the root path through its closing index expression.
+///
+/// The recorded read is the indexed element rather than any member or call chained after it, so a
+/// report about that read is attributed to the index expression instead of the whole postfix
+/// expression. A projection without an index expression falls back to the root path span.
+fn projection_prefix_span(
+    tree: &SyntaxTree,
+    path: NodeId,
+    index_expression: Option<NodeId>,
+) -> Result<SourceSpan, AnalysisError> {
+    let path = tree.node(path).ok_or(AnalysisError::Invariant)?;
+    let Some(expression) = index_expression.and_then(|index| tree.node(index)) else {
+        return Ok(path.span().clone());
+    };
+    SourceSpan::from_portable_parts(
+        path.span().source().package_path().as_str(),
+        path.span().bytes().start(),
+        expression.span().bytes().end(),
+    )
+    .map_err(|_| AnalysisError::Invariant)
 }
 
 fn diagnose_projected_shared_receiver_place(

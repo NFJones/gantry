@@ -1639,6 +1639,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A spawned block captures a value with no source-task transfer contract.",
     },
     DiagnosticCodeDefinition {
+        code: "tuple-index-not-literal",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A tuple projection index is not a nonnegative compile-time integer literal.",
+    },
+    DiagnosticCodeDefinition {
         code: "tuple-index-out-of-range",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,

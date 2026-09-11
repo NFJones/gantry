@@ -30,7 +30,7 @@ const PREREQUISITES: [(&str, &str, &str, &str, &str); 5] = [
         "a6915ef212b9e245da00fd383f79bc81f05c3556",
         "Close the native source concurrency evidence gate.",
         "protocol/conformance/native-source-concurrency-gate-v1.json",
-        "cb08a71988561e2f86d10e11af931c38411313e1ce7d0661e81d78238bf95c2a",
+        "1942e710274c77c852c2a42933ca63b594d3d70959b7db3add428225af09afec",
     ),
     (
         "GNT-ASYNC-PROOF-001",
@@ -62,11 +62,11 @@ const ARTIFACTS: [(&str, &str); 8] = [
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "1a53c1379d177ea0b4277549c0c1b168b71bf00abab7a1f55fc5516b5b7699cd",
+        "907d8585a169b5d860349b8365dd7377bc07a2b5cdbe04d653280356a75c2f9e",
     ),
     (
         "protocol/conformance/async-execution-gate-v1.json",
-        "76e2f67c4a03120b5e1f5d597195471828c1799abad2c3a6c27df8e59eb24c27",
+        "835ecb3793ba53764a29537102cccf4ddcd6832c9bbfc8cb9c1adb4608d62a1c",
     ),
     (
         "protocol/goldens/concurrent-refinement-model-v1.json",

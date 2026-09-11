@@ -26,7 +26,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-   "sha256": "e6852e1afb2d80456b6a9cb3ef33da1d54feea505fa4bb268e0a351a0a38a228"
+   "sha256": "a5e73e2c11fb90f95dd49663050b86267b5eb8cf91a39e4777d5357d36383e2c"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs",
@@ -222,7 +222,7 @@
   },
   {
    "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "652db39c50a5fbee1aa80bb08ead7e66534855dbc7b91c677a9e2bd66698fc5d"
+   "sha256": "19ae2b6618101fd8a2320279cf46341d0a5ed83f599312083510ff4f41ad978c"
   },
   {
    "path": "protocol/conformance/execution-observation-v1.json",
@@ -258,11 +258,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "e3946dcc5f86b68af15699be72fe03f24b5797b29b9364bcfd14ea9c1a71be0c"
+   "sha256": "c5eb082ae10a42bab6adf923b121bd5b886aa70ad139ef36a91428d2a08bb4ec"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "af1ec558bede7a3f787a606c80de9ccc12bd849e3d39a77e366708ebce4073c3"
+   "sha256": "f69b32afddbd0da615003120b3bac07fe011d2e8e60d7aca20548dba97241864"
   },
   {
    "path": "protocol/requirements/section14-v1.json",

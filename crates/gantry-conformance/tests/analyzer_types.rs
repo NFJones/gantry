@@ -3473,6 +3473,262 @@ fn public_must_consume_obligations_are_judged_per_place() {
     }
 }
 
+/// An index projection reads the element it names rather than moving it out of the aggregate, so a
+/// `MustConsume` element is copied by that read exactly as a projected struct field is (2d).
+#[test]
+fn public_must_consume_indexed_element_reads_are_copies() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         struct Holder { token: Token }\n\
+         struct Pair { token: Token, n: Int }\n\
+         affine struct Leaf { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         impl Holder { fn consume(owned self) {} }\n";
+
+    // Only a consumption-requiring element is a copied read: an index of a copyable element, a
+    // tuple index, and an affine element whose bindings are discarded stay admitted, and distinct
+    // indices stay distinct places in the ledger.
+    for accepted in [
+        "fn run(items: List<Int>) -> Int { items[0] } fn main() {}",
+        "fn run(pair: Tuple<Int, Bool>) -> Int { pair[0] } fn main() {}",
+        "fn run(items: List<Leaf>) { let a: Leaf = items[0]; let b: Leaf = items[1]; discard a; discard b; } fn main() {}",
+        "fn run(items: List<Leaf>, i: Int) { let a: Leaf = items[i]; discard a; } fn main() {}",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    // Only a literal index has a statically known element type, so a dynamic tuple index is rejected
+    // as an index form rather than as an element class: the same code rejects a tuple of copyable
+    // elements.
+    for rejected in [
+        "fn split(pair: Tuple<Token, Int>, i: Int) -> Tuple<Token, Int> { let t: Token = pair[i]; t.consume(); return pair; } fn main() {}",
+        "fn probe(pair: Tuple<Int, Int>, i: Int) -> Int { let n: Int = pair[i]; n } fn main() {}",
+    ] {
+        assert_affine_rejected(
+            &format!("{DECLARATIONS}{rejected}"),
+            "tuple-index-not-literal",
+        );
+    }
+
+    // A dynamic index and a literal index do not name disjoint places: `items[i]` and `items[2 - 2]`
+    // each name an element the ledger cannot tell apart from `items[0]`, so the second read of the
+    // same value is a repeated use.
+    for reuse in [
+        "fn split(items: List<Leaf>, i: Int) { let a: Leaf = items[i]; discard a; let b: Leaf = items[0]; discard b; } fn main() {}",
+        "fn split(items: List<Leaf>) { let a: Leaf = items[2 - 2]; discard a; let b: Leaf = items[0]; discard b; } fn main() {}",
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{reuse}"), "affine-value-reuse");
+    }
+
+    // The reproduction: the element read into a binding leaves the list holding the same stored
+    // value, so the read itself is the unaccounted copy.
+    assert_affine_rejected(
+        &format!(
+            "{DECLARATIONS}fn split(items: List<Token>) -> List<Token> {{ let t: Token = items[0]; t.consume(); return items; }} fn main() {{}}"
+        ),
+        "must-consume-copy",
+    );
+
+    // The same read inlined into `main` reports exactly the projection and nothing else.
+    let inlined = format!(
+        "{DECLARATIONS}fn main(items: List<Token>) -> List<Token> {{ let t: Token = items[0]; t.consume(); return items; }}"
+    );
+    assert_affine_rejected_at(&inlined, "must-consume-copy", "items[0]");
+    assert_eq!(
+        diagnostic_codes(analyze(&inlined).diagnostics()),
+        ["must-consume-copy"],
+        "{inlined}"
+    );
+
+    // A copied argument, a tuple projection, an element that only inherits the class from a
+    // stored value, a dynamic index, a member read through the element, a receiver admission, and
+    // a returned element are copies by the same rule.
+    for rejected in [
+        "fn take(t: Token) { t.consume(); } fn split(items: List<Token>) -> List<Token> { take(items[0]); return items; } fn main() {}",
+        "fn split(pair: Tuple<Token, Int>) -> Tuple<Token, Int> { let t: Token = pair[0]; t.consume(); return pair; } fn main() {}",
+        "fn split(items: List<Holder>) -> List<Holder> { let h: Holder = items[0]; h.token.consume(); return items; } fn main() {}",
+        "fn split(items: List<Token>, i: Int) -> List<Token> { let t: Token = items[i]; t.consume(); return items; } fn main() {}",
+        "fn split(items: List<Token>) { items[0].consume(); } fn main() {}",
+        "fn split(items: List<Token>) -> Token { return items[0]; } fn main() {}",
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{rejected}"), "must-consume-copy");
+    }
+
+    // A copyable member read through the copied element reports the copy once.
+    let member = format!(
+        "{DECLARATIONS}fn split(items: List<Token>) -> Int {{ items[0].value }} fn main() {{}}"
+    );
+    assert_eq!(
+        diagnostic_codes(analyze(&member).diagnostics())
+            .iter()
+            .filter(|code| **code == "must-consume-copy")
+            .count(),
+        1,
+        "{member}"
+    );
+
+    // The recorded read is the index expression rather than the whole postfix expression, so the copy
+    // is attributed to `items[0]` both for the consuming-receiver shape and for the member read, which
+    // is the place the sibling receiver admission already blames.
+    let consumed_receiver = format!(
+        "{DECLARATIONS}fn split(items: List<Token>) {{ items[0].consume(); }} fn main() {{}}"
+    );
+    assert_affine_rejected_at(&consumed_receiver, "must-consume-copy", "items[0]");
+    assert_affine_rejected_at(&member, "must-consume-copy", "items[0]");
+
+    // The recorded copy span stops at the index expression, so it excludes both the closing bracket
+    // and any member or call chained after the projection. The start-only marker above cannot see
+    // that end offset, which is the part of the attribution the fix changes.
+    for source in [&consumed_receiver, &member] {
+        let rejected = analyze(source);
+        let primary = rejected
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "must-consume-copy")
+            .and_then(|diagnostic| diagnostic.primary.as_ref())
+            .unwrap_or_else(|| panic!("{source}: {:?}", rejected.diagnostics()));
+        let start = source
+            .find("items[0]")
+            .unwrap_or_else(|| panic!("{source}: missing projection"));
+        assert_eq!(
+            usize::try_from(primary.bytes().start()).unwrap_or_default(),
+            start,
+            "{source}"
+        );
+        assert_eq!(
+            usize::try_from(primary.bytes().end()).unwrap_or_default(),
+            start + "items[0".len(),
+            "{source}"
+        );
+    }
+
+    // A read of any element of a `MustConsume` aggregate is a projection read of that value under
+    // `GNT-6.2d`, so the tuple pair and the struct-field pair are rejected with the same code. The
+    // struct-field span is the field name alone, so its marker carries the following statement text
+    // to stay unique in the source.
+    assert_affine_rejected_at(
+        &format!(
+            "{DECLARATIONS}fn split(pair: Tuple<Token, Int>) -> Int {{ let n: Int = pair[1]; n }} fn main() {{}}"
+        ),
+        "must-consume-copy",
+        "pair[1]",
+    );
+    assert_affine_rejected_at(
+        &format!("{DECLARATIONS}fn split(p: Pair) -> Int {{ let n: Int = p.n; n }} fn main() {{}}"),
+        "must-consume-copy",
+        "n; n }",
+    );
+
+    // `discard` of the element reports the discard once and never as a copy: the projection
+    // records it and the statement fallback does not duplicate it.
+    let discarded = analyze(&format!(
+        "{DECLARATIONS}fn split(items: List<Token>) {{ discard items[0]; }} fn main() {{}}"
+    ));
+    let codes = diagnostic_codes(discarded.diagnostics());
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|code| **code == "must-consume-discard")
+            .count(),
+        1,
+        "{codes:?}"
+    );
+    assert!(!codes.contains(&"must-consume-copy"), "{codes:?}");
+
+    // A field-chain receiver is not the binding itself, so the same rule resolves the chain root,
+    // folds the projected members to reach the indexed aggregate, and keys the place by the field
+    // path ahead of its index segment. These declarations add one chain shape per pinned case.
+    const FIELD_DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         affine struct Leaf { value: Int }\n\
+         struct Bag { items: List<Token> }\n\
+         struct BagI { items: List<Int> }\n\
+         struct Outer { bag: Bag }\n\
+         struct HB { pair: Tuple<Token, Int> }\n\
+         struct HBII { pair: Tuple<Int, Int> }\n\
+         struct HL { items: List<Leaf> }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    // A copyable element and a single affine element read stay admitted through the field chain.
+    for accepted in [
+        "fn run(b: BagI) -> Int { b.items[0] } fn main() {}",
+        "fn run(h: HL, i: Int) { let a: Leaf = h.items[i]; discard a; } fn main() {}",
+    ] {
+        assert_affine_accepted(&format!("{FIELD_DECLARATIONS}{accepted}"));
+    }
+
+    // Each field-chain read of a `MustConsume` element is the same unaccounted copy as the
+    // bare-binding read, including through a second projected level.
+    for source in [
+        "fn split(b: Bag) -> Bag { b.items[0].consume(); return b; } fn main() {}",
+        "fn split(b: Bag) -> Bag { let t: Token = b.items[0]; t.consume(); return b; } fn main() {}",
+        "fn split(o: Outer) -> Outer { let t: Token = o.bag.items[0]; t.consume(); return o; } fn main() {}",
+        "fn split(h: HB) -> HB { let t: Token = h.pair[0]; t.consume(); return h; } fn main() {}",
+    ] {
+        assert_affine_rejected(
+            &format!("{FIELD_DECLARATIONS}{source}"),
+            "must-consume-copy",
+        );
+    }
+
+    // The recorded read spans the field chain from the binding root through the index expression,
+    // exactly as the bare-binding prefix does.
+    for (source, prefix) in [
+        (
+            "fn split(b: Bag) -> Bag { let t: Token = b.items[0]; t.consume(); return b; } fn main() {}",
+            "b.items[0",
+        ),
+        (
+            "fn split(o: Outer) -> Outer { let t: Token = o.bag.items[0]; t.consume(); return o; } fn main() {}",
+            "o.bag.items[0",
+        ),
+    ] {
+        let program = format!("{FIELD_DECLARATIONS}{source}");
+        let rejected = analyze(&program);
+        let primary = rejected
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "must-consume-copy")
+            .and_then(|diagnostic| diagnostic.primary.as_ref())
+            .unwrap_or_else(|| panic!("{source}: {:?}", rejected.diagnostics()));
+        let start = program
+            .find(prefix)
+            .unwrap_or_else(|| panic!("{source}: missing prefix {prefix:?}"));
+        assert_eq!(
+            usize::try_from(primary.bytes().start()).unwrap_or_default(),
+            start,
+            "{source}"
+        );
+        assert_eq!(
+            usize::try_from(primary.bytes().end()).unwrap_or_default(),
+            start + prefix.len(),
+            "{source}"
+        );
+    }
+
+    // A field-receiver tuple index is rejected as an index form rather than as an element class,
+    // and the same chain reaches the type check the bare binding already performs.
+    assert_affine_rejected(
+        &format!(
+            "{FIELD_DECLARATIONS}fn run(h: HBII, i: Int) -> Int {{ let n: Int = h.pair[i]; n }} fn main() {{}}"
+        ),
+        "tuple-index-not-literal",
+    );
+    assert_affine_rejected(
+        &format!(
+            "{FIELD_DECLARATIONS}fn run(b: BagI) -> Int {{ let x: Bool = b.items[0]; 1 }} fn main() {{}}"
+        ),
+        "type-mismatch",
+    );
+
+    // A field-chain projection keys the same place ledger as the bare binding, so a second read of
+    // the element is a repeated use.
+    assert_affine_rejected(
+        &format!(
+            "{FIELD_DECLARATIONS}fn run(h: HL, i: Int) {{ let a: Leaf = h.items[i]; discard a; let c: Leaf = h.items[0]; discard c; }} fn main() {{}}"
+        ),
+        "affine-value-reuse",
+    );
+}
+
 /// A `for` statement binds a fresh item place per iteration, so the item owes its consumption at
 /// the iteration exit exactly as a `let` declaration does (`GNT-6.2d`, `GNT-9.4`).
 #[test]
