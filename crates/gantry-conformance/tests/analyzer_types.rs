@@ -3547,6 +3547,10 @@ fn public_constant_conditions_select_the_reaching_obligation_paths() {
         "fn run() { let t: Token = Token { value: 1 }; if true { t.consume(); } else { t.consume(); } } fn main() {}",
         "fn run() { let t: Token = Token { value: 1 }; if false { t.consume(); } else { t.consume(); } } fn main() {}",
         "fn run() { let t: Token = Token { value: 1 }; if false { } else if true { t.consume(); } } fn main() {}",
+        // A diverging branch still settles the consumption performed before it, and a pattern
+        // chain whose trailing condition is statically true cannot fall through.
+        "fn run() { let t: Token = Token { value: 1 }; if true { t.consume(); while true { } } } fn main() {}",
+        "fn run(o: Option<Int>) { let t: Token = Token { value: 1 }; if let Some(x) = o { t.consume(); } else if true { t.consume(); } } fn main() {}",
     ] {
         assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
     }
@@ -3572,6 +3576,18 @@ fn public_constant_conditions_select_the_reaching_obligation_paths() {
         // A runtime condition keeps the partial-consume verdict.
         (
             "fn run(flag: Bool) { let t: Token = Token { value: 1 }; if flag { t.consume(); } } fn main() {}",
+            "must-consume-path-dependent",
+        ),
+        // A branch that diverges never reaches a transfer that reports what it owes, so the
+        // value is still unconsumed at the scope exit.
+        (
+            "fn run() { let t: Token = Token { value: 1 }; if true { while true { } } } fn main() {}",
+            "must-consume-unconsumed",
+        ),
+        // A pattern chain whose trailing runtime condition can fail leaves the value live on
+        // the path where neither branch runs.
+        (
+            "fn run(o: Option<Int>, flag: Bool) { let t: Token = Token { value: 1 }; if let Some(x) = o { t.consume(); } else if flag { t.consume(); } } fn main() {}",
             "must-consume-path-dependent",
         ),
     ] {

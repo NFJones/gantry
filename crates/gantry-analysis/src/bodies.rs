@@ -45,6 +45,10 @@ struct BlockResult {
     trailing: Option<TypeDescriptor>,
     breaks_loop: bool,
     continues_loop: bool,
+    /// The block left through a construct with no normal completion rather than an explicit
+    /// `return`/`break`/`continue` transfer, so an obligation it still owes surfaces at the
+    /// enclosing scope exit instead of being settled by the transfer.
+    diverges: bool,
 }
 
 /// Completion of one statement `match`: `GNT-3-T-BRANCH` merges every feasible
@@ -54,6 +58,7 @@ struct StatementCompletion {
     falls_through: bool,
     breaks_loop: bool,
     continues_loop: bool,
+    diverges: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2625,6 +2630,7 @@ fn check_block(
     let mut trailing = None;
     let mut breaks_loop = false;
     let mut continues_loop = false;
+    let mut diverges = false;
     for (child_index, child) in node.children().iter().copied().enumerate() {
         let child_node = tree.node(child).ok_or(AnalysisError::Invariant)?;
         if is_token(child_node.form()) {
@@ -2775,6 +2781,7 @@ fn check_block(
                 reachable = result.falls_through;
                 breaks_loop |= result.breaks_loop;
                 continues_loop |= result.continues_loop;
+                diverges |= !result.falls_through && result.diverges;
             }
             SyntaxForm::MatchStatement => {
                 let completion = check_match_statement(
@@ -2789,6 +2796,7 @@ fn check_block(
                 reachable = completion.falls_through;
                 breaks_loop |= completion.breaks_loop;
                 continues_loop |= completion.continues_loop;
+                diverges |= completion.diverges;
             }
             SyntaxForm::IfStatement => {
                 let has_pattern = child_node.children().iter().copied().any(|nested| {
@@ -2921,12 +2929,13 @@ fn check_block(
                         )?
                     };
                     branch_results.push(result);
-                    // A branch that left the region never reaches the join, so the discharge it
-                    // performed is already settled and cannot make a surviving path look
-                    // path-dependent.
+                    // A branch that left the region without a normal completion never reaches the
+                    // join. A settled transfer already reported what it owed, so it contributes no
+                    // join state; a branch that diverged owes at the enclosing scope exit, so its
+                    // final state keeps the obligation visible there.
                     if branch_results
                         .last()
-                        .is_some_and(|result| result.falls_through)
+                        .is_some_and(|result| result.falls_through || result.diverges)
                     {
                         branch_states.push((
                             blocks.saturating_sub(1),
@@ -2942,43 +2951,47 @@ fn check_block(
                 // statically true condition is unreachable, and the pre-conditional state is a
                 // reaching path exactly when the chain can fall through without taking a branch.
                 let has_final_else = blocks > conditions.len();
+                // The first expression of a pattern chain is the scrutinee rather than a
+                // condition, and a pattern can always fail to select its branch.
+                let first_condition = usize::from(has_pattern);
                 let mut reaching_states = Vec::new();
                 let mut no_branch_possible = true;
-                if has_pattern {
-                    // A pattern match can always fail to select, so every analysed branch reaches
-                    // the join and an elseless chain keeps the pre-conditional state.
-                    reaching_states.extend(branch_states.iter().map(|(_, state)| state.clone()));
-                } else {
-                    for (index, condition) in conditions.iter().copied().enumerate() {
-                        match bool_fact(tree, condition)? {
-                            BoolFact::True => {
-                                if let Some((_, state)) =
-                                    branch_states.iter().find(|(branch, _)| *branch == index)
-                                {
-                                    reaching_states.push(state.clone());
-                                }
-                                no_branch_possible = false;
-                                break;
+                if has_pattern
+                    && let Some((_, state)) = branch_states.iter().find(|(branch, _)| *branch == 0)
+                {
+                    reaching_states.push(state.clone());
+                }
+                for (index, condition) in
+                    conditions.iter().copied().enumerate().skip(first_condition)
+                {
+                    match bool_fact(tree, condition)? {
+                        BoolFact::True => {
+                            if let Some((_, state)) =
+                                branch_states.iter().find(|(branch, _)| *branch == index)
+                            {
+                                reaching_states.push(state.clone());
                             }
-                            BoolFact::False => {}
-                            BoolFact::Unknown => {
-                                if let Some((_, state)) =
-                                    branch_states.iter().find(|(branch, _)| *branch == index)
-                                {
-                                    reaching_states.push(state.clone());
-                                }
+                            no_branch_possible = false;
+                            break;
+                        }
+                        BoolFact::False => {}
+                        BoolFact::Unknown => {
+                            if let Some((_, state)) =
+                                branch_states.iter().find(|(branch, _)| *branch == index)
+                            {
+                                reaching_states.push(state.clone());
                             }
                         }
                     }
-                    // A final else block covers the not-taken path whenever no condition is
-                    // statically true.
-                    if no_branch_possible
-                        && let Some((_, state)) = branch_states
-                            .iter()
-                            .find(|(branch, _)| *branch == conditions.len())
-                    {
-                        reaching_states.push(state.clone());
-                    }
+                }
+                // A final else block covers the not-taken path whenever no condition is statically
+                // true.
+                if no_branch_possible
+                    && let Some((_, state)) = branch_states
+                        .iter()
+                        .find(|(branch, _)| *branch == conditions.len())
+                {
+                    reaching_states.push(state.clone());
                 }
                 let include_fallthrough = !has_final_else && no_branch_possible;
                 merge_obligation_states(&saved, &reaching_states, include_fallthrough, context);
@@ -2993,6 +3006,7 @@ fn check_block(
                         || branch_results.iter().any(|result| result.falls_through);
                     breaks_loop |= branch_results.iter().any(|result| result.breaks_loop);
                     continues_loop |= branch_results.iter().any(|result| result.continues_loop);
+                    diverges |= !reachable && branch_results.iter().any(|result| result.diverges);
                 } else {
                     let has_final_else = branch_results.len() > conditions.len();
                     let mut selected_fallthrough = !has_final_else;
@@ -3024,6 +3038,8 @@ fn check_block(
                     reachable = selected_fallthrough;
                     breaks_loop |= selected_breaks;
                     continues_loop |= selected_continues;
+                    diverges |= !selected_fallthrough
+                        && branch_results.iter().any(|result| result.diverges);
                 }
             }
             SyntaxForm::ForStatement => {
@@ -3144,6 +3160,7 @@ fn check_block(
                     }
                     _ => return Err(AnalysisError::Invariant),
                 };
+                diverges |= !reachable;
             }
             SyntaxForm::Expression => {
                 let terminated = node
@@ -3209,6 +3226,7 @@ fn check_block(
         trailing,
         breaks_loop,
         continues_loop,
+        diverges,
     })
 }
 
@@ -3380,6 +3398,7 @@ fn check_match_statement(
             falls_through: true,
             breaks_loop: false,
             continues_loop: false,
+            diverges: false,
         });
     };
     if scrutinee_type == TypeDescriptor::DECISION {
@@ -3397,6 +3416,7 @@ fn check_match_statement(
     let mut any_fallthrough = false;
     let mut any_break = false;
     let mut any_continue = false;
+    let mut any_diverges = false;
     let mut branch_states = Vec::new();
     for arm in statement.children().iter().copied().filter(|child| {
         tree.node(*child)
@@ -3451,12 +3471,15 @@ fn check_match_statement(
         });
         let result = checked?;
         leave_obligation_scope(context, diagnostics)?;
-        if result.falls_through {
+        // A diverging arm never reaches the join and never settles through a transfer, so its
+        // final state keeps the obligation visible at the enclosing scope exit.
+        if result.falls_through || result.diverges {
             branch_states.push(ObligationSnapshot::capture(context));
         }
         any_fallthrough |= result.falls_through;
         any_break |= result.breaks_loop;
         any_continue |= result.continues_loop;
+        any_diverges |= result.diverges;
     }
     let exhaustive = !universe.is_empty() && universe.is_subset(&covered);
     merge_obligation_states(&saved, &branch_states, !exhaustive, context);
@@ -3469,10 +3492,12 @@ fn check_match_statement(
             [] as [(&str, &str); 0],
         )?);
     }
+    let falls_through = !exhaustive || any_fallthrough;
     Ok(StatementCompletion {
-        falls_through: !exhaustive || any_fallthrough,
+        falls_through,
         breaks_loop: any_break,
         continues_loop: any_continue,
+        diverges: !falls_through && any_diverges,
     })
 }
 
