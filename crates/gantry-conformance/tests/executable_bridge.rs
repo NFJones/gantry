@@ -3980,3 +3980,73 @@ fn main() -> Int {
     );
     assert_eq!(run_single_entry(&root), 15);
 }
+
+/// A receiver call with explicit type arguments still lowers when its result is an operand.
+///
+/// The generic instantiation registers its resolved call site against the whole call, exactly
+/// like the monomorphic receiver call, so operand lowering resolves the same direct target the
+/// split operand reconstructs instead of falling back to the fragment walk and reporting an
+/// internal error.
+#[test]
+fn generic_receiver_call_operand_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn pick<T>(self, value: Int) -> Int { value } }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 5 };
+    counter.pick::<Int>(2) + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 3);
+}
+
+/// A generic free call with explicit type arguments still lowers when its result is an operand.
+///
+/// A free generic call registers its resolved call site the same way, so the operand resolves the
+/// call rather than the fragment walk. Its operand form failed with an internal error before that
+/// registration was aligned with the monomorphic free call.
+#[test]
+fn generic_free_call_operand_executes() {
+    let root = TempDirectory::new(
+        r#"
+fn pick<T>(value: Int) -> Int { value }
+fn main() -> Int { pick::<Int>(2) + 1 }
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 3);
+}
+
+/// The monomorphic receiver-call operands still execute beside the generic form.
+#[test]
+fn monomorphic_receiver_call_operands_still_execute() {
+    for (source, expected) in [
+        (
+            "struct Counter { value: Int }\n\
+             impl Counter { fn read(self) -> Int { self.value } }\n\
+             fn main() -> Int { let counter: Counter = Counter { value: 5 }; counter.read() + 1 }\n",
+            6,
+        ),
+        (
+            "struct Counter { value: Int }\n\
+             impl Counter { fn add(self, other: Int) -> Int { self.value + other } }\n\
+             fn main() -> Int { let counter: Counter = Counter { value: 5 }; counter.add(2) + 1 }\n",
+            8,
+        ),
+        (
+            "struct Counter { value: Int }\n\
+             impl Counter { fn read(self) -> Int { self.value } }\n\
+             impl Counter { fn add(self, amount: Int) -> Int { self.value + amount } }\n\
+             fn main() -> Int { let counter: Counter = Counter { value: 5 }; counter.add(counter.read()) + 1 }\n",
+            11,
+        ),
+    ] {
+        let root = TempDirectory::new(source);
+        assert_eq!(
+            run_single_entry(&root),
+            expected,
+            "{source} lowered wrongly"
+        );
+    }
+}

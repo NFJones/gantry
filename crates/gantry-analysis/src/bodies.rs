@@ -5963,10 +5963,18 @@ fn infer_member_sequence(
             }
         }
         if let Some(resolution) = generic {
+            // Register the instantiation against the whole call span, exactly as a
+            // monomorphic receiver call registers its own resolved call site, so that
+            // operand lowering finds the call the split operand reconstructs instead of
+            // falling back to the fragment walk. Diagnostics and source origins keep the
+            // authored callee reference.
+            let call_site = call_sequence_span(tree, children, member_node)
+                .unwrap_or_else(|| member_node.span().clone());
             retain_generic_instantiation(
                 &resolution.signature,
                 resolution.concrete_arguments,
                 member_node,
+                &call_site,
                 context,
                 diagnostics,
             )?;
@@ -7583,6 +7591,7 @@ fn infer_qualified_trait_call(
             &resolution.signature,
             resolution.concrete_arguments,
             method_node,
+            method_node.span(),
             context,
             diagnostics,
         )?;
@@ -7812,7 +7821,15 @@ fn infer_generic_call(
                 .map_err(|_| AnalysisError::Invariant)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    retain_generic_instantiation(signature, concrete_arguments, path, context, diagnostics)?;
+    let call_site = call_sequence_span(tree, children, path).unwrap_or_else(|| path.span().clone());
+    retain_generic_instantiation(
+        signature,
+        concrete_arguments,
+        path,
+        &call_site,
+        context,
+        diagnostics,
+    )?;
     Ok(Some(instantiated_result))
 }
 
@@ -7912,10 +7929,17 @@ fn check_callable_sealed_bounds(
     Ok(true)
 }
 
+/// Retains one generic instantiation of a call site.
+///
+/// `reference` is the authored callee reference that requests the instantiation, and it keeps
+/// diagnostics and instantiation source origins on the callee the author wrote. `call_site` is the
+/// whole call span, the same shape a monomorphic call registers, so operand lowering resolves the
+/// call that a split operand reconstructs instead of falling back to the fragment walk.
 fn retain_generic_instantiation(
     signature: &GenericCallableSignature,
     concrete_arguments: Vec<TypeDescriptor>,
-    call_site: &gantry_frontend::SyntaxNode,
+    reference: &gantry_frontend::SyntaxNode,
+    call_site: &SourceSpan,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
@@ -7924,7 +7948,7 @@ fn retain_generic_instantiation(
         check_callable_sealed_bounds(
             signature,
             &concrete_arguments,
-            call_site,
+            reference,
             context,
             diagnostics,
         )?;
@@ -7936,17 +7960,13 @@ fn retain_generic_instantiation(
         .borrow_mut()
         .entry(key.clone())
         .or_default()
-        .insert(call_site.span().clone());
+        .insert(reference.span().clone());
     if let Some(caller) = context.current_effect_owner.borrow().clone() {
         let selected_implementation = matches!(signature.kind, TemplateKind::TraitMethod)
             .then(|| signature.implementation.clone())
             .flatten();
         context.resolved_calls.borrow_mut().insert(
-            (
-                caller,
-                call_site.span().clone(),
-                EffectNode::Concrete(key.clone()),
-            ),
+            (caller, call_site.clone(), EffectNode::Concrete(key.clone())),
             selected_implementation,
         );
     }
@@ -7965,7 +7985,7 @@ fn retain_generic_instantiation(
                 GenericAnalysisCode::PolymorphicRecursion.wire_name(),
                 DiagnosticCategory::Type,
                 "a generic callable recursively changes its own type arguments",
-                call_site.span().clone(),
+                reference.span().clone(),
                 [("instantiation_witness", instantiation_witness(&cycle))],
             )?);
             return Ok(());
@@ -7989,7 +8009,7 @@ fn retain_generic_instantiation(
     if !check_callable_sealed_bounds(
         signature,
         &concrete_arguments,
-        call_site,
+        reference,
         context,
         diagnostics,
     )? {
