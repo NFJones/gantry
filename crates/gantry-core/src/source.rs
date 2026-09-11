@@ -1183,6 +1183,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "The package contains more than one default agent declaration.",
     },
     DiagnosticCodeDefinition {
+        code: "duplicate-effect-contract-member",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An effect contract declares one member more than once.",
+    },
+    DiagnosticCodeDefinition {
         code: "duplicate-item",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
@@ -1217,6 +1223,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "A where clause repeats one authored predicate.",
+    },
+    DiagnosticCodeDefinition {
+        code: "effect-contract-order",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An effect contract lists members outside the canonical effect order.",
     },
     DiagnosticCodeDefinition {
         code: "effect-contract-violation",

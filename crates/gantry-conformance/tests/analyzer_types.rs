@@ -3205,6 +3205,114 @@ fn public_trait_implementation_effects_stay_within_the_declared_contract() {
     );
 }
 
+/// A declared effect contract must have unique members written in the canonical effect order,
+/// because that declaration is the conservative summary that callers and implementations are
+/// checked against (`GNT-6.12-static-traits`).
+#[test]
+fn public_declared_effect_contracts_require_unique_canonical_members() {
+    let canonical = analyze(
+        r#"trait Render { fn render(self) effects { prompt, action(read_only), background, session, attempt }; }
+struct Item {}
+impl Render for Item { fn render(self) { discard prompt "Generate." -> String; } }
+fn main() {}"#,
+    );
+    assert_eq!(
+        canonical.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        canonical.diagnostics()
+    );
+
+    let duplicated_source = r#"trait Render { fn render(self) effects { prompt, prompt }; }
+fn main() {}"#;
+    let duplicated = analyze(duplicated_source);
+    assert_eq!(
+        duplicated.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        duplicated.diagnostics()
+    );
+    let duplicates = duplicated
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "duplicate-effect-contract-member")
+        .collect::<Vec<_>>();
+    assert_eq!(duplicates.len(), 1, "{:?}", duplicated.diagnostics());
+    assert!(
+        duplicated
+            .diagnostics()
+            .iter()
+            .all(|diagnostic| diagnostic.code.as_str() != "effect-contract-order"),
+        "a repeated member is reported once: {:?}",
+        duplicated.diagnostics()
+    );
+    let duplicate_span = duplicates[0]
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("{:?}", duplicated.diagnostics()));
+    let repeated_start = duplicated_source.rfind("prompt").unwrap_or_default();
+    assert_eq!(
+        usize::try_from(duplicate_span.bytes().start()).unwrap_or_default(),
+        repeated_start
+    );
+    let repeated_end = usize::try_from(duplicate_span.bytes().end()).unwrap_or_default();
+    assert_eq!(
+        duplicated_source.get(repeated_start..repeated_end),
+        Some("prompt"),
+        "{:?}",
+        duplicated.diagnostics()
+    );
+    assert!(duplicated.executable_program().is_none());
+
+    let unordered_source = r#"trait Render { fn render(self) effects { session, join }; }
+fn main() {}"#;
+    let unordered = analyze(unordered_source);
+    assert_eq!(
+        unordered.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        unordered.diagnostics()
+    );
+    let orders = unordered
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "effect-contract-order")
+        .collect::<Vec<_>>();
+    assert_eq!(orders.len(), 1, "{:?}", unordered.diagnostics());
+    let order_span = orders[0]
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("{:?}", unordered.diagnostics()));
+    let misplaced_start = unordered_source.rfind("join").unwrap_or_default();
+    assert_eq!(
+        usize::try_from(order_span.bytes().start()).unwrap_or_default(),
+        misplaced_start
+    );
+    let misplaced_end = usize::try_from(order_span.bytes().end()).unwrap_or_default();
+    assert_eq!(
+        unordered_source.get(misplaced_start..misplaced_end),
+        Some("join"),
+        "{:?}",
+        unordered.diagnostics()
+    );
+    assert!(unordered.executable_program().is_none());
+
+    // Action recovery classes hold separate canonical positions, so a lower class after a higher
+    // class is out of order even though both members name the `action` effect.
+    let action_order = analyze(
+        r#"trait Render { fn render(self) effects { action(idempotent), action(read_only) }; }
+fn main() {}"#,
+    );
+    assert!(
+        action_order
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "effect-contract-order"),
+        "{:?}",
+        action_order.diagnostics()
+    );
+}
+
 /// A pattern payload that binds a `MustConsume` value owes consumption like any other binding
 /// introduction, in `match` arms and in `if let` chains (D5).
 #[test]

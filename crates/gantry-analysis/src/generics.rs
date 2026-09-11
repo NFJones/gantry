@@ -18,9 +18,9 @@ use gantry_core::source::{
 use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
 use gantry_ir::{
-    EffectSet, ImplementationHead, IndependentTypeProperties, OwnershipClass, Predicate,
-    PrimitiveTypeProperties, ReceiverMode, TraitContract, TraitMethodContract, TraitReference,
-    TypeDescriptor, TypeExpression,
+    EFFECT_ORDER, EffectSet, ImplementationHead, IndependentTypeProperties, OwnershipClass,
+    Predicate, PrimitiveTypeProperties, ReceiverMode, TraitContract, TraitMethodContract,
+    TraitReference, TypeDescriptor, TypeExpression,
 };
 
 use crate::{
@@ -470,6 +470,7 @@ pub(crate) fn collect_type_binders(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Vec<TypeBinder>, AnalysisError> {
     diagnose_duplicate_where_predicates(sources, diagnostics)?;
+    diagnose_declared_effect_contracts(sources, diagnostics)?;
     let mut drafts = Vec::new();
     for (source_index, source) in sources.iter().enumerate() {
         let tree = source.tree();
@@ -592,6 +593,67 @@ fn diagnose_duplicate_where_predicates(
         }
     }
     Ok(())
+}
+
+/// Rejects duplicate or noncanonical members in every declared effect contract.
+///
+/// `GNT-6.12-static-traits` requires a nonempty `effects { ... }` set whose members are unique
+/// and written in the canonical effect order, so an authored contract that repeats one member or
+/// orders two members against `EFFECT_ORDER` is an analysis error rather than a silently
+/// canonicalized set.
+fn diagnose_declared_effect_contracts(
+    sources: &[ParsedSource],
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    for source in sources {
+        let tree = source.tree();
+        for contract in tree.nodes().iter().enumerate().filter_map(|(index, node)| {
+            matches!(node.form(), SyntaxForm::EffectContract).then_some(NodeId::from_index(index))
+        }) {
+            let mut first = BTreeMap::<Effect, SourceSpan>::new();
+            let mut preceding: Option<(Effect, SourceSpan)> = None;
+            for (effect, span) in effect_contract_members(tree, contract)? {
+                if let Some(previous) = first.get(&effect) {
+                    diagnostics.push(named_generic_diagnostic(
+                        "duplicate-effect-contract-member",
+                        "an effect contract repeats one member",
+                        span,
+                        vec![RelatedSpan {
+                            label: Arc::from("first member"),
+                            span: previous.clone(),
+                        }],
+                        [] as [(&str, &str); 0],
+                    )?);
+                    continue;
+                }
+                if let Some((earlier, earlier_span)) = preceding
+                    && effect_order_index(effect) < effect_order_index(earlier)
+                {
+                    diagnostics.push(named_generic_diagnostic(
+                        "effect-contract-order",
+                        "an effect contract is not in canonical effect order",
+                        span.clone(),
+                        vec![RelatedSpan {
+                            label: Arc::from("preceding member"),
+                            span: earlier_span,
+                        }],
+                        [] as [(&str, &str); 0],
+                    )?);
+                }
+                first.insert(effect, span.clone());
+                preceding = Some((effect, span));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Returns one effect's position in the normative canonical effect order.
+fn effect_order_index(effect: Effect) -> usize {
+    EFFECT_ORDER
+        .iter()
+        .position(|candidate| *candidate == effect)
+        .unwrap_or(EFFECT_ORDER.len())
 }
 
 fn predicate_token_signature(tree: &SyntaxTree, root: NodeId) -> Result<String, AnalysisError> {
@@ -1542,8 +1604,20 @@ fn collect_effect_contract(
     tree: &SyntaxTree,
     contract: NodeId,
 ) -> Result<EffectSet, AnalysisError> {
-    let contract = tree.node(contract).ok_or(AnalysisError::Invariant)?;
     let mut effects = EffectSet::default();
+    for (effect, _) in effect_contract_members(tree, contract)? {
+        effects.insert(effect);
+    }
+    Ok(effects)
+}
+
+/// Returns every declared effect contract member in authored source order.
+fn effect_contract_members(
+    tree: &SyntaxTree,
+    contract: NodeId,
+) -> Result<Vec<(Effect, SourceSpan)>, AnalysisError> {
+    let contract = tree.node(contract).ok_or(AnalysisError::Invariant)?;
+    let mut members = Vec::new();
     let tokens = contract
         .children()
         .iter()
@@ -1584,10 +1658,10 @@ fn collect_effect_contract(
             _ => None,
         };
         if let Some(effect) = effect {
-            effects.insert(effect);
+            members.push((effect, token.span().clone()));
         }
     }
-    Ok(effects)
+    Ok(members)
 }
 
 /// Resolves both path-form and typed implementation receivers to one expression.
