@@ -1399,6 +1399,50 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         candidate.test_ownership_token().clone(),
     );
 
+    let mismatched_candidate = TempDirectory::new(
+        b"agents { worker } default agent = worker; action read_only inspect(value: Int) -> Int; fn main() -> Int { 1 }",
+    );
+    let mismatch_lifecycle = InterpreterLifecycle::new(&configuration);
+    let mismatch_allocator = FreshIdentityAllocator::default();
+    let mismatch_package = AnalyzePackageCoordinator::new(
+        &mismatch_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
+    let mismatch_start = StartExecutionCoordinator::new(
+        &mismatch_package,
+        &mismatch_lifecycle,
+        &configuration,
+        &mismatch_allocator,
+        preflight.clone(),
+    );
+    let mismatch_resume = DurableStartExecutionCoordinator::new(
+        mismatch_start,
+        &configuration,
+        Arc::clone(&storage_adapter),
+    );
+    let result = block_on(mismatch_resume.resume(DurableResumeExecutionRequest {
+        journal_id: journal_id.clone(),
+        protocol_selection: &selection,
+        candidate_package_root: Some(&mismatched_candidate.0),
+        expected_execution_id: Some(execution_id),
+        event_delivery: None,
+    }));
+    let DurableResumeExecutionResult::Rejected(failure) = result else {
+        panic!("different canonical-IR candidate was accepted");
+    };
+    assert_eq!(
+        failure.category,
+        ResumeStartFailureCategory::SourceOrConfigurationIncompatibility
+    );
+    assert_eq!(&*failure.code, "canonical-ir-identity-mismatch");
+    assert!(failure.release_error.is_none());
+    assert_eq!(
+        read_prefix(storage.as_ref(), &journal_id),
+        prefix_after_start
+    );
+
     let revised_configuration = test_configuration(Arc::clone(&services))
         .with_graceful_shutdown_timeout_us(45_000_000)
         .unwrap_or_else(|error| panic!("mutable configuration failed: {error:?}"));

@@ -1770,6 +1770,11 @@ Callable types are admitted only by the selected profile and specification
 revision; this item fixes the row contract any such admission MUST satisfy and
 does not itself admit callable types.
 
+Each retained instantiation key fixes the bound of every effect-row variable
+carried by the instantiation by the same ordered substitution that closes it;
+the row is recomputed for that key, and no template-level bound is observable
+after lowering.
+
 For a call whose callee or any argument or capture has callable type, the
 call's effects are the union of the callee's row, the upper bounds of every
 effect-row variable in the callee's type, the row of every callable-typed
@@ -1786,8 +1791,9 @@ callable it is given, and a higher-order callable cannot acquire effects
 absent from its declared row. A row is a deterministic function of the closed
 template, its ordered closed substitutions, and the declared contracts and
 rows of every callable it may denote; source order, physical layout, call-site
-count, and private decomposition MUST NOT change it. `pure fn` remains valid
-exactly when the closed row is empty.
+count, and private decomposition MUST NOT change it. When callable types are
+admitted, `pure fn` remains valid exactly when the closed row is empty; a
+package in which they are not admitted remains governed by `GNT-3-T-EFFECTS`.
 
 Closures, resource operations, agent handlers, and imported tools follow the
 same rules. A closure's row is computed from its body, its captures, and its
@@ -1832,23 +1838,32 @@ selected and after the finite instantiation closure of
 and the callable rows of `GNT-3-T-EFFECT-ROWS` have been computed, so every
 row, site, and requirement slot is resolved to a closed type and a selected
 implementation. The closure is the least set of capability requirement
-instances and agent, tool, handler, and operation requirement slots that
-contains the declared requirement of every exact operation site reachable from
-every retained non-generic callable, every retained concrete public or durable
-schema root, every retained instantiation key, and every callable row bound
-invocable from those roots. An item not retained by the selected solution is
-not a root. When the selected solution retains the complete analyzed package,
-as v1 does, the closure contains exactly the action requirements that
-Section 7 item 2 resolves before start.
+instances (a public capability requirement together with the selected
+implementation binding that satisfies it) and agent, tool, handler, and
+operation requirement slots that contains the declared requirement of every
+exact operation site reachable from every retained root, including the agent,
+model-exposed tool, handler, and operation slots attached to those sites,
+every retained concrete public or durable schema root, every retained
+instantiation key, and every callable row bound invocable from those roots.
+A root is retained when the selected solution keeps it in the analyzed
+executable package: its entry point, every callable reachable from that entry
+point or exposed by the package's public interface, every concrete public or
+durable schema root, and every instantiation key interned from those. A
+declaration reachable from none of those is not retained, and a generic that
+`GNT-3-T-PARAMETRIC-PACKAGE` checks only parametrically is checked without
+being retained. An item not retained by the selected solution is not a root.
+In v1 the selected solution retains the complete analyzed executable package,
+and Section 7 item 2 resolves exactly the action requirements of this closure
+before start; no action requirement outside it is required.
 
 A declared requirement, declared action, dependency, module, optional feature,
 agent-fulfillment descriptor, exposed tool, or retained instantiation key that
 is not reachable from a retained root contributes no authority, MUST NOT be
 required before start, and MUST NOT appear in the closure. When a target,
 feature, or dependency solution retains fewer items than the complete package,
-only closure members are required before start. The closure is never narrowed
-by an unreachable-path argument or by runtime observation: it is the maximum
-static authority of the artifact.
+only closure members are required before start. Within the retained roots, the
+closure is never narrowed by an unreachable-path argument or by runtime
+observation: it is the maximum static authority of the retained artifact.
 
 Analysis MUST fail closed. If the callable target set is not finitely
 closable, or a requirement slot, row bound, retained root, or selected
@@ -1860,9 +1875,17 @@ state derived from an incomplete closure. The same package, target and feature
 solution, and specification revision MUST produce byte-identical closure
 contents, ordered canonically by requirement identity.
 
+The closure is an analysis-side derivation, not a separate published surface:
+no v1 artifact is required to carry an authority-closure field, and every
+surface that would expose closure-derived authority state remains subject to
+the prohibitions above.
+
 A started or resumable artifact's closure MUST NOT mutate. Discovering a host
 service, provider tool, or descriptor at runtime MUST NOT widen the closure of
-a running or resumable machine. Admitting a newly discovered descriptor
+a running or resumable machine. A mapping-revision change permitted by
+Section 7 item 2 is not a closure mutation: the closure is stated over
+canonical signatures and requirement slots, not over the concrete mapping a
+revision selects. Admitting a newly discovered descriptor
 requires validated descriptors, repeated analysis, linking, policy binding,
 and preflight, and a new content-identified artifact with its own immutable
 tool-set and mapping revisions before its first model turn; any broker design
@@ -3881,7 +3904,16 @@ they are the input to logical operation IDs, audit, preflight, and durable
 compatibility. Nothing in this item makes a site nameable from source.
 
 Two or more exact sites MAY satisfy one public requirement, and one site MUST
-satisfy exactly one public requirement in the selected solution. Splitting a
+satisfy exactly one public requirement in the selected solution. A site
+satisfies the public requirement of its selected declaration: the requirement
+whose package-qualified declaration path, complete canonical typed signature,
+capability family, and recovery class equal that declaration's; a site whose
+declaration exposes an imported tool satisfies that tool descriptor's
+requirement, and an effect-row variable of an exported signature is not
+satisfiable by a site. The mapping MUST be total and functional and determined
+by the selected solution alone. No v1 artifact publishes a separate
+public-requirement layer; the mapping binds any linker or tooling comparison
+that consumes it. Splitting a
 private helper, reordering equivalent internal code, or changing a private
 site MUST change canonical artifact identity where that identity covers sites,
 and MUST NOT create, remove, or widen a public requirement. Adding a
@@ -4158,7 +4190,8 @@ operation identity, failure categories, and propagation.
    Action declarations likewise identify logical harness capabilities rather
    than concrete provider functions. Before a new execution or resume begins,
    the integration MUST resolve every canonical action signature in the
-   analyzed package and, when that set is nonempty, MUST supply one opaque
+   executable authority closure of `GNT-3-T-AUTHORITY-CLOSURE` and, when that
+   set is nonempty, MUST supply one opaque
    stable action-mapping revision ID covering that complete mapping. A package
    with no action declarations requires neither action resolution nor an
    action-mapping revision. An unresolved action is an integration-
@@ -6091,11 +6124,16 @@ major version change.
 artifact and its replacement is four relations, each evaluated and reported on
 its own layer:
 
-1. **Source compatibility** asks whether downstream source written against one
-   public interface still analyzes against the replacement, judged from
-   exported item names, kinds, visibility, normalized signatures, generic and
-   trait bounds, receiver modes, exhaustiveness and construction rules, and
-   public constants.
+1. **Source and boundary compatibility** asks whether downstream source
+   written against one public interface still analyzes against the
+   replacement and whether versioned entry, action, model, tool, artifact, and
+   protected-reference schemas accept and produce the same values under the
+   same normalization and limits. It is judged from exported item names,
+   kinds, visibility, normalized signatures, generic and trait bounds,
+   receiver modes, exhaustiveness and construction rules, public constants,
+   and boundary-schema acceptance. This class carries the canonical-boundary
+   relation of the design taxonomy, and a boundary-schema acceptance change
+   MUST be reported distinctly from a source-visible declaration change.
 2. **Authority compatibility** asks whether exported calls can reach effects or
    requirements absent from the previous executable authority closure, require
    stronger capability, agent, or tool bindings, release additional data, or
@@ -6104,15 +6142,17 @@ its own layer:
 3. **Declared-behavior compatibility** asks whether documented guarantees for
    results, errors, ordering, state transitions, determinism, security,
    resource use, and recovery remain valid. It is not generally decidable from
-   signatures or linked IR, so it is compared through declared contract
-   revisions and executable conformance evidence rather than inferred from
-   equal types.
+   signatures or linked IR, so it is compared through declared capability
+   contract versions and executable conformance evidence rather than inferred
+   from equal types.
 4. **Artifact compatibility** asks whether an already linked executable may be
    replaced, or an existing durable run resumed, by the candidate artifact.
    The conservative answer is no unless canonical identity or a normative
-   compatibility contract proves otherwise: a different canonical-IR identity
-   is the `source-or-configuration-incompatibility` resume-start failure of
-   item 6, and Section 11's resume rules continue to govern durable admission
+   compatibility contract proves otherwise; in v1, compatibility in this
+   class is canonical identity equality and the normative-contract branch is
+   reserved for a later revision. A different canonical-IR identity is the
+   `source-or-configuration-incompatibility` resume-start failure of item 6,
+   and Section 11's resume rules continue to govern durable admission
    independently.
 
 These relations do not imply one another. A callable can keep every parameter
@@ -6124,7 +6164,11 @@ artifact identity and no public requirement is not an authority change and
 MUST NOT be reported as one. Tooling and publication comparison MUST evaluate
 all four classes, MUST report which classes were machine-checked and which
 were not, and MUST NOT declare semantic compatibility from equal signatures,
-schemas, effect rows, or requirement sets alone.
+schemas, effect rows, or requirement sets alone. The report MUST name the
+compared inputs of each class — exported declarations and signatures; public
+requirements, closures, and retained slots; declared capability contract
+versions and conformance evidence; canonical artifact identities and recovery
+records — and MUST mark each class machine-checked or not.
 
 <a id="GNT-11.7"></a>
 
