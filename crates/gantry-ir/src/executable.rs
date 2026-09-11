@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::generated::{Effect, OperationSiteKind, RecoveryClass};
 use crate::{
     ActionParameter, CanonicalCallableIdentity, CanonicalPath, CanonicalSignature, EffectSet,
-    StructuralPosition, TypeDescriptor,
+    OwnershipClass, StructuralPosition, TypeDescriptor,
 };
 use gantry_core::value::{LogicalValue, ValuePathSegment};
 
@@ -82,6 +82,14 @@ pub enum ReceiverSource {
         root: Arc<str>,
         /// Descendant route within the root value.
         path: Vec<ValuePathSegment>,
+        /// Ownership class of the caller place admitted by this call.
+        ///
+        /// A shared or exclusive admission only reads the caller place and records
+        /// [`OwnershipClass::Copyable`]. An `owned self` admission moves the caller place out, so it
+        /// records the proved ownership class of the receiver type: a `must_consume struct`
+        /// receiver records [`OwnershipClass::MustConsume`], which requires the runtime to retain an
+        /// accounting obligation instead of silently discarding the consumed place.
+        ownership: OwnershipClass,
     },
 }
 
@@ -1199,6 +1207,7 @@ mod tests {
                     source: ReceiverSource::CallerPlace {
                         root: Arc::from("value"),
                         path: Vec::new(),
+                        ownership: OwnershipClass::Copyable,
                     },
                 },
                 method_identity,
@@ -1227,6 +1236,7 @@ mod tests {
                     source: ReceiverSource::CallerPlace {
                         root: Arc::from("counter"),
                         path: Vec::new(),
+                        ownership: OwnershipClass::Copyable,
                     },
                 },
                 method_identity,

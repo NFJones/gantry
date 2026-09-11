@@ -295,6 +295,11 @@ struct BodyContext {
     shared_receiver_value_roots: RefCell<BTreeSet<Arc<str>>>,
     affine_consumed: RefCell<BTreeSet<AffinePlace>>,
     affine_loop_entry_roots: RefCell<Vec<BTreeSet<Arc<str>>>>,
+    must_consume_obligations: RefCell<BTreeMap<Arc<str>, SourceSpan>>,
+    must_consume_discharged: RefCell<BTreeSet<Arc<str>>>,
+    must_consume_receiver: Cell<bool>,
+    must_consume_consuming: Cell<bool>,
+    must_consume_discarding: Cell<bool>,
     resolved_struct_fields: RefCell<BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, TypeDescriptor>>>,
     spawn_captures: RefCell<BTreeMap<EffectNode, BTreeMap<SourceSpan, Vec<SpawnCaptureMetadata>>>>,
     concrete_declaration_types: RefCell<BTreeMap<InstantiationKey, BTreeMap<NodeId, TypeFact>>>,
@@ -923,6 +928,11 @@ fn build_body_context(
         shared_receiver_value_roots: RefCell::new(BTreeSet::new()),
         affine_consumed: RefCell::new(BTreeSet::new()),
         affine_loop_entry_roots: RefCell::new(Vec::new()),
+        must_consume_obligations: RefCell::new(BTreeMap::new()),
+        must_consume_discharged: RefCell::new(BTreeSet::new()),
+        must_consume_receiver: Cell::new(false),
+        must_consume_consuming: Cell::new(false),
+        must_consume_discarding: Cell::new(false),
         resolved_struct_fields: RefCell::new(BTreeMap::new()),
         spawn_captures: RefCell::new(BTreeMap::new()),
         concrete_declaration_types: RefCell::new(BTreeMap::new()),
@@ -2336,6 +2346,11 @@ fn check_callable(
     context.shared_receiver_value_roots.borrow_mut().clear();
     context.affine_consumed.borrow_mut().clear();
     context.affine_loop_entry_roots.borrow_mut().clear();
+    context.must_consume_obligations.borrow_mut().clear();
+    context.must_consume_discharged.borrow_mut().clear();
+    context.must_consume_receiver.set(false);
+    context.must_consume_consuming.set(false);
+    context.must_consume_discarding.set(false);
     *context.current_visible_traits.borrow_mut() = context
         .callable_visible_traits
         .get(node.span())
@@ -2360,8 +2375,26 @@ fn check_callable(
             continue;
         };
         if let Some(fact) = facts.get(&type_node) {
-            environment.insert(name, fact.descriptor.clone());
+            environment.insert(name.clone(), fact.descriptor.clone());
+            register_must_consume_binding(
+                name,
+                &fact.descriptor,
+                parameter_node.span().clone(),
+                context,
+            );
         }
+    }
+    // The `owned self` admission already consumed the caller place, so the callee-local receiver
+    // starts discharged rather than owing a further consumption.
+    if let Some(receiver) = environment.get("self").cloned()
+        && method_receiver_mode(tree, callable).is_ok_and(|mode| mode == ReceiverMode::Owned)
+        && is_must_consume_type(&receiver, context)
+    {
+        context.must_consume_receiver.set(true);
+        context
+            .must_consume_discharged
+            .borrow_mut()
+            .insert(Arc::from("self"));
     }
 
     let result = node
@@ -2415,6 +2448,15 @@ fn check_callable(
             [("expected", result.canonical_string())],
         )?);
     }
+    let obligations = context.must_consume_obligations.borrow().clone();
+    let discharged = context.must_consume_discharged.borrow().clone();
+    report_unconsumed_obligations(
+        &obligations,
+        &discharged,
+        "a MustConsume value is not consumed before the callable returns",
+        context,
+        diagnostics,
+    )?;
     Ok(())
 }
 
@@ -2458,7 +2500,9 @@ fn check_block(
             SyntaxForm::DiscardStatement => {
                 let expression = direct_child_form(tree, child_node, SyntaxForm::Expression)
                     .ok_or(AnalysisError::Invariant)?;
-                let _ = infer_expression(
+                let recorded = diagnostics.len();
+                context.must_consume_discarding.set(true);
+                let discarded = infer_expression(
                     tree,
                     expression,
                     facts,
@@ -2466,13 +2510,54 @@ fn check_block(
                     None,
                     context,
                     diagnostics,
-                )?;
+                );
+                context.must_consume_discarding.set(false);
+                let discarded = discarded?;
+                // A discarded place already records one class-aware diagnostic; a discarded
+                // `MustConsume` value is still a silent discard of the obligation.
+                let reported = diagnostics[recorded..].iter().any(|diagnostic| {
+                    matches!(
+                        diagnostic.code.as_str(),
+                        "must-consume-discard" | "must-consume-copy"
+                    )
+                });
+                if !reported
+                    && let Some(ty) = discarded
+                    && is_must_consume_type(&ty, context)
+                {
+                    diagnostics.push(body_diagnostic(
+                        "must-consume-discard",
+                        DiagnosticCategory::Type,
+                        "a MustConsume value requires consumption rather than discard",
+                        tree.node(expression)
+                            .ok_or(AnalysisError::Invariant)?
+                            .span()
+                            .clone(),
+                        [] as [(&str, &str); 0],
+                    )?);
+                }
             }
             SyntaxForm::SpawnStatement => {
                 check_spawned_block(tree, child_node, facts, &environment, context, diagnostics)?;
             }
             SyntaxForm::ReturnStatement => {
                 let expression = direct_child_form(tree, child_node, SyntaxForm::Expression);
+                // An `owned self` receiver that is handed back to the caller escapes the callable
+                // that owes its consumption.
+                if context.must_consume_receiver.get()
+                    && let Some(id) = expression
+                    && expression_is_receiver_root(tree, id)
+                {
+                    diagnostics.push(body_diagnostic(
+                        "must-consume-escape",
+                        DiagnosticCategory::Type,
+                        "an `owned self` MustConsume receiver is returned by the consuming callable",
+                        child_node.span().clone(),
+                        [] as [(&str, &str); 0],
+                    )?);
+                }
+                // Returning the place transfers it to the caller, which discharges the obligation.
+                context.must_consume_consuming.set(true);
                 let actual = expression
                     .map(|id| {
                         infer_expression(
@@ -2488,6 +2573,7 @@ fn check_block(
                     .transpose()?
                     .flatten()
                     .unwrap_or(TypeDescriptor::UNIT);
+                context.must_consume_consuming.set(false);
                 require_type(
                     expected_result,
                     &actual,
@@ -2611,6 +2697,10 @@ fn check_block(
                         }
                     }
                 }
+                let saved_obligations = context.must_consume_obligations.borrow().clone();
+                let saved_discharged = context.must_consume_discharged.borrow().clone();
+                let mut branch_obligations = Vec::new();
+                let mut branch_discharged = Vec::new();
                 let mut branch_results = Vec::new();
                 let mut blocks = 0_usize;
                 for nested in child_node.children().iter().copied().filter(|nested| {
@@ -2623,6 +2713,14 @@ fn check_block(
                         &environment
                     };
                     blocks = blocks.saturating_add(1);
+                    context
+                        .must_consume_obligations
+                        .borrow_mut()
+                        .clone_from(&saved_obligations);
+                    context
+                        .must_consume_discharged
+                        .borrow_mut()
+                        .clone_from(&saved_discharged);
                     let result = if has_pattern && blocks == 1 {
                         with_shared_receiver_payload_roots(
                             context,
@@ -2651,7 +2749,74 @@ fn check_block(
                         )?
                     };
                     branch_results.push(result);
+                    branch_obligations.push(context.must_consume_obligations.borrow().clone());
+                    branch_discharged.push(context.must_consume_discharged.borrow().clone());
                 }
+                // A consuming admission on only some paths leaves the obligation live: a discharge
+                // survives the merge only when every analysed path discharges it.
+                let has_else_clause = child_node.children().iter().any(|nested| {
+                    tree.node(*nested).is_some_and(|node| {
+                        matches!(
+                            node.form(),
+                            SyntaxForm::Token(TokenKind::ReservedWord(word))
+                                if word.spelling() == "else"
+                        )
+                    })
+                });
+                if !has_else_clause {
+                    // The implicit fall-through path leaves every obligation exactly as it was.
+                    branch_discharged.push(saved_discharged.clone());
+                }
+                let mut merged = saved_discharged.clone();
+                let mut first = true;
+                for branch in &branch_discharged {
+                    if first {
+                        merged.clone_from(branch);
+                        first = false;
+                    } else {
+                        merged.retain(|root| branch.contains(root));
+                    }
+                }
+                for (obligations, discharged) in branch_obligations.iter().zip(&branch_discharged) {
+                    let introduced = obligations
+                        .iter()
+                        .filter(|(root, _)| !saved_obligations.contains_key(*root))
+                        .map(|(root, span)| (root.clone(), span.clone()))
+                        .collect::<BTreeMap<_, _>>();
+                    report_unconsumed_obligations(
+                        &introduced,
+                        discharged,
+                        "a MustConsume value is not consumed before the branch completes",
+                        context,
+                        diagnostics,
+                    )?;
+                }
+                let path_dependent = branch_discharged
+                    .iter()
+                    .flat_map(|branch| branch.iter())
+                    .filter(|root| !merged.contains(*root))
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                for root in path_dependent {
+                    let Some(span) = saved_obligations.get(&root) else {
+                        continue;
+                    };
+                    diagnostics.push(body_diagnostic(
+                        "must-consume-path-dependent",
+                        DiagnosticCategory::Type,
+                        "a MustConsume value is consumed on only some paths",
+                        span.clone(),
+                        [("binding", root.as_ref())],
+                    )?);
+                }
+                context
+                    .must_consume_obligations
+                    .borrow_mut()
+                    .clone_from(&saved_obligations);
+                context
+                    .must_consume_discharged
+                    .borrow_mut()
+                    .clone_from(&merged);
                 if has_pattern {
                     let has_else = child_node.children().iter().any(|nested| {
                         tree.node(*nested).is_some_and(|node| {
@@ -2731,6 +2896,8 @@ fn check_block(
                         )?);
                     }
                 }
+                let loop_obligations = context.must_consume_obligations.borrow().clone();
+                let loop_discharged = context.must_consume_discharged.borrow().clone();
                 let _ = with_affine_loop_scope(context, &environment, || {
                     check_block(
                         tree,
@@ -2742,12 +2909,15 @@ fn check_block(
                         diagnostics,
                     )
                 })?;
+                report_loop_consumption(&loop_obligations, &loop_discharged, context, diagnostics)?;
             }
             SyntaxForm::LoopStatement | SyntaxForm::WhileStatement | SyntaxForm::UntilStatement => {
                 check_loop_limit(tree, child_node, diagnostics)?;
                 let condition = direct_child_form(tree, child_node, SyntaxForm::Expression);
                 let body = direct_child_form(tree, child_node, SyntaxForm::Block)
                     .ok_or(AnalysisError::Invariant)?;
+                let loop_obligations = context.must_consume_obligations.borrow().clone();
+                let loop_discharged = context.must_consume_discharged.borrow().clone();
                 let body_result = with_affine_loop_scope(context, &environment, || {
                     for condition in condition.iter().copied() {
                         if let Some(actual) = infer_expression(
@@ -2782,6 +2952,7 @@ fn check_block(
                         diagnostics,
                     )
                 })?;
+                report_loop_consumption(&loop_obligations, &loop_discharged, context, diagnostics)?;
                 let fact = condition
                     .map(|condition| bool_fact(tree, condition))
                     .transpose()?
@@ -2798,6 +2969,33 @@ fn check_block(
                 };
             }
             SyntaxForm::Expression => {
+                let terminated = node
+                    .children()
+                    .get(child_index.saturating_add(1))
+                    .and_then(|next| tree.node(*next))
+                    .is_some_and(|next| matches!(next.form(), SyntaxForm::ExpressionStatement));
+                // A trailing expression is the callable result: a returned `MustConsume` place is
+                // handed to the caller rather than copied, and a returned `owned self` receiver
+                // escapes the consuming callable.
+                if !terminated
+                    && context.must_consume_receiver.get()
+                    && expression_is_receiver_root(tree, child)
+                {
+                    diagnostics.push(body_diagnostic(
+                        "must-consume-escape",
+                        DiagnosticCategory::Type,
+                        "an `owned self` MustConsume receiver is returned by the consuming callable",
+                        child_node.span().clone(),
+                        [] as [(&str, &str); 0],
+                    )?);
+                }
+                if !terminated {
+                    // Only a whole place transfers its obligation to the caller: a projection or a
+                    // produced value is a copy rather than the returned place itself.
+                    context
+                        .must_consume_consuming
+                        .set(expression_is_whole_place(tree, child));
+                }
                 let actual = infer_expression(
                     tree,
                     child,
@@ -2807,11 +3005,7 @@ fn check_block(
                     context,
                     diagnostics,
                 )?;
-                let terminated = node
-                    .children()
-                    .get(child_index.saturating_add(1))
-                    .and_then(|next| tree.node(*next))
-                    .is_some_and(|next| matches!(next.form(), SyntaxForm::ExpressionStatement));
+                context.must_consume_consuming.set(false);
                 if terminated {
                     if let Some(actual) = actual
                         && actual != TypeDescriptor::UNIT
@@ -3426,9 +3620,70 @@ fn with_shared_receiver_payload_roots<T>(
     result
 }
 
-fn is_affine_type(ty: &TypeDescriptor, context: &BodyContext) -> bool {
-    prove_ownership_class(ty, &context.capability_declarations)
-        .is_ok_and(|class| class == OwnershipClass::AffineDroppable)
+/// Returns the proved ownership class of one analysed type.
+fn ownership_class(ty: &TypeDescriptor, context: &BodyContext) -> Option<OwnershipClass> {
+    prove_ownership_class(ty, &context.capability_declarations).ok()
+}
+
+/// Returns whether the type's ownership class requires the move ledger to account for uses.
+fn requires_consumption(ty: &TypeDescriptor, context: &BodyContext) -> bool {
+    ownership_class(ty, context).is_some_and(OwnershipClass::requires_consumption)
+}
+
+/// Returns whether the type's ownership class prohibits silent copying and discard.
+fn is_must_consume_type(ty: &TypeDescriptor, context: &BodyContext) -> bool {
+    ownership_class(ty, context) == Some(OwnershipClass::MustConsume)
+}
+
+/// Access kind recorded for one non-copyable place.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AffineAccess {
+    /// The place is read rather than moved.
+    ///
+    /// `AffineDroppable` admits one read; `MustConsume` records it as an unaccounted copy.
+    Read,
+    /// The place is moved out by an `owned self` admission.
+    Consume,
+}
+
+/// Records one binding that owes consumption before the enclosing callable returns.
+fn register_must_consume_binding(
+    name: Arc<str>,
+    ty: &TypeDescriptor,
+    span: SourceSpan,
+    context: &BodyContext,
+) {
+    if is_must_consume_type(ty, context) {
+        context
+            .must_consume_obligations
+            .borrow_mut()
+            .entry(name)
+            .or_insert(span);
+    }
+}
+
+/// Reports every obligation still live after the current region completes.
+fn report_unconsumed_obligations(
+    obligations: &BTreeMap<Arc<str>, SourceSpan>,
+    discharged: &BTreeSet<Arc<str>>,
+    expected_reason: &'static str,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    for (root, span) in obligations {
+        if discharged.contains(root) {
+            continue;
+        }
+        diagnostics.push(body_diagnostic(
+            "must-consume-unconsumed",
+            DiagnosticCategory::Type,
+            expected_reason,
+            span.clone(),
+            [("binding", root.as_ref())],
+        )?);
+    }
+    let _ = context;
+    Ok(())
 }
 
 /// Runs one loop body with the outer binding roots visible for repeated-execution checks.
@@ -3447,38 +3702,121 @@ fn with_affine_loop_scope<T>(
     result
 }
 
+/// Reports consumption that only a loop iteration could perform and restores the outer state.
+///
+/// A loop body may execute zero or many times, so a discharge recorded inside it is never a
+/// callable-wide discharge: the obligation stays live and the consumption is path-dependent.
+fn report_loop_consumption(
+    obligations: &BTreeMap<Arc<str>, SourceSpan>,
+    discharged: &BTreeSet<Arc<str>>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let after = context.must_consume_discharged.borrow().clone();
+    for root in after.difference(discharged) {
+        let Some(span) = obligations.get(root) else {
+            continue;
+        };
+        diagnostics.push(body_diagnostic(
+            "must-consume-path-dependent",
+            DiagnosticCategory::Type,
+            "a MustConsume value is consumed inside a loop that may not execute",
+            span.clone(),
+            [("binding", root.as_ref())],
+        )?);
+    }
+    context
+        .must_consume_discharged
+        .borrow_mut()
+        .clone_from(discharged);
+    Ok(())
+}
+
 /// Records one affine read or move place, rejecting any intersecting or repeated use.
 fn record_affine_place(
     place: AffinePlace,
     root_type: Option<&TypeDescriptor>,
     place_type: &TypeDescriptor,
     span: SourceSpan,
+    access: AffineAccess,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    if !is_affine_type(place_type, context)
-        && !root_type.is_some_and(|root| is_affine_type(root, context))
-    {
+    let place_class = ownership_class(place_type, context);
+    let root_class = root_type.and_then(|root| ownership_class(root, context));
+    let tracked = place_class.is_some_and(OwnershipClass::requires_consumption)
+        || root_class.is_some_and(OwnershipClass::requires_consumption);
+    if !tracked {
         return Ok(());
     }
+    let must_consume = place_class == Some(OwnershipClass::MustConsume)
+        || root_class == Some(OwnershipClass::MustConsume);
+    // A return hands the owned value back to the caller, which is the declared disposition for one
+    // `MustConsume` place rather than an unaccounted copy.
+    let access = match access {
+        AffineAccess::Read if must_consume && context.must_consume_consuming.take() => {
+            AffineAccess::Consume
+        }
+        access => access,
+    };
     let repeats_in_loop = context
         .affine_loop_entry_roots
         .borrow()
         .last()
         .is_some_and(|roots| roots.contains(&place.root));
-    let intersects = context
-        .affine_consumed
-        .borrow()
-        .iter()
-        .any(|consumed| consumed.intersects(&place));
-    if repeats_in_loop || intersects {
+    // A `MustConsume` discharge is root-scoped and branch-scoped, so consuming one place in two
+    // exclusive branches is not a reuse. The `AffineDroppable` ledger stays path-insensitive.
+    let intersects = if must_consume {
+        context
+            .must_consume_discharged
+            .borrow()
+            .contains(&place.root)
+    } else {
+        context
+            .affine_consumed
+            .borrow()
+            .iter()
+            .any(|consumed| consumed.intersects(&place))
+    };
+    // The receiver of one consuming callable is the value this admission already consumed, so
+    // reading it inside that callable is neither an unaccounted copy nor a reuse.
+    let receiver_read =
+        must_consume && context.must_consume_receiver.get() && place.root.as_ref() == "self";
+    if !receiver_read && (repeats_in_loop || intersects) {
         diagnostics.push(body_diagnostic(
             "affine-value-reuse",
             DiagnosticCategory::Type,
-            "an AffineDroppable value is used more than once",
+            if must_consume {
+                "a MustConsume value is used more than once"
+            } else {
+                "an AffineDroppable value is used more than once"
+            },
+            span.clone(),
+            [] as [(&str, &str); 0],
+        )?);
+    } else if must_consume && access == AffineAccess::Read && !receiver_read {
+        let discarding = context.must_consume_discarding.get();
+        diagnostics.push(body_diagnostic(
+            if discarding {
+                "must-consume-discard"
+            } else {
+                "must-consume-copy"
+            },
+            DiagnosticCategory::Type,
+            if discarding {
+                "a MustConsume value requires consumption rather than discard"
+            } else {
+                "a MustConsume place is copied; only an `owned self` admission consumes it"
+            },
             span,
             [] as [(&str, &str); 0],
         )?);
+    }
+    if must_consume && access == AffineAccess::Consume {
+        context
+            .must_consume_discharged
+            .borrow_mut()
+            .insert(place.root.clone());
     }
     context.affine_consumed.borrow_mut().insert(place);
     Ok(())
@@ -3496,6 +3834,7 @@ fn record_affine_read(
         Some(ty),
         ty,
         span,
+        AffineAccess::Read,
         context,
         diagnostics,
     )
@@ -3528,17 +3867,47 @@ fn check_owned_move_receiver(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    if !is_affine_type(receiver_type, context) {
+    if !requires_consumption(receiver_type, context) {
         return Ok(());
     }
     let Some((root, fields)) = owned_receiver_place(tree, receiver_children) else {
+        // A bare `self` receiver arrives as a reserved word rather than a path node, and re-admitting
+        // it inside the consuming callable still escapes the obligation this frame owes.
+        if is_must_consume_type(receiver_type, context)
+            && context.must_consume_receiver.get()
+            && receiver_children
+                .iter()
+                .any(|child| expression_is_receiver_root(tree, *child))
+        {
+            diagnostics.push(body_diagnostic(
+                "must-consume-escape",
+                DiagnosticCategory::Type,
+                "an `owned self` MustConsume receiver is re-admitted inside the consuming callable",
+                span,
+                [] as [(&str, &str); 0],
+            )?);
+        }
         return Ok(());
     };
+    if is_must_consume_type(receiver_type, context)
+        && context.must_consume_receiver.get()
+        && root.as_ref() == "self"
+        && fields.is_empty()
+    {
+        diagnostics.push(body_diagnostic(
+            "must-consume-escape",
+            DiagnosticCategory::Type,
+            "an `owned self` MustConsume receiver is re-admitted inside the consuming callable",
+            span.clone(),
+            [] as [(&str, &str); 0],
+        )?);
+    }
     record_affine_place(
         AffinePlace::projected(root.clone(), fields),
         environment.get(&root),
         receiver_type,
         span,
+        AffineAccess::Consume,
         context,
         diagnostics,
     )
@@ -3649,6 +4018,60 @@ fn node_has_reserved_word(
     node.children().iter().filter_map(|child| tree.node(*child)).any(|node| {
         matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == expected)
     })
+}
+
+/// Returns whether one expression is exactly the reserved receiver word `self`.
+///
+/// A projected receiver (`self.field`) is a member read rather than the owned place itself, so any
+/// field access inside the expression disqualifies it.
+fn expression_is_receiver_root(tree: &SyntaxTree, id: NodeId) -> bool {
+    fn walk(tree: &SyntaxTree, id: NodeId, receiver: &mut bool, projected: &mut bool) {
+        let Some(node) = tree.node(id) else {
+            return;
+        };
+        match node.form() {
+            SyntaxForm::Token(TokenKind::ReservedWord(word)) => {
+                *receiver |= word.spelling() == "self";
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)) => *projected = true,
+            SyntaxForm::Token(_) => {}
+            _ => {
+                for child in node.children() {
+                    walk(tree, *child, receiver, projected);
+                }
+            }
+        }
+    }
+    let mut receiver = false;
+    let mut projected = false;
+    walk(tree, id, &mut receiver, &mut projected);
+    receiver && !projected
+}
+
+/// Returns whether one expression is a whole binding path rather than a projection or a call.
+///
+/// Only a whole place transfers an ownership obligation to the caller; a projection or a produced
+/// value is a copy of one place or of no place at all.
+fn expression_is_whole_place(tree: &SyntaxTree, id: NodeId) -> bool {
+    fn walk(tree: &SyntaxTree, id: NodeId, identifier: &mut bool, disqualified: &mut bool) {
+        let Some(node) = tree.node(id) else {
+            return;
+        };
+        match node.form() {
+            SyntaxForm::Token(TokenKind::Identifier(_)) => *identifier = true,
+            SyntaxForm::Token(TokenKind::Punctuation(_)) => *disqualified = true,
+            SyntaxForm::Token(_) => {}
+            _ => {
+                for child in node.children() {
+                    walk(tree, *child, identifier, disqualified);
+                }
+            }
+        }
+    }
+    let mut identifier = false;
+    let mut disqualified = false;
+    walk(tree, id, &mut identifier, &mut disqualified);
+    identifier && !disqualified
 }
 
 fn node_has_identifier(
@@ -5384,7 +5807,8 @@ fn diagnose_projected_shared_receiver_place(
             .inherent_method_sources
             .get(&(receiver.clone(), member.clone()))
         && (metadata.receiver_mode.requires_caller_place()
-            || (metadata.receiver_mode == ReceiverMode::Owned && is_affine_type(receiver, context)))
+            || (metadata.receiver_mode == ReceiverMode::Owned
+                && requires_consumption(receiver, context)))
     {
         let (code, message) = match metadata.receiver_mode {
             ReceiverMode::ExclusivePlace => (
@@ -5393,7 +5817,7 @@ fn diagnose_projected_shared_receiver_place(
             ),
             ReceiverMode::Owned => (
                 "owned-receiver-scope",
-                "`owned self` on an AffineDroppable receiver requires a binding root or struct-field receiver place",
+                "`owned self` on a consumption-requiring receiver requires a binding root or struct-field receiver place",
             ),
             _ => (
                 "shared-receiver-place",
@@ -5589,6 +6013,7 @@ fn infer_operand_projection_sequence(
         Some(&root_binding),
         &field,
         member_span,
+        AffineAccess::Read,
         context,
         diagnostics,
     )?;
@@ -5666,6 +6091,7 @@ fn infer_member_sequence(
             Some(&root_binding),
             &receiver,
             place_span,
+            AffineAccess::Read,
             context,
             diagnostics,
         )?;
@@ -5868,7 +6294,7 @@ fn infer_member_sequence(
             };
             let requires_place = metadata.receiver_mode.requires_caller_place()
                 || (metadata.receiver_mode == ReceiverMode::Owned
-                    && is_affine_type(&receiver, context));
+                    && requires_consumption(&receiver, context));
             if requires_place && !caller_place_is_valid {
                 let (code, message) = match metadata.receiver_mode {
                     ReceiverMode::ExclusivePlace => (
@@ -5877,7 +6303,7 @@ fn infer_member_sequence(
                     ),
                     ReceiverMode::Owned => (
                         "owned-receiver-scope",
-                        "`owned self` on an AffineDroppable receiver requires a binding root or struct-field receiver place",
+                        "`owned self` on a consumption-requiring receiver requires a binding root or struct-field receiver place",
                     ),
                     _ => (
                         "shared-receiver-place",
@@ -5992,6 +6418,7 @@ fn infer_member_sequence(
                 Some(&root_binding),
                 &field,
                 member_node.span().clone(),
+                AffineAccess::Read,
                 context,
                 diagnostics,
             )?;

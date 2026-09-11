@@ -13,16 +13,16 @@ use gantry_core::value::{
 #[cfg(feature = "concurrent")]
 use gantry_ir::{CanonicalCallableIdentity, ExecutableTaskHandle, TaskBodyIdentity};
 use gantry_ir::{
-    CanonicalPath, InstructionKind, MachineProgram, Parameter, ReceiverMode, ReceiverSource,
-    StructuralPosition, TypeDescriptor,
+    CanonicalPath, InstructionKind, MachineProgram, OwnershipClass, Parameter, ReceiverMode,
+    ReceiverSource, StructuralPosition, TypeDescriptor,
 };
 
 use super::{
-    Binding, ExecutionBudgetSnapshot, LoadedPlace, MachineCheckpointV3, MachineFailure,
-    MachineLabel, MachineLimits, MachineOutcome, MachineRecoveryError, MachineStatus, MovedPlace,
-    OperationOccurrence, PendingOperation, PlaceInitialization, RuntimeCode, Scope,
-    SessionCreationModeV1, SessionScopeOccurrence, SharedPlaceAdmission, WorkflowFrame,
-    validate_execution_budget_snapshot, validate_machine_checkpoint,
+    Binding, ConsumptionObligation, ExecutionBudgetSnapshot, LoadedPlace, MachineCheckpointV3,
+    MachineFailure, MachineLabel, MachineLimits, MachineOutcome, MachineRecoveryError,
+    MachineStatus, MovedPlace, OperationOccurrence, PendingOperation, PlaceInitialization,
+    RuntimeCode, Scope, SessionCreationModeV1, SessionScopeOccurrence, SharedPlaceAdmission,
+    WorkflowFrame, validate_execution_budget_snapshot, validate_machine_checkpoint,
 };
 #[cfg(feature = "concurrent")]
 use super::{
@@ -56,6 +56,12 @@ const MACHINE_MAGIC_V7: &[u8; 8] = b"GNTMCP07";
 /// deliberate rather than accidental: the format is published once the durable projection
 /// registers it.
 const MACHINE_MAGIC_V8: &[u8; 8] = b"GNTMCP08";
+/// The V9 wire form and its consumption-obligation section stay private for now, for the same
+/// reason as V7 and V8: neither `GNTMCP09` nor `GNTMCX01` is registered in
+/// `protocol/catalogs/public-formats-v1.json`, which also omits V5 through V8, so the deferral is
+/// deliberate rather than accidental: the format is published once the durable projection
+/// registers it.
+const MACHINE_MAGIC_V9: &[u8; 8] = b"GNTMCP09";
 const EXECUTION_BUDGET_MAGIC: &[u8; 8] = b"GNTBGT01";
 #[cfg(feature = "concurrent")]
 const TASK_CONTROL_EXTENSION_MAGIC: &[u8; 8] = b"GNTMTC01";
@@ -65,6 +71,7 @@ const SHARED_RECEIVER_EXTENSION_MAGIC: &[u8; 8] = b"GNTSRA01";
 const PLACE_INITIALIZATION_EXTENSION_MAGIC: &[u8; 8] = b"GNTSTG01";
 const MOVED_OUT_EXTENSION_MAGIC: &[u8; 8] = b"GNTRMO01";
 const PLACE_ORIGINS_EXTENSION_MAGIC: &[u8; 8] = b"GNTLOA01";
+const CONSUMPTION_OBLIGATION_EXTENSION_MAGIC: &[u8; 8] = b"GNTMCX01";
 
 pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapshot) -> Vec<u8> {
     let mut writer = Writer::default();
@@ -122,7 +129,14 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
     // older wire form. A machine whose staged values never came from a place keeps its older,
     // shorter encoding.
     let staged_origins = checkpoint.values_places.iter().any(Option::is_some);
-    writer.raw(if staged_origins {
+    let consumption_obligation = checkpoint
+        .frames
+        .iter()
+        .any(|frame| !frame.consumption_obligation.is_empty())
+        || !checkpoint.settled_obligations.is_empty();
+    writer.raw(if consumption_obligation {
+        MACHINE_MAGIC_V9
+    } else if staged_origins {
         MACHINE_MAGIC_V8
     } else if moved_out {
         MACHINE_MAGIC_V7
@@ -181,7 +195,12 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         checkpoint.outcome.as_ref(),
         checkpoint.limits.value_limits,
     );
-    if staged_origins || moved_out || place_initialization || shared_receiver {
+    if staged_origins
+        || moved_out
+        || place_initialization
+        || shared_receiver
+        || consumption_obligation
+    {
         let mut extension_count = 0_usize;
         #[cfg(feature = "concurrent")]
         if successor {
@@ -197,6 +216,9 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
             extension_count += 1;
         }
         if staged_origins {
+            extension_count += 1;
+        }
+        if consumption_obligation {
             extension_count += 1;
         }
         writer.count(extension_count);
@@ -215,6 +237,9 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         }
         if staged_origins {
             write_place_origins_extension(&mut writer, checkpoint);
+        }
+        if consumption_obligation {
+            write_consumption_obligation_extension(&mut writer, checkpoint);
         }
     } else {
         #[cfg(feature = "concurrent")]
@@ -254,6 +279,7 @@ pub(super) fn decode_machine_checkpoint(
         magic if magic == MACHINE_MAGIC_V6 => 6_u8,
         magic if magic == MACHINE_MAGIC_V7 => 7_u8,
         magic if magic == MACHINE_MAGIC_V8 => 8_u8,
+        magic if magic == MACHINE_MAGIC_V9 => 9_u8,
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     };
     let execution = reader.identity(Some(IdentityKind::Execution))?;
@@ -304,6 +330,10 @@ pub(super) fn decode_machine_checkpoint(
     // The staged-place-origin list is restored from the V8 section; versions 3 through 7 cannot
     // carry it, so their staged values resume without a recorded origin.
     let mut staged_places: Option<Vec<Option<LoadedPlace>>> = None;
+    // The consumption obligations are restored from the V9 section; versions 3 through 8 cannot
+    // carry them, and a stream that claims one of those versions while the program already executed
+    // a `MustConsume` owned caller-place call is rejected as a program mismatch below.
+    let mut settled_obligations = Vec::new();
     // The legacy versions 3 through 6 cannot carry the moved-out mark: a completed owned move is
     // always encoded as V7. A stream whose sections do not parse as the version it claims therefore
     // cannot be a checkpoint this runtime produced for a frame that already executed an owned
@@ -514,6 +544,74 @@ pub(super) fn decode_machine_checkpoint(
                     return Err(MachineRecoveryError::InvalidCheckpoint);
                 }
             }
+            9 => {
+                // V9 carries the consumption-obligation section last. The staged-place-origin
+                // section stays optional here because an obligation, not a recorded origin, is what
+                // selects V9; every other section keeps the V8 order, appears at most once, and the
+                // obligation section is the final section. A missing, duplicated, or reordered
+                // section is a structurally impossible encoding rather than a recoverable mismatch.
+                let extension_count = reader.count()?;
+                let mut seen = 0_usize;
+                #[cfg(feature = "concurrent")]
+                {
+                    let magic = reader.peek(TASK_CONTROL_EXTENSION_MAGIC.len());
+                    if magic == TASK_CONTROL_EXTENSION_MAGIC
+                        || magic == TASK_CONTROL_EXTENSION_MAGIC_V2
+                    {
+                        let magic = reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())?;
+                        (task_body, pending_task_control) = read_task_control_extension(
+                            &mut reader,
+                            magic,
+                            &mut frames,
+                            limits.value_limits,
+                        )?;
+                        seen += 1;
+                    }
+                }
+                if reader.peek(SHARED_RECEIVER_EXTENSION_MAGIC.len())
+                    == SHARED_RECEIVER_EXTENSION_MAGIC
+                {
+                    reader.raw(SHARED_RECEIVER_EXTENSION_MAGIC.len())?;
+                    read_shared_receiver_extension(&mut reader, &mut frames)?;
+                    seen += 1;
+                }
+                if reader.peek(PLACE_INITIALIZATION_EXTENSION_MAGIC.len())
+                    == PLACE_INITIALIZATION_EXTENSION_MAGIC
+                {
+                    reader.raw(PLACE_INITIALIZATION_EXTENSION_MAGIC.len())?;
+                    read_place_initialization_extension(&mut reader, &mut frames)?;
+                    seen += 1;
+                }
+                if reader.peek(MOVED_OUT_EXTENSION_MAGIC.len()) == MOVED_OUT_EXTENSION_MAGIC {
+                    reader.raw(MOVED_OUT_EXTENSION_MAGIC.len())?;
+                    read_moved_out_extension(&mut reader, &mut frames)?;
+                    seen += 1;
+                }
+                if reader.peek(PLACE_ORIGINS_EXTENSION_MAGIC.len()) == PLACE_ORIGINS_EXTENSION_MAGIC
+                {
+                    reader.raw(PLACE_ORIGINS_EXTENSION_MAGIC.len())?;
+                    let places = read_place_origins_extension(&mut reader)?;
+                    seen += 1;
+                    // A declared count that disagrees with the staged values is a mismatch with the
+                    // machine state rather than a malformed encoding.
+                    if places.len() != values.len() {
+                        return Err(MachineRecoveryError::ProgramMismatch);
+                    }
+                    staged_places = Some(places);
+                }
+                if reader.peek(CONSUMPTION_OBLIGATION_EXTENSION_MAGIC.len())
+                    != CONSUMPTION_OBLIGATION_EXTENSION_MAGIC
+                {
+                    return Err(MachineRecoveryError::InvalidCheckpoint);
+                }
+                reader.raw(CONSUMPTION_OBLIGATION_EXTENSION_MAGIC.len())?;
+                settled_obligations =
+                    read_consumption_obligation_extension(&mut reader, &mut frames)?;
+                seen += 1;
+                if seen != extension_count || !reader.is_empty() {
+                    return Err(MachineRecoveryError::InvalidCheckpoint);
+                }
+            }
             _ => unreachable!("machine checkpoint version is bounded"),
         }
         if !reader.is_empty() {
@@ -525,7 +623,17 @@ pub(super) fn decode_machine_checkpoint(
         if version < 7 && has_executed_owned_caller_place_call(program, &frames) {
             return Err(MachineRecoveryError::ProgramMismatch);
         }
+        if version < 9 && has_must_consume_owned_caller_place_call(program, &frames) {
+            return Err(MachineRecoveryError::ProgramMismatch);
+        }
         return Err(error);
+    }
+    // The versions before V9 cannot carry a consumption obligation, so a checkpoint that claims one
+    // of them while the program already executed a `MustConsume` owned caller-place call cannot be a
+    // checkpoint this runtime produced for that state. Like the moved-out guard, this is a fail-closed
+    // compatibility check rather than an integrity mechanism.
+    if version < 9 && has_must_consume_owned_caller_place_call(program, &frames) {
+        return Err(MachineRecoveryError::ProgramMismatch);
     }
     #[cfg(feature = "concurrent")]
     if frames.len() == 1
@@ -547,6 +655,7 @@ pub(super) fn decode_machine_checkpoint(
         task_body,
         limits,
         frames,
+        settled_obligations,
         values,
         values_places,
         occurrences,
@@ -610,6 +719,120 @@ fn has_executed_owned_caller_place_call(
                 == Some(ReceiverMode::Owned)
         })
     })
+}
+
+/// Reports whether one frame already executed a `MustConsume` owned caller-place receiver call.
+///
+/// Such a frame may already owe a consumption obligation that only the V9 section carries, so a
+/// stream that claims an earlier version cannot be a checkpoint this runtime produced for that
+/// state. Like the moved-out guard, this is a fail-closed compatibility check rather than an
+/// integrity mechanism.
+fn has_must_consume_owned_caller_place_call(
+    program: &MachineProgram,
+    frames: &[WorkflowFrame],
+) -> bool {
+    frames.iter().any(|frame| {
+        let Some(workflow) = program.workflows().get(frame.workflow) else {
+            return false;
+        };
+        let Some(executed) = workflow.instructions.get(..frame.pc) else {
+            return false;
+        };
+        executed.iter().any(|instruction| {
+            let InstructionKind::ReceiverCall {
+                callee,
+                source: ReceiverSource::CallerPlace { ownership, .. },
+                ..
+            } = &instruction.kind
+            else {
+                return false;
+            };
+            *ownership == OwnershipClass::MustConsume
+                && program
+                    .callable_index(callee)
+                    .and_then(|index| program.workflows().get(index))
+                    .and_then(|workflow| workflow.parameters.first())
+                    .and_then(Parameter::receiver_mode)
+                    == Some(ReceiverMode::Owned)
+        })
+    })
+}
+
+/// Writes the deterministic consumption-obligation section.
+///
+/// The section carries the per-frame live obligations in canonical place order followed by the
+/// machine-level settled list, so equal machine state always yields identical bytes.
+fn write_consumption_obligation_extension(writer: &mut Writer, checkpoint: &MachineCheckpointV3) {
+    writer.raw(CONSUMPTION_OBLIGATION_EXTENSION_MAGIC);
+    writer.count(checkpoint.frames.len());
+    for frame in &checkpoint.frames {
+        let mut entries = frame.consumption_obligation.clone();
+        entries.sort_by(ConsumptionObligation::canonical_cmp);
+        entries.dedup_by(|left, right| left.canonical_cmp(right) == std::cmp::Ordering::Equal);
+        writer.count(entries.len());
+        for entry in &entries {
+            writer.string(&entry.root);
+            write_shared_receiver_path(writer, &entry.path);
+        }
+    }
+    let mut settled = checkpoint.settled_obligations.clone();
+    settled.sort_by(ConsumptionObligation::canonical_cmp);
+    settled.dedup_by(|left, right| left.canonical_cmp(right) == std::cmp::Ordering::Equal);
+    writer.count(settled.len());
+    for entry in &settled {
+        writer.string(&entry.root);
+        write_shared_receiver_path(writer, &entry.path);
+    }
+}
+
+/// Reads the V9 consumption-obligation section.
+///
+/// The section is mandatory and self-describing, so any truncation, count mismatch, or bogus length
+/// inside it is reported as a structurally impossible checkpoint.
+fn read_consumption_obligation_extension(
+    reader: &mut Reader<'_>,
+    frames: &mut [WorkflowFrame],
+) -> Result<Vec<ConsumptionObligation>, MachineRecoveryError> {
+    let frame_count = reader
+        .usize()
+        .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+    if frame_count != frames.len() {
+        return Err(MachineRecoveryError::InvalidCheckpoint);
+    }
+    for frame in frames {
+        let entry_count = reader
+            .usize()
+            .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+        let mut entries = Vec::with_capacity(entry_count.min(reader.remaining()));
+        for _ in 0..entry_count {
+            let root = reader
+                .string()
+                .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+            let path = read_shared_receiver_path(reader)
+                .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+            entries.push(ConsumptionObligation {
+                root: Arc::from(root),
+                path,
+            });
+        }
+        frame.consumption_obligation = entries;
+    }
+    let settled_count = reader
+        .usize()
+        .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+    let mut settled = Vec::with_capacity(settled_count.min(reader.remaining()));
+    for _ in 0..settled_count {
+        let root = reader
+            .string()
+            .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+        let path = read_shared_receiver_path(reader)
+            .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+        settled.push(ConsumptionObligation {
+            root: Arc::from(root),
+            path,
+        });
+    }
+    Ok(settled)
 }
 
 fn write_limits(writer: &mut Writer, limits: MachineLimits) {
@@ -702,6 +925,7 @@ fn read_frame(
         receiver_admission: None,
         place_initialization: Vec::new(),
         moved_out: Vec::new(),
+        consumption_obligation: Vec::new(),
     })
 }
 

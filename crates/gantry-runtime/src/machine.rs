@@ -15,8 +15,8 @@ use gantry_core::value::{
 use gantry_ir::generated::Effect;
 use gantry_ir::{
     AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison, ExecutableOperation,
-    Instruction, InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, Projection,
-    ReceiverMode, ReceiverSource, StructuralPosition, TypeDescriptor,
+    Instruction, InstructionKind, LoopPhase, MachineProgram, OwnershipClass, Parameter, Primitive,
+    Projection, ReceiverMode, ReceiverSource, StructuralPosition, TypeDescriptor,
 };
 #[cfg(feature = "concurrent")]
 use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
@@ -717,6 +717,7 @@ struct WorkflowFrame {
     receiver_admission: Option<SharedPlaceAdmission>,
     place_initialization: Vec<PlaceInitialization>,
     moved_out: Vec<MovedPlace>,
+    consumption_obligation: Vec<ConsumptionObligation>,
 }
 
 /// Durable evidence that a callee frame was admitted through a shared caller place.
@@ -749,6 +750,46 @@ struct PlaceInitialization {
 struct MovedPlace {
     root: Arc<str>,
     path: Vec<ValuePathSegment>,
+}
+
+/// Durable evidence that one owned `MustConsume` admission has not been accounted for.
+///
+/// The obligation is recorded in the frame that owns the consumed caller place. A normal return
+/// transfers it to the caller frame exactly like the moved-out mark, and a failure cut drains it
+/// into the machine-level settled list so an unaccounted consumption is retained rather than
+/// silently discarded together with the frames.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ConsumptionObligation {
+    pub(crate) root: Arc<str>,
+    pub(crate) path: Vec<ValuePathSegment>,
+}
+
+impl ConsumptionObligation {
+    /// Orders two obligations by root and then by canonical path segments.
+    fn canonical_cmp(&self, other: &Self) -> Ordering {
+        self.root
+            .cmp(&other.root)
+            .then_with(|| canonical_path_cmp(&self.path, &other.path))
+    }
+}
+
+/// Records one consumption obligation in the frame that owns the consumed place.
+///
+/// Every existing intersecting entry is replaced, so a frame never records two intersecting
+/// obligations and the resulting vector stays in canonical order.
+fn record_consumption_obligation(
+    frame: &mut WorkflowFrame,
+    root: Arc<str>,
+    path: Vec<ValuePathSegment>,
+) {
+    let entry = ConsumptionObligation { root, path };
+    frame.consumption_obligation.retain(|existing| {
+        !places_intersect(&existing.root, &existing.path, &entry.root, &entry.path)
+    });
+    frame.consumption_obligation.push(entry);
+    frame
+        .consumption_obligation
+        .sort_by(ConsumptionObligation::canonical_cmp);
 }
 
 /// Two places intersect when they share one root and one path is a prefix of the other.
@@ -945,6 +986,8 @@ pub struct MachineCheckpointV3 {
     task_body: Option<TaskBodyIdentity>,
     limits: MachineLimits,
     frames: Vec<WorkflowFrame>,
+    /// Obligations retained after a discarded frame, in canonical place order.
+    settled_obligations: Vec<ConsumptionObligation>,
     values: Vec<LogicalValue>,
     /// Read-guard hints: the place origin of each staged value, in stack order.
     ///
@@ -1499,6 +1542,8 @@ pub struct Machine {
     limits: MachineLimits,
     execution_budget: ExecutionBudget,
     frames: Vec<WorkflowFrame>,
+    /// Obligations that survived a discarded frame, in canonical place order.
+    settled_obligations: Vec<ConsumptionObligation>,
     values: Vec<LogicalValue>,
     values_places: Vec<Option<LoadedPlace>>,
     occurrences: Vec<Arc<str>>,
@@ -1521,6 +1566,23 @@ pub struct Machine {
 }
 
 impl Machine {
+    /// Returns one frame's live consumption obligations in canonical place order.
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_consumption_obligations(
+        &self,
+        frame_index: usize,
+    ) -> Option<&[ConsumptionObligation]> {
+        self.frames
+            .get(frame_index)
+            .map(|frame| frame.consumption_obligation.as_slice())
+    }
+
+    /// Returns the obligations retained after a discarded frame.
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_settled_obligations(&self) -> &[ConsumptionObligation] {
+        &self.settled_obligations
+    }
+
     /// Creates the root task after profile, identity, argument, and value checks.
     pub fn new(
         program: Arc<MachineProgram>,
@@ -1761,7 +1823,9 @@ impl Machine {
                 receiver_admission: None,
                 place_initialization: Vec::new(),
                 moved_out: Vec::new(),
+                consumption_obligation: Vec::new(),
             }],
+            settled_obligations: Vec::new(),
             values: Vec::new(),
             values_places: Vec::new(),
             occurrences: Vec::new(),
@@ -1866,7 +1930,9 @@ impl Machine {
                 receiver_admission: None,
                 place_initialization: Vec::new(),
                 moved_out: Vec::new(),
+                consumption_obligation: Vec::new(),
             }],
+            settled_obligations: Vec::new(),
             values: Vec::new(),
             values_places: Vec::new(),
             occurrences: Vec::new(),
@@ -2056,6 +2122,7 @@ impl Machine {
             task_body: self.task_body.clone(),
             limits: self.limits,
             frames: self.frames.clone(),
+            settled_obligations: self.settled_obligations.clone(),
             values: self.values.clone(),
             values_places: self.values_places.clone(),
             occurrences: self.occurrences.clone(),
@@ -2144,6 +2211,7 @@ impl Machine {
             limits: checkpoint.limits,
             execution_budget,
             frames: checkpoint.frames,
+            settled_obligations: checkpoint.settled_obligations,
             // Staged values resume with the place origins the checkpoint recorded, so the
             // projection guard still fires after recovery. A wire form that cannot carry origins
             // resumes every staged value without one.
@@ -2960,6 +3028,7 @@ impl Machine {
                 .value = candidate;
         }
         self.clear_moved_out(name, path);
+        self.clear_consumption_obligations(name, path);
         self.advance_pc();
         Ok(())
     }
@@ -3402,7 +3471,7 @@ impl Machine {
             );
         }
         let (values, stack_arguments, caller_place) = match receiver_source.as_ref() {
-            Some(ReceiverSource::CallerPlace { root, path }) => {
+            Some(ReceiverSource::CallerPlace { root, path, .. }) => {
                 let Some(stack_arguments) = arguments.checked_sub(1) else {
                     return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
                 };
@@ -3441,6 +3510,15 @@ impl Machine {
         }
         let owned_move = caller_place.is_some()
             && parameters.first().and_then(Parameter::receiver_mode) == Some(ReceiverMode::Owned);
+        // Only an owned admission of a `MustConsume` caller place consumes a place that must be
+        // accounted for; a shared or exclusive admission only reads it.
+        let consumed_place = match receiver_source.as_ref() {
+            Some(ReceiverSource::CallerPlace {
+                ownership: OwnershipClass::MustConsume,
+                ..
+            }) if owned_move => caller_place.clone(),
+            _ => None,
+        };
         let receiver_admission = if owned_move {
             None
         } else {
@@ -3463,7 +3541,7 @@ impl Machine {
         } else {
             Vec::new()
         };
-        if let Some(ReceiverSource::CallerPlace { root, path }) = receiver_source.as_ref()
+        if let Some(ReceiverSource::CallerPlace { root, path, .. }) = receiver_source.as_ref()
             && parameters.first().and_then(Parameter::receiver_mode)
                 == Some(ReceiverMode::ExclusivePlace)
             && (self.binding(root).is_none_or(|binding| !binding.mutable)
@@ -3473,7 +3551,7 @@ impl Machine {
         {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
-        if let Some(ReceiverSource::CallerPlace { root, path }) = receiver_source.as_ref()
+        if let Some(ReceiverSource::CallerPlace { root, path, .. }) = receiver_source.as_ref()
             && parameters.first().and_then(Parameter::receiver_mode)
                 == Some(ReceiverMode::ExclusivePlace)
             && root.as_ref() == "self"
@@ -3528,6 +3606,10 @@ impl Machine {
             receiver_admission,
             place_initialization,
             moved_out: Vec::new(),
+            consumption_obligation: consumed_place
+                .map(|(root, path)| ConsumptionObligation { root, path })
+                .into_iter()
+                .collect(),
         });
         self.finish_deterministic(workflow, site, Arc::from("call"))
     }
@@ -3773,6 +3855,13 @@ impl Machine {
         {
             record_moved_out(caller, entry.root, entry.path);
         }
+        // A normal return transfers the callee's live obligations to the caller frame that owns the
+        // consumed place, so the accounting survives the callee-frame pop.
+        if let Some(caller) = self.frames.last_mut() {
+            for entry in frame.consumption_obligation {
+                record_consumption_obligation(caller, entry.root, entry.path);
+            }
+        }
         self.finish_deterministic(workflow, site, Arc::from("return"))
     }
 
@@ -4012,6 +4101,17 @@ impl Machine {
     fn finish_failure(&mut self, failure: MachineFailure) -> MachineStep {
         self.pending_session_scope = None;
         self.pending_operation = None;
+        // A failure cut discards the frames, so every live obligation is retained in the
+        // machine-level settled list instead of disappearing with them.
+        for frame in &mut self.frames {
+            for entry in frame.consumption_obligation.drain(..) {
+                self.settled_obligations.push(entry);
+            }
+        }
+        self.settled_obligations
+            .sort_by(ConsumptionObligation::canonical_cmp);
+        self.settled_obligations
+            .dedup_by(|left, right| left.canonical_cmp(right) == Ordering::Equal);
         #[cfg(feature = "concurrent")]
         {
             self.pending_task_control = None;
@@ -4079,6 +4179,15 @@ impl Machine {
         if let Some(frame) = self.frames.last_mut() {
             frame
                 .moved_out
+                .retain(|entry| !places_intersect(&entry.root, &entry.path, root, path));
+        }
+    }
+
+    /// Discharges every obligation that re-initialising one place makes accounted for.
+    fn clear_consumption_obligations(&mut self, root: &str, path: &[ValuePathSegment]) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame
+                .consumption_obligation
                 .retain(|entry| !places_intersect(&entry.root, &entry.path, root, path));
         }
     }
@@ -4358,7 +4467,7 @@ fn validate_machine_checkpoint(
         });
         let parent_caller_place = match parent_instruction.map(|instruction| &instruction.kind) {
             Some(InstructionKind::ReceiverCall {
-                source: ReceiverSource::CallerPlace { root, path },
+                source: ReceiverSource::CallerPlace { root, path, .. },
                 ..
             }) => Some((root, path)),
             _ => None,
@@ -4418,7 +4527,7 @@ fn validate_machine_checkpoint(
                 &parent_instruction.kind,
                 InstructionKind::ReceiverCall {
                     callee: instruction_callee,
-                    source: ReceiverSource::CallerPlace { root, path },
+                    source: ReceiverSource::CallerPlace { root, path, .. },
                     ..
                 } if instruction_callee == callee
                     && root.as_ref() == admission.root.as_ref()
@@ -4521,7 +4630,7 @@ fn validate_machine_checkpoint(
                     .any(|instruction| match &instruction.kind {
                         InstructionKind::ReceiverCall {
                             callee,
-                            source: ReceiverSource::CallerPlace { root, path },
+                            source: ReceiverSource::CallerPlace { root, path, .. },
                             ..
                         } => {
                             root.as_ref() == entry.root.as_ref()
@@ -4538,6 +4647,112 @@ fn validate_machine_checkpoint(
             if !justified {
                 return Err(MachineRecoveryError::ProgramMismatch);
             }
+        }
+        // Every live obligation must stay canonical, pairwise non-intersecting, rooted in a
+        // non-empty name, and justified by an earlier MustConsume owned caller-place call in this
+        // frame's own workflow.
+        for (entry_index, entry) in frame.consumption_obligation.iter().enumerate() {
+            if entry.root.is_empty() {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
+            }
+            if frame.consumption_obligation[..entry_index]
+                .iter()
+                .any(|prior| {
+                    prior.canonical_cmp(entry) != Ordering::Less
+                        || places_intersect(&prior.root, &prior.path, &entry.root, &entry.path)
+                })
+            {
+                return Err(MachineRecoveryError::InvalidCheckpoint);
+            }
+            let justified =
+                instructions[..frame.pc]
+                    .iter()
+                    .any(|instruction| match &instruction.kind {
+                        InstructionKind::ReceiverCall {
+                            callee,
+                            source:
+                                ReceiverSource::CallerPlace {
+                                    root,
+                                    path,
+                                    ownership: OwnershipClass::MustConsume,
+                                },
+                            ..
+                        } => {
+                            root.as_ref() == entry.root.as_ref()
+                                && path == &entry.path
+                                && program
+                                    .callable_index(callee)
+                                    .and_then(|index| program.workflows().get(index))
+                                    .and_then(|workflow| workflow.parameters.first())
+                                    .and_then(Parameter::receiver_mode)
+                                    == Some(ReceiverMode::Owned)
+                        }
+                        _ => false,
+                    });
+            // The parent frame's admission staged this obligation when it consumed the caller place,
+            // so the justification may also come from that earlier parent instruction.
+            let justified = justified
+                || parent_instruction.is_some_and(|instruction| {
+                    matches!(
+                        &instruction.kind,
+                        InstructionKind::ReceiverCall {
+                            source: ReceiverSource::CallerPlace {
+                                root,
+                                path,
+                                ownership: OwnershipClass::MustConsume,
+                            },
+                            ..
+                        } if root.as_ref() == entry.root.as_ref() && path == &entry.path
+                    )
+                });
+            if !justified {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            }
+        }
+    }
+
+    // The machine-level settled list survives discarded frames, so it carries the same structural
+    // requirements while its justification may come from any `MustConsume` owned caller-place call
+    // the retained program can still execute.
+    for (entry_index, entry) in checkpoint.settled_obligations.iter().enumerate() {
+        if entry.root.is_empty() {
+            return Err(MachineRecoveryError::InvalidCheckpoint);
+        }
+        if checkpoint.settled_obligations[..entry_index]
+            .iter()
+            .any(|prior| {
+                prior.canonical_cmp(entry) != Ordering::Less
+                    || places_intersect(&prior.root, &prior.path, &entry.root, &entry.path)
+            })
+        {
+            return Err(MachineRecoveryError::InvalidCheckpoint);
+        }
+        let justified = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .chain(
+                program
+                    .task_bodies()
+                    .iter()
+                    .flat_map(|body| body.instructions().iter()),
+            )
+            .any(|instruction| {
+                matches!(
+                    &instruction.kind,
+                    InstructionKind::ReceiverCall {
+                        source: ReceiverSource::CallerPlace {
+                            root,
+                            path,
+                            ownership: OwnershipClass::MustConsume,
+                        },
+                        ..
+                    } if root.as_ref() == entry.root.as_ref()
+                        && path == &entry.path
+                )
+            });
+        if !justified {
+            return Err(MachineRecoveryError::ProgramMismatch);
         }
     }
 

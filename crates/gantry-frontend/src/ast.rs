@@ -115,6 +115,8 @@ pub enum SyntaxForm {
     StructDeclaration,
     /// `affine` marker preceding a struct declaration.
     AffineStructModifier,
+    /// `must_consume` marker preceding a struct declaration.
+    MustConsumeStructModifier,
     /// Struct field declaration.
     StructField,
     /// `enum` declaration.

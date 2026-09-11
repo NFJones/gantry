@@ -14,8 +14,8 @@ use gantry_core::value::{
 };
 use gantry_ir::generated::Effect;
 use gantry_ir::{
-    CanonicalCallableIdentity, CanonicalPath, EffectSet, Projection, ReceiverMode, ReceiverSource,
-    StructuralPosition, TypeDescriptor,
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, OwnershipClass, Projection, ReceiverMode,
+    ReceiverSource, StructuralPosition, TypeDescriptor,
 };
 #[cfg(feature = "concurrent")]
 use gantry_ir::{
@@ -1894,6 +1894,7 @@ fn shared_receiver_calls_resolve_nested_caller_places_and_recover() {
                                     ValuePathSegment::StructField("values".to_owned()),
                                     ValuePathSegment::TupleMember(0),
                                 ],
+                                ownership: OwnershipClass::Copyable,
                             },
                         },
                     ),
@@ -2115,6 +2116,7 @@ fn owned_move_program(
                             source: ReceiverSource::CallerPlace {
                                 root: Arc::from(receiver_root),
                                 path: receiver_path,
+                                ownership: OwnershipClass::Copyable,
                             },
                         },
                     ),
@@ -2641,6 +2643,7 @@ fn exclusive_receiver_admission_recovery_rejects_tampering_and_resumes_nested_wr
                             source: ReceiverSource::CallerPlace {
                                 root: Arc::from("item"),
                                 path: Vec::new(),
+                                ownership: OwnershipClass::Copyable,
                             },
                         },
                     ),
@@ -2670,6 +2673,7 @@ fn exclusive_receiver_admission_recovery_rejects_tampering_and_resumes_nested_wr
                             source: ReceiverSource::CallerPlace {
                                 root: Arc::from("self"),
                                 path: vec![ValuePathSegment::StructField("value".to_owned())],
+                                ownership: OwnershipClass::Copyable,
                             },
                         },
                     ),
@@ -2937,6 +2941,7 @@ fn shared_receiver_admission_rejections_preserve_the_pre_call_instruction_state(
         ReceiverSource::CallerPlace {
             root: Arc::from("missing"),
             path: Vec::new(),
+            ownership: OwnershipClass::Copyable,
         },
         1,
         item.clone(),
@@ -2947,6 +2952,7 @@ fn shared_receiver_admission_rejections_preserve_the_pre_call_instruction_state(
         ReceiverSource::CallerPlace {
             root: Arc::from("item"),
             path: vec![ValuePathSegment::TupleMember(0)],
+            ownership: OwnershipClass::Copyable,
         },
         1,
         item.clone(),
@@ -2957,6 +2963,7 @@ fn shared_receiver_admission_rejections_preserve_the_pre_call_instruction_state(
         ReceiverSource::CallerPlace {
             root: Arc::from("item"),
             path: vec![ValuePathSegment::StructField("value".to_owned())],
+            ownership: OwnershipClass::Copyable,
         },
         1,
         string,
@@ -2967,6 +2974,7 @@ fn shared_receiver_admission_rejections_preserve_the_pre_call_instruction_state(
         ReceiverSource::CallerPlace {
             root: Arc::from("item"),
             path: vec![ValuePathSegment::StructField("value".to_owned())],
+            ownership: OwnershipClass::Copyable,
         },
         2,
         item.clone(),
@@ -2977,6 +2985,7 @@ fn shared_receiver_admission_rejections_preserve_the_pre_call_instruction_state(
         ReceiverSource::CallerPlace {
             root: Arc::from("item"),
             path: vec![ValuePathSegment::StructField("value".to_owned())],
+            ownership: OwnershipClass::Copyable,
         },
         1,
         item.clone(),
@@ -2987,6 +2996,7 @@ fn shared_receiver_admission_rejections_preserve_the_pre_call_instruction_state(
         ReceiverSource::CallerPlace {
             root: Arc::from("item"),
             path: vec![ValuePathSegment::StructField("value".to_owned())],
+            ownership: OwnershipClass::Copyable,
         },
         1,
         item,
@@ -3660,6 +3670,7 @@ fn task_body_shared_receiver_checkpoint_uses_the_task_body_parent_instruction() 
                     source: ReceiverSource::CallerPlace {
                         root: Arc::from("item"),
                         path: vec![ValuePathSegment::StructField("value".to_owned())],
+                        ownership: OwnershipClass::Copyable,
                     },
                 },
             ),
@@ -4164,6 +4175,7 @@ fn owned_move_records_place_initialization_and_recovers() {
                             source: ReceiverSource::CallerPlace {
                                 root: Arc::from("token"),
                                 path: Vec::new(),
+                                ownership: OwnershipClass::Copyable,
                             },
                         },
                     ),
@@ -4359,6 +4371,7 @@ fn owned_move_unwind_discards_staged_value_without_rollback() {
                             source: ReceiverSource::CallerPlace {
                                 root: Arc::from("token"),
                                 path: Vec::new(),
+                                ownership: OwnershipClass::Copyable,
                             },
                         },
                     ),
@@ -4606,6 +4619,7 @@ fn receiver_call_at_path(
             source: ReceiverSource::CallerPlace {
                 root: Arc::from(root),
                 path,
+                ownership: OwnershipClass::Copyable,
             },
         },
     )
@@ -5559,6 +5573,7 @@ fn moved_out_capture_program() -> Arc<MachineProgram> {
                     source: ReceiverSource::CallerPlace {
                         root: Arc::from("count"),
                         path: Vec::new(),
+                        ownership: OwnershipClass::Copyable,
                     },
                 },
             ),
@@ -5876,4 +5891,343 @@ fn staged_value_stack_keeps_its_place_origins_aligned() {
         ))
     );
     assert_eq!(machine.test_value_stack_alignment(), (0, 0));
+}
+
+/// One caller-place receiver call whose admission consumes a `MustConsume` place.
+#[cfg(feature = "durable")]
+fn consuming_receiver_call(
+    site_index: u64,
+    callee: &CanonicalCallableIdentity,
+    root: &str,
+) -> Instruction {
+    instruction(
+        site_index,
+        TypeDescriptor::INT,
+        InstructionKind::ReceiverCall {
+            callee: callee.clone(),
+            arguments: 1,
+            source: ReceiverSource::CallerPlace {
+                root: Arc::from(root),
+                path: Vec::new(),
+                ownership: OwnershipClass::MustConsume,
+            },
+        },
+    )
+}
+
+/// `crate::main` consumes `token` through one `MustConsume` owned admission.
+#[cfg(feature = "durable")]
+fn must_consume_program(callee_body: Vec<Instruction>) -> Arc<MachineProgram> {
+    affine_call_program(
+        vec![token_parameter("token")],
+        TypeDescriptor::INT,
+        vec![("consume", ReceiverMode::Owned, callee_body)],
+        |identities| {
+            vec![
+                consuming_receiver_call(0, &identities[0], "token"),
+                instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    )
+}
+
+/// The V9 obligation section is written last, so the bytes from its magic to the end of the
+/// checkpoint are exactly that section.
+#[cfg(feature = "durable")]
+const CONSUMPTION_OBLIGATION_SECTION_MAGIC: &[u8] = b"GNTMCX01";
+
+#[cfg(feature = "durable")]
+fn obligation_entries(entries: &[&str]) -> Vec<u8> {
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(&(entries.len() as u64).to_be_bytes());
+    for root in entries {
+        encoded.extend_from_slice(&(root.len() as u64).to_be_bytes());
+        encoded.extend_from_slice(root.as_bytes());
+        // Every fixture obligation roots at one whole binding with an empty path.
+        encoded.extend_from_slice(&0_u64.to_be_bytes());
+    }
+    encoded
+}
+
+#[cfg(feature = "durable")]
+fn consumption_obligation_section(
+    frame_count: u64,
+    frames: &[&[&str]],
+    settled: &[&str],
+) -> Vec<u8> {
+    let mut section = CONSUMPTION_OBLIGATION_SECTION_MAGIC.to_vec();
+    section.extend_from_slice(&frame_count.to_be_bytes());
+    for frame in frames {
+        section.extend_from_slice(&obligation_entries(frame));
+    }
+    section.extend_from_slice(&obligation_entries(settled));
+    section
+}
+
+#[cfg(feature = "durable")]
+fn resplice_consumption_obligation_section(bytes: &[u8], section: &[u8]) -> Vec<u8> {
+    let offset = section_offset(bytes, CONSUMPTION_OBLIGATION_SECTION_MAGIC);
+    let mut rewritten = bytes[..offset].to_vec();
+    rewritten.extend_from_slice(section);
+    rewritten
+}
+
+/// A `MustConsume` owned admission stages one obligation in the callee frame, and a normal return
+/// transfers it to the caller frame that owns the consumed place.
+#[cfg(feature = "durable")]
+#[test]
+fn must_consume_admission_stages_and_transfers_the_obligation() {
+    let program = must_consume_program(owned_consume_body());
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 1);
+    let staged = machine
+        .test_consumption_obligations(1)
+        .unwrap_or_else(|| panic!("the consuming call stages a callee frame"));
+    assert_eq!(staged.len(), 1);
+    assert_eq!(staged[0].root.as_ref(), "token");
+    assert!(staged[0].path.is_empty());
+
+    step_deterministic(&mut machine, 2);
+    assert_eq!(
+        machine.test_consumption_obligations(1).map(<[_]>::len),
+        None
+    );
+    let transferred = machine
+        .test_consumption_obligations(0)
+        .unwrap_or_else(|| panic!("the caller frame owns the consumed place"));
+    assert_eq!(transferred.len(), 1);
+    assert_eq!(transferred[0].root.as_ref(), "token");
+    assert!(machine.test_settled_obligations().is_empty());
+    assert_eq!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        ))
+    );
+}
+
+/// A failure cut discards the frames, so the staged obligation is retained in the machine-level
+/// settled list instead of disappearing with them.
+#[cfg(feature = "durable")]
+#[test]
+fn must_consume_obligation_survives_a_failure_cut() {
+    let program = must_consume_program(vec![
+        instruction(
+            0,
+            TypeDescriptor::declared(path("crate::Token")),
+            InstructionKind::Load(Arc::from("missing")),
+        ),
+        instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+    ]);
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 1);
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Failed(failure) if failure.code == RuntimeCode::InternalInvariant
+    ));
+    let settled = machine.test_settled_obligations();
+    assert_eq!(settled.len(), 1);
+    assert_eq!(settled[0].root.as_ref(), "token");
+    assert!(settled[0].path.is_empty());
+    // The frame-level record is drained rather than duplicated.
+    assert_eq!(
+        machine.test_consumption_obligations(1).map(<[_]>::len),
+        Some(0)
+    );
+}
+
+/// A checkpoint carries the obligation section only for a `MustConsume` caller place, and the new
+/// wire form round-trips with its obligation intact.
+#[cfg(feature = "durable")]
+#[test]
+fn must_consume_obligation_checkpoint_round_trips_and_stays_absent_without_it() {
+    let program = must_consume_program(owned_consume_body());
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 1);
+    let checkpoint = machine.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP09".as_slice()));
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("obligation checkpoint decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    assert_eq!(decoded.canonical_bytes(), bytes);
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("obligation budget recovery failed: {error:?}"));
+    let recovered = Machine::recover_from_checkpoint(Arc::clone(&program), decoded, budget)
+        .unwrap_or_else(|error| panic!("obligation recovery failed: {error:?}"));
+    let recovered_obligation = recovered
+        .test_consumption_obligations(1)
+        .unwrap_or_else(|| panic!("the recovered callee frame keeps its obligation"));
+    assert_eq!(recovered_obligation.len(), 1);
+    assert_eq!(recovered_obligation[0].root.as_ref(), "token");
+
+    // Without one `MustConsume` admission the older wire form stays current and carries no section.
+    let program = two_place_owned_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5), token_value(9)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 1);
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_ne!(bytes.get(..8), Some(b"GNTMCP09".as_slice()));
+    assert!(
+        !bytes
+            .windows(CONSUMPTION_OBLIGATION_SECTION_MAGIC.len())
+            .any(|window| window == CONSUMPTION_OBLIGATION_SECTION_MAGIC)
+    );
+    assert!(machine.test_settled_obligations().is_empty());
+}
+
+/// Re-initializing the consumed place makes the obligation accounted for, so the newer wire form is
+/// no longer selected and the place is readable again.
+#[cfg(feature = "durable")]
+#[test]
+fn must_consume_obligation_is_discharged_by_reinitialization() {
+    let token_type = TypeDescriptor::declared(path("crate::Token"));
+    let program = affine_call_program(
+        vec![Parameter {
+            name: Arc::from("token"),
+            ty: token_type.clone(),
+            mutable: true,
+            receiver_mode: None,
+        }],
+        TypeDescriptor::INT,
+        vec![("consume", ReceiverMode::Owned, owned_consume_body())],
+        |identities| {
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::INT,
+                    InstructionKind::ReceiverCall {
+                        callee: identities[0].clone(),
+                        arguments: 1,
+                        source: ReceiverSource::CallerPlace {
+                            root: Arc::from("token"),
+                            path: Vec::new(),
+                            ownership: OwnershipClass::MustConsume,
+                        },
+                    },
+                ),
+                instruction(1, token_type.clone(), InstructionKind::Push(token_value(3))),
+                instruction(
+                    2,
+                    TypeDescriptor::UNIT,
+                    InstructionKind::Assign {
+                        name: Arc::from("token"),
+                        path: Vec::new(),
+                        target_type: token_type.clone(),
+                    },
+                ),
+                instruction(
+                    3,
+                    token_type.clone(),
+                    InstructionKind::Load(Arc::from("token")),
+                ),
+                instruction(
+                    4,
+                    TypeDescriptor::INT,
+                    InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                ),
+                instruction(5, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    );
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 5);
+    assert_eq!(
+        machine.test_consumption_obligations(0).map(<[_]>::len),
+        Some(0)
+    );
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_ne!(bytes.get(..8), Some(b"GNTMCP09".as_slice()));
+    assert_eq!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(3).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        ))
+    );
+}
+
+/// Structurally impossible obligation sections are rejected as malformed, and an entry that no
+/// retained `MustConsume` admission justifies is reported as a program mismatch.
+#[cfg(feature = "durable")]
+#[test]
+fn must_consume_obligation_section_negatives_are_rejected() {
+    let program = must_consume_program(owned_consume_body());
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 1);
+    let bytes = machine.checkpoint().canonical_bytes();
+
+    let duplicated = {
+        let mut rewritten = bytes.clone();
+        rewritten.extend_from_slice(&consumption_obligation_section(2, &[&[], &["token"]], &[]));
+        rewritten
+    };
+    assert_eq!(
+        crate::MachineCheckpointV3::decode(&program, &duplicated),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    );
+    for section in [
+        consumption_obligation_section(2, &[&[], &[""]], &[]),
+        consumption_obligation_section(2, &[&[], &["token", "token"]], &[]),
+        consumption_obligation_section(1, &[], &[]),
+    ] {
+        let rewritten = resplice_consumption_obligation_section(&bytes, &section);
+        assert_eq!(
+            crate::MachineCheckpointV3::decode(&program, &rewritten),
+            Err(crate::MachineRecoveryError::InvalidCheckpoint)
+        );
+    }
+
+    // The same bytes are inconsistent with a program that only reads the caller place.
+    let copyable = affine_call_program(
+        vec![token_parameter("token")],
+        TypeDescriptor::INT,
+        vec![("consume", ReceiverMode::Owned, owned_consume_body())],
+        |identities| {
+            vec![
+                receiver_call(0, &identities[0], "token"),
+                instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+            ]
+        },
+    );
+    assert_eq!(
+        crate::MachineCheckpointV3::decode(&copyable, &bytes),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    );
+
+    // A stream that claims the previous version cannot carry the obligation this program owes.
+    let mut superseded = bytes.clone();
+    superseded[..8].copy_from_slice(b"GNTMCP08");
+    assert_eq!(
+        crate::MachineCheckpointV3::decode(&program, &superseded),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    );
 }

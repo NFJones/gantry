@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use gantry::analysis::{AnalysisStatus, analyze_package_types};
 use gantry::frontend::validate_package_syntax;
 use gantry::identity::ProtocolIdentity;
-use gantry::ir::ReceiverSource;
+use gantry::ir::{OwnershipClass, ReceiverSource};
 use gantry::numeric::GantryInt;
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
@@ -608,7 +608,7 @@ fn main(holder: Holder) -> Int { holder.counter.read() }
     assert!(
         matches!(
             shared_call,
-            Some((1, ReceiverSource::CallerPlace { root, path }))
+            Some((1, ReceiverSource::CallerPlace { root, path, .. }))
                 if root.as_ref() == "holder"
                     && path == &vec![gantry::value::ValuePathSegment::StructField("counter".to_owned())]
         ),
@@ -698,7 +698,7 @@ fn main() -> Int {
         InstructionKind::ReceiverCall {
             callee,
             arguments: 1,
-            source: ReceiverSource::CallerPlace { root, path },
+            source: ReceiverSource::CallerPlace { root, path, .. },
         } if callee.as_str() == "<crate::Counter>::increment"
             && root.as_ref() == "holder"
             && matches!(path.as_slice(),
@@ -898,6 +898,94 @@ fn main(mut holder: Holder) -> Int { holder.counter.increment(); holder.counter.
     ));
 }
 
+/// A `MustConsume` owned receiver admits its caller place as a staged consumption, keeps the
+/// obligation in the mid-call checkpoint, and recovers to the same result.
+#[test]
+fn source_must_consume_owned_receiver_stages_obligation_and_recovers_mid_call_checkpoint() {
+    use gantry::ir::{OwnershipClass, ReceiverMode};
+    use gantry::runtime::{ExecutionBudget, MachineCheckpointV3};
+
+    let root = TempDirectory::new(
+        r#"
+must_consume struct Token { value: Int }
+impl Token { fn consume(owned self) -> Int { self.value } }
+fn main() -> Int {
+    let token: Token = Token { value: 7 };
+    token.consume()
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let main = entry_workflow(&package);
+    assert!(
+        program.workflows().iter().any(|workflow| {
+            workflow.path.as_str() == "<crate::Token>::consume"
+                && matches!(
+                    workflow.parameters.as_slice(),
+                    [gantry::ir::Parameter {
+                        name,
+                        mutable: true,
+                        receiver_mode: Some(ReceiverMode::Owned),
+                        ..
+                    }] if name.as_ref() == "self"
+                )
+        }),
+        "{:#?}",
+        program.workflows()
+    );
+    assert!(
+        main.instructions.iter().any(|instruction| matches!(
+            &instruction.kind,
+            InstructionKind::ReceiverCall {
+                callee,
+                arguments: 1,
+                source: ReceiverSource::CallerPlace { root, path, ownership },
+            } if callee.as_str() == "<crate::Token>::consume"
+                && root.as_ref() == "token"
+                && path.is_empty()
+                && *ownership == OwnershipClass::MustConsume
+        )),
+        "{:#?}",
+        main.instructions
+    );
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x52; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("must-consume source program did not start: {error:?}"));
+    // Step into the owned callee frame, where the consumption obligation is staged.
+    for _ in 0..4 {
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        if machine.checkpoint().canonical_bytes().get(..8) == Some(b"GNTMCP09".as_slice()) {
+            break;
+        }
+    }
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP09".as_slice()));
+    let checkpoint = MachineCheckpointV3::decode(program, &bytes)
+        .unwrap_or_else(|error| panic!("must-consume checkpoint did not decode: {error:?}"));
+    assert_eq!(checkpoint.canonical_bytes(), bytes);
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("must-consume budget recovery failed: {error:?}"));
+    let mut recovered =
+        Machine::recover_from_checkpoint(Arc::new(program.clone()), checkpoint, budget)
+            .unwrap_or_else(|error| panic!("must-consume recovery failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
 /// A source-lowered affine owned move admits the caller place as a move source rather than a
 /// copied value and keeps a mid-call checkpoint decodable and tamper-rejecting.
 #[test]
@@ -942,7 +1030,7 @@ fn main(holder: Holder) -> Int {
             InstructionKind::ReceiverCall {
                 callee,
                 arguments: 1,
-                source: ReceiverSource::CallerPlace { root, path },
+                source: ReceiverSource::CallerPlace { root, path, .. },
             } if callee.as_str() == "<crate::Token>::consume"
                 && root.as_ref() == "holder"
                 && path
@@ -1080,7 +1168,7 @@ fn main(outer: Outer) -> Tuple<Int, Int> {
     assert_eq!(calls.len(), 2, "{:#?}", main.instructions);
     assert!(calls.iter().all(|source| matches!(
         source,
-        ReceiverSource::CallerPlace { root, path }
+        ReceiverSource::CallerPlace { root, path, .. }
             if root.as_ref() == "outer"
                 && matches!(path.as_slice(),
                     [
@@ -1120,11 +1208,11 @@ fn main(counter: Counter) -> Int { counter.nested() }
         .collect::<Vec<_>>();
     assert!(receiver_calls.iter().any(|(callee, source)| {
         *callee == "<crate::Counter>::nested"
-            && matches!(source, ReceiverSource::CallerPlace { root, path } if root.as_ref() == "counter" && path.is_empty())
+            && matches!(source, ReceiverSource::CallerPlace { root, path, .. } if root.as_ref() == "counter" && path.is_empty())
     }));
     assert!(receiver_calls.iter().any(|(callee, source)| {
         *callee == "<crate::Counter>::read"
-            && matches!(source, ReceiverSource::CallerPlace { root, path } if root.as_ref() == "self" && path.is_empty())
+            && matches!(source, ReceiverSource::CallerPlace { root, path, .. } if root.as_ref() == "self" && path.is_empty())
     }));
 
     let counter = LogicalValue::structure(
@@ -1297,7 +1385,7 @@ fn main(pair: Pair) -> Int { add(pair.left.read(), pair.right.read()) + pair.lef
     assert_eq!(calls.len(), 3, "{:#?}", main.instructions);
     assert!(calls.iter().all(|source| matches!(
         source,
-        ReceiverSource::CallerPlace { root, path }
+        ReceiverSource::CallerPlace { root, path, .. }
             if root.as_ref() == "pair"
                 && matches!(path.as_slice(),
                     [gantry::value::ValuePathSegment::StructField(field)]
@@ -1558,6 +1646,7 @@ fn explicit_ir_shared_place_admission_executes_without_copy_or_mutation_claims()
                                 path: vec![gantry::value::ValuePathSegment::StructField(
                                     "value".to_owned(),
                                 )],
+                                ownership: OwnershipClass::Copyable,
                             },
                         },
                     ),
@@ -1992,7 +2081,7 @@ fn main(inputs: Inputs) -> List<Int> {
     assert!(root_body.instructions().iter().any(|instruction| matches!(
         &instruction.kind,
         InstructionKind::ReceiverCall {
-            source: ReceiverSource::CallerPlace { root, path }, ..
+            source: ReceiverSource::CallerPlace { root, path, .. }, ..
         } if root.as_ref() == "inputs"
             && matches!(path.as_slice(),
                 [gantry::value::ValuePathSegment::StructField(field)] if field == "counter")
@@ -2008,7 +2097,7 @@ fn main(inputs: Inputs) -> List<Int> {
     assert!(field_body.instructions().iter().any(|instruction| matches!(
         &instruction.kind,
         InstructionKind::ReceiverCall {
-            source: ReceiverSource::CallerPlace { root, path }, ..
+            source: ReceiverSource::CallerPlace { root, path, .. }, ..
         } if root.as_ref() == "inputs"
             && matches!(path.as_slice(),
                 [
@@ -2402,7 +2491,7 @@ fn main(pair: Tuple<Counter, Int>) -> Int {
     assert!(main.instructions.iter().any(|instruction| matches!(
         &instruction.kind,
         InstructionKind::ReceiverCall {
-            source: ReceiverSource::CallerPlace { root, path }, ..
+            source: ReceiverSource::CallerPlace { root, path, .. }, ..
         } if root.as_ref() == "counter" && path.is_empty()
     )));
     let counter = LogicalValue::structure(

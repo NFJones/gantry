@@ -2527,3 +2527,226 @@ fn call_result_receiver_is_rejected_with_a_source_diagnostic() {
         accepted.diagnostics()
     );
 }
+
+/// A `must_consume struct` seeds `MustConsume`; nested members, affine declarations, and generic
+/// instantiations fold to the dominating class, and unrelated declarations stay accepted.
+#[test]
+fn must_consume_structs_fold_ownership_class_and_generics() {
+    use gantry::ir::{OwnershipClass, TypeDescriptor};
+
+    let package = analyze(
+        "must_consume struct Token { value: Int }\n\
+         must_consume struct Empty {}\n\
+         must_consume struct Generic<T> { value: T }\n\
+         struct Plain { value: Int }\n\
+         struct Contains { token: Token }\n\
+         affine struct Held { token: Token }\n\
+         struct Wrapped { inner: Generic<Int> }\n\
+         impl Empty { fn consume(owned self) {} }\n\
+         impl Contains { fn consume(owned self) {} }\n\
+         impl Held { fn consume(owned self) {} }\n\
+         impl Wrapped { fn consume(owned self) {} }\n\
+         fn take_token(value: Token) { discard value; }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Invalid,
+        "a discarded MustConsume parameter must stay rejected: {:?}",
+        package.diagnostics()
+    );
+
+    let package = analyze(
+        "must_consume struct Token { value: Int }\n\
+         must_consume struct Empty {}\n\
+         must_consume struct Generic<T> { value: T }\n\
+         struct Plain { value: Int }\n\
+         struct Contains { token: Token }\n\
+         affine struct Held { token: Token }\n\
+         struct Wrapped { inner: Generic<Int> }\n\
+         impl Empty { fn consume(owned self) {} }\n\
+         impl Contains { fn consume(owned self) {} }\n\
+         impl Held { fn consume(owned self) {} }\n\
+         impl Wrapped { fn consume(owned self) {} }\n\
+         fn take_empty(value: Empty) { value.consume(); }\n\
+         fn take_contains(value: Contains) { value.consume(); }\n\
+         fn take_held(value: Held) { value.consume(); }\n\
+         fn take_wrapped(value: Wrapped) { value.consume(); }\n\
+         fn take_plain(value: Plain) { discard value; }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    assert!(OwnershipClass::MustConsume.requires_consumption());
+    assert!(OwnershipClass::AffineDroppable.requires_consumption());
+    assert!(!OwnershipClass::Copyable.requires_consumption());
+    let policy = analysis_limits(64, 100);
+    for (name, class) in [
+        ("crate::Empty", OwnershipClass::MustConsume),
+        ("crate::Contains", OwnershipClass::MustConsume),
+        ("crate::Held", OwnershipClass::MustConsume),
+        ("crate::Wrapped", OwnershipClass::MustConsume),
+        ("crate::Plain", OwnershipClass::Copyable),
+    ] {
+        let ty = TypeDescriptor::from_canonical_string(name)
+            .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+        let properties = package
+            .type_capabilities(&ty, policy)
+            .unwrap_or_else(|error| panic!("query failed for {name}: {error:?}"));
+        assert_eq!(properties.ownership_class(), class, "{name}");
+    }
+}
+
+/// A live `MustConsume` place is discharged only by an `owned self` admission: a projection read, a
+/// copied argument, a discard, one branch, a loop iteration, and reuse are all rejected.
+#[test]
+fn must_consume_places_require_an_owned_admission() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    for source in [
+        "fn main(token: Token) { token.consume(); }",
+        "fn run(token: Token, flag: Bool) { if flag { token.consume(); } else { token.consume(); } } fn main() {}",
+        "affine struct Affine {} fn main(value: Affine) { discard value; }",
+        "must_consume struct Declared {} affine struct AffineDecl {} struct OrdinaryDecl {} fn main() {}",
+    ] {
+        let accepted = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+    }
+
+    for (source, code) in [
+        (
+            "fn main(token: Token) -> Int { token.value }",
+            "must-consume-copy",
+        ),
+        (
+            "fn take(value: Token) { value.consume(); } fn main(token: Token) { take(token); }",
+            "must-consume-copy",
+        ),
+        (
+            "fn main(token: Token) { discard token; }",
+            "must-consume-discard",
+        ),
+        ("fn main(token: Token) {}", "must-consume-unconsumed"),
+        (
+            "fn run(token: Token, flag: Bool) { if flag { token.consume(); } } fn main() {}",
+            "must-consume-path-dependent",
+        ),
+        (
+            "fn run(token: Token) { loop(limit = 1) { token.consume(); break; } } fn main() {}",
+            "must-consume-path-dependent",
+        ),
+        (
+            "fn main(token: Token) { token.consume(); token.consume(); }",
+            "affine-value-reuse",
+        ),
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "{source}: expected {code}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(rejected.executable_program().is_none());
+    }
+}
+
+/// A plain struct with a `MustConsume` member is enforced, not merely classified.
+#[test]
+fn must_consume_member_dominance_is_enforced() {
+    const DECLARATIONS: &str = "must_consume struct Token {}\n\
+         struct Holder { token: Token }\n\
+         impl Holder { fn consume(owned self) {} }\n";
+
+    let rejected = analyze(&format!(
+        "{DECLARATIONS}fn main(holder: Holder) {{ discard holder; }}"
+    ));
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "must-consume-discard"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(rejected.executable_program().is_none());
+
+    let accepted = analyze(&format!(
+        "{DECLARATIONS}fn main(holder: Holder) {{ holder.consume(); }}"
+    ));
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+}
+
+/// An `owned self` `MustConsume` receiver cannot leave the consuming callable.
+#[test]
+fn must_consume_receiver_escape_is_rejected() {
+    for source in [
+        "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} fn leak(owned self) -> Token { self } }\n\
+         fn main(token: Token) { let returned: Token = token.leak(); returned.consume(); }",
+        "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         impl Token { fn relay(owned self) { self.consume(); } }\n\
+         fn main(token: Token) { token.relay(); }",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "must-consume-escape"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+}
+
+/// A `MustConsume` `owned self` receiver still requires an addressable caller place.
+#[test]
+fn must_consume_owned_receiver_requires_addressable_caller_place() {
+    let rejected = analyze(
+        "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         fn make(seed: Int) -> Token { Token { value: seed } }\n\
+         fn main() -> Int { make(1).consume() }",
+    );
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "owned-receiver-scope"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}

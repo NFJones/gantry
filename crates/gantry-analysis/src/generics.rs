@@ -1787,6 +1787,7 @@ pub(crate) struct GenericDeclarationShape {
     members: Vec<TypeExpression>,
     predicates: Vec<CapabilityPredicate>,
     affine: bool,
+    must_consume: bool,
     expandable: bool,
 }
 
@@ -1799,6 +1800,11 @@ impl GenericDeclarationShape {
     /// Returns whether the declaration is an `affine struct`.
     pub(crate) const fn is_affine(&self) -> bool {
         self.affine
+    }
+
+    /// Returns whether the declaration is a `must_consume struct`.
+    pub(crate) const fn is_must_consume(&self) -> bool {
+        self.must_consume
     }
 }
 
@@ -2006,6 +2012,8 @@ pub(crate) fn collect_generic_declaration_shapes(
             let predicates = collect_capability_predicates(tree, owner, binder.as_ref())?;
             let affine = matches!(node.form(), SyntaxForm::StructDeclaration)
                 && direct_child(tree, owner, SyntaxForm::AffineStructModifier).is_some();
+            let must_consume = matches!(node.form(), SyntaxForm::StructDeclaration)
+                && direct_child(tree, owner, SyntaxForm::MustConsumeStructModifier).is_some();
             declarations.insert(
                 symbol.path.as_str().to_owned(),
                 GenericDeclarationShape {
@@ -2014,6 +2022,7 @@ pub(crate) fn collect_generic_declaration_shapes(
                     members,
                     predicates,
                     affine,
+                    must_consume,
                     expandable: !rejected_declarations.contains(symbol.path.as_str()),
                 },
             );
@@ -2118,7 +2127,7 @@ trait StoredMemberProperty {
     fn primitive(&self, properties: PrimitiveTypeProperties) -> Self::Value;
     fn opaque(&self) -> Result<Self::Value, AnalysisError>;
     fn combine(&self, left: Self::Value, right: Self::Value) -> Self::Value;
-    fn affine_declaration_seed(&self) -> Self::Value;
+    fn declaration_seed(&self, class: OwnershipClass) -> Self::Value;
     fn is_absorbing(&self, value: Self::Value) -> bool;
     fn cached(&self, key: &str) -> Option<Self::Value>;
     fn cache(&mut self, key: String, value: Self::Value);
@@ -2152,7 +2161,7 @@ impl StoredMemberProperty for CapabilityProperty<'_> {
         left && right
     }
 
-    fn affine_declaration_seed(&self) -> Self::Value {
+    fn declaration_seed(&self, _class: OwnershipClass) -> Self::Value {
         self.identity()
     }
 
@@ -2192,8 +2201,8 @@ impl StoredMemberProperty for IndependentProperty<'_> {
         left.combine(right)
     }
 
-    fn affine_declaration_seed(&self) -> Self::Value {
-        IndependentTypeProperties::affine()
+    fn declaration_seed(&self, class: OwnershipClass) -> Self::Value {
+        IndependentTypeProperties::ownership_seed(class)
     }
 
     fn is_absorbing(&self, _value: Self::Value) -> bool {
@@ -2269,9 +2278,11 @@ fn prove_stored_member_property<Property: StoredMemberProperty>(
                 }
                 StoredMemberNode::Members(mut members) => {
                     members.sort_by_key(TypeDescriptor::canonical_string);
-                    if declared_affine(&stack[index].descriptor, declarations) {
-                        stack[index].value = property
-                            .combine(stack[index].value, property.affine_declaration_seed());
+                    if let Some(class) =
+                        declared_ownership_class(&stack[index].descriptor, declarations)
+                    {
+                        stack[index].value =
+                            property.combine(stack[index].value, property.declaration_seed(class));
                     }
                     stack[index].members = Some(members);
                 }
@@ -2330,14 +2341,20 @@ fn prove_stored_member_property<Property: StoredMemberProperty>(
     }
 }
 
-fn declared_affine(
+fn declared_ownership_class(
     descriptor: &TypeDescriptor,
     declarations: &BTreeMap<String, GenericDeclarationShape>,
-) -> bool {
-    descriptor
+) -> Option<OwnershipClass> {
+    let shape = descriptor
         .declared_path()
-        .and_then(|path| declarations.get(path.as_str()))
-        .is_some_and(GenericDeclarationShape::is_affine)
+        .and_then(|path| declarations.get(path.as_str()))?;
+    if shape.is_must_consume() {
+        Some(OwnershipClass::MustConsume)
+    } else if shape.is_affine() {
+        Some(OwnershipClass::AffineDroppable)
+    } else {
+        None
+    }
 }
 
 fn stored_member_node(

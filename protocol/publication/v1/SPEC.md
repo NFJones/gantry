@@ -3444,8 +3444,8 @@ be reconstructible from checkpointed state; existing checkpoint formats MAY be
 retained only if an explicit place-initialization bit is added to the retained
 frame representation and `validate_machine_checkpoint` reconstructs every
 invariant, otherwise a new checkpoint magic is required. Partial moves,
-arbitrary or argument loans, reborrow through an owned receiver,
-`MustConsume` type declarations, and task or channel transfer are excluded.
+arbitrary or argument loans, reborrow through an owned receiver, and task or
+channel transfer are excluded.
 
 <a id="GNT-6.2c"></a>
 
@@ -3456,8 +3456,32 @@ combine conservatively. Copying an `AffineDroppable` value, including reading a
 moved value more than once or passing it as a copied argument and reusing it,
 MUST be rejected at compile time. Discarding an `AffineDroppable` value is
 permitted. An `owned self` method on an `AffineDroppable` receiver performs the
-owned-move transfer described in item 2b. `MustConsume` and resource
+owned-move transfer described in item 2b. Resource
 declarations remain excluded.
+
+<a id="GNT-6.2d"></a>
+
+2d. A struct declaration MAY be prefixed with `must_consume`. A `must_consume
+struct` admits the `MustConsume` ownership class: its stored members fold with
+the must-consume seed, and a `MustConsume` member makes every enclosing stored
+aggregate `MustConsume`, because that class dominates `AffineDroppable`, which
+dominates `Copyable`. Copying a `MustConsume` value, including reading it by
+projection, passing it as a copied argument, or reintroducing it as a value,
+MUST be rejected at compile time, and `discard` of a `MustConsume` value MUST
+NOT be accepted. A `MustConsume` place MUST be consumed exactly once on every
+path that leaves the scope of its binding. Consuming means an `owned self` call
+whose receiver place is that value, or a `return` of that value from the
+callable that owns it; the destination of either transfer carries the
+obligation. An unconsumed place at a scope, callable, or loop exit, a place
+consumed on only some paths, and a returned or re-admitted `owned self`
+receiver of `MustConsume` type MUST be rejected. An `owned self` method on a
+`MustConsume` receiver performs the owned-move transfer described in item 2b.
+On unwind, a staged `MustConsume` value transfers its consumption obligation to
+the runtime supervisor as item 2b requires: the obligation MUST NOT be silently
+discarded, MUST survive the frame that staged it, MUST be reconstructible from
+checkpointed state, and MUST remain observable with the task's settled
+evidence. Live resources, loans and reborrowing, partial moves, and task or
+channel transfer remain excluded.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
@@ -7049,9 +7073,12 @@ effect_name             = "prompt" | "decide"
                         | "spawn" | "join" | "background"
                         | "session" | "attempt" ;
 
-struct_declaration      = "struct", identifier_token,
+struct_declaration      = [ ownership_modifier ], "struct", identifier_token,
                           [ type_parameter_list ], [ where_clause ], "{",
                           [ struct_field_list ], "}" ;
+ownership_modifier      = "affine" | "must_consume" ;
+`ownership_modifier` is a contextual identifier spelling, not a reserved word: it is
+recognized only immediately before `struct` and remains an ordinary identifier elsewhere.
 struct_field_list       = struct_field, { ",", struct_field }, [ "," ] ;
 struct_field            = identifier_token, ":", value_type,
                           [ "=", field_default ] ;

@@ -8,8 +8,8 @@ use gantry_ir::{
     ActionParameter, AggregateKind, CanonicalCallableIdentity, CanonicalPath, CanonicalSignature,
     Comparison, EffectSet, ExecutableAction, ExecutableOperation, ExecutableTaskBody,
     ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
-    InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, Projection, ReceiverMode,
-    ReceiverSource, TaskBodyIdentity, TypeDescriptor, Workflow,
+    InstructionKind, LoopPhase, MachineProgram, OwnershipClass, Parameter, Primitive, Projection,
+    ReceiverMode, ReceiverSource, TaskBodyIdentity, TypeDescriptor, Workflow,
 };
 
 use super::MachineRecoveryError;
@@ -17,6 +17,41 @@ use super::checkpoint_codec::{Reader, Writer};
 
 const MAGIC_V2: &[u8; 8] = b"GNTPRG02";
 const MAGIC_V3: &[u8; 8] = b"GNTPRG03";
+/// The V4 wire carries the ownership class of a caller-place receiver admission.
+///
+/// A program whose caller-place admissions are all shared or exclusive reads stays on the V3 wire,
+/// so the class is not a gratuitous bump: V4 is selected exactly when one admission records a
+/// consuming class that V3 cannot express.
+const MAGIC_V4: &[u8; 8] = b"GNTPRG04";
+
+/// Canonical program wire selected for one machine program.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ProgramWire {
+    V2,
+    V3,
+    V4,
+}
+
+impl ProgramWire {
+    /// Writes the canonical magic for this wire form.
+    fn write_magic(self, writer: &mut Writer) {
+        writer.raw(match self {
+            Self::V2 => MAGIC_V2,
+            Self::V3 => MAGIC_V3,
+            Self::V4 => MAGIC_V4,
+        });
+    }
+
+    /// Returns whether this wire carries explicit receiver modes and caller-place sources.
+    const fn is_successor(self) -> bool {
+        !matches!(self, Self::V2)
+    }
+
+    /// Returns whether this wire carries the ownership class of a caller-place admission.
+    const fn carries_caller_place_ownership(self) -> bool {
+        matches!(self, Self::V4)
+    }
+}
 
 fn program_uses_successor_wire(program: &MachineProgram) -> bool {
     let has_non_v2_receiver_metadata = program.workflows().iter().any(|workflow| {
@@ -63,6 +98,46 @@ fn write_receiver_mode(writer: &mut Writer, mode: Option<ReceiverMode>) {
     });
 }
 
+/// Returns whether some caller-place admission carries a non-copyable ownership class.
+fn program_carries_caller_place_ownership(program: &MachineProgram) -> bool {
+    program
+        .workflows()
+        .iter()
+        .flat_map(|workflow| workflow.instructions.iter())
+        .chain(
+            program
+                .task_bodies()
+                .iter()
+                .flat_map(|body| body.instructions().iter()),
+        )
+        .any(|instruction| {
+            matches!(
+                instruction.kind,
+                InstructionKind::ReceiverCall {
+                    source: ReceiverSource::CallerPlace { ownership, .. },
+                    ..
+                } if ownership != OwnershipClass::Copyable
+            )
+        })
+}
+
+fn write_ownership_class(writer: &mut Writer, class: OwnershipClass) {
+    writer.u8(match class {
+        OwnershipClass::Copyable => 0,
+        OwnershipClass::AffineDroppable => 1,
+        OwnershipClass::MustConsume => 2,
+    });
+}
+
+fn read_ownership_class(reader: &mut Reader<'_>) -> Result<OwnershipClass, MachineRecoveryError> {
+    Ok(match reader.u8()? {
+        0 => OwnershipClass::Copyable,
+        1 => OwnershipClass::AffineDroppable,
+        2 => OwnershipClass::MustConsume,
+        _ => return Err(MachineRecoveryError::InvalidEncoding),
+    })
+}
+
 fn read_receiver_mode(
     reader: &mut Reader<'_>,
 ) -> Result<Option<ReceiverMode>, MachineRecoveryError> {
@@ -84,8 +159,14 @@ fn codec_limits() -> ValueLimits {
 
 pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
     let mut writer = Writer::default();
-    let successor = program_uses_successor_wire(program);
-    writer.raw(if successor { MAGIC_V3 } else { MAGIC_V2 });
+    let wire = if program_carries_caller_place_ownership(program) {
+        ProgramWire::V4
+    } else if program_uses_successor_wire(program) {
+        ProgramWire::V3
+    } else {
+        ProgramWire::V2
+    };
+    wire.write_magic(&mut writer);
     writer.count(program.workflows().len());
     for (identity, workflow) in program
         .callable_identities()
@@ -99,7 +180,7 @@ pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
             writer.string(&parameter.name);
             writer.string(&parameter.ty.canonical_string());
             writer.boolean(parameter.mutable);
-            if successor {
+            if wire.is_successor() {
                 write_receiver_mode(&mut writer, parameter.receiver_mode());
             }
         }
@@ -113,21 +194,22 @@ pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
         for instruction in &workflow.instructions {
             writer.position(&instruction.site);
             writer.string(&instruction.ty.canonical_string());
-            write_instruction(&mut writer, &instruction.kind);
+            write_instruction(&mut writer, &instruction.kind, wire);
         }
     }
     writer.count(program.task_bodies().len());
     for body in program.task_bodies() {
-        write_task_body(&mut writer, body);
+        write_task_body(&mut writer, body, wire);
     }
     writer.finish()
 }
 
 pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, MachineRecoveryError> {
     let mut reader = Reader::new(bytes);
-    let successor = match reader.raw(MAGIC_V2.len())? {
-        magic if magic == MAGIC_V2 => false,
-        magic if magic == MAGIC_V3 => true,
+    let wire = match reader.raw(MAGIC_V2.len())? {
+        magic if magic == MAGIC_V2 => ProgramWire::V2,
+        magic if magic == MAGIC_V3 => ProgramWire::V3,
+        magic if magic == MAGIC_V4 => ProgramWire::V4,
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     };
     let workflow_count = reader.count()?;
@@ -144,7 +226,7 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
             let ty = ty(&reader.string()?)?;
             let mutable = reader.boolean()?;
             parameters.push(Parameter {
-                receiver_mode: if successor {
+                receiver_mode: if wire.is_successor() {
                     read_receiver_mode(&mut reader)?
                 } else if name.as_ref() == "self" {
                     Some(ReceiverMode::from_v1_mutability(mutable))
@@ -170,7 +252,7 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
             instructions.push(Instruction {
                 site: reader.position()?,
                 ty: ty(&reader.string()?)?,
-                kind: read_instruction(&mut reader, successor)?,
+                kind: read_instruction(&mut reader, wire)?,
             });
         }
         callables.push((
@@ -187,7 +269,7 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
     let body_count = reader.count()?;
     let mut task_bodies = Vec::with_capacity(body_count);
     for _ in 0..body_count {
-        task_bodies.push(read_task_body(&mut reader, successor)?);
+        task_bodies.push(read_task_body(&mut reader, wire)?);
     }
     if !reader.is_empty() {
         return Err(MachineRecoveryError::InvalidEncoding);
@@ -200,7 +282,7 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
     Ok(program)
 }
 
-fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
+fn write_instruction(writer: &mut Writer, instruction: &InstructionKind, wire: ProgramWire) {
     match instruction {
         InstructionKind::Push(value) => {
             writer.u8(0);
@@ -307,13 +389,21 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
         InstructionKind::ReceiverCall {
             callee,
             arguments,
-            source: ReceiverSource::CallerPlace { root, path },
+            source:
+                ReceiverSource::CallerPlace {
+                    root,
+                    path,
+                    ownership,
+                },
         } => {
             writer.u8(32);
             writer.string(callee.as_str());
             writer.usize(*arguments);
             writer.string(root);
             write_value_path(writer, path);
+            if wire.carries_caller_place_ownership() {
+                write_ownership_class(writer, *ownership);
+            }
         }
         InstructionKind::Return => writer.u8(16),
         InstructionKind::Operation => writer.u8(17),
@@ -364,7 +454,7 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
 
 fn read_instruction(
     reader: &mut Reader<'_>,
-    successor: bool,
+    wire: ProgramWire,
 ) -> Result<InstructionKind, MachineRecoveryError> {
     Ok(match reader.u8()? {
         0 => InstructionKind::Push(reader.value(codec_limits())?),
@@ -397,7 +487,7 @@ fn read_instruction(
             when_some: reader.usize()?,
             when_none: reader.usize()?,
         },
-        33 if successor => InstructionKind::BranchResult {
+        33 if wire.is_successor() => InstructionKind::BranchResult {
             when_ok: reader.usize()?,
             when_err: reader.usize()?,
         },
@@ -422,13 +512,18 @@ fn read_instruction(
             arguments: reader.usize()?,
             source: ReceiverSource::CopiedValue,
         },
-        32 if successor => InstructionKind::ReceiverCall {
+        32 if wire.is_successor() => InstructionKind::ReceiverCall {
             callee: CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
                 .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
             arguments: reader.usize()?,
             source: ReceiverSource::CallerPlace {
                 root: Arc::from(reader.string()?),
                 path: read_value_path(reader)?,
+                ownership: if wire.carries_caller_place_ownership() {
+                    read_ownership_class(reader)?
+                } else {
+                    OwnershipClass::Copyable
+                },
             },
         },
         32 => return Err(MachineRecoveryError::InvalidEncoding),
@@ -473,7 +568,7 @@ fn read_instruction(
     })
 }
 
-fn write_task_body(writer: &mut Writer, body: &ExecutableTaskBody) {
+fn write_task_body(writer: &mut Writer, body: &ExecutableTaskBody, wire: ProgramWire) {
     write_task_body_identity(writer, body.identity());
     writer.string(&body.result_type().canonical_string());
     writer.count(body.captures().len());
@@ -492,13 +587,13 @@ fn write_task_body(writer: &mut Writer, body: &ExecutableTaskBody) {
     for instruction in body.instructions() {
         writer.position(&instruction.site);
         writer.string(&instruction.ty.canonical_string());
-        write_instruction(writer, &instruction.kind);
+        write_instruction(writer, &instruction.kind, wire);
     }
 }
 
 fn read_task_body(
     reader: &mut Reader<'_>,
-    successor: bool,
+    wire: ProgramWire,
 ) -> Result<ExecutableTaskBody, MachineRecoveryError> {
     let identity = read_task_body_identity(reader)?;
     let result_type = ty(&reader.string()?)?;
@@ -528,7 +623,7 @@ fn read_task_body(
         instructions.push(Instruction {
             site: reader.position()?,
             ty: ty(&reader.string()?)?,
-            kind: read_instruction(reader, successor)?,
+            kind: read_instruction(reader, wire)?,
         });
     }
     ExecutableTaskBody::new(
@@ -891,7 +986,7 @@ mod tests {
     use gantry_ir::{
         CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody,
         ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
-        InstructionKind, MachineProgram, Parameter, ReceiverMode, ReceiverSource,
+        InstructionKind, MachineProgram, OwnershipClass, Parameter, ReceiverMode, ReceiverSource,
         StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow,
     };
 
@@ -1198,6 +1293,7 @@ mod tests {
                 arguments: 1,
                 source: ReceiverSource::CopiedValue,
             },
+            super::ProgramWire::V3,
         );
         assert_eq!(instruction_writer.finish()[0], 31);
         let encoded = encode_machine_program(&program);
@@ -1362,6 +1458,7 @@ mod tests {
                     .unwrap_or_else(|error| panic!("method identity failed: {error}")),
                 arguments: 1,
             },
+            super::ProgramWire::V3,
         );
         assert_eq!(instruction_writer.finish()[0], 15);
         let encoded = encode_machine_program(&program);
@@ -1415,6 +1512,7 @@ mod tests {
                                     path: vec![gantry_core::value::ValuePathSegment::StructField(
                                         "value".to_owned(),
                                     )],
+                                    ownership: OwnershipClass::Copyable,
                                 },
                             },
                         ),
@@ -1553,6 +1651,7 @@ mod tests {
                             path: vec![gantry_core::value::ValuePathSegment::StructField(
                                 "value".to_owned(),
                             )],
+                            ownership: OwnershipClass::Copyable,
                         },
                     },
                 },

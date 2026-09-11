@@ -22,6 +22,19 @@ pub enum OwnershipClass {
 }
 
 impl OwnershipClass {
+    /// Returns whether the class requires the move ledger to account for every use.
+    ///
+    /// `MustConsume` requires each reachable place to be consumed or explicitly
+    /// discarded through a declared disposition; `AffineDroppable` requires the
+    /// same accounting while an ordinary discard remains a permitted use.
+    #[must_use]
+    pub const fn requires_consumption(self) -> bool {
+        match self {
+            Self::MustConsume | Self::AffineDroppable => true,
+            Self::Copyable => false,
+        }
+    }
+
     /// Combines reachable member obligations without weakening either member.
     ///
     /// `MustConsume` dominates `AffineDroppable`, which dominates `Copyable`.
@@ -164,8 +177,20 @@ impl IndependentTypeProperties {
     /// Seed contributed by an `affine struct` declaration independent of its members.
     #[must_use]
     pub const fn affine() -> Self {
+        Self::ownership_seed(OwnershipClass::AffineDroppable)
+    }
+
+    /// Seed contributed by a `must_consume struct` declaration independent of its members.
+    #[must_use]
+    pub const fn must_consume() -> Self {
+        Self::ownership_seed(OwnershipClass::MustConsume)
+    }
+
+    /// Seed contributed by an ownership-modifier declaration independent of its members.
+    #[must_use]
+    pub const fn ownership_seed(ownership: OwnershipClass) -> Self {
         Self {
-            ownership: OwnershipClass::AffineDroppable,
+            ownership,
             ..Self::empty_aggregate()
         }
     }

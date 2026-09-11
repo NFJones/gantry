@@ -314,3 +314,68 @@ fn public_parser_rejects_affine_without_struct() {
         assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
     }
 }
+
+/// `must_consume` is a contextual struct modifier, not a reserved word, and stays a valid identifier.
+#[test]
+fn public_parser_accepts_must_consume_struct_and_keeps_it_contextual() {
+    let source = r#"must_consume struct Token { value: Int }
+must_consume struct Box<T> { value: T }
+struct Ordinary { value: Int }
+fn main(must_consume: Int, token: Token) -> Int { let must_consume_again: Int = must_consume; discard token; must_consume_again }
+"#;
+    let outcome = parse(source, 512, 16);
+    assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+    let tree = outcome.tree().unwrap_or_else(|| unreachable!("valid tree"));
+    let must_consume_structs = tree
+        .nodes()
+        .iter()
+        .filter(|node| {
+            matches!(node.form(), SyntaxForm::StructDeclaration)
+                && node.children().iter().any(|child| {
+                    tree.node(*child)
+                        .is_some_and(|n| matches!(n.form(), SyntaxForm::MustConsumeStructModifier))
+                })
+        })
+        .count();
+    assert_eq!(must_consume_structs, 2);
+}
+
+/// `must_consume` without a following `struct` is a syntax fault at item position.
+#[test]
+fn public_parser_rejects_must_consume_without_struct() {
+    for source in [
+        "must_consume Token { value: Int }",
+        "must_consume enum State { Ready }",
+    ] {
+        let outcome = parse(source, 64, 4);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        assert!(
+            outcome.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code.as_str() == "unexpected-token"
+                    && diagnostic.fields.get("expected").map(AsRef::as_ref) == Some("struct")
+            }),
+            "{source}: {:?}",
+            outcome.diagnostics()
+        );
+    }
+}
+
+/// Two stacked ownership modifiers cannot precede one struct declaration.
+#[test]
+fn public_parser_rejects_stacked_ownership_struct_modifiers() {
+    for source in [
+        "affine must_consume struct Token { value: Int }",
+        "must_consume affine struct Token { value: Int }",
+    ] {
+        let outcome = parse(source, 64, 4);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        assert!(
+            outcome.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code.as_str() == "unexpected-token"
+                    && diagnostic.fields.get("expected").map(AsRef::as_ref) == Some("struct")
+            }),
+            "{source}: {:?}",
+            outcome.diagnostics()
+        );
+    }
+}

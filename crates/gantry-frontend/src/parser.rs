@@ -543,7 +543,10 @@ impl<'a> Machine<'a> {
                 .push(Task::ExpectPunctuation(Punctuation::Semicolon));
             self.tasks.push(Task::ParsePath);
             self.tasks.push(Task::ExpectWord("use"));
-        } else if self.at_word("struct") || self.at_identifier_named("affine") {
+        } else if self.at_word("struct")
+            || self.at_identifier_named("affine")
+            || self.at_identifier_named("must_consume")
+        {
             self.parse_struct_declaration()?;
         } else if self.at_word("enum") {
             self.parse_enum_declaration()?;
@@ -584,6 +587,10 @@ impl<'a> Machine<'a> {
         self.begin(SyntaxForm::StructDeclaration);
         if self.at_identifier_named("affine") {
             self.begin(SyntaxForm::AffineStructModifier);
+            self.consume_current()?;
+            self.finish().map_err(|_| self.invariant_fault())?;
+        } else if self.at_identifier_named("must_consume") {
+            self.begin(SyntaxForm::MustConsumeStructModifier);
             self.consume_current()?;
             self.finish().map_err(|_| self.invariant_fault())?;
         }

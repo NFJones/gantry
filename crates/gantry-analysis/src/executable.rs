@@ -133,15 +133,18 @@ pub(crate) fn lower_executable_program(
     let owned_move_receivers = body
         .source_callables
         .iter()
-        .filter(|callable| {
-            callable.receiver_mode == Some(gantry_ir::ReceiverMode::Owned)
-                && callable.receiver.as_ref().is_some_and(|ty| {
-                    prove_ownership_class(ty, capability_declarations)
-                        .is_ok_and(|class| class == OwnershipClass::AffineDroppable)
-                })
+        .filter_map(|callable| {
+            if callable.receiver_mode != Some(gantry_ir::ReceiverMode::Owned) {
+                return None;
+            }
+            let class = callable
+                .receiver
+                .as_ref()
+                .and_then(|ty| prove_ownership_class(ty, capability_declarations).ok())
+                .filter(|class| class.requires_consumption())?;
+            Some((callable.identity.clone(), class))
         })
-        .map(|callable| callable.identity.clone())
-        .collect::<BTreeSet<_>>();
+        .collect::<BTreeMap<_, _>>();
     let root_identity = CanonicalCallableIdentity::free(&entry.path, &[]);
     let mut reachable = BTreeSet::new();
     let mut pending = vec![root_identity.clone()];
@@ -299,7 +302,7 @@ struct Compiler<'a> {
     direct_targets: &'a [(gantry_core::source::SourceSpan, CanonicalCallableIdentity)],
     callable_results: &'a BTreeMap<CanonicalCallableIdentity, TypeDescriptor>,
     shared_receivers: &'a BTreeSet<CanonicalCallableIdentity>,
-    owned_move_receivers: &'a BTreeSet<CanonicalCallableIdentity>,
+    owned_move_receivers: &'a BTreeMap<CanonicalCallableIdentity, OwnershipClass>,
     operation_results: Option<&'a BTreeMap<gantry_core::source::SourceSpan, TypeDescriptor>>,
     closed_enums: &'a BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
     actions: &'a [ActionInventory],
@@ -1322,8 +1325,8 @@ impl Compiler<'_> {
         if let Some(callee) = self.direct_target(&node) {
             let receiver_type = callee.receiver_type();
             let shared_receiver = self.shared_receivers.contains(&callee);
-            let owned_move_receiver = self.owned_move_receivers.contains(&callee);
-            let requires_place = shared_receiver || owned_move_receiver;
+            let owned_move_receiver = self.owned_move_receivers.get(&callee).copied();
+            let requires_place = shared_receiver || owned_move_receiver.is_some();
             let constructed_receiver = receiver_type.as_ref().and_then(|_| {
                 descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
             });
@@ -1382,7 +1385,11 @@ impl Compiler<'_> {
                         arguments,
                         source: if requires_place {
                             let (root, path) = caller_place.ok_or(AnalysisError::Invariant)?;
-                            gantry_ir::ReceiverSource::CallerPlace { root, path }
+                            gantry_ir::ReceiverSource::CallerPlace {
+                                root,
+                                path,
+                                ownership: owned_move_receiver.unwrap_or(OwnershipClass::Copyable),
+                            }
                         } else {
                             gantry_ir::ReceiverSource::CopiedValue
                         },
@@ -1402,8 +1409,8 @@ impl Compiler<'_> {
             let receiver = postfix_method_receiver(self.tree, &node);
             let callee = CanonicalCallableIdentity::free(&call.callee, &[]);
             let shared_receiver = self.shared_receivers.contains(&callee);
-            let owned_move_receiver = self.owned_move_receivers.contains(&callee);
-            let requires_place = shared_receiver || owned_move_receiver;
+            let owned_move_receiver = self.owned_move_receivers.get(&callee).copied();
+            let requires_place = shared_receiver || owned_move_receiver.is_some();
             if let Some(receiver) = &receiver
                 && !requires_place
             {
@@ -1426,7 +1433,11 @@ impl Compiler<'_> {
                         source: if requires_place {
                             let (root, path) = postfix_method_receiver_place(self.tree, &node)
                                 .ok_or(AnalysisError::Invariant)?;
-                            gantry_ir::ReceiverSource::CallerPlace { root, path }
+                            gantry_ir::ReceiverSource::CallerPlace {
+                                root,
+                                path,
+                                ownership: owned_move_receiver.unwrap_or(OwnershipClass::Copyable),
+                            }
                         } else {
                             gantry_ir::ReceiverSource::CopiedValue
                         },
@@ -2178,8 +2189,9 @@ impl Compiler<'_> {
         let Some(result) = self.callable_results.get(&callee).cloned() else {
             return Ok(None);
         };
+        let owned_move_receiver = self.owned_move_receivers.get(&callee).copied();
         let requires_place =
-            self.shared_receivers.contains(&callee) || self.owned_move_receivers.contains(&callee);
+            self.shared_receivers.contains(&callee) || owned_move_receiver.is_some();
         match &receiver {
             SplitOperandReceiver::Place(root, path) => {
                 let Some(receiver_types) =
@@ -2234,6 +2246,7 @@ impl Compiler<'_> {
                     gantry_ir::ReceiverSource::CallerPlace {
                         root: root.clone(),
                         path: path.clone(),
+                        ownership: owned_move_receiver.unwrap_or(OwnershipClass::Copyable),
                     }
                 } else {
                     gantry_ir::ReceiverSource::CopiedValue
