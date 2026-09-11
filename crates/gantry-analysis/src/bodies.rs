@@ -2885,6 +2885,10 @@ fn check_block(
                 let saved = ObligationSnapshot::capture(context);
                 let mut branch_states = Vec::new();
                 let mut branch_results = Vec::new();
+                // Branches that settled through a transfer report their own obligations and
+                // contribute no join state while a path still falls through; the vacuous join
+                // below folds their final states so it never invents a discharge.
+                let mut settled_states = Vec::new();
                 let mut blocks = 0_usize;
                 for nested in child_node.children().iter().copied().filter(|nested| {
                     tree.node(*nested)
@@ -2943,6 +2947,8 @@ fn check_block(
                             blocks.saturating_sub(1),
                             ObligationSnapshot::capture(context),
                         ));
+                    } else {
+                        settled_states.push(ObligationSnapshot::capture(context));
                     }
                 }
                 // A consuming admission on only some paths leaves the obligation live: a discharge
@@ -2996,6 +3002,9 @@ fn check_block(
                     reaching_states.push(state.clone());
                 }
                 let include_fallthrough = !has_final_else && no_branch_possible;
+                if reaching_states.is_empty() && !include_fallthrough {
+                    reaching_states = settled_states;
+                }
                 merge_obligation_states(&saved, &reaching_states, include_fallthrough, context);
                 if has_pattern {
                     let has_else = child_node.children().iter().any(|nested| {
@@ -3420,6 +3429,7 @@ fn check_match_statement(
     let mut any_continue = false;
     let mut any_diverges = false;
     let mut branch_states = Vec::new();
+    let mut settled_states = Vec::new();
     for arm in statement.children().iter().copied().filter(|child| {
         tree.node(*child)
             .is_some_and(|node| matches!(node.form(), SyntaxForm::MatchArm))
@@ -3478,6 +3488,8 @@ fn check_match_statement(
         // final state keeps the obligation visible at the enclosing scope exit.
         if result.falls_through || result.diverges {
             branch_states.push(ObligationSnapshot::capture(context));
+        } else {
+            settled_states.push(ObligationSnapshot::capture(context));
         }
         any_fallthrough |= result.falls_through;
         any_break |= result.breaks_loop;
@@ -3485,6 +3497,9 @@ fn check_match_statement(
         any_diverges |= result.diverges;
     }
     let exhaustive = !universe.is_empty() && universe.is_subset(&covered);
+    if branch_states.is_empty() && exhaustive {
+        branch_states = settled_states;
+    }
     merge_obligation_states(&saved, &branch_states, !exhaustive, context);
     if !universe.is_empty() && !exhaustive {
         diagnostics.push(body_diagnostic(

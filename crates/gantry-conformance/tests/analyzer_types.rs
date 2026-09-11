@@ -3617,20 +3617,20 @@ fn public_loop_transfers_retire_only_the_scopes_they_leave() {
 
     // The loop body's scope is retired by the `break` itself, so the enclosing block reports the
     // still-live obligation exactly once.
-    let package = analyze(&format!(
-        "{DECLARATIONS}fn run() {{ let t: Token = Token {{ value: 1 }}; if true {{ while true {{ break; }} }} }} fn main() {{}}"
-    ));
-    assert_eq!(package.status(), AnalysisStatus::Invalid);
-    assert_eq!(
-        package
-            .diagnostics()
-            .iter()
-            .filter(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed")
-            .count(),
-        1,
-        "{:?}",
-        package.diagnostics()
-    );
+    for source in [
+        "fn run() { let t: Token = Token { value: 1 }; if true { while true { break; } } } fn main() {}",
+        "fn run() { let t: Token = Token { value: 1 }; while true { if true { break; } } } fn main() {}",
+    ] {
+        let package = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(package.status(), AnalysisStatus::Invalid, "{source}");
+        // The loop never consumes the value, so the only report is the unconsumed obligation.
+        assert_eq!(
+            diagnostic_codes(package.diagnostics()),
+            ["must-consume-unconsumed"],
+            "{source}: {:?}",
+            package.diagnostics()
+        );
+    }
 }
 
 /// An implementation method must stay within the effect contract its trait method declares,
