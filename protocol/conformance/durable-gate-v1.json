@@ -78,7 +78,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "7c41eddf12e615b510cc5b2a8da6ca41ce8e6851a87265ca69912412c27297dc"
+   "sha256": "fac17543f301716d61910d801bec238dffb1e81ade43a2b75cc467557013bad8"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",

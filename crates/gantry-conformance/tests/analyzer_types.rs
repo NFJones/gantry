@@ -5407,3 +5407,105 @@ fn assert_affine_rejected_at(source: &str, code: &str, marker: &str) {
         "{source}"
     );
 }
+
+/// A rebind of an already discharged whole-root `MustConsume` place re-initializes that root, so
+/// a loop body that may not execute leaves a fresh value owed after the loop (defect 2be81c0f).
+#[test]
+fn public_skippable_loop_reinitialization_owes_the_fresh_value() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    const AGGREGATE: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         struct Holder { token: Token, marker: Int }\n\
+         impl Holder { fn consume(owned self) {} }\n";
+
+    const NESTED: &str = "must_consume struct Inner { value: Int }\n\
+         impl Inner { fn consume(owned self) {} }\n\
+         must_consume struct Outer { inner: Inner }\n\
+         impl Outer { fn consume(owned self) {} }\n";
+
+    for source in [
+        "fn run(mut token: Token, flag: Bool) { token.consume(); while flag { token = Token { value: 1 }; break; } } fn main() {}",
+        "fn run(mut token: Token, items: List<Int>) { token.consume(); for item in items { discard item; token = Token { value: 1 }; break; } } fn main() {}",
+        "fn run(mut token: Token, flag: Bool, other: Bool) { token.consume(); while flag { if other { token = Token { value: 1 }; } break; } } fn main() {}",
+        "fn run(mut token: Token, flag: Bool) { token.consume(); while flag { token = Token { value: 1 }; continue; } } fn main() {}",
+        "fn run(mut token: Token, flag: Bool) { token.consume(); while flag { token = Token { value: 1 }; } } fn main() {}",
+    ] {
+        let rejected = analyze(&format!("{DECLARATIONS}{source}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert_eq!(
+            diagnostic_codes(rejected.diagnostics()),
+            ["must-consume-path-dependent"],
+            "{source}"
+        );
+    }
+
+    // The same rebind outside a loop, and one inside a loop whose body always executes, still owe
+    // the fresh value to the callable exit instead of to a loop re-initialization report.
+    for source in [
+        "fn run(mut token: Token) { token.consume(); token = Token { value: 1 }; } fn main() {}",
+        "fn run(mut token: Token) { token.consume(); loop { token = Token { value: 1 }; break; } } fn main() {}",
+    ] {
+        assert_affine_rejected(
+            &format!("{DECLARATIONS}{source}"),
+            "must-consume-unconsumed",
+        );
+    }
+
+    let conditional = "fn run(mut token: Token, flag: Bool) { token.consume(); if flag { token = Token { value: 1 }; } token.consume(); } fn main() {}";
+    assert_affine_rejected(
+        &format!("{DECLARATIONS}{conditional}"),
+        "affine-value-reuse",
+    );
+
+    // A decomposed root marks each obligation place separately: a loop body that may not execute
+    // leaves the fresh place owed, consuming the fresh place clears only its own mark, and
+    // consuming the whole root afterwards stays a repeated use of the fresh value.
+    assert_affine_rejected(
+        &format!(
+            "{AGGREGATE}fn run(mut h: Holder, flag: Bool) {{ h.token.consume(); while flag {{ h = Holder {{ token: Token {{ value: 1 }}, marker: 0 }}; break; }} }} fn main() {{}}"
+        ),
+        "must-consume-path-dependent",
+    );
+    assert_affine_accepted(&format!(
+        "{AGGREGATE}fn run(mut h: Holder) {{ h.token.consume(); h = Holder {{ token: Token {{ value: 1 }}, marker: 0 }}; h.token.consume(); }} fn main() {{}}"
+    ));
+    assert_affine_rejected(
+        &format!(
+            "{AGGREGATE}fn run(mut h: Holder) {{ h.token.consume(); h = Holder {{ token: Token {{ value: 1 }}, marker: 0 }}; h.token.consume(); h.consume(); }} fn main() {{}}"
+        ),
+        "affine-value-reuse",
+    );
+
+    // A declared aggregate stays one atomic obligation, so a descendant discharge makes the
+    // whole-root re-initialization mark stale: using the root afterwards is a repeated use, while
+    // consuming the fresh root itself stays valid and leaving it alone stays unconsumed.
+    assert_affine_rejected(
+        &format!(
+            "{NESTED}fn run(mut o: Outer) {{ o.consume(); o = Outer {{ inner: Inner {{ value: 1 }} }}; o.inner.consume(); o.consume(); }} fn main() {{}}"
+        ),
+        "affine-value-reuse",
+    );
+    assert_affine_accepted(&format!(
+        "{NESTED}fn run(mut o: Outer) {{ o.consume(); o = Outer {{ inner: Inner {{ value: 1 }} }}; o.consume(); }} fn main() {{}}"
+    ));
+    assert_affine_rejected(
+        &format!(
+            "{NESTED}fn run(mut o: Outer) {{ o.consume(); o = Outer {{ inner: Inner {{ value: 1 }} }}; }} fn main() {{}}"
+        ),
+        "must-consume-unconsumed",
+    );
+
+    for source in [
+        "fn run(mut token: Token, flag: Bool) { token.consume(); while flag { } } fn main() {}",
+        "fn run(flag: Bool) { while flag { let u: Token = Token { value: 1 }; u.consume(); } } fn main() {}",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{source}"));
+    }
+}

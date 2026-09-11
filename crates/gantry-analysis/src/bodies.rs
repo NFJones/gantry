@@ -3757,14 +3757,22 @@ fn check_assignment(
                 [] as [(&str, &str); 0],
             )?);
         } else if identifiers.len() == 1 {
-            rebind_must_consume(
-                &root,
-                MustConsumeBinding {
-                    span: node.span().clone(),
-                    ty: target,
-                },
-                context,
-            );
+            let binding = MustConsumeBinding {
+                span: node.span().clone(),
+                ty: target,
+            };
+            let places = obligation_places(&binding.ty, context);
+            rebind_must_consume(&root, binding, context);
+            // A rebind of a gone place re-initializes every obligation place of the new binding:
+            // the loop re-initialization report must see it just like a projected place, and a
+            // later discharge of one of those places has to clear its own mark.
+            let mut fresh = context.must_consume_fresh.borrow_mut();
+            let mut fresh_all = context.must_consume_fresh_all.borrow_mut();
+            for leaf in places {
+                let place = AffinePlace::projected(root.clone(), leaf);
+                fresh.insert(place.clone());
+                fresh_all.insert(place);
+            }
         } else {
             reinitialize_must_consume_place(&place, context);
         }
@@ -4424,17 +4432,18 @@ fn record_shadowed_binding(name: Arc<str>, context: &BodyContext) {
 
 /// Marks one place as consumed on this reaching path.
 fn discharge_must_consume(place: &AffinePlace, context: &BodyContext) {
-    let contained = |candidate: &AffinePlace| {
-        candidate.root == place.root && candidate.path.starts_with(&place.path)
-    };
+    // A re-initialization mark asserts that the marked place holds a fresh value, so consuming
+    // the marked place, a place inside it, or a place that contains it makes that assertion
+    // stale. Disjoint sibling marks stay: their places still hold what the assignment gave them.
+    let stale = |candidate: &AffinePlace| candidate.intersects(place);
     context
         .must_consume_fresh
         .borrow_mut()
-        .retain(|candidate| !contained(candidate));
+        .retain(|candidate| !stale(candidate));
     context
         .must_consume_fresh_all
         .borrow_mut()
-        .retain(|candidate| !contained(candidate));
+        .retain(|candidate| !stale(candidate));
     context
         .must_consume_discharged
         .borrow_mut()
