@@ -12,6 +12,7 @@ const MANIFEST_PATH: &str = "protocol/conformance/native-source-concurrency-gate
 const CONTRACT_PATH: &str = "protocol/conformance/async-execution-contract-v1.json";
 const JOIN_MANIFEST_PATH: &str = "protocol/conformance/source-join-v1.json";
 const LOWER_MANIFEST_PATH: &str = "protocol/conformance/async-source-lowering-v1.json";
+/// Digest of the derived frozen assignment rows of `CONTRACT_PATH`, not of its bytes.
 const ASSIGNMENT_SHA256: &str = "74faddf1d9144d541328a5393dc8d96016a9c91b6240d3fcef4c194b46e4e17e";
 const EXCLUSIONS: [&str; 5] = [
     "adapter-owned-runtime",
@@ -86,43 +87,43 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "803a056bfd82d4fe88f6c253b7b644751f1dcec32d091521888f7cc3f8552879",
+        "759278c89630929218ad26f563ac54d665571863720aa6747b13d22cab92f6ea",
     ),
     (
         "protocol/conformance/async-coordinator-model-v1.json",
-        "84bc1c7b1ad5a6c2a6c84f5587cba7c18792c573e58b61657ec53dec143d182c",
+        "681d2950efb50b560cb51af581ae6f254fa9063f9075209828232f52070780e7",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "70903f466c3887ffebaa46acdb11195af67525cdc1338a3750b7931ac162b95a",
+        "6a244e4b9facedc4c420ea74287c929be10ab4075b241a5e8053b43124fde029",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
-        "3238313e9dd00554703ef97b0cb484d636228cd7db8e914972e5824cbf0c61c2",
+        "0c048c90924fa652c327695525dd751940c2c298233080fe5a3dc9bfcdad2ad6",
     ),
     (
         "protocol/conformance/async-source-lowering-v1.json",
-        "2bc2c28ef447a0eeb75c0e01d6ce2f68e6fb4a8b26e6be89e26df2cf7110c3c6",
+        "144624381e82d6873a62183e193c810677d7f21f0ebc6fe71d0ebf2c623929f9",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",
-        "88e25c23798caade360890320d0d6eec3867366991762d7f8d3b23dce7eb5f4f",
+        "33f7ade9bfa70c893330a88f2498057672962f736e34fd4e5265e3be4d02fbf5",
     ),
     (
         "protocol/conformance/executable-task-ir-v1.json",
-        "641ed1a4bd7bd7c31d8cc428d9edfd518c57b9cc5977a201d3328e7d6e73740d",
+        "92e07f8c92964c7d6acdb1b6a092c19aca086bc22a69c98f30fae55a8b5333a4",
     ),
     (
         "protocol/conformance/source-join-v1.json",
-        "9e20c6f10183e40cef712ab3f1d36c54ae60d2733f07fcee36327d3f0c3d33d8",
+        "c4db07c56259d2155f4faaad4efa565d8c80dcc2b5d9dc8efc03cfe00994f326",
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "ec763c4ceb1ca93ef0e03d46dedcf625560bbd8aa31028d8723d035ebf467fdf",
+        "6dc2cdf07cbf1930b81cb5b71d992718de86499cab50571d3654ccec17799435",
     ),
     (
         "protocol/conformance/tokio-executor-v1.json",
-        "786c50e4c226fc8ec51fd77df911efb22d7d8a13e31155b823373ea92ae0a2d3",
+        "578a55b0e823c60f820cc7a82b18227821c0f860e6b3d9d14dcc44d86f303eef",
     ),
 ];
 

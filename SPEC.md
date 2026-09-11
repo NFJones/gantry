@@ -10628,3 +10628,275 @@ Concrete Rust layouts and private storage encodings remain implementation
 choices. Independent implementations that support the same protocol major
 version MUST interoperate on canonical public envelopes and canonical IR;
 private database pages and executor objects are never portable artifacts.
+
+<a id="GNT-15.10-protected-values"></a>
+
+**Protected values.** A **protected value** is a layer-1 value in the sense of
+Section 12: it can occur where Gantry source names a value, and it is neither
+an ordinary value nor an `ExternalValue`. Every protected value carries exactly
+one data class drawn from the closed v1 protected-class vocabulary defined
+below, and it MUST NOT carry zero classes, two classes, or an
+implementation-defined class outside that vocabulary. The class is a property of
+the value's creation contract, not of its contents.
+
+The closed v1 protected-class vocabulary is: source, entry input, interpolation
+arguments, named inputs, action arguments, rendered prompts, session
+identifiers, raw hook output, normalized values, decision rationales, decline
+reasons, hook-failure messages, journals, and protected event payloads. These
+fourteen classes are the complete v1 vocabulary. A class is declared by the
+value's creation contract and MUST NOT be inferred from the journal
+protected-reference classes of Section 12, which classify stored references
+rather than values, so a protected-reference spelling that coincides with a
+protected-class spelling does not make the two vocabularies one vocabulary.
+Changing this vocabulary requires a catalogue change and a protocol revision,
+never a hand edit of a generated protocol binding.
+
+Ordinary source MUST NOT destructure a protected value, obtain its length or
+size, compare it for equality or order, format or render it, interpolate it
+into an ordinary value or string, serialize it, branch on its contents, emit it
+as telemetry, or supply it to a model or provider. A protected value MUST NOT
+be used as a pattern, a match scrutinee, a key, a sort operand, or a hash
+input. These prohibitions bind every observation site, including one that
+already holds the value, and a diagnostic, projection, or recovery path that
+accepts ordinary values MUST NOT be given a protected value instead.
+
+Only transformations declared protection-preserving may consume a protected
+value, and every output that depends on it remains protected. A transformation
+is declared protection-preserving only when its contract names the protected
+input classes it consumes, names the destination classes it produces, and shows
+that each output class is at least as restrictive as every input class that can
+reach it. Dependence is transitive and conservative: an output computed from a
+protected value, from a value derived from one, or from ordinary data combined
+with one is itself protected, even when the computed result appears independent
+of the protected contents. A function of the declared class or identity alone is
+ordinary only when its contract proves independence from protected contents.
+
+No generic reveal or declassification operation exists. Gantry MUST NOT expose
+an operation, method, hook, adapter, tool, or diagnostic entry point that
+returns protected contents, length, ordering, or an encoding of them, to any
+holder, including the holder that created the value, the integration that
+supplied it, and an operation that holds authority over it. A canonical
+protected-value identity is a domain-separated digest of the declared class and
+declared provenance, never of protected bytes, and observing such an identity
+reveals no payload; equality of identities is ordinary and MUST NOT be
+implemented as equality of contents.
+
+A protected value, or an authority reference that a protection rule makes
+relevant, MUST NOT cross a value-action boundary without a dedicated protocol.
+Action arguments, entry inputs, workflow and task results, operation results,
+and ordinary protocol envelopes are value-action boundaries. A crossing is
+permitted only when a dedicated protocol declares it, the receiving contract
+names the classes it accepts and the destination it occupies, and the crossing
+is visible to admission; absent that declaration, a protected value reaching
+such a boundary is a static-analysis or admission failure, not a runtime
+decision.
+
+This section reuses the existing classification rather than adding to it.
+Source protection remains `Unsealed` or `Sealed`, recovery remains `SealedValue`
+or `Unavailable`, and aggregate folding stays conservative in the sense of
+Section 3; a protected value is `Sealed`, and a value derived from one cannot be
+less restrictive than its inputs. `Unsealed` does not mean nonsensitive: it
+records only that the classification itself imposes no sealing requirement, and
+integration data that is never sealed remains subject to this section. No class
+grants execution admission, additional source capabilities, or release authority
+by itself.
+
+The readability statement of Section 12 is a rule about which layer Gantry
+source may name, not a promise that every layer-1 value is inspectable. Layer 1
+MAY contain protected values that Gantry source cannot inspect, and a layer-1
+binding of a protected value is an opaque name: source may hold it, pass it to a
+protection-preserving transformation, and compare identities, but it MUST NOT
+learn its contents. Readability of the layer and inspectability of a value are
+separate claims, and this section MUST NOT be read as requiring that every
+layer-1 value be observable by source.
+
+A protected value MUST NOT be constructed from ordinary bytes, from an ordinary
+value, or by casting, transmuting, or deserializing an ordinary representation,
+and no deserializer for a protected value exists. Creation is owned by the
+protection layer that receives the payload from the integration boundary or from
+a protection-preserving transformation, and it records the declared class and
+provenance needed for identity and audit. An implementation MAY represent a
+protected value as an opaque handle whose private storage form is not a portable
+artifact and is not reachable through any public API.
+
+<a id="GNT-15.10-semantic-envelope"></a>
+
+**Semantic envelope.** Every observation that an operation makes of protected
+inputs has a classification in the semantic envelope, and each observation is
+either a **protected clause** or an **ordinary clause**. A protected clause is an
+observation whose classification is selected from protected contents: the choice
+among its permitted outcomes depends, at least in part, on data classified
+protected. An ordinary clause is provably independent of protected contents, and
+that independence is a property of the operation's contract rather than of
+observed behaviour.
+
+The semantic envelope covers every language-visible consequence of an operation
+whose inputs include a protected value: success or failure, the chosen result
+variant, whether an output is produced and how large it is, diagnostic text and
+subject, the retry decision and any recorded cause, readiness or ordering among
+observations, the outcome of a task or channel operation, termination and its
+reason, and any semantic quota charge. Each item is classified protected or
+ordinary for the operation, and an item the contract leaves unclassified MUST be
+treated as protected.
+
+A protection-preserving operation MUST classify every observation of its
+protected inputs under this section, and it MUST NOT make an observation of them
+outside the envelope. A protected classification MUST NOT be published through
+an ordinary channel, and a protected value that reaches an ordinary destination
+without a declared release is a violation of `GNT-15.10-release-operation`
+rather than a question about envelope classification.
+
+Whenever an input is protected, every payload-independent public settlement MUST
+be classified ordinary, so that a caller or scheduler can settle work without
+learning protected bits. Payload-independent settlement includes completion
+acknowledgement, cancellation acknowledgement, admission and admission refusal,
+and the deterministic exhaustion result of a disclosure budget. A settlement
+that would vary with protected contents MUST NOT be published as ordinary.
+
+Policy denial, transport failure, and budget or resource exhaustion MAY remain
+ordinary clauses only under a contract that shows their classification is not
+selected from protected contents: the denial is decided by ordinary policy, the
+transport failure is reported by ordinary transport state, and exhaustion is
+deterministic in the ordinary budget accounting. A contract that cannot show
+that independence MUST classify the item protected.
+
+Physical timing and microarchitectural channels are outside the bounded claim of
+this section: no portable contract bounds them, and an implementation MUST NOT
+claim to have done so. Language-visible completion and arbitration remain
+semantic and are in scope. Completion ordering, retry and redelivery decisions,
+scheduling fairness that source can observe, and every arbitration outcome that
+changes which ordinary clause a caller observes are classified here even when
+their physical cause is timing.
+
+A logical charge is either payload-independent public settlement or a protected
+value itself. A quota, credit, or budget observation computed from protected
+contents MUST be carried as a protected value; a charge computed only from
+ordinary accounting MAY be published as ordinary settlement. An implementation
+MUST NOT convert a protected charge into an ordinary one by rounding,
+quantization, or aggregation unless the resulting observation is provably
+payload-independent under the operation's contract.
+
+<a id="GNT-15.10-release-operation"></a>
+
+**Release operation.** Release is a distinct operation, separate from admission,
+authority, and execution, and it is never an implicit consequence of another
+operation's success. A release requires three independently satisfied conditions:
+holder authority over the release site, applicability of the declared data class,
+and an admissible destination class. Satisfying one condition grants nothing
+toward the others.
+
+Release never authorizes execution, and operation or authority admission never
+implies release. Holding an authority instance that admits an operation which
+produced or holds a protected value does not permit releasing it; attenuating or
+delegating that instance never creates release permission; and a release grant
+never admits an operation, satisfies a capability requirement, or substitutes for
+an authority instance.
+
+The destination is a closed class: ordinary source, protected journal, diagnostic
+sink, provider or model input, and null or telemetry. A destination outside this
+class cannot receive a release. The data-class and destination pair MUST be
+declared by the release site before evaluation, and a pair the site does not
+declare is rejected before any projection of the value occurs.
+
+A release returns an ordinary value only after it is accepted, and rejection MUST
+NOT distinguish which protected bit caused it. Each rejection is one of class
+mismatch, destination mismatch, or budget exhaustion; those categories are
+selected from declared ordinary policy and ordinary accounting, not from protected
+contents, and a rejection's diagnostics, errors, and events MUST carry the
+category without payload bytes or payload-derived bits.
+
+A disclosure budget is charged per accepted release. The budget is monotone
+under charge, its initial value and charge size are ordinary declared
+configuration, and exhaustion is deterministic: the same ordinary accounting
+state produces the same refusal for every payload of the same class and
+destination. The exhaustion result is payload-independent settlement and MUST be
+reported as an ordinary error rather than as protected diagnostic text.
+
+Every accepted release emits protected audit evidence naming the release site,
+the data class, the destination class, the projection applied, the budget
+consumption, and the outcome. The evidence MUST NOT contain payload bytes, a
+payload encoding, a payload-derived digest, or a payload-derived bit, and it is
+itself protected because it relates to protected data; it is stored where the
+applicable capability governs access.
+
+This section is the general form of the release decision, and the per-event
+frozen delivery permissions of Section 12 are its transport-side specialization.
+The protection side owns the class and destination declaration, the release
+site's authority, the disclosure budget, and the audit evidence. The transport
+side owns enforcement of a frozen permission: the sink class, the captured
+Boolean capabilities, and the redaction policy frozen at event creation decide
+whether a protected payload class may reach a sink, and recovery MUST NOT
+re-decide them from current configuration. A transport decision that admits
+delivery MUST NOT widen the declared destination class, and a release decision
+MUST NOT override a frozen delivery permission that denies access.
+
+A release whose destination is ordinary source produces a value that is no
+longer protected, and from that moment the value is governed by ordinary rules.
+Release to a protected journal, a diagnostic sink, a provider, or telemetry does
+not declassify the value: the receiver remains bound by the declared class, and a
+further release to another destination is a new release requiring its own
+declaration, authority, and budget charge.
+
+<a id="GNT-15.10-emergency-cleanup"></a>
+
+**Emergency cleanup.** Emergency cleanup is sealed: it runs with no source
+callback, no source-visible scope, and no declassification. Source cannot name,
+observe, cancel, or configure the cleanup of protected values, and no cleanup
+step may create an ordinary value derived from protected contents.
+
+Cleanup may release protected values only to a pre-declared null destination under
+authority that already exists before cleanup begins. It MUST NOT reach ordinary
+source, a diagnostic sink, a provider, or telemetry, and it MUST NOT acquire,
+manufacture, or extend release authority, including by using the emergency
+diagnostic callback or any other best-effort channel.
+
+No hidden finalization may change source semantics after cleanup. Finalization
+performed during cleanup MUST NOT alter an outcome source already observed, MUST
+NOT produce new source-visible values, and MUST NOT change a durable record. A
+cleanup step that cannot preserve those properties MUST be reported as an
+ordinary operational failure of the cleanup step rather than a semantic change.
+
+Cleanup outcomes are payload-independent and bounded: the observations are
+whether cleanup ran, whether it was admitted under its existing authority, and
+whether it completed, and each is ordinary settlement computed from ordinary
+accounting. Cleanup MUST NOT publish the number, size, or class distribution of
+the protected values it consumed, and it MUST be bounded in time and work so that
+the protection layer cannot stall an interpreter indefinitely.
+
+After an interrupted or aborted cleanup, and after process-level loss, the
+protection layer promises only recovery from the durable prefix confirmed before
+the loss: no cleanup promise covers protection state that was never made durable,
+and an implementation MUST NOT describe an aborted cleanup as a completed
+erasure.
+
+<a id="GNT-15.10-protection-invariants"></a>
+
+**Protection invariants.** Codecs, diagnostics, events, dependency edges, tools,
+provider adapters, and generated schemas MUST NOT erase protection. A codec that
+round-trips a protected value, a diagnostic that renders one, an event that
+carries one, a dependency edge that treats one as an ordinary value, a tool that
+inspects one, a provider adapter that receives one, or a generated schema that
+declares one as an ordinary wire field each erase protection, and each is a
+defect in the erasing component.
+
+The obligation to prove non-erasure is a negative-evidence obligation: for each
+such component, conformance MUST cite the check showing that the component
+cannot be reached with a protected value, or the check showing that its contract
+keeps the value protected. A component with no such evidence MUST be reported as
+unproven rather than assumed safe, and an absence of observed leakage is not
+evidence of non-erasure.
+
+The bounded claim of this section excludes several stronger properties. It does
+not promise full noninterference after release: once a value is released to a
+declared destination, the released value is ordinary and this section says
+nothing about what the destination does with it. It does not promise an
+unspecified physical or microarchitectural side-channel guarantee beyond the
+language-visible envelope of GNT-15.10-semantic-envelope.
+
+It does not permit implicit declassification: no operation, tool, adapter, or
+administrator path may declassify a protected value without a declared release,
+and a configuration change, a newer contract revision, or an implementation
+convenience never creates one retroactively. It does not equate operation
+authority with release authority: authority over an operation that handles
+protected data is not authority to release it, and the two are declared, granted,
+and audited separately.

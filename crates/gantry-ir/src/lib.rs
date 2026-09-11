@@ -21,6 +21,7 @@ mod generic;
 mod manifest;
 mod path;
 mod primitive;
+mod protected;
 mod schema;
 mod signature;
 mod type_expression;
@@ -65,6 +66,22 @@ pub use generic::{
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
 pub use path::{CanonicalPath, CanonicalPathError};
 pub use primitive::{Comparison, Primitive};
+pub use protected::{
+    AuditAccess, AuditOutcome, CleanupOutcome, CleanupReport, CrossingDeclaration,
+    CrossingRejection, DECLARED_NAME_LIMIT, DeclaredName, DeclaredNameRejection, DeliveryDecision,
+    DeliveryDenial, DisclosureBudget, DisclosureCharge, ENVELOPE_OBSERVATION_ORDER,
+    EXCLUDED_PROTECTION_CLAIMS, EmergencyCleanup, EnvelopeClause, EnvelopeObservation,
+    EnvelopeRejection, ExcludedClaimKind, ExcludedProtectionClaim, ExcludedProtectionClaimName,
+    ExhaustionAccounting, FrozenDeliveryPermission, LayerValueInspection,
+    NON_ERASURE_COMPONENT_ORDER, NonErasureClaim, NonErasureComponentKind, NonErasureObligation,
+    NonErasureStatus, PROTECTED_DATA_CLASS_ORDER, PROVENANCE_ORIGIN_ORDER, ProjectionKind,
+    ProtectedDataClass, ProtectedValue, ProtectedValueId, ProtectionPreservingTransform,
+    ProvenanceOrigin, ProvenanceOriginKind, RELEASE_DESTINATION_ORDER, ReleaseAuditEvidence,
+    ReleaseAuditView, ReleaseAuthorityError, ReleaseDecision, ReleaseDestination, ReleaseGrant,
+    ReleaseHolderAuthority, ReleaseHolderBindingId, ReleaseHolderId, ReleaseOutcome,
+    ReleaseProjection, ReleaseRejection, ReleaseSite, ReleasedValue, SemanticEnvelope,
+    ValueActionBoundary, admit_crossing, combined_protection_class,
+};
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
 pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,

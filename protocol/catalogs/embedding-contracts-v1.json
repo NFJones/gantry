@@ -72,7 +72,7 @@
  "catalog": "gantry.embedding-contracts",
  "major": 1,
  "minor": 0,
- "specification_revision": "ec5c2081f6e08312c31c0fb4e4283b60dea268bb4873da5b2ed5bf8ba5f3efee",
+ "specification_revision": "bbff3858372a2f19087b7ae840b48baa72de652040ef839440320f787ad42d23",
  "operations": [
   {
    "wire": "abort-task",
@@ -338,6 +338,7 @@
    "cancellation": "gantry-token",
    "async_kind": "borrowed-future",
    "requirements": [
+    "GNT-15.10-protected-values",
     "GNT-15.2",
     "GNT-15.9-boundary-failure-containment"
    ]
@@ -402,6 +403,9 @@
    "async_kind": "borrowed-future",
    "requirements": [
     "GNT-12.5",
+    "GNT-15.10-protection-invariants",
+    "GNT-15.10-release-operation",
+    "GNT-15.10-semantic-envelope",
     "GNT-15.6",
     "GNT-15.9-boundary-failure-containment"
    ]
@@ -437,6 +441,8 @@
    "cancellation": "gantry-token",
    "async_kind": "borrowed-future",
    "requirements": [
+    "GNT-15.10-emergency-cleanup",
+    "GNT-15.10-protected-values",
     "GNT-15.2",
     "GNT-15.9-boundary-failure-containment",
     "GNT-7.11"
@@ -687,6 +693,10 @@
    "async_kind": "borrowed-future",
    "requirements": [
     "GNT-12.4",
+    "GNT-15.10-emergency-cleanup",
+    "GNT-15.10-protected-values",
+    "GNT-15.10-protection-invariants",
+    "GNT-15.10-semantic-envelope",
     "GNT-15.5",
     "GNT-15.9-boundary-failure-containment"
    ]

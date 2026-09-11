@@ -36,6 +36,7 @@ use tokio::runtime::{Builder, Runtime};
 
 const MANIFEST_PATH: &str = "protocol/conformance/async-execution-gate-v1.json";
 const CONTRACT_PATH: &str = "protocol/conformance/async-execution-contract-v1.json";
+/// Digest of the derived frozen assignment rows of `CONTRACT_PATH`, not of its bytes.
 const ASSIGNMENT_SHA256: &str = "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49c9f3c0f0d6d889102";
 const ARTIFACTS: [(&str, &str); 19] = [
     (
@@ -44,75 +45,75 @@ const ARTIFACTS: [(&str, &str); 19] = [
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "803a056bfd82d4fe88f6c253b7b644751f1dcec32d091521888f7cc3f8552879",
+        "759278c89630929218ad26f563ac54d665571863720aa6747b13d22cab92f6ea",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "70903f466c3887ffebaa46acdb11195af67525cdc1338a3750b7931ac162b95a",
+        "6a244e4b9facedc4c420ea74287c929be10ab4075b241a5e8053b43124fde029",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
-        "3238313e9dd00554703ef97b0cb484d636228cd7db8e914972e5824cbf0c61c2",
+        "0c048c90924fa652c327695525dd751940c2c298233080fe5a3dc9bfcdad2ad6",
     ),
     (
         "protocol/conformance/automatic-durable-root-v1.json",
-        "531b1c901fa8e17a8fd2867ec4ff5f2138f80a4f7e9ff0f8d2a4db89c7a532af",
+        "1c816e43e68b3a4d97fa618005bf14515f6b0bf4c07f570811e2ba1e50cb3bd1",
     ),
     (
         "protocol/conformance/automatic-root-start-v1.json",
-        "005871baf5a5cf28b325572aa5f5f876e84c47e8aadafef457ed6858a9415570",
+        "74ec4c729237e49c62b22558282bf829bf2816943699fc1aad28286425119647",
     ),
     (
         "protocol/conformance/durable-recovery-v1.json",
-        "3e62a7e62404c5a4a8c219c3f078a7eb3a19b2db1e75a8c7e89cfedec21426aa",
+        "a49861415a3719d1b41661ccb608130ad18602000dc52023b08dc0d946135269",
     ),
     (
         "protocol/conformance/durable-start-v1.json",
-        "65f495edeafb21480073cc31a3e7de6b1954acc656efaf9a99e6df4581e28225",
+        "0ac5c1387b9b389f53def60a56bd28b7af55c430c0a0e90dc0895ed208b3053a",
     ),
     (
         "protocol/conformance/execution-api-v1.json",
-        "d9c30e4f391ba72007c5c450935b20fc5d93231706b895c441205cf4ad8df100",
+        "51b3b5f2176f381d87f4ece79dac6f56a9149fe5df02ef92dc1157202e4cd173",
     ),
     (
         "protocol/conformance/execution-coordinator-v1.json",
-        "47e222c01108c7bc8f8ebdbcf2c52ec24d3af6797a5b8c68a2e1c9d988a0b6a3",
+        "f228ddb8947cf1e4af75c97ce3bfeaa3fa8b145229e3f7d372b514189b609038",
     ),
     (
         "protocol/conformance/executor-services-v1.json",
-        "c500bfe50a302805635df76646b9676a66b23ee3fcc90b29cd332e23bc748f29",
+        "7770960e501131d919db83cb45e9892bf2c70ea2664dd1353b9eaa726d9a279c",
     ),
     (
         "protocol/conformance/interpreter-lifecycle-v1.json",
-        "b74d8cfa3d28fb0859bdd4957efba84b9d97445c3217b6e85d70f7f01a04c60e",
+        "438c177d20848f457f476c8f116ca74198d097c3a2fc37567e6bb979453920f9",
     ),
     (
         "protocol/conformance/interpreter-ownership-v1.json",
-        "95f0df959ab6427b55de1fa97213040c22dc7348ba1e7eeac0cf4a38ae3806ea",
+        "910a24e6e87db277ed419d0aa7e692cbf4ae2cb3965ec0d97f89331f5947153c",
     ),
     (
         "protocol/conformance/revent-ownership-v1.json",
-        "def88109b9f3903f8b32108ca1516119cf15b8b89e36baa0f1ed6b8bb53a6caa",
+        "f698264899000365579f730d48b69347a179c61058f9021a413be29886efecce",
     ),
     (
         "protocol/conformance/runtime-sessions-v1.json",
-        "991f6093184f50ba5cfb175c150fbb8f3a9ddbee378f38bd72cfe910a88ab586",
+        "0a04adabfc34757020606219b5f695ca58719a14741b286469aa6b540de8a669",
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "ec763c4ceb1ca93ef0e03d46dedcf625560bbd8aa31028d8723d035ebf467fdf",
+        "6dc2cdf07cbf1930b81cb5b71d992718de86499cab50571d3654ccec17799435",
     ),
     (
         "protocol/conformance/task-driver-v1.json",
-        "01c6b91cb6a859ad059bda76bdefbacb2f6af63f32275361ac521e5e79d215c4",
+        "1c2fa0ab9557994cc06bf197cfe1af90ce226ca482b684b084a24b4767c88380",
     ),
     (
         "protocol/conformance/task-supervision-v1.json",
-        "610317b1617fe7424b58416b0f7ee8b43a26afe61cadaf3a4560e364112a5486",
+        "32143c6e3fcdadd136534acc067606e6e558bdae78315b10b108841c6a2bf870",
     ),
     (
         "protocol/conformance/tokio-executor-v1.json",
-        "786c50e4c226fc8ec51fd77df911efb22d7d8a13e31155b823373ea92ae0a2d3",
+        "578a55b0e823c60f820cc7a82b18227821c0f860e6b3d9d14dcc44d86f303eef",
     ),
 ];
 const EVIDENCE: [(&str, &str); 21] = [

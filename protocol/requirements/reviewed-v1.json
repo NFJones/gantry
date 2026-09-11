@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "ec5c2081f6e08312c31c0fb4e4283b60dea268bb4873da5b2ed5bf8ba5f3efee",
+ "specification_sha256": "bbff3858372a2f19087b7ae840b48baa72de652040ef839440320f787ad42d23",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9484,
-   "end_line": 10630,
+   "end_line": 10902,
    "rationale": null
   }
  ],
@@ -28382,6 +28382,856 @@
        "evidence": [
         "crates/gantry-conformance/tests/diagnostic_presentation.rs#rendering_derives_multibyte_locations_and_requires_explicit_source_disclosure",
         "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-15.10-protected-values",
+   "span_start_line": 10631,
+   "span_end_line": 10720,
+   "anchor_line": 10632,
+   "body_start_line": 10633,
+   "body_end_line": 10720,
+   "profiles": [
+    "embedding"
+   ],
+   "roles": [
+    "harness",
+    "implementation",
+    "integration"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 10633,
+     "end_line": 10641,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#protected_values_are_sealed_opaque_and_never_ordinary"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-002",
+     "start_line": 10642,
+     "end_line": 10653,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#protected_class_vocabulary_is_closed_and_not_inferred_from_journal_references"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-003",
+     "start_line": 10654,
+     "end_line": 10662,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#ordinary_observations_of_a_protected_value_are_unreachable"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-004",
+     "start_line": 10663,
+     "end_line": 10673,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#protection_preserving_transformations_keep_dependent_outputs_protected"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-005",
+     "start_line": 10674,
+     "end_line": 10683,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#no_generic_reveal_or_declassification_is_reachable_by_any_holder"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-006",
+     "start_line": 10684,
+     "end_line": 10693,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#protected_values_do_not_cross_a_value_action_boundary_undeclared"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-007",
+     "start_line": 10694,
+     "end_line": 10703,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#sealed_classification_is_reused_and_unsealed_is_not_nonsensitive"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-008",
+     "start_line": 10704,
+     "end_line": 10712,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#layer_one_readability_does_not_imply_inspectability"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-009",
+     "start_line": 10713,
+     "end_line": 10720,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#protected_values_have_no_byte_constructor_or_public_storage",
+        "crates/gantry-conformance/tests/protected_release.rs#provenance_is_a_validated_declaration_and_identity_is_payload_independent"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-15.10-semantic-envelope",
+   "span_start_line": 10721,
+   "span_end_line": 10777,
+   "anchor_line": 10722,
+   "body_start_line": 10723,
+   "body_end_line": 10777,
+   "profiles": [
+    "embedding"
+   ],
+   "roles": [
+    "harness",
+    "implementation",
+    "integration"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 10723,
+     "end_line": 10732,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#every_semantic_envelope_item_is_classified"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-002",
+     "start_line": 10733,
+     "end_line": 10741,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#semantic_envelope_covers_every_language_visible_consequence"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-003",
+     "start_line": 10742,
+     "end_line": 10748,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#unclassified_observations_default_to_protected"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-004",
+     "start_line": 10749,
+     "end_line": 10755,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#payload_independent_public_settlement_stays_ordinary"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-005",
+     "start_line": 10756,
+     "end_line": 10762,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#denial_transport_failure_and_exhaustion_require_an_independent_contract"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-006",
+     "start_line": 10763,
+     "end_line": 10770,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#language_visible_completion_and_arbitration_are_semantic"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-007",
+     "start_line": 10771,
+     "end_line": 10777,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#logical_charges_are_settlement_or_protected_values"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-15.10-release-operation",
+   "span_start_line": 10778,
+   "span_end_line": 10838,
+   "anchor_line": 10779,
+   "body_start_line": 10780,
+   "body_end_line": 10838,
+   "profiles": [
+    "embedding"
+   ],
+   "roles": [
+    "harness",
+    "implementation",
+    "integration"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 10780,
+     "end_line": 10787,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#release_requires_authority_class_and_destination_independently"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-002",
+     "start_line": 10788,
+     "end_line": 10794,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#release_never_authorizes_execution_and_admission_never_implies_release"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-003",
+     "start_line": 10795,
+     "end_line": 10800,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#release_destination_class_is_closed_and_declared_before_evaluation"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-004",
+     "start_line": 10801,
+     "end_line": 10807,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#rejection_categories_are_payload_independent"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-005",
+     "start_line": 10808,
+     "end_line": 10814,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#disclosure_budget_is_monotone_and_exhausts_deterministically"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-006",
+     "start_line": 10815,
+     "end_line": 10821,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#release_audit_evidence_names_the_site_without_payload"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-007",
+     "start_line": 10822,
+     "end_line": 10832,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#frozen_delivery_permissions_own_the_transport_side_decision"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-008",
+     "start_line": 10833,
+     "end_line": 10838,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#release_outcomes_depend_on_the_declared_destination_class"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-15.10-emergency-cleanup",
+   "span_start_line": 10839,
+   "span_end_line": 10870,
+   "anchor_line": 10840,
+   "body_start_line": 10841,
+   "body_end_line": 10870,
+   "profiles": [
+    "embedding"
+   ],
+   "roles": [
+    "harness",
+    "implementation",
+    "integration"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 10841,
+     "end_line": 10846,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#emergency_cleanup_is_sealed_and_callback_free"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-002",
+     "start_line": 10847,
+     "end_line": 10852,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#cleanup_reaches_only_a_predeclared_null_destination"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-003",
+     "start_line": 10853,
+     "end_line": 10858,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#no_hidden_finalization_changes_source_semantics"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-004",
+     "start_line": 10859,
+     "end_line": 10865,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#cleanup_outcomes_are_payload_independent_and_bounded"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-005",
+     "start_line": 10866,
+     "end_line": 10870,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#interrupted_cleanup_promises_only_the_durable_prefix"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-15.10-protection-invariants",
+   "span_start_line": 10871,
+   "span_end_line": 10902,
+   "anchor_line": 10872,
+   "body_start_line": 10873,
+   "body_end_line": 10902,
+   "profiles": [
+    "embedding"
+   ],
+   "roles": [
+    "harness",
+    "implementation",
+    "integration"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 10873,
+     "end_line": 10881,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#codecs_diagnostics_events_tools_and_adapters_preserve_protection"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-002",
+     "start_line": 10882,
+     "end_line": 10888,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#non_erasure_is_a_negative_evidence_obligation"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-003",
+     "start_line": 10889,
+     "end_line": 10895,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#bounded_claim_excludes_noninterference_and_physical_channels"
+       ],
+       "rationale": null
+      }
+     ]
+    },
+    {
+     "key": "clause-004",
+     "start_line": 10896,
+     "end_line": 10902,
+     "profiles": [
+      "embedding"
+     ],
+     "roles": [
+      "harness",
+      "implementation",
+      "integration"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "embedding",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/protected_release.rs#declassification_is_never_implicit_and_authority_is_not_release"
        ],
        "rationale": null
       }
