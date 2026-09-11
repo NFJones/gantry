@@ -2598,6 +2598,98 @@ fn affine_place_ledger_keys_places_and_keeps_siblings_usable() {
     }
 }
 
+/// A partial move and a pattern commit both key the affinity ledger by place: the transferred or
+/// matched place, every place containing it, and a repeated commit are rejected, while a sibling
+/// projection stays readable and a `Copyable` matched place transfers nothing (2g).
+#[test]
+fn affine_partial_moves_and_pattern_commits() {
+    const DECLARATIONS: &str = "affine struct Leaf { value: Int }\n\
+         enum Maybe { Present(Leaf), Absent }\n\
+         struct Wrapper { inner: Maybe, other: Int }\n\
+         fn make() -> Wrapper { Wrapper { inner: Maybe::Present(Leaf { value: 6 }), other: 3 } }\n\
+         enum Count { One(Int), Zero }\n\
+         fn tally() -> Count { Count::One(1) }\n";
+
+    for accepted in [
+        // A commit whose matched place is a projection leaves the sibling projection readable.
+        "fn main() -> Int {\n\
+             let w: Wrapper = make();\n\
+             let r: Int = match w.inner { Maybe::Present(leaf) => leaf.value, Maybe::Absent => 0 };\n\
+             w.other + r\n\
+         }",
+        // A partial move leaves the sibling projection readable too.
+        "fn main() -> Int {\n\
+             let w: Wrapper = make();\n\
+             let m: Maybe = w.inner;\n\
+             w.other\n\
+         }",
+        // A `Copyable` matched place transfers nothing and may be committed twice.
+        "fn main() -> Int {\n\
+             let c: Count = tally();\n\
+             let a: Int = match c { Count::One(v) => v, Count::Zero => 0 };\n\
+             let b: Int = match c { Count::One(v) => v, Count::Zero => 1 };\n\
+             a + b\n\
+         }",
+        // A temporary scrutinee is not a place, so each call-result commit is independent.
+        "fn main() -> Int {\n\
+             let a: Int = match tally() { Count::One(v) => v, Count::Zero => 0 };\n\
+             let b: Int = match tally() { Count::One(v) => v, Count::Zero => 1 };\n\
+             a + b\n\
+         }",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    for rejected in [
+        // A place containing the matched place is unreadable after the commit.
+        "fn main() -> Int {\n\
+             let w: Wrapper = make();\n\
+             let r: Int = match w.inner { Maybe::Present(leaf) => leaf.value, Maybe::Absent => 0 };\n\
+             discard w;\n\
+             r\n\
+         }",
+        // The matched place itself cannot be transferred after the commit.
+        "fn main() -> Int {\n\
+             let w: Wrapper = make();\n\
+             let r: Int = match w.inner { Maybe::Present(leaf) => leaf.value, Maybe::Absent => 0 };\n\
+             let m: Maybe = w.inner;\n\
+             r\n\
+         }",
+        // A partial move and a commit address the same place, so the second use is a reuse.
+        "fn main() -> Int {\n\
+             let w: Wrapper = make();\n\
+             let m: Maybe = w.inner;\n\
+             let r: Int = match w.inner { Maybe::Present(leaf) => leaf.value, Maybe::Absent => 0 };\n\
+             r\n\
+         }",
+        // A commit inside a loop body is a potentially repeated transfer.
+        "fn main() -> Int {\n\
+             let w: Wrapper = make();\n\
+             let mut total: Int = 0;\n\
+             loop(limit = 2) {\n\
+                 match w.inner { Maybe::Present(leaf) => { total = total + leaf.value; }, Maybe::Absent => { break; } }\n\
+             }\n\
+             total\n\
+         }",
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{rejected}"), "affine-value-reuse");
+    }
+
+    // A `MustConsume` matched place is not consumed by a commit: the pattern's read of the place
+    // is a copy, and item 2d admits only an `owned self` call or a `return` as consumption.
+    assert_affine_rejected(
+        "must_consume struct Token { value: Int }\n\
+         enum Slot { Filled(Token), Empty }\n\
+         fn slot() -> Slot { Slot::Filled(Token { value: 1 }) }\n\
+         fn main() -> Int {\n\
+             let s: Slot = slot();\n\
+             let r: Int = match s { Slot::Filled(token) => 1, Slot::Empty => 0 };\n\
+             r\n\
+         }",
+        "must-consume-copy",
+    );
+}
+
 /// The affine move ledger keys `(root, field path)` places, so a repeated owned move and a read of
 /// an already-moved place — including through a struct-field projection — are rejected.
 #[test]

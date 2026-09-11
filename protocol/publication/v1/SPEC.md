@@ -3527,6 +3527,41 @@ excluded, as do live-resource loans, general argument loans, partial moves and
 pattern commit, staging and transfer linearization outside the receiver
 positions above, and unwind disposition. The exclusions of items 2b and 2d
 continue to apply.
+
+<a id="GNT-6.2g"></a>
+2g. A **partial move** is a transfer of a value out of a place that is not its
+own binding root. It marks exactly the transferred subplace under item 2e's
+rules, binds the transferred value to its destination, and never marks the
+containing place, so every place that neither contains nor is contained in the
+transferred subplace remains readable. Reading or transferring a containing
+place, or any other place that contains the transferred subplace, MUST be
+rejected for the lifetime of the binding root, exactly as item 2e requires of a
+marked place.
+
+A **pattern commit** is the transfer one arm pattern performs when it binds at
+least one payload of its matched place by value. Binding a payload by value
+transfers that payload out of the matched place, and it is never a copy of it.
+The matched place of a `match` arm or `if let` condition is the place named by
+its scrutinee expression. A commit marks exactly that matched place under item
+2e's rules, so a later read or transfer of the matched place, of a place
+containing it, or of a place contained in it MUST be rejected while the binding
+root of the matched place is in scope. A pattern payload is a fresh binding
+introduction for its own value, and item 2d's payload obligations apply to it
+unchanged.
+
+A commit whose matched place is `Copyable` transfers nothing and marks nothing,
+so the matched place remains readable and MAY be committed again. A commit
+inside a loop body is potentially repeated and MUST be rejected as a repeated
+transfer when the root of the matched place is bound outside that loop body.
+
+A commit does not itself consume the matched place: when that place is
+`MustConsume`, the pattern's read of it is a copy, item 2d's copy rule MUST
+reject the statement, and the place is consumed only by the two dispositions
+item 2d lists.
+
+Struct and tuple patterns, rest patterns, pattern guards, and task or channel
+transfer remain excluded, as do the unwind, cancellation, and suspension duties
+that the other items of this section own.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
