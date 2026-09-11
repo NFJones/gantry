@@ -6,7 +6,7 @@
   "specification_sha256": "5ce48d9140573f60a59a8833510a60abcbc47c3298a7260a50dbc1a56a9f811e",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "09472e6a7ea814ac4ecb9690f5170186dea74741661064220a96e2a6dfc029f8",
+    "publication_set_identity": "eed7bcf2fe9a60fdf826e7d63a8b4cd4d893f42e577b5d76af1c7e0c729bbee9",
     "verification_path": "protocol/publication/verification-v1.json",
     "verification_sha256": "03f7cd214cbea139e96d3489c53aa30ca22a93b534a9966d0839062abb4b0ae1"
   },
@@ -126,7 +126,7 @@
   },
   "matrix": {
     "path": "release/release-matrix-v1.json",
-    "sha256": "b8bea688cc42134088f4593294ab6b818500201822a10eea4922142d4e177cf7",
+    "sha256": "563bc18863a98952c0bed7cbe1d0f9aaec573961f46c6b7554919059f4d0a0d5",
     "verifier_path": "release/verify-release-matrix.py",
     "verifier_sha256": "0d7f31fe8f607b0db86b6c2e292e06254dacaddaf2205c2f1a3af7348e9d66ee",
     "status": "qualified-passed",

@@ -3,7 +3,7 @@
   "overall_status": "qualified-passed",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "09472e6a7ea814ac4ecb9690f5170186dea74741661064220a96e2a6dfc029f8",
+    "publication_set_identity": "eed7bcf2fe9a60fdf826e7d63a8b4cd4d893f42e577b5d76af1c7e0c729bbee9",
     "source_revision": "46c82f39c5485c6f05fec10c4d8bc74b913f6977",
     "specification_sha256": "5ce48d9140573f60a59a8833510a60abcbc47c3298a7260a50dbc1a56a9f811e"
   },
@@ -30,7 +30,7 @@
     },
     {
       "path": "protocol/publication/index-v1.json",
-      "sha256": "09472e6a7ea814ac4ecb9690f5170186dea74741661064220a96e2a6dfc029f8"
+      "sha256": "eed7bcf2fe9a60fdf826e7d63a8b4cd4d893f42e577b5d76af1c7e0c729bbee9"
     }
   ],
   "environment": {

@@ -1111,6 +1111,12 @@ pub struct DiagnosticCodeDefinition {
 /// Initial Gantry source-substrate diagnostic code registry.
 pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
     DiagnosticCodeDefinition {
+        code: "affine-value-reuse",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An affine value is used more than once.",
+    },
+    DiagnosticCodeDefinition {
         code: "aggregate-member-type",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1151,6 +1157,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::TaskOwnership,
         meaning: "A task handle is consumed more than once.",
+    },
+    DiagnosticCodeDefinition {
+        code: "cyclic-trait-obligation",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "Trait obligations form a cycle that cannot be proved.",
     },
     DiagnosticCodeDefinition {
         code: "default-agent-outside-root",
@@ -1417,6 +1429,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A prompt interpolation closes nested delimiters out of order.",
     },
     DiagnosticCodeDefinition {
+        code: "missing-implementation",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A required trait implementation is missing.",
+    },
+    DiagnosticCodeDefinition {
         code: "missing-module-source",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
@@ -1453,10 +1471,52 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "The canonical module graph contains a parent cycle.",
     },
     DiagnosticCodeDefinition {
+        code: "must-consume-discard",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A MustConsume value requires consumption rather than discard.",
+    },
+    DiagnosticCodeDefinition {
+        code: "must-consume-escape",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A MustConsume value escapes the callable that owns it.",
+    },
+    DiagnosticCodeDefinition {
+        code: "must-consume-path-dependent",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A MustConsume place is consumed on only some reaching paths.",
+    },
+    DiagnosticCodeDefinition {
+        code: "must-consume-replaced",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An initialized MustConsume place cannot be replaced without consuming it.",
+    },
+    DiagnosticCodeDefinition {
+        code: "must-consume-unconsumed",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A MustConsume place leaves its scope without being consumed.",
+    },
+    DiagnosticCodeDefinition {
         code: "nonexhaustive-match",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::ControlFlow,
         meaning: "A structural match does not cover every value of its scrutinee type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "pattern-type-mismatch",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A pattern does not match the exact scrutinee type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "polymorphic-recursion",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A recursive generic declaration changes its own type arguments.",
     },
     DiagnosticCodeDefinition {
         code: "projection-index-type",
@@ -1469,6 +1529,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "The self receiver is referenced outside an inherent method body.",
+    },
+    DiagnosticCodeDefinition {
+        code: "receiver-value-place",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A receiver call requires a binding root, a struct-field receiver place, or a constructed value.",
     },
     DiagnosticCodeDefinition {
         code: "recursive-enum",
@@ -1487,6 +1553,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::ControlFlow,
         meaning: "A match arm is unreachable after preceding ordered patterns.",
+    },
+    DiagnosticCodeDefinition {
+        code: "sealed-trait-implementation",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A compiler-owned capability name cannot be declared by source.",
     },
     DiagnosticCodeDefinition {
         code: "sealed-type-boundary",
@@ -1583,6 +1655,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
         meaning: "A required package-item path does not resolve uniquely.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unsatisfied-bound",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A type argument does not satisfy a declared bound.",
     },
     DiagnosticCodeDefinition {
         code: "unterminated-block-comment",
