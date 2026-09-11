@@ -1549,6 +1549,48 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An `owned self` receiver is outside zero-argument monomorphic inherent methods, or a consumption-requiring owned receiver lacks a binding-root or struct-field caller place.",
     },
     DiagnosticCodeDefinition {
+        code: "package-alias-collision",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A dependency alias collides with another name in its declaring package instance.",
+    },
+    DiagnosticCodeDefinition {
+        code: "package-alias-unresolved",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A qualified path names a dependency alias that its declaring package instance does not declare.",
+    },
+    DiagnosticCodeDefinition {
+        code: "package-instance-interface-mismatch",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A package interface does not match the interface identity bound by its package instance or pinned dependency artifact.",
+    },
+    DiagnosticCodeDefinition {
+        code: "package-item-not-exported",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A name is not exported by the frozen public interface manifest that governs it.",
+    },
+    DiagnosticCodeDefinition {
+        code: "package-reexport-cycle",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A re-export chain never terminates in a defining exported item.",
+    },
+    DiagnosticCodeDefinition {
+        code: "package-target-kind-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A target violates the closed target-kind vocabulary or the rules of its kind.",
+    },
+    DiagnosticCodeDefinition {
+        code: "package-transitive-undeclared",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A package names an item reachable only through a dependency it does not declare.",
+    },
+    DiagnosticCodeDefinition {
         code: "pattern-type-mismatch",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,

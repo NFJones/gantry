@@ -1473,7 +1473,11 @@ fn lease_within(child: AuthorityLeasePolicy, parent: AuthorityLeasePolicy) -> bo
 }
 
 /// Returns the domain-separated digest of length-prefixed canonical fields.
-fn digest_fields(domain: &str, fields: &[&[u8]]) -> [u8; 32] {
+///
+/// The helper is crate-visible so that every canonical identity layer of this
+/// crate derives its digest under the same length-prefixed, domain-separated
+/// encoding.
+pub(crate) fn digest_fields(domain: &str, fields: &[&[u8]]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(domain.as_bytes());
     hasher.update([0_u8]);

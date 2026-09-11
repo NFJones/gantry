@@ -19,6 +19,7 @@ mod facts;
 pub mod generated;
 mod generic;
 mod manifest;
+mod package;
 mod path;
 mod primitive;
 mod protected;
@@ -64,6 +65,22 @@ pub use generic::{
     TraitMethodContract, TraitReference,
 };
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
+pub use package::{
+    AliasMap, AliasNamespace, AxisReport, AxisVerdict, BoundarySchemaReport,
+    BoundarySchemaSubReport, BoundarySchemaSurface, CanonicalIrDigest, CollisionCondition,
+    ComparedInput, ComparedInputs, CompatibilityAxis, CompatibilityReport, ConstructionPolicy,
+    DeclaredCeiling, DeclaredNamespaces, DeclaredSurface, DeclaringPackageScope, DependencyAlias,
+    DependencyDeclaration, DependencyInterfacePin, DurableArtifactRelation, DurableArtifactReport,
+    DurableArtifactSubReport, ExhaustivenessPolicy, ExportEntry, FeatureName, GeneratorInput,
+    GeneratorInputRole, GeneratorInputs, IdentityProof, Import, ImportSet, InterfaceDigest,
+    InterfaceItem, InterfaceMetadata, InterfaceProof, InterfaceSeal, ItemKind, NominalFacts,
+    PackageDiagnosticCode, PackageError, PackageGraph, PackageIdentity, PackageIdentityInputs,
+    PackageIdentityRecord, PackageInstance, PackageName, PackageSourceIdentity, PackageVersion,
+    PublicInterfaceManifest, QualifiedPath, RequirementDemand, ResolvedName, SelectedFeatureSet,
+    SourceManifestDigest, TargetCondition, TargetDescriptor, TargetFactSet, TargetFacts,
+    TargetKind, TargetSet, TraitFacts, UnprovenReason, UnqualifiedResolution, Visibility,
+    check_ceiling,
+};
 pub use path::{CanonicalPath, CanonicalPathError};
 pub use primitive::{Comparison, Primitive};
 pub use protected::{

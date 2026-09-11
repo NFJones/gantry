@@ -61,6 +61,7 @@
     - [15.8 Protocol versioning](#158-protocol-versioning)
     - [15.9 Thread safety](#159-thread-safety)
     - [15.10 Protected data](#1510-protected-data)
+  - [16. Packages, Manifests, and Public Interfaces](#16-packages-manifests-and-public-interfaces)
 
 <!-- In all code blocks rust syntax highlighting is used deliberately. Eventually, these can be changed to gantry -->
 
@@ -800,6 +801,7 @@ than one block.
 | Observability | `GNT-12.0`, `GNT-12.1` through `GNT-12.11`, `GNT-12.11-generic-diagnostics` |
 | Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10`, `GNT-15.1-automatic-execution`, `GNT-15.2-runtime-sessions`, `GNT-15.4-owned-work` |
+| Packages, manifests, and public interfaces | `GNT-16.0`, `GNT-16.1-package-identity`, `GNT-16.2-package-instances`, `GNT-16.3-dependency-aliases`, `GNT-16.4-visibility`, `GNT-16.5-reexports`, `GNT-16.6-target-kinds`, `GNT-16.7-public-interface-manifest`, `GNT-16.8-compatibility-axes`, `GNT-16.9-resolution-order-independence` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -10900,3 +10902,458 @@ convenience never creates one retroactively. It does not equate operation
 authority with release authority: authority over an operation that handles
 protected data is not authority to release it, and the two are declared, granted,
 and audited separately.
+
+## 16. Packages, Manifests, and Public Interfaces
+
+<a id="GNT-16.0"></a>
+
+This section defines package identity, package instances, dependency aliases,
+visibility, re-exports, target kinds, the public interface manifest, the
+reportable compatibility axes, and resolution-order independence for
+source-language editions that admit more than one resolved package in one
+execution. It extends the single-package rules of Sections 4 and 11 rather
+than replacing them, and it states no obligation that a check cannot decide.
+
+The closed vocabulary of this section is exactly the following terms. A clause
+here MUST NOT use a package term outside this vocabulary, and a term listed
+below MUST NOT be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| package | A unit of source, manifest, and identity: one immutable source snapshot in the sense of Section 4 together with its declared package metadata. |
+| package version | The exact version value recorded by a package manifest. A version is an exact value, never a range and never a comparison. |
+| source identity | The package-source-manifest identity defined by `GNT-11.6-package-source-manifest`. |
+| package instance | A resolved package at one exact version with one selected feature solution. |
+| package-instance identity | The canonical identity defined by `GNT-16.1-package-identity`. |
+| root package | The package that declares the selected entry target of an execution. |
+| workspace | A declared set of member packages resolved together under one manifest root. |
+| dependency alias | The local source spelling that one direct dependency occupies in a declaring package, under `GNT-16.3-dependency-aliases`. |
+| target kind | Exactly one of the five kinds of `GNT-16.6-target-kinds`. |
+| target descriptor | The resolved description of one target. Its vocabulary and its resolution are owned by TARGET-001 and are not defined by this section. |
+| feature selection | The set of features selected for one package instance under the selected feature solution named by `GNT-16.2-package-instances`. |
+| defining package | The package whose own source declares an item, as distinct from a package that only re-exports it. |
+| exported item | An item that a package's frozen public interface manifest makes nameable outside that package. |
+| public interface manifest | The canonical record defined by `GNT-16.7-public-interface-manifest`. |
+| declaring package | The package whose own manifest declares a dependency alias or a re-export, as distinct from the package that declaration reaches. |
+| dependency namespace | The local namespace one direct dependency occupies in its declaring package, located at that dependency's alias under `GNT-16.3-dependency-aliases`. |
+| target facts | The resolved facts of one target descriptor that participate in package identity; their vocabulary and resolution are owned by TARGET-001. |
+| public-interface digest | The digest over the canonical encoding of a public interface manifest, one identity input of `GNT-16.1-package-identity`. |
+| declared generator input | One input a declaring package records for a generator invocation; its declaration completeness, determinism, and identity participation are owned by `GNT-16.9-resolution-order-independence`. |
+| lockfile | The persisted record of one resolution and its interface bindings; this section defines no lockfile format, and PACKAGE-001 owns it. |
+| artifact identity | The canonical identity of one compiled artifact under the separate-compilation contract owned by LINK-001. |
+| package-source manifest | The package-source manifest of `GNT-11.6-package-source-manifest`, whose identity is the source identity of this section. |
+
+**Applicability.** The clauses of this section govern a source-language edition
+or implementation profile that can resolve more than one package in a single
+execution. The v1 edition described by Sections 1 through 15 does not:
+`GNT-4.6` excludes package resolution from v1, `GNT-4.9` excludes visibility
+constraints, `GNT-13.3` admits no import alias and no visibility modifier, and
+coherence is checked across the complete package because v1 has no external
+package dependency model. An implementation that supports only that
+single-package model MUST record each clause of this section as a profile-based
+`not-applicable` justification in the sense of Sections 2 and 15. It MUST NOT
+report a clause here as satisfied, partially satisfied, conditionally
+satisfied, or satisfied for a subset of its rules, because the behavior those
+rules constrain is not defined for that model and a partial claim would assert
+conformance to behavior this specification does not define. Non-applicability
+is a property of the claimed edition and profile, not of a particular package,
+workspace, or run.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+local-only module paths and package containment of `GNT-4.6`; the v1 exclusion
+of visibility constraints in `GNT-4.9`; the v1 grammar of `GNT-13.3`, which
+admits no import alias and no visibility modifier; whole-package coherence,
+which v1 checks across the complete package; the v1 rule that top-level package
+and module contents are declarations; and the v1 rule that every package
+activity operates on one immutable source snapshot. Nothing in this section
+introduces package resolution, registry lookup or registry fallback, a registry
+display name, mutable package-global state, or load-time initialization of
+package source into an edition that does not already define it, and no clause
+here may be read as amending any of the sections listed above.
+
+<a id="GNT-16.1-package-identity"></a>
+
+**[GNT-16.1-package-identity] Canonical package identity.** A **package
+identity** is the identity of one resolved package. It MUST have exactly one
+canonical byte representation, and two packages have the same identity if and
+only if those canonical bytes are identical. The identity is computed over
+exactly these inputs and no others: the resolved package name; the exact
+package version; the canonical source-identity digest of
+`GNT-11.6-package-source-manifest`; the selected features of the instance; the
+target facts of the instance; the public-interface digest of
+`GNT-16.7-public-interface-manifest`; and the declared generator inputs of
+`GNT-16.9-resolution-order-independence`.
+
+The identity MUST NOT depend on the module graph path that reached the package,
+the filesystem layout, an absolute or relative host path, a host directory or
+file name, discovery order, a registry display name, or the spelling of a
+dependency alias. An alias is local source spelling and is never an identity:
+two packages reached under different aliases in different declaring packages
+have the same identity, and renaming an alias MUST NOT change any package or
+interface identity.
+
+Identity inputs are domain-separated and independently recorded, so that two
+packages differing in any input above do not collide: source bytes that differ
+only in a comment produce the same canonical IR under Section 11 but a
+different source-identity digest here, and the identity record MUST retain both
+labeled digests rather than substituting one for the other. Identity digests
+use the digest family and lowercase hexadecimal form already required by
+`GNT-11.6-package-source-manifest`, and the canonical encoding of the identity
+record follows the canonical-encoding rules of Sections 11 and 15.
+
+Comparison of identities is exact. An implementation MUST NOT compare
+identities as text substrings, display names, version strings, or prefixes,
+MUST NOT treat a missing input as an empty input, and MUST reject rather than
+repair an identity record that carries an unknown property or an unsupported
+version. When an implementation cannot establish every input above, it MUST
+report the identity as unproven and MUST NOT assert identity equality.
+
+<a id="GNT-16.2-package-instances"></a>
+
+**[GNT-16.2-package-instances] Package instances.** A **package instance** is a
+resolved package at one exact version with one selected feature solution. Two
+package instances are distinct nominal universes exactly when their
+package-instance identities differ, and distinctness holds even when their
+exported items are structurally identical. Distinct resolved versions of one
+package name are distinct nominal universes, and feature-distinct instances of
+one version are likewise distinct: a type declared by one instance is a
+different nominal type from a structurally identical type declared by another,
+so `old::Token` and `new::Token` are not interchangeable, and a value of one
+MUST NOT be supplied where the other is expected without an explicit source
+conversion declared by the program. This section defines no implicit
+conversion, no structural subtyping, and no coercion between instances.
+
+An instance reached through several graph paths has exactly one identity. A
+direct edge, a transitive edge, a diamond, or a repeated path MUST NOT produce a
+second instance, a second nominal declaration, or a path-qualified variant of
+either; type equality, coherence, overlapping-implementation checks, schema
+identity, effect analysis, and authority closure MUST be evaluated per
+package-instance identity rather than per package name, version, or graph path.
+
+Identical instances deduplicate and deliberately distinct instances do not
+collapse. The resolved graph MUST contain exactly one node per package-instance
+identity and MUST NOT create path-dependent duplicate types, duplicate
+coherence targets, or duplicate requirement closures. Conversely, a checker
+MUST NOT merge two instances whose identity inputs differ in any way, MUST NOT
+use a name or version string as an identity proxy, and MUST NOT resolve an
+ambiguity by preferring one graph position over another.
+
+Feature unification and version-requirement resolution policy are owned by
+TARGET-001 and are out of scope for this section, which is phrased over the
+selected feature solution those rules produce and MUST NOT be read as selecting
+a unification policy. Under the v1 single-package model, and under a v1
+`not-applicable` record for this section, this block constrains nothing and its
+rules MUST NOT be reported as partially satisfied.
+
+<a id="GNT-16.3-dependency-aliases"></a>
+
+**[GNT-16.3-dependency-aliases] Dependency aliases.** A direct dependency of a
+package MUST be declared in that package's manifest with exactly one explicit
+alias, and a direct dependency without an explicit alias is invalid. Each alias
+occupies a dependency namespace in its declaring package, and that namespace
+MUST NOT silently collide with a local module name, an ordinary item, an agent
+name, a capability slot, another dependency alias, or a reserved word of the
+selected edition. A collision is a static error rather than a resolution
+preference.
+
+Alias resolution has exactly one parse rule and exactly one resolution rule. A
+qualified path whose first segment is an alias resolves to that alias's package
+instance. An unqualified lookup remains lexical and package-local, and an
+unqualified name MUST NOT resolve into a dependency. The only way an external
+item becomes nameable through an unqualified name is an explicit import that
+names the item through the alias, and that import follows the landed `use` rules
+of Sections 4 and 13 apart from the package-qualified root.
+
+Resolution MUST NOT fall back to filesystem layout, a host directory or file
+name, a registry display name, a transitive graph path, or discovery order. No
+clause of this section defines such a fallback, and an implementation MUST
+report an unresolved qualified path as an error rather than searching for a
+candidate.
+
+Each alias binds exactly one package-instance identity for the whole declaring
+package instance: an alias MUST NOT denote two instances, an unspecified
+instance, or a set of candidate instances. Dependencies are not automatically
+re-exported, so a package MUST NOT make a dependency's items part of its own
+public interface merely by depending on that package. An undeclared transitive
+dependency is not nameable, so a package MUST NOT name an item of a dependency
+of a dependency unless it declares that dependency itself. The alias is local
+source spelling and never a public identity: no identity record, lock record,
+interface record, or diagnostic subject may use an alias as an identity.
+
+When an edition or its tooling synthesizes an alias from a package name rather
+than taking it from source, the synthesized spelling MUST be rejected if it
+collides by reserved-word status, canonical normalization, case, truncation, or
+confusable similarity with a name already in the declaring package's dependency
+namespace or item namespace. A synthesized alias MUST be accompanied by a
+machine-readable map from the alias to the external package identity it binds,
+and the same inputs MUST produce the same alias and the same map independently
+of discovery or enumeration order. Identifier security algorithms, including
+confusable and mixed-script policy, are owned by IDENT-001; this clause requires
+only that a synthesized alias satisfy the landed identifier rules of `GNT-4.12`
+and the collision rejections above.
+
+The v1 grammar of `GNT-13.3` admits no import alias, so this block is
+`not-applicable` under a v1 profile and MUST NOT be read as adding an alias form
+to that grammar.
+
+<a id="GNT-16.4-visibility"></a>
+
+**[GNT-16.4-visibility] Visibility.** Only exported items of a dependency's
+frozen public interface manifest are nameable outside the defining package. An
+item that the frozen manifest does not record as exported is not nameable by
+another package, and reaching it by any other spelling is a static error.
+
+Visibility MUST NOT be inferred from filesystem location, module or file name,
+alias spelling, registry metadata, manifest ordering, discovery order, or
+version. In particular, an item that is package-wide addressable inside its
+defining package under the landed Section 4 rules is not thereby exported, and
+making an item addressable inside one package MUST NOT extend addressability
+across a package boundary.
+
+A non-exported item MUST NOT become reachable through any re-export chain. A
+chain that re-exports an item MUST terminate in a defining package that exports
+it, and if any link in the chain is not exported the chain is invalid. A chain
+MUST NOT be accepted because its final segment names an exported item of some
+other package. Reachability is decided against the frozen interface and MUST NOT
+be recomputed from current source, so a later source edit cannot retroactively
+widen an interface that was frozen for a resolved instance.
+
+This block defines no visibility keyword, modifier, or partial-visibility form;
+the grammar of any such form belongs to the edition that admits it, and v1
+admits none. This block does not amend `GNT-4.9` or `GNT-13.3`; it is scoped to
+editions that admit visibility, and it is `not-applicable` under a v1 profile.
+
+<a id="GNT-16.5-reexports"></a>
+
+**[GNT-16.5-reexports] Re-exports.** A re-export introduces reachability only.
+It MUST NOT create a new nominal type, a new action declaration, a new
+capability requirement, a new agent slot, a new trait identity, or a new
+operation identity. Nominal typing, coherence, effect analysis, authority
+closure, recovery classification, and audit continue to attribute the item to
+its defining package.
+
+The public interface manifest MUST retain the defining package identity for
+every re-exported item and MUST record exported aliases separately from defining
+names. A facade therefore cannot erase provenance, authority, recovery, mode, or
+provenance facts: an implementation MUST NOT report a re-exported item's
+requirement closure, recovery class, mode restriction, or defining package as
+those of the re-exporting package, and MUST NOT use a re-export to satisfy an
+authority or capability requirement that the defining package does not declare.
+
+Removing or redirecting a public re-export is a compatibility change and MUST be
+evaluated and reported under the axes of `GNT-16.8-compatibility-axes`. A
+removal or redirection that changes which defining item a name reaches is
+reported on the source axis, and the same change is additionally reported on
+each other axis it affects when the redirected item differs in boundary schema,
+public requirements, declared behaviour, or artifact identity.
+
+A re-export cycle that never terminates in a defining exported item is rejected.
+Re-export chains MAY be arbitrarily long when they terminate, and an
+implementation MUST report a non-terminating chain as a static error rather
+than as an unresolved name.
+
+Import cycles are distinct from package-dependency cycles. A cycle among modules
+of one package is a source-organization question governed by Section 4, whereas
+the resolved package dependency graph MUST stay acyclic; a dependency cycle
+among package instances is a static error and MUST NOT be broken by traversal
+order, by discarding one edge, or by choosing one of the participating
+instances.
+
+This section defines no glob import, no prelude injection, no shadowing rule,
+and no implicit transitive access. A clause here MUST NOT be read as admitting
+one, and an edition that admits one MUST define it separately with its own
+identifier, resolution rule, and collision rule.
+
+<a id="GNT-16.6-target-kinds"></a>
+
+**[GNT-16.6-target-kinds] Target kinds and manifest vocabulary.** The
+target-kind vocabulary is closed: `library`, `binary`, `test`, `example`,
+`benchmark`. A target MUST have exactly one kind from this vocabulary, and a
+kind outside it is invalid rather than an extension point.
+
+A `library` target declares no entry point, and its exported items are the
+package's public interface. A `binary` target declares exactly one entry point,
+which is subject to the landed entry and mode rules of Sections 4, 7, and 15; a
+second entry point in one binary target is invalid, and a `library` target that
+declares an entry point is invalid. A `test`, `example`, or `benchmark` target is
+non-shipping and bounded-authority: its items MUST NOT appear in another target's
+public interface, MUST NOT be exported by a shipping target, and MUST NOT widen
+the authority closure, capability requirements, or exported interface of the
+shipping target it exercises. Its capability ceiling is bounded by the declared
+ceiling of that target, and a non-shipping target MUST NOT be represented as
+shipping authority.
+
+The manifest vocabulary of this section is closed as well. A package manifest
+MUST record the package identity, exact version, edition, and source; a
+`targets[]` collection whose entries record kind, name, root, and entry; a
+`dependencies[]` collection whose entries record alias, source,
+version-requirement, and features; workspace members and the workspace root; the
+declarative capability ceilings; and the standard-library contract version. A
+manifest MUST NOT introduce a package fact whose meaning this vocabulary does
+not define, and an unknown property or an unsupported manifest version is
+invalid rather than ignored.
+
+Declarative capability ceilings bound and never grant. They MUST NOT be the
+semantic source of truth for preflight: the authority and requirement closure
+used for preflight remains the landed computed closure of Sections 7 and 15, and
+a declared ceiling MUST NOT admit an operation, substitute for a resolved
+requirement, or relax a recovery class. A resolved requirement that exceeds a
+declared ceiling is a static or preflight failure.
+
+Physical crate layout is nonsemantic. Directory structure, file names, and host
+manifest or project file layout MUST NOT affect package identity, target
+identity, dependency resolution, or public interface identity, and two hosts
+with different physical layouts MUST produce the same identities for the same
+declaration set. Target predicates, feature unification, and lockfile binding
+are out of scope here and are owned by TARGET-001; this section defines no
+predicate language and no lockfile format.
+
+<a id="GNT-16.7-public-interface-manifest"></a>
+
+**[GNT-16.7-public-interface-manifest] Public interface manifest.** A package's
+public interface manifest is the canonical record of what another package may
+name and rely on. Its contents are closed to exactly the following groups:
+
+1. exported names, item kinds, visibility, normalized signatures, generic and
+   trait bounds, receiver modes, effect rows, mode restrictions, and
+   semantics-relevant public constants;
+2. nominal identities, public fields and variants, construction and
+   exhaustiveness policy, structural properties, and exported canonical
+   schemas;
+3. trait ownership, coherence-affecting implementations, and member-addition
+   rules;
+4. package-qualified capability and agent requirements, action declarations
+   with their recovery classes, fulfilment descriptors, model-visible tool
+   contracts, data-release projections, and protected-value transitions;
+5. the edition, the standard-library contract version, target predicates, the
+   selected public features, dependency interface digests, and protocol
+   versions.
+
+A manifest that omits a declared member is invalid; it MUST NOT be treated as a
+narrower interface, and a consumer MUST NOT read absence as non-export. A
+manifest whose identity cannot be established, or whose version is unsupported,
+MUST be reported as unproven rather than accepted.
+
+The manifest has a canonical encoding and a digest over that encoding. Its
+digest is one of the identity inputs of `GNT-16.1-package-identity` and MUST be
+bound as the interface entry of the resolution and lock record, so that a change
+to any recorded interface fact changes the instance identity. Concrete key
+spellings and the canonical JSON Schema follow the publication artifacts of
+Section 15; this section constrains the manifest by required content rather than
+by re-specifying the encoding that `GNT-11.6-package-source-manifest` fixes for
+package-source manifests.
+
+An interface whose identity does not match the pinned dependency artifact MUST
+NOT be used. The mismatch MUST be rejected before execution rather than repaired
+from a freshly recomputed interface, from source available at the time, or from
+a display name. The mechanism of that check and the pre-execution rejection path
+are owned by LINK-001; this section requires only that a mismatched interface is
+never linked and that the failure names the expected and observed interface
+identities.
+
+Equality of interfaces, signatures, or schemas MUST NOT be reported as
+behavioural compatibility. Equal exported declarations establish the source and
+boundary-schema axes of `GNT-16.8-compatibility-axes` and nothing further; the
+declared behaviour of a replacement, and the admissibility of replacing an
+artifact or resuming a durable run, are separate questions decided by the rules
+cited there.
+
+<a id="GNT-16.8-compatibility-axes"></a>
+
+**[GNT-16.8-compatibility-axes] Compatibility axes.** A comparison of a package,
+interface, or artifact with its replacement MUST report five axes. The axes
+refine the landed four compatibility classes of `GNT-11.6-compatibility-classes`
+and never replace, renumber, or add to them.
+
+1. **Source.** Whether downstream source written against one public interface
+   still analyzes against the replacement: exported names, kinds, visibility,
+   normalized signatures, generic and trait bounds, receiver modes, public
+   constants, construction and exhaustiveness rules, and the declared target
+   set. This axis carries the source-visible part of landed class 1.
+2. **Boundary schema.** Whether the versioned entry, action, model, tool,
+   artifact, and protected-reference schemas accept and produce the same values
+   under the same normalization and limits: the canonical-boundary relation of
+   landed class 1. A boundary-schema acceptance change MUST be reported
+   distinctly from a source-visible declaration change, and the reverse holds.
+3. **Authority.** Whether exported calls can reach effects or requirements
+   absent from the previous executable authority closure, require stronger
+   capability, agent, or tool bindings, release additional data, or change a
+   recovery class, compared over public requirements rather than private
+   operation sites. This axis is landed class 2.
+4. **Declared behaviour.** Whether documented guarantees for results, errors,
+   ordering, state transitions, determinism, security, resource use, and
+   recovery remain valid. A declared-behaviour comparison MUST cite versioned
+   contract revisions and executable conformance evidence, and MUST NOT be
+   inferred from equal signatures, schemas, or effect rows. This axis is landed
+   class 3.
+5. **Durable artifact.** Whether an already linked executable may be replaced by
+   the candidate, and whether an existing durable run may resume. Inside this
+   axis the linked-replacement relation and the durable-resume relation MUST be
+   reported distinctly and MUST NOT be merged into one verdict, and a change in
+   one MUST NOT be reported as a change in the other. This axis is landed
+   class 4, where compatibility remains canonical identity equality and the
+   normative-contract branch stays reserved as the landed class states.
+
+Each comparison MUST name the compared inputs and MUST mark each axis
+machine-checked or not. An axis that was not machine-checked MUST be reported as
+not checked rather than as compatible, and a report MUST NOT aggregate the axes
+into a single compatibility verdict. The four landed classes remain the
+normative classes: axis 1 and axis 2 separate reportable sub-relations inside
+class 1, and axis 5 separates reportable sub-relations inside class 4. This
+section therefore adds no fifth class, renames no class, and changes no
+consequence of the landed classes.
+
+Instance and rights comparison remains governed by
+`GNT-11.6-authority-instance-compatibility`. That comparison informs axis 3 and
+MUST NOT decide axes 1, 2, 4, or 5, and an axis report MUST NOT substitute for
+the four reported properties of that block.
+
+<a id="GNT-16.9-resolution-order-independence"></a>
+
+**[GNT-16.9-resolution-order-independence] Resolution order independence.**
+Resolution MUST be independent of discovery order, filesystem enumeration order,
+graph path, and response order. Given the same immutable manifests and sources,
+resolution MUST produce the same resolved graph, the same instance identities,
+the same interface digests, and the same diagnostics under every permutation of
+directory enumeration, discovery, traversal, and registry or remote response
+order. No clause of this section defines first-wins, last-wins, nearest-wins, or
+preference ordering, and an implementation MUST NOT derive a resolution outcome
+from any of them.
+
+Loading and linking MUST NOT execute dependency source and MUST NOT acquire
+runtime authority. Resolving, loading, or linking a package MUST NOT run source
+code, invoke an action or tool, prompt a model, acquire a capability, read host
+state, or observe timing. A library initializer and a mutable package global are
+both excluded: a package MUST NOT declare, and MUST NOT rely on, state that is
+initialized when the package is loaded or linked, and package state is created
+by explicit execution of the running program. Declared constants are not
+initializers: they are evaluated under the bounded compile-time contract owned
+by CONST-SPEC-001, and a constant that contract cannot evaluate is a static
+error rather than a load-time computation.
+
+Generators receive declared host capabilities only. A generator MUST NOT receive
+ambient host authority, an undeclared environment, or undeclared input, and its
+declared inputs, outputs, and hashes MUST enter the lockfile and the artifact
+identity, so that changing a declared input, output, or hash changes the
+artifact identity. Generator execution limits and the confinement contract that
+bounds a generator are owned by TOOLCHAIN-001; this section requires only
+declaration completeness, determinism given the declared inputs, and identity
+participation.
+
+Four rules complete this block as normative requirements:
+
+1. Resolution results MUST NOT vary with discovery order, filesystem
+   enumeration order, graph path, or response order.
+2. Distinct resolved versions and feature-distinct instances of one name are
+   distinct nominal universes, and their items are not interchangeable.
+3. Identical package instances deduplicate to exactly one identity, and no
+   resolution outcome may produce a path-dependent duplicate.
+4. A stale interface MUST NOT link: an interface whose identity does not match
+   the pinned dependency artifact MUST NOT be used.
+
+These four rules, and every other clause of this section, are `not-applicable`
+under a v1 profile, where no package is resolved, loaded, or linked as a
+dependency of another package. v1 remains unaffected by this block, and the
+block MUST NOT be read as introducing that machinery into v1 or as altering the
+landed v1 treatment of `const`, of package contents, or of the single immutable
+source snapshot per package activity.
