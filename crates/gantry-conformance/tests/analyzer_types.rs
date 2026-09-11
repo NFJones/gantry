@@ -2730,6 +2730,87 @@ fn affine_owned_move_ledger_rejects_repeated_moves_and_moved_place_reads() {
     );
 }
 
+/// An `owned self` receiver whose type requires consumption admits only a caller place: a binding
+/// root of the calling frame or struct-field projections from one. An indexed place, a pattern
+/// payload binding, and a call result are values rather than caller places, while a `Copyable`
+/// receiver admits any receiver place and a constructed value because it is a copy (2b).
+#[test]
+fn public_owned_receiver_place_rule_admits_caller_places_and_rejects_values() {
+    const DECLARATIONS: &str = "affine struct Token { value: Int }\n\
+         struct Holder { token: Token, marker: Int }\n\
+         struct Inner { holder: Holder }\n\
+         enum Maybe { Present(Token), Absent }\n\
+         struct Counter { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         impl Counter { fn consume(owned self) -> Int { self.value } }\n";
+
+    // A struct-field projection and a nested projection are caller places, the sibling place stays
+    // readable after the projected partial move, a constructed value is admitted for a `Copyable`
+    // receiver, and a receiver bound inside the loop body is a fresh place on every iteration.
+    for accepted in [
+        "fn main() -> Int {\n\
+             let holder: Holder = Holder { token: Token { value: 7 }, marker: 3 };\n\
+             let moved: Int = holder.token.consume();\n\
+             moved + holder.marker\n\
+         }",
+        "fn main() -> Int {\n\
+             let inner: Inner = Inner { holder: Holder { token: Token { value: 7 }, marker: 3 } };\n\
+             let moved: Int = inner.holder.token.consume();\n\
+             moved + inner.holder.marker\n\
+         }",
+        "fn main() -> Int { Counter { value: 4 }.consume() }",
+        "fn main(flag: Bool) -> Int {\n\
+             while flag {\n\
+                 let token: Token = Token { value: 1 };\n\
+                 discard token.consume();\n\
+             }\n\
+             0\n\
+         }",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    for (rejected, code) in [
+        // An indexed place is not a caller place.
+        (
+            "fn main(items: List<Token>) -> Int { let moved: Int = items[0].consume(); moved }",
+            "owned-receiver-scope",
+        ),
+        // An arm pattern payload binding is a fresh value, not a caller place.
+        (
+            "fn main(maybe: Maybe) -> Int { if let Maybe::Present(token) = maybe { discard token.consume(); } 0 }",
+            "owned-receiver-scope",
+        ),
+        // A call result is not a receiver place even though a `Copyable` receiver is a copy.
+        (
+            "fn make() -> Counter { Counter { value: 5 } }\n\
+             fn main() -> Int { make().consume() }",
+            "receiver-value-place",
+        ),
+        // The projected partial move leaves the containing place unreadable.
+        (
+            "fn main() -> Int {\n\
+                 let holder: Holder = Holder { token: Token { value: 7 }, marker: 3 };\n\
+                 let moved: Int = holder.token.consume();\n\
+                 let again: Int = holder.token.value;\n\
+                 moved + again\n\
+             }",
+            "affine-value-reuse",
+        ),
+        // A receiver transfer inside a loop body whose root is bound outside is a repeated move.
+        (
+            "fn main(flag: Bool) -> Int {\n\
+                 let token: Token = Token { value: 1 };\n\
+                 while flag { discard token.consume(); }\n\
+                 0\n\
+             }",
+            "affine-value-reuse",
+        ),
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{rejected}"), code);
+    }
+}
+
 /// A read of an affine place that executes once per loop iteration is repeated use.
 #[test]
 fn affine_repeated_read_inside_loop_is_rejected() {

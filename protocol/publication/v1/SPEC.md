@@ -3426,9 +3426,11 @@ payloads, owned receivers, or general loan forms.
 2b. A zero-argument monomorphic inherent method MAY declare `owned self` as the
 owned receiver. Its wire name MUST match the IR `Owned` receiver-mode variant.
 For a `Copyable` receiver, an owned receiver is an independent mutable local
-copy; the source value remains valid and no move or staging occurs in this
-increment. For a future `AffineDroppable` or `MustConsume` receiver, the value
-MUST be staged in the evaluation frame at a move transfer point and the source
+copy: the caller place is neither marked nor staged, it stays readable, and no
+write-back occurs, so an assignment through the callee's mutable `self` does not
+reach it and the source value remains valid. For an `AffineDroppable` or
+`MustConsume` receiver, the value MUST be staged in the evaluation frame at a
+move transfer point and the source
 place marked uninitialized. Admission is left to right: the receiver is admitted
 first, then the remaining arguments, then arity, mode, depth, cancellation, and
 frame admission, then the transfer. A staged move and an overlapping later use of
@@ -3443,8 +3445,17 @@ transfers its consumption obligation to the runtime supervisor, and a
 be reconstructible from checkpointed state; existing checkpoint formats MAY be
 retained only if an explicit place-initialization bit is added to the retained
 frame representation and `validate_machine_checkpoint` reconstructs every
-invariant, otherwise a new checkpoint magic is required. Partial moves,
-arbitrary or argument loans, reborrow through an owned receiver, and task or
+invariant, otherwise a new checkpoint magic is required. When the receiver's
+type requires consumption, its place MUST be an addressable binding root of the
+calling frame or a finite sequence of struct-field projections from one; a
+constructed value, a call result, an indexed place, and an arm-pattern payload
+binding are values rather than caller places and MUST be rejected at analysis
+time. When the receiver's type does not require consumption, the receiver is
+copied, so it MUST be a binding root, a struct-field receiver place, or a
+constructed value, and every other receiver expression MUST be rejected. An
+owned receiver that addresses a struct-field projection performs a partial move,
+so the transferred subplace and its containment are governed by items 2e and 2g.
+Arbitrary or argument loans, reborrow through an owned receiver, and task or
 channel transfer are excluded.
 
 <a id="GNT-6.2c"></a>
@@ -3497,7 +3508,10 @@ including a marked place and a place containing one, and never clears a mark
 by itself: a mark remains in force for the lifetime of its binding root, an
 analysis MAY clear a mark only when it proves the place re-initialized, and
 MUST reject any read it cannot prove initialized. A transfer inside a loop
-body is potentially repeated and MUST be rejected as a repeated transfer.
+body is potentially repeated and MUST be rejected as a repeated transfer when
+the binding root of the transferred place is bound outside that loop body,
+while a transfer of a place whose root is bound inside the loop body is admitted
+once per iteration.
 
 <a id="GNT-6.2f"></a>
 

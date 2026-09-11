@@ -1,1 +1,217 @@
-{"artifacts":[{"path":"SPEC.md","sha256":"5ae98367a0e6874a5671b7cdbec63da76aa15ba845edbb6e2f0300713d187707"},{"path":"crates/gantry-conformance/tests/combined_gate.rs","sha256":"0d43c9bb75e7d3b9296a5c13d412092ec7a3c93509e0122371d0ad4bd0d60194"},{"path":"crates/gantry-conformance/tests/combined_refinement.rs","sha256":"bcdf7c86e5f10ab87fd2ab82129a5b132599360156a5c00791529de0887b78c7"},{"path":"crates/gantry-runtime/src/recovery/concurrent.rs","sha256":"a6c29446fd496c8d9551e60c671e02bd1a39d82e9ed2bbf8e870548d89425765"},{"path":"crates/gantry-runtime/src/task.rs","sha256":"81c197cbf9cbeec9f73de3603b394017cb3c5329df20935932e3c5032a74207d"},{"path":"crates/gantry-runtime/src/task/combined_checkpoint.rs","sha256":"a278367ad2723e852292fefcc9104bbfdf236b7858b7b3d21dbf7c5e4286841d"},{"path":"crates/gantry/src/lib.rs","sha256":"7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"},{"path":"protocol/conformance/concurrent-gate-v1.json","sha256":"6cb7751c7748541812801f9dceca90f05ca6793e848206435d38cd1e7205d38c"},{"path":"protocol/conformance/durable-gate-v1.json","sha256":"3371f3c8838ad95f4dee923b58d7acab9e77275e9ac61816e4abdb9161a89993"},{"path":"protocol/requirements/generated/requirements-v1.json","sha256":"358b15a890b3e5282dd9d9e58d0f72b8288b9da29d82e13bf3862394ad7d715a"},{"path":"protocol/requirements/reviewed-v1.json","sha256":"21b0041b0b7fd8aaafbe58d08d1080c162f0ad5e0afd21bf4e56b19ee37c79a2"}],"claim":{"advertises_profiles":["analyzer","concurrent-evaluator","durable-runtime","embedding","evaluator","frontend"],"excludes_capabilities":[],"excludes_profiles":[],"profiles":["analyzer","concurrent-evaluator","durable-runtime","embedding","evaluator","frontend"]},"composed_obligations":[{"clause":"clause-001","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"concurrent-evaluator","excluded_profile":"durable-runtime","requirement":"GNT-10.11"},{"clause":"clause-001","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_join_ownership_and_settlement_recover_once","complementary_profile":"concurrent-evaluator","excluded_profile":"durable-runtime","requirement":"GNT-10.7"},{"clause":"clause-001","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"concurrent-evaluator","excluded_profile":"durable-runtime","requirement":"GNT-10.9"},{"clause":"clause-001","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"combined-only","excluded_profile":"durable-runtime","requirement":"GNT-11.8"},{"clause":"clause-002","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"durable-runtime","excluded_profile":"concurrent-evaluator","requirement":"GNT-12.5"},{"clause":"clause-003","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"durable-runtime","excluded_profile":"concurrent-evaluator","requirement":"GNT-12.5"},{"clause":"clause-004","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"durable-runtime","excluded_profile":"concurrent-evaluator","requirement":"GNT-12.5"},{"clause":"clause-001","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"concurrent-evaluator","excluded_profile":"durable-runtime","requirement":"GNT-3-M-DETACH"},{"clause":"clause-001","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"concurrent-evaluator","excluded_profile":"durable-runtime","requirement":"GNT-3-M-SPAWN"},{"clause":"clause-002","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_join_ownership_and_settlement_recover_once","complementary_profile":"concurrent-evaluator","excluded_profile":"durable-runtime","requirement":"GNT-3-M-TASK-SETTLE"},{"clause":"clause-003","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_join_ownership_and_settlement_recover_once","complementary_profile":"concurrent-evaluator","excluded_profile":"durable-runtime","requirement":"GNT-3-M-TASK-SETTLE"},{"clause":"clause-001","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"durable-runtime","excluded_profile":"concurrent-evaluator","requirement":"GNT-3.14"},{"clause":"clause-001","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"durable-runtime","excluded_profile":"concurrent-evaluator","requirement":"GNT-3.7"},{"clause":"clause-007","combined_evidence":"crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","complementary_profile":"durable-runtime","excluded_profile":"concurrent-evaluator","requirement":"GNT-4.17-frontend-resource-limits"}],"composition":{"checkpoint":"gantry-runtime::ConcurrentDurableCheckpointV4","evaluator":"gantry-runtime::Machine","event_recovery":"gantry-runtime::RecoveredDurableEventsV1","graph_recovery":"gantry-runtime::recover_concurrent_authoritative_prefix","journal_evidence":"gantry-runtime::ConcurrentDurableEvidenceV4"},"environment_gaps":["The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result or a qualified stable-media power-loss environment."],"format":"gantry.combined-gate-evidence/v1","gate":"GNT-COMB-001","prerequisites":[{"commit":"08f75f8a339cb47d556d5a1cd1c01aabc2965755","issue":"GNT-DEF-COMB-001","subject":"Recover durable concurrent task graphs."},{"commit":"77a4cc6e41f6db17b104601cb116bb2d2506938e","issue":"GNT-GATE-500","subject":"Close concurrent evaluator profile gate."},{"commit":"8672022e3d2da4f33b6ef9836ec66c75fd9ce2a4","issue":"GNT-GATE-600","subject":"Close standalone durable profile gate."}],"required_evidence":["crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions","crates/gantry-conformance/tests/combined_refinement.rs#public_combined_join_ownership_and_settlement_recover_once"],"specification":{"path":"SPEC.md","sha256":"5ae98367a0e6874a5671b7cdbec63da76aa15ba845edbb6e2f0300713d187707"},"status":"verified","validation_commands":["cargo +1.91.0 check --locked --workspace --all-targets --all-features","cargo +1.97.1 check --locked --workspace --all-targets --all-features","cargo +stable check --locked --workspace --all-targets --all-features","cargo clippy --locked --workspace --all-targets --all-features -- -D warnings","cargo fmt --all -- --check","cargo run --locked -p xtask -- check generated","cargo run --locked -p xtask -- check governance","cargo run --locked -p xtask -- check workspace","cargo test --locked --workspace --all-targets --all-features"]}
+{
+ "artifacts": [
+  {
+   "path": "SPEC.md",
+   "sha256": "9fea9d4a28fc7c09752e2cf308e3069823abded9bbd5061aae14bcdf034f161b"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/combined_gate.rs",
+   "sha256": "0d43c9bb75e7d3b9296a5c13d412092ec7a3c93509e0122371d0ad4bd0d60194"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/combined_refinement.rs",
+   "sha256": "bcdf7c86e5f10ab87fd2ab82129a5b132599360156a5c00791529de0887b78c7"
+  },
+  {
+   "path": "crates/gantry-runtime/src/recovery/concurrent.rs",
+   "sha256": "a6c29446fd496c8d9551e60c671e02bd1a39d82e9ed2bbf8e870548d89425765"
+  },
+  {
+   "path": "crates/gantry-runtime/src/task.rs",
+   "sha256": "81c197cbf9cbeec9f73de3603b394017cb3c5329df20935932e3c5032a74207d"
+  },
+  {
+   "path": "crates/gantry-runtime/src/task/combined_checkpoint.rs",
+   "sha256": "a278367ad2723e852292fefcc9104bbfdf236b7858b7b3d21dbf7c5e4286841d"
+  },
+  {
+   "path": "crates/gantry/src/lib.rs",
+   "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
+  },
+  {
+   "path": "protocol/conformance/concurrent-gate-v1.json",
+   "sha256": "2dfaf7b293b0a0c5b6a00c2d970c6e7ea1f9fc1620a02b97f28a8149429da785"
+  },
+  {
+   "path": "protocol/conformance/durable-gate-v1.json",
+   "sha256": "492214de81b8019e0be8811f0836e756a70df00cd88fc906d3bfa45bc9383446"
+  },
+  {
+   "path": "protocol/requirements/generated/requirements-v1.json",
+   "sha256": "fa97320944a714ffdae51125be082cfa9ca3bff6b528c2b6dae7b0da8c864cb1"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "18a48dea7bf5a96882a623f036312d0d905e896aa0c8f479b45758375b169395"
+  }
+ ],
+ "claim": {
+  "advertises_profiles": [
+   "analyzer",
+   "concurrent-evaluator",
+   "durable-runtime",
+   "embedding",
+   "evaluator",
+   "frontend"
+  ],
+  "excludes_capabilities": [],
+  "excludes_profiles": [],
+  "profiles": [
+   "analyzer",
+   "concurrent-evaluator",
+   "durable-runtime",
+   "embedding",
+   "evaluator",
+   "frontend"
+  ]
+ },
+ "composed_obligations": [
+  {
+   "clause": "clause-001",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "concurrent-evaluator",
+   "excluded_profile": "durable-runtime",
+   "requirement": "GNT-10.11"
+  },
+  {
+   "clause": "clause-001",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_join_ownership_and_settlement_recover_once",
+   "complementary_profile": "concurrent-evaluator",
+   "excluded_profile": "durable-runtime",
+   "requirement": "GNT-10.7"
+  },
+  {
+   "clause": "clause-001",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "concurrent-evaluator",
+   "excluded_profile": "durable-runtime",
+   "requirement": "GNT-10.9"
+  },
+  {
+   "clause": "clause-001",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "combined-only",
+   "excluded_profile": "durable-runtime",
+   "requirement": "GNT-11.8"
+  },
+  {
+   "clause": "clause-002",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "durable-runtime",
+   "excluded_profile": "concurrent-evaluator",
+   "requirement": "GNT-12.5"
+  },
+  {
+   "clause": "clause-003",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "durable-runtime",
+   "excluded_profile": "concurrent-evaluator",
+   "requirement": "GNT-12.5"
+  },
+  {
+   "clause": "clause-004",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "durable-runtime",
+   "excluded_profile": "concurrent-evaluator",
+   "requirement": "GNT-12.5"
+  },
+  {
+   "clause": "clause-001",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "concurrent-evaluator",
+   "excluded_profile": "durable-runtime",
+   "requirement": "GNT-3-M-DETACH"
+  },
+  {
+   "clause": "clause-001",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "concurrent-evaluator",
+   "excluded_profile": "durable-runtime",
+   "requirement": "GNT-3-M-SPAWN"
+  },
+  {
+   "clause": "clause-002",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_join_ownership_and_settlement_recover_once",
+   "complementary_profile": "concurrent-evaluator",
+   "excluded_profile": "durable-runtime",
+   "requirement": "GNT-3-M-TASK-SETTLE"
+  },
+  {
+   "clause": "clause-003",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_join_ownership_and_settlement_recover_once",
+   "complementary_profile": "concurrent-evaluator",
+   "excluded_profile": "durable-runtime",
+   "requirement": "GNT-3-M-TASK-SETTLE"
+  },
+  {
+   "clause": "clause-001",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "durable-runtime",
+   "excluded_profile": "concurrent-evaluator",
+   "requirement": "GNT-3.14"
+  },
+  {
+   "clause": "clause-001",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "durable-runtime",
+   "excluded_profile": "concurrent-evaluator",
+   "requirement": "GNT-3.7"
+  },
+  {
+   "clause": "clause-007",
+   "combined_evidence": "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+   "complementary_profile": "durable-runtime",
+   "excluded_profile": "concurrent-evaluator",
+   "requirement": "GNT-4.17-frontend-resource-limits"
+  }
+ ],
+ "composition": {
+  "checkpoint": "gantry-runtime::ConcurrentDurableCheckpointV4",
+  "evaluator": "gantry-runtime::Machine",
+  "event_recovery": "gantry-runtime::RecoveredDurableEventsV1",
+  "graph_recovery": "gantry-runtime::recover_concurrent_authoritative_prefix",
+  "journal_evidence": "gantry-runtime::ConcurrentDurableEvidenceV4"
+ },
+ "environment_gaps": [
+  "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result or a qualified stable-media power-loss environment."
+ ],
+ "format": "gantry.combined-gate-evidence/v1",
+ "gate": "GNT-COMB-001",
+ "prerequisites": [
+  {
+   "commit": "08f75f8a339cb47d556d5a1cd1c01aabc2965755",
+   "issue": "GNT-DEF-COMB-001",
+   "subject": "Recover durable concurrent task graphs."
+  },
+  {
+   "commit": "77a4cc6e41f6db17b104601cb116bb2d2506938e",
+   "issue": "GNT-GATE-500",
+   "subject": "Close concurrent evaluator profile gate."
+  },
+  {
+   "commit": "8672022e3d2da4f33b6ef9836ec66c75fd9ce2a4",
+   "issue": "GNT-GATE-600",
+   "subject": "Close standalone durable profile gate."
+  }
+ ],
+ "required_evidence": [
+  "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_crash_cuts_recover_without_repeating_task_transitions",
+  "crates/gantry-conformance/tests/combined_refinement.rs#public_combined_join_ownership_and_settlement_recover_once"
+ ],
+ "specification": {
+  "path": "SPEC.md",
+  "sha256": "9fea9d4a28fc7c09752e2cf308e3069823abded9bbd5061aae14bcdf034f161b"
+ },
+ "status": "verified",
+ "validation_commands": [
+  "cargo +1.91.0 check --locked --workspace --all-targets --all-features",
+  "cargo +1.97.1 check --locked --workspace --all-targets --all-features",
+  "cargo +stable check --locked --workspace --all-targets --all-features",
+  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+  "cargo fmt --all -- --check",
+  "cargo run --locked -p xtask -- check generated",
+  "cargo run --locked -p xtask -- check governance",
+  "cargo run --locked -p xtask -- check workspace",
+  "cargo test --locked --workspace --all-targets --all-features"
+ ]
+}

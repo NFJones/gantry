@@ -1,1 +1,234 @@
-{"artifacts":[{"path":"SPEC.md","sha256":"5ae98367a0e6874a5671b7cdbec63da76aa15ba845edbb6e2f0300713d187707"},{"path":"crates/gantry-conformance/tests/automatic_durable_root.rs","sha256":"af6eb95d0e7e752f475fbde43b6fb9cea141dbb024b76e0b823b72650ed4810c"},{"path":"crates/gantry-conformance/tests/durable_events.rs","sha256":"6e7876f1877e55a665572685b28aa4ed968fd556ae32a33c3f8063f5ebd50f46"},{"path":"crates/gantry-conformance/tests/durable_gate.rs","sha256":"16dbc8618521e1c0a5dedebc305d6ee8911fed81eb7ad475be69c4adff2e2a08"},{"path":"crates/gantry-conformance/tests/durable_recovery.rs","sha256":"9626da2228fd5731d2e9ea277896ebe4dbacbbbb7f1fb12d3ab446d4c44fe56b"},{"path":"crates/gantry-conformance/tests/durable_refinement_model.rs","sha256":"fd4363ecd496192b68245b3dc96e229e7f4fa3f3f614d0f00649d7fc457cbbc1"},{"path":"crates/gantry-conformance/tests/durable_start.rs","sha256":"24e8b4985c1d77b7b23585579c370db2ff283ba40d9e3e5680a1ccb0e9136550"},{"path":"crates/gantry-conformance/tests/journal_storage.rs","sha256":"a7e7af4ff4f96301977c6f5af7064e5c431468c2d0ea7ff2754683e367b21589"},{"path":"crates/gantry-conformance/tests/source_spawn.rs","sha256":"85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"},{"path":"crates/gantry-conformance/tests/sqlite_storage.rs","sha256":"f17685224167e329e79f258686bbbe82918d257dd97d52abc15ad11e398514c7"},{"path":"crates/gantry-conformance/tests/type_properties.rs","sha256":"04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"},{"path":"crates/gantry/src/lib.rs","sha256":"7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"},{"path":"docs/durable-runtime-refinement.md","sha256":"5c45f47225e87c82a7432d1b9c1f5151a97f5f544c7c7e165349ac796117b486"},{"path":"docs/sqlite-journal-storage.md","sha256":"8e82161ae7d6b8e590e6f524dd994593b899abb26b76d90551ca1917206a183a"},{"path":"protocol/conformance/durable-events-v1.json","sha256":"b24a1cb56c606a0071d7cf237d0c66eaae8a7a98b6bd0a55cce33d1b2cd137fd"},{"path":"protocol/conformance/durable-recovery-v1.json","sha256":"e331b3f811432129df32000562cb6d6f053978981f9ede930afeab587aa9ef34"},{"path":"protocol/conformance/durable-refinement-v1.json","sha256":"b12923ada16079b0309852cb6a5e2eadd1ab6de5c82fb67eaa173ad5398ebc97"},{"path":"protocol/conformance/durable-start-v1.json","sha256":"aed5decc9f7fea63d4446c00ee9425834d83aa8cf98865c88ac5d3dcfc97b302"},{"path":"protocol/conformance/journal-storage-v1.json","sha256":"4e4d90088aab95b73f76ef5f9cc59ecf00fa4fcc2c1a41b88d10139a26b2b782"},{"path":"protocol/conformance/sequential-gate-v1.json","sha256":"5e63ea6c5d318503ee40e224af50e0050ef521768b559157da2b6646d4dbdb66"},{"path":"protocol/conformance/source-spawn-v1.json","sha256":"98d565782405989055c068282369b3082c473741888eb56fdbd9cee0c7dec738"},{"path":"protocol/conformance/sqlite-storage-v1.json","sha256":"274fbab96ab9905e600186e5c6a8f646a8c08f5b8a3a017c296390f40871d8ec"},{"path":"protocol/goldens/durable-events-v1.json","sha256":"836a7d6da3ae28598d804889eee00a143137fa844fe13023df71e53da42e4294"},{"path":"protocol/goldens/durable-recovery-v1.json","sha256":"6a1dfbe46e5acfad3083c1f07d0e23fe40e1e43145b6b77e1fb455e6a7e7fc82"},{"path":"protocol/goldens/durable-refinement-model-v1.json","sha256":"621d7c89e236fde9c7353e40750e848f4899d1e86cad15c2f493e90730efb966"},{"path":"protocol/goldens/durable-start-v1.json","sha256":"e172bb98d05baa6f93edf7e28e8580bb170319db968f56391687d41d58e8ec9e"},{"path":"protocol/goldens/journal-storage-v1.json","sha256":"0ba3f85bba95f7ee7f59c6917b948c77ed4b0d505de6ee56913595162cd94949"},{"path":"protocol/publication/artifacts-v1.json","sha256":"d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"},{"path":"protocol/requirements/generated/requirements-v1.json","sha256":"358b15a890b3e5282dd9d9e58d0f72b8288b9da29d82e13bf3862394ad7d715a"},{"path":"protocol/requirements/reviewed-v1.json","sha256":"21b0041b0b7fd8aaafbe58d08d1080c162f0ad5e0afd21bf4e56b19ee37c79a2"},{"path":"protocol/requirements/section14-v1.json","sha256":"f00223bc14d98087491a254cdacc97df099b0cfd21af0f4a6943e99b85e499ec"}],"claim":{"advertises_profiles":["analyzer","durable-runtime","embedding","evaluator","frontend"],"excludes_capabilities":["combined-concurrent-durable"],"excludes_profiles":["concurrent-evaluator"],"profiles":["analyzer","durable-runtime","embedding","evaluator","frontend"]},"environment_gaps":["The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result or a qualified stable-media power-loss environment."],"evidence_anchor_count":119,"format":"gantry.durable-gate-evidence/v1","gate":"GNT-GATE-600","prerequisites":[{"commit":"c25ed214ed78bde04f463d2800ca2915de3a8954","issue":"GNT-DUR-003","subject":"Implement durable start and resume preflight."},{"commit":"c3e7de8c63a40ffbd35aac14a9d8bd04028f5783","issue":"GNT-DUR-004","subject":"Implement durable lifecycle control."},{"commit":"a45452092bf5fa807e7aef8196b801d0c1a68f75","issue":"GNT-DUR-005","subject":"Implement journal-first durable events."},{"commit":"067255908bf89ea4c100c8f6cbbffe9e58b0b788","issue":"GNT-DUR-006","subject":"Model durable runtime refinement"},{"commit":"4976e758eb2cc681527998b662f3e204eef13b1d","issue":"GNT-SPEC-001","subject":"Define the lifecycle formal kernel."},{"commit":"4d14aede55c527cf027ada62ae9b65b3747cf314","issue":"GNT-SQL-002","subject":"Add SQLite physical fault evidence."}],"required_evidence":["crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement","crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery","crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions","crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch","crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay","crates/gantry-conformance/tests/durable_start.rs#durable_cancellation_commits_once_before_terminal_observation_and_release","crates/gantry-conformance/tests/durable_start.rs#durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent","crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries","crates/gantry-conformance/tests/journal_storage.rs#public_in_memory_store_passes_the_common_atomic_fenced_contract","crates/gantry-conformance/tests/sqlite_storage.rs#bundled_sqlite_fault_matrix_preserves_atomic_sequence_and_payload_prefixes","crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_cross_process_owner_exclusion_and_crash_reclamation","crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_strict_power_loss_policy_matches_environment_qualification"],"review_summary":{"applicable_clause_count":367,"covered_count":359,"not_applicable_count":8,"profile":"durable-runtime"},"section14_excerpt_count":51,"semantic_evidence":{"argument":"docs/durable-runtime-refinement.md","counterexample_count":15,"explored_state_count":3724,"manifest":"protocol/conformance/durable-refinement-v1.json","maximum_depth":15,"model":"protocol/goldens/durable-refinement-model-v1.json","terminal_state_count":2772},"specification":{"path":"SPEC.md","sha256":"5ae98367a0e6874a5671b7cdbec63da76aa15ba845edbb6e2f0300713d187707"},"status":"verified","validation_commands":["cargo +1.91.0 check --locked --workspace --all-targets --all-features","cargo +1.97.1 check --locked --workspace --all-targets --all-features","cargo +stable check --locked --workspace --all-targets --all-features","cargo clippy --locked --workspace --all-targets --all-features -- -D warnings","cargo fmt --all -- --check","cargo run --locked -p xtask -- check generated","cargo run --locked -p xtask -- check governance","cargo run --locked -p xtask -- check workspace","cargo test --locked --workspace --all-targets --all-features"]}
+{
+ "artifacts": [
+  {
+   "path": "SPEC.md",
+   "sha256": "9fea9d4a28fc7c09752e2cf308e3069823abded9bbd5061aae14bcdf034f161b"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/automatic_durable_root.rs",
+   "sha256": "af6eb95d0e7e752f475fbde43b6fb9cea141dbb024b76e0b823b72650ed4810c"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/durable_events.rs",
+   "sha256": "6e7876f1877e55a665572685b28aa4ed968fd556ae32a33c3f8063f5ebd50f46"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/durable_gate.rs",
+   "sha256": "16dbc8618521e1c0a5dedebc305d6ee8911fed81eb7ad475be69c4adff2e2a08"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/durable_recovery.rs",
+   "sha256": "9626da2228fd5731d2e9ea277896ebe4dbacbbbb7f1fb12d3ab446d4c44fe56b"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/durable_refinement_model.rs",
+   "sha256": "fd4363ecd496192b68245b3dc96e229e7f4fa3f3f614d0f00649d7fc457cbbc1"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/durable_start.rs",
+   "sha256": "24e8b4985c1d77b7b23585579c370db2ff283ba40d9e3e5680a1ccb0e9136550"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/journal_storage.rs",
+   "sha256": "a7e7af4ff4f96301977c6f5af7064e5c431468c2d0ea7ff2754683e367b21589"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/source_spawn.rs",
+   "sha256": "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/sqlite_storage.rs",
+   "sha256": "f17685224167e329e79f258686bbbe82918d257dd97d52abc15ad11e398514c7"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/type_properties.rs",
+   "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
+  },
+  {
+   "path": "crates/gantry/src/lib.rs",
+   "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
+  },
+  {
+   "path": "docs/durable-runtime-refinement.md",
+   "sha256": "5c45f47225e87c82a7432d1b9c1f5151a97f5f544c7c7e165349ac796117b486"
+  },
+  {
+   "path": "docs/sqlite-journal-storage.md",
+   "sha256": "8e82161ae7d6b8e590e6f524dd994593b899abb26b76d90551ca1917206a183a"
+  },
+  {
+   "path": "protocol/conformance/durable-events-v1.json",
+   "sha256": "0ca246ba3b1e5da4970fe8f4d6409e5d23d01ebc0594bb0b4d4e6fc6eba95e6c"
+  },
+  {
+   "path": "protocol/conformance/durable-recovery-v1.json",
+   "sha256": "f914f8369f42d35235d5db0b4d8c8d2b58bf6191c798abf5219745e7657918c2"
+  },
+  {
+   "path": "protocol/conformance/durable-refinement-v1.json",
+   "sha256": "20d72629efd81075ec428c97aa60bf5c993b089a401602f6016c622a126e03cd"
+  },
+  {
+   "path": "protocol/conformance/durable-start-v1.json",
+   "sha256": "aa84125bd27ee97c10fcbad9fd2b6ee1d2c0dfecded536a7dd0dfe1d69f3a325"
+  },
+  {
+   "path": "protocol/conformance/journal-storage-v1.json",
+   "sha256": "65f60c4aee5bc8aae7197dcd754bd8195c2c8170bdb2ce9a59d1929d2eb2c0ab"
+  },
+  {
+   "path": "protocol/conformance/sequential-gate-v1.json",
+   "sha256": "297e36c57dec962bfb687e85bbc3257ad5320f1f1feb13e25dbdb93b38c4e7a0"
+  },
+  {
+   "path": "protocol/conformance/source-spawn-v1.json",
+   "sha256": "ac86cfa338eb56708c7274549cf719402979664cfe5993f644cf1263d2939679"
+  },
+  {
+   "path": "protocol/conformance/sqlite-storage-v1.json",
+   "sha256": "274fbab96ab9905e600186e5c6a8f646a8c08f5b8a3a017c296390f40871d8ec"
+  },
+  {
+   "path": "protocol/goldens/durable-events-v1.json",
+   "sha256": "836a7d6da3ae28598d804889eee00a143137fa844fe13023df71e53da42e4294"
+  },
+  {
+   "path": "protocol/goldens/durable-recovery-v1.json",
+   "sha256": "6a1dfbe46e5acfad3083c1f07d0e23fe40e1e43145b6b77e1fb455e6a7e7fc82"
+  },
+  {
+   "path": "protocol/goldens/durable-refinement-model-v1.json",
+   "sha256": "621d7c89e236fde9c7353e40750e848f4899d1e86cad15c2f493e90730efb966"
+  },
+  {
+   "path": "protocol/goldens/durable-start-v1.json",
+   "sha256": "e172bb98d05baa6f93edf7e28e8580bb170319db968f56391687d41d58e8ec9e"
+  },
+  {
+   "path": "protocol/goldens/journal-storage-v1.json",
+   "sha256": "0ba3f85bba95f7ee7f59c6917b948c77ed4b0d505de6ee56913595162cd94949"
+  },
+  {
+   "path": "protocol/publication/artifacts-v1.json",
+   "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"
+  },
+  {
+   "path": "protocol/requirements/generated/requirements-v1.json",
+   "sha256": "fa97320944a714ffdae51125be082cfa9ca3bff6b528c2b6dae7b0da8c864cb1"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "18a48dea7bf5a96882a623f036312d0d905e896aa0c8f479b45758375b169395"
+  },
+  {
+   "path": "protocol/requirements/section14-v1.json",
+   "sha256": "43b9ddbfb7429b8874b51724b08dcf94cc8f01e65552288d7a097c0ba6beaf79"
+  }
+ ],
+ "claim": {
+  "advertises_profiles": [
+   "analyzer",
+   "durable-runtime",
+   "embedding",
+   "evaluator",
+   "frontend"
+  ],
+  "excludes_capabilities": [
+   "combined-concurrent-durable"
+  ],
+  "excludes_profiles": [
+   "concurrent-evaluator"
+  ],
+  "profiles": [
+   "analyzer",
+   "durable-runtime",
+   "embedding",
+   "evaluator",
+   "frontend"
+  ]
+ },
+ "environment_gaps": [
+  "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result or a qualified stable-media power-loss environment."
+ ],
+ "evidence_anchor_count": 120,
+ "format": "gantry.durable-gate-evidence/v1",
+ "gate": "GNT-GATE-600",
+ "prerequisites": [
+  {
+   "commit": "c25ed214ed78bde04f463d2800ca2915de3a8954",
+   "issue": "GNT-DUR-003",
+   "subject": "Implement durable start and resume preflight."
+  },
+  {
+   "commit": "c3e7de8c63a40ffbd35aac14a9d8bd04028f5783",
+   "issue": "GNT-DUR-004",
+   "subject": "Implement durable lifecycle control."
+  },
+  {
+   "commit": "a45452092bf5fa807e7aef8196b801d0c1a68f75",
+   "issue": "GNT-DUR-005",
+   "subject": "Implement journal-first durable events."
+  },
+  {
+   "commit": "067255908bf89ea4c100c8f6cbbffe9e58b0b788",
+   "issue": "GNT-DUR-006",
+   "subject": "Model durable runtime refinement"
+  },
+  {
+   "commit": "4976e758eb2cc681527998b662f3e204eef13b1d",
+   "issue": "GNT-SPEC-001",
+   "subject": "Define the lifecycle formal kernel."
+  },
+  {
+   "commit": "4d14aede55c527cf027ada62ae9b65b3747cf314",
+   "issue": "GNT-SQL-002",
+   "subject": "Add SQLite physical fault evidence."
+  }
+ ],
+ "required_evidence": [
+  "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement",
+  "crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery",
+  "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions",
+  "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch",
+  "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay",
+  "crates/gantry-conformance/tests/durable_start.rs#durable_cancellation_commits_once_before_terminal_observation_and_release",
+  "crates/gantry-conformance/tests/durable_start.rs#durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent",
+  "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries",
+  "crates/gantry-conformance/tests/journal_storage.rs#public_in_memory_store_passes_the_common_atomic_fenced_contract",
+  "crates/gantry-conformance/tests/sqlite_storage.rs#bundled_sqlite_fault_matrix_preserves_atomic_sequence_and_payload_prefixes",
+  "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_cross_process_owner_exclusion_and_crash_reclamation",
+  "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_strict_power_loss_policy_matches_environment_qualification"
+ ],
+ "review_summary": {
+  "applicable_clause_count": 367,
+  "covered_count": 359,
+  "not_applicable_count": 8,
+  "profile": "durable-runtime"
+ },
+ "section14_excerpt_count": 51,
+ "semantic_evidence": {
+  "argument": "docs/durable-runtime-refinement.md",
+  "counterexample_count": 15,
+  "explored_state_count": 3724,
+  "manifest": "protocol/conformance/durable-refinement-v1.json",
+  "maximum_depth": 15,
+  "model": "protocol/goldens/durable-refinement-model-v1.json",
+  "terminal_state_count": 2772
+ },
+ "specification": {
+  "path": "SPEC.md",
+  "sha256": "9fea9d4a28fc7c09752e2cf308e3069823abded9bbd5061aae14bcdf034f161b"
+ },
+ "status": "verified",
+ "validation_commands": [
+  "cargo +1.91.0 check --locked --workspace --all-targets --all-features",
+  "cargo +1.97.1 check --locked --workspace --all-targets --all-features",
+  "cargo +stable check --locked --workspace --all-targets --all-features",
+  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+  "cargo fmt --all -- --check",
+  "cargo run --locked -p xtask -- check generated",
+  "cargo run --locked -p xtask -- check governance",
+  "cargo run --locked -p xtask -- check workspace",
+  "cargo test --locked --workspace --all-targets --all-features"
+ ]
+}
