@@ -6870,31 +6870,45 @@ fn infer_projection(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
-    let Some(path) = node.children().iter().copied().find(|child| {
-        tree.node(*child)
-            .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
+    let children = node.children();
+    // The parser flattens a postfix chain into sibling children, so the receiver part of one index
+    // projection is every child ahead of the index postfix rather than one required root path: a
+    // `self` root has no path at all, a parenthesized receiver is a group of its own children, and a
+    // call prefix stays a call postfix ahead of the projection.
+    let Some(index_postfix) = children.iter().position(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, *child, Punctuation::LeftBracket)
+        })
     }) else {
         return Ok(None);
     };
-    let Some(name) = direct_identifier(tree, path)? else {
+    let receiver_children = children.get(..index_postfix).unwrap_or_default();
+    let Some(receiver) = resolve_projection_receiver(
+        tree,
+        receiver_children,
+        facts,
+        environment,
+        context,
+        diagnostics,
+    )?
+    else {
         return Ok(None);
     };
-    let Some(base) = environment.get(&name).cloned() else {
-        return Ok(None);
-    };
-    // A field-chain receiver is not the binding itself. The parser flattens a dotted chain into
-    // sibling children, one dotted member node per projected field ahead of the index postfix, so
-    // the binding stays the projection root while the receiver type is the folded member type and
-    // the place path carries the field path ahead of its index segment. A shape the field walk
-    // cannot resolve keeps the receiver and the place path of a bare binding, which is the
-    // pre-existing behavior of every other projection shape.
-    let (receiver_type, fields) =
-        index_projection_receiver(tree, node.children(), path, &name, &base, context)?
-            .unwrap_or_else(|| (base.clone(), Vec::new()));
-    let index_expression = node.children().iter().copied().find(|child| {
-        tree.node(*child)
-            .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
-    });
+    let ProjectionReceiver {
+        receiver_type,
+        place,
+    } = receiver;
+    // Only a child after the index postfix is the index expression: a parenthesized receiver part
+    // carries an `Expression` child of its own ahead of the projection.
+    let index_expression = children
+        .iter()
+        .copied()
+        .skip(index_postfix.saturating_add(1))
+        .find(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+        });
     // A literal index segment is keyed only when the index expression is exactly one integer-literal
     // token: `items[2 - 2]` names the same element as `items[0]`, so every other index expression
     // keys the wildcard segment rather than a second literal one.
@@ -6935,18 +6949,21 @@ fn infer_projection(
             // A projection never produces a caller place. A read of any element of a `MustConsume`
             // aggregate is a projection read of that value under `GNT-6.2d`: a consumption-requiring
             // element is a copied read and a `Copyable` element is a copy, matching the struct-field
-            // projection rule.
-            let mut place_path = fields.clone();
-            place_path.push(Arc::from(format!("[{index}]")));
-            record_affine_place(
-                AffinePlace::projected(name.clone(), place_path),
-                Some(&base),
-                &member,
-                projection_prefix_span(tree, path, index_expression)?,
-                AffineAccess::Read,
-                context,
-                diagnostics,
-            )?;
+            // projection rule. Only a place-backed receiver records that read: the element of a call
+            // result or of any other value is a temporary without a caller place to read.
+            if let (Some(place), Some(prefix)) = (&place, receiver_children.first().copied()) {
+                let mut place_path = place.fields.clone();
+                place_path.push(Arc::from(format!("[{index}]")));
+                record_affine_place(
+                    AffinePlace::projected(Arc::clone(&place.root), place_path),
+                    Some(&place.binding),
+                    &member,
+                    projection_prefix_span(tree, prefix, index_expression)?,
+                    AffineAccess::Read,
+                    context,
+                    diagnostics,
+                )?;
+            }
             return Ok(Some(member));
         }
         diagnostics.push(body_diagnostic(
@@ -6988,77 +7005,302 @@ fn infer_projection(
             // A read of any element of a `MustConsume` aggregate is a projection read of that value
             // under `GNT-6.2d`, matching the struct-field rule. A literal index keeps distinct
             // elements distinct places, and every other index expression keys the wildcard segment
-            // so a dynamic read overlaps each element place of the same list. A field-chain receiver
-            // keeps its field path ahead of that index segment.
-            let segment: Arc<str> = match literal_index {
-                Some(index) => Arc::from(format!("[{index}]")),
-                None => Arc::from(SEGMENT_ANY),
-            };
-            let mut place_path = fields.clone();
-            place_path.push(segment);
-            record_affine_place(
-                AffinePlace::projected(name.clone(), place_path),
-                Some(&base),
-                receiver,
-                projection_prefix_span(tree, path, index_expression)?,
-                AffineAccess::Read,
-                context,
-                diagnostics,
-            )?;
+            // so a dynamic read overlaps each element place of the same list. A place-backed receiver
+            // keeps its field path ahead of that index segment, while a receiver that is a call
+            // result or another temporary has no caller place whose element could be read.
+            if let (Some(place), Some(prefix)) = (&place, receiver_children.first().copied()) {
+                let segment: Arc<str> = match literal_index {
+                    Some(index) => Arc::from(format!("[{index}]")),
+                    None => Arc::from(SEGMENT_ANY),
+                };
+                let mut place_path = place.fields.clone();
+                place_path.push(segment);
+                record_affine_place(
+                    AffinePlace::projected(Arc::clone(&place.root), place_path),
+                    Some(&place.binding),
+                    receiver,
+                    projection_prefix_span(tree, prefix, index_expression)?,
+                    AffineAccess::Read,
+                    context,
+                    diagnostics,
+                )?;
+            }
         }
         return Ok(projected);
     }
     Ok(None)
 }
 
-/// One index projection's folded receiver type and the ordered field path reaching it.
-type ProjectionReceiver = (TypeDescriptor, Vec<Arc<str>>);
+/// One index projection's resolved receiver: the folded receiver type and, for a receiver part that
+/// names a caller place, the binding place the projection reads from.
+struct ProjectionReceiver {
+    receiver_type: TypeDescriptor,
+    place: Option<ProjectionPlace>,
+}
 
-/// Resolves the receiver type and ordered field path of one index projection.
+/// The caller place one index projection's receiver part names.
+struct ProjectionPlace {
+    root: Arc<str>,
+    binding: TypeDescriptor,
+    receiver_type: TypeDescriptor,
+    fields: Vec<Arc<str>>,
+}
+
+/// How one index projection's receiver part resolves as a caller place.
+enum ProjectionPlaceResolution {
+    /// The chain root is a binding and every member of its field path resolved.
+    Place(ProjectionPlace),
+    /// A member the chain cannot resolve, already reported once here as `unknown-member`. The
+    /// carrier part stays a place, so nothing downstream reads its whole root.
+    UnknownMember,
+    /// A part that names no caller place at all, such as a call result.
+    NotAPlace,
+}
+
+/// Resolves the receiver type of one index projection and, when it is place-backed, its place.
 ///
-/// The parser flattens a dotted chain into sibling children: the root `Path`, one dotted postfix and
-/// member token per projected field, then the index postfix and its index expression. The children
-/// ahead of the index postfix are the receiver part, so `bag.items[0]` folds
-/// [`projected_member_type`] over `items` to obtain the receiver type while the projection root stays
-/// the binding `bag`. Returns `None` for a shape the field walk cannot resolve — a call, a
-/// parenthesized receiver, a receiver part that does not open with the resolved root path, or a
-/// member the receiver does not declare — which leaves the projection on its pre-existing path.
-fn index_projection_receiver(
+/// The parser flattens a postfix chain into sibling children, so the receiver part is every child
+/// ahead of the index postfix and takes one of a few shapes: a bare binding root, a dotted field
+/// chain whose root is a binding, a call such as `heads(bag)`, or any of those with grouping
+/// parentheses anywhere in the chain. A place-backed part resolves through
+/// [`projection_place_chain`], and a member that walk cannot resolve keeps every later walk away
+/// from the whole part instead of reading its root. Every other part still contributes a receiver
+/// type through [`projection_receiver_type`], because the index projects an element of the value
+/// the part produces even when that value is a temporary.
+fn resolve_projection_receiver(
+    tree: &SyntaxTree,
+    receiver_children: &[NodeId],
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<ProjectionReceiver>, AnalysisError> {
+    match projection_place_chain(tree, receiver_children, environment, context, diagnostics)? {
+        ProjectionPlaceResolution::Place(place) => {
+            return Ok(Some(ProjectionReceiver {
+                receiver_type: place.receiver_type.clone(),
+                place: Some(place),
+            }));
+        }
+        ProjectionPlaceResolution::UnknownMember => return Ok(None),
+        ProjectionPlaceResolution::NotAPlace => {}
+    }
+    let Some(receiver_type) = projection_receiver_type(
+        tree,
+        receiver_children,
+        facts,
+        environment,
+        context,
+        diagnostics,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(ProjectionReceiver {
+        receiver_type,
+        place: None,
+    }))
+}
+
+/// Returns the inner expression of a receiver part that is exactly one parenthesized expression.
+fn parenthesized_expression(tree: &SyntaxTree, children: &[NodeId]) -> Option<NodeId> {
+    let [open, inner_id, close] = children else {
+        return None;
+    };
+    let open = tree.node(*open)?;
+    let close = tree.node(*close)?;
+    if !matches!(
+        open.form(),
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+    ) || !matches!(
+        close.form(),
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+    ) {
+        return None;
+    }
+    let inner = tree.node(*inner_id)?;
+    matches!(inner.form(), SyntaxForm::Expression).then_some(*inner_id)
+}
+
+/// One token of a projection receiver chain, with the step it contributes to the chain.
+enum ProjectionChainToken {
+    Root(Arc<str>),
+    Member(Arc<str>),
+    Dot,
+}
+
+/// Resolves a projection receiver part as a caller place chain, grouping parentheses included.
+///
+/// The parser flattens a postfix chain into sibling nodes and keeps grouping parentheses as nodes of
+/// their own, so the receiver part arrives as a token sequence whose parentheses may wrap the chain
+/// root, one field step, or the whole chain. A `(` that immediately follows a callee path or
+/// identifier opens a call, and a chain with a call segment never names a caller place; every other
+/// balanced `(`/`)` pair is grouping and contributes no chain token, so `(h).items`, `((h).items)`,
+/// and `(h.items)` normalize to the same root and field path.
+///
+/// A field-chain receiver is not the binding itself: the binding stays the projection root while the
+/// receiver type is the folded member type and the place path is the field path ahead of its index
+/// segment. A member the walk cannot resolve reports `unknown-member` exactly once, here, and
+/// resolves to [`ProjectionPlaceResolution::UnknownMember`], so the type-only fallback reports no
+/// second diagnostic and records no whole-root read for the same part. The root may be the reserved
+/// word `self`, which the environment binds like any other receiver binding.
+fn projection_place_chain(
     tree: &SyntaxTree,
     children: &[NodeId],
-    path: NodeId,
-    name: &Arc<str>,
-    base: &TypeDescriptor,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
     context: &BodyContext,
-) -> Result<Option<ProjectionReceiver>, AnalysisError> {
-    let Some(index_postfix) = children.iter().position(|child| {
-        tree.node(*child).is_some_and(|node| {
-            matches!(node.form(), SyntaxForm::PostfixExpression)
-                && node_contains_punctuation(tree, *child, Punctuation::LeftBracket)
-        })
-    }) else {
-        return Ok(None);
-    };
-    let receiver_children = children.get(..index_postfix).unwrap_or_default();
-    if receiver_children.first() != Some(&path) {
-        return Ok(None);
-    }
-    let Some((root, fields)) = postfix_field_sequence(tree, receiver_children) else {
-        return Ok(None);
-    };
-    if root != *name {
-        return Ok(None);
-    }
-    let mut receiver = base.clone();
-    let mut place_path = Vec::with_capacity(fields.len());
-    for (member, _) in fields {
-        let Some(field) = projected_member_type(&receiver, member.as_ref(), context)? else {
-            return Ok(None);
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<ProjectionPlaceResolution, AnalysisError> {
+    let mut chain: Vec<(NodeId, ProjectionChainToken)> = Vec::new();
+    let mut grouping = 0usize;
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        let SyntaxForm::Token(token) = node.form() else {
+            work.extend(node.children().iter().rev().copied());
+            continue;
         };
-        receiver = field;
+        match token {
+            TokenKind::Punctuation(Punctuation::LeftParenthesis) => {
+                // A callee path or identifier ahead of the parenthesis opens a call, and the value
+                // a call produces is not a caller place.
+                if chain.last().is_some_and(|(_, step)| {
+                    matches!(
+                        step,
+                        ProjectionChainToken::Root(_) | ProjectionChainToken::Member(_)
+                    )
+                }) {
+                    return Ok(ProjectionPlaceResolution::NotAPlace);
+                }
+                grouping += 1;
+            }
+            TokenKind::Punctuation(Punctuation::RightParenthesis) => {
+                if grouping == 0 {
+                    return Ok(ProjectionPlaceResolution::NotAPlace);
+                }
+                grouping -= 1;
+            }
+            TokenKind::Punctuation(Punctuation::Dot) => {
+                chain.push((id, ProjectionChainToken::Dot));
+            }
+            TokenKind::Identifier(name) if chain.is_empty() => {
+                chain.push((id, ProjectionChainToken::Root(Arc::clone(name))));
+            }
+            TokenKind::Identifier(name) => {
+                chain.push((id, ProjectionChainToken::Member(Arc::clone(name))));
+            }
+            TokenKind::ReservedWord(word) if word.spelling() == "self" && chain.is_empty() => {
+                chain.push((id, ProjectionChainToken::Root(Arc::from("self"))));
+            }
+            _ => return Ok(ProjectionPlaceResolution::NotAPlace),
+        }
+    }
+    if grouping != 0 {
+        return Ok(ProjectionPlaceResolution::NotAPlace);
+    }
+    let Some((_, ProjectionChainToken::Root(root))) = chain.first() else {
+        return Ok(ProjectionPlaceResolution::NotAPlace);
+    };
+    let mut fields = Vec::new();
+    let mut cursor = 1;
+    while cursor < chain.len() {
+        let Some((_, ProjectionChainToken::Dot)) = chain.get(cursor) else {
+            return Ok(ProjectionPlaceResolution::NotAPlace);
+        };
+        let Some((member_id, ProjectionChainToken::Member(member))) = chain.get(cursor + 1) else {
+            return Ok(ProjectionPlaceResolution::NotAPlace);
+        };
+        fields.push((Arc::clone(member), *member_id));
+        cursor = cursor.saturating_add(2);
+    }
+    let Some(binding) = environment.get(root).cloned() else {
+        // A root the environment does not bind names no caller place, so the part keeps the
+        // type-only fallback it had before the chain walk.
+        return Ok(ProjectionPlaceResolution::NotAPlace);
+    };
+    let mut receiver_type = binding.clone();
+    let mut place_path = Vec::with_capacity(fields.len());
+    for (member, member_id) in fields {
+        let Some(field) = projected_member_type(&receiver_type, member.as_ref(), context)? else {
+            let member_node = tree.node(member_id).ok_or(AnalysisError::Invariant)?;
+            diagnostics.push(body_diagnostic(
+                "unknown-member",
+                DiagnosticCategory::Type,
+                "a receiver type has no field or inherent method with this name",
+                member_node.span().clone(),
+                [
+                    ("member", member.as_ref()),
+                    ("receiver", receiver_type.canonical_string().as_str()),
+                ],
+            )?);
+            return Ok(ProjectionPlaceResolution::UnknownMember);
+        };
+        receiver_type = field;
         place_path.push(member);
     }
-    Ok(Some((receiver, place_path)))
+    Ok(ProjectionPlaceResolution::Place(ProjectionPlace {
+        root: Arc::clone(root),
+        binding,
+        receiver_type,
+        fields: place_path,
+    }))
+}
+
+/// Resolves the receiver type of a projection receiver part that names no caller place.
+///
+/// A parenthesized part is typed through its inner expression, which is never re-resolved as a place
+/// because the chain walk already rejected that same part. A dotted part such as `head(bag).items`
+/// folds its member chain, and a call part such as `heads(bag)` is typed as the call result. A part
+/// that is none of those stays untyped exactly as before.
+fn projection_receiver_type(
+    tree: &SyntaxTree,
+    receiver_children: &[NodeId],
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    if let Some(expression) = parenthesized_expression(tree, receiver_children) {
+        return infer_expression(
+            tree,
+            expression,
+            facts,
+            environment,
+            None,
+            context,
+            diagnostics,
+        );
+    }
+    if receiver_children
+        .iter()
+        .any(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
+    {
+        return infer_member_sequence(
+            tree,
+            receiver_children,
+            facts,
+            environment,
+            None,
+            None,
+            context,
+            diagnostics,
+        );
+    }
+    if receiver_children
+        .iter()
+        .any(|child| node_contains_punctuation(tree, *child, Punctuation::LeftParenthesis))
+    {
+        return infer_call_sequence(
+            tree,
+            receiver_children,
+            facts,
+            environment,
+            None,
+            context,
+            diagnostics,
+        );
+    }
+    Ok(None)
 }
 
 /// Returns the span of one projection's index expression, or of the projection node without one.

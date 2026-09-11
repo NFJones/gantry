@@ -3729,6 +3729,231 @@ fn public_must_consume_indexed_element_reads_are_copies() {
     );
 }
 
+/// An index projection resolves its receiver from the children ahead of the index postfix rather than
+/// from one required root path, so a `self` root, a parenthesized place, and a call result all type
+/// the element they name and reach the same element rules (`GNT-6.2d`).
+#[test]
+fn public_must_consume_index_projection_receivers_are_resolved() {
+    // Every receiver shape gets one copyable projection to accept: the `self` root of `probe`, the
+    // parenthesized place of `run`, and the call prefixes of `head` and `headi`.
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         struct Bag { items: List<Int> }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         impl Bag { fn probe(self) -> Int { self.items[0] } }\n\
+         fn head(b: Bag) -> Bag { b }\n\
+         fn headi(b: Bag) -> List<Int> { b.items }\n";
+
+    // A copyable element read stays admitted through every shape, nested parentheses included.
+    for accepted in [
+        "fn run(b: Bag) -> Int { (b.items)[0] } fn main() {}",
+        "fn run(b: Bag) -> Int { ((b.items))[0] } fn main() {}",
+        "fn run(b: Bag) -> Int { head(b).items[0] } fn main() {}",
+        "fn run(b: Bag) -> Int { headi(b)[0] } fn main() {}",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    // Each shape reaches the element type check and nothing else, so a `Bool` binding of an `Int`
+    // element is the only report.
+    for rejected in [
+        "fn run(b: Bag) -> Int { let x: Bool = (b.items)[0]; 1 } fn main() {}",
+        "fn run(b: Bag) -> Int { let x: Bool = ((b.items))[0]; 1 } fn main() {}",
+        "fn run(b: Bag) -> Int { let x: Bool = head(b).items[0]; 1 } fn main() {}",
+        "fn run(b: Bag) -> Int { let x: Bool = headi(b)[0]; 1 } fn main() {}",
+    ] {
+        let program = format!("{DECLARATIONS}{rejected}");
+        assert_eq!(
+            diagnostic_codes(analyze(&program).diagnostics()),
+            ["type-mismatch"],
+            "{program}"
+        );
+    }
+
+    // A `self` root carries no path child at all, so it reaches those rules through the reserved
+    // word alone: the same copyable read, element type check, and index form as a binding root.
+    const SELF_DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         struct Bag { items: List<Int> }\n\
+         struct Pair { pair: Tuple<Int, Int> }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         fn main() {}\n";
+
+    assert_affine_accepted(&format!(
+        "{SELF_DECLARATIONS}impl Bag {{ fn probe(self) -> Int {{ self.items[0] }} }}"
+    ));
+    let self_mismatch = format!(
+        "{SELF_DECLARATIONS}impl Bag {{ fn probe(self) -> Int {{ let x: Bool = self.items[0]; 1 }} }}"
+    );
+    assert_eq!(
+        diagnostic_codes(analyze(&self_mismatch).diagnostics()),
+        ["type-mismatch"],
+        "{self_mismatch}"
+    );
+    let self_tuple = format!(
+        "{SELF_DECLARATIONS}impl Pair {{ fn probe(self, i: Int) -> Int {{ let n: Int = self.pair[i]; n }} }}"
+    );
+    assert_eq!(
+        diagnostic_codes(analyze(&self_tuple).diagnostics()),
+        ["tuple-index-not-literal"],
+        "{self_tuple}"
+    );
+
+    // A `self` root and a parenthesized place are place-backed, so a read of a `MustConsume` element
+    // is recorded against the binding and rejected as a copy exactly as `t.tokens[0]` is. Each source
+    // consumes the containing value, so the copied read is the only report.
+    const PLACE_DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         struct Toks { tokens: List<Token> }\n\
+         struct Pair { pair: Tuple<Int, Int> }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         impl Toks { fn consume(owned self) {} }\n\
+         fn main() {}\n";
+
+    let self_read = format!(
+        "{PLACE_DECLARATIONS}impl Toks {{ fn read(self) -> Int {{ let x: Token = self.tokens[0]; x.consume(); self.consume(); 1 }} }}"
+    );
+    let paren_read = format!(
+        "{PLACE_DECLARATIONS}fn run(t: Toks) -> Int {{ let x: Token = (t.tokens)[0]; x.consume(); t.consume(); 1 }}"
+    );
+    for source in [&self_read, &paren_read] {
+        assert_eq!(
+            diagnostic_codes(analyze(source).diagnostics()),
+            ["must-consume-copy"],
+            "{source}"
+        );
+    }
+
+    // The recorded read starts at the receiver part rather than at any inner path, so it covers the
+    // reserved word of a `self` root and the parenthesis of a parenthesized place, and it stops at
+    // the index expression rather than at the closing bracket.
+    for (source, prefix) in [(&self_read, "self.tokens[0"), (&paren_read, "(t.tokens)[0")] {
+        assert_affine_rejected_at(source, "must-consume-copy", prefix);
+        let rejected = analyze(source);
+        let primary = rejected
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "must-consume-copy")
+            .and_then(|diagnostic| diagnostic.primary.as_ref())
+            .unwrap_or_else(|| panic!("{source}: {:?}", rejected.diagnostics()));
+        let start = source
+            .find(prefix)
+            .unwrap_or_else(|| panic!("{source}: missing prefix {prefix:?}"));
+        assert_eq!(
+            usize::try_from(primary.bytes().start()).unwrap_or_default(),
+            start,
+            "{source}"
+        );
+        assert_eq!(
+            usize::try_from(primary.bytes().end()).unwrap_or_default(),
+            start + prefix.len(),
+            "{source}"
+        );
+    }
+
+    // A discarded element of a parenthesized place reports the discard once, under the same prefix
+    // span rather than under an inner path node.
+    let discarded = format!(
+        "{PLACE_DECLARATIONS}fn run(t: Toks) -> Int {{ discard (t.tokens)[0]; t.consume(); 1 }}"
+    );
+    assert_eq!(
+        diagnostic_codes(analyze(&discarded).diagnostics()),
+        ["must-consume-discard"],
+        "{discarded}"
+    );
+    assert_affine_rejected_at(&discarded, "must-consume-discard", "(t.tokens)[0");
+
+    // A dynamic tuple index through a parenthesized place is rejected as an index form rather than as
+    // an element class, exactly as the bare binding form is.
+    let paren_tuple = format!(
+        "{PLACE_DECLARATIONS}fn run(p: Pair, i: Int) -> Int {{ let x: Bool = (p.pair)[i]; 1 }}"
+    );
+    assert_eq!(
+        diagnostic_codes(analyze(&paren_tuple).diagnostics()),
+        ["tuple-index-not-literal"],
+        "{paren_tuple}"
+    );
+
+    // Grouping parentheses are transparent at every position of a receiver chain, not only around the
+    // whole receiver part: `(h).items`, `((h).items)`, and `(h.items)` all name the same place chain
+    // `h.items` names. The chain root stays the binding and each element is its own list segment, so
+    // two sibling reads are two element places rather than two reads of the whole chain root.
+    const CHAIN_DECLARATIONS: &str = "affine struct Leaf { value: Int }\n\
+         struct HL { items: List<Leaf> }\n\
+         fn main() {}\n";
+
+    for accepted in [
+        // The bare and whole-part-parenthesized forms are the controls the chain-root form matches.
+        "fn af(h: HL) { let a: Leaf = h.items[0]; discard a; let c: Leaf = h.items[1]; discard c; }",
+        "fn af(h: HL) { let a: Leaf = (h.items)[0]; discard a; let c: Leaf = (h.items)[1]; discard c; }",
+        "fn af(h: HL) { let a: Leaf = (h).items[0]; discard a; let c: Leaf = (h).items[1]; discard c; }",
+        "fn af(h: HL) { let a: Leaf = ((h).items)[0]; discard a; let c: Leaf = ((h).items)[1]; discard c; }",
+    ] {
+        assert_affine_accepted(&format!("{CHAIN_DECLARATIONS}{accepted}"));
+    }
+
+    // A chain-root parenthesis reaches the element type check and nothing else, exactly as the
+    // whole-part parenthesis of `(b.items)[0]` reaches it.
+    let rooted_chain = format!(
+        "{DECLARATIONS}fn run(b: Bag) -> Int {{ let x: Bool = (b).items[0]; 1 }} fn main() {{}}"
+    );
+    assert_eq!(
+        diagnostic_codes(analyze(&rooted_chain).diagnostics()),
+        ["type-mismatch"],
+        "{rooted_chain}"
+    );
+
+    // The normalized chain records one element read under the receiver part's own prefix span, so a
+    // discarded and a copied `MustConsume` element both start at the parenthesis and stop at the
+    // index expression rather than at an inner path node.
+    let rooted_discard = format!(
+        "{PLACE_DECLARATIONS}fn run(t: Toks) -> Int {{ discard (t).tokens[0]; t.consume(); 1 }}"
+    );
+    assert_eq!(
+        diagnostic_codes(analyze(&rooted_discard).diagnostics()),
+        ["must-consume-discard"],
+        "{rooted_discard}"
+    );
+    assert_affine_rejected_at(&rooted_discard, "must-consume-discard", "(t).tokens[0");
+    let rooted_copy = format!(
+        "{PLACE_DECLARATIONS}fn run(t: Toks) -> Int {{ let x: Token = (t).tokens[0]; x.consume(); t.consume(); 1 }}"
+    );
+    assert_eq!(
+        diagnostic_codes(analyze(&rooted_copy).diagnostics()),
+        ["must-consume-copy"],
+        "{rooted_copy}"
+    );
+    assert_affine_rejected_at(&rooted_copy, "must-consume-copy", "(t).tokens[0");
+
+    // A member the chain cannot resolve is that chain's own report: the walk reports
+    // `unknown-member` once at the member token and reads no element, so the root is neither copied
+    // nor reported a second time. The bare binding is the control.
+    const UNRESOLVED_DECLARATIONS: &str = "must_consume struct Outer { bag: List<Bool> }\n\
+         impl Outer { fn consume(owned self) {} }\n\
+         fn main() {}\n";
+
+    for source in [
+        "fn run(o: Outer) -> Int { let x: Bool = (o).nope[0]; o.consume(); 1 }",
+        "fn run(o: Outer) -> Int { let x: Bool = o.nope[0]; o.consume(); 1 }",
+    ] {
+        let program = format!("{UNRESOLVED_DECLARATIONS}{source}");
+        assert_eq!(
+            diagnostic_codes(analyze(&program).diagnostics()),
+            ["unknown-member"],
+            "{program}"
+        );
+    }
+
+    // A call result is no caller place, so an element projected out of one is a temporary: reading a
+    // `MustConsume` element out of `make()[0]` is consumed by its own binding and the projection
+    // contributes no report at all.
+    const CALL_DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         fn make() -> List<Token> { [Token { value: 1 }] }\n\
+         fn main() {}\n";
+
+    assert_affine_accepted(&format!(
+        "{CALL_DECLARATIONS}fn run() -> Int {{ let t: Token = make()[0]; t.consume(); 1 }}"
+    ));
+}
+
 /// A `for` statement binds a fresh item place per iteration, so the item owes its consumption at
 /// the iteration exit exactly as a `let` declaration does (`GNT-6.2d`, `GNT-9.4`).
 #[test]

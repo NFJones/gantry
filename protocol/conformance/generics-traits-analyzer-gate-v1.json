@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "crates/gantry-analysis/src/bodies.rs",
-   "sha256": "4a9678f5d997dcd43b71baa6fb8122ed73e6d9626dccaff3dedfcd24c22e0fea"
+   "sha256": "d4a2dcb7fc81b9aa9d0039dc958a5d32264e23c7949aa0fb2d2e70f4c865215a"
   },
   {
    "path": "crates/gantry-analysis/src/capabilities.rs",
@@ -38,7 +38,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-   "sha256": "a5e73e2c11fb90f95dd49663050b86267b5eb8cf91a39e4777d5357d36383e2c"
+   "sha256": "342e92d859728977d280f6a71d40c43d86037be9d532d827811a377fded704b2"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
@@ -122,11 +122,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "c5eb082ae10a42bab6adf923b121bd5b886aa70ad139ef36a91428d2a08bb4ec"
+   "sha256": "660f56e260c31651191c0c0646cc611519973561cd2f278b322184cdc6ad1dc2"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "f69b32afddbd0da615003120b3bac07fe011d2e8e60d7aca20548dba97241864"
+   "sha256": "6771fe93ba69a49b0d97d888f3f9ef3a14f5dafef14d3761aa8edf645ef48947"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
