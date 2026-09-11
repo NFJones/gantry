@@ -3595,6 +3595,44 @@ fn public_constant_conditions_select_the_reaching_obligation_paths() {
     }
 }
 
+/// A `break` retires the scopes opened inside its loop exactly once, so a discharge recorded
+/// before the loop survives the enclosing block and a live obligation is reported once
+/// (`GNT-6.2d`).
+#[test]
+fn public_loop_transfers_retire_only_the_scopes_they_leave() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) {} }\n";
+
+    // The discharge before the conditional is still the scope's discharge after the nested loop
+    // retires its own scopes and exits through a `break`.
+    for accepted in [
+        "fn run() { let t: Token = Token { value: 1 }; t.consume(); if true { while true { break; } } } fn main() {}",
+        "fn run() { let t: Token = Token { value: 1 }; t.consume(); if true { loop(limit = 1) { break; } } } fn main() {}",
+        "fn run(flag: Bool) { let t: Token = Token { value: 1 }; t.consume(); if flag { while true { break; } } } fn main() {}",
+        "fn run(o: Option<Int>) { let t: Token = Token { value: 1 }; t.consume(); if let Some(x) = o { while true { break; } } } fn main() {}",
+        "fn run(o: Option<Int>) { let t: Token = Token { value: 1 }; t.consume(); match o { Some(_) => { while true { break; } }, None => { } } } fn main() {}",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    // The loop body's scope is retired by the `break` itself, so the enclosing block reports the
+    // still-live obligation exactly once.
+    let package = analyze(&format!(
+        "{DECLARATIONS}fn run() {{ let t: Token = Token {{ value: 1 }}; if true {{ while true {{ break; }} }} }} fn main() {{}}"
+    ));
+    assert_eq!(package.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        package
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_str() == "must-consume-unconsumed")
+            .count(),
+        1,
+        "{:?}",
+        package.diagnostics()
+    );
+}
+
 /// An implementation method must stay within the effect contract its trait method declares,
 /// because that declared set is the conservative summary parametric callers rely on
 /// (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).

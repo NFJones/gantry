@@ -2624,6 +2624,7 @@ fn check_block(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<BlockResult, AnalysisError> {
     let node = tree.node(block).ok_or(AnalysisError::Invariant)?;
+    let scope_floor = context.must_consume_scopes.borrow().len();
     enter_obligation_scope(context);
     let mut environment = inherited.clone();
     let mut reachable = true;
@@ -2898,6 +2899,7 @@ fn check_block(
                     saved.restore(context);
                     let result = if has_pattern && blocks == 1 {
                         let pattern_span = pattern_span.clone().ok_or(AnalysisError::Invariant)?;
+                        let scope_floor = context.must_consume_scopes.borrow().len();
                         enter_obligation_bindings(context, &pattern_bindings, &pattern_span);
                         let checked = with_shared_receiver_payload_roots(
                             context,
@@ -2915,7 +2917,7 @@ fn check_block(
                             },
                         );
                         let checked = checked?;
-                        leave_obligation_scope(context, diagnostics)?;
+                        leave_obligation_scope_above(scope_floor, context, diagnostics)?;
                         checked
                     } else {
                         check_block(
@@ -3220,7 +3222,7 @@ fn check_block(
             _ => {}
         }
     }
-    leave_obligation_scope(context, diagnostics)?;
+    leave_obligation_scope_above(scope_floor, context, diagnostics)?;
     Ok(BlockResult {
         falls_through: reachable,
         trailing,
@@ -3457,6 +3459,7 @@ fn check_match_statement(
             .span()
             .clone();
         saved.restore(context);
+        let scope_floor = context.must_consume_scopes.borrow().len();
         enter_obligation_bindings(context, &bindings, &pattern_span);
         let checked = with_shared_receiver_payload_roots(context, payload_roots, || {
             check_block(
@@ -3470,7 +3473,7 @@ fn check_match_statement(
             )
         });
         let result = checked?;
-        leave_obligation_scope(context, diagnostics)?;
+        leave_obligation_scope_above(scope_floor, context, diagnostics)?;
         // A diverging arm never reaches the join and never settles through a transfer, so its
         // final state keeps the obligation visible at the enclosing scope exit.
         if result.falls_through || result.diverges {
@@ -4408,6 +4411,19 @@ fn enter_obligation_bindings(
     for (name, ty) in bindings {
         register_must_consume_binding(name.clone(), ty, span.clone(), context);
     }
+}
+
+/// Retires the scope one block or binding frame opened, unless a `break`/`continue` inside it
+/// already retired that scope and every scope it nested on the way out of the loop.
+fn leave_obligation_scope_above(
+    floor: usize,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    if context.must_consume_scopes.borrow().len() > floor {
+        leave_obligation_scope(context, diagnostics)?;
+    }
+    Ok(())
 }
 
 /// Reports and retires the obligations one block introduced, restoring any shadowed outer state.
@@ -9878,6 +9894,7 @@ fn infer_match(
             .span()
             .clone();
         saved.restore(context);
+        let scope_floor = context.must_consume_scopes.borrow().len();
         enter_obligation_bindings(context, &bindings, &pattern_span);
         let checked = with_shared_receiver_payload_roots(context, payload_roots, || {
             if tree
@@ -9907,7 +9924,7 @@ fn infer_match(
             }
         });
         let actual = checked?;
-        leave_obligation_scope(context, diagnostics)?;
+        leave_obligation_scope_above(scope_floor, context, diagnostics)?;
         branch_states.push(ObligationSnapshot::capture(context));
         if let Some(actual) = actual {
             if let Some(previous) = &result_type {
