@@ -4104,6 +4104,45 @@ fn main() -> Int {
     assert_eq!(run_single_entry(&root), 6);
 }
 
+/// A `MustConsume` return transfer carries the obligation through the call and executes.
+#[test]
+fn must_consume_return_transfer_executes() {
+    let root = TempDirectory::new(
+        r#"
+must_consume struct Guard { value: Int }
+impl Guard { fn release(owned self) -> Int { self.value } }
+fn pass(guard: Guard) -> Guard {
+    return guard;
+}
+fn main() -> Int {
+    let guard: Guard = pass(Guard { value: 5 });
+    guard.release() + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 6);
+}
+
+/// A `MustConsume` return operand that names a struct-field projection executes as a partial move.
+#[test]
+fn must_consume_projection_return_transfer_executes() {
+    let root = TempDirectory::new(
+        r#"
+must_consume struct Guard { value: Int }
+struct Holder { guard: Guard, count: Int }
+impl Guard { fn release(owned self) -> Int { self.value } }
+fn take(holder: Holder) -> Guard {
+    return holder.guard;
+}
+fn main() -> Int {
+    let guard: Guard = take(Holder { guard: Guard { value: 7 }, count: 1 });
+    guard.release() + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 8);
+}
+
 /// A free call with explicit arguments still lowers when its result is an operand.
 #[test]
 fn free_call_with_arguments_operand_still_lowers() {

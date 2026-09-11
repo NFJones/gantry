@@ -3491,8 +3491,13 @@ On unwind, a staged `MustConsume` value transfers its consumption obligation to
 the runtime supervisor as item 2b requires: the obligation MUST NOT be silently
 discarded, MUST survive the frame that staged it, MUST be reconstructible from
 checkpointed state, and MUST remain observable with the task's settled
-evidence. Live resources, loans and reborrowing, partial moves, and task or
-channel transfer remain excluded.
+evidence. Live resources, task or channel transfer, and the remaining transfer
+points the other items of this section own remain excluded.
+
+A `return` operand that names a `MustConsume` place is a consumption transfer
+rather than an item 2h value position: it is admitted once on each path that
+leaves the callable, it MUST NOT record an item 2h use, and it MAY name a finite
+struct-field projection of the callable's binding root.
 
 <a id="GNT-6.2e"></a>
 
@@ -3537,10 +3542,10 @@ remains permitted. A loan is acquired only by a call whose receiver place is
 admitted: a failed admission changes nothing and acquires no loan. Every
 admitted loan is released when its call returns or fails; the loan rules that
 unwind, cancellation, suspension, and task or channel affinity add remain
-excluded, as do live-resource loans, general argument loans, partial moves and
-pattern commit, staging and transfer linearization outside the receiver
-positions above, and unwind disposition. The exclusions of items 2b and 2d
-continue to apply.
+excluded, as do live-resource loans, general argument loans, staging and
+transfer linearization for operand positions other than the receiver positions
+above and the return operand item 2d defines, and unwind disposition. The
+exclusions of items 2b and 2d continue to apply.
 
 <a id="GNT-6.2g"></a>
 2g. A **partial move** is a transfer of a value out of a place that is not its
@@ -3600,8 +3605,8 @@ and never clears a place the ledger has already recorded, so a later read of a
 destination that was already used, or of a destination that contains or is
 contained in a used place, MUST be rejected exactly as item 2e requires.
 
-A value position naming a `MustConsume` place is a copy and MUST be rejected by
-item 2d's copy rule, which admits only its two consumption dispositions.
+A value position naming a `MustConsume` place is a copy and MUST be rejected
+by item 2d's copy rule, whose `return` operand is a consumption transfer.
 
 Loans taken as arguments, task or channel transfer, resources, and the unwind,
 cancellation, and suspension duties the other items of this section own remain

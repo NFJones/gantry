@@ -4117,6 +4117,77 @@ fn owned_classes_have_no_isolated_task_capture_contract() {
     }
 }
 
+/// A `MustConsume` `return` operand is a consumption transfer rather than a value-position read.
+///
+/// The transfer is admitted once on each path that leaves the callable, so exclusive branches MAY
+/// each return the same place, and the operand MAY name a struct-field projection of the callable's
+/// binding root. An `AffineDroppable` return operand stays the item 2h read, so returning the same
+/// place twice, or reading it on one path and returning it on another, stays a reuse.
+#[test]
+fn must_consume_return_operand_is_a_consumption_transfer() {
+    for source in [
+        "must_consume struct Guard { v: Int }\nfn pass(g: Guard) -> Guard { return g; }\nfn main() -> Int { 0 }",
+        "must_consume struct Guard { v: Int }\nfn pass(g: Guard, b: Bool) -> Guard {\n    if b { return g; }\n    return g;\n}\nfn main() -> Int { 0 }",
+        "must_consume struct Guard { v: Int }\nstruct Holder { g: Guard, n: Int }\nfn take(h: Holder) -> Guard { return h.g; }\nfn main() -> Int { 0 }",
+        "affine struct Token { v: Int }\nfn pass(t: Token) -> Token { return t; }\nfn main() -> Int { 0 }",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            package.diagnostics()
+        );
+    }
+
+    for (code, source) in [
+        (
+            "affine-value-reuse",
+            "affine struct Token { v: Int }\nfn pass(t: Token, b: Bool) -> Token {\n    if b { return t; }\n    return t;\n}\nfn main() -> Int { 0 }",
+        ),
+        (
+            "affine-value-reuse",
+            "affine struct Token { v: Int }\nfn pass(t: Token, b: Bool) -> Token {\n    if b { discard t; }\n    return t;\n}\nfn main() -> Int { 0 }",
+        ),
+        (
+            "affine-value-reuse",
+            "affine struct Token { v: Int }\nstruct Wallet { t: Token, n: Int }\nfn pass(w: Wallet, b: Bool) -> Token {\n    if b { return w.t; }\n    return w.t;\n}\nfn main() -> Int { 0 }",
+        ),
+        (
+            "must-consume-copy",
+            "must_consume struct Guard { v: Int }\nfn pass(g: Guard) -> Int { let u: Guard = g; 0 }\nfn main() -> Int { 0 }",
+        ),
+        (
+            "must-consume-discard",
+            "must_consume struct Guard { v: Int }\nfn drop_it(g: Guard) -> Int { discard g; 0 }\nfn main() -> Int { 0 }",
+        ),
+        (
+            "must-consume-copy",
+            "must_consume struct Guard { v: Int }\nfn read_it(g: Guard) -> Int { g.v }\nfn main() -> Int { 0 }",
+        ),
+        (
+            "must-consume-path-dependent",
+            "must_consume struct Guard { v: Int }\nimpl Guard { fn consume(owned self) {} }\nfn maybe(g: Guard, b: Bool) -> Int {\n    if b { g.consume(); }\n    0\n}\nfn main() -> Int { 0 }",
+        ),
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "{source}: {code}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+}
+
 /// Rejects `source` with `code` and requires the primary span to start at the single `marker`
 /// occurrence, which pins the value position the report blames.
 fn assert_affine_rejected_at(source: &str, code: &str, marker: &str) {

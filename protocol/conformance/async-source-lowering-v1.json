@@ -10,11 +10,11 @@
   },
   {
    "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-   "sha256": "de15e30637ebcb07649394955a85a60a3d2861f010effc1c703466ea611c28e8"
+   "sha256": "78cb612b3f389a07663eda682c3cae0a30aa6e4fc282f1e021f86cabe4921e0d"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "1d778095f1dcb025bed8b5a909a8ddb992559d43f82e7375778e6651d90cd138"
+   "sha256": "950cfd41374586afb9ba1692bb3335cbcfa8475be81599ba0bd43e09403e518d"
   }
  ],
  "capabilities": [
@@ -77,5 +77,5 @@
    "requirement": "GNT-15.8"
   }
  ],
- "specification_sha256": "21a2f4d7d7f94393280547973852b372e18a7d2913c151efcc9c8f3958c14ad1"
+ "specification_sha256": "074fca3d99c89ee25b75d54446bf57ffd5f06dd9c98ebca10fae4a2e2028d0f9"
 }
