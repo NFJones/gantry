@@ -1240,7 +1240,7 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         code: "exclusive-reborrow-subplace",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
-        meaning: "A nested `exclusive self` reborrow does not select a strict struct-field subplace.",
+        meaning: "A nested `exclusive self` reborrow of an enclosing admitted caller place does not select a strict struct-field subplace of that place.",
     },
     DiagnosticCodeDefinition {
         code: "exclusive-receiver-immutable",
@@ -1252,7 +1252,7 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         code: "exclusive-receiver-place",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
-        meaning: "An `exclusive self` call receiver is not a mutable binding root or struct-field receiver place.",
+        meaning: "An `exclusive self` call receiver is not an admitted caller place of the calling frame: neither a mutable binding root nor a struct-field projection from one.",
     },
     DiagnosticCodeDefinition {
         code: "exclusive-receiver-scope",

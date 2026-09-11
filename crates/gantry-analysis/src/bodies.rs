@@ -1892,6 +1892,21 @@ fn method_receiver_mode(
     }
 }
 
+/// Returns the receiver mode of the innermost callable containing `span`.
+///
+/// The enclosing callable's mode decides whether `self` names an admitted caller
+/// place, so a nested `exclusive self` reborrow can tell the enclosing admitted
+/// place from a callee-local receiver binding.
+fn enclosing_callable_receiver_mode(
+    tree: &SyntaxTree,
+    span: &SourceSpan,
+) -> Result<Option<ReceiverMode>, AnalysisError> {
+    let Some(callable) = enclosing_callable_node(tree, span) else {
+        return Ok(None);
+    };
+    method_receiver_mode(tree, callable).map(Some)
+}
+
 fn callable_result(
     tree: &SyntaxTree,
     callable: NodeId,
@@ -3516,22 +3531,29 @@ fn assignment_targets_sealed_member(
     identifiers.len() > 1 && environment.get(root) == Some(&TypeDescriptor::DECISION)
 }
 
+/// Returns the innermost function or method declaration containing `span`.
+fn enclosing_callable_node(tree: &SyntaxTree, span: &SourceSpan) -> Option<NodeId> {
+    tree.nodes()
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| {
+            matches!(
+                node.form(),
+                SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
+            ) && span_contains(node.span(), span)
+        })
+        .min_by_key(|(_, node)| span_width(node.span()))
+        .map(|(index, _)| NodeId::from_index(index))
+}
+
 fn assignment_root_is_mutable(
     tree: &SyntaxTree,
     assignment: &SourceSpan,
     root: &Arc<str>,
     receiver: bool,
 ) -> Result<bool, AnalysisError> {
-    let Some(callable) = tree
-        .nodes()
-        .iter()
-        .filter(|node| {
-            matches!(
-                node.form(),
-                SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
-            ) && span_contains(node.span(), assignment)
-        })
-        .min_by_key(|node| span_width(node.span()))
+    let Some(callable) =
+        enclosing_callable_node(tree, assignment).and_then(|callable| tree.node(callable))
     else {
         return Ok(false);
     };
@@ -6242,7 +6264,7 @@ fn diagnose_projected_shared_receiver_place(
         let (code, message) = match metadata.receiver_mode {
             ReceiverMode::ExclusivePlace => (
                 "exclusive-receiver-place",
-                "`exclusive self` requires a mutable binding root or struct-field receiver place",
+                "`exclusive self` requires an admitted caller place: a mutable binding root of the calling frame or a struct-field projection from one",
             ),
             ReceiverMode::Owned => (
                 "owned-receiver-scope",
@@ -6746,7 +6768,7 @@ fn infer_member_sequence(
                         ),
                         _ => (
                             "exclusive-receiver-place",
-                            "`exclusive self` requires a mutable binding root or struct-field receiver place",
+                            "`exclusive self` requires an admitted caller place: a mutable binding root of the calling frame or a struct-field projection from one",
                         ),
                     },
                     ReceiverMode::Owned => (
@@ -7056,19 +7078,21 @@ fn postfix_shared_receiver_place(
 
 /// Admission outcome for one `exclusive self` call receiver place.
 ///
-/// Item 2f admits a caller place only for a mutable binding root or, inside an
-/// `exclusive self` method, a strict struct-field reborrow of the enclosing
-/// admitted place. Each failure cause is retained so the call site can report it.
+/// Item 2f admits a caller place only for a mutable binding root of the calling
+/// frame or, inside a `shared self` or `exclusive self` method, a strict
+/// struct-field reborrow of the enclosing admitted place. Each failure cause is
+/// retained so the call site can report it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ExclusiveReceiverAdmission {
     /// The receiver is an admitted caller place.
     Admitted,
-    /// The receiver expression is not a caller place at all.
+    /// The receiver is not an admitted caller place: neither a mutable binding root
+    /// of the calling frame nor a struct-field projection from one.
     NotACallerPlace,
     /// The receiver place root is not a mutable binding.
     ImmutableRoot,
-    /// The receiver is the enclosing admitted place rather than a strict struct-field
-    /// subplace of it.
+    /// The receiver is the enclosing callable's own admitted caller place rather than
+    /// a strict struct-field subplace of that place.
     NotAStrictStructFieldSubplace,
 }
 
@@ -7119,10 +7143,19 @@ fn postfix_exclusive_receiver_place(
             if !assignment_root_is_mutable(tree, call, &Arc::from("self"), true)? {
                 return Ok(ExclusiveReceiverAdmission::ImmutableRoot);
             }
-            return Ok(if method_dot.is_some_and(|dot| dot > 1) {
-                ExclusiveReceiverAdmission::Admitted
-            } else {
+            if method_dot.is_some_and(|dot| dot > 1) {
+                return Ok(ExclusiveReceiverAdmission::Admitted);
+            }
+            // Only a `shared self` or `exclusive self` method binds `self` to the
+            // admitted caller place; an `owned self`, `mut self`, or plain `self`
+            // method binds a copy or an owned value, so `self` itself is never an
+            // admitted caller place and the failure is not a reborrow subplace.
+            let reborrows_enclosing_place = enclosing_callable_receiver_mode(tree, call)?
+                .is_some_and(ReceiverMode::requires_caller_place);
+            return Ok(if reborrows_enclosing_place {
                 ExclusiveReceiverAdmission::NotAStrictStructFieldSubplace
+            } else {
+                ExclusiveReceiverAdmission::NotACallerPlace
             });
         }
         work.extend(node.children().iter().rev().copied());

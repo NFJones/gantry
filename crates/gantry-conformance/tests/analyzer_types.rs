@@ -375,42 +375,56 @@ fn public_exclusive_receiver_admission_is_scoped_to_mutable_monomorphic_inherent
 }
 
 /// A nested `exclusive self` reborrow must select a strict struct-field subplace of the
-/// enclosing admitted place, and each exclusive admission failure keeps its own code
-/// (item 2f).
+/// enclosing admitted place, while a receiver binding that admits no caller place is
+/// rejected with its own cause code (item 2f).
 #[test]
 fn public_exclusive_reborrow_requires_a_strict_struct_field_subplace() {
-    let accepted = analyze(
+    for source in [
         "struct Counter { value: Int } struct Holder { counter: Counter } impl Counter { fn increment(exclusive self) { self.value += 1; } } impl Holder { fn bump(exclusive self) { self.counter.increment(); } } fn main() -> Int { let mut holder: Holder = Holder { counter: Counter { value: 1 } }; holder.bump(); holder.counter.value }",
-    );
-    assert_eq!(
-        accepted.status(),
-        AnalysisStatus::Valid,
-        "{:?}",
-        accepted.diagnostics()
-    );
-    assert!(
-        accepted.diagnostics().is_empty(),
-        "{:?}",
-        accepted.diagnostics()
-    );
-    assert!(accepted.executable_program().is_some());
+        // A `mut self` receiver binds a mutable local copy, so a strict struct-field
+        // subplace of that binding is still admitted.
+        "struct Counter { value: Int } struct Holder { counter: Counter } impl Counter { fn increment(exclusive self) { self.value += 1; } } impl Holder { fn bump(mut self) { self.counter.increment(); } } fn main() -> Int { let mut holder: Holder = Holder { counter: Counter { value: 1 } }; holder.bump(); holder.counter.value }",
+    ] {
+        let accepted = analyze(source);
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+        assert!(
+            accepted.diagnostics().is_empty(),
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+        assert!(accepted.executable_program().is_some());
+    }
 
     for (source, expected_code) in [
+        // An `owned self` or `mut self` receiver binding is not an admitted caller
+        // place, so the nested call reports the not-an-admitted-place cause.
         (
-            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(counter: Counter) { counter.increment(); }",
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } fn take(owned self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
+            "exclusive-receiver-place",
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } fn bump(mut self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
+            "exclusive-receiver-place",
+        ),
+        // A plain `self` receiver is an immutable local copy, so its place root is
+        // reported immutable, as is the enclosing root of a `shared self` method.
+        (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } fn probe(self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
             "exclusive-receiver-immutable",
         ),
         (
+            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } fn peek(shared self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
+            "exclusive-receiver-immutable",
+        ),
+        // The enclosing admitted place itself is not a strict struct-field subplace.
+        (
             "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
             "exclusive-reborrow-subplace",
-        ),
-        (
-            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main() { Counter { value: 1 }.increment(); }",
-            "exclusive-receiver-place",
-        ),
-        (
-            "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: Option<Counter>) { if let Some(counter) = state { discard counter.increment(); } }",
-            "exclusive-receiver-place",
         ),
     ] {
         let rejected = analyze(source);
@@ -422,6 +436,13 @@ fn public_exclusive_reborrow_requires_a_strict_struct_field_subplace() {
         );
         assert_eq!(
             receiver_family_codes(rejected.diagnostics()),
+            [expected_code],
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        // Each shape reports exactly one diagnostic, so the complete list is asserted.
+        assert_eq!(
+            diagnostic_codes(rejected.diagnostics()),
             [expected_code],
             "{source}: {:?}",
             rejected.diagnostics()
@@ -2275,6 +2296,14 @@ fn receiver_family_codes(diagnostics: &[gantry::source::StructuredDiagnostic]) -
                 || code.starts_with("shared-receiver-")
                 || code.starts_with("owned-receiver-")
         })
+        .collect()
+}
+
+/// Every diagnostic code reported for one analyzed package.
+fn diagnostic_codes(diagnostics: &[gantry::source::StructuredDiagnostic]) -> Vec<&str> {
+    diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code.as_str())
         .collect()
 }
 
