@@ -2363,6 +2363,107 @@ fn assert_affine_accepted(source: &str) {
     );
 }
 
+/// The affinity ledger keys places by binding root and struct-field path: a transferred subplace,
+/// every place containing or contained in it, and the marked place itself are rejected, while an
+/// unrelated sibling place stays readable and assignable.
+#[test]
+fn affine_place_ledger_keys_places_and_keeps_siblings_usable() {
+    let header = "affine struct Leaf { value: Int }\n\
+                  struct Holder { leaf: Leaf, other: Int }\n\
+                  struct Outer { inner: Holder }\n\
+                  fn make() -> Holder { Holder { leaf: Leaf { value: 1 }, other: 2 } }\n\
+                  fn make_outer() -> Outer { Outer { inner: Holder { leaf: Leaf { value: 1 }, other: 2 } } }\n";
+    // An unrelated sibling projection stays readable and assignable after the transfer.
+    for accepted in [
+        "fn main() -> Int {\n\
+             let holder: Holder = make();\n\
+             let first: Leaf = holder.leaf;\n\
+             holder.other\n\
+         }",
+        "fn main() -> Int {\n\
+             let mut holder: Holder = make();\n\
+             let first: Leaf = holder.leaf;\n\
+             holder.other = 5;\n\
+             holder.other\n\
+         }",
+        // A sibling at any depth is unaffected.
+        "fn main() -> Int {\n\
+             let outer: Outer = make_outer();\n\
+             let first: Leaf = outer.inner.leaf;\n\
+             outer.inner.other\n\
+         }",
+        // Assignment stays admitted for the marked place itself.
+        "fn main() -> Int {\n\
+             let mut holder: Holder = make();\n\
+             let first: Leaf = holder.leaf;\n\
+             holder.leaf = Leaf { value: 3 };\n\
+             holder.other\n\
+         }",
+    ] {
+        assert_affine_accepted(&format!("{header}{accepted}"));
+    }
+
+    for rejected in [
+        // The marked place, a place contained in it, and every place containing it.
+        "fn main() -> Int {\n\
+             let holder: Holder = make();\n\
+             let first: Leaf = holder.leaf;\n\
+             let second: Leaf = holder.leaf;\n\
+             first.value + second.value\n\
+         }",
+        "fn main() -> Int {\n\
+             let holder: Holder = make();\n\
+             let first: Leaf = holder.leaf;\n\
+             holder.leaf.value\n\
+         }",
+        "fn main() -> Int {\n\
+             let holder: Holder = make();\n\
+             let first: Leaf = holder.leaf;\n\
+             discard holder;\n\
+             first.value\n\
+         }",
+        "fn main() -> Int {\n\
+             let outer: Outer = make_outer();\n\
+             let first: Leaf = outer.inner.leaf;\n\
+             discard outer;\n\
+             first.value\n\
+         }",
+        // A moved binding root makes every place under it unreadable.
+        "fn main() -> Int {\n\
+             let holder: Holder = make();\n\
+             let whole: Holder = holder;\n\
+             holder.other\n\
+         }",
+        // A mark survives assignment to the marked place and to its binding root.
+        "fn main() -> Int {\n\
+             let mut holder: Holder = make();\n\
+             let first: Leaf = holder.leaf;\n\
+             holder.leaf = Leaf { value: 3 };\n\
+             holder.leaf.value\n\
+         }",
+        "fn main() -> Int {\n\
+             let mut holder: Holder = make();\n\
+             let first: Leaf = holder.leaf;\n\
+             holder = make();\n\
+             holder.leaf.value\n\
+         }",
+        // A transfer inside a loop body is a potentially repeated transfer.
+        "fn main(count: Int) -> Int {\n\
+             let holder: Holder = make();\n\
+             let mut total: Int = 0;\n\
+             let mut index: Int = 0;\n\
+             while index < count {\n\
+                 let first: Leaf = holder.leaf;\n\
+                 total += first.value;\n\
+                 index = index + 1;\n\
+             }\n\
+             total\n\
+         }",
+    ] {
+        assert_affine_rejected(&format!("{header}{rejected}"), "affine-value-reuse");
+    }
+}
+
 /// The affine move ledger keys `(root, field path)` places, so a repeated owned move and a read of
 /// an already-moved place — including through a struct-field projection — are rejected.
 #[test]

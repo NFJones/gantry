@@ -3482,6 +3482,22 @@ discarded, MUST survive the frame that staged it, MUST be reconstructible from
 checkpointed state, and MUST remain observable with the task's settled
 evidence. Live resources, loans and reborrowing, partial moves, and task or
 channel transfer remain excluded.
+
+<a id="GNT-6.2e"></a>
+
+2e. An affinity ledger **place** is identified by a binding root together with
+the ordered sequence of struct-field projections from that root. Transferring
+an `AffineDroppable` or `MustConsume` value out of a projection marks exactly
+that place and binds the transferred value; it is never a copy of the projected
+value. While a place is marked, that place, every place contained in it, and
+every place that contains it MUST NOT be read, and each such read MUST be
+rejected at analysis time. A place that neither contains nor is contained in a
+marked place remains readable. Assignment is admitted for every place,
+including a marked place and a place containing one, and never clears a mark
+by itself: a mark remains in force for the lifetime of its binding root, an
+analysis MAY clear a mark only when it proves the place re-initialized, and
+MUST reject any read it cannot prove initialized. A transfer inside a loop
+body is potentially repeated and MUST be rejected as a repeated transfer.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
