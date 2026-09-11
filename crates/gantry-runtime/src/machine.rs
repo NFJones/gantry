@@ -815,6 +815,12 @@ impl MovedPlace {
 /// `Load` records the place it read and every `Project` extends that record, so a projection into
 /// a moved-out subplace of an enclosing place can be detected even though reading the enclosing
 /// place itself stays legal. The stack runs in lockstep with the staged value stack.
+///
+/// The origin is a read-guard hint, not an integrity mechanism. A runtime-produced checkpoint
+/// carries the same origin list, and recovery restores it so the guard fires after resume, but a
+/// forged or stripped origin is only a consistency concern: an adversary who can rewrite
+/// checkpoint bytes can at most lose the guard optimization or be rejected. As with the moved-out
+/// mark, recovery never derives a caller binding from this record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LoadedPlace {
     root: Arc<str>,
@@ -940,6 +946,13 @@ pub struct MachineCheckpointV3 {
     limits: MachineLimits,
     frames: Vec<WorkflowFrame>,
     values: Vec<LogicalValue>,
+    /// Read-guard hints: the place origin of each staged value, in stack order.
+    ///
+    /// The list runs in lockstep with `values`. One origin is a read-guard hint for the projection
+    /// guard rather than an integrity mechanism: a forged or missing origin on a runtime-produced
+    /// checkpoint is a consistency concern, and an adversary who can rewrite checkpoint bytes can
+    /// only disable the guard optimization or be rejected, never change the recovered bindings.
+    values_places: Vec<Option<LoadedPlace>>,
     occurrences: Vec<Arc<str>>,
     counters: BTreeMap<String, u64>,
     source_loop_entries: BTreeMap<String, u64>,
@@ -1445,14 +1458,15 @@ impl MachineCheckpointV3 {
 
     /// Encodes this checkpoint with the oldest exact machine wire representation.
     ///
-    /// Legacy-representable state retains `GNTMCP03`; task-control state uses
-    /// the successor `GNTMCP04` representation.
+    /// Legacy-representable state retains `GNTMCP03`; task-control state uses the successor
+    /// `GNTMCP04` representation, and a recorded staged place origin uses the successor `GNTMCP08`
+    /// representation.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         encode_machine_checkpoint(self)
     }
 
-    /// Decodes one exact `GNTMCP03` through `GNTMCP07` checkpoint.
+    /// Decodes one exact `GNTMCP03` through `GNTMCP08` checkpoint.
     pub fn decode(program: &MachineProgram, bytes: &[u8]) -> Result<Self, MachineRecoveryError> {
         decode_machine_checkpoint(program, bytes)
     }
@@ -2043,6 +2057,7 @@ impl Machine {
             limits: self.limits,
             frames: self.frames.clone(),
             values: self.values.clone(),
+            values_places: self.values_places.clone(),
             occurrences: self.occurrences.clone(),
             counters: self.counters.clone(),
             source_loop_entries: self.source_loop_entries.clone(),
@@ -2129,10 +2144,10 @@ impl Machine {
             limits: checkpoint.limits,
             execution_budget,
             frames: checkpoint.frames,
-            // A checkpoint does not carry place origins, so every staged value resumes without a
-            // recorded origin: the projection guard then behaves exactly as it does for a value
-            // that never came from a place.
-            values_places: vec![None; checkpoint.values.len()],
+            // Staged values resume with the place origins the checkpoint recorded, so the
+            // projection guard still fires after recovery. A wire form that cannot carry origins
+            // resumes every staged value without one.
+            values_places: checkpoint.values_places,
             values: checkpoint.values,
             occurrences: checkpoint.occurrences,
             counters: checkpoint.counters,

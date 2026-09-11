@@ -5163,6 +5163,253 @@ fn moved_out_section_follows_the_staged_move_section() {
     ));
 }
 
+/// The V8 staged-place-origin section is written last, so the bytes from its magic to the end of
+/// the checkpoint are exactly that section. These helpers rebuild it byte for byte so the codec
+/// negatives below exercise real encodings; the fixtures used here record empty canonical paths,
+/// which keeps the test-local section writer trivial.
+#[cfg(feature = "durable")]
+const PLACE_ORIGINS_SECTION_MAGIC: &[u8] = b"GNTLOA01";
+
+#[cfg(feature = "durable")]
+fn place_origins_section(entries: &[Option<&str>]) -> Vec<u8> {
+    let mut section = PLACE_ORIGINS_SECTION_MAGIC.to_vec();
+    section.extend_from_slice(&(entries.len() as u64).to_be_bytes());
+    for entry in entries {
+        match entry {
+            None => section.push(0),
+            Some(root) => {
+                section.push(1);
+                section.extend_from_slice(&(root.len() as u64).to_be_bytes());
+                section.extend_from_slice(root.as_bytes());
+                section.extend_from_slice(&0_u64.to_be_bytes());
+            }
+        }
+    }
+    section
+}
+
+#[cfg(feature = "durable")]
+fn resplice_place_origins_section(bytes: &[u8], section: &[u8]) -> Vec<u8> {
+    let offset = section_offset(bytes, PLACE_ORIGINS_SECTION_MAGIC);
+    let mut rewritten = bytes[..offset].to_vec();
+    rewritten.extend_from_slice(section);
+    rewritten
+}
+
+/// A checkpoint taken between `Load` and `Project` while a moved-out mark is live records the
+/// staged place origin, so the resumed machine still refuses the projection of the moved-out
+/// subplace instead of serving the stale pre-move value.
+#[cfg(feature = "durable")]
+#[test]
+fn staged_origin_survives_recovery_and_guards_projection() {
+    let program = partial_move_token_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    // Four transitions complete the owned move and the fifth loads the enclosing `holder` place,
+    // so the checkpoint sits strictly between that `Load` and the following `Project`.
+    step_deterministic(&mut machine, 5);
+    let checkpoint = machine.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("staged-origin checkpoint decode failed: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("staged-origin budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(Arc::clone(&program), decoded, budget)
+        .unwrap_or_else(|error| panic!("staged-origin recovery failed: {error:?}"));
+    // The recovered guard still fires at the projection of the moved-out subplace. Without the
+    // origin list in the checkpoint the resumed machine served the stale pre-move value here.
+    assert!(
+        matches!(
+            drive(&mut recovered),
+            MachineOutcome::Failed(failure)
+                if failure.code == RuntimeCode::InternalInvariant && failure.site == site(2)
+        ),
+        "a recovered machine must refuse the projection of a moved-out subplace"
+    );
+    assert_eq!(
+        bytes.get(..8),
+        Some(b"GNTMCP08".as_slice()),
+        "a recorded staged origin selects the V8 wire form"
+    );
+    // The uninterrupted machine fails at the same site, so the cut is faithful.
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Failed(failure)
+            if failure.code == RuntimeCode::InternalInvariant && failure.site == site(2)
+    ));
+}
+
+/// A V8 checkpoint carrying staged place origins round-trips canonically, keeps its origin section
+/// last, and recovers both the guard and a surviving-sibling projection.
+#[cfg(feature = "durable")]
+#[test]
+fn staged_origin_section_round_trips() {
+    let program = partial_move_token_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 5);
+    let checkpoint = machine.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP08".as_slice()));
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("staged-origin round-trip decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    assert_eq!(decoded.canonical_bytes(), bytes);
+    // The origin section is present exactly once and last, and it records the loaded `holder`
+    // origin above the callee result that carries no origin.
+    let origins = section_offset(&bytes, PLACE_ORIGINS_SECTION_MAGIC);
+    let expected = place_origins_section(&[None, Some("holder")]);
+    assert_eq!(&bytes[origins..], expected.as_slice());
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("staged-origin budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(Arc::clone(&program), decoded, budget)
+        .unwrap_or_else(|error| panic!("staged-origin recovery failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Failed(failure)
+            if failure.code == RuntimeCode::InternalInvariant && failure.site == site(2)
+    ));
+}
+
+/// A projected origin path round-trips, and the recovered machine still reads a surviving sibling
+/// of a partial move.
+#[cfg(feature = "durable")]
+#[test]
+fn staged_origin_path_round_trips_for_a_surviving_sibling() {
+    let program = partial_move_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    // The sixth transition projects the surviving sibling `holder.marker`, so the recorded origin
+    // carries a non-empty canonical path above the live `holder.token` moved-out mark.
+    step_deterministic(&mut machine, 6);
+    let checkpoint = machine.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP08".as_slice()));
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("staged-origin path decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    assert_eq!(decoded.canonical_bytes(), bytes);
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("staged-origin path budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(Arc::clone(&program), decoded, budget)
+        .unwrap_or_else(|error| panic!("staged-origin path recovery failed: {error:?}"));
+    let expected = MachineOutcome::Succeeded(LogicalValue::integer(
+        GantryInt::new(10).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    ));
+    assert_eq!(drive(&mut recovered), expected);
+    assert_eq!(drive(&mut machine), expected);
+}
+
+/// The staged-place-origin section rejects malformed encodings, and a declared count that does not
+/// match the staged values is a program mismatch rather than an encoding error.
+#[cfg(feature = "durable")]
+#[test]
+fn staged_origin_section_rejects_malformed_encodings() {
+    let program = partial_move_token_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 5);
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP08".as_slice()));
+    let offset = section_offset(&bytes, PLACE_ORIGINS_SECTION_MAGIC);
+
+    // Truncated section.
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &bytes[..offset + 12]),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Missing section.
+    let mut missing = bytes.clone();
+    missing[offset..offset + PLACE_ORIGINS_SECTION_MAGIC.len()].copy_from_slice(b"GNTLOA02");
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &missing),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Duplicated section: the mandatory origin section must be last, so trailing bytes fail.
+    let mut doubled = bytes.clone();
+    doubled.extend_from_slice(&place_origins_section(&[None, Some("holder")]));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &doubled),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // Empty root in a present origin.
+    let empty_root =
+        resplice_place_origins_section(&bytes, &place_origins_section(&[None, Some("")]));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &empty_root),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    // A declared count that disagrees with the staged values.
+    let miscounted =
+        resplice_place_origins_section(&bytes, &place_origins_section(&[Some("holder")]));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &miscounted),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+}
+
+/// A machine with no recorded place origin never selects the V8 wire form.
+#[cfg(feature = "durable")]
+#[test]
+fn staged_origin_section_stays_absent_without_a_load() {
+    // A live moved-out mark without a staged load keeps the V7 wire form.
+    let program = partial_move_token_program();
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![holder_value(7, 3)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 4);
+    let moved_out = machine.checkpoint().canonical_bytes();
+    assert_eq!(moved_out.get(..8), Some(b"GNTMCP07".as_slice()));
+    assert!(
+        moved_out
+            .windows(PLACE_ORIGINS_SECTION_MAGIC.len())
+            .all(|window| window != PLACE_ORIGINS_SECTION_MAGIC),
+        "the V7 wire form must not carry the origin section"
+    );
+
+    // A live staging entry without a staged load keeps the V6 wire form.
+    let program = owned_move_program(
+        token_parameter("token"),
+        "token",
+        Vec::new(),
+        TypeDescriptor::INT,
+        vec![
+            int_push(0, 7),
+            instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    step_deterministic(&mut machine, 1);
+    assert_eq!(
+        machine.checkpoint().canonical_bytes().get(..8),
+        Some(b"GNTMCP06".as_slice())
+    );
+}
+
 /// A `crate::Holder` fixture value with the given `token.value` and `marker`.
 #[cfg(feature = "durable")]
 fn holder_value(token: i64, marker: i64) -> LogicalValue {

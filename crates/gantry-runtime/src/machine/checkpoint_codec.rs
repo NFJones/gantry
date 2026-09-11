@@ -18,8 +18,8 @@ use gantry_ir::{
 };
 
 use super::{
-    Binding, ExecutionBudgetSnapshot, MachineCheckpointV3, MachineFailure, MachineLabel,
-    MachineLimits, MachineOutcome, MachineRecoveryError, MachineStatus, MovedPlace,
+    Binding, ExecutionBudgetSnapshot, LoadedPlace, MachineCheckpointV3, MachineFailure,
+    MachineLabel, MachineLimits, MachineOutcome, MachineRecoveryError, MachineStatus, MovedPlace,
     OperationOccurrence, PendingOperation, PlaceInitialization, RuntimeCode, Scope,
     SessionCreationModeV1, SessionScopeOccurrence, SharedPlaceAdmission, WorkflowFrame,
     validate_execution_budget_snapshot, validate_machine_checkpoint,
@@ -50,6 +50,12 @@ const MACHINE_MAGIC_V6: &[u8; 8] = b"GNTMCP06";
 /// deliberate rather than accidental: the format is published once the durable projection
 /// registers it.
 const MACHINE_MAGIC_V7: &[u8; 8] = b"GNTMCP07";
+/// The V8 wire form and its staged-place-origin section stay private for now, for the same reason
+/// as V7: neither `GNTMCP08` nor `GNTLOA01` is registered in
+/// `protocol/catalogs/public-formats-v1.json`, which also omits V5 through V7, so the deferral is
+/// deliberate rather than accidental: the format is published once the durable projection
+/// registers it.
+const MACHINE_MAGIC_V8: &[u8; 8] = b"GNTMCP08";
 const EXECUTION_BUDGET_MAGIC: &[u8; 8] = b"GNTBGT01";
 #[cfg(feature = "concurrent")]
 const TASK_CONTROL_EXTENSION_MAGIC: &[u8; 8] = b"GNTMTC01";
@@ -58,6 +64,7 @@ const TASK_CONTROL_EXTENSION_MAGIC_V2: &[u8; 8] = b"GNTMTC02";
 const SHARED_RECEIVER_EXTENSION_MAGIC: &[u8; 8] = b"GNTSRA01";
 const PLACE_INITIALIZATION_EXTENSION_MAGIC: &[u8; 8] = b"GNTSTG01";
 const MOVED_OUT_EXTENSION_MAGIC: &[u8; 8] = b"GNTRMO01";
+const PLACE_ORIGINS_EXTENSION_MAGIC: &[u8; 8] = b"GNTLOA01";
 
 pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapshot) -> Vec<u8> {
     let mut writer = Writer::default();
@@ -111,7 +118,13 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         .frames
         .iter()
         .any(|frame| !frame.moved_out.is_empty());
-    writer.raw(if moved_out {
+    // Any recorded place origin needs the V8 origin section, so V8 takes precedence over every
+    // older wire form. A machine whose staged values never came from a place keeps its older,
+    // shorter encoding.
+    let staged_origins = checkpoint.values_places.iter().any(Option::is_some);
+    writer.raw(if staged_origins {
+        MACHINE_MAGIC_V8
+    } else if moved_out {
         MACHINE_MAGIC_V7
     } else if place_initialization {
         MACHINE_MAGIC_V6
@@ -168,8 +181,8 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         checkpoint.outcome.as_ref(),
         checkpoint.limits.value_limits,
     );
-    if moved_out {
-        let mut extension_count = 1_usize;
+    if staged_origins || moved_out || place_initialization || shared_receiver {
+        let mut extension_count = 0_usize;
         #[cfg(feature = "concurrent")]
         if successor {
             extension_count += 1;
@@ -178,6 +191,12 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
             extension_count += 1;
         }
         if place_initialization {
+            extension_count += 1;
+        }
+        if moved_out {
+            extension_count += 1;
+        }
+        if staged_origins {
             extension_count += 1;
         }
         writer.count(extension_count);
@@ -191,32 +210,12 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         if place_initialization {
             write_place_initialization_extension(&mut writer, checkpoint);
         }
-        write_moved_out_extension(&mut writer, checkpoint);
-    } else if place_initialization {
-        let mut extension_count = 1_usize;
-        #[cfg(feature = "concurrent")]
-        if successor {
-            extension_count += 1;
+        if moved_out {
+            write_moved_out_extension(&mut writer, checkpoint);
         }
-        if shared_receiver {
-            extension_count += 1;
+        if staged_origins {
+            write_place_origins_extension(&mut writer, checkpoint);
         }
-        writer.count(extension_count);
-        #[cfg(feature = "concurrent")]
-        if successor {
-            write_task_control_extension(&mut writer, checkpoint);
-        }
-        if shared_receiver {
-            write_shared_receiver_extension(&mut writer, checkpoint);
-        }
-        write_place_initialization_extension(&mut writer, checkpoint);
-    } else if shared_receiver {
-        writer.count(usize::from(successor) + 1);
-        #[cfg(feature = "concurrent")]
-        if successor {
-            write_task_control_extension(&mut writer, checkpoint);
-        }
-        write_shared_receiver_extension(&mut writer, checkpoint);
     } else {
         #[cfg(feature = "concurrent")]
         if successor {
@@ -254,6 +253,7 @@ pub(super) fn decode_machine_checkpoint(
         magic if magic == MACHINE_MAGIC_V5 => 5_u8,
         magic if magic == MACHINE_MAGIC_V6 => 6_u8,
         magic if magic == MACHINE_MAGIC_V7 => 7_u8,
+        magic if magic == MACHINE_MAGIC_V8 => 8_u8,
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     };
     let execution = reader.identity(Some(IdentityKind::Execution))?;
@@ -301,6 +301,9 @@ pub(super) fn decode_machine_checkpoint(
     let mut task_body = None;
     #[cfg(feature = "concurrent")]
     let mut pending_task_control = None;
+    // The staged-place-origin list is restored from the V8 section; versions 3 through 7 cannot
+    // carry it, so their staged values resume without a recorded origin.
+    let mut staged_places: Option<Vec<Option<LoadedPlace>>> = None;
     // The legacy versions 3 through 6 cannot carry the moved-out mark: a completed owned move is
     // always encoded as V7. A stream whose sections do not parse as the version it claims therefore
     // cannot be a checkpoint this runtime produced for a frame that already executed an owned
@@ -450,6 +453,67 @@ pub(super) fn decode_machine_checkpoint(
                     return Err(MachineRecoveryError::InvalidCheckpoint);
                 }
             }
+            8 => {
+                // V8 extends V7 with a mandatory staged-place-origin section that is written last.
+                // The moved-out section stays optional here because a recorded origin, not the
+                // moved-out mark, is what selects V8; every other section keeps the V7 order,
+                // appears at most once, and the origin list is the final section. A missing,
+                // duplicated, or reordered section is a structurally impossible encoding rather
+                // than a recoverable mismatch.
+                let extension_count = reader.count()?;
+                let mut seen = 0_usize;
+                #[cfg(feature = "concurrent")]
+                {
+                    let magic = reader.peek(TASK_CONTROL_EXTENSION_MAGIC.len());
+                    if magic == TASK_CONTROL_EXTENSION_MAGIC
+                        || magic == TASK_CONTROL_EXTENSION_MAGIC_V2
+                    {
+                        let magic = reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())?;
+                        (task_body, pending_task_control) = read_task_control_extension(
+                            &mut reader,
+                            magic,
+                            &mut frames,
+                            limits.value_limits,
+                        )?;
+                        seen += 1;
+                    }
+                }
+                if reader.peek(SHARED_RECEIVER_EXTENSION_MAGIC.len())
+                    == SHARED_RECEIVER_EXTENSION_MAGIC
+                {
+                    reader.raw(SHARED_RECEIVER_EXTENSION_MAGIC.len())?;
+                    read_shared_receiver_extension(&mut reader, &mut frames)?;
+                    seen += 1;
+                }
+                if reader.peek(PLACE_INITIALIZATION_EXTENSION_MAGIC.len())
+                    == PLACE_INITIALIZATION_EXTENSION_MAGIC
+                {
+                    reader.raw(PLACE_INITIALIZATION_EXTENSION_MAGIC.len())?;
+                    read_place_initialization_extension(&mut reader, &mut frames)?;
+                    seen += 1;
+                }
+                if reader.peek(MOVED_OUT_EXTENSION_MAGIC.len()) == MOVED_OUT_EXTENSION_MAGIC {
+                    reader.raw(MOVED_OUT_EXTENSION_MAGIC.len())?;
+                    read_moved_out_extension(&mut reader, &mut frames)?;
+                    seen += 1;
+                }
+                if reader.peek(PLACE_ORIGINS_EXTENSION_MAGIC.len()) != PLACE_ORIGINS_EXTENSION_MAGIC
+                {
+                    return Err(MachineRecoveryError::InvalidCheckpoint);
+                }
+                reader.raw(PLACE_ORIGINS_EXTENSION_MAGIC.len())?;
+                let places = read_place_origins_extension(&mut reader)?;
+                seen += 1;
+                // A declared count that disagrees with the staged values is a mismatch with the
+                // machine state rather than a malformed encoding.
+                if places.len() != values.len() {
+                    return Err(MachineRecoveryError::ProgramMismatch);
+                }
+                staged_places = Some(places);
+                if seen != extension_count || !reader.is_empty() {
+                    return Err(MachineRecoveryError::InvalidCheckpoint);
+                }
+            }
             _ => unreachable!("machine checkpoint version is bounded"),
         }
         if !reader.is_empty() {
@@ -471,6 +535,9 @@ pub(super) fn decode_machine_checkpoint(
         pending.occurrence.metadata =
             task_body_operation_metadata(program, body_identity, &pending.occurrence.site);
     }
+    // Versions 3 through 7 cannot carry a staged-place origin, so their values resume with an
+    // absent origin for every stack slot.
+    let values_places = staged_places.unwrap_or_else(|| vec![None; values.len()]);
     let checkpoint = MachineCheckpointV3 {
         execution,
         task_id,
@@ -481,6 +548,7 @@ pub(super) fn decode_machine_checkpoint(
         limits,
         frames,
         values,
+        values_places,
         occurrences,
         counters,
         source_loop_entries,
@@ -804,6 +872,66 @@ fn read_moved_out_extension(
         frame.moved_out = entries;
     }
     Ok(())
+}
+
+/// Writes the deterministic staged-place-origin section.
+///
+/// The list runs in staged-stack order, which is the canonical order for this section, so equal
+/// machine state always yields identical bytes. Each entry is a present/absent tag for the value at
+/// the same stack index; a present entry records the place root and its canonical path segments.
+fn write_place_origins_extension(writer: &mut Writer, checkpoint: &MachineCheckpointV3) {
+    writer.raw(PLACE_ORIGINS_EXTENSION_MAGIC);
+    writer.count(checkpoint.values_places.len());
+    for place in &checkpoint.values_places {
+        match place {
+            Some(place) => {
+                writer.u8(1);
+                writer.string(&place.root);
+                write_shared_receiver_path(writer, &place.path);
+            }
+            None => writer.u8(0),
+        }
+    }
+}
+
+/// Reads the V8 staged-place-origin section.
+///
+/// The section is mandatory, self-describing, and last, and a lost origin would silently disable the
+/// projection guard, so truncation, a bogus length, an unknown tag, or an empty root is reported as a
+/// structurally impossible checkpoint rather than ignored. Whether the declared count matches the
+/// staged values is checked by the caller, because that disagreement is a mismatch with the machine
+/// state rather than a malformed encoding.
+fn read_place_origins_extension(
+    reader: &mut Reader<'_>,
+) -> Result<Vec<Option<LoadedPlace>>, MachineRecoveryError> {
+    let count = reader
+        .usize()
+        .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+    let mut places = Vec::with_capacity(count.min(reader.remaining()));
+    for _ in 0..count {
+        match reader
+            .u8()
+            .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?
+        {
+            0 => places.push(None),
+            1 => {
+                let root = reader
+                    .string()
+                    .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+                if root.is_empty() {
+                    return Err(MachineRecoveryError::InvalidCheckpoint);
+                }
+                let path = read_shared_receiver_path(reader)
+                    .map_err(|_| MachineRecoveryError::InvalidCheckpoint)?;
+                places.push(Some(LoadedPlace {
+                    root: Arc::from(root),
+                    path,
+                }));
+            }
+            _ => return Err(MachineRecoveryError::InvalidCheckpoint),
+        }
+    }
+    Ok(places)
 }
 
 #[cfg(feature = "concurrent")]
