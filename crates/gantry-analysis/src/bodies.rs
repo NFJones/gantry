@@ -145,6 +145,7 @@ pub(crate) struct EffectDraft {
     pub(crate) pure: bool,
     pub(crate) source: Option<SourceSpan>,
     pub(crate) contributors: BTreeMap<Effect, SourceSpan>,
+    pub(crate) call_sites: BTreeMap<EffectNode, SourceSpan>,
 }
 
 pub(crate) struct BodyAnalysis {
@@ -2311,6 +2312,20 @@ fn finish_effect_graph(
                 .contributors
                 .get(&offending)
                 .cloned()
+                .or_else(|| {
+                    // A purely transitive effect has no contributor in this body, so the call that
+                    // can reach it is the closest available location.
+                    draft
+                        .calls
+                        .iter()
+                        .find(|callee| {
+                            summaries
+                                .get(*callee)
+                                .is_some_and(|callee_effects| callee_effects.contains(offending))
+                        })
+                        .and_then(|callee| draft.call_sites.get(callee))
+                        .cloned()
+                })
                 .or_else(|| draft.source.clone())
         {
             diagnostics.push(body_diagnostic(
@@ -2428,17 +2443,14 @@ fn trait_contract_effects(
     ))
 }
 
-fn record_effect_call(context: &BodyContext, callee: EffectNode) {
+fn record_effect_call(context: &BodyContext, callee: EffectNode, call_site: SourceSpan) {
     let Some(owner) = context.current_effect_owner.borrow().clone() else {
         return;
     };
-    context
-        .effect_drafts
-        .borrow_mut()
-        .entry(owner)
-        .or_default()
-        .calls
-        .insert(callee);
+    let mut drafts = context.effect_drafts.borrow_mut();
+    let draft = drafts.entry(owner).or_default();
+    draft.calls.insert(callee.clone());
+    draft.call_sites.entry(callee).or_insert(call_site);
 }
 
 fn record_direct_effects(context: &BodyContext, effects: EffectSet) {
@@ -6756,19 +6768,19 @@ fn infer_member_sequence(
                     diagnostics,
                 )?;
             }
+            let call_site = call_sequence_span(tree, children, member_node)
+                .unwrap_or_else(|| member_node.span().clone());
             if let Some(caller) = context.current_effect_owner.borrow().clone() {
-                let call_site = call_sequence_span(tree, children, member_node)
-                    .unwrap_or_else(|| member_node.span().clone());
                 context.resolved_calls.borrow_mut().insert(
                     (
                         caller,
-                        call_site,
+                        call_site.clone(),
                         EffectNode::Source(metadata.declaration.clone()),
                     ),
                     None,
                 );
             }
-            record_effect_call(context, EffectNode::Source(metadata.declaration));
+            record_effect_call(context, EffectNode::Source(metadata.declaration), call_site);
         }
         if arguments.len() != signature.parameters.len() {
             diagnostics.push(body_diagnostic(
@@ -7638,7 +7650,7 @@ fn resolve_trait_method(
                         selected_implementation,
                     );
                 }
-                record_effect_call(context, effect_target);
+                record_effect_call(context, effect_target, source.span().clone());
             }
             Ok(Some((signature, retained)))
         }
@@ -8227,15 +8239,19 @@ fn infer_call_sequence(
         .find(|(_, child)| node_is_punctuation(tree, **child, Punctuation::RightParenthesis))
         .map_or(children.len(), |(index, _)| index);
     if let Some(source) = context.callable_sources.get(&target).cloned() {
+        let call_site =
+            call_sequence_span(tree, children, path).unwrap_or_else(|| path.span().clone());
         if let Some(caller) = context.current_effect_owner.borrow().clone() {
-            let call_site =
-                call_sequence_span(tree, children, path).unwrap_or_else(|| path.span().clone());
             context.resolved_calls.borrow_mut().insert(
-                (caller, call_site, EffectNode::Source(source.clone())),
+                (
+                    caller,
+                    call_site.clone(),
+                    EffectNode::Source(source.clone()),
+                ),
                 None,
             );
         }
-        record_effect_call(context, EffectNode::Source(source));
+        record_effect_call(context, EffectNode::Source(source), call_site);
     }
     let arguments = children
         .get(open.saturating_add(1)..close)
@@ -8786,7 +8802,11 @@ fn retain_generic_instantiation(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     if context.parametric_validation.get() {
-        record_effect_call(context, EffectNode::Template(signature.template.clone()));
+        record_effect_call(
+            context,
+            EffectNode::Template(signature.template.clone()),
+            call_site.clone(),
+        );
         check_callable_sealed_bounds(
             signature,
             &concrete_arguments,
@@ -8812,7 +8832,11 @@ fn retain_generic_instantiation(
             selected_implementation,
         );
     }
-    record_effect_call(context, EffectNode::Concrete(key.clone()));
+    record_effect_call(
+        context,
+        EffectNode::Concrete(key.clone()),
+        call_site.clone(),
+    );
     if context.generic_instantiations.borrow().contains_key(&key) {
         return Ok(());
     }

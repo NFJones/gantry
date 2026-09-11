@@ -3166,6 +3166,43 @@ fn public_trait_implementation_effects_stay_within_the_declared_contract() {
         "{:?}",
         in_contract_function.diagnostics()
     );
+
+    // A purely transitive violation points at the call that can reach the effect.
+    let transitive_span = analyze(
+        "trait Render { pure fn render(self); }\n\
+         struct Item {}\n\
+         fn helper() { discard prompt \"x\" -> String; }\n\
+         impl Render for Item { fn render(self) { helper(); } }\n\
+         fn main() {}",
+    );
+    let transitive_diagnostic = transitive_span
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "effect-contract-violation")
+        .unwrap_or_else(|| panic!("{:?}", transitive_span.diagnostics()));
+    let transitive_primary = transitive_diagnostic
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("{:?}", transitive_span.diagnostics()));
+    let transitive_source = "trait Render { pure fn render(self); }\n\
+         struct Item {}\n\
+         fn helper() { discard prompt \"x\" -> String; }\n\
+         impl Render for Item { fn render(self) { helper(); } }\n\
+         fn main() {}";
+    let transitive_start = usize::try_from(transitive_primary.bytes().start()).unwrap_or_default();
+    let transitive_end = usize::try_from(transitive_primary.bytes().end()).unwrap_or_default();
+    let transitive_text = transitive_source
+        .get(transitive_start..transitive_end)
+        .unwrap_or_default();
+    assert!(
+        transitive_text.contains("helper"),
+        "{transitive_text:?}: {:?}",
+        transitive_span.diagnostics()
+    );
+    assert!(
+        !transitive_text.contains("fn render"),
+        "the span covers the declaration instead of the call: {transitive_text:?}"
+    );
 }
 
 /// A pattern payload that binds a `MustConsume` value owes consumption like any other binding
