@@ -791,12 +791,12 @@ than one block.
 | Formal kernel | Every named `GNT-3-F-*`, `GNT-3-T-*`, `GNT-3-M-*`, and `GNT-3-D-*` rule in Sections 3.1 through 3.6 |
 | Source organization | `GNT-4.0`, `GNT-4.1` through `GNT-4.17`, `GNT-4.17-frontend-resource-limits`, `GNT-4.17-generic-analysis-limits` |
 | Values and types | `GNT-5.0`, `GNT-5.1` through `GNT-5.20`, `GNT-5.13-automatic-storage`, `GNT-5.15-canonical-scalar-keys`, `GNT-5.20-parametric-types` |
-| Workflows and actions | `GNT-6.0`, `GNT-6.1` through `GNT-6.12`, `GNT-6.12-static-traits` |
+| Workflows and actions | `GNT-6.0`, `GNT-6.1` through `GNT-6.12`, `GNT-6.12-static-traits`, `GNT-6.5-abstract-requirements` |
 | Integration operations | `GNT-7.0`, `GNT-7.1` through `GNT-7.18` |
 | Structured output | `GNT-8.0`, `GNT-8.1` through `GNT-8.13`, `GNT-8.13-concrete-generic-schemas` |
 | Control flow | `GNT-9.0`, `GNT-9.1` through `GNT-9.12` |
 | Parallel execution | `GNT-10.0`, `GNT-10.1` through `GNT-10.14` |
-| Durable execution | `GNT-11.0`, `GNT-11.1` through `GNT-11.11`, `GNT-11.11-generic-artifact-recovery` |
+| Durable execution | `GNT-11.0`, `GNT-11.1` through `GNT-11.11`, `GNT-11.11-generic-artifact-recovery`, `GNT-11.6-compatibility-classes` |
 | Observability | `GNT-12.0`, `GNT-12.1` through `GNT-12.11`, `GNT-12.11-generic-diagnostics` |
 | Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10`, `GNT-15.1-automatic-execution`, `GNT-15.2-runtime-sessions`, `GNT-15.4-owned-work` |
@@ -1756,6 +1756,50 @@ effects equal this least fixed point; every grammar-adjacent rule in Section
 holds. Failure of any premise is an analysis error. There is no other route to
 the package-valid judgment.
 
+<a id="GNT-3-T-EFFECT-ROWS"></a>
+
+**[GNT-3-T-EFFECT-ROWS] Higher-order effect rows.** A callable type carries
+one row, written `⟨ρ, ε⟩`. `ε` is a finite set of effects drawn from the
+Section 3.1 effect domain in canonical effect order and is the conservative
+summary of every operation the callable may reach when it is invoked. `ρ` is
+either the closed marker or an effect-row variable with upper bound `ε_ρ`. A
+closed row admits only callable values whose row is a subset of `ε`; an
+effect-row variable admits any value whose row is within its bound, and the
+substituted bound is retained by the callable type that declares the variable.
+Callable types are admitted only by the selected profile and specification
+revision; this item fixes the row contract any such admission MUST satisfy and
+does not itself admit callable types.
+
+For a call whose callee or any argument or capture has callable type, the
+call's effects are the union of the callee's row, the upper bounds of every
+effect-row variable in the callee's type, the row of every callable-typed
+argument and capture, the direct effects of the reached body, and the effect
+summaries of every callable the callee may denote. A callable value with more
+than one denotable target contributes the union of their rows. Recursive and
+mutually recursive callable values contribute the least fixed point of
+`GNT-3-T-EFFECTS`.
+
+Union is the only composition: no conversion, parameter, capture, aggregate,
+storage, transfer, inlining, or dependency boundary may lower, narrow,
+intersect, or discharge a row. A callable cannot erase the authority of a
+callable it is given, and a higher-order callable cannot acquire effects
+absent from its declared row. A row is a deterministic function of the closed
+template, its ordered closed substitutions, and the declared contracts and
+rows of every callable it may denote; source order, physical layout, call-site
+count, and private decomposition MUST NOT change it. `pure fn` remains valid
+exactly when the closed row is empty.
+
+Closures, resource operations, agent handlers, and imported tools follow the
+same rules. A closure's row is computed from its body, its captures, and its
+callable-typed parameters; a resource operation contributes the effects and
+requirements of its declared operation contract; an agent handler contributes
+the requirements of its declared handler contract; an imported tool
+contributes the declared requirements, recovery class, and schema of its
+descriptor and never provider policy observed at run time. Storing, returning,
+passing through a parameter, embedding in an aggregate, or transferring a
+callable across a dependency MUST NOT change its row and MUST NOT erase the
+site identities of its reachable operation sites.
+
 <a id="GNT-3-T-PARAMETRIC-PACKAGE"></a>
 
 **[GNT-3-T-PARAMETRIC-PACKAGE] Parametric package validity and lowering.**
@@ -1777,6 +1821,54 @@ effects, operation sites, task sites, source origins, and call targets. A
 conforming analyzer MAY use another algorithm only if it accepts and rejects
 the same packages, charges the same portable resource units, and emits the
 same canonical analysis and executable artifacts.
+
+<a id="GNT-3-T-AUTHORITY-CLOSURE"></a>
+
+**[GNT-3-T-AUTHORITY-CLOSURE] Least-authority executable authority closure.**
+Each analyzed artifact has one conservative executable authority closure. It
+is computed only after the target, feature, and dependency solution is
+selected and after the finite instantiation closure of
+`GNT-3-F-INSTANTIATION`, the least effect fixed point of `GNT-3-T-EFFECTS`,
+and the callable rows of `GNT-3-T-EFFECT-ROWS` have been computed, so every
+row, site, and requirement slot is resolved to a closed type and a selected
+implementation. The closure is the least set of capability requirement
+instances and agent, tool, handler, and operation requirement slots that
+contains the declared requirement of every exact operation site reachable from
+every retained non-generic callable, every retained concrete public or durable
+schema root, every retained instantiation key, and every callable row bound
+invocable from those roots. An item not retained by the selected solution is
+not a root. When the selected solution retains the complete analyzed package,
+as v1 does, the closure contains exactly the action requirements that
+Section 7 item 2 resolves before start.
+
+A declared requirement, declared action, dependency, module, optional feature,
+agent-fulfillment descriptor, exposed tool, or retained instantiation key that
+is not reachable from a retained root contributes no authority, MUST NOT be
+required before start, and MUST NOT appear in the closure. When a target,
+feature, or dependency solution retains fewer items than the complete package,
+only closure members are required before start. The closure is never narrowed
+by an unreachable-path argument or by runtime observation: it is the maximum
+static authority of the artifact.
+
+Analysis MUST fail closed. If the callable target set is not finitely
+closable, or a requirement slot, row bound, retained root, or selected
+implementation cannot be resolved, then analysis fails source-invalid with a
+registered diagnostic identifying the unresolved item, and Gantry MUST NOT
+publish a canonical analysis artifact, executable projection, authority state,
+preflight evidence, or partial closure. No consumer may observe authority
+state derived from an incomplete closure. The same package, target and feature
+solution, and specification revision MUST produce byte-identical closure
+contents, ordered canonically by requirement identity.
+
+A started or resumable artifact's closure MUST NOT mutate. Discovering a host
+service, provider tool, or descriptor at runtime MUST NOT widen the closure of
+a running or resumable machine. Admitting a newly discovered descriptor
+requires validated descriptors, repeated analysis, linking, policy binding,
+and preflight, and a new content-identified artifact with its own immutable
+tool-set and mapping revisions before its first model turn; any broker design
+MUST declare an existential request and result type, a statically declared
+maximum authority and recovery envelope, and equally exact identity and resume
+rules.
 
 ### 3.4 Dynamic semantics
 
@@ -3771,6 +3863,36 @@ remain excluded.
    workflow call; and `join` are interpreter operations and MUST NOT directly
    invoke an operation hook. Executing the called workflow body may still
    reach an explicit integration operation, as specified above.
+<a id="GNT-6.5-abstract-requirements"></a>
+
+**5a. Abstract capability requirements and exact operation sites.** A public
+capability requirement is a stable abstract identity: a package-qualified
+operation requirement (declaration path, complete canonical typed signature,
+capability family, and recovery class), an imported-tool descriptor it may
+expose, or an effect-row variable of an exported callable. A public
+requirement is the only effect identity an exported signature may name, and it
+MUST NOT be defined by, or equal to, a source operation site.
+
+An exact operation site is a distinct identity: the selected package instance,
+callable identity, static site position, and selected implementation that fix
+one dispatch. Sites are retained only in the canonical analysis and executable
+artifacts described in `GNT-3-F-INSTANTIATION`, Section 7, and Section 11;
+they are the input to logical operation IDs, audit, preflight, and durable
+compatibility. Nothing in this item makes a site nameable from source.
+
+Two or more exact sites MAY satisfy one public requirement, and one site MUST
+satisfy exactly one public requirement in the selected solution. Splitting a
+private helper, reordering equivalent internal code, or changing a private
+site MUST change canonical artifact identity where that identity covers sites,
+and MUST NOT create, remove, or widen a public requirement. Adding a
+requirement, widening an exported effect bound, or changing a declared
+operation contract, recovery class, or tool descriptor MUST be a visible
+public-interface change even when call syntax and value types are unchanged.
+Public-layer and linked-layer comparison MUST remain distinct: a comparison
+that dissolves sites into requirements hides an authority change, and one that
+promotes sites into requirements treats every implementation refactor as a
+public break.
+
 <a id="GNT-6.6"></a>
 
 6. Each `prompt` expression MUST contain an explicit prompt template and MAY
@@ -5963,6 +6085,47 @@ version, and size-limit failures. Once a manifest schema has appeared in a
 complete publication set, it follows the source-language major version;
 changing a field's meaning or canonical ordering requires a source-language
 major version change.
+<a id="GNT-11.6-compatibility-classes"></a>
+
+**6b. Independent compatibility classes.** Compatibility between a package or
+artifact and its replacement is four relations, each evaluated and reported on
+its own layer:
+
+1. **Source compatibility** asks whether downstream source written against one
+   public interface still analyzes against the replacement, judged from
+   exported item names, kinds, visibility, normalized signatures, generic and
+   trait bounds, receiver modes, exhaustiveness and construction rules, and
+   public constants.
+2. **Authority compatibility** asks whether exported calls can reach effects or
+   requirements absent from the previous executable authority closure, require
+   stronger capability, agent, or tool bindings, release additional data, or
+   change a recovery class. It compares public requirements, not private
+   operation sites.
+3. **Declared-behavior compatibility** asks whether documented guarantees for
+   results, errors, ordering, state transitions, determinism, security,
+   resource use, and recovery remain valid. It is not generally decidable from
+   signatures or linked IR, so it is compared through declared contract
+   revisions and executable conformance evidence rather than inferred from
+   equal types.
+4. **Artifact compatibility** asks whether an already linked executable may be
+   replaced, or an existing durable run resumed, by the candidate artifact.
+   The conservative answer is no unless canonical identity or a normative
+   compatibility contract proves otherwise: a different canonical-IR identity
+   is the `source-or-configuration-incompatibility` resume-start failure of
+   item 6, and Section 11's resume rules continue to govern durable admission
+   independently.
+
+These relations do not imply one another. A callable can keep every parameter
+and result type while gaining network authority; keep its types and effects
+while changing ordering or error meaning; or preserve all three while changing
+canonical artifact identity, which invalidates an in-progress resume without
+being a source-level break. Conversely, a private site refactor that changes
+artifact identity and no public requirement is not an authority change and
+MUST NOT be reported as one. Tooling and publication comparison MUST evaluate
+all four classes, MUST report which classes were machine-checked and which
+were not, and MUST NOT declare semantic compatibility from equal signatures,
+schemas, effect rows, or requirement sets alone.
+
 <a id="GNT-11.7"></a>
 
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
