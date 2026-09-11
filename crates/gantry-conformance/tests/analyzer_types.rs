@@ -3473,6 +3473,64 @@ fn public_must_consume_obligations_are_judged_per_place() {
     }
 }
 
+/// Re-initializing a place inside an already consumed containing place owes the fresh value's own
+/// consumption, while the containing place and the places it still contains stay gone
+/// (`GNT-6.2d`).
+#[test]
+fn public_reinitialized_subplace_of_a_consumed_place_owes_consumption() {
+    const DECLARATIONS: &str = "must_consume struct Token { value: Int }\n\
+         must_consume struct Wrap { inner: Token }\n\
+         struct Holder { token: Token, marker: Int }\n\
+         struct Pair { left: Token, right: Token }\n\
+         impl Token { fn consume(owned self) {} }\n\
+         impl Holder { fn consume(owned self) {} }\n\
+         impl Pair { fn consume(owned self) {} }\n\
+         impl Wrap { fn consume(owned self) {} }\n";
+
+    // The fresh value is a new obligation, so consuming it discharges the root again.
+    for accepted in [
+        "fn main(mut holder: Holder) { holder.consume(); holder.token = Token { value: 1 }; holder.token.consume(); }",
+        "fn main(mut wrap: Wrap) { wrap.consume(); wrap.inner = Token { value: 1 }; wrap.inner.consume(); }",
+    ] {
+        assert_affine_accepted(&format!("{DECLARATIONS}{accepted}"));
+    }
+
+    for (source, code) in [
+        // The fresh value is not consumed before the callable returns.
+        (
+            "fn main(mut holder: Holder) { holder.consume(); holder.token = Token { value: 1 }; }",
+            "must-consume-unconsumed",
+        ),
+        (
+            "fn main(mut wrap: Wrap) { wrap.consume(); wrap.inner = Token { value: 1 }; }",
+            "must-consume-unconsumed",
+        ),
+        // Replacing the fresh value discards it.
+        (
+            "fn main(mut holder: Holder) { holder.consume(); holder.token = Token { value: 1 }; holder.token = Token { value: 2 }; }",
+            "must-consume-replaced",
+        ),
+        // Only the re-initialized place is fresh: a sibling place is still gone with the place
+        // that contained it.
+        (
+            "fn main(mut pair: Pair) { pair.consume(); pair.left = Token { value: 1 }; pair.right.consume(); }",
+            "affine-value-reuse",
+        ),
+        // The containing place itself stays gone, so consuming it again is a repeated use.
+        (
+            "fn main(mut holder: Holder) { holder.consume(); holder.token = Token { value: 1 }; holder.consume(); }",
+            "affine-value-reuse",
+        ),
+        // A re-initialization inside a branch owes consumption only on the paths that reach it.
+        (
+            "fn run(mut holder: Holder, flag: Bool) { holder.consume(); if flag { holder.token = Token { value: 1 }; } } fn main() {}",
+            "must-consume-path-dependent",
+        ),
+    ] {
+        assert_affine_rejected(&format!("{DECLARATIONS}{source}"), code);
+    }
+}
+
 /// An implementation method must stay within the effect contract its trait method declares,
 /// because that declared set is the conservative summary parametric callers rely on
 /// (`GNT-3-T-PARAMETRIC-PACKAGE`, `GNT-6.12-static-traits`).

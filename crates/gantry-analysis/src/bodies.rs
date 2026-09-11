@@ -309,6 +309,8 @@ struct BodyContext {
     must_consume_obligations: RefCell<BTreeMap<Arc<str>, MustConsumeBinding>>,
     must_consume_discharged: RefCell<BTreeSet<AffinePlace>>,
     must_consume_partial: RefCell<BTreeSet<AffinePlace>>,
+    must_consume_fresh: RefCell<BTreeSet<AffinePlace>>,
+    must_consume_fresh_all: RefCell<BTreeSet<AffinePlace>>,
     must_consume_scopes: RefCell<Vec<MustConsumeScope>>,
     must_consume_loop_depths: RefCell<Vec<usize>>,
     must_consume_receiver: Cell<bool>,
@@ -945,6 +947,8 @@ fn build_body_context(
         must_consume_obligations: RefCell::new(BTreeMap::new()),
         must_consume_discharged: RefCell::new(BTreeSet::new()),
         must_consume_partial: RefCell::new(BTreeSet::new()),
+        must_consume_fresh: RefCell::new(BTreeSet::new()),
+        must_consume_fresh_all: RefCell::new(BTreeSet::new()),
         must_consume_scopes: RefCell::new(Vec::new()),
         must_consume_loop_depths: RefCell::new(Vec::new()),
         must_consume_receiver: Cell::new(false),
@@ -2492,6 +2496,8 @@ fn check_callable(
     context.must_consume_obligations.borrow_mut().clear();
     context.must_consume_discharged.borrow_mut().clear();
     context.must_consume_partial.borrow_mut().clear();
+    context.must_consume_fresh.borrow_mut().clear();
+    context.must_consume_fresh_all.borrow_mut().clear();
     context.must_consume_scopes.borrow_mut().clear();
     context.must_consume_loop_depths.borrow_mut().clear();
     context.must_consume_receiver.set(false);
@@ -3561,8 +3567,9 @@ fn check_assignment(
     // the rule covers a binding root and every struct-field projection of one. The answer is judged
     // per obligation place rather than per root, so consuming one projected field never licenses
     // replacing a sibling. A place whose value is already gone may be reassigned: a binding root
-    // binds a fresh obligation, and a projection re-initializes exactly its own subtree, so the
-    // fresh value owes its consumption like any other.
+    // binds a fresh obligation, and a projection re-initializes exactly its own subtree - even
+    // inside a containing place that was already consumed - so the fresh value owes its
+    // consumption like any other.
     if operator == Punctuation::Equal
         && !receiver
         && let Some(target) =
@@ -3591,7 +3598,7 @@ fn check_assignment(
                 context,
             );
         } else {
-            clear_must_consume_places(&place, context);
+            reinitialize_must_consume_place(&place, context);
         }
     }
     Ok(())
@@ -3987,16 +3994,32 @@ fn is_declared_must_consume(ty: &TypeDescriptor, context: &BodyContext) -> bool 
         .is_some_and(|declaration| declaration.is_must_consume())
 }
 
-/// Returns whether every obligation place is covered by a consumed place.
-fn obligation_places_covered(
-    places: &BTreeSet<Vec<Arc<str>>>,
+/// Returns whether one obligation leaf is covered by a place of a marked set.
+///
+/// A leaf is covered when the set holds a place that contains it: transferring a place moves every
+/// place inside it, so the leaf's value is gone with the containing place.
+fn obligation_leaf_marked(
+    marked: &BTreeSet<AffinePlace>,
     root: &Arc<str>,
-    consumed: &BTreeSet<AffinePlace>,
+    leaf: &[Arc<str>],
 ) -> bool {
-    places.iter().all(|place| {
-        consumed
-            .iter()
-            .any(|marked| marked.root == *root && place.starts_with(&marked.path))
+    marked
+        .iter()
+        .any(|place| place.root == *root && leaf.starts_with(&place.path))
+}
+
+/// Returns whether one obligation leaf holds a value an admitted assignment re-initialized.
+///
+/// The leaf is fresh for the place the assignment named, for every place inside it, and for the
+/// place that contains it: a declared aggregate stays one atomic obligation, so re-initializing a
+/// stored value inside it leaves a value that owes its own consumption.
+fn obligation_leaf_refreshed(
+    refreshed: &BTreeSet<AffinePlace>,
+    root: &Arc<str>,
+    leaf: &[Arc<str>],
+) -> bool {
+    refreshed.iter().any(|place| {
+        place.root == *root && (leaf.starts_with(&place.path) || place.path.starts_with(leaf))
     })
 }
 
@@ -4004,7 +4027,8 @@ fn obligation_places_covered(
 ///
 /// The answer is judged per obligation place: a target that contains, or is contained in, a place
 /// that still holds a value would discard it, while a sibling place that owes nothing stays
-/// replaceable. Coverage by a consumed place is the proof that the value is already gone.
+/// replaceable. Coverage by a consumed place is the proof that the value is already gone, unless an
+/// earlier admitted assignment re-initialized the place on a reaching path.
 fn obligation_place_is_live(place: &AffinePlace, context: &BodyContext) -> bool {
     let Some(binding) = context
         .must_consume_obligations
@@ -4016,12 +4040,12 @@ fn obligation_place_is_live(place: &AffinePlace, context: &BodyContext) -> bool 
     };
     let places = obligation_places(&binding.ty, context);
     let discharged = context.must_consume_discharged.borrow();
+    let fresh = context.must_consume_fresh.borrow();
     places.iter().any(|leaf| {
         let leaf = AffinePlace::projected(place.root.clone(), leaf.clone());
         leaf.intersects(place)
-            && !discharged
-                .iter()
-                .any(|marked| marked.root == place.root && leaf.path.starts_with(&marked.path))
+            && (!obligation_leaf_marked(&discharged, &place.root, &leaf.path)
+                || obligation_leaf_refreshed(&fresh, &place.root, &leaf.path))
     })
 }
 
@@ -4077,6 +4101,8 @@ struct MustConsumePrior {
     binding: MustConsumeBinding,
     discharged: BTreeSet<AffinePlace>,
     partial: BTreeSet<AffinePlace>,
+    fresh: BTreeSet<AffinePlace>,
+    fresh_all: BTreeSet<AffinePlace>,
 }
 
 /// The consumption state of every obligation place at one region boundary.
@@ -4088,6 +4114,10 @@ struct ObligationSnapshot {
     partial: BTreeSet<AffinePlace>,
     /// Places consumed on every reaching path.
     discharged: BTreeSet<AffinePlace>,
+    /// Places an admitted assignment re-initialized on some reaching path.
+    fresh: BTreeSet<AffinePlace>,
+    /// Places an admitted assignment re-initialized on every reaching path.
+    fresh_all: BTreeSet<AffinePlace>,
 }
 
 impl ObligationSnapshot {
@@ -4097,6 +4127,8 @@ impl ObligationSnapshot {
             obligations: context.must_consume_obligations.borrow().clone(),
             partial: context.must_consume_partial.borrow().clone(),
             discharged: context.must_consume_discharged.borrow().clone(),
+            fresh: context.must_consume_fresh.borrow().clone(),
+            fresh_all: context.must_consume_fresh_all.borrow().clone(),
         }
     }
 
@@ -4114,26 +4146,41 @@ impl ObligationSnapshot {
             .must_consume_discharged
             .borrow_mut()
             .clone_from(&self.discharged);
+        context
+            .must_consume_fresh
+            .borrow_mut()
+            .clone_from(&self.fresh);
+        context
+            .must_consume_fresh_all
+            .borrow_mut()
+            .clone_from(&self.fresh_all);
     }
 
     /// Returns the proved state of one root, or `None` when the root owes nothing.
     ///
     /// The state folds every `MustConsume` place the binding holds: the root is discharged only
-    /// when every place is consumed on every reaching path, path-dependent when every place is
-    /// consumed on some path but not all, and live when some place was never consumed.
+    /// when every place is consumed on every reaching path and no admitted assignment re-initialized
+    /// one, live when some place holds a value on every reaching path, and path-dependent otherwise.
     fn state(&self, root: &Arc<str>, context: &BodyContext) -> Option<ObligationState> {
         let binding = self.obligations.get(root)?;
         let places = obligation_places(&binding.ty, context);
-        if obligation_places_covered(&places, root, &self.discharged) {
+        if places.iter().all(|leaf| {
+            obligation_leaf_marked(&self.discharged, root, leaf)
+                && !obligation_leaf_refreshed(&self.fresh, root, leaf)
+        }) {
             return Some(ObligationState::Discharged);
         }
-        let mut consumed = self.discharged.clone();
-        consumed.extend(self.partial.iter().cloned());
-        Some(if obligation_places_covered(&places, root, &consumed) {
-            ObligationState::Partial
-        } else {
-            ObligationState::Live
-        })
+        Some(
+            if places.iter().any(|leaf| {
+                (!obligation_leaf_marked(&self.discharged, root, leaf)
+                    && !obligation_leaf_marked(&self.partial, root, leaf))
+                    || obligation_leaf_refreshed(&self.fresh_all, root, leaf)
+            }) {
+                ObligationState::Live
+            } else {
+                ObligationState::Partial
+            },
+        )
     }
 }
 
@@ -4186,6 +4233,8 @@ fn record_shadowed_binding(name: Arc<str>, context: &BodyContext) {
         binding,
         discharged: obligation_places_for_root(&name, &context.must_consume_discharged.borrow()),
         partial: obligation_places_for_root(&name, &context.must_consume_partial.borrow()),
+        fresh: obligation_places_for_root(&name, &context.must_consume_fresh.borrow()),
+        fresh_all: obligation_places_for_root(&name, &context.must_consume_fresh_all.borrow()),
     });
     let mut scopes = context.must_consume_scopes.borrow_mut();
     let Some(scope) = scopes.last_mut() else {
@@ -4199,6 +4248,17 @@ fn record_shadowed_binding(name: Arc<str>, context: &BodyContext) {
 
 /// Marks one place as consumed on this reaching path.
 fn discharge_must_consume(place: &AffinePlace, context: &BodyContext) {
+    let contained = |candidate: &AffinePlace| {
+        candidate.root == place.root && candidate.path.starts_with(&place.path)
+    };
+    context
+        .must_consume_fresh
+        .borrow_mut()
+        .retain(|candidate| !contained(candidate));
+    context
+        .must_consume_fresh_all
+        .borrow_mut()
+        .retain(|candidate| !contained(candidate));
     context
         .must_consume_discharged
         .borrow_mut()
@@ -4219,14 +4279,25 @@ fn rebind_must_consume(root: &Arc<str>, binding: MustConsumeBinding, context: &B
         .must_consume_partial
         .borrow_mut()
         .retain(|place| place.root != *root);
+    context
+        .must_consume_fresh
+        .borrow_mut()
+        .retain(|place| place.root != *root);
+    context
+        .must_consume_fresh_all
+        .borrow_mut()
+        .retain(|place| place.root != *root);
 }
 
-/// Clears the marks of one re-initialized place subtree.
+/// Records that one admitted assignment re-initialized its target place.
 ///
 /// Assignment to a place whose value is already gone re-initializes exactly that place and the
 /// places contained in it, so the fresh value owes its own consumption under `GNT-6.2d`, while a
-/// containing place that was already consumed stays gone.
-fn clear_must_consume_places(place: &AffinePlace, context: &BodyContext) {
+/// containing place that was already consumed stays gone. The stored place is the target itself:
+/// every place inside it holds a fresh value, a read of the containing place stays a read of what
+/// the containing transfer moved, and a later assignment inside the target is judged against the
+/// fresh value it would discard.
+fn reinitialize_must_consume_place(place: &AffinePlace, context: &BodyContext) {
     let contained = |candidate: &AffinePlace| {
         candidate.root == place.root && candidate.path.starts_with(&place.path)
     };
@@ -4238,6 +4309,22 @@ fn clear_must_consume_places(place: &AffinePlace, context: &BodyContext) {
         .must_consume_partial
         .borrow_mut()
         .retain(|candidate| !contained(candidate));
+    context
+        .must_consume_fresh
+        .borrow_mut()
+        .retain(|candidate| !contained(candidate));
+    context
+        .must_consume_fresh_all
+        .borrow_mut()
+        .retain(|candidate| !contained(candidate));
+    context
+        .must_consume_fresh
+        .borrow_mut()
+        .insert(place.clone());
+    context
+        .must_consume_fresh_all
+        .borrow_mut()
+        .insert(place.clone());
 }
 
 /// Enters one lexical block for `MustConsume` binding bookkeeping.
@@ -4291,6 +4378,14 @@ fn leave_obligation_scope(
             .must_consume_partial
             .borrow_mut()
             .retain(|place| place.root != *root);
+        context
+            .must_consume_fresh
+            .borrow_mut()
+            .retain(|place| place.root != *root);
+        context
+            .must_consume_fresh_all
+            .borrow_mut()
+            .retain(|place| place.root != *root);
         let Some(previous) = previous else {
             continue;
         };
@@ -4306,6 +4401,14 @@ fn leave_obligation_scope(
             .must_consume_partial
             .borrow_mut()
             .extend(previous.partial.iter().cloned());
+        context
+            .must_consume_fresh
+            .borrow_mut()
+            .extend(previous.fresh.iter().cloned());
+        context
+            .must_consume_fresh_all
+            .borrow_mut()
+            .extend(previous.fresh_all.iter().cloned());
     }
     Ok(())
 }
@@ -4383,9 +4486,32 @@ fn merge_obligation_states(
     include_fallthrough: bool,
     context: &BodyContext,
 ) {
+    let reaching = branches
+        .iter()
+        .chain(include_fallthrough.then_some(saved))
+        .cloned()
+        .collect::<Vec<_>>();
     let mut merged = saved.clone();
     merged.partial.clear();
     merged.discharged.clear();
+    merged.fresh.clear();
+    merged.fresh_all.clear();
+    // A place one reaching path re-initialized is fresh at the join, and a place every reaching
+    // path re-initialized is fresh on every path; the pre-conditional state contributes only as a
+    // reaching path.
+    merged.fresh.extend(
+        reaching
+            .iter()
+            .flat_map(|branch| branch.fresh.iter().cloned()),
+    );
+    if let Some((first, rest)) = reaching.split_first() {
+        merged.fresh_all = first.fresh_all.clone();
+        for branch in rest {
+            merged
+                .fresh_all
+                .retain(|place| branch.fresh_all.contains(place));
+        }
+    }
     for root in saved.obligations.keys() {
         let Some(binding) = saved.obligations.get(root) else {
             continue;
@@ -4394,9 +4520,9 @@ fn merge_obligation_states(
             let place = AffinePlace::projected(root.clone(), leaf);
             let mut discharged_everywhere = true;
             let mut consumed_somewhere = false;
-            let mut reaching = 0_usize;
-            for branch in branches.iter().chain(include_fallthrough.then_some(saved)) {
-                reaching = reaching.saturating_add(1);
+            let mut reaching_count = 0_usize;
+            for branch in &reaching {
+                reaching_count = reaching_count.saturating_add(1);
                 if branch
                     .discharged
                     .iter()
@@ -4416,7 +4542,7 @@ fn merge_obligation_states(
             }
             // No path reaches this join, so nothing can be left owing on one: every exiting
             // branch reported its own obligation, and the fold is vacuous rather than live.
-            if reaching == 0 {
+            if reaching_count == 0 {
                 merged
                     .discharged
                     .insert(AffinePlace::root_only(root.clone()));
@@ -4448,18 +4574,31 @@ fn with_affine_loop_scope<T>(
     result
 }
 
-/// Reports consumption that only a loop iteration could perform and restores the outer state.
+/// Reports consumption and re-initialization that only a loop iteration could perform and restores
+/// the outer state.
 ///
 /// A loop body may execute zero or many times, so a discharge recorded inside it is never a
-/// callable-wide discharge: the obligation stays live and the consumption is path-dependent.
+/// callable-wide discharge: the obligation stays live and the consumption is path-dependent. A
+/// place an iteration re-initialized is path-dependent in the same way, because the fresh value may
+/// never be consumed when the body does not run.
 fn report_loop_consumption(
     entry: &ObligationSnapshot,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let after = context.must_consume_discharged.borrow().clone();
+    let after_fresh = context.must_consume_fresh.borrow().clone();
     let mut reported = BTreeSet::new();
     for place in after.difference(&entry.discharged) {
+        // A place the entry already left gone belongs to a value an iteration re-initialized, not
+        // to an outer obligation the loop consumed.
+        if entry
+            .discharged
+            .iter()
+            .any(|marked| marked.root == place.root && place.path.starts_with(&marked.path))
+        {
+            continue;
+        }
         if !reported.insert(place.root.clone()) {
             continue;
         }
@@ -4470,6 +4609,21 @@ fn report_loop_consumption(
             "must-consume-path-dependent",
             DiagnosticCategory::Type,
             "a MustConsume value is consumed inside a loop that may not execute",
+            binding.span.clone(),
+            [("binding", place.root.as_ref())],
+        )?);
+    }
+    for place in after_fresh.difference(&entry.fresh) {
+        if !reported.insert(place.root.clone()) {
+            continue;
+        }
+        let Some(binding) = entry.obligations.get(&place.root) else {
+            continue;
+        };
+        diagnostics.push(body_diagnostic(
+            "must-consume-path-dependent",
+            DiagnosticCategory::Type,
+            "a MustConsume value is re-initialized inside a loop that may not execute",
             binding.span.clone(),
             [("binding", place.root.as_ref())],
         )?);
@@ -4518,18 +4672,19 @@ fn record_affine_place(
         .last()
         .is_some_and(|roots| roots.contains(&place.root));
     // A `MustConsume` discharge is root-scoped and branch-scoped, so consuming one place in two
-    // exclusive branches is not a reuse. The `AffineDroppable` ledger stays path-insensitive.
+    // exclusive branches is not a reuse. The `AffineDroppable` ledger stays path-insensitive. A
+    // place every reaching path re-initialized holds a fresh value, so an earlier discharge does
+    // not make a use of it repeated.
     let intersects = if must_consume {
-        context
-            .must_consume_discharged
-            .borrow()
-            .iter()
-            .any(|consumed| consumed.intersects(&place))
-            || context
-                .must_consume_partial
-                .borrow()
-                .iter()
-                .any(|consumed| consumed.intersects(&place))
+        let discharged = context.must_consume_discharged.borrow();
+        let partial = context.must_consume_partial.borrow();
+        let fresh = context.must_consume_fresh_all.borrow();
+        discharged.iter().chain(partial.iter()).any(|consumed| {
+            consumed.intersects(&place)
+                && !fresh.iter().any(|refreshed| {
+                    refreshed.root == place.root && place.path.starts_with(&refreshed.path)
+                })
+        })
     } else {
         context
             .affine_consumed

@@ -4,7 +4,7 @@
  "status": "verified",
  "specification": {
   "path": "SPEC.md",
-  "sha256": "f8217480c60fd652f29db7454cba0d7c4943d45c23d7f6f79ea0749973cdea8d"
+  "sha256": "0685817d73ae12cba029040e0fe22d359df36cf09d978826e0f621c8a1aea590"
  },
  "prerequisites": [
   {
@@ -38,7 +38,7 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "d6e3522e645d4c37de4798e284d64b593d483a668a981ec95e5ddd84943245a2"
+   "sha256": "4c50cb35f9c11b910efece488203b26a7e76bd253c3e8ee850cf40cbab0da663"
   },
   {
    "path": "protocol/schemas/source-substrate-v1.schema.json",
@@ -51,7 +51,7 @@
    "kind": "golden",
    "visibility": "public-facade",
    "state": "verified",
-   "revision": "f8217480c60fd652f29db7454cba0d7c4943d45c23d7f6f79ea0749973cdea8d",
+   "revision": "0685817d73ae12cba029040e0fe22d359df36cf09d978826e0f621c8a1aea590",
    "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs"
   },
   {
@@ -59,7 +59,7 @@
    "kind": "requirement",
    "visibility": "public-facade",
    "state": "verified",
-   "revision": "f8217480c60fd652f29db7454cba0d7c4943d45c23d7f6f79ea0749973cdea8d",
+   "revision": "0685817d73ae12cba029040e0fe22d359df36cf09d978826e0f621c8a1aea590",
    "path": "crates/gantry-conformance/tests/requirements_ledger.rs"
   },
   {
@@ -67,7 +67,7 @@
    "kind": "public-api",
    "visibility": "public-facade",
    "state": "verified",
-   "revision": "f8217480c60fd652f29db7454cba0d7c4943d45c23d7f6f79ea0749973cdea8d",
+   "revision": "0685817d73ae12cba029040e0fe22d359df36cf09d978826e0f621c8a1aea590",
    "path": "crates/gantry-conformance/tests/source_provider.rs"
   },
   {
@@ -75,7 +75,7 @@
    "kind": "fixture",
    "visibility": "public-facade",
    "state": "verified",
-   "revision": "f8217480c60fd652f29db7454cba0d7c4943d45c23d7f6f79ea0749973cdea8d",
+   "revision": "0685817d73ae12cba029040e0fe22d359df36cf09d978826e0f621c8a1aea590",
    "path": "crates/gantry-conformance/tests/source_substrate.rs"
   }
  ],
