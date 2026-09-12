@@ -1,907 +1,907 @@
 {
- "adoption_gate": "protocol/conformance/async-execution-adoption-v1.json",
- "amended_profiles": [
-  "analyzer",
-  "concurrent-evaluator",
-  "durable-runtime",
-  "embedding",
-  "evaluator",
-  "frontend"
- ],
- "compatibility_impacts": [
-  "Async capacities and blocking-work policy are operational and excluded from durable identity.",
-  "Every evaluator embedding now requires owned task submission, completion observation, and abort.",
-  "IntegrationPreflight and other shared integration services are Send + Sync; operation hooks remain Send-only.",
-  "No supported API exposes manual Machine driving or a legacy execution mode.",
-  "Profile advertisement remains disabled until downstream implementation and conformance evidence close.",
-  "RuntimeSessionService owns post-acceptance session establishment independently of preflight.",
-  "Start may complete root work before caller observation, but never before accepted-state publication.",
-  "Superseded publication bytes remain isolated and cannot prove the amended contract."
- ],
- "contract_artifacts": [
-  {
-   "path": "crates/gantry-core/src/generated/portable.rs",
-   "sha256": "120629e353413041ed035a48ed1aa63b898da841f8ac9b37be2d396cf9fb61ff"
-  },
-  {
-   "path": "crates/gantry-core/src/generated/profiles.rs",
-   "sha256": "9c8b1d0b628c519822d228851d5228f403c4f33b1c7e7fb5c8e5ae43f8866fd6"
-  },
-  {
-   "path": "crates/gantry-host/src/generated/embedding.rs",
-   "sha256": "cad4af21c5c5e214783b17e4a7349b9a19e10e9115d3a68fc21cfd645643e9ce"
-  },
-  {
-   "path": "protocol/catalogs/embedding-contracts-v1.json",
-   "sha256": "21e4a1f9307358972d04041972b8e0fd53434757344512f418b6851fd60f9a38"
-  },
-  {
-   "path": "protocol/catalogs/portable-contracts-v1.json",
-   "sha256": "f37bfea3e0e33dbe2ae3d81075b35a8962e9b4af6d2cbac7f26227a79feb84cf"
-  },
-  {
-   "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "48d5d614a269b46a6ea93aa71f01750ee2ec7c2442b7b62c106eb590eba85ffc"
-  },
-  {
-   "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "0c2dabaa5728d57da8e697af04b2f9701c6fe48f108c5e30a204c455c2b8407b"
-  },
-  {
-   "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "18e4df984b0cd835c907d5cf8a4c4ce92c5537bf833fe2a5cb538b3f4c24fe19"
-  },
-  {
-   "path": "protocol/schemas/embedding-contracts-v1.schema.json",
-   "sha256": "ece46244c27b05ed7a43acc929cc11b618a6a9f91a76b9940c10d3e0d0efc4bb"
-  },
-  {
-   "path": "protocol/schemas/portable-contracts-v1.schema.json",
-   "sha256": "38d6f0c5434e4591ab8d650b89a89eb941c29b97df17a108b002cc136d2d13ca"
-  },
-  {
-   "path": "protocol/schemas/profile-catalog-v1.schema.json",
-   "sha256": "74b9513e5b7325da1202f5e349c3f6ece75694392b5406773ee98248ef720b80"
-  }
- ],
- "decisions": [
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-01",
-   "implementation_owners": [
-    "GNT-ASYNC-EXEC-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.4",
-    "GNT-3.3-runtime-ownership"
-   ],
-   "resolution": "Every evaluator receives owned task submission, completion observation, and abort through the executor adapter; Gantry owns semantic tasks while the embedding owns the runtime.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-02",
-   "implementation_owners": [
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.4-owned-work"
-   ],
-   "resolution": "OwnedTaskResult remains an opaque transport acknowledgement and never carries a Gantry source value or semantic task status.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-03",
-   "implementation_owners": [
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.4-owned-work"
-   ],
-   "resolution": "Completion observation distinguishes completed, stopped, panicked, and failed; registered completion ownership must be bounded and non-recursive.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-04",
-   "implementation_owners": [
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.4-owned-work",
-    "GNT-15.9-boundary-failure-containment"
-   ],
-   "resolution": "Executor completion preserves integration-panic and Gantry-invariant origins, while executor-internal failures remain a distinct failed result.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-05",
-   "implementation_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-SESS-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.1-automatic-execution",
-    "GNT-15.2-runtime-sessions",
-    "GNT-15.9"
-   ],
-   "resolution": "Post-acceptance establishment belongs to a Send and Sync RuntimeSessionService; pre-acceptance mapping and session resolution remain must-settle IntegrationPreflight operations.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-core/src/generated/portable.rs",
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json",
-    "protocol/catalogs/portable-contracts-v1.json"
-   ],
-   "id": "decision-06",
-   "implementation_owners": [
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-BLOCK-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.4-owned-work",
-    "GNT-15.7"
-   ],
-   "resolution": "Package snapshot, parsing, and analysis work uses a bounded BlockingWorkService or equivalent provider-owned worker with nonblocking queue admission and owned immutable inputs.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json",
-    "protocol/catalogs/portable-contracts-v1.json"
-   ],
-   "id": "decision-07",
-   "implementation_owners": [
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-RESUME-001",
-    "GNT-ASYNC-START-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.1-automatic-execution",
-    "GNT-15.4-owned-work",
-    "GNT-7.17"
-   ],
-   "resolution": "Root capacity and registry storage are reserved before start acceptance; resume admits, submits, registers, and publishes the complete reconstructed runnable set atomically or rolls it back without semantic change.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-core/src/generated/portable.rs",
-    "protocol/catalogs/portable-contracts-v1.json"
-   ],
-   "id": "decision-08",
-   "implementation_owners": [
-    "GNT-ASYNC-CLI-001",
-    "GNT-ASYNC-DOC-001",
-    "GNT-ASYNC-TOKIO-001"
-   ],
-   "normative_requirements": [
-    "GNT-3.3-runtime-ownership"
-   ],
-   "resolution": "An adapter-owned Tokio runtime helper is conforming only when construction, ownership, and shutdown are explicit; interpreter operations never create a hidden runtime.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-core/src/generated/portable.rs",
-    "protocol/catalogs/portable-contracts-v1.json"
-   ],
-   "id": "decision-09",
-   "implementation_owners": [
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-CONF-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.4-owned-work",
-    "GNT-15.7"
-   ],
-   "resolution": "Cross-execution roots, children, resume sets, public activities, background tasks, blocking jobs, and event deliveries use separate finite capacities with one acyclic acquisition order.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-10",
-   "implementation_owners": [
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-OBS-001",
-    "GNT-ASYNC-REVENT-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "normative_requirements": [
-    "GNT-10.13",
-    "GNT-15.1-automatic-execution",
-    "GNT-15.4-owned-work"
-   ],
-   "resolution": "Every interpreter-owned async activity is registered through the same bounded supervision and lifecycle accounting used by execution tasks; shutdown waits for each owned class.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-11",
-   "implementation_owners": [
-    "GNT-ASYNC-LIFE-001"
-   ],
-   "normative_requirements": [
-    "GNT-10.13",
-    "GNT-15.1-automatic-execution"
-   ],
-   "resolution": "The cloneable public facade tracks external owners separately from internal task references and runs the nonblocking unclean-drop path exactly once for the last external owner.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-core/src/generated/portable.rs",
-    "protocol/catalogs/portable-contracts-v1.json"
-   ],
-   "id": "decision-12",
-   "implementation_owners": [
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-CANCEL-001",
-    "GNT-ASYNC-ROOTCTL-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.4-owned-work",
-    "GNT-15.7"
-   ],
-   "resolution": "A reserved control-plane capacity remains unavailable to ordinary work so failure settlement, reaping, rollback, cancellation, owner release, and shutdown retain bounded progress under saturation.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-13",
-   "implementation_owners": [
-    "GNT-ASYNC-API-001",
-    "GNT-ASYNC-START-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.1-automatic-execution",
-    "GNT-3-M-LIFECYCLES"
-   ],
-   "resolution": "Accepted state and supervision registration precede source progress; a root may complete before caller observation, and no post-return activation handshake or manual driver remains.",
-   "status": "resolved"
-  },
-  {
-   "generated_artifacts": [
-    "crates/gantry-host/src/generated/embedding.rs",
-    "protocol/catalogs/embedding-contracts-v1.json"
-   ],
-   "id": "decision-14",
-   "implementation_owners": [
-    "GNT-ASYNC-START-001"
-   ],
-   "normative_requirements": [
-    "GNT-15.1-automatic-execution",
-    "GNT-3-M-LIFECYCLES",
-    "GNT-3-M-TASK-SETTLE",
-    "GNT-7.17"
-   ],
-   "resolution": "Predictable admission refusal remains pre-acceptance, while exceptional submission failure after acceptance settles the same root as executor-failure with root-submission-failure and never rewrites start as rejected.",
-   "status": "resolved"
-  }
- ],
- "format": "gantry.async-execution-contract-gate/v1",
- "issue": "GNT-ASYNC-GATE-000",
- "prerequisites": [
-  {
-   "commit": "b076f1adf2b0128a579a3743e36588de2862e8c8",
-   "issue": "GNT-ASYNC-SPEC-001",
-   "subject": "Define executor-backed execution semantics."
-  },
-  {
-   "commit": "1da9cb5036c21fc48bafd6d240447a72d6a1bf27",
-   "issue": "GNT-ASYNC-CONTRACT-001",
-   "subject": "Amend generated async execution contracts."
-  },
-  {
-   "commit": "ef45c97154093183acf880feba47fe9b98607e97",
-   "issue": "GNT-ASYNC-CONTRACT-001",
-   "subject": "Correct preflight trait contract."
-  },
-  {
-   "commit": "58c88d66ca7926515edaf0892bcf39fdc6d897b3",
-   "issue": "GNT-ASYNC-CONTRACT-001",
-   "subject": "Correct executor completion contract."
-  }
- ],
- "profile_claims": "enabled",
- "requirement_assignments": [
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DOC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-PUB-001",
-    "GNT-ASYNC-REL-001"
-   ],
-   "profiles": [
+  "adoption_gate": "protocol/conformance/async-execution-adoption-v1.json",
+  "amended_profiles": [
     "analyzer",
     "concurrent-evaluator",
     "durable-runtime",
     "embedding",
     "evaluator",
     "frontend"
-   ],
-   "requirement": "GNT-1.0"
-  },
-  {
-   "clause": "clause-002",
-   "evidence_owners": [
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-PUB-001",
-    "GNT-ASYNC-REL-001"
-   ],
-   "profiles": [
-    "analyzer",
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator",
-    "frontend"
-   ],
-   "requirement": "GNT-1.5"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-API-001",
-    "GNT-ASYNC-DOC-001",
-    "GNT-ASYNC-PUB-001",
-    "GNT-ASYNC-REL-001"
-   ],
-   "profiles": [
-    "analyzer",
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator",
-    "frontend"
-   ],
-   "requirement": "GNT-2.1"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CLI-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-TOKIO-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator"
-   ],
-   "requirement": "GNT-3.3"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CLI-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-TOKIO-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator"
-   ],
-   "requirement": "GNT-3.3-runtime-ownership"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CANCEL-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-MODEL-001",
-    "GNT-ASYNC-PROOF-001",
-    "GNT-ASYNC-SPAWN-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-TOKIO-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator"
-   ],
-   "requirement": "GNT-3.6"
-  },
-  {
-   "clause": "clause-002",
-   "evidence_owners": [
-    "GNT-ASYNC-BUD-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-COORD-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-DUR-001",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-ID-001",
-    "GNT-ASYNC-PROOF-001",
-    "GNT-ASYNC-REC-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "evaluator"
-   ],
-   "requirement": "GNT-3-M-STATE"
-  },
-  {
-   "clause": "clause-006",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-CANCEL-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-COORD-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-OBS-001",
-    "GNT-ASYNC-PROOF-001",
-    "GNT-ASYNC-RESUME-001",
-    "GNT-ASYNC-REVENT-001",
-    "GNT-ASYNC-ROOTCTL-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "evaluator"
-   ],
-   "requirement": "GNT-3-M-LIFECYCLES"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-BUD-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DUR-001",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-ID-001",
-    "GNT-ASYNC-IR-001",
-    "GNT-ASYNC-LOWER-001",
-    "GNT-ASYNC-SESS-001",
-    "GNT-ASYNC-SPAWN-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator"
-   ],
-   "requirement": "GNT-3-M-SPAWN"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CANCEL-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-COORD-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-DUR-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-JOIN-001",
-    "GNT-ASYNC-PROOF-001",
-    "GNT-ASYNC-REC-001",
-    "GNT-ASYNC-ROOTCTL-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "evaluator"
-   ],
-   "requirement": "GNT-3-M-TASK-SETTLE"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CANCEL-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-DUR-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-JOIN-001",
-    "GNT-ASYNC-OBS-001",
-    "GNT-ASYNC-PROOF-001",
-    "GNT-ASYNC-REC-001",
-    "GNT-ASYNC-SPAWN-001"
-   ],
-   "profiles": [
-    "durable-runtime"
-   ],
-   "requirement": "GNT-3-D-COMMIT-ORDER"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DUR-001",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-PROOF-001",
-    "GNT-ASYNC-REC-001"
-   ],
-   "profiles": [
-    "durable-runtime"
-   ],
-   "requirement": "GNT-3-D-CRASH"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-SESS-001",
-    "GNT-ASYNC-TOKIO-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator"
-   ],
-   "requirement": "GNT-7.4"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-BLOCK-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-START-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator"
-   ],
-   "requirement": "GNT-7.17"
-  },
-  {
-   "clause": "clause-003",
-   "evidence_owners": [
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-CANCEL-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-REC-001",
-    "GNT-ASYNC-SPAWN-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator"
-   ],
-   "requirement": "GNT-7.17"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DOC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-ROOTCTL-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "profiles": [
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator"
-   ],
-   "requirement": "GNT-10.13"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DUR-001",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-ID-001",
-    "GNT-ASYNC-PROOF-001",
-    "GNT-ASYNC-REC-001"
-   ],
-   "profiles": [
-    "durable-runtime"
-   ],
-   "requirement": "GNT-11.7"
-  },
-  {
-   "clause": "clause-002",
-   "evidence_owners": [
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-DUR-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-REC-001",
-    "GNT-ASYNC-RESUME-001",
-    "GNT-ASYNC-START-001"
-   ],
-   "profiles": [
-    "durable-runtime"
-   ],
-   "requirement": "GNT-11.10"
-  },
-  {
-   "clause": "clause-005",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-API-001",
-    "GNT-ASYNC-BLOCK-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DOC-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-PUB-001",
-    "GNT-ASYNC-SESS-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.0"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-API-001",
-    "GNT-ASYNC-BLOCK-001",
-    "GNT-ASYNC-CLI-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DOC-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-SESS-001",
-    "GNT-ASYNC-TOKIO-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.1"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-API-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-COORD-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-RESUME-001",
-    "GNT-ASYNC-REVENT-001",
-    "GNT-ASYNC-ROOTCTL-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.1-automatic-execution"
-  },
-  {
-   "clause": "clause-007",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-API-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-RESUME-001",
-    "GNT-ASYNC-START-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.1-concurrency-and-reentrancy"
-  },
-  {
-   "clause": "clause-009",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-API-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-REC-001",
-    "GNT-ASYNC-RESUME-001",
-    "GNT-ASYNC-START-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.1-concurrency-and-reentrancy"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-REC-001",
-    "GNT-ASYNC-SESS-001",
-    "GNT-ASYNC-SPAWN-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.2-runtime-sessions"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-CANCEL-001",
-    "GNT-ASYNC-CLI-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-ROOTCTL-001",
-    "GNT-ASYNC-SPAWN-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-SUP-001",
-    "GNT-ASYNC-TOKIO-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.4"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-BLOCK-001",
-    "GNT-ASYNC-BUD-001",
-    "GNT-ASYNC-CANCEL-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-COORD-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-DROOT-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-JOIN-001",
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-MODEL-001",
-    "GNT-ASYNC-OBS-001",
-    "GNT-ASYNC-REC-001",
-    "GNT-ASYNC-RESUME-001",
-    "GNT-ASYNC-REVENT-001",
-    "GNT-ASYNC-ROOTCTL-001",
-    "GNT-ASYNC-SPAWN-001",
-    "GNT-ASYNC-START-001",
-    "GNT-ASYNC-SUP-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.4-owned-work"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-ADMIT-001",
-    "GNT-ASYNC-BLOCK-001",
-    "GNT-ASYNC-BUD-001",
-    "GNT-ASYNC-CLI-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DOC-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-REC-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.7"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-API-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DOC-001",
-    "GNT-ASYNC-GATE-200",
-    "GNT-ASYNC-IR-001",
-    "GNT-ASYNC-LOWER-001",
-    "GNT-ASYNC-PUB-001",
-    "GNT-ASYNC-REL-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.8"
-  },
-  {
-   "clause": "clause-001",
-   "evidence_owners": [
-    "GNT-ASYNC-ACT-001",
-    "GNT-ASYNC-BLOCK-001",
-    "GNT-ASYNC-CONF-001",
-    "GNT-ASYNC-DRIVER-001",
-    "GNT-ASYNC-EXEC-001",
-    "GNT-ASYNC-GATE-100",
-    "GNT-ASYNC-LIFE-001",
-    "GNT-ASYNC-SESS-001",
-    "GNT-ASYNC-SUP-001",
-    "GNT-ASYNC-TOKIO-001"
-   ],
-   "profiles": [
-    "embedding"
-   ],
-   "requirement": "GNT-15.9"
-  }
- ],
- "specification_sha256": "ae4a1bfea85114d1b4640cbe66e04a5d43d439b6820ac2106ec6d23be93aed01",
- "status": "verified"
+  ],
+  "compatibility_impacts": [
+    "Async capacities and blocking-work policy are operational and excluded from durable identity.",
+    "Every evaluator embedding now requires owned task submission, completion observation, and abort.",
+    "IntegrationPreflight and other shared integration services are Send + Sync; operation hooks remain Send-only.",
+    "No supported API exposes manual Machine driving or a legacy execution mode.",
+    "Profile advertisement remains disabled until downstream implementation and conformance evidence close.",
+    "RuntimeSessionService owns post-acceptance session establishment independently of preflight.",
+    "Start may complete root work before caller observation, but never before accepted-state publication.",
+    "Superseded publication bytes remain isolated and cannot prove the amended contract."
+  ],
+  "contract_artifacts": [
+    {
+      "path": "crates/gantry-core/src/generated/portable.rs",
+      "sha256": "7befe5b6e9d7733a4a6a1e94efa222b3de13f3c85f1521e59494afadfa05bce7"
+    },
+    {
+      "path": "crates/gantry-core/src/generated/profiles.rs",
+      "sha256": "9175f1b22740162cf8c5053436e63fe9375dee6c3dc69032dad223319a8a80ef"
+    },
+    {
+      "path": "crates/gantry-host/src/generated/embedding.rs",
+      "sha256": "067ec113060db31427cee47ca60537d090568e92d900c95188f42c63805a3a43"
+    },
+    {
+      "path": "protocol/catalogs/embedding-contracts-v1.json",
+      "sha256": "0d9a635145ef3b9deb5f846512ea41a55c68a79caee8312005b82ff3fa819fb6"
+    },
+    {
+      "path": "protocol/catalogs/portable-contracts-v1.json",
+      "sha256": "f96409427db4f666e0430585d4136e54c8225da0282ea8040d15c0056537ba38"
+    },
+    {
+      "path": "protocol/catalogs/profiles-v1.json",
+      "sha256": "39aab780615f991f14ae1de76f49e40d51e453da4a00f73540d76bbe926f8a64"
+    },
+    {
+      "path": "protocol/requirements/generated/requirements-v1.json",
+      "sha256": "703fca9b2555bc962cbc36cf1849507b7341a3f24a7b40746f7aeca7b66f51fb"
+    },
+    {
+      "path": "protocol/requirements/reviewed-v1.json",
+      "sha256": "4d0488c44220417e2defc6bc12911b90d1d701803518145993d5d2a2a3ec4591"
+    },
+    {
+      "path": "protocol/schemas/embedding-contracts-v1.schema.json",
+      "sha256": "ece46244c27b05ed7a43acc929cc11b618a6a9f91a76b9940c10d3e0d0efc4bb"
+    },
+    {
+      "path": "protocol/schemas/portable-contracts-v1.schema.json",
+      "sha256": "38d6f0c5434e4591ab8d650b89a89eb941c29b97df17a108b002cc136d2d13ca"
+    },
+    {
+      "path": "protocol/schemas/profile-catalog-v1.schema.json",
+      "sha256": "74b9513e5b7325da1202f5e349c3f6ece75694392b5406773ee98248ef720b80"
+    }
+  ],
+  "decisions": [
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-01",
+      "implementation_owners": [
+        "GNT-ASYNC-EXEC-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.4",
+        "GNT-3.3-runtime-ownership"
+      ],
+      "resolution": "Every evaluator receives owned task submission, completion observation, and abort through the executor adapter; Gantry owns semantic tasks while the embedding owns the runtime.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-02",
+      "implementation_owners": [
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.4-owned-work"
+      ],
+      "resolution": "OwnedTaskResult remains an opaque transport acknowledgement and never carries a Gantry source value or semantic task status.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-03",
+      "implementation_owners": [
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.4-owned-work"
+      ],
+      "resolution": "Completion observation distinguishes completed, stopped, panicked, and failed; registered completion ownership must be bounded and non-recursive.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-04",
+      "implementation_owners": [
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.9-boundary-failure-containment"
+      ],
+      "resolution": "Executor completion preserves integration-panic and Gantry-invariant origins, while executor-internal failures remain a distinct failed result.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-05",
+      "implementation_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-SESS-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.1-automatic-execution",
+        "GNT-15.2-runtime-sessions",
+        "GNT-15.9"
+      ],
+      "resolution": "Post-acceptance establishment belongs to a Send and Sync RuntimeSessionService; pre-acceptance mapping and session resolution remain must-settle IntegrationPreflight operations.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-core/src/generated/portable.rs",
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json",
+        "protocol/catalogs/portable-contracts-v1.json"
+      ],
+      "id": "decision-06",
+      "implementation_owners": [
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-BLOCK-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ],
+      "resolution": "Package snapshot, parsing, and analysis work uses a bounded BlockingWorkService or equivalent provider-owned worker with nonblocking queue admission and owned immutable inputs.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json",
+        "protocol/catalogs/portable-contracts-v1.json"
+      ],
+      "id": "decision-07",
+      "implementation_owners": [
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-RESUME-001",
+        "GNT-ASYNC-START-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.1-automatic-execution",
+        "GNT-15.4-owned-work",
+        "GNT-7.17"
+      ],
+      "resolution": "Root capacity and registry storage are reserved before start acceptance; resume admits, submits, registers, and publishes the complete reconstructed runnable set atomically or rolls it back without semantic change.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-core/src/generated/portable.rs",
+        "protocol/catalogs/portable-contracts-v1.json"
+      ],
+      "id": "decision-08",
+      "implementation_owners": [
+        "GNT-ASYNC-CLI-001",
+        "GNT-ASYNC-DOC-001",
+        "GNT-ASYNC-TOKIO-001"
+      ],
+      "normative_requirements": [
+        "GNT-3.3-runtime-ownership"
+      ],
+      "resolution": "An adapter-owned Tokio runtime helper is conforming only when construction, ownership, and shutdown are explicit; interpreter operations never create a hidden runtime.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-core/src/generated/portable.rs",
+        "protocol/catalogs/portable-contracts-v1.json"
+      ],
+      "id": "decision-09",
+      "implementation_owners": [
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-CONF-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ],
+      "resolution": "Cross-execution roots, children, resume sets, public activities, background tasks, blocking jobs, and event deliveries use separate finite capacities with one acyclic acquisition order.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-10",
+      "implementation_owners": [
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-OBS-001",
+        "GNT-ASYNC-REVENT-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "normative_requirements": [
+        "GNT-10.13",
+        "GNT-15.1-automatic-execution",
+        "GNT-15.4-owned-work"
+      ],
+      "resolution": "Every interpreter-owned async activity is registered through the same bounded supervision and lifecycle accounting used by execution tasks; shutdown waits for each owned class.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-11",
+      "implementation_owners": [
+        "GNT-ASYNC-LIFE-001"
+      ],
+      "normative_requirements": [
+        "GNT-10.13",
+        "GNT-15.1-automatic-execution"
+      ],
+      "resolution": "The cloneable public facade tracks external owners separately from internal task references and runs the nonblocking unclean-drop path exactly once for the last external owner.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-core/src/generated/portable.rs",
+        "protocol/catalogs/portable-contracts-v1.json"
+      ],
+      "id": "decision-12",
+      "implementation_owners": [
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-CANCEL-001",
+        "GNT-ASYNC-ROOTCTL-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ],
+      "resolution": "A reserved control-plane capacity remains unavailable to ordinary work so failure settlement, reaping, rollback, cancellation, owner release, and shutdown retain bounded progress under saturation.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-13",
+      "implementation_owners": [
+        "GNT-ASYNC-API-001",
+        "GNT-ASYNC-START-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.1-automatic-execution",
+        "GNT-3-M-LIFECYCLES"
+      ],
+      "resolution": "Accepted state and supervision registration precede source progress; a root may complete before caller observation, and no post-return activation handshake or manual driver remains.",
+      "status": "resolved"
+    },
+    {
+      "generated_artifacts": [
+        "crates/gantry-host/src/generated/embedding.rs",
+        "protocol/catalogs/embedding-contracts-v1.json"
+      ],
+      "id": "decision-14",
+      "implementation_owners": [
+        "GNT-ASYNC-START-001"
+      ],
+      "normative_requirements": [
+        "GNT-15.1-automatic-execution",
+        "GNT-3-M-LIFECYCLES",
+        "GNT-3-M-TASK-SETTLE",
+        "GNT-7.17"
+      ],
+      "resolution": "Predictable admission refusal remains pre-acceptance, while exceptional submission failure after acceptance settles the same root as executor-failure with root-submission-failure and never rewrites start as rejected.",
+      "status": "resolved"
+    }
+  ],
+  "format": "gantry.async-execution-contract-gate/v1",
+  "issue": "GNT-ASYNC-GATE-000",
+  "prerequisites": [
+    {
+      "commit": "b076f1adf2b0128a579a3743e36588de2862e8c8",
+      "issue": "GNT-ASYNC-SPEC-001",
+      "subject": "Define executor-backed execution semantics."
+    },
+    {
+      "commit": "1da9cb5036c21fc48bafd6d240447a72d6a1bf27",
+      "issue": "GNT-ASYNC-CONTRACT-001",
+      "subject": "Amend generated async execution contracts."
+    },
+    {
+      "commit": "ef45c97154093183acf880feba47fe9b98607e97",
+      "issue": "GNT-ASYNC-CONTRACT-001",
+      "subject": "Correct preflight trait contract."
+    },
+    {
+      "commit": "58c88d66ca7926515edaf0892bcf39fdc6d897b3",
+      "issue": "GNT-ASYNC-CONTRACT-001",
+      "subject": "Correct executor completion contract."
+    }
+  ],
+  "profile_claims": "enabled",
+  "requirement_assignments": [
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DOC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-PUB-001",
+        "GNT-ASYNC-REL-001"
+      ],
+      "profiles": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator",
+        "frontend"
+      ],
+      "requirement": "GNT-1.0"
+    },
+    {
+      "clause": "clause-002",
+      "evidence_owners": [
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-PUB-001",
+        "GNT-ASYNC-REL-001"
+      ],
+      "profiles": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator",
+        "frontend"
+      ],
+      "requirement": "GNT-1.5"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-API-001",
+        "GNT-ASYNC-DOC-001",
+        "GNT-ASYNC-PUB-001",
+        "GNT-ASYNC-REL-001"
+      ],
+      "profiles": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator",
+        "frontend"
+      ],
+      "requirement": "GNT-2.1"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CLI-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-TOKIO-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
+      ],
+      "requirement": "GNT-3.3"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CLI-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-TOKIO-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
+      ],
+      "requirement": "GNT-3.3-runtime-ownership"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CANCEL-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-MODEL-001",
+        "GNT-ASYNC-PROOF-001",
+        "GNT-ASYNC-SPAWN-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-TOKIO-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
+      ],
+      "requirement": "GNT-3.6"
+    },
+    {
+      "clause": "clause-002",
+      "evidence_owners": [
+        "GNT-ASYNC-BUD-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-COORD-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-DUR-001",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-ID-001",
+        "GNT-ASYNC-PROOF-001",
+        "GNT-ASYNC-REC-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "evaluator"
+      ],
+      "requirement": "GNT-3-M-STATE"
+    },
+    {
+      "clause": "clause-006",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-CANCEL-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-COORD-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-OBS-001",
+        "GNT-ASYNC-PROOF-001",
+        "GNT-ASYNC-RESUME-001",
+        "GNT-ASYNC-REVENT-001",
+        "GNT-ASYNC-ROOTCTL-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "evaluator"
+      ],
+      "requirement": "GNT-3-M-LIFECYCLES"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-BUD-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DUR-001",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-ID-001",
+        "GNT-ASYNC-IR-001",
+        "GNT-ASYNC-LOWER-001",
+        "GNT-ASYNC-SESS-001",
+        "GNT-ASYNC-SPAWN-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator"
+      ],
+      "requirement": "GNT-3-M-SPAWN"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CANCEL-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-COORD-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-DUR-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-JOIN-001",
+        "GNT-ASYNC-PROOF-001",
+        "GNT-ASYNC-REC-001",
+        "GNT-ASYNC-ROOTCTL-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "evaluator"
+      ],
+      "requirement": "GNT-3-M-TASK-SETTLE"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CANCEL-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-DUR-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-JOIN-001",
+        "GNT-ASYNC-OBS-001",
+        "GNT-ASYNC-PROOF-001",
+        "GNT-ASYNC-REC-001",
+        "GNT-ASYNC-SPAWN-001"
+      ],
+      "profiles": [
+        "durable-runtime"
+      ],
+      "requirement": "GNT-3-D-COMMIT-ORDER"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DUR-001",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-PROOF-001",
+        "GNT-ASYNC-REC-001"
+      ],
+      "profiles": [
+        "durable-runtime"
+      ],
+      "requirement": "GNT-3-D-CRASH"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-SESS-001",
+        "GNT-ASYNC-TOKIO-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
+      ],
+      "requirement": "GNT-7.4"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-BLOCK-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-START-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
+      ],
+      "requirement": "GNT-7.17"
+    },
+    {
+      "clause": "clause-003",
+      "evidence_owners": [
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-CANCEL-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-REC-001",
+        "GNT-ASYNC-SPAWN-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
+      ],
+      "requirement": "GNT-7.17"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DOC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-ROOTCTL-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
+      ],
+      "requirement": "GNT-10.13"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DUR-001",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-ID-001",
+        "GNT-ASYNC-PROOF-001",
+        "GNT-ASYNC-REC-001"
+      ],
+      "profiles": [
+        "durable-runtime"
+      ],
+      "requirement": "GNT-11.7"
+    },
+    {
+      "clause": "clause-002",
+      "evidence_owners": [
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-DUR-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-REC-001",
+        "GNT-ASYNC-RESUME-001",
+        "GNT-ASYNC-START-001"
+      ],
+      "profiles": [
+        "durable-runtime"
+      ],
+      "requirement": "GNT-11.10"
+    },
+    {
+      "clause": "clause-005",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-API-001",
+        "GNT-ASYNC-BLOCK-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DOC-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-PUB-001",
+        "GNT-ASYNC-SESS-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.0"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-API-001",
+        "GNT-ASYNC-BLOCK-001",
+        "GNT-ASYNC-CLI-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DOC-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-SESS-001",
+        "GNT-ASYNC-TOKIO-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.1"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-API-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-COORD-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-RESUME-001",
+        "GNT-ASYNC-REVENT-001",
+        "GNT-ASYNC-ROOTCTL-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.1-automatic-execution"
+    },
+    {
+      "clause": "clause-007",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-API-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-RESUME-001",
+        "GNT-ASYNC-START-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.1-concurrency-and-reentrancy"
+    },
+    {
+      "clause": "clause-009",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-API-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-REC-001",
+        "GNT-ASYNC-RESUME-001",
+        "GNT-ASYNC-START-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.1-concurrency-and-reentrancy"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-REC-001",
+        "GNT-ASYNC-SESS-001",
+        "GNT-ASYNC-SPAWN-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.2-runtime-sessions"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-CANCEL-001",
+        "GNT-ASYNC-CLI-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-ROOTCTL-001",
+        "GNT-ASYNC-SPAWN-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-SUP-001",
+        "GNT-ASYNC-TOKIO-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.4"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-BLOCK-001",
+        "GNT-ASYNC-BUD-001",
+        "GNT-ASYNC-CANCEL-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-COORD-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-DROOT-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-JOIN-001",
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-MODEL-001",
+        "GNT-ASYNC-OBS-001",
+        "GNT-ASYNC-REC-001",
+        "GNT-ASYNC-RESUME-001",
+        "GNT-ASYNC-REVENT-001",
+        "GNT-ASYNC-ROOTCTL-001",
+        "GNT-ASYNC-SPAWN-001",
+        "GNT-ASYNC-START-001",
+        "GNT-ASYNC-SUP-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.4-owned-work"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-ADMIT-001",
+        "GNT-ASYNC-BLOCK-001",
+        "GNT-ASYNC-BUD-001",
+        "GNT-ASYNC-CLI-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DOC-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-REC-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.7"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-API-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DOC-001",
+        "GNT-ASYNC-GATE-200",
+        "GNT-ASYNC-IR-001",
+        "GNT-ASYNC-LOWER-001",
+        "GNT-ASYNC-PUB-001",
+        "GNT-ASYNC-REL-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.8"
+    },
+    {
+      "clause": "clause-001",
+      "evidence_owners": [
+        "GNT-ASYNC-ACT-001",
+        "GNT-ASYNC-BLOCK-001",
+        "GNT-ASYNC-CONF-001",
+        "GNT-ASYNC-DRIVER-001",
+        "GNT-ASYNC-EXEC-001",
+        "GNT-ASYNC-GATE-100",
+        "GNT-ASYNC-LIFE-001",
+        "GNT-ASYNC-SESS-001",
+        "GNT-ASYNC-SUP-001",
+        "GNT-ASYNC-TOKIO-001"
+      ],
+      "profiles": [
+        "embedding"
+      ],
+      "requirement": "GNT-15.9"
+    }
+  ],
+  "specification_sha256": "d1ab4b6ab20bdddfb4955210c7441b72e65ddeef929172ec8046624751db8a83",
+  "status": "verified"
 }

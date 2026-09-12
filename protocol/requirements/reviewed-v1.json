@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "ae4a1bfea85114d1b4640cbe66e04a5d43d439b6820ac2106ec6d23be93aed01",
+ "specification_sha256": "d1ab4b6ab20bdddfb4955210c7441b72e65ddeef929172ec8046624751db8a83",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9494,
-   "end_line": 12751,
+   "end_line": 12977,
    "rationale": null
   }
  ],
@@ -33405,6 +33405,357 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/lifecycle_stop.rs#stop_non_claims_are_closed_ordered_and_refused_as_guarantees"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.0-integration-fault-containment",
+   "span_start_line": 12752,
+   "span_end_line": 12815,
+   "anchor_line": 12755,
+   "body_start_line": 12756,
+   "body_end_line": 12815,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12756,
+     "end_line": 12815,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#section_publishes_the_nine_clause_anchors_in_order"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.1-containment-boundaries",
+   "span_start_line": 12816,
+   "span_end_line": 12834,
+   "anchor_line": 12817,
+   "body_start_line": 12818,
+   "body_end_line": 12834,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12818,
+     "end_line": 12834,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#containment_boundary_vocabulary_is_closed_and_owns_clause_23_1"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.2-foreign-failure-taxonomy",
+   "span_start_line": 12835,
+   "span_end_line": 12851,
+   "anchor_line": 12836,
+   "body_start_line": 12837,
+   "body_end_line": 12851,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12837,
+     "end_line": 12851,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#foreign_failure_vocabulary_is_closed_and_each_class_owns_its_own_code"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.3-effect-ambiguity-preservation",
+   "span_start_line": 12852,
+   "span_end_line": 12871,
+   "anchor_line": 12853,
+   "body_start_line": 12854,
+   "body_end_line": 12871,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12854,
+     "end_line": 12871,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#ambiguous_effect_is_preserved_and_never_made_definite"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.4-operation-ownership-and-single-settlement",
+   "span_start_line": 12872,
+   "span_end_line": 12893,
+   "anchor_line": 12873,
+   "body_start_line": 12874,
+   "body_end_line": 12893,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12874,
+     "end_line": 12893,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#second_settlement_is_refused_without_mutating_settled_state"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.5-failed-instance-poisoning-and-isolation",
+   "span_start_line": 12894,
+   "span_end_line": 12913,
+   "anchor_line": 12895,
+   "body_start_line": 12896,
+   "body_end_line": 12913,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12896,
+     "end_line": 12913,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#poisoning_is_one_way_and_refuses_reuse"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.6-protected-fault-diagnostics",
+   "span_start_line": 12914,
+   "span_end_line": 12932,
+   "anchor_line": 12915,
+   "body_start_line": 12916,
+   "body_end_line": 12932,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12916,
+     "end_line": 12932,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#protected_containment_report_is_withheld_from_ordinary_observation"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.7-adapter-containment-obligations",
+   "span_start_line": 12933,
+   "span_end_line": 12958,
+   "anchor_line": 12934,
+   "body_start_line": 12935,
+   "body_end_line": 12958,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12935,
+     "end_line": 12958,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#destructor_and_cancellation_boundaries_use_the_same_classes_and_codes"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-23.8-containment-non-claims",
+   "span_start_line": 12959,
+   "span_end_line": 12977,
+   "anchor_line": 12960,
+   "body_start_line": 12961,
+   "body_end_line": 12977,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12961,
+     "end_line": 12977,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/fault_containment.rs#containment_non_claim_vocabulary_is_closed_ordered_and_distinct"
        ],
        "rationale": null
       }

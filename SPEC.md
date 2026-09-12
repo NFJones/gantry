@@ -12749,3 +12749,229 @@ promising a limit outside it, a non-claim MUST NOT be presented as a guarantee, 
 an implementation MUST NOT report a clause of this section as satisfied, partially
 satisfied, or conditionally satisfied where it can only demonstrate one of these
 limits.
+
+## 23. Integration Fault Containment
+
+<a id="GNT-23.0-integration-fault-containment"></a>
+
+**[GNT-23.0-integration-fault-containment] Integration fault containment.** This
+section defines what an integration boundary does when the code it calls fails in a
+way the language does not model: the boundaries at which a foreign failure is
+contained, the closed foreign failure taxonomy, the preservation of effect ambiguity,
+operation ownership and single settlement, poisoning and isolation of a failed
+instance, what a containment diagnostic carries and what it must not reveal, the
+adapter-facing obligations, and the explicit non-claims of the section. It cites and
+extends, rather than replaces, the landed operation and lifecycle contracts: the
+operation kinds, receiver arrangement, progress observation, interruption and late
+completion, ambiguous-effect classification, resource state after failure, and
+adapter obligations of Section 20; the cooperative stop and hard cancellation rules
+of Section 22; the shutdown operation, its cohort, and its finite graceful timeout of
+`GNT-10.12`, `GNT-10.13` and `GNT-10.14`; the unreadable credential contract of
+Section 21; and the protected-data and protected-diagnostic rules of `GNT-15.10` and
+the protection store.
+
+The closed vocabulary of this section is exactly the following terms. A clause here
+MUST NOT use a containment term outside this vocabulary, and a term listed below MUST
+NOT be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| containment boundary | One member of the closed boundary vocabulary of `GNT-23.1-containment-boundaries`: a call, a poll, a cancel or abort, a completion, a callback, or a destructor. |
+| foreign failure | One member of the closed foreign failure vocabulary of `GNT-23.2-foreign-failure-taxonomy`: a failure raised by code this section does not own. |
+| foreign failure class | One member of that same closed vocabulary, reported under its own frozen containment diagnostic and never under another class or under a generic failure. |
+| Gantry invariant failure | A detected failure of a Gantry invariant, reported by `GNT-23.2-foreign-failure-taxonomy` as itself: it is not a foreign failure and is never contained as one. |
+| effect ambiguity | The effect state of `GNT-23.3-effect-ambiguity-preservation` in which an effect may already have begun, so it is never rolled back, never reclassified as definite, and never retried. |
+| containment report | The declared diagnostic of `GNT-23.6-protected-fault-diagnostics`: the boundary, the failure class, the effect state, the owner generation, the codes, and the clause anchors. |
+| poisoned instance | One adapter or resource instance that `GNT-23.5-failed-instance-poisoning-and-isolation` marked unusable, naming the instance identity and the reason. |
+| containment non-claim | One published limit of `GNT-23.8-containment-non-claims`. |
+
+**Applicability.** The clauses of this section govern an edition or profile that
+admits foreign integration code behind Gantry operations. The v1 edition described by
+Sections 1 through 15 does not: its landed model has operations, recovery classes, and
+task statuses, but no containment boundary, no foreign failure class, and no
+containment report. An implementation that supports only that model MUST record each
+clause of this section as a profile-based `not-applicable` justification in the sense
+of Sections 2 and 15, and MUST NOT report a clause here as satisfied, partially
+satisfied, conditionally satisfied, or satisfied for a subset of its rules.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+operation kinds, receiver arrangement, progress observation, and effect and retry
+classification of `GNT-20.1` through `GNT-20.6`; the resource state after failure, the
+half-close rules, and the adapter obligations of `GNT-20.7`, `GNT-20.8` and
+`GNT-20.11`; the owner generation and stale-owner fencing of
+`GNT-20.10-retirement-and-stale-owner-fencing`; the shutdown operation, its cohort,
+its finite graceful timeout, and its unclean-drop path of `GNT-10.12`, `GNT-10.13` and
+`GNT-10.14`; the cooperative stop and hard cancellation rules of Section 22; the
+secret and credential contract of Section 21; and the protected-data and
+protected-diagnostic rules of `GNT-15.10` and the protection store. Nothing here
+introduces a second fault taxonomy: the landed operation failure classes, task
+statuses, and stop causes remain those of Sections 20 and 22, and a foreign failure
+class of `GNT-23.2-foreign-failure-taxonomy` is never reported as one of them. Nothing
+here introduces a protected class: the protected classes and their disclosure rules
+remain those of Sections 15 and 21. Nothing here introduces a new identity input:
+every identity of this section is derived from declared fields, and no process
+identifier, adapter handle, host path, clock reading, environment fact, or locale
+enters one. Every obligation of this section is decided by an explicit check over
+declared values, and this section states no obligation that no check can decide.
+
+<a id="GNT-23.1-containment-boundaries"></a>
+
+**[GNT-23.1-containment-boundaries] Containment boundaries.** A foreign failure is
+contained at exactly these boundaries and at no others: the call of one integration
+operation, the poll of one live-resource operation, the cancel or abort of one
+operation, the completion of one operation, a callback the integration invokes into
+Gantry, and the destructor of one adapter or resource instance. At each of these
+boundaries the foreign failure MUST be contained as a value: the boundary converts it
+into a declared containment report of `GNT-23.2-foreign-failure-taxonomy` and
+`GNT-23.6-protected-fault-diagnostics` rather than letting it cross a task boundary or
+a public API boundary as an unwind, an abort, or an unspecified propagation. No ad hoc
+call site, adapter hook, provider notification, timer, ambient handler, or host
+mechanism becomes a containment boundary, and no clause of this section permits a
+foreign failure to escape one of these boundaries instead of being contained there.
+Containment at one boundary decides exactly one failure class, one effect state, one
+owner generation, and the codes of `GNT-23.6-protected-fault-diagnostics`: two
+boundaries that observe the same foreign failure report two reports rather than
+merging, deduplicating, or relabelling them.
+
+<a id="GNT-23.2-foreign-failure-taxonomy"></a>
+
+**[GNT-23.2-foreign-failure-taxonomy] Foreign failure taxonomy.** The foreign failure
+vocabulary is exactly four classes: panic, exception, trap, and protocol failure. The
+four are distinct, each is reported under its own frozen containment diagnostic of
+`GNT-23.6-protected-fault-diagnostics`, and no foreign failure may be reported as
+another foreign class, as a generic or unspecified failure, or as a Gantry invariant
+failure. A failure that a boundary cannot attribute to one of the four classes is
+refused rather than mapped onto the nearest declared class, because a diagnostic that
+carried an improvised class could not be attributed to a clause of this section. A
+Gantry invariant failure is not a foreign failure: it carries its own diagnostic, it
+is reported as itself, and containment of it as a foreign class is refused, so no
+foreign failure and no invariant failure is ever reported as the other. The classes
+name the origin of a failure and nothing else: a class carries no payload byte, no
+message, no backtrace, and no protected content, and no class is inferred from a
+payload.
+
+<a id="GNT-23.3-effect-ambiguity-preservation"></a>
+
+**[GNT-23.3-effect-ambiguity-preservation] Effect ambiguity preservation.** Every
+contained failure carries the effect state the boundary observed, and the vocabulary
+of that state is exactly three: the effect definitely did not start, the boundary
+definitely rejected the operation so nothing took effect, or the effect is ambiguous
+because work may already have reached the target. The three stay distinct and each is
+reported under its own declared state: an effect that definitely did not start is
+never reported as ambiguous, a definite rejection is never reported as an ambiguous
+effect, and an ambiguous effect is never reported as definite. An ambiguous effect is
+never rolled back, never reclassified as definite, and never
+retried: a refinement that would make an ambiguous effect definite and a retry of an
+ambiguous mutation are both refused and recorded as refusals rather than repairs. This
+section therefore performs no compensating action, no undo, and no rollback, and it
+never re-derives an effect state from a later observation of the same target. Retry
+eligibility for an ambiguous effect remains the landed rule of
+`GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, reached only through
+the deduplication record of the exact operation and generation, and this section adds
+no retry of its own.
+
+<a id="GNT-23.4-operation-ownership-and-single-settlement"></a>
+
+**[GNT-23.4-operation-ownership-and-single-settlement] Operation ownership and single
+settlement.** Each operation has exactly one owner generation and exactly one
+settlement. The owner generation is the landed counter of
+`GNT-20.10-retirement-and-stale-owner-fencing`; it is never a second fence vocabulary,
+and a completion is admissible only from the generation that holds the operation. A
+settlement records the owner generation and at most one settled outcome, and it is
+settled by the first admissible completion only: a later completion of an
+already-settled operation is refused as a second settlement, a completion that names a
+generation the operation does not hold is refused as a stale-generation completion,
+and a completion that declares no outcome or more than one outcome for one settlement
+is refused as a malformed completion, which is its own distinct condition, decided
+before a second settlement and before a stale generation. Every refusal leaves the
+settled state exactly as it was: the recorded owner generation and the settled outcome
+are unchanged, a refusal is never recorded as a settlement, and the settled outcome is
+never replaced, re-derived, or reclassified by a refused completion. No completion
+settles an operation twice, a late, malformed, or stale completion never runs the
+operation's effect path, and this clause refines the landed interruption, late
+completion, and settlement-winner rules of
+`GNT-20.5-interruption-cancellation-and-late-completion` rather than restating them.
+
+<a id="GNT-23.5-failed-instance-poisoning-and-isolation"></a>
+
+**[GNT-23.5-failed-instance-poisoning-and-isolation] Failed-instance poisoning and
+isolation.** A failed adapter or resource instance is poisoned, and a poisoned
+instance MUST NOT be reused: it is never dispatched again, never substituted, never
+repaired in place, and never returned to a caller as usable. The poisoned identity is
+the landed adapter-instance or resource identity the failed instance already carries,
+so it names one instance and never a family, a process, or a task
+cohort. Poisoning is one-way and recorded once: the first poisoning of an instance
+fixes its reason, a repeated poisoning reports the recorded instance and reason
+instead of creating a second poisoned instance, and no path un-poisons an instance or
+clears the record. Poisoning never widens: an instance whose boundary did not fail
+remains usable, sibling work and unaffected instances stay usable wherever the landed
+isolation promises of `GNT-20.7-resource-state-after-failure-and-poisoning` and
+`GNT-20.8-half-close-and-post-failure-ownership` hold, and no poisoning reaches an
+unrelated instance, a whole adapter kind, or a task cohort. The
+poisoned state, the poison reasons, and the reuse refusal refine the landed resource
+state and adapter obligations of `GNT-20.7`, `GNT-20.8` and `GNT-20.11` and do not
+redeclare them.
+
+<a id="GNT-23.6-protected-fault-diagnostics"></a>
+
+**[GNT-23.6-protected-fault-diagnostics] Protected fault diagnostics.** A containment
+report carries the boundary, the failure class, the effect state, the owner
+generation, the codes of this section, and the clause anchors that own them, and it
+carries nothing else: it MUST NOT carry payload bytes, protected contents, secrets,
+credentials, or foreign backtraces, and no rendering of a report derives a byte, a
+length, a digest, or a bit from a payload. This holds by construction rather than by
+redaction, because no field of a report can hold one and no accessor returns one. A
+containment report that relates to protected data is itself protected: it is reachable
+only through the landed protected-diagnostic rules of `GNT-15.10` and the protection
+store, an ordinary observer is refused rather than given the text, and the report
+implements no rendering trait and no deserializer. The codes are a frozen registry,
+one code per condition of this section, each anchored to exactly one clause of this
+section, so a diagnostic names the clause that owns its condition and no condition is
+reported under another condition's code. A diagnostic never reclassifies a landed
+outcome, never widens a right, and never carries the value of a secret reference of
+Section 21.
+
+<a id="GNT-23.7-adapter-containment-obligations"></a>
+
+**[GNT-23.7-adapter-containment-obligations] Adapter containment obligations.** An
+adapter that carries integration operations owes the following, and each obligation is
+decidable from declared values:
+
+- No foreign unwind crosses a task boundary or a public API boundary. A panic, an
+  exception, a trap, or a protocol failure observed at a call, a poll, a cancel or
+  abort, a completion, a callback, or a destructor is contained at that boundary as a
+  declared value of `GNT-23.1-containment-boundaries`, and an adapter that cannot
+  contain refuses the obligation instead of propagating the failure.
+- A foreign failure is reported as exactly one class of
+  `GNT-23.2-foreign-failure-taxonomy`, never as another foreign class, as a generic
+  failure, or as a Gantry invariant failure.
+- The adapter declares the effect state it observed under
+  `GNT-23.3-effect-ambiguity-preservation`, chooses one of the three declared states,
+  and never presents a definite state for an effect that may already have begun.
+- The adapter never reuses a poisoned instance, and never presents one for dispatch,
+  substitution, or repair under `GNT-23.5-failed-instance-poisoning-and-isolation`.
+- Destructor and cancellation paths follow the same rules as call, poll, and
+  completion: a destructor that fails is contained at the destructor boundary, and a
+  cancel or abort that fails is contained at the cancel-or-abort boundary, with the
+  same classes, the same effect states, and the same codes. No adapter gets a private
+  failure vocabulary, a private effect state, or a private diagnostic for its
+  destructor or cancellation path.
+
+<a id="GNT-23.8-containment-non-claims"></a>
+
+**[GNT-23.8-containment-non-claims] Explicit non-claims.** This section does not
+promise and MUST NOT be read as promising: an arbitrary memory-corruption guarantee,
+because containment reports that a foreign failure was observed at a boundary and
+never claims that the memory state of the process, the task, or the foreign code is
+sound; a rollback after effects may have begun, because containment never undoes an
+effect and an ambiguous effect stays ambiguous; a platform or ABI guarantee, because
+this section makes no claim about how a platform implements an unwind, a trap, an
+abort, or a protocol failure beyond containing what a boundary observed; that a
+poisoned instance can be repaired in place, because poisoning is one-way and a
+poisoned instance is never returned to service; or a protected payload or backtrace
+disclosure, because a report carries declared metadata and codes only. The non-claims
+are a closed vocabulary: a report, a clause, or an evidence item MUST NOT be read as
+promising a limit outside it, a non-claim MUST NOT be presented as a guarantee, and an
+implementation MUST NOT report a clause of this section as satisfied, partially
+satisfied, or conditionally satisfied where it can only demonstrate one of these
+limits.

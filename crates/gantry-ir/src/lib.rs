@@ -17,6 +17,7 @@ mod canonical;
 mod effects;
 mod executable;
 mod facts;
+pub mod fault;
 pub mod generated;
 mod generic;
 pub mod identifier;
@@ -75,6 +76,19 @@ pub use facts::{
     ActionEffectContributor, ActionInventory, CallEdge, EntryInventory, OperationSite,
     OwnershipFact, SiteContractError, StaticSiteId, StructuralPosition, TaskControlSite,
     WorkflowFacts,
+};
+// The fault containment model of SPEC.md Section 23 is published here. Its
+// `ContainmentFailureClass` and `ContainmentSettlement` are named apart from the landed
+// `GNT-20` operation ABI spellings `FailureClass` and `OperationSettlement`, so no name of
+// this crate root is claimed by two vocabularies at once.
+pub use fault::{
+    CONTAINMENT_NON_CLAIM_NAMES, CONTAINMENT_NON_CLAIM_ORDER, Completion, ContainmentBoundary,
+    ContainmentDeclaration, ContainmentDiagnosticCode, ContainmentError, ContainmentFailureClass,
+    ContainmentNonClaim, ContainmentNonClaimName, ContainmentObligation, ContainmentPlan,
+    ContainmentReport, ContainmentSettlement, ContainmentVerdict, EffectState,
+    FAULT_CONTAINMENT_CLAUSES, ForeignFailureKind, ForeignFailureObservation, MalformedCompletion,
+    ObligationRefusal, PoisonLedger, PoisonReason, ReportScope, attribute_foreign_failure,
+    check_containment_declaration, poison_resource_state,
 };
 pub use generic::{
     CanonicalImplementationIdentity, ClosedCallable, ClosedOperationSite, ClosedTaskSite,
