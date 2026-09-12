@@ -63,6 +63,7 @@
     - [15.10 Protected data](#1510-protected-data)
   - [16. Packages, Manifests, and Public Interfaces](#16-packages-manifests-and-public-interfaces)
   - [17. Targets, Features, and Conditional Compilation](#17-targets-features-and-conditional-compilation)
+  - [18. Identity Domains and Identifier Security](#18-identity-domains-and-identifier-security)
 
 <!-- In all code blocks rust syntax highlighting is used deliberately. Eventually, these can be changed to gantry -->
 
@@ -804,6 +805,7 @@ than one block.
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10`, `GNT-15.1-automatic-execution`, `GNT-15.2-runtime-sessions`, `GNT-15.4-owned-work` |
 | Packages, manifests, and public interfaces | `GNT-16.0`, `GNT-16.1-package-identity`, `GNT-16.2-package-instances`, `GNT-16.3-dependency-aliases`, `GNT-16.4-visibility`, `GNT-16.5-reexports`, `GNT-16.6-target-kinds`, `GNT-16.7-public-interface-manifest`, `GNT-16.8-compatibility-axes`, `GNT-16.9-resolution-order-independence` |
 | Targets, features, and conditional compilation | `GNT-17.0`, `GNT-17.1-target-descriptor`, `GNT-17.2-descriptor-normalization-and-target-facts`, `GNT-17.3-sealed-predicates`, `GNT-17.4-feature-declaration`, `GNT-17.5-feature-unification`, `GNT-17.6-conditional-selection-rule`, `GNT-17.7-inactive-code-policy`, `GNT-17.8-target-matrix`, `GNT-17.9-build-host-authority`, `GNT-17.10-target-selected-mode-admission`, `GNT-17.11-target-artifact-binding`, `GNT-17.12-target-resolution-failure`, `GNT-17.13-runtime-availability-separation` |
+| Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -11587,3 +11589,208 @@ under Section 15 and never by a descriptor field, and an optional runtime
 service is declared statically as an optional binding or behind an explicit
 dynamic-authorization boundary, with absence handled as a typed preflight or
 application outcome. A target fact grants no authority.
+
+## 18. Identity Domains and Identifier Security
+
+<a id="GNT-18.0"></a>
+
+This section defines the symbolic domains that carry an identity, their
+canonical identities, the admission of source spellings, collision handling,
+external-name mapping, generated aliases, safe rendering, typed-identity
+authority, and identity version pinning. It extends the identifier rules of
+`GNT-4.12`, the lexical identifier rules of `GNT-13.2`, and the package and
+target identity rules of Sections 16 and 17 rather than replacing them, and it
+adds no grammar production.
+
+The closed vocabulary of this section is exactly the following terms. A clause
+here MUST NOT use an identity term outside this vocabulary, and a term listed
+below MUST NOT be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| canonical symbolic identity | The single canonical byte encoding that is the identity of one entry of a symbolic domain. |
+| symbolic domain | One member of the closed identity-carrying domain list of `GNT-18.1-symbolic-identity-domains`. |
+| source identifier domain | The domain of the identifiers that the grammar of `GNT-13.2` admits as source spelling. |
+| declared name | One name a declaration records for a lookup namespace. |
+| declared name set | The complete set of declared names one declaration introduces in its lookup namespace. |
+| lookup namespace | The scope in which a declared name resolves to one canonical symbolic identity. |
+| canonical name | The canonical spelling of one declared name inside its lookup namespace. |
+| symbolic-identity record | The versioned record of `GNT-18.2-canonical-symbolic-identity` that carries one canonical symbolic identity. |
+| external name | A name owned by a registry, a publisher, a provider, an external package, or an imported tool. |
+| source alias | The local source spelling of `GNT-16.3-dependency-aliases`; it is spelling and never an identity. |
+| generated alias | A source spelling a generator produces for a name under `GNT-18.10-generated-alias-derivation`. |
+| alias map | The machine-readable record that maps generated aliases to canonical symbolic identities. |
+| collision relation | The symmetric relation of `GNT-18.6-collision-relation` over one lookup namespace. |
+| collision condition | One member of the closed collision vocabulary of `GNT-18.6-collision-relation`. |
+| reserved word | One member of the selected edition's closed published reserved-word set. |
+| confusable skeleton | The UTS #39 skeleton of a name, computed under the pinned Unicode version. |
+| script | One Unicode script property value that a scalar carries under the pinned Unicode version. |
+| Recommended single-script set | The scripts that UTS #39 names as recommended for single-script identifiers. |
+| excluded scalar | One member of the excluded-scalar classes of `GNT-13.2`. |
+| display label | A bounded presentation string derived from a name for human display only. |
+| identity version | The version that pins the Unicode version, normalization, folding, skeleton, and encoding of this section. |
+| safe rendering | Rendering that escapes control and bidi-invisible scalars by code point, in code-point order. |
+
+**Applicability.** The clauses of this section govern an edition or profile
+that admits symbolic domains beyond the single-package v1 identifier domain:
+packages, generated declarations, agent and capability slots, tools, providers,
+and policy and approval subjects. The v1 edition described by Sections 1
+through 15 does not: `GNT-4.6` excludes package resolution, `GNT-13.3` admits
+no import alias and no visibility modifier, and v1 has no provider, tool, or
+policy subject domain. An implementation that supports only that model MUST
+record each clause of this section as a profile-based `not-applicable`
+justification in the sense of Sections 2 and 15, and MUST NOT report a clause
+here as satisfied, partially satisfied, conditionally satisfied, or satisfied
+for a subset of its rules, because the behavior those rules constrain is not
+defined for that model and a partial claim would assert conformance to behavior
+this specification does not define. Non-applicability is a property of the
+claimed edition and profile, not of a particular declaration, generator run, or
+provider. Source-identifier security in v1 remains exactly the landed
+`GNT-4.12` and `GNT-13.2` rules, which this section neither weakens nor
+duplicates.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+NFC requirement, the Unicode 16.0.0 `XID_Start` and `XID_Continue` rules, exact
+case-sensitive equality, and the reject-rather-than-silently-normalize rule of
+`GNT-4.12`; the lexical identifier rules, the reserved-word precedence, the
+excluded-scalar classes, the `identifier-confusable-collision` and
+`identifier-script-warning` codes, and code-point rendering of `GNT-13.2`; the
+identity inputs of `GNT-16.1-package-identity` and
+`GNT-16.2-package-instances`, and the rule of `GNT-16.3-dependency-aliases`
+that an alias is local spelling and never an identity; the declared-name rules
+of Section 17, which this section consumes and never redefines; and the
+capability-family spelling fixed by `GNT-3-T-AUTHORITY-CLOSURE`. Nothing here
+introduces a new Unicode version, a second identity, a second reserved-word
+set, a new grammar production, or authority carried by a display string, and no
+clause here may be read as amending any of the sections listed above.
+
+<a id="GNT-18.1-symbolic-identity-domains"></a>
+
+**[GNT-18.1-symbolic-identity-domains] Identity-carrying domains.** The domains
+that carry an identity are exactly these: source identifiers; package,
+namespace, feature, and dependency-alias names; generated declarations; agent
+and capability slots; tools; providers; policy subjects; and approval subjects.
+Only source identifiers, package names, and namespace names MAY enter the source
+identifier domain as spelling; every other listed domain is a declared name that
+MUST NOT enter it.
+
+<a id="GNT-18.2-canonical-symbolic-identity"></a>
+
+**[GNT-18.2-canonical-symbolic-identity] Canonical symbolic identity.** Each
+domain of `GNT-18.1-symbolic-identity-domains` has exactly one canonical byte
+encoding, one equality relation over that encoding, and one versioned
+symbolic-identity record. An identity MUST NOT derive from a display label, a
+host path, a discovery order, or a graph path, and two records are the same
+identity if and only if their canonical bytes are identical. An unsupported
+record version or an unknown record property is rejected, never repaired.
+
+<a id="GNT-18.3-source-spelling-admission"></a>
+
+**[GNT-18.3-source-spelling-admission] Source spelling admission.** A spelling
+enters source only if it satisfies `GNT-4.12` and `GNT-13.2` exactly: it is in
+NFC; every scalar satisfies the Unicode 16.0.0 `XID_Start` and `XID_Continue`
+rules those blocks fix; equality is exact and case-sensitive with no case
+folding; and no scalar is a default-ignorable, join-control, variation-selector,
+or bidi-control scalar. It cites those blocks and adds no scalar class and no
+weaker path.
+
+<a id="GNT-18.4-confusable-and-script-policy"></a>
+
+**[GNT-18.4-confusable-and-script-policy] Confusable and script policy.** The
+pinned UTS #39 skeleton comparison and the Recommended single-script rule govern
+every domain of `GNT-18.1-symbolic-identity-domains`, including names that never
+enter the grammar. Distinct spellings sharing one skeleton in one lookup
+namespace follow one deterministic stated rule and are diagnosed with the landed
+`identifier-confusable-collision` code, a name outside the Recommended
+single-script set with the landed `identifier-script-warning` code; visual
+resemblance is never an identity.
+
+<a id="GNT-18.5-reserved-word-occupancy"></a>
+
+**[GNT-18.5-reserved-word-occupancy] Reserved-word occupancy.** Reserved words
+are exactly the selected edition's closed published reserved-word set, and a
+name equal to a reserved word is never usable in a lookup namespace, because
+reserved-word precedence is lexical and applies before any declared name
+resolves. This section consumes that set exactly as `GNT-13.2` publishes it and
+MUST NOT redefine it, extend it per domain, or admit a reserved word as a
+canonical name, an external name, or a generated alias.
+
+<a id="GNT-18.6-collision-relation"></a>
+
+**[GNT-18.6-collision-relation] Collision relation.** Collisions are decided by
+one symmetric relation over a closed condition vocabulary of exactly `exact`,
+`case`, `truncation`, `normalization`, `reserved-word`, and `confusable`. The
+relation is independent of declaration order and of iteration order, and a
+diagnostic carries its colliding pair in canonical order, so neither declaration
+order nor traversal order decides an outcome. A condition outside that
+vocabulary is an error, and a collision MUST NOT be resolved by preferring a
+declaration, a discovery order, or a display form.
+
+<a id="GNT-18.7-case-behaviour"></a>
+
+**[GNT-18.7-case-behaviour] Case behaviour.** Source identity comparison is
+exactly case-sensitive and MUST NOT fold. A case-insensitive or locale-sensitive
+comparison is admitted only as an explicitly declared target-filesystem or
+provider fact supplied as an input, never as identity or as a lookup key, and
+any folding a target performs MUST use the full case mappings of the pinned
+Unicode version of `GNT-18.13-identity-version-pinning`.
+
+<a id="GNT-18.8-truncation-behaviour"></a>
+
+**[GNT-18.8-truncation-behaviour] Truncation behaviour.** Truncation is a
+relation over bounded declared names and a declared maximum length, and it is a
+collision condition of `GNT-18.6-collision-relation` rather than a renaming
+step. A name that is truncated, or that exceeds the declared maximum length,
+MUST NOT silently denote another name and MUST fail with a diagnostic naming the
+domain, the declared maximum, and the offending name. Display truncation is a
+presentation concern and is out of scope for this section.
+
+<a id="GNT-18.9-external-name-mapping"></a>
+
+**[GNT-18.9-external-name-mapping] External-name mapping.** Every external name,
+whether a registry name, a publisher name, a provider name, an external package
+name, or an imported tool name, maps injectively to exactly one canonical typed
+identity, or it fails before use. An external name never becomes source syntax
+by normalization, case folding, transliteration, or visual resemblance, and the
+mapping MUST NOT derive from discovery order, response order, or a display
+string.
+
+<a id="GNT-18.10-generated-alias-derivation"></a>
+
+**[GNT-18.10-generated-alias-derivation] Generated-alias derivation.** A
+generated alias uses one deterministic escaping and disambiguation algorithm,
+MUST satisfy `GNT-18.3` through `GNT-18.6` in the declaring scope, and MUST
+publish a machine-readable alias-to-identity map. From the same pinned inputs
+the same aliases, the same map, and the same public interface MUST be
+reproduced, and the algorithm MUST NOT consult discovery, enumeration, graph
+order, a host path, the clock, the locale, or an ambient environment fact.
+
+<a id="GNT-18.11-hostile-label-rendering"></a>
+
+**[GNT-18.11-hostile-label-rendering] Hostile label rendering.** A display label
+is bounded and renders control and bidi-invisible scalars escaped by code point,
+in code-point order, with no reordering and no font-dependent equality, so an
+embedded sequence can never retarget a label and two labels are equal only by
+their rendered bytes. The canonical symbolic identity MUST always be available
+alongside the label, and a label MUST NOT be a lookup, authorization, or audit
+key.
+
+<a id="GNT-18.12-typed-identity-authority"></a>
+
+**[GNT-18.12-typed-identity-authority] Typed identity authority.** No display
+string is a lookup, authorization, policy, approval, transcript, audit, or
+durable-recovery key; each such decision uses the canonical typed identity of
+`GNT-18.2-canonical-symbolic-identity` for its domain, as the capability
+identities of `GNT-3-T-AUTHORITY-CLOSURE` are used. Copying, retyping, or
+re-rendering an identifier or a label copies a name and never copies authority,
+and a decision taken from a display string MUST be reported as a defect.
+
+<a id="GNT-18.13-identity-version-pinning"></a>
+
+**[GNT-18.13-identity-version-pinning] Identity version pinning.** The Unicode
+version, the normalization form, the case-folding set, the UTS #39 skeleton
+version, and the encoding identity of this section are pinned together in one
+identity version. Changing any of them requires a new identity version, and an
+implementation MUST NOT silently re-interpret a recorded identity, an alias map,
+or an external-name mapping under a different identity version, and it MUST
+reject an identity recorded under an unsupported version.

@@ -2,7 +2,7 @@
 // Source: protocol/catalogs/portable-contracts-v1.json. Do not edit manually.
 
 /// SHA-256 of the exact reviewed `SPEC.md` revision.
-pub const PORTABLE_SPECIFICATION_REVISION: &str = "9c4e6f2a06773af8ce4b114256039aed2a7234b34c05054b5b7f8118b15d7aff";
+pub const PORTABLE_SPECIFICATION_REVISION: &str = "335c102e7b6354ff08dd2544b1a00afcd8c68a379f26a4678004dd3ba2e7b416";
 
 
 /// Closed `IdentityOrigin` portable vocabulary.
