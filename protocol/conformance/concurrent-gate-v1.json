@@ -1,218 +1,218 @@
 {
- "artifacts": [
-  {
-   "path": "SPEC.md",
-   "sha256": "77dee25b47bea38f43cdac7c5a27495ba4a9bb2dbe2b6dd22aee899d8f18968d"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/authority_lineage.rs",
-   "sha256": "5f1383286bbd3bd0744885bc66b60bd5cc3ad37610828ae0bc6f3283f530781a"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/concurrent_gate.rs",
-   "sha256": "994fd9b308f72039fbbe4ba7aae3cf1b244da0f804f0d22a4f06565ecbe51d9c"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
-   "sha256": "30b94ea161a5d7e55bf54f92242f53eed268f4434889cd60ee30a030ced0fcee"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/concurrent_lifecycle.rs",
-   "sha256": "4c439e0cb609007c93b04c5f22e6c3032b6ea3454e460a89cea90f60817b8637"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/concurrent_refinement_model.rs",
-   "sha256": "93c97cc206f7744e24a18d939248d26109f08d107bf1ba0a24999cc55f60e83d"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/concurrent_task_state.rs",
-   "sha256": "7c25b2035419ba3dcc1940cb0b92182861872c09929f96526d4c44c4ecb74439"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/source_spawn.rs",
-   "sha256": "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/type_properties.rs",
-   "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
-  },
-  {
-   "path": "crates/gantry/src/lib.rs",
-   "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
-  },
-  {
-   "path": "docs/concurrent-evaluator-refinement.md",
-   "sha256": "7b87c8b42141d9c6d654fd9e7615c719fad08450fda924ff8bdd1125b2e9f800"
-  },
-  {
-   "path": "protocol/catalogs/embedding-contracts-v1.json",
-   "sha256": "dfd8d5461de99a20b1d06796396781015275f5e70ba85c34e5efe37e52525b2f"
-  },
-  {
-   "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "2143dfab8e772c306213b9989d78b115ca7b2389b328bcc61e6562c91731b96c"
-  },
-  {
-   "path": "protocol/conformance/concurrent-executor-v1.json",
-   "sha256": "2b1a166573675f6f93337ca42dcee064af6d669c32731cf7b6362bfc23f4a04f"
-  },
-  {
-   "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
-   "sha256": "c835b36063b988c5e7f55f26ca0ba17f9a5b770b24aefa489ff0125c4bc2c9e1"
-  },
-  {
-   "path": "protocol/conformance/concurrent-lifecycle-v1.json",
-   "sha256": "41655939c7ed44c727b04549aaf8c118e8b11a4b33cadd092eb7c102d51ceb99"
-  },
-  {
-   "path": "protocol/conformance/concurrent-refinement-v1.json",
-   "sha256": "1c84e41a1eeb9627ce81fc2abe14a278eddb230c27929642b0367e75946feff4"
-  },
-  {
-   "path": "protocol/conformance/concurrent-task-state-v1.json",
-   "sha256": "59e7a06a6b3241cdc9271c496155a35b9b4f615a5f04382fc0a733e5d2715806"
-  },
-  {
-   "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "5314d7abb453ab83909cfaa5b0c1ce96f0ae7d0f3801a45fa2fcfad2ad282ba5"
-  },
-  {
-   "path": "protocol/conformance/source-spawn-v1.json",
-   "sha256": "bd8eaef8434cdfcfc56d519f8e531a3e5c7aeeb0595803f0d902070f5fa4e19b"
-  },
-  {
-   "path": "protocol/goldens/concurrent-executor-model-v1.json",
-   "sha256": "5896f16a699d89948ece362c0c9b64ef54ce0c9a956829715af424de2386ce93"
-  },
-  {
-   "path": "protocol/goldens/concurrent-lifecycle-v1.json",
-   "sha256": "491c82fd5d4327e4293c2e0b59e524fff0ef658ef5719df38fe4aa4b21344dd3"
-  },
-  {
-   "path": "protocol/goldens/concurrent-refinement-model-v1.json",
-   "sha256": "b1dece7db1454e50db4ac3f55ed770c2ff511b4ed5a66f31f96c190d5c6adb27"
-  },
-  {
-   "path": "protocol/publication/artifacts-v1.json",
-   "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"
-  },
-  {
-   "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "4d6600f924651c3a12304b63285069d9ffc63b8136282d3fde81976746c0c009"
-  },
-  {
-   "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "4d3512a5dfbfb64c8653ad2880e2430b5767c7fb850ca520d3cee2e5e8190c83"
-  },
-  {
-   "path": "protocol/requirements/section14-v1.json",
-   "sha256": "9bc07363118576cae8054b9707afc29bfc86d6360f3ba9a5989e5256119a22a6"
-  }
- ],
- "claim": {
-  "advertises_profiles": [
-   "analyzer",
-   "concurrent-evaluator",
-   "embedding",
-   "evaluator",
-   "frontend"
+  "artifacts": [
+    {
+      "path": "SPEC.md",
+      "sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/authority_lineage.rs",
+      "sha256": "5f1383286bbd3bd0744885bc66b60bd5cc3ad37610828ae0bc6f3283f530781a"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/concurrent_gate.rs",
+      "sha256": "994fd9b308f72039fbbe4ba7aae3cf1b244da0f804f0d22a4f06565ecbe51d9c"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
+      "sha256": "30b94ea161a5d7e55bf54f92242f53eed268f4434889cd60ee30a030ced0fcee"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/concurrent_lifecycle.rs",
+      "sha256": "4c439e0cb609007c93b04c5f22e6c3032b6ea3454e460a89cea90f60817b8637"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/concurrent_refinement_model.rs",
+      "sha256": "93c97cc206f7744e24a18d939248d26109f08d107bf1ba0a24999cc55f60e83d"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/concurrent_task_state.rs",
+      "sha256": "7c25b2035419ba3dcc1940cb0b92182861872c09929f96526d4c44c4ecb74439"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/source_spawn.rs",
+      "sha256": "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/type_properties.rs",
+      "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
+    },
+    {
+      "path": "crates/gantry/src/lib.rs",
+      "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
+    },
+    {
+      "path": "docs/concurrent-evaluator-refinement.md",
+      "sha256": "7b87c8b42141d9c6d654fd9e7615c719fad08450fda924ff8bdd1125b2e9f800"
+    },
+    {
+      "path": "protocol/catalogs/embedding-contracts-v1.json",
+      "sha256": "c97f72180fe5bf96075de15c3435fb757958438529611c84e308ce0e9d8e8c55"
+    },
+    {
+      "path": "protocol/catalogs/profiles-v1.json",
+      "sha256": "ea9badf2730a10d895c8ec04e6a4ba7d9aaa975bf5c6e69ec02ff45507915cc4"
+    },
+    {
+      "path": "protocol/conformance/concurrent-executor-v1.json",
+      "sha256": "cea01ecf64c7cb7793f4978b251f514280dd813acca302b5284ec87dd08e2b05"
+    },
+    {
+      "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
+      "sha256": "76c47b3f2bf144782b21d640e7f68131ace2364a1f687cc4bf2d4bd4b8e7d02f"
+    },
+    {
+      "path": "protocol/conformance/concurrent-lifecycle-v1.json",
+      "sha256": "a277d12cdd67ca0a47d360730abff970b9e50b3f2bd5e573b2ac086c79195614"
+    },
+    {
+      "path": "protocol/conformance/concurrent-refinement-v1.json",
+      "sha256": "4a505f4d69aa970e8441d01e43b932bc4ee105c9e14e1578d10a299acd8c905e"
+    },
+    {
+      "path": "protocol/conformance/concurrent-task-state-v1.json",
+      "sha256": "60264382def453dfef9a56f560e5f23ba614e895e8776a5793cb79c42420ded4"
+    },
+    {
+      "path": "protocol/conformance/sequential-gate-v1.json",
+      "sha256": "c7b4235bf22e77b935eb57b3cb35d599ae3783d01da018d8cb455a9dbc7109db"
+    },
+    {
+      "path": "protocol/conformance/source-spawn-v1.json",
+      "sha256": "3239d5ac84feb5d3d0d357ccdb6e763efd1056cc64686ae558c39e65731363a3"
+    },
+    {
+      "path": "protocol/goldens/concurrent-executor-model-v1.json",
+      "sha256": "5896f16a699d89948ece362c0c9b64ef54ce0c9a956829715af424de2386ce93"
+    },
+    {
+      "path": "protocol/goldens/concurrent-lifecycle-v1.json",
+      "sha256": "491c82fd5d4327e4293c2e0b59e524fff0ef658ef5719df38fe4aa4b21344dd3"
+    },
+    {
+      "path": "protocol/goldens/concurrent-refinement-model-v1.json",
+      "sha256": "b1dece7db1454e50db4ac3f55ed770c2ff511b4ed5a66f31f96c190d5c6adb27"
+    },
+    {
+      "path": "protocol/publication/artifacts-v1.json",
+      "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"
+    },
+    {
+      "path": "protocol/requirements/generated/requirements-v1.json",
+      "sha256": "744e5361052153202e9e0881ad397319049fea08ea4f6eb20c6cc81a742eff8c"
+    },
+    {
+      "path": "protocol/requirements/reviewed-v1.json",
+      "sha256": "aecb4fd49a8f48da21dbccd4818a93e547ef649536018dbcf360176f8c65c919"
+    },
+    {
+      "path": "protocol/requirements/section14-v1.json",
+      "sha256": "f8d0554dca6d6515f85bca5782bb39b53832ad3f8f9e869a0cb29e3c5bffb924"
+    }
   ],
-  "excludes_capabilities": [
-   "journal",
-   "resume"
+  "claim": {
+    "advertises_profiles": [
+      "analyzer",
+      "concurrent-evaluator",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ],
+    "excludes_capabilities": [
+      "journal",
+      "resume"
+    ],
+    "excludes_profiles": [
+      "durable-runtime"
+    ],
+    "profiles": [
+      "analyzer",
+      "concurrent-evaluator",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ]
+  },
+  "environment_gaps": [
+    "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result."
   ],
-  "excludes_profiles": [
-   "durable-runtime"
+  "evidence_anchor_count": 122,
+  "format": "gantry.concurrent-gate-evidence/v1",
+  "gate": "GNT-GATE-500",
+  "prerequisites": [
+    {
+      "commit": "87e8ca6044b4b85510314a9732de246e7ea274ff",
+      "issue": "GNT-CON-001",
+      "subject": "Implement concurrent task scheduler state."
+    },
+    {
+      "commit": "7952343003d371908ff92d120998d5013bb0a8d4",
+      "issue": "GNT-CON-002",
+      "subject": "Implement linear task handle ownership."
+    },
+    {
+      "commit": "54b5595f252008a364309fa07ac3521ece3a36e9",
+      "issue": "GNT-CON-003",
+      "subject": "Refine concurrent execution lifecycle."
+    },
+    {
+      "commit": "cbaf46ac5c3ce54e49859cee4f6a1ece5795fd30",
+      "issue": "GNT-CON-004",
+      "subject": "Implement concurrent executor services."
+    },
+    {
+      "commit": "3b9267e1dcac9cc756b6972235ad83dd5601c57a",
+      "issue": "GNT-CON-005",
+      "subject": "Document concurrent evaluator refinement."
+    },
+    {
+      "commit": "4976e758eb2cc681527998b662f3e204eef13b1d",
+      "issue": "GNT-SPEC-001",
+      "subject": "Define the lifecycle formal kernel."
+    }
   ],
-  "profiles": [
-   "analyzer",
-   "concurrent-evaluator",
-   "embedding",
-   "evaluator",
-   "frontend"
+  "required_evidence": [
+    "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic",
+    "crates/gantry-conformance/tests/concurrent_executor.rs#caller_owned_tokio_task_services_are_executor_neutral_and_terminal",
+    "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence",
+    "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order",
+    "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order",
+    "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_cancellation_abort_terminal_and_shutdown_cohorts_are_exact",
+    "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_concurrent_events_are_canonical_typed_and_causal",
+    "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_spawned_sessions_establish_once_before_child_use",
+    "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay",
+    "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path",
+    "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated"
+  ],
+  "review_summary": {
+    "applicable_clause_count": 337,
+    "covered_count": 330,
+    "not_applicable_count": 7,
+    "profile": "concurrent-evaluator"
+  },
+  "section14_excerpt_count": 51,
+  "semantic_evidence": {
+    "argument": "docs/concurrent-evaluator-refinement.md",
+    "counterexample_count": 14,
+    "explored_state_count": 9986,
+    "manifest": "protocol/conformance/concurrent-refinement-v1.json",
+    "maximum_depth": 14,
+    "model": "protocol/goldens/concurrent-refinement-model-v1.json",
+    "terminal_state_count": 2482
+  },
+  "specification": {
+    "path": "SPEC.md",
+    "sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27"
+  },
+  "status": "verified",
+  "validation_commands": [
+    "cargo +1.91.0 check --locked --workspace --all-targets --all-features",
+    "cargo +1.97.1 check --locked --workspace --all-targets --all-features",
+    "cargo +stable check --locked --workspace --all-targets --all-features",
+    "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check",
+    "cargo run --locked -p xtask -- check generated",
+    "cargo run --locked -p xtask -- check governance",
+    "cargo run --locked -p xtask -- check workspace",
+    "cargo test --locked --workspace --all-targets --all-features"
   ]
- },
- "environment_gaps": [
-  "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result."
- ],
- "evidence_anchor_count": 122,
- "format": "gantry.concurrent-gate-evidence/v1",
- "gate": "GNT-GATE-500",
- "prerequisites": [
-  {
-   "commit": "87e8ca6044b4b85510314a9732de246e7ea274ff",
-   "issue": "GNT-CON-001",
-   "subject": "Implement concurrent task scheduler state."
-  },
-  {
-   "commit": "7952343003d371908ff92d120998d5013bb0a8d4",
-   "issue": "GNT-CON-002",
-   "subject": "Implement linear task handle ownership."
-  },
-  {
-   "commit": "54b5595f252008a364309fa07ac3521ece3a36e9",
-   "issue": "GNT-CON-003",
-   "subject": "Refine concurrent execution lifecycle."
-  },
-  {
-   "commit": "cbaf46ac5c3ce54e49859cee4f6a1ece5795fd30",
-   "issue": "GNT-CON-004",
-   "subject": "Implement concurrent executor services."
-  },
-  {
-   "commit": "3b9267e1dcac9cc756b6972235ad83dd5601c57a",
-   "issue": "GNT-CON-005",
-   "subject": "Document concurrent evaluator refinement."
-  },
-  {
-   "commit": "4976e758eb2cc681527998b662f3e204eef13b1d",
-   "issue": "GNT-SPEC-001",
-   "subject": "Define the lifecycle formal kernel."
-  }
- ],
- "required_evidence": [
-  "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic",
-  "crates/gantry-conformance/tests/concurrent_executor.rs#caller_owned_tokio_task_services_are_executor_neutral_and_terminal",
-  "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence",
-  "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order",
-  "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order",
-  "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_cancellation_abort_terminal_and_shutdown_cohorts_are_exact",
-  "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_concurrent_events_are_canonical_typed_and_causal",
-  "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_spawned_sessions_establish_once_before_child_use",
-  "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay",
-  "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path",
-  "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated"
- ],
- "review_summary": {
-  "applicable_clause_count": 337,
-  "covered_count": 330,
-  "not_applicable_count": 7,
-  "profile": "concurrent-evaluator"
- },
- "section14_excerpt_count": 51,
- "semantic_evidence": {
-  "argument": "docs/concurrent-evaluator-refinement.md",
-  "counterexample_count": 14,
-  "explored_state_count": 9986,
-  "manifest": "protocol/conformance/concurrent-refinement-v1.json",
-  "maximum_depth": 14,
-  "model": "protocol/goldens/concurrent-refinement-model-v1.json",
-  "terminal_state_count": 2482
- },
- "specification": {
-  "path": "SPEC.md",
-  "sha256": "77dee25b47bea38f43cdac7c5a27495ba4a9bb2dbe2b6dd22aee899d8f18968d"
- },
- "status": "verified",
- "validation_commands": [
-  "cargo +1.91.0 check --locked --workspace --all-targets --all-features",
-  "cargo +1.97.1 check --locked --workspace --all-targets --all-features",
-  "cargo +stable check --locked --workspace --all-targets --all-features",
-  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-  "cargo fmt --all -- --check",
-  "cargo run --locked -p xtask -- check generated",
-  "cargo run --locked -p xtask -- check governance",
-  "cargo run --locked -p xtask -- check workspace",
-  "cargo test --locked --workspace --all-targets --all-features"
- ]
 }

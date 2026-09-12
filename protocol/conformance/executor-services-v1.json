@@ -1,1 +1,25 @@
-{"format":"gantry.executor-services-evidence/v1","specification_sha256":"77dee25b47bea38f43cdac7c5a27495ba4a9bb2dbe2b6dd22aee899d8f18968d","issue":"GNT-ASYNC-EXEC-001","capabilities":[{"id":"base-contracts","evidence":"crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact"},{"id":"caller-owned-tokio-adapter","evidence":"crates/gantry-conformance/tests/executor_services.rs#caller_owned_tokio_runtimes_preserve_completion_first_and_drop_losers"},{"id":"deterministic-task-service","evidence":"crates/gantry-conformance/tests/executor_services.rs#deterministic_task_service_preserves_every_physical_outcome"}],"exclusions":["Concrete start, resume, supervision, blocking-work, and event-delivery paths consume the admission owner in their downstream issues.","Evaluator cancellation checkpoints and scheduler-yield composition remain owned by evaluator integration.","Persistence and recovery of selected delays and timestamps remain owned by durable-runtime work.","Tokio-specific stress, runtime shutdown, and adapter fault qualification remain owned by GNT-ASYNC-TOKIO-001."]}
+{
+  "format": "gantry.executor-services-evidence/v1",
+  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
+  "issue": "GNT-ASYNC-EXEC-001",
+  "capabilities": [
+    {
+      "id": "base-contracts",
+      "evidence": "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact"
+    },
+    {
+      "id": "caller-owned-tokio-adapter",
+      "evidence": "crates/gantry-conformance/tests/executor_services.rs#caller_owned_tokio_runtimes_preserve_completion_first_and_drop_losers"
+    },
+    {
+      "id": "deterministic-task-service",
+      "evidence": "crates/gantry-conformance/tests/executor_services.rs#deterministic_task_service_preserves_every_physical_outcome"
+    }
+  ],
+  "exclusions": [
+    "Concrete start, resume, supervision, blocking-work, and event-delivery paths consume the admission owner in their downstream issues.",
+    "Evaluator cancellation checkpoints and scheduler-yield composition remain owned by evaluator integration.",
+    "Persistence and recovery of selected delays and timestamps remain owned by durable-runtime work.",
+    "Tokio-specific stress, runtime shutdown, and adapter fault qualification remain owned by GNT-ASYNC-TOKIO-001."
+  ]
+}

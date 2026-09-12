@@ -1,67 +1,67 @@
 {
- "artifacts": [
-  {
-   "path": "crates/gantry-conformance/tests/general_purpose_preregistration.rs",
-   "sha256": "98e02c59c3b5fcca06ad115a5037a9a568f0ef87d8749a4d8a83b53e57212a7f"
+  "artifacts": [
+    {
+      "path": "crates/gantry-conformance/tests/general_purpose_preregistration.rs",
+      "sha256": "98e02c59c3b5fcca06ad115a5037a9a568f0ef87d8749a4d8a83b53e57212a7f"
+    },
+    {
+      "path": "docs/general-purpose-preregistration.md",
+      "sha256": "7bf9aa9f88de8464c235611ecf5d0f0693e7852fec513122998f3db6d9b02a3a"
+    },
+    {
+      "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
+      "sha256": "f75d712cfdb641b3654d4942ee059ff63ad9d75afe869ab78903d02b7b8437eb"
+    },
+    {
+      "path": "protocol/goldens/general-purpose-preregistration-v1.canonical.json",
+      "sha256": "62cd365523e7918e1b06e6c18c1f7da6a63d040c06c2ed6466cc6c6a17b81920"
+    },
+    {
+      "path": "protocol/schemas/general-purpose-preregistration-v1.schema.json",
+      "sha256": "81f87d4cd54c007e903f64824247b83377cbd67ca1a855218b3fef0eea97de10"
+    }
+  ],
+  "claim": {
+    "advertises_general_purpose": false,
+    "advertises_production_strategy": false,
+    "advertises_stable_edition": false,
+    "advertises_stable_standard_library": false,
+    "phase": "phase-0-preregistration",
+    "profiles": []
   },
-  {
-   "path": "docs/general-purpose-preregistration.md",
-   "sha256": "7bf9aa9f88de8464c235611ecf5d0f0693e7852fec513122998f3db6d9b02a3a"
+  "environment_gaps": [
+    "Human authoring trials are deferred until after implementation and are not evidence for this gate.",
+    "Production-provider interoperability is owned by a separate embedding-harness effort; this gate uses deterministic fakes, mocked hooks, and recorded transcripts.",
+    "Quantitative performance qualification is deferred; this gate makes no latency, throughput, memory, cancellation-response, or sustained-service claim."
+  ],
+  "evidence": [
+    {
+      "id": "canonical-policy",
+      "path": "crates/gantry-conformance/tests/general_purpose_preregistration.rs",
+      "state": "verified",
+      "visibility": "public-repository"
+    },
+    {
+      "id": "scope-and-overclaim-negatives",
+      "path": "crates/gantry-conformance/tests/general_purpose_preregistration.rs",
+      "state": "verified",
+      "visibility": "public-repository"
+    }
+  ],
+  "format": "gantry.general-purpose-preregistration-gate-evidence/v1",
+  "gate": "GNT-GP-GATE-000",
+  "prerequisites": [],
+  "specification": {
+    "path": "SPEC.md",
+    "sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27"
   },
-  {
-   "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-   "sha256": "472c68b597fc9c86dd2370a31e81e8003500cf56de064400c117215aa047c4bd"
-  },
-  {
-   "path": "protocol/goldens/general-purpose-preregistration-v1.canonical.json",
-   "sha256": "8283dcd55034eaa4841e1b2afd9da0f4a7fdcfbdbca413ea8e330f6b21802b8d"
-  },
-  {
-   "path": "protocol/schemas/general-purpose-preregistration-v1.schema.json",
-   "sha256": "81f87d4cd54c007e903f64824247b83377cbd67ca1a855218b3fef0eea97de10"
-  }
- ],
- "claim": {
-  "advertises_general_purpose": false,
-  "advertises_production_strategy": false,
-  "advertises_stable_edition": false,
-  "advertises_stable_standard_library": false,
-  "phase": "phase-0-preregistration",
-  "profiles": []
- },
- "environment_gaps": [
-  "Human authoring trials are deferred until after implementation and are not evidence for this gate.",
-  "Production-provider interoperability is owned by a separate embedding-harness effort; this gate uses deterministic fakes, mocked hooks, and recorded transcripts.",
-  "Quantitative performance qualification is deferred; this gate makes no latency, throughput, memory, cancellation-response, or sustained-service claim."
- ],
- "evidence": [
-  {
-   "id": "canonical-policy",
-   "path": "crates/gantry-conformance/tests/general_purpose_preregistration.rs",
-   "state": "verified",
-   "visibility": "public-repository"
-  },
-  {
-   "id": "scope-and-overclaim-negatives",
-   "path": "crates/gantry-conformance/tests/general_purpose_preregistration.rs",
-   "state": "verified",
-   "visibility": "public-repository"
-  }
- ],
- "format": "gantry.general-purpose-preregistration-gate-evidence/v1",
- "gate": "GNT-GP-GATE-000",
- "prerequisites": [],
- "specification": {
-  "path": "SPEC.md",
-  "sha256": "77dee25b47bea38f43cdac7c5a27495ba4a9bb2dbe2b6dd22aee899d8f18968d"
- },
- "status": "verified",
- "validation_commands": [
-  "cargo run --locked -p xtask -- check generated",
-  "cargo run --locked -p xtask -- check governance",
-  "cargo run --locked -p xtask -- check workspace",
-  "cargo fmt --all -- --check",
-  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-  "cargo test --locked --workspace --all-targets --all-features --no-fail-fast"
- ]
+  "status": "verified",
+  "validation_commands": [
+    "cargo run --locked -p xtask -- check generated",
+    "cargo run --locked -p xtask -- check governance",
+    "cargo run --locked -p xtask -- check workspace",
+    "cargo fmt --all -- --check",
+    "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --locked --workspace --all-targets --all-features --no-fail-fast"
+  ]
 }

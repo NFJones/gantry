@@ -65,6 +65,7 @@
   - [17. Targets, Features, and Conditional Compilation](#17-targets-features-and-conditional-compilation)
   - [18. Identity Domains and Identifier Security](#18-identity-domains-and-identifier-security)
   - [19. Dynamic Authorization and Authenticated Approval](#19-dynamic-authorization-and-authenticated-approval)
+  - [20. Value Actions and Live-Resource Operations](#20-value-actions-and-live-resource-operations)
 
 <!-- In all code blocks rust syntax highlighting is used deliberately. Eventually, these can be changed to gantry -->
 
@@ -808,6 +809,7 @@ than one block.
 | Targets, features, and conditional compilation | `GNT-17.0`, `GNT-17.1-target-descriptor`, `GNT-17.2-descriptor-normalization-and-target-facts`, `GNT-17.3-sealed-predicates`, `GNT-17.4-feature-declaration`, `GNT-17.5-feature-unification`, `GNT-17.6-conditional-selection-rule`, `GNT-17.7-inactive-code-policy`, `GNT-17.8-target-matrix`, `GNT-17.9-build-host-authority`, `GNT-17.10-target-selected-mode-admission`, `GNT-17.11-target-artifact-binding`, `GNT-17.12-target-resolution-failure`, `GNT-17.13-runtime-availability-separation` |
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
+| Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -12009,3 +12011,281 @@ protected arguments, protected contents, the protected comment of
 semantics. It is reachable only through a capability-gated audit view whose
 holder holds declared rights over the audit domain, and rendering, exporting, or
 aggregating it is itself an operation subject to admission.
+
+## 20. Value Actions and Live-Resource Operations
+
+<a id="GNT-20.0-value-actions-and-live-resource-operations"></a>
+
+This section defines the declared operation ABI of a value action, a protected
+operation, and a live-resource operation: the closed operation kinds, the logical
+operation and resource-generation identities, receiver loans and ownership
+transfer, partial progress and end of stream, interruption, cancellation, and late
+completion, ambiguous-effect classification and retry eligibility, resource state
+after failure and poisoning, half-close and post-failure ownership, deduplication
+retention and compaction, retirement and stale-owner fencing, and the obligations
+and diagnostics of an adapter. It cites and extends, rather than replaces, the
+landed integration, recovery, identity, ownership, authority, and protected-value
+text of `GNT-7.14`, `GNT-7.15`, `GNT-7.16`, `GNT-6.2f`,
+`GNT-7.2-authority-rebinding`, `GNT-3-M-OPERATION`, `GNT-3-M-FAIL`,
+`GNT-3-T-AUTHORITY-ADMISSION`, `GNT-19.6-decision-linearization-and-revalidation`,
+and `GNT-15.10-release-operation`, and it states no obligation that a check cannot
+decide.
+
+The closed vocabulary of this section is exactly the following terms. A clause here
+MUST NOT use an operation term outside this vocabulary, and a term listed below
+MUST NOT be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| operation kind | One member of the closed kind vocabulary of `GNT-20.1-operation-kinds`: a value action, a protected operation, or a live-resource operation. |
+| value action | An operation that produces a durable value and carries no live handle. |
+| protected operation | An operation over protected data that produces a durable value and carries no live handle. |
+| live-resource operation | An operation that carries a live handle and is never reported as a durable value. |
+| logical operation identity | The stable identity of one declared operation under `GNT-20.2-logical-operation-and-resource-generation-identity`. |
+| resource generation | The opaque generation identity of one operation and its exact site under `GNT-20.2-logical-operation-and-resource-generation-identity`. |
+| receiver arrangement | The loan, transfer, or retention of `GNT-20.3-receiver-loan-and-ownership-transfer`. |
+| progress observation | One member of the closed observation vocabulary of `GNT-20.4-partial-progress-and-eof`. |
+| settlement | The single durable record of one resource generation's observed outcome. |
+| effect certainty | The two-member classification of `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`. |
+| retry eligibility | One member of the closed eligibility vocabulary of `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`. |
+| deduplication record | The durable evidence of one exact operation and generation under `GNT-20.9-deduplication-retention-and-compaction`. |
+| owner generation | The explicit, only-ever-advancing counter of `GNT-20.10-retirement-and-stale-owner-fencing`. |
+| adapter instance | The sealed execution binding of `GNT-20.11-adapter-obligations-and-diagnostics`. |
+
+**Applicability.** The clauses of this section govern an edition or profile that
+declares value actions, protected operations, live-resource operations, and the
+adapter instances that carry them. Applicability is per clause and per profile, and
+it is recorded in the requirement inventory of Section 2 rather than inferred here.
+A clause here MUST NOT be reported as satisfied, partially satisfied,
+conditionally satisfied, or satisfied for a subset of its rules, because a partial
+claim would assert conformance to behavior this specification does not define. A
+profile that cannot exercise a clause MUST record that clause as a profile-based
+`not-applicable` justification with its rationale instead of reporting it as
+satisfied.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+externally read-only rule and the recovery classes of `GNT-7.14` and `GNT-7.15`; the
+dynamic operation identity and canonical site identity of `GNT-7.16`; the
+admitted-caller-place and general argument-loan rules of `GNT-6.2f`, which exclude
+live-resource loans; the resume rebinding of `GNT-7.2-authority-rebinding`; the
+operation lifecycle and failure propagation of `GNT-3-M-OPERATION` and
+`GNT-3-M-FAIL`; the admission commit point and
+revalidation of `GNT-3-T-AUTHORITY-ADMISSION` and
+`GNT-19.6-decision-linearization-and-revalidation`; the release separation of
+`GNT-15.10-release-operation`; and the protected classes, disclosure budgets, and
+release projections of Section 15. Nothing here introduces an application-level
+idempotency guarantee, a durable live handle, a transparent redispatch, or a
+rollback of accepted external work. Operation identity is not application
+idempotency: two invocations of one logical operation identity are two invocations,
+and this section deduplicates only through the record of one exact operation and
+generation. A live handle MUST NOT be serialized, journaled, transferred to another
+process, or reconstructed from durable state. A redispatch is an explicit, admitted
+operation with its own cut and its own evidence, never a transparent retry inside an
+adapter. Work that reached an external target is never rolled back by this section:
+an accepted effect settles under its own recovery class and its own observed
+outcome.
+
+<a id="GNT-20.1-operation-kinds"></a>
+
+**[GNT-20.1-operation-kinds] Operation kinds.** The closed vocabulary of operation
+kinds is exactly three members: a value action, a protected operation, and a
+live-resource operation. The three are distinct and exhaustive, and membership of a
+kind is decided once, at declaration. A value action and a protected operation
+produce a durable value and carry no live handle; a live-resource operation carries
+a live handle and MUST NOT be reported as a durable value. A live handle MUST be
+obtainable only from a live-resource operation, so an implementation MUST refuse to
+report a value action or a protected operation as a live resource, and MUST refuse
+to report a live-resource operation as a durable value. No operation changes kind
+after declaration, and no kind may be read as, reported as, or substituted for
+another.
+
+<a id="GNT-20.2-logical-operation-and-resource-generation-identity"></a>
+
+**[GNT-20.2-logical-operation-and-resource-generation-identity] Logical operation
+and resource-generation identity.** One operation has exactly one stable logical
+operation identity, and it is the stable approval subject of
+`GNT-19.2-approval-subject`: the identity of one canonical declaration at one exact
+source site, independent of the adapter, the host, the process, and the transport
+that carries it. The dynamic operation identity of `GNT-7.16` is a different
+identity: it is the path-derived dispatch identity of one canonical site for one
+invocation and MUST NOT be reused across invocations, so it is never this logical
+operation identity and MUST NOT be reported as, decoded from, or substituted for it.
+One resource generation is one opaque, domain-separated identity over exactly that
+logical operation identity, that exact site, and one explicit generation counter
+supplied by the caller, and it is defined by this clause rather than by `GNT-7.16`.
+No process identifier, adapter handle, host path, clock reading, locale, or
+environment fact participates in either identity, so equal inputs produce equal
+identities and a later generation is a distinct identity. A generation MUST NOT be
+constructed from text, decoded from a serialized form, or defaulted, and a
+completion, settlement, or record that names another logical operation or another
+generation MUST be refused rather than reinterpreted, so a stale generation can never
+settle a later operation.
+
+<a id="GNT-20.3-receiver-loan-and-ownership-transfer"></a>
+
+**[GNT-20.3-receiver-loan-and-ownership-transfer] Receiver loan and ownership
+transfer.** The receiver arrangements are exactly three and they are distinct: the
+receiver is borrowed as one sealed receiver loan under this clause, transferred in
+under one explicit owner generation, or retained by the caller. A receiver loan is
+sealed, generation-bound, non-transferable, and released on settlement: it is sealed
+for one exact declaration, one exact site, and one exact resource generation, it is
+never a transfer of ownership, it cannot be written as, decoded from, or substituted
+for an owner generation or a retained receiver, and it is released when the operation
+that holds it settles. A borrowed receiver MUST carry a loan sealed for that exact
+site and that exact resource generation, and an implementation MUST refuse a loan of
+another site or another generation rather than reinterpret it. `GNT-6.2f` is not this
+rule: that clause is the general argument-loan rule, and it explicitly excludes
+live-resource loans, so no receiver loan of this clause is admitted, sealed, or
+released by `GNT-6.2f` and this clause neither narrows nor extends it. An owner
+generation is not a loan and a retained receiver is not a transfer, so no arrangement
+may be written as, decoded from, or substituted for another. Ownership transfer
+advances the owner generation; it MUST NOT reuse a generation that already settled or
+retired, and it MUST NOT weaken the authority, recovery-class, or protected-value
+obligations the landed text attaches to the receiver.
+
+<a id="GNT-20.4-partial-progress-and-eof"></a>
+
+**[GNT-20.4-partial-progress-and-eof] Partial progress and EOF.** The closed
+progress vocabulary distinguishes an unstarted observation, a committed completion,
+partial advance, an end of stream, a short read, and a short write. A short read and
+a short write are progress: they are neither an end of stream nor a completion, and
+partial advance is progress as well. A committed completion is the only completion,
+and an end of stream is a distinct observation from it, so an implementation MUST
+NOT report partial progress as a completion, MUST NOT report a short read or a short
+write as an end of stream, and MUST NOT treat a committed completion as an end of
+stream or the reverse. An interrupted operation MUST retain its declared progress
+record, because a resume that lost observed progress would repeat or skip accepted
+work. A settlement's claimed progress MUST equal the progress the resource observed or
+be a declared upgrade of it, so a claim that would move progress backwards, including
+an end of stream where a committed completion was observed or an unstarted observation
+where progress was observed, MUST be refused rather than recorded, and a refused claim
+MUST NOT replace the declared progress record.
+
+<a id="GNT-20.5-interruption-cancellation-and-late-completion"></a>
+
+**[GNT-20.5-interruption-cancellation-and-late-completion] Interruption,
+cancellation, and late completion.** The durable cuts an operation passes are
+exactly: declared, admitted, dispatched, and settled, in that order, and dispatch is
+admitted only at or after the admission commit point of
+`GNT-3-T-AUTHORITY-ADMISSION`. An interruption retains the declared progress record
+and changes no resource state. A cancellation request races with admission and
+dispatch and MUST NOT be reported as a definite not-started effect. One resource
+generation has exactly one settlement: the first settlement of one generation wins,
+and a duplicate, late, or wrong-generation completion MUST be refused rather than
+settled, so a cancellation race has exactly one winner. A settlement MUST NOT claim
+a completion the resource never observed, and MUST NOT claim an end of stream where
+only a short read or a short write was observed. A fenced generation records its
+observed outcome without reopening.
+
+<a id="GNT-20.6-ambiguous-effect-classification-and-retry-eligibility"></a>
+
+**[GNT-20.6-ambiguous-effect-classification-and-retry-eligibility] Ambiguous-effect
+classification and retry eligibility.** Effect certainty has exactly two members:
+an effect that definitely did not start, and an effect that may have begun. An
+operation that has not passed the admission commit point and whose cancellation was
+not requested definitely did not start; every other combination MAY have begun, and
+a requested cancellation MUST NOT be classified as a definite not-started effect.
+Retry eligibility is exactly one of: eligible as a fresh invocation, ineligible, or
+eligible only through the deduplication proof of that exact operation and
+generation. An effect that definitely did not start is retried freely, because no
+invocation was dispatched. An effect that may have begun MUST NOT be retried as a
+fresh invocation: without a deduplication record for that exact operation and
+generation it is ineligible, and with one it either requires that proof, for a
+recovery class whose repeat is not harmless under `GNT-7.15`, or is admitted as a
+deduplicated retry, for a recovery class whose repeat is harmless. A record that was
+retired or that rejected a stale owner never authorizes a retry. A crash before
+admission carries no effect and MUST NOT be reported as ambiguous; a crash at or
+after admission without the retained record of that exact operation and generation
+is ambiguous and MUST NOT be reported as a completed effect.
+
+<a id="GNT-20.7-resource-state-after-failure-and-poisoning"></a>
+
+**[GNT-20.7-resource-state-after-failure-and-poisoning] Resource state after failure
+and poisoning.** The closed resource-state vocabulary is exactly: usable,
+partially-advanced, half-closed, poisoned, consumed, and closed. Only usable and
+partially-advanced have an open half. One failure settles exactly one declared
+state, derived from the operation kind and the failure class rather than chosen by
+the caller: a live-resource operation whose adapter failed is half-closed and
+poisons that adapter instance; a live-resource operation that failed on the resource
+itself is poisoned; a value action or a protected operation whose adapter failed is
+consumed; and a value action or a protected operation that failed on the resource is
+partially advanced. A failure without an open half MUST NOT be reported as a
+half-close, poisoning a poisoned resource MUST NOT be repeated, and a partial
+failure MUST NOT leave a resource in an undeclared or ambiguous state. An
+observation on a resource that has no open half, or whose generation was fenced,
+MUST be refused, and the category of a fenced generation MUST be preserved rather
+than relabelled.
+
+<a id="GNT-20.8-half-close-and-post-failure-ownership"></a>
+
+**[GNT-20.8-half-close-and-post-failure-ownership] Half-close and post-failure
+ownership.** A half-close is meaningful exactly while an open half survives: it
+preserves the still-open half, its resource generation, and its owner generation,
+and it MUST be refused for a resource that is closed, consumed, poisoned, or already
+half-closed. A half-close MUST NOT create, release, or rebind ownership, and the
+surviving half remains the same generation under the same owner. Post-failure
+ownership is exactly one declared receiver arrangement for one failure: the
+arrangement is preserved unchanged by the failure, so a failure MUST NOT silently
+transfer, retain, or reclaim a receiver, and a post-failure settlement MUST NOT
+report more than one state or more than one arrangement for the same failure. A
+poisoned resource MUST NOT be reused by another operation, and a poisoned adapter
+instance MUST NOT carry another dispatch.
+
+<a id="GNT-20.9-deduplication-retention-and-compaction"></a>
+
+**[GNT-20.9-deduplication-retention-and-compaction] Deduplication retention and
+compaction.** A deduplication record carries its own identity, the logical operation
+identity and resource generation it covers, its owner generation, its state, the
+observed settlement it was created from, and explicit retention bounds. The record
+states are exactly: authoritative, compacted, retired, and rejected-stale-owner. A
+record is never a cache: it MUST NOT be consulted for another operation or another
+generation, and it MUST NOT be treated as permission to repeat work whose effect is
+not already settled. Retention bounds are explicit and finite: a bound that retains
+forever, such as a zero generation bound with a zero instant bound, MUST be refused
+rather than published. Compaction MUST preserve the logical operation identity, the
+resource generation, the owner generation, and the durable settlement, so every
+identity needed to redispatch and to reconstruct the record after a restart survives
+compaction. A restart MUST NOT reconstruct an operation identity without the
+settlement that gives it meaning, MUST NOT attach a settlement to a record that
+rejected a stale owner, and MUST refuse a settlement that names another identity.
+
+<a id="GNT-20.10-retirement-and-stale-owner-fencing"></a>
+
+**[GNT-20.10-retirement-and-stale-owner-fencing] Retirement and stale-owner
+fencing.** The owner generation of a resource is an explicit caller-supplied
+counter, not a clock, a process identifier, or an adapter handle, and it only ever
+advances. Retirement of one deduplication record requires exactly two things: a
+durable settlement of that record's own operation and generation, and an owner
+generation that succeeds the settling generation. A record MUST NOT be retired on
+evidence it does not have, and a stale owner MUST NOT advance it. A retired record
+carries the advanced owner generation and fences every owner generation that does
+not succeed it: a fenced stale owner MUST be refused rather than admitted as a new
+invocation through that record, while a genuinely advanced owner is admitted as a
+fresh invocation. Fencing is not deletion: the settlement, the retirement evidence,
+and the fence category remain, and a fenced generation MUST NOT be reopened, reused,
+or reinstated.
+
+<a id="GNT-20.11-adapter-obligations-and-diagnostics"></a>
+
+**[GNT-20.11-adapter-obligations-and-diagnostics] Adapter obligations and
+diagnostics.** An adapter instance is one sealed binding of a selected downstream
+implementation, the rights it may exercise, the owner generation it was bound under,
+and the explicit monotonic binding sequence it was bound at, and it carries its own
+domain-separated identity. An adapter MUST present its binding for dispatch, MUST
+refuse a poisoned or retired binding, and MUST carry the
+landed right its operation's declared recovery class demands under `GNT-7.15` and
+`GNT-3-T-AUTHORITY-ADMISSION`; a dispatch MUST NOT proceed on a binding that lacks
+that right. Substitution is the only way one binding replaces another: it MUST
+narrow or preserve the presented rights, MUST advance the owner generation, and MUST
+be refused for a poisoned or retired binding, so substitution can never widen
+authority or reuse a retired identity. A deployment that binds one implementation
+again after a retirement MUST advance the binding sequence, so the reinstated
+binding's identity differs from the retired one. An adapter MUST NOT observe beyond
+the declared observation allowance of the live-resource observation channel it was
+given, so an observation consumes that allowance and never a Section 15 disclosure
+budget: a disclosure budget remains release-scoped, it is charged per accepted
+release, and an observation MUST NOT charge, consume, or project one. An adapter
+MUST NOT convert protected content into an ordinary observation, and MUST NOT
+substitute, forge, or reinterpret a host-governed identity. Every refusal of this
+section MUST carry exactly one diagnostic that names the clause that owns it, and a
+condition MUST NOT be reported under another condition's code.

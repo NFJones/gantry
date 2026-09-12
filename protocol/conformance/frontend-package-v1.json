@@ -1,1 +1,19 @@
-{"format":"gantry.frontend-package-evidence/v1","specification_sha256":"77dee25b47bea38f43cdac7c5a27495ba4a9bb2dbe2b6dd22aee899d8f18968d","issue":"GNT-FE-003","entries":[{"requirement":"GNT-4.1","clause":"clause-001"},{"requirement":"GNT-4.17","clause":"clause-001"},{"requirement":"GNT-4.6","clause":"clause-001"}]}
+{
+  "format": "gantry.frontend-package-evidence/v1",
+  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
+  "issue": "GNT-FE-003",
+  "entries": [
+    {
+      "requirement": "GNT-4.1",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-4.17",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-4.6",
+      "clause": "clause-001"
+    }
+  ]
+}

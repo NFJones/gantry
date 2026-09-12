@@ -1,1 +1,23 @@
-{"format":"gantry.language-adoption/v1","gate":"GNT-GEN-GATE-000","status":"verified","specification_sha256":"77dee25b47bea38f43cdac7c5a27495ba4a9bb2dbe2b6dd22aee899d8f18968d","amended_profiles":["analyzer","concurrent-evaluator","durable-runtime","embedding","evaluator","frontend"],"advertises_profiles":["analyzer","concurrent-evaluator","durable-runtime","embedding","evaluator","frontend"],"blocked_by":[]}
+{
+  "format": "gantry.language-adoption/v1",
+  "gate": "GNT-GEN-GATE-000",
+  "status": "verified",
+  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
+  "amended_profiles": [
+    "analyzer",
+    "concurrent-evaluator",
+    "durable-runtime",
+    "embedding",
+    "evaluator",
+    "frontend"
+  ],
+  "advertises_profiles": [
+    "analyzer",
+    "concurrent-evaluator",
+    "durable-runtime",
+    "embedding",
+    "evaluator",
+    "frontend"
+  ],
+  "blocked_by": []
+}

@@ -21,6 +21,7 @@ pub mod generated;
 mod generic;
 pub mod identifier;
 mod manifest;
+mod operation;
 mod package;
 mod path;
 mod primitive;
@@ -93,6 +94,15 @@ pub use identifier::{
     collision_condition, generated_alias, share_one_skeleton,
 };
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
+pub use operation::{
+    AdapterInstance, CrashCutClassification, DedupRecord, DedupRecordState, DedupRetentionBounds,
+    DispatchAdmission, DurableOperationCut, DurableValueRecord, EffectCertainty, FailureClass,
+    LiveResource, LoanId, OPERATION_ABI_CLAUSES, OperationAbi, OperationAbiDiagnosticCode,
+    OperationAbiError, OperationCancellation, OperationKind, OperationSettlement, OwnerGeneration,
+    PostFailureSettlement, ProgressDisposition, ProgressObservation, ProgressRecord,
+    ReceiverOwnership, ResourceGenerationId, ResourceState, RetryEligibility, admit_dispatch,
+    classify_effect, retry_eligibility,
+};
 pub use package::{
     AliasMap, AliasNamespace, AxisReport, AxisVerdict, BoundarySchemaReport,
     BoundarySchemaSubReport, BoundarySchemaSurface, CanonicalIrDigest, CollisionCondition,

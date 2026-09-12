@@ -1,236 +1,236 @@
 {
- "artifacts": [
-  {
-   "path": "crates/gantry-analysis/src/bodies.rs",
-   "sha256": "62717399a88d0b4566379e942cf4b2a03fe5b01ff879aea5a1265e189ab8151d"
-  },
-  {
-   "path": "crates/gantry-analysis/src/capabilities.rs",
-   "sha256": "4dbad143d4d4a6bfe46c5cd400d5be2c30fe9be8817432deb1728008e4e164fc"
-  },
-  {
-   "path": "crates/gantry-analysis/src/effects.rs",
-   "sha256": "b47f0c16989cdefad2f25f35f3b41633c6c1f7b0f10f179144b7b0297ceb65c6"
-  },
-  {
-   "path": "crates/gantry-analysis/src/generics.rs",
-   "sha256": "80885c76b33cad5c41798780ecb49049d0f72ffba69668158010c05ada25785f"
-  },
-  {
-   "path": "crates/gantry-analysis/src/lowering.rs",
-   "sha256": "6227c1fbff80d450f86141a68917db806e2741d1ba8e4f073ad661d591db386d"
-  },
-  {
-   "path": "crates/gantry-analysis/src/schemas.rs",
-   "sha256": "40a4b790ff13b28c5574ef4d150885d0f865e7d7194532c96b4abf6e80b5006a"
-  },
-  {
-   "path": "crates/gantry-analysis/src/types.rs",
-   "sha256": "3fd94cfae0a3d71ae3b9a8ff546485e34396d44aa649f5fe4879f2639b1711ca"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
-   "sha256": "22691fa2379cff6b7829f1230d1a31397dda030e8cb977f0f72d0fcd6f89a7ca"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
-   "sha256": "1015892343f4f2b21fadbaba117fa0bde439ce50f05f66465752a58f083cda2a"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-   "sha256": "9e40c4815b675cceba1a86227ecb780e72e6b0ce46dcec9f66e41f992febd29f"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
-   "sha256": "fbbe7cc1b2676774f4e143187b19a30a0311b17c617649618bc1aec5c5f2e3ba"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/external_facade_matrix.rs",
-   "sha256": "39785c2a3cf8f65b6d7d63ff246285ee3cc8420fbcad3460bd2180ada8b7190d"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
-   "sha256": "736071b95e8854ab039f95c2624319a0fdb099660bba204b40c0bf0b7f414b14"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
-   "sha256": "58d9fa6c149a449816558e1c02c559e5add8d11a434ae3321670b058f06a7808"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/ir_contracts.rs",
-   "sha256": "a30040599cc1e5021ad0fe4fbee013963e1f0a9b0b2dac923698f38a2bd0c2f3"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
-   "sha256": "7aea4d069a22a45a91065a400f71b559505db881ce52dbb1be346c9bc7f6051a"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/type_properties.rs",
-   "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/validate_package.rs",
-   "sha256": "287d1c2a5c6b28edf94bb2d856bcd57617231eeaa388a23245ada63a4402694f"
-  },
-  {
-   "path": "crates/gantry-ir/src/lib.rs",
-   "sha256": "e10b65912caaa0ef6c650624dae6624b48db488049bcc208914e71d6aaa43437"
-  },
-  {
-   "path": "crates/gantry-ir/src/type_properties.rs",
-   "sha256": "df81e1309abc00f64fa18b6b503adce483343e239533321749848f4f1a9c92c8"
-  },
-  {
-   "path": "crates/gantry/src/lib.rs",
-   "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
-  },
-  {
-   "path": "crates/gantry/src/validate.rs",
-   "sha256": "fa88f88e67d8cb33b3ac73f8e33d8f04968ed526310afb72334661d545e6ac09"
-  },
-  {
-   "path": "docs/analyzer-generics-and-traits.md",
-   "sha256": "9b9907140f2aeaac14146ffab6339f25effaf08f969fb097516f041b6580f349"
-  },
-  {
-   "path": "docs/analyzer-package-validity.md",
-   "sha256": "c7099efb64b3331bf94a8a408c8e6f7eedf9c5d80f5495ec52d61fef394418eb"
-  },
-  {
-   "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "b0e7fe356a5a05594962dfdd50566c948c38368fcd5a015fa6e1cf03ed04d3ca"
-  },
-  {
-   "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "2143dfab8e772c306213b9989d78b115ca7b2389b328bcc61e6562c91731b96c"
-  },
-  {
-   "path": "protocol/conformance/analyzer-validity-v1.json",
-   "sha256": "c75cd9dd3ad4eec696fb2c621517bfa7f686ae84b3993573bce93291161f5663"
-  },
-  {
-   "path": "protocol/conformance/generics-traits-frontend-v1.json",
-   "sha256": "d30ebed557f322b1140761084f9b18d1af6434489b6d4757ffeedbba77650047"
-  },
-  {
-   "path": "protocol/conformance/generics-traits-ir-v1.json",
-   "sha256": "d5dd644b024e59bce71714c20edf889508a3d59c03ea68396dafa1be4024e78a"
-  },
-  {
-   "path": "protocol/goldens/analyzer-validity-model-v1.json",
-   "sha256": "25d78122e545e9a091a07c48efb91b940111000cef9bd8a30d21205104ed0b99"
-  },
-  {
-   "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "4d6600f924651c3a12304b63285069d9ffc63b8136282d3fde81976746c0c009"
-  },
-  {
-   "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "4d3512a5dfbfb64c8653ad2880e2430b5767c7fb850ca520d3cee2e5e8190c83"
-  },
-  {
-   "path": "protocol/requirements/section14-v1.json",
-   "sha256": "9bc07363118576cae8054b9707afc29bfc86d6360f3ba9a5989e5256119a22a6"
-  },
-  {
-   "path": "protocol/schemas/canonical-ir-v1.schema.json",
-   "sha256": "af0cece208d873047c35501657e58ef2e9d010a9b869b40143baf4860e416134"
-  },
-  {
-   "path": "protocol/schemas/generated-schema-object-v1.schema.json",
-   "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
-  },
-  {
-   "path": "protocol/schemas/package-source-manifest-v1.schema.json",
-   "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
-  },
-  {
-   "path": "protocol/schemas/source-map-v1.schema.json",
-   "sha256": "109e2c94cc55bc10458734d042a85775f1c5de98cf6fe0fff5985095ab6ec1fa"
-  }
- ],
- "claim": {
-  "advertises_profiles": [
-   "analyzer",
-   "frontend"
+  "artifacts": [
+    {
+      "path": "crates/gantry-analysis/src/bodies.rs",
+      "sha256": "62717399a88d0b4566379e942cf4b2a03fe5b01ff879aea5a1265e189ab8151d"
+    },
+    {
+      "path": "crates/gantry-analysis/src/capabilities.rs",
+      "sha256": "4dbad143d4d4a6bfe46c5cd400d5be2c30fe9be8817432deb1728008e4e164fc"
+    },
+    {
+      "path": "crates/gantry-analysis/src/effects.rs",
+      "sha256": "b47f0c16989cdefad2f25f35f3b41633c6c1f7b0f10f179144b7b0297ceb65c6"
+    },
+    {
+      "path": "crates/gantry-analysis/src/generics.rs",
+      "sha256": "80885c76b33cad5c41798780ecb49049d0f72ffba69668158010c05ada25785f"
+    },
+    {
+      "path": "crates/gantry-analysis/src/lowering.rs",
+      "sha256": "6227c1fbff80d450f86141a68917db806e2741d1ba8e4f073ad661d591db386d"
+    },
+    {
+      "path": "crates/gantry-analysis/src/schemas.rs",
+      "sha256": "40a4b790ff13b28c5574ef4d150885d0f865e7d7194532c96b4abf6e80b5006a"
+    },
+    {
+      "path": "crates/gantry-analysis/src/types.rs",
+      "sha256": "3fd94cfae0a3d71ae3b9a8ff546485e34396d44aa649f5fe4879f2639b1711ca"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
+      "sha256": "22691fa2379cff6b7829f1230d1a31397dda030e8cb977f0f72d0fcd6f89a7ca"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
+      "sha256": "1015892343f4f2b21fadbaba117fa0bde439ce50f05f66465752a58f083cda2a"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_types.rs",
+      "sha256": "9e40c4815b675cceba1a86227ecb780e72e6b0ce46dcec9f66e41f992febd29f"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
+      "sha256": "fbbe7cc1b2676774f4e143187b19a30a0311b17c617649618bc1aec5c5f2e3ba"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/external_facade_matrix.rs",
+      "sha256": "39785c2a3cf8f65b6d7d63ff246285ee3cc8420fbcad3460bd2180ada8b7190d"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
+      "sha256": "736071b95e8854ab039f95c2624319a0fdb099660bba204b40c0bf0b7f414b14"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
+      "sha256": "58d9fa6c149a449816558e1c02c559e5add8d11a434ae3321670b058f06a7808"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/ir_contracts.rs",
+      "sha256": "a30040599cc1e5021ad0fe4fbee013963e1f0a9b0b2dac923698f38a2bd0c2f3"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
+      "sha256": "7aea4d069a22a45a91065a400f71b559505db881ce52dbb1be346c9bc7f6051a"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/type_properties.rs",
+      "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/validate_package.rs",
+      "sha256": "287d1c2a5c6b28edf94bb2d856bcd57617231eeaa388a23245ada63a4402694f"
+    },
+    {
+      "path": "crates/gantry-ir/src/lib.rs",
+      "sha256": "0ad0b3e15540d323a0bedacc96fc65d3c61e78e0ca23870cde1e422f5d6885f3"
+    },
+    {
+      "path": "crates/gantry-ir/src/type_properties.rs",
+      "sha256": "df81e1309abc00f64fa18b6b503adce483343e239533321749848f4f1a9c92c8"
+    },
+    {
+      "path": "crates/gantry/src/lib.rs",
+      "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
+    },
+    {
+      "path": "crates/gantry/src/validate.rs",
+      "sha256": "fa88f88e67d8cb33b3ac73f8e33d8f04968ed526310afb72334661d545e6ac09"
+    },
+    {
+      "path": "docs/analyzer-generics-and-traits.md",
+      "sha256": "9b9907140f2aeaac14146ffab6339f25effaf08f969fb097516f041b6580f349"
+    },
+    {
+      "path": "docs/analyzer-package-validity.md",
+      "sha256": "c7099efb64b3331bf94a8a408c8e6f7eedf9c5d80f5495ec52d61fef394418eb"
+    },
+    {
+      "path": "protocol/catalogs/ir-contracts-v1.json",
+      "sha256": "19702ace6d0839bfe461a90fa7599347c0800377ee2c20756cf4cba4e958b3eb"
+    },
+    {
+      "path": "protocol/catalogs/profiles-v1.json",
+      "sha256": "ea9badf2730a10d895c8ec04e6a4ba7d9aaa975bf5c6e69ec02ff45507915cc4"
+    },
+    {
+      "path": "protocol/conformance/analyzer-validity-v1.json",
+      "sha256": "1cae87496de0b8a1506158db3b7db874ba781f9c7911c67a0f8f3420f8fe490d"
+    },
+    {
+      "path": "protocol/conformance/generics-traits-frontend-v1.json",
+      "sha256": "ad9947d72107505fb88235ebba0ae5cc79498c34ada28cb0db4ee4e033c72ba8"
+    },
+    {
+      "path": "protocol/conformance/generics-traits-ir-v1.json",
+      "sha256": "51789f8df819c66ee7016335d5536f8c2caafeb1e3c8b9eb4999ad0a86ae18a6"
+    },
+    {
+      "path": "protocol/goldens/analyzer-validity-model-v1.json",
+      "sha256": "25d78122e545e9a091a07c48efb91b940111000cef9bd8a30d21205104ed0b99"
+    },
+    {
+      "path": "protocol/requirements/generated/requirements-v1.json",
+      "sha256": "744e5361052153202e9e0881ad397319049fea08ea4f6eb20c6cc81a742eff8c"
+    },
+    {
+      "path": "protocol/requirements/reviewed-v1.json",
+      "sha256": "aecb4fd49a8f48da21dbccd4818a93e547ef649536018dbcf360176f8c65c919"
+    },
+    {
+      "path": "protocol/requirements/section14-v1.json",
+      "sha256": "f8d0554dca6d6515f85bca5782bb39b53832ad3f8f9e869a0cb29e3c5bffb924"
+    },
+    {
+      "path": "protocol/schemas/canonical-ir-v1.schema.json",
+      "sha256": "af0cece208d873047c35501657e58ef2e9d010a9b869b40143baf4860e416134"
+    },
+    {
+      "path": "protocol/schemas/generated-schema-object-v1.schema.json",
+      "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
+    },
+    {
+      "path": "protocol/schemas/package-source-manifest-v1.schema.json",
+      "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
+    },
+    {
+      "path": "protocol/schemas/source-map-v1.schema.json",
+      "sha256": "109e2c94cc55bc10458734d042a85775f1c5de98cf6fe0fff5985095ab6ec1fa"
+    }
   ],
-  "excludes_profiles": [
-   "concurrent-evaluator",
-   "durable-runtime",
-   "embedding",
-   "evaluator"
+  "claim": {
+    "advertises_profiles": [
+      "analyzer",
+      "frontend"
+    ],
+    "excludes_profiles": [
+      "concurrent-evaluator",
+      "durable-runtime",
+      "embedding",
+      "evaluator"
+    ],
+    "profiles": [
+      "analyzer",
+      "frontend"
+    ]
+  },
+  "environment_gaps": [
+    "The analyzer and frontend claims are qualified on the recorded Linux cells; hosted macOS qualification is not claimed by this evidence gate."
   ],
-  "profiles": [
-   "analyzer",
-   "frontend"
+  "format": "gantry.analyzer-gate-evidence/v1",
+  "gate": "GNT-GEN-GATE-300",
+  "prerequisites": [
+    {
+      "commit": "71e6834b841e1a87acd61d66c88a9da62ef95726",
+      "issue": "GNT-GEN-AN-001",
+      "subject": "Implement generic type analysis."
+    },
+    {
+      "commit": "baca937f1e51c2e4ac88bce7dfaaef8073930d39",
+      "issue": "GNT-GEN-AN-002",
+      "subject": "Implement static trait resolution and coherence."
+    },
+    {
+      "commit": "cc1cc69a54568fdc10bfd1a6e749bd6d49285e45",
+      "issue": "GNT-GEN-AN-003",
+      "subject": "Implement generic body monomorphization and effects."
+    },
+    {
+      "commit": "d0016d93e3338405e7eb5f99983e719fa48b6c39",
+      "issue": "GNT-GEN-AN-004",
+      "subject": "Emit concrete schemas and closed executable artifacts."
+    },
+    {
+      "commit": "b5fffb5d7391911d319672a50e76c4bb45657986",
+      "issue": "GNT-GEN-API-001",
+      "subject": "Expose generic analysis through facade and CLI."
+    },
+    {
+      "commit": "29253e9cc4eaf8d74690f7bb2d7bebe026472e02",
+      "issue": "GNT-GEN-PROOF-001",
+      "subject": "Extend analyzer package-validity argument."
+    }
+  ],
+  "profile": "analyzer",
+  "review_summary": {
+    "applicable_clause_count": 462,
+    "covered_count": 274,
+    "not_applicable_count": 188
+  },
+  "section14_excerpt_count": 51,
+  "specification": {
+    "path": "SPEC.md",
+    "sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27"
+  },
+  "status": "verified",
+  "validation_commands": [
+    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just check",
+    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just clippy",
+    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just fmt",
+    "RUSTUP_TOOLCHAIN=1.97.1 timeout 600s just test",
+    "RUSTUP_TOOLCHAIN=stable timeout 300s just check",
+    "RUSTUP_TOOLCHAIN=stable timeout 300s just clippy",
+    "RUSTUP_TOOLCHAIN=stable timeout 300s just fmt",
+    "RUSTUP_TOOLCHAIN=stable timeout 600s just test",
+    "cargo +1.97.1 run --locked -p xtask -- check generated",
+    "cargo +1.97.1 run --locked -p xtask -- check governance",
+    "cargo +1.97.1 run --locked -p xtask -- check workspace",
+    "cargo +1.97.1 test -p gantry-conformance --test analyzer_gate -- --nocapture",
+    "cargo +stable run --locked -p xtask -- check generated",
+    "cargo +stable run --locked -p xtask -- check governance",
+    "cargo +stable run --locked -p xtask -- check workspace",
+    "cargo +stable test -p gantry-conformance --test analyzer_gate -- --nocapture",
+    "git diff --check"
   ]
- },
- "environment_gaps": [
-  "The analyzer and frontend claims are qualified on the recorded Linux cells; hosted macOS qualification is not claimed by this evidence gate."
- ],
- "format": "gantry.analyzer-gate-evidence/v1",
- "gate": "GNT-GEN-GATE-300",
- "prerequisites": [
-  {
-   "commit": "71e6834b841e1a87acd61d66c88a9da62ef95726",
-   "issue": "GNT-GEN-AN-001",
-   "subject": "Implement generic type analysis."
-  },
-  {
-   "commit": "baca937f1e51c2e4ac88bce7dfaaef8073930d39",
-   "issue": "GNT-GEN-AN-002",
-   "subject": "Implement static trait resolution and coherence."
-  },
-  {
-   "commit": "cc1cc69a54568fdc10bfd1a6e749bd6d49285e45",
-   "issue": "GNT-GEN-AN-003",
-   "subject": "Implement generic body monomorphization and effects."
-  },
-  {
-   "commit": "d0016d93e3338405e7eb5f99983e719fa48b6c39",
-   "issue": "GNT-GEN-AN-004",
-   "subject": "Emit concrete schemas and closed executable artifacts."
-  },
-  {
-   "commit": "b5fffb5d7391911d319672a50e76c4bb45657986",
-   "issue": "GNT-GEN-API-001",
-   "subject": "Expose generic analysis through facade and CLI."
-  },
-  {
-   "commit": "29253e9cc4eaf8d74690f7bb2d7bebe026472e02",
-   "issue": "GNT-GEN-PROOF-001",
-   "subject": "Extend analyzer package-validity argument."
-  }
- ],
- "profile": "analyzer",
- "review_summary": {
-  "applicable_clause_count": 450,
-  "covered_count": 262,
-  "not_applicable_count": 188
- },
- "section14_excerpt_count": 51,
- "specification": {
-  "path": "SPEC.md",
-  "sha256": "77dee25b47bea38f43cdac7c5a27495ba4a9bb2dbe2b6dd22aee899d8f18968d"
- },
- "status": "verified",
- "validation_commands": [
-  "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just check",
-  "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just clippy",
-  "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just fmt",
-  "RUSTUP_TOOLCHAIN=1.97.1 timeout 600s just test",
-  "RUSTUP_TOOLCHAIN=stable timeout 300s just check",
-  "RUSTUP_TOOLCHAIN=stable timeout 300s just clippy",
-  "RUSTUP_TOOLCHAIN=stable timeout 300s just fmt",
-  "RUSTUP_TOOLCHAIN=stable timeout 600s just test",
-  "cargo +1.97.1 run --locked -p xtask -- check generated",
-  "cargo +1.97.1 run --locked -p xtask -- check governance",
-  "cargo +1.97.1 run --locked -p xtask -- check workspace",
-  "cargo +1.97.1 test -p gantry-conformance --test analyzer_gate -- --nocapture",
-  "cargo +stable run --locked -p xtask -- check generated",
-  "cargo +stable run --locked -p xtask -- check governance",
-  "cargo +stable run --locked -p xtask -- check workspace",
-  "cargo +stable test -p gantry-conformance --test analyzer_gate -- --nocapture",
-  "git diff --check"
- ]
 }
