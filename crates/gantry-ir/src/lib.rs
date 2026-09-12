@@ -18,6 +18,7 @@ mod executable;
 mod facts;
 pub mod generated;
 mod generic;
+pub mod identifier;
 mod manifest;
 mod package;
 mod path;
@@ -64,6 +65,18 @@ pub use generic::{
     ExecutableProjection, GenericAnalysisFacts, GenericContractError, GenericTemplate,
     ImplementationHead, Predicate, ResolvedCall, SourceOriginSet, TraitContract,
     TraitMethodContract, TraitReference,
+};
+// `identifier` is re-exported here for the identifier-security surface, except
+// for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and
+// protected models already publish under those exact names; those three stay
+// reachable as `gantry_ir::identifier::{AliasMap, CollisionCondition, DeclaredName}`.
+pub use identifier::{
+    CanonicalSymbolicIdentity, CollisionDiagnostic, ConfusableSkeleton,
+    DEFAULT_NAMESPACE_MAX_SCALARS, DISPLAY_LABEL_MAX_SCALARS, DisplayLabel, ExternalName,
+    ExternalNameMap, GeneratedAlias, IdentifierDiagnosticCode, IdentifierError, IdentityKey,
+    IdentityVersion, LookupNamespace, NameSpelling, SPELLING_LIMIT_BYTES, ScriptClassification,
+    ScriptSet, SourceSpelling, SymbolicDomain, SymbolicIdentityDigest, SymbolicIdentityRecord,
+    collision_condition, generated_alias, share_one_skeleton,
 };
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
 pub use package::{
