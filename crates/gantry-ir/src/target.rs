@@ -32,17 +32,38 @@
 //! [`PackageIdentity`]: a descriptor record, a sealed-predicate decode, a
 //! feature declaration set, feature unification, a generated-output
 //! declaration, an expected-input record, an artifact binding and its wire
-//! record, and mode admission. Every diagnostic those entry points raise carries
-//! that instance, as `GNT-17.12-target-resolution-failure` requires, and the
-//! instance is never an input of a canonical encoding or of a digest.
+//! record, mode admission, a conditional-selection-rule identity, a conditional
+//! branch declaration with its declared facts, and a target matrix. Every
+//! diagnostic those entry points raise carries that instance, as
+//! `GNT-17.12-target-resolution-failure` requires, and the instance is never an
+//! input of a canonical encoding or of a digest.
 //!
-//! One condition of `GNT-17.12-target-resolution-failure` is published without a
-//! check here: an unresolvable conditional selection. The decision rule of
-//! `GNT-17.6-conditional-selection-rule` is not modelled by this module — the
-//! declared predicate metadata of `crate::package` records those conditional
-//! forms without resolving them — so
-//! [`TargetDiagnosticCode::ConditionalSelectionUnresolved`] is registered and
-//! anchored, and raised by nothing yet.
+//! The decision rule of `GNT-17.6-conditional-selection-rule` is modelled here
+//! as one published, versioned, total rule: [`ConditionalSelectionRule`]
+//! classifies the evaluated guard set of one declaration into exactly one
+//! [`BranchMatch`] and retains exactly the branches whose whole guard set
+//! matched, so no first-match, last-match, preference, or declaration-order
+//! fallback exists and the same declaration evaluated against the same
+//! descriptor and solution always yields the same [`BranchOutcome`]. One
+//! condition of `GNT-17.12-target-resolution-failure` is therefore published
+//! without a check here: because that rule is total, no conditional selection
+//! this model can build is unresolvable, so
+//! [`TargetDiagnosticCode::ConditionalSelectionUnresolved`] stays registered and
+//! anchored and is raised by nothing yet. The declared predicate metadata of
+//! `crate::package` still records those conditional forms without resolving
+//! them.
+//!
+//! The retained closure of `GNT-17.7-inactive-code-policy` is the union of the
+//! retained branches' declared facts — one canonical, sorted, deduplicated set
+//! per kind of [`DeclaredFactKind`] — so retention decides contribution: an
+//! inactive branch contributes no fact to [`RetainedClosure`], and a branch that
+//! declared facts while inactive is refused by
+//! [`RetainedClosure::check_contribution`]. The target matrix of
+//! `GNT-17.8-target-matrix` is [`TargetMatrix`], whose entries state one
+//! [`TargetMatrixState`] per descriptor, kind, and mode combination, so an
+//! unsupported combination fails under `TargetMatrix::admit` and an unattested
+//! combination fails under `TargetMatrix::coverage` rather than being assumed
+//! supported or substituted by another target.
 //!
 //! Three records stay distinct. [`ExecutionTargetDescriptor`] is the versioned
 //! closed record of one execution target, [`TargetFactsRecord`] is the
@@ -89,6 +110,12 @@ const PREDICATE_OUTCOME_DOMAIN: &str = "gantry.target-predicate-outcomes/v1";
 /// Domain separator for the canonical target artifact-binding encoding.
 const ARTIFACT_BINDING_DOMAIN: &str = "gantry.target-artifact-binding/v1";
 
+/// Domain separator for the canonical retained-closure encoding.
+const RETAINED_CLOSURE_DOMAIN: &str = "gantry.target-retained-closure/v1";
+
+/// Domain separator for the canonical target-matrix encoding.
+const TARGET_MATRIX_DOMAIN: &str = "gantry.target-matrix/v1";
+
 /// One frozen published diagnostic identity of the target model.
 ///
 /// The codes are frozen: a consumer matches on [`Self::as_str`], and the
@@ -100,8 +127,9 @@ const ARTIFACT_BINDING_DOMAIN: &str = "gantry.target-artifact-binding/v1";
 /// `GNT-17.12-target-resolution-failure` is the deliberate exception: an
 /// unresolvable conditional selection is published as
 /// [`Self::ConditionalSelectionUnresolved`] but is raised by no entry point of
-/// this module, because the published total rule of
-/// `GNT-17.6-conditional-selection-rule` that decides it is not modelled here.
+/// this module, because the total rule of `GNT-17.6-conditional-selection-rule`
+/// that this module models decides every guard set it is given, so no selection
+/// this model can build is unresolvable.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TargetDiagnosticCode {
     /// `target-artifact-binding-digest-invalid`
@@ -116,8 +144,14 @@ pub enum TargetDiagnosticCode {
     ArtifactBindingPropertyUnknown,
     /// `target-artifact-binding-version-unsupported`
     ArtifactBindingVersionUnsupported,
+    /// `target-branch-facts-inactive`
+    BranchFactsInactive,
+    /// `target-closure-digest-invalid`
+    ClosureDigestInvalid,
     /// `target-conditional-selection-unresolved`
     ConditionalSelectionUnresolved,
+    /// `target-declared-fact-name-invalid`
+    DeclaredFactNameInvalid,
     /// `target-descriptor-digest-invalid`
     DescriptorDigestInvalid,
     /// `target-descriptor-edition-invalid`
@@ -148,24 +182,37 @@ pub enum TargetDiagnosticCode {
     FeatureUnknown,
     /// `target-generated-output-name-invalid`
     GeneratedOutputNameInvalid,
+    /// `target-matrix-combination-unsupported`
+    MatrixCombinationUnsupported,
+    /// `target-matrix-coverage-missing`
+    MatrixCoverageMissing,
+    /// `target-matrix-digest-invalid`
+    MatrixDigestInvalid,
+    /// `target-matrix-entry-duplicate`
+    MatrixEntryDuplicate,
     /// `target-mode-not-admitted`
     ModeNotAdmitted,
     /// `target-predicate-name-unknown`
     PredicateNameUnknown,
+    /// `target-selection-rule-unsupported`
+    SelectionRuleUnsupported,
     /// `target-wire-value-unknown`
     WireValueUnknown,
 }
 
 impl TargetDiagnosticCode {
     /// Every published code, in sorted code order.
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 33] = [
         Self::ArtifactBindingDigestInvalid,
         Self::ArtifactBindingMismatch,
         Self::ArtifactBindingMissingInput,
         Self::ArtifactBindingPropertyDuplicate,
         Self::ArtifactBindingPropertyUnknown,
         Self::ArtifactBindingVersionUnsupported,
+        Self::BranchFactsInactive,
+        Self::ClosureDigestInvalid,
         Self::ConditionalSelectionUnresolved,
+        Self::DeclaredFactNameInvalid,
         Self::DescriptorDigestInvalid,
         Self::DescriptorEditionInvalid,
         Self::DescriptorPropertyDuplicate,
@@ -181,8 +228,13 @@ impl TargetDiagnosticCode {
         Self::FeatureSolutionInstanceMismatch,
         Self::FeatureUnknown,
         Self::GeneratedOutputNameInvalid,
+        Self::MatrixCombinationUnsupported,
+        Self::MatrixCoverageMissing,
+        Self::MatrixDigestInvalid,
+        Self::MatrixEntryDuplicate,
         Self::ModeNotAdmitted,
         Self::PredicateNameUnknown,
+        Self::SelectionRuleUnsupported,
         Self::WireValueUnknown,
     ];
 
@@ -198,7 +250,10 @@ impl TargetDiagnosticCode {
             Self::ArtifactBindingVersionUnsupported => {
                 "target-artifact-binding-version-unsupported"
             }
+            Self::BranchFactsInactive => "target-branch-facts-inactive",
+            Self::ClosureDigestInvalid => "target-closure-digest-invalid",
             Self::ConditionalSelectionUnresolved => "target-conditional-selection-unresolved",
+            Self::DeclaredFactNameInvalid => "target-declared-fact-name-invalid",
             Self::DescriptorDigestInvalid => "target-descriptor-digest-invalid",
             Self::DescriptorEditionInvalid => "target-descriptor-edition-invalid",
             Self::DescriptorPropertyDuplicate => "target-descriptor-property-duplicate",
@@ -214,8 +269,13 @@ impl TargetDiagnosticCode {
             Self::FeatureSolutionInstanceMismatch => "target-feature-solution-instance-mismatch",
             Self::FeatureUnknown => "target-feature-unknown",
             Self::GeneratedOutputNameInvalid => "target-generated-output-name-invalid",
+            Self::MatrixCombinationUnsupported => "target-matrix-combination-unsupported",
+            Self::MatrixCoverageMissing => "target-matrix-coverage-missing",
+            Self::MatrixDigestInvalid => "target-matrix-digest-invalid",
+            Self::MatrixEntryDuplicate => "target-matrix-entry-duplicate",
             Self::ModeNotAdmitted => "target-mode-not-admitted",
             Self::PredicateNameUnknown => "target-predicate-name-unknown",
+            Self::SelectionRuleUnsupported => "target-selection-rule-unsupported",
             Self::WireValueUnknown => "target-wire-value-unknown",
         }
     }
@@ -242,8 +302,17 @@ impl TargetDiagnosticCode {
             Self::ArtifactBindingVersionUnsupported => {
                 "An artifact-binding record names a version this implementation does not support."
             }
+            Self::BranchFactsInactive => {
+                "An inactive conditional branch declares facts it must not contribute to the retained closure."
+            }
+            Self::ClosureDigestInvalid => {
+                "A digest spelling of a retained closure is not 64 lowercase hexadecimal digits."
+            }
             Self::ConditionalSelectionUnresolved => {
                 "A conditional selection cannot be resolved under the published total rule of its version."
+            }
+            Self::DeclaredFactNameInvalid => {
+                "A declared fact of a conditional branch is not a legal declared name."
             }
             Self::DescriptorDigestInvalid => {
                 "A digest spelling of a target descriptor or of its target facts is not 64 lowercase hexadecimal digits."
@@ -286,11 +355,26 @@ impl TargetDiagnosticCode {
             Self::GeneratedOutputNameInvalid => {
                 "A declared generated-output name is not a legal declared name."
             }
+            Self::MatrixCombinationUnsupported => {
+                "A target matrix records a target, kind, and mode combination as unsupported."
+            }
+            Self::MatrixCoverageMissing => {
+                "A target matrix records no explicit state for a target, kind, and mode combination."
+            }
+            Self::MatrixDigestInvalid => {
+                "A digest spelling of a target matrix is not 64 lowercase hexadecimal digits."
+            }
+            Self::MatrixEntryDuplicate => {
+                "A target matrix records one target, kind, and mode combination twice."
+            }
             Self::ModeNotAdmitted => {
                 "A semantic mode is not admitted for the selected target kind."
             }
             Self::PredicateNameUnknown => {
                 "A predicate name is not a member of the sealed predicate vocabulary."
+            }
+            Self::SelectionRuleUnsupported => {
+                "A conditional declaration names a selection-rule identity this implementation does not support."
             }
             Self::WireValueUnknown => {
                 "A target record carries a field value outside the closed vocabulary of its version."
@@ -309,6 +393,9 @@ impl TargetDiagnosticCode {
             | Self::ArtifactBindingPropertyUnknown
             | Self::ArtifactBindingVersionUnsupported
             | Self::GeneratedOutputNameInvalid => "GNT-17.11-target-artifact-binding",
+            Self::BranchFactsInactive
+            | Self::ClosureDigestInvalid
+            | Self::DeclaredFactNameInvalid => "GNT-17.7-inactive-code-policy",
             Self::ConditionalSelectionUnresolved => "GNT-17.12-target-resolution-failure",
             Self::DescriptorDigestInvalid
             | Self::TargetFactsTextInvalid
@@ -330,6 +417,11 @@ impl TargetDiagnosticCode {
             }
             Self::ModeNotAdmitted => "GNT-17.10-target-selected-mode-admission",
             Self::PredicateNameUnknown => "GNT-17.3-sealed-predicates",
+            Self::MatrixCombinationUnsupported
+            | Self::MatrixCoverageMissing
+            | Self::MatrixDigestInvalid
+            | Self::MatrixEntryDuplicate => "GNT-17.8-target-matrix",
+            Self::SelectionRuleUnsupported => "GNT-17.6-conditional-selection-rule",
         }
     }
 }
@@ -401,6 +493,20 @@ pub enum TargetError {
         /// The unsupported version.
         version: u32,
     },
+    /// An inactive conditional branch that declares facts of the retained closure.
+    BranchFactsInactive {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The canonical guard spellings of the inactive branch, in canonical order.
+        guards: Vec<Arc<str>>,
+        /// The declared fact kinds that branch contributed, in vocabulary order.
+        kinds: Vec<DeclaredFactKind>,
+    },
+    /// A retained-closure digest that is not 64 lowercase hexadecimal digits.
+    ClosureDigestInvalid {
+        /// The rejected digest text.
+        value: Arc<str>,
+    },
     /// A conditional selection the published total rule cannot resolve.
     ConditionalSelectionUnresolved {
         /// The declaring package instance.
@@ -409,6 +515,15 @@ pub enum TargetError {
         site: Arc<str>,
         /// The canonical guard spellings that left the selection undecided.
         guards: Vec<Arc<str>>,
+    },
+    /// A declared fact name outside the closed declared vocabulary.
+    DeclaredFactNameInvalid {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The declared fact kind the rejected name was declared for.
+        kind: DeclaredFactKind,
+        /// The rejected declared name.
+        value: Arc<str>,
     },
     /// A descriptor or target-facts digest that is not 64 lowercase hexadecimal digits.
     DescriptorDigestInvalid {
@@ -507,6 +622,44 @@ pub enum TargetError {
         /// The rejected generated-output name.
         value: Arc<str>,
     },
+    /// A target combination the matrix records as unsupported.
+    MatrixCombinationUnsupported {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The normalized digest of the descriptor the combination names.
+        descriptor: TargetDescriptorDigest,
+        /// The target kind of the combination.
+        kind: TargetKind,
+        /// The semantic mode of the combination.
+        mode: SemanticMode,
+    },
+    /// A target combination the matrix records no state for.
+    MatrixCoverageMissing {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The normalized digest of the descriptor the combination names.
+        descriptor: TargetDescriptorDigest,
+        /// The target kind of the combination.
+        kind: TargetKind,
+        /// The semantic mode of the combination.
+        mode: SemanticMode,
+    },
+    /// A target-matrix digest that is not 64 lowercase hexadecimal digits.
+    MatrixDigestInvalid {
+        /// The rejected digest text.
+        value: Arc<str>,
+    },
+    /// One target combination recorded twice by one matrix.
+    MatrixEntryDuplicate {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The normalized digest of the descriptor the combination names.
+        descriptor: TargetDescriptorDigest,
+        /// The target kind of the combination.
+        kind: TargetKind,
+        /// The semantic mode of the combination.
+        mode: SemanticMode,
+    },
     /// A semantic mode the selected target kind does not admit.
     ModeNotAdmitted {
         /// The declaring package instance.
@@ -522,6 +675,13 @@ pub enum TargetError {
         instance: Box<PackageIdentity>,
         /// The rejected predicate name.
         name: Arc<str>,
+    },
+    /// A selection-rule identity this implementation does not support.
+    SelectionRuleUnsupported {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The rejected rule identity.
+        rule: Arc<str>,
     },
     /// A field value outside the closed vocabulary of its record version.
     WireValueUnknown {
@@ -555,9 +715,12 @@ impl TargetError {
             Self::ArtifactBindingVersionUnsupported { .. } => {
                 TargetDiagnosticCode::ArtifactBindingVersionUnsupported
             }
+            Self::BranchFactsInactive { .. } => TargetDiagnosticCode::BranchFactsInactive,
+            Self::ClosureDigestInvalid { .. } => TargetDiagnosticCode::ClosureDigestInvalid,
             Self::ConditionalSelectionUnresolved { .. } => {
                 TargetDiagnosticCode::ConditionalSelectionUnresolved
             }
+            Self::DeclaredFactNameInvalid { .. } => TargetDiagnosticCode::DeclaredFactNameInvalid,
             Self::DescriptorDigestInvalid { .. } => TargetDiagnosticCode::DescriptorDigestInvalid,
             Self::DescriptorEditionInvalid { .. } => TargetDiagnosticCode::DescriptorEditionInvalid,
             Self::DescriptorPropertyDuplicate { .. } => {
@@ -591,8 +754,15 @@ impl TargetError {
             Self::GeneratedOutputNameInvalid { .. } => {
                 TargetDiagnosticCode::GeneratedOutputNameInvalid
             }
+            Self::MatrixCombinationUnsupported { .. } => {
+                TargetDiagnosticCode::MatrixCombinationUnsupported
+            }
+            Self::MatrixCoverageMissing { .. } => TargetDiagnosticCode::MatrixCoverageMissing,
+            Self::MatrixDigestInvalid { .. } => TargetDiagnosticCode::MatrixDigestInvalid,
+            Self::MatrixEntryDuplicate { .. } => TargetDiagnosticCode::MatrixEntryDuplicate,
             Self::ModeNotAdmitted { .. } => TargetDiagnosticCode::ModeNotAdmitted,
             Self::PredicateNameUnknown { .. } => TargetDiagnosticCode::PredicateNameUnknown,
+            Self::SelectionRuleUnsupported { .. } => TargetDiagnosticCode::SelectionRuleUnsupported,
             Self::WireValueUnknown { .. } => TargetDiagnosticCode::WireValueUnknown,
         }
     }
@@ -647,6 +817,24 @@ impl fmt::Display for TargetError {
                 "package `{}` names unsupported artifact-binding version {version}",
                 instance.as_str()
             ),
+            Self::BranchFactsInactive {
+                instance,
+                guards,
+                kinds,
+            } => {
+                write!(
+                    formatter,
+                    "package `{}` declares an inactive branch under guards ",
+                    instance.as_str()
+                )?;
+                write_guard_list(formatter, guards)?;
+                write!(formatter, " that contributes ")?;
+                write_fact_kind_list(formatter, kinds)
+            }
+            Self::ClosureDigestInvalid { value } => write!(
+                formatter,
+                "retained-closure digest `{value}` is not lowercase hexadecimal"
+            ),
             Self::ConditionalSelectionUnresolved {
                 instance,
                 site,
@@ -659,6 +847,16 @@ impl fmt::Display for TargetError {
                 )?;
                 write_guard_list(formatter, guards)
             }
+            Self::DeclaredFactNameInvalid {
+                instance,
+                kind,
+                value,
+            } => write!(
+                formatter,
+                "package `{}` declares the {} fact `{value}`, which is not a legal declared name",
+                instance.as_str(),
+                kind.wire_name()
+            ),
             Self::DescriptorDigestInvalid { value } => {
                 write!(formatter, "digest `{value}` is not lowercase hexadecimal")
             }
@@ -743,6 +941,46 @@ impl fmt::Display for TargetError {
                 "package `{}` declares generated output `{value}`, which is not a legal declared name",
                 instance.as_str()
             ),
+            Self::MatrixCombinationUnsupported {
+                instance,
+                descriptor,
+                kind,
+                mode,
+            } => write!(
+                formatter,
+                "package `{}` records the {} target `{descriptor}` in the {} mode as unsupported",
+                instance.as_str(),
+                kind.wire_name(),
+                mode.wire_name()
+            ),
+            Self::MatrixCoverageMissing {
+                instance,
+                descriptor,
+                kind,
+                mode,
+            } => write!(
+                formatter,
+                "package `{}` records no matrix state for the {} target `{descriptor}` in the {} mode",
+                instance.as_str(),
+                kind.wire_name(),
+                mode.wire_name()
+            ),
+            Self::MatrixDigestInvalid { value } => write!(
+                formatter,
+                "target-matrix digest `{value}` is not lowercase hexadecimal"
+            ),
+            Self::MatrixEntryDuplicate {
+                instance,
+                descriptor,
+                kind,
+                mode,
+            } => write!(
+                formatter,
+                "package `{}` records the {} target `{descriptor}` in the {} mode twice",
+                instance.as_str(),
+                kind.wire_name(),
+                mode.wire_name()
+            ),
             Self::ModeNotAdmitted {
                 instance,
                 kind,
@@ -757,6 +995,11 @@ impl fmt::Display for TargetError {
             Self::PredicateNameUnknown { instance, name } => write!(
                 formatter,
                 "package `{}` names predicate `{name}`, which is not sealed",
+                instance.as_str()
+            ),
+            Self::SelectionRuleUnsupported { instance, rule } => write!(
+                formatter,
+                "package `{}` names selection rule `{rule}`, which this version does not support",
                 instance.as_str()
             ),
             Self::WireValueUnknown {
@@ -792,6 +1035,20 @@ fn write_guard_list(formatter: &mut fmt::Formatter<'_>, guards: &[Arc<str>]) -> 
             formatter.write_str(", ")?;
         }
         formatter.write_str(guard)?;
+    }
+    Ok(())
+}
+
+/// Writes one comma-separated list of declared fact kinds.
+fn write_fact_kind_list(
+    formatter: &mut fmt::Formatter<'_>,
+    kinds: &[DeclaredFactKind],
+) -> fmt::Result {
+    for (index, kind) in kinds.iter().enumerate() {
+        if index > 0 {
+            formatter.write_str(", ")?;
+        }
+        formatter.write_str(kind.wire_name())?;
     }
     Ok(())
 }
@@ -901,6 +1158,16 @@ target_digest_type!(
     TargetArtifactBindingDigest,
     ArtifactBindingDigestInvalid,
     "One digest over the canonical encoding of one target artifact binding (GNT-17.11-target-artifact-binding)."
+);
+target_digest_type!(
+    RetainedClosureDigest,
+    ClosureDigestInvalid,
+    "One digest over the canonical encoding of one retained closure (GNT-17.7-inactive-code-policy)."
+);
+target_digest_type!(
+    TargetMatrixDigest,
+    MatrixDigestInvalid,
+    "One digest over the canonical encoding of one target matrix (GNT-17.8-target-matrix)."
 );
 
 /// The closed architecture vocabulary of descriptor version 1.
@@ -1960,6 +2227,790 @@ impl FeatureSolution {
     }
 }
 
+/// How one evaluated guard set decides one conditional branch
+/// (`GNT-17.6-conditional-selection-rule`).
+///
+/// The vocabulary is closed and total: every guard set of every declaration is
+/// classified into exactly one of these three members, so no guard set is left
+/// undecided. An empty guard set matched vacuously, and it is the unconditional
+/// branch of a declaration.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum BranchMatch {
+    /// Every predicate of the guard set matched.
+    EveryMatched,
+    /// No predicate of the guard set matched.
+    NoneMatched,
+    /// At least one predicate of the guard set matched and at least one did not.
+    PartiallyMatched,
+}
+
+impl BranchMatch {
+    /// Every member of the closed vocabulary, in wire-name order.
+    pub const ALL: [Self; 3] = [
+        Self::EveryMatched,
+        Self::NoneMatched,
+        Self::PartiallyMatched,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::EveryMatched => "every-matched",
+            Self::NoneMatched => "none-matched",
+            Self::PartiallyMatched => "partially-matched",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.wire_name() == value)
+    }
+
+    /// Classifies one evaluated guard set under the decision rule.
+    ///
+    /// The classification reads every recorded outcome and no position, so
+    /// permuting a guard set cannot change it, and a guard set whose outcomes
+    /// only partly matched is neither `EveryMatched` nor `NoneMatched`.
+    #[must_use]
+    pub fn classify(outcomes: &PredicateOutcomeSet) -> Self {
+        let matched = outcomes
+            .as_slice()
+            .iter()
+            .filter(|outcome| outcome.matched)
+            .count();
+        if matched == outcomes.len() {
+            Self::EveryMatched
+        } else if matched == 0 {
+            Self::NoneMatched
+        } else {
+            Self::PartiallyMatched
+        }
+    }
+}
+
+/// The one published, versioned conditional-selection rule
+/// (`GNT-17.6-conditional-selection-rule`).
+///
+/// The rule is total and structural. It reads the selected descriptor and the
+/// declaring feature solution through the evaluated guard set of one
+/// declaration, and it decides a branch by conjunction: a branch is retained
+/// exactly when *every* predicate of its guard set matched. Conjunction is
+/// commutative and associative, so neither the enumeration order of a guard set
+/// nor the declaration order of a branch can change the decision.
+///
+/// Where several predicates match, the rule reads them as one conjunction
+/// rather than as a sequence, so first-match, last-match, preference ordering,
+/// and declaration order are not inputs of this rule, and they cannot decide
+/// which branch is retained. A guard set that only partly matched is not
+/// retained, and a guard set that matched nothing is not retained either, so no
+/// fallback branch is ever chosen in place of a stated rule. Where several
+/// branches of one declaration are retained, [`Self::retain_one`] selects the
+/// branch with the least canonical branch encoding, which is a pure function of
+/// the declaration's own content.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ConditionalSelectionRule(Arc<str>);
+
+impl ConditionalSelectionRule {
+    /// The published rule identity of the only rule this build implements.
+    pub const IDENTITY: &'static str = "gnt-conditional-selection/v1";
+
+    /// Validates one published rule identity.
+    ///
+    /// The identity is named by a conditional declaration, so an unsupported
+    /// identity is reported against the instance that declared it rather than
+    /// resolved by another rule.
+    pub fn new(declaring: &PackageIdentity, identity: &str) -> Result<Self, TargetError> {
+        if identity != Self::IDENTITY {
+            return Err(TargetError::SelectionRuleUnsupported {
+                instance: Box::new(declaring.clone()),
+                rule: Arc::from(identity),
+            });
+        }
+        Ok(Self(Arc::from(identity)))
+    }
+
+    /// Returns the published rule identity.
+    #[must_use]
+    pub fn identity(&self) -> &str {
+        &self.0
+    }
+
+    /// Classifies the evaluated guard set of one declaration under this rule.
+    #[must_use]
+    pub fn match_outcome(&self, outcomes: &PredicateOutcomeSet) -> BranchMatch {
+        BranchMatch::classify(outcomes)
+    }
+
+    /// Returns whether this rule retains a branch with one classification.
+    ///
+    /// The rule retains exactly the branches whose whole guard set matched, so
+    /// a partly matched guard set is never retained by a preference.
+    #[must_use]
+    pub const fn retains(&self, outcome: BranchMatch) -> bool {
+        matches!(outcome, BranchMatch::EveryMatched)
+    }
+
+    /// Evaluates one declaration against one descriptor and one solution.
+    ///
+    /// The recorded outcome set is derived here from the declaration's own
+    /// guard set, so it is exactly one evaluation of that guard set, and the
+    /// same declaration evaluated against the same descriptor and the same
+    /// solution yields the same outcome under every guard-set and declaration
+    /// order.
+    #[must_use]
+    pub fn evaluate(
+        &self,
+        declaration: &BranchDeclaration,
+        descriptor: &ExecutionTargetDescriptor,
+        solution: &FeatureSolution,
+    ) -> BranchOutcome {
+        let outcomes = PredicateOutcomeSet::evaluate(declaration.guards(), descriptor, solution);
+        let match_outcome = self.match_outcome(&outcomes);
+        BranchOutcome {
+            declaration: declaration.clone(),
+            retained: self.retains(match_outcome),
+            outcomes,
+        }
+    }
+
+    /// Selects the one branch this rule retains among several declared branches.
+    ///
+    /// The candidates are branches of one declaration, which share a declaring
+    /// instance. The selection reads the canonical branch encoding — the rule
+    /// identity, the canonical guard set, the contributed facts, and the
+    /// declaring instance — so it is a function of the declaration's content and
+    /// never of the position of a candidate in the list; two candidates with
+    /// equal encodings are equal branches. No candidate is retained by the
+    /// guard rule exactly when none of them is returned.
+    #[must_use]
+    pub fn retain_one<'a>(&self, outcomes: &'a [BranchOutcome]) -> Option<&'a BranchOutcome> {
+        outcomes
+            .iter()
+            .filter(|outcome| outcome.retained)
+            .min_by_key(|outcome| branch_encoding(&outcome.declaration))
+    }
+}
+
+/// The closed vocabulary of the declared facts one branch may contribute
+/// (`GNT-17.7-inactive-code-policy`).
+///
+/// These are exactly the six kinds of `GNT-17.7-inactive-code-policy`: a type,
+/// an implementation, an operation, a capability requirement, an agent tool,
+/// and durable state. No other kind can be declared here, and an inactive
+/// branch contributes none of them.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DeclaredFactKind {
+    /// A declared type.
+    Type,
+    /// A declared implementation.
+    Implementation,
+    /// A declared operation.
+    Operation,
+    /// A declared capability requirement.
+    CapabilityRequirement,
+    /// A declared agent tool.
+    AgentTool,
+    /// Declared durable state.
+    DurableState,
+}
+
+impl DeclaredFactKind {
+    /// Every kind of the closed vocabulary, in the fixed order its clause names.
+    pub const ALL: [Self; 6] = [
+        Self::Type,
+        Self::Implementation,
+        Self::Operation,
+        Self::CapabilityRequirement,
+        Self::AgentTool,
+        Self::DurableState,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Type => "type",
+            Self::Implementation => "implementation",
+            Self::Operation => "operation",
+            Self::CapabilityRequirement => "capability-requirement",
+            Self::AgentTool => "agent-tool",
+            Self::DurableState => "durable-state",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.wire_name() == value)
+    }
+}
+
+/// The declared facts one conditional branch contributes
+/// (`GNT-17.7-inactive-code-policy`).
+///
+/// Each kind is one canonical, sorted, deduplicated set of declared names, so
+/// the order a declaration lists its facts in is not part of the declaration.
+/// This value is the unit the retained closure collects whole or does not
+/// collect at all: an inactive branch contributes no name of any of the six
+/// sets.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DeclaredFacts {
+    names: BTreeMap<DeclaredFactKind, Vec<Arc<str>>>,
+}
+
+impl DeclaredFacts {
+    /// Declares the facts of one branch under the closed declared-name vocabulary.
+    ///
+    /// The declaring instance is required because a conditional branch is a
+    /// declaration: a fact name that is empty or carries a control character is
+    /// reported against the instance that declared it rather than ignored, and
+    /// the order of the given entries is not part of the value.
+    pub fn new(
+        declaring: &PackageIdentity,
+        entries: &[(DeclaredFactKind, &str)],
+    ) -> Result<Self, TargetError> {
+        let mut names = BTreeMap::<DeclaredFactKind, BTreeSet<Arc<str>>>::new();
+        for (kind, value) in entries {
+            if !is_declared_name(value) {
+                return Err(TargetError::DeclaredFactNameInvalid {
+                    instance: Box::new(declaring.clone()),
+                    kind: *kind,
+                    value: Arc::from(*value),
+                });
+            }
+            names.entry(*kind).or_default().insert(Arc::from(*value));
+        }
+        Ok(Self {
+            names: names
+                .into_iter()
+                .map(|(kind, set)| (kind, set.into_iter().collect()))
+                .collect(),
+        })
+    }
+
+    /// Declares no fact at all.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            names: BTreeMap::new(),
+        }
+    }
+
+    /// Returns whether this declaration contributes no fact.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.names.values().all(Vec::is_empty)
+    }
+
+    /// Returns the number of distinct declared facts.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.names.values().map(Vec::len).sum()
+    }
+
+    /// Returns the declared names of one kind, in canonical order.
+    #[must_use]
+    pub fn names(&self, kind: DeclaredFactKind) -> &[Arc<str>] {
+        self.names.get(&kind).map_or(&[], Vec::as_slice)
+    }
+
+    /// Returns every kind this declaration contributes a fact for, in vocabulary order.
+    #[must_use]
+    pub fn declared_kinds(&self) -> Vec<DeclaredFactKind> {
+        DeclaredFactKind::ALL
+            .into_iter()
+            .filter(|kind| !self.names(*kind).is_empty())
+            .collect()
+    }
+
+    /// Returns the union of this declaration and another, in canonical order.
+    #[must_use]
+    fn union(&self, other: &Self) -> Self {
+        let mut names = self.names.clone();
+        for (kind, added) in &other.names {
+            let present = names.entry(*kind).or_default();
+            present.extend(added.iter().cloned());
+            present.sort();
+            present.dedup();
+        }
+        Self { names }
+    }
+}
+
+/// One conditional branch of one declaration (`GNT-17.6-conditional-selection-rule`).
+///
+/// A branch is the declaring instance it belongs to, the published rule identity
+/// that resolves it, the canonical guard set of sealed predicates it is guarded
+/// by, and the declared facts it contributes. The guard set is a set: the
+/// constructor sorts and deduplicates it, so the order the predicates are listed
+/// in is not part of the declaration and cannot change any outcome, and an empty
+/// guard set is the unconditional branch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BranchDeclaration {
+    declaring: PackageIdentity,
+    rule: ConditionalSelectionRule,
+    guards: Vec<TargetPredicate>,
+    facts: DeclaredFacts,
+}
+
+impl BranchDeclaration {
+    /// Declares one conditional branch under one validated rule identity.
+    #[must_use]
+    pub fn new(
+        declaring: &PackageIdentity,
+        rule: ConditionalSelectionRule,
+        guards: &[TargetPredicate],
+        facts: DeclaredFacts,
+    ) -> Self {
+        let mut guards = guards.to_vec();
+        guards.sort();
+        guards.dedup();
+        Self {
+            declaring: declaring.clone(),
+            rule,
+            guards,
+            facts,
+        }
+    }
+
+    /// Returns the package instance this branch was declared by.
+    #[must_use]
+    pub const fn declaring(&self) -> &PackageIdentity {
+        &self.declaring
+    }
+
+    /// Returns the published rule identity that resolves this branch.
+    #[must_use]
+    pub const fn rule(&self) -> &ConditionalSelectionRule {
+        &self.rule
+    }
+
+    /// Returns the canonical guard set of this branch.
+    #[must_use]
+    pub fn guards(&self) -> &[TargetPredicate] {
+        &self.guards
+    }
+
+    /// Returns the declared facts this branch contributes when it is retained.
+    #[must_use]
+    pub const fn facts(&self) -> &DeclaredFacts {
+        &self.facts
+    }
+}
+
+/// One branch and the rule's decision about it
+/// (`GNT-17.6-conditional-selection-rule`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BranchOutcome {
+    declaration: BranchDeclaration,
+    retained: bool,
+    outcomes: PredicateOutcomeSet,
+}
+
+impl BranchOutcome {
+    /// Returns the branch this outcome decides.
+    #[must_use]
+    pub const fn declaration(&self) -> &BranchDeclaration {
+        &self.declaration
+    }
+
+    /// Returns whether the rule retains this branch.
+    #[must_use]
+    pub const fn retained(&self) -> bool {
+        self.retained
+    }
+
+    /// Returns every evaluated predicate outcome that decided this branch.
+    #[must_use]
+    pub const fn outcomes(&self) -> &PredicateOutcomeSet {
+        &self.outcomes
+    }
+
+    /// Returns how the evaluated guard set decided this branch.
+    ///
+    /// The classification is a pure function of the recorded outcome set, so it
+    /// is the decision the rule made and not a second decision: this branch is
+    /// retained exactly when it is `EveryMatched`.
+    #[must_use]
+    pub fn match_outcome(&self) -> BranchMatch {
+        BranchMatch::classify(&self.outcomes)
+    }
+}
+
+/// Exactly the declared facts the retained branches of one declaration contribute
+/// (`GNT-17.7-inactive-code-policy`).
+///
+/// The closure is the union of the retained branches' declarations, one canonical,
+/// sorted, deduplicated set per kind, with one canonical encoding and one digest
+/// over it. Retention is the gate: an inactive branch contributes no type, no
+/// implementation, no operation, no capability requirement, no agent tool, and no
+/// durable state, so no fact of an inactive branch can enter these sets, this
+/// encoding, or this digest.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetainedClosure {
+    facts: DeclaredFacts,
+    canonical: Arc<[u8]>,
+    digest: RetainedClosureDigest,
+}
+
+impl RetainedClosure {
+    /// Collects exactly the declared facts of the retained branches of a selection.
+    ///
+    /// This is the closure computation of `GNT-17.7-inactive-code-policy`: a
+    /// branch the rule did not retain contributes none of its declared facts, so
+    /// an inactive branch cannot change any set, the canonical encoding, or the
+    /// digest. [`Self::check_contribution`] and [`Self::checked`] are the strict
+    /// entry points that report a conditional form whose inactive branch declared
+    /// facts at all.
+    #[must_use]
+    pub fn new(outcomes: &[BranchOutcome]) -> Self {
+        let facts = outcomes
+            .iter()
+            .filter(|outcome| outcome.retained())
+            .fold(DeclaredFacts::empty(), |closure, outcome| {
+                closure.union(outcome.declaration().facts())
+            });
+        Self::from_facts(facts)
+    }
+
+    /// Returns the empty closure a selection that retains no fact contributes.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::from_facts(DeclaredFacts::empty())
+    }
+
+    /// Reports one inactive branch that declares facts it must not contribute.
+    ///
+    /// `GNT-17.7-inactive-code-policy` gives an inactive branch no contribution to
+    /// the retained closure, so a branch the rule did not retain that declares a
+    /// fact is rejected rather than collected, and the rejection names the
+    /// declaring instance, the branch's guard set, and the kinds it declared.
+    pub fn check_contribution(outcome: &BranchOutcome) -> Result<(), TargetError> {
+        let facts = outcome.declaration().facts();
+        if outcome.retained() || facts.is_empty() {
+            return Ok(());
+        }
+        Err(TargetError::BranchFactsInactive {
+            instance: Box::new(outcome.declaration().declaring().clone()),
+            guards: guard_spellings(outcome.declaration()),
+            kinds: facts.declared_kinds(),
+        })
+    }
+
+    /// Checks every contribution and then collects the retained facts.
+    ///
+    /// A selection whose inactive branch declared facts is rejected here, so a
+    /// caller that requires every declared branch to honor
+    /// `GNT-17.7-inactive-code-policy` never obtains a closure from it.
+    pub fn checked(outcomes: &[BranchOutcome]) -> Result<Self, TargetError> {
+        for outcome in outcomes {
+            Self::check_contribution(outcome)?;
+        }
+        Ok(Self::new(outcomes))
+    }
+
+    /// Returns the declared names of one kind, in canonical order.
+    #[must_use]
+    pub fn names(&self, kind: DeclaredFactKind) -> &[Arc<str>] {
+        self.facts.names(kind)
+    }
+
+    /// Returns whether this closure records no fact.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.facts.is_empty()
+    }
+
+    /// Returns the number of distinct facts this closure records.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.facts.len()
+    }
+
+    /// Returns the one canonical byte encoding of this closure.
+    #[must_use]
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.canonical
+    }
+
+    /// Returns the digest over those canonical bytes.
+    #[must_use]
+    pub fn digest(&self) -> RetainedClosureDigest {
+        self.digest.clone()
+    }
+
+    /// Composes one closure from one canonical declared-facts value.
+    fn from_facts(facts: DeclaredFacts) -> Self {
+        let canonical = encode_declared_facts(&facts);
+        let digest = RetainedClosureDigest::from_digest(digest_fields(
+            RETAINED_CLOSURE_DOMAIN,
+            &[&canonical],
+        ));
+        Self {
+            facts,
+            canonical: Arc::from(canonical.into_boxed_slice()),
+            digest,
+        }
+    }
+}
+
+/// The closed state vocabulary of one target-matrix entry
+/// (`GNT-17.8-target-matrix`).
+///
+/// A combination is either analyzed and supported or recorded as unsupported.
+/// There is no third member and no default value, so a state this vocabulary does
+/// not name cannot be recorded and no combination is assumed supported.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TargetMatrixState {
+    /// The combination is analyzed and supported.
+    Supported,
+    /// The combination is recorded as unsupported rather than left unattested.
+    Unsupported,
+}
+
+impl TargetMatrixState {
+    /// Every member of the closed vocabulary, in wire-name order.
+    pub const ALL: [Self; 2] = [Self::Supported, Self::Unsupported];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Supported => "supported",
+            Self::Unsupported => "unsupported",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.wire_name() == value)
+    }
+}
+
+/// One analyzed combination of a target matrix (`GNT-17.8-target-matrix`).
+///
+/// The combination is the normalized descriptor digest, the target kind, and the
+/// semantic mode, and its state is explicit. The selected feature solution stays a
+/// `GNT-17.11-target-artifact-binding` input of the one artifact a binding records,
+/// so no feature selection is inferred from an entry here.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct TargetMatrixEntry {
+    descriptor: TargetDescriptorDigest,
+    kind: TargetKind,
+    mode: SemanticMode,
+    state: TargetMatrixState,
+}
+
+impl TargetMatrixEntry {
+    /// Records one combination with its explicit state.
+    ///
+    /// The state is a member of the closed vocabulary rather than a flag, and this
+    /// constructor applies no mode admission: a combination a target kind does not
+    /// admit must still be recordable as unsupported, which is what
+    /// `GNT-17.8-target-matrix` requires of tooling coverage.
+    #[must_use]
+    pub const fn new(
+        descriptor: TargetDescriptorDigest,
+        kind: TargetKind,
+        mode: SemanticMode,
+        state: TargetMatrixState,
+    ) -> Self {
+        Self {
+            descriptor,
+            kind,
+            mode,
+            state,
+        }
+    }
+
+    /// Returns the normalized digest of the descriptor this combination names.
+    #[must_use]
+    pub const fn descriptor(&self) -> &TargetDescriptorDigest {
+        &self.descriptor
+    }
+
+    /// Returns the target kind of this combination.
+    #[must_use]
+    pub const fn kind(&self) -> TargetKind {
+        self.kind
+    }
+
+    /// Returns the semantic mode of this combination.
+    #[must_use]
+    pub const fn mode(&self) -> SemanticMode {
+        self.mode
+    }
+
+    /// Returns the explicit state of this combination.
+    #[must_use]
+    pub const fn state(&self) -> TargetMatrixState {
+        self.state
+    }
+
+    /// Returns whether this entry names the combination another entry names.
+    #[must_use]
+    fn names_same_combination(&self, other: &Self) -> bool {
+        self.descriptor == other.descriptor && self.kind == other.kind && self.mode == other.mode
+    }
+
+    /// Returns whether this entry covers one combination.
+    #[must_use]
+    fn covers(
+        &self,
+        descriptor: &TargetDescriptorDigest,
+        kind: TargetKind,
+        mode: SemanticMode,
+    ) -> bool {
+        self.descriptor == *descriptor && self.kind == kind && self.mode == mode
+    }
+}
+
+/// The explicit target matrix of one declaring instance (`GNT-17.8-target-matrix`).
+///
+/// The entries are held in canonical order, which is a function of the entry set
+/// and never of the order they were given in, so the canonical bytes and the matrix
+/// digest are order-independent. A combination the matrix does not record is
+/// unattested, which is invalid rather than supported, and a combination it records
+/// as unsupported fails rather than being substituted by another target.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TargetMatrix {
+    declaring: PackageIdentity,
+    entries: Vec<TargetMatrixEntry>,
+    canonical: Arc<[u8]>,
+    digest: TargetMatrixDigest,
+}
+
+impl TargetMatrix {
+    /// Constructs one target matrix in canonical order.
+    ///
+    /// One combination recorded twice is rejected rather than deduplicated or
+    /// preferred, because two states for one combination would make coverage
+    /// ambiguous and would let a later entry decide what an earlier one recorded.
+    pub fn new(
+        declaring: &PackageIdentity,
+        entries: &[TargetMatrixEntry],
+    ) -> Result<Self, TargetError> {
+        let mut entries = entries.to_vec();
+        entries.sort();
+        for pair in entries.windows(2) {
+            if pair[0].names_same_combination(&pair[1]) {
+                return Err(TargetError::MatrixEntryDuplicate {
+                    instance: Box::new(declaring.clone()),
+                    descriptor: pair[0].descriptor.clone(),
+                    kind: pair[0].kind,
+                    mode: pair[0].mode,
+                });
+            }
+        }
+        let canonical = encode_target_matrix(&entries);
+        let digest =
+            TargetMatrixDigest::from_digest(digest_fields(TARGET_MATRIX_DOMAIN, &[&canonical]));
+        Ok(Self {
+            declaring: declaring.clone(),
+            entries,
+            canonical: Arc::from(canonical.into_boxed_slice()),
+            digest,
+        })
+    }
+
+    /// Returns the package instance that declared this matrix.
+    #[must_use]
+    pub const fn declaring(&self) -> &PackageIdentity {
+        &self.declaring
+    }
+
+    /// Returns every entry in canonical order.
+    #[must_use]
+    pub fn entries(&self) -> &[TargetMatrixEntry] {
+        &self.entries
+    }
+
+    /// Returns the explicit state one combination is recorded with.
+    ///
+    /// A combination this matrix records no entry for is unattested, which is
+    /// invalid rather than supported: coverage fails and names the combination and
+    /// the declaring instance instead of assuming a state.
+    pub fn coverage(
+        &self,
+        descriptor: &TargetDescriptorDigest,
+        kind: TargetKind,
+        mode: SemanticMode,
+    ) -> Result<TargetMatrixState, TargetError> {
+        self.entries
+            .iter()
+            .find(|entry| entry.covers(descriptor, kind, mode))
+            .map(TargetMatrixEntry::state)
+            .ok_or_else(|| TargetError::MatrixCoverageMissing {
+                instance: Box::new(self.declaring.clone()),
+                descriptor: descriptor.clone(),
+                kind,
+                mode,
+            })
+    }
+
+    /// Admits one combination before any artifact is bound for it.
+    ///
+    /// A combination recorded as unsupported fails with the combination and the
+    /// declaring instance named, and no other target is substituted for it; a
+    /// combination this matrix does not record fails as unattested. Only an
+    /// explicitly supported combination is admitted.
+    pub fn admit(
+        &self,
+        descriptor: &TargetDescriptorDigest,
+        kind: TargetKind,
+        mode: SemanticMode,
+    ) -> Result<(), TargetError> {
+        match self.coverage(descriptor, kind, mode)? {
+            TargetMatrixState::Supported => Ok(()),
+            TargetMatrixState::Unsupported => Err(TargetError::MatrixCombinationUnsupported {
+                instance: Box::new(self.declaring.clone()),
+                descriptor: descriptor.clone(),
+                kind,
+                mode,
+            }),
+        }
+    }
+
+    /// Returns the one canonical byte encoding of this matrix.
+    #[must_use]
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.canonical
+    }
+
+    /// Returns the digest over those canonical bytes.
+    #[must_use]
+    pub fn digest(&self) -> TargetMatrixDigest {
+        self.digest.clone()
+    }
+}
+
 /// The `GNT-17.2` target facts of one package instance.
 ///
 /// The facts are exactly the descriptor version, the normalized descriptor
@@ -2948,6 +3999,97 @@ fn encode_artifact_binding(
     output.push_str(",\"toolchain_sha256\":");
     push_json_string(&mut output, toolchain.as_str());
     output.push_str(",\"version_of_record\":1}");
+    output.into_bytes()
+}
+
+/// Appends the canonical encoding of one declared-facts value.
+///
+/// The six kinds are written in the fixed vocabulary order of
+/// `GNT-17.7-inactive-code-policy`, and each set is written in its canonical
+/// order, so the bytes are a function of the declared facts alone.
+fn push_declared_facts(output: &mut String, facts: &DeclaredFacts) {
+    output.push('{');
+    for (index, kind) in DeclaredFactKind::ALL.iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        push_json_string(output, kind.wire_name());
+        output.push_str(":[");
+        for (name_index, name) in facts.names(*kind).iter().enumerate() {
+            if name_index > 0 {
+                output.push(',');
+            }
+            push_json_string(output, name);
+        }
+        output.push(']');
+    }
+    output.push('}');
+}
+
+/// Returns the one canonical encoding of one retained closure.
+fn encode_declared_facts(facts: &DeclaredFacts) -> Vec<u8> {
+    let mut output = String::new();
+    push_declared_facts(&mut output, facts);
+    output.into_bytes()
+}
+
+/// Returns the one canonical encoding of one target matrix.
+///
+/// The encoding is over the entries in canonical order, so it is a function of
+/// the entry set and not of the order the entries were given in.
+fn encode_target_matrix(entries: &[TargetMatrixEntry]) -> Vec<u8> {
+    let mut output = String::from("[");
+    for (index, entry) in entries.iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        output.push_str("{\"descriptor_sha256\":");
+        push_json_string(&mut output, entry.descriptor().as_str());
+        output.push_str(",\"kind\":");
+        push_json_string(&mut output, entry.kind().wire_name());
+        output.push_str(",\"mode\":");
+        push_json_string(&mut output, entry.mode().wire_name());
+        output.push_str(",\"state\":");
+        push_json_string(&mut output, entry.state().wire_name());
+        output.push('}');
+    }
+    output.push(']');
+    output.into_bytes()
+}
+
+/// Returns the canonical guard spellings of one branch, in canonical order.
+fn guard_spellings(declaration: &BranchDeclaration) -> Vec<Arc<str>> {
+    declaration
+        .guards()
+        .iter()
+        .map(|guard| Arc::from(guard.wire_name()))
+        .collect()
+}
+
+/// Returns the canonical branch encoding one declaration is ordered by.
+///
+/// The encoding covers the rule identity, the canonical guard set, the
+/// contributed facts, and the declaring instance, so it is one value per
+/// distinct branch and two branches with equal encodings are equal branches.
+/// The declaring instance stays outside every identity-bearing encoding of this
+/// module; it is part of this ordering key only, because one selection must be
+/// total over the branches one declaration declares.
+fn branch_encoding(declaration: &BranchDeclaration) -> Vec<u8> {
+    let mut output = String::from("{\"declaring\":");
+    let declaring = declaration.declaring().as_str();
+    push_json_string(&mut output, &declaring);
+    output.push_str(",\"facts\":");
+    push_declared_facts(&mut output, declaration.facts());
+    output.push_str(",\"guards\":[");
+    for (index, guard) in declaration.guards().iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        push_json_string(&mut output, &guard.wire_name());
+    }
+    output.push_str("],\"rule\":");
+    push_json_string(&mut output, declaration.rule().identity());
+    output.push('}');
     output.into_bytes()
 }
 

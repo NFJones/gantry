@@ -11,15 +11,17 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use gantry::ir::{
-    AbiEnvironment, Architecture, CanonicalIrDigest, ExecutionTargetDescriptor, ExpectedInputs,
-    FeatureDeclaration, FeatureDeclarations, FeatureName, FeatureSolution, FeatureSolutionDigest,
-    GeneratedOutput, GeneratedOutputHash, GeneratedOutputSet, GeneratorInputs, InterfaceDigest,
-    ModeAdmission, OperatingSystemFamily, PackageIdentity, PackageIdentityInputs, PackageName,
-    PackageSourceIdentity, PackageVersion, PredicateOutcome, PredicateOutcomeSet,
-    SelectedFeatureSet, SourceManifestDigest, TargetArtifactBinding, TargetArtifactBindingRecord,
+    AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome, CanonicalIrDigest,
+    ConditionalSelectionRule, DeclaredFactKind, DeclaredFacts, ExecutionTargetDescriptor,
+    ExpectedInputs, FeatureDeclaration, FeatureDeclarations, FeatureName, FeatureSolution,
+    FeatureSolutionDigest, GeneratedOutput, GeneratedOutputHash, GeneratedOutputSet,
+    GeneratorInputs, InterfaceDigest, ModeAdmission, OperatingSystemFamily, PackageIdentity,
+    PackageIdentityInputs, PackageName, PackageSourceIdentity, PackageVersion, PredicateOutcome,
+    PredicateOutcomeSet, RetainedClosure, RetainedClosureDigest, SelectedFeatureSet,
+    SourceManifestDigest, TargetArtifactBinding, TargetArtifactBindingRecord,
     TargetDescriptorDigest, TargetDescriptorField, TargetDescriptorRecord, TargetDiagnosticCode,
-    TargetError, TargetFactSet, TargetFactsRecord, TargetKind, TargetPredicate,
-    TargetPredicateName, ToolchainIdentity,
+    TargetError, TargetFactSet, TargetFactsRecord, TargetKind, TargetMatrix, TargetMatrixDigest,
+    TargetMatrixEntry, TargetMatrixState, TargetPredicate, TargetPredicateName, ToolchainIdentity,
 };
 use gantry::portable::DiagnosticCategory;
 use gantry::protocol::ProtocolVersion;
@@ -221,6 +223,73 @@ fn fixture_binding() -> TargetArtifactBinding {
     expected_inputs()
         .bind()
         .unwrap_or_else(|_| unreachable!("fixture binding is well formed"))
+}
+
+/// Returns the fixture descriptor that names the durable mode.
+fn durable_descriptor() -> ExecutionTargetDescriptor {
+    descriptor_with(
+        Architecture::X86_64,
+        OperatingSystemFamily::Linux,
+        AbiEnvironment::Gnu,
+        "2026",
+        stdlib(1, 0),
+        gantry::mode::SemanticMode::Durable,
+    )
+}
+
+/// Returns the published conditional-selection rule of the declaring instance.
+fn rule() -> ConditionalSelectionRule {
+    ConditionalSelectionRule::new(&declaring(), ConditionalSelectionRule::IDENTITY)
+        .unwrap_or_else(|_| unreachable!("the published rule identity is supported"))
+}
+
+/// Returns one declared-facts value under the closed `GNT-17.7` vocabulary.
+fn facts(entries: &[(DeclaredFactKind, &str)]) -> DeclaredFacts {
+    DeclaredFacts::new(&declaring(), entries)
+        .unwrap_or_else(|_| unreachable!("fixture fact names are legal declared names"))
+}
+
+/// Returns one conditional branch of the declaring instance.
+fn branch(guards: &[TargetPredicate], contributed: DeclaredFacts) -> BranchDeclaration {
+    BranchDeclaration::new(&declaring(), rule(), guards, contributed)
+}
+
+/// Returns the guards of a declaration that every fixture predicate matches.
+fn every_matched_guards() -> Vec<TargetPredicate> {
+    vec![
+        TargetPredicate::DescriptorField(TargetDescriptorField::Architecture(Architecture::X86_64)),
+        TargetPredicate::DescriptorField(TargetDescriptorField::SemanticMode(
+            gantry::mode::SemanticMode::Portable,
+        )),
+        TargetPredicate::FeatureEnabled(feature("b")),
+    ]
+}
+
+/// Returns the guards of a declaration that exactly one fixture predicate matches.
+fn partially_matched_guards() -> Vec<TargetPredicate> {
+    vec![
+        TargetPredicate::DescriptorField(TargetDescriptorField::Architecture(Architecture::X86_64)),
+        TargetPredicate::FeatureEnabled(feature("c")),
+    ]
+}
+
+/// Returns the guards of a declaration that no fixture predicate matches.
+fn none_matched_guards() -> Vec<TargetPredicate> {
+    vec![
+        TargetPredicate::DescriptorField(TargetDescriptorField::Architecture(
+            Architecture::Aarch64,
+        )),
+        TargetPredicate::FeatureEnabled(feature("c")),
+    ]
+}
+
+/// Returns one matrix entry for the fixture descriptor and one combination.
+fn matrix_entry(
+    kind: TargetKind,
+    mode: gantry::mode::SemanticMode,
+    state: TargetMatrixState,
+) -> TargetMatrixEntry {
+    TargetMatrixEntry::new(descriptor().digest(), kind, mode, state)
 }
 
 #[test]
@@ -1113,6 +1182,586 @@ fn binding_with_a_missing_input_or_unsupported_version_is_rejected_not_repaired(
 }
 
 #[test]
+fn conditional_selection_rule_is_total_and_order_independent() {
+    let declaring = declaring();
+    let selection = rule();
+    assert_eq!(selection.identity(), ConditionalSelectionRule::IDENTITY);
+    assert_eq!(selection.identity(), "gnt-conditional-selection/v1");
+    // An unsupported rule identity is rejected against the instance that named
+    // it rather than resolved by another rule.
+    assert!(matches!(
+        ConditionalSelectionRule::new(&declaring, "gnt-conditional-selection/v2"),
+        Err(TargetError::SelectionRuleUnsupported { instance, rule })
+            if *instance == declaring && rule.as_ref() == "gnt-conditional-selection/v2"
+    ));
+    // The match vocabulary is closed: every guard set is classified into exactly
+    // one member, and a spelling outside the vocabulary is not a member.
+    assert_eq!(BranchMatch::ALL.len(), 3);
+    assert_eq!(
+        BranchMatch::from_wire_name("every-matched"),
+        Some(BranchMatch::EveryMatched)
+    );
+    assert_eq!(
+        BranchMatch::from_wire_name("none-matched"),
+        Some(BranchMatch::NoneMatched)
+    );
+    assert_eq!(
+        BranchMatch::from_wire_name("partially-matched"),
+        Some(BranchMatch::PartiallyMatched)
+    );
+    assert_eq!(BranchMatch::from_wire_name("first-match"), None);
+    assert_eq!(BranchMatch::from_wire_name("last-match"), None);
+    assert_eq!(BranchMatch::from_wire_name("declaration-order"), None);
+    let target = descriptor();
+    let selected = solution(&["b"]);
+    let expected = [
+        (
+            branch(&every_matched_guards(), facts(&[])),
+            BranchMatch::EveryMatched,
+        ),
+        (
+            branch(&partially_matched_guards(), facts(&[])),
+            BranchMatch::PartiallyMatched,
+        ),
+        (
+            branch(&none_matched_guards(), facts(&[])),
+            BranchMatch::NoneMatched,
+        ),
+        (branch(&[], facts(&[])), BranchMatch::EveryMatched),
+    ];
+    for (declaration, match_outcome) in &expected {
+        let outcome = selection.evaluate(declaration, &target, &selected);
+        assert_eq!(outcome.declaration(), declaration);
+        assert_eq!(outcome.match_outcome(), *match_outcome);
+        assert_eq!(outcome.retained(), selection.retains(*match_outcome));
+        assert!(BranchMatch::ALL.contains(&outcome.match_outcome()));
+        assert_eq!(
+            outcome.retained(),
+            *match_outcome == BranchMatch::EveryMatched
+        );
+    }
+    // The same declaration evaluated against the same descriptor and the same
+    // solution yields the same outcome under every order of its guard set.
+    let mut guards = every_matched_guards();
+    let canonical = branch(&guards, facts(&[]));
+    let baseline = selection.evaluate(&canonical, &target, &selected);
+    for _ in 0..guards.len() {
+        guards.rotate_left(1);
+        let permuted = branch(&guards, facts(&[]));
+        assert_eq!(permuted.guards(), canonical.guards());
+        assert_eq!(permuted, canonical);
+        assert_eq!(selection.evaluate(&permuted, &target, &selected), baseline);
+    }
+    // A matching predicate in any position does not retain a guard set that only
+    // partly matched, so neither the first nor the last matching predicate can
+    // decide which branch is retained.
+    let mut partial = partially_matched_guards();
+    for _ in 0..partial.len() {
+        partial.rotate_left(1);
+        let outcome = selection.evaluate(&branch(&partial, facts(&[])), &target, &selected);
+        assert_eq!(outcome.match_outcome(), BranchMatch::PartiallyMatched);
+        assert!(
+            !outcome.retained(),
+            "a partly matched guard set is never retained"
+        );
+    }
+    // Declaration order is not an input either: one declaration has one outcome
+    // wherever it is evaluated.
+    let declarations = expected
+        .iter()
+        .map(|(declaration, _)| declaration.clone())
+        .collect::<Vec<_>>();
+    let in_order: Vec<BranchOutcome> = declarations
+        .iter()
+        .map(|declaration| selection.evaluate(declaration, &target, &selected))
+        .collect();
+    let mut reversed_declarations = declarations.clone();
+    reversed_declarations.reverse();
+    let reversed = reversed_declarations
+        .iter()
+        .map(|declaration| selection.evaluate(declaration, &target, &selected))
+        .collect::<Vec<_>>();
+    for outcome in &in_order {
+        assert_eq!(
+            reversed
+                .iter()
+                .find(|candidate| candidate.declaration() == outcome.declaration()),
+            Some(outcome),
+            "one declaration has one outcome"
+        );
+    }
+    // One branch of one declaration is selected, and the selection is the same
+    // value under every order of the declared branches.
+    let mut reversed_outcomes = in_order.clone();
+    reversed_outcomes.reverse();
+    let selected_branch = selection
+        .retain_one(&in_order)
+        .unwrap_or_else(|| unreachable!("one declared branch is retained"));
+    assert!(selected_branch.retained());
+    assert_eq!(Some(selected_branch.declaration()), Some(&declarations[0]));
+    assert_eq!(
+        selection.retain_one(&in_order),
+        selection.retain_one(&reversed_outcomes)
+    );
+    // A declaration none of whose branches is retained retains no branch.
+    let unretained = [declarations[1].clone(), declarations[2].clone()]
+        .iter()
+        .map(|declaration| selection.evaluate(declaration, &target, &selected))
+        .collect::<Vec<_>>();
+    assert_eq!(selection.retain_one(&unretained), None);
+}
+
+#[test]
+fn inactive_branch_contributes_no_facts_and_its_contribution_is_rejected() {
+    let declaring = declaring();
+    let selection = rule();
+    let target = descriptor();
+    let selected = solution(&["b"]);
+    let contributed = facts(&[
+        (DeclaredFactKind::Type, "crate::Payload"),
+        (DeclaredFactKind::Operation, "crate::Payload::encode"),
+        (DeclaredFactKind::CapabilityRequirement, "network-egress"),
+        (DeclaredFactKind::AgentTool, "filesystem-read"),
+        (DeclaredFactKind::DurableState, "crate::Session"),
+        (DeclaredFactKind::Implementation, "crate::PayloadImpl"),
+    ]);
+    let inactive = selection.evaluate(
+        &branch(&none_matched_guards(), contributed.clone()),
+        &target,
+        &selected,
+    );
+    assert!(!inactive.retained());
+    // An inactive branch that declares facts is rejected rather than collected,
+    // and the rejection names the declaring instance and the branch.
+    match RetainedClosure::check_contribution(&inactive) {
+        Err(TargetError::BranchFactsInactive {
+            instance,
+            guards,
+            kinds,
+        }) => {
+            assert_eq!(*instance, declaring);
+            assert_eq!(
+                guards,
+                vec![
+                    Arc::from("descriptor-field:architecture=aarch64"),
+                    Arc::from("feature-enabled:c"),
+                ]
+            );
+            assert_eq!(
+                kinds,
+                vec![
+                    DeclaredFactKind::Type,
+                    DeclaredFactKind::Implementation,
+                    DeclaredFactKind::Operation,
+                    DeclaredFactKind::CapabilityRequirement,
+                    DeclaredFactKind::AgentTool,
+                    DeclaredFactKind::DurableState,
+                ]
+            );
+        }
+        other => unreachable!("an inactive contribution is reported: {other:?}"),
+    }
+    assert!(RetainedClosure::checked(std::slice::from_ref(&inactive)).is_err());
+    // The closure computation records none of the inactive branch's facts.
+    let closure = RetainedClosure::new(std::slice::from_ref(&inactive));
+    for kind in DeclaredFactKind::ALL {
+        assert!(
+            closure.names(kind).is_empty(),
+            "an inactive branch contributes no {kind:?}"
+        );
+    }
+    assert!(closure.is_empty());
+    assert_eq!(closure.len(), 0);
+    assert_eq!(closure.digest(), RetainedClosure::empty().digest());
+    assert_eq!(
+        closure.canonical_bytes(),
+        RetainedClosure::empty().canonical_bytes()
+    );
+    // A retained branch contributes exactly its declared facts, in canonical
+    // order, and its contribution is accepted.
+    let retained_facts = facts(&[
+        (DeclaredFactKind::Type, "crate::Payload"),
+        (DeclaredFactKind::Type, "crate::Audit"),
+        (DeclaredFactKind::Type, "crate::Payload"),
+    ]);
+    assert_eq!(
+        retained_facts
+            .names(DeclaredFactKind::Type)
+            .iter()
+            .map(AsRef::<str>::as_ref)
+            .collect::<Vec<_>>(),
+        vec!["crate::Audit", "crate::Payload"],
+        "a declared set is canonically sorted and deduplicated"
+    );
+    let retained = selection.evaluate(
+        &branch(&every_matched_guards(), retained_facts.clone()),
+        &target,
+        &selected,
+    );
+    assert!(retained.retained());
+    assert_eq!(RetainedClosure::check_contribution(&retained), Ok(()));
+    let closure = RetainedClosure::checked(std::slice::from_ref(&retained))
+        .unwrap_or_else(|_| unreachable!("a retained contribution is accepted"));
+    assert_eq!(
+        closure.names(DeclaredFactKind::Type),
+        retained_facts.names(DeclaredFactKind::Type)
+    );
+    assert_eq!(closure.len(), 2);
+    assert_ne!(closure.digest(), RetainedClosure::empty().digest());
+    assert_eq!(closure.digest().as_str().len(), 64);
+    // An inactive branch that declares nothing is not a contribution at all.
+    let silent = selection.evaluate(
+        &branch(&none_matched_guards(), facts(&[])),
+        &target,
+        &selected,
+    );
+    assert!(!silent.retained());
+    assert_eq!(RetainedClosure::check_contribution(&silent), Ok(()));
+    // The declared-fact vocabulary rejects a name that is not a legal declared
+    // name rather than ignoring it.
+    assert!(matches!(
+        DeclaredFacts::new(&declaring, &[(DeclaredFactKind::Type, "")]),
+        Err(TargetError::DeclaredFactNameInvalid { instance, kind, value })
+            if *instance == declaring && kind == DeclaredFactKind::Type && value.as_ref() == ""
+    ));
+    assert!(DeclaredFacts::empty().is_empty());
+    assert_eq!(DeclaredFacts::empty().len(), 0);
+}
+
+#[test]
+fn retained_closure_digest_changes_with_retained_facts_and_not_with_inactive_facts() {
+    let selection = rule();
+    let target = descriptor();
+    let selected = solution(&["b"]);
+    let baseline = facts(&[(DeclaredFactKind::Operation, "crate::Payload::encode")]);
+    let extended = facts(&[
+        (DeclaredFactKind::Operation, "crate::Payload::encode"),
+        (DeclaredFactKind::AgentTool, "filesystem-read"),
+    ]);
+    let retained = |contributed: &DeclaredFacts| {
+        selection.evaluate(
+            &branch(&every_matched_guards(), contributed.clone()),
+            &target,
+            &selected,
+        )
+    };
+    let baseline_closure = RetainedClosure::new(&[retained(&baseline)]);
+    let extended_closure = RetainedClosure::new(&[retained(&extended)]);
+    assert_ne!(
+        baseline_closure.canonical_bytes(),
+        extended_closure.canonical_bytes()
+    );
+    assert_ne!(baseline_closure.digest(), extended_closure.digest());
+    assert_eq!(baseline_closure.len(), 1);
+    assert_eq!(extended_closure.len(), 2);
+    // The closure digest is one canonical digest spelling that round-trips, and a
+    // spelling outside it is rejected rather than repaired.
+    assert_eq!(extended_closure.digest().as_str().len(), 64);
+    assert_eq!(
+        RetainedClosureDigest::from_hex(extended_closure.digest().as_str()),
+        Ok(extended_closure.digest())
+    );
+    assert!(matches!(
+        RetainedClosureDigest::from_hex("not-a-digest"),
+        Err(TargetError::ClosureDigestInvalid { value }) if value.as_ref() == "not-a-digest"
+    ));
+    // The closure is the union of every retained branch, so a second retained
+    // branch that contributes the same facts adds nothing.
+    let second_retained = selection.evaluate(
+        &branch(
+            &[TargetPredicate::FeatureEnabled(feature("a"))],
+            extended.clone(),
+        ),
+        &target,
+        &selected,
+    );
+    assert!(second_retained.retained());
+    assert_eq!(
+        RetainedClosure::new(&[retained(&extended), second_retained]),
+        extended_closure
+    );
+    // An inactive branch's declared facts change nothing: the closure, its
+    // canonical encoding, and its digest are the ones of an empty closure.
+    let inactive_baseline = selection.evaluate(
+        &branch(&none_matched_guards(), baseline.clone()),
+        &target,
+        &selected,
+    );
+    let inactive_extended = selection.evaluate(
+        &branch(&none_matched_guards(), extended.clone()),
+        &target,
+        &selected,
+    );
+    assert_ne!(inactive_baseline, inactive_extended);
+    assert!(!inactive_baseline.retained() && !inactive_extended.retained());
+    assert_eq!(
+        RetainedClosure::new(std::slice::from_ref(&inactive_baseline)),
+        RetainedClosure::new(std::slice::from_ref(&inactive_extended))
+    );
+    assert_eq!(
+        RetainedClosure::new(std::slice::from_ref(&inactive_baseline)).digest(),
+        RetainedClosure::empty().digest()
+    );
+    assert_eq!(
+        RetainedClosure::new(std::slice::from_ref(&inactive_extended)).canonical_bytes(),
+        RetainedClosure::empty().canonical_bytes()
+    );
+    // The unchanged digest is not the result of retaining nothing at all: the
+    // same facts do change the digest once their branch is retained, and both
+    // inactive declarations are rejected by the strict check.
+    assert_ne!(baseline_closure.digest(), RetainedClosure::empty().digest());
+    assert!(RetainedClosure::checked(&[inactive_baseline, inactive_extended]).is_err());
+    assert_eq!(
+        RetainedClosure::new(&[retained(&extended), retained(&baseline)]),
+        extended_closure,
+    );
+}
+
+#[test]
+fn target_matrix_coverage_rejects_an_unattested_combination() {
+    use gantry::mode::SemanticMode::{Durable, Portable};
+
+    let declaring = declaring();
+    let supported = matrix_entry(TargetKind::Binary, Portable, TargetMatrixState::Supported);
+    let unsupported = matrix_entry(TargetKind::Test, Durable, TargetMatrixState::Unsupported);
+    let matrix = TargetMatrix::new(&declaring, &[supported.clone(), unsupported.clone()])
+        .unwrap_or_else(|_| unreachable!("fixture entries name distinct combinations"));
+    assert_eq!(matrix.declaring(), &declaring);
+    assert_eq!(
+        matrix.coverage(supported.descriptor(), supported.kind(), supported.mode()),
+        Ok(TargetMatrixState::Supported)
+    );
+    assert_eq!(
+        matrix.coverage(
+            unsupported.descriptor(),
+            unsupported.kind(),
+            unsupported.mode()
+        ),
+        Ok(TargetMatrixState::Unsupported)
+    );
+    // A state is explicit rather than assumed: a combination with no entry is
+    // unattested, and the rejection names the combination and the instance.
+    let absent = descriptor_digest("absent");
+    match matrix.coverage(&absent, TargetKind::Example, Portable) {
+        Err(TargetError::MatrixCoverageMissing {
+            instance,
+            descriptor: reported,
+            kind,
+            mode,
+        }) => {
+            assert_eq!(*instance, declaring);
+            assert_eq!(reported, absent);
+            assert_eq!(kind, TargetKind::Example);
+            assert_eq!(mode, Portable);
+        }
+        other => unreachable!("an unattested combination is reported: {other:?}"),
+    }
+    assert!(matches!(
+        matrix.admit(&absent, TargetKind::Example, Portable),
+        Err(TargetError::MatrixCoverageMissing { .. })
+    ));
+    // A combination recorded for another kind is not coverage for this one, and
+    // a matrix with no entry covers nothing at all.
+    assert!(matches!(
+        matrix.coverage(unsupported.descriptor(), TargetKind::Example, Durable),
+        Err(TargetError::MatrixCoverageMissing { .. })
+    ));
+    let empty = TargetMatrix::new(&declaring, &[])
+        .unwrap_or_else(|_| unreachable!("an empty matrix records no duplicate"));
+    assert_eq!(empty.entries().len(), 0);
+    assert!(matches!(
+        empty.admit(supported.descriptor(), TargetKind::Binary, Portable),
+        Err(TargetError::MatrixCoverageMissing { .. })
+    ));
+    // The state vocabulary is closed: a spelling it does not name is not a
+    // state, so no combination can be recorded as anything else.
+    assert_eq!(TargetMatrixState::ALL.len(), 2);
+    assert_eq!(
+        TargetMatrixState::from_wire_name("supported"),
+        Some(TargetMatrixState::Supported)
+    );
+    assert_eq!(
+        TargetMatrixState::from_wire_name("unsupported"),
+        Some(TargetMatrixState::Unsupported)
+    );
+    assert_eq!(TargetMatrixState::from_wire_name("attested"), None);
+    assert_eq!(TargetMatrixState::from_wire_name("partial"), None);
+    // A combination a target kind does not admit is still recordable as
+    // unsupported, which is the coverage the matrix must carry.
+    assert_eq!(unsupported.state(), TargetMatrixState::Unsupported);
+    assert!(ModeAdmission::admit_mode(&declaring, TargetKind::Test, Durable).is_err());
+}
+
+#[test]
+fn unsupported_target_combination_fails_with_a_diagnostic_naming_the_declaring_instance() {
+    use gantry::mode::SemanticMode::{Durable, Portable};
+
+    let declaring = declaring();
+    let supported = matrix_entry(TargetKind::Binary, Portable, TargetMatrixState::Supported);
+    let unsupported = matrix_entry(TargetKind::Test, Durable, TargetMatrixState::Unsupported);
+    let matrix = TargetMatrix::new(&declaring, &[supported, unsupported.clone()])
+        .unwrap_or_else(|_| unreachable!("fixture entries name distinct combinations"));
+    // The combination is recorded, and it is recorded as unsupported rather than
+    // left unattested.
+    assert_eq!(
+        matrix.coverage(unsupported.descriptor(), TargetKind::Test, Durable),
+        Ok(TargetMatrixState::Unsupported)
+    );
+    match matrix.admit(unsupported.descriptor(), TargetKind::Test, Durable) {
+        Err(TargetError::MatrixCombinationUnsupported {
+            instance,
+            descriptor: reported,
+            kind,
+            mode,
+        }) => {
+            assert_eq!(*instance, declaring);
+            assert_eq!(reported, *unsupported.descriptor());
+            assert_eq!(kind, TargetKind::Test);
+            assert_eq!(mode, Durable);
+        }
+        other => unreachable!("an unsupported combination is reported: {other:?}"),
+    }
+    let error = matrix
+        .admit(unsupported.descriptor(), TargetKind::Test, Durable)
+        .err()
+        .unwrap_or_else(|| unreachable!("the fixture combination is unsupported"));
+    assert_eq!(
+        error.code(),
+        TargetDiagnosticCode::MatrixCombinationUnsupported
+    );
+    assert_eq!(error.requirement(), "GNT-17.8-target-matrix");
+    let rendered = error.to_string();
+    assert!(rendered.contains("target-matrix-combination-unsupported"));
+    assert!(rendered.contains(&declaring.as_str()));
+    assert!(rendered.contains(unsupported.descriptor().as_str()));
+    // The unsupported combination fails before any binding is produced: the step
+    // that would bind the artifact is unreachable for it.
+    let attempt = || -> Result<TargetArtifactBinding, TargetError> {
+        matrix.admit(unsupported.descriptor(), TargetKind::Test, Durable)?;
+        ExpectedInputs::new(
+            &declaring,
+            TargetKind::Test,
+            durable_descriptor(),
+            solution(&["c"]),
+            &predicates(),
+            outputs("out"),
+            toolchain(),
+            Durable,
+        )
+        .and_then(|inputs| inputs.bind())
+    };
+    assert!(matches!(
+        attempt(),
+        Err(TargetError::MatrixCombinationUnsupported { .. })
+    ));
+    // The same combination would also fail mode admission, so the matrix is the
+    // step that fails first: the combination is named rather than substituted by
+    // another target or by another mode.
+    assert!(matches!(
+        ModeAdmission::admit_mode(&declaring, TargetKind::Test, Durable),
+        Err(TargetError::ModeNotAdmitted {
+            kind: TargetKind::Test,
+            mode: Durable,
+            ..
+        })
+    ));
+    // An explicitly supported combination is admitted here, so the matrix is not
+    // refusing every combination.
+    assert_eq!(
+        matrix.admit(unsupported.descriptor(), TargetKind::Binary, Portable),
+        Ok(())
+    );
+}
+
+#[test]
+fn target_matrix_digest_is_order_independent() {
+    use gantry::mode::SemanticMode::{Application, Durable, Portable};
+
+    let declaring = declaring();
+    let entries = [
+        matrix_entry(TargetKind::Binary, Portable, TargetMatrixState::Supported),
+        matrix_entry(
+            TargetKind::Binary,
+            Application,
+            TargetMatrixState::Supported,
+        ),
+        matrix_entry(TargetKind::Binary, Durable, TargetMatrixState::Unsupported),
+        TargetMatrixEntry::new(
+            descriptor_digest("other"),
+            TargetKind::Test,
+            Portable,
+            TargetMatrixState::Supported,
+        ),
+    ];
+    let matrix = TargetMatrix::new(&declaring, &entries)
+        .unwrap_or_else(|_| unreachable!("fixture entries name distinct combinations"));
+    assert_eq!(matrix.entries().len(), entries.len());
+    // The entries are held in canonical order, and the encoding and the digest
+    // are functions of the entry set rather than of the given order.
+    assert!(matrix.entries().windows(2).all(|pair| pair[0] < pair[1]));
+    let mut reversed = entries.to_vec();
+    reversed.reverse();
+    let permuted = TargetMatrix::new(&declaring, &reversed)
+        .unwrap_or_else(|_| unreachable!("a permutation records no duplicate"));
+    assert_eq!(permuted.canonical_bytes(), matrix.canonical_bytes());
+    assert_eq!(permuted.digest(), matrix.digest());
+    assert_eq!(permuted.entries(), matrix.entries());
+    let mut rotated = entries.to_vec();
+    rotated.rotate_left(2);
+    let permuted = TargetMatrix::new(&declaring, &rotated)
+        .unwrap_or_else(|_| unreachable!("a rotation records no duplicate"));
+    assert_eq!(permuted.digest(), matrix.digest());
+    // The matrix digest is one canonical digest spelling that round-trips, and a
+    // spelling outside it is rejected rather than repaired.
+    assert_eq!(matrix.digest().as_str().len(), 64);
+    assert_eq!(
+        TargetMatrixDigest::from_hex(matrix.digest().as_str()),
+        Ok(matrix.digest())
+    );
+    assert!(matches!(
+        TargetMatrixDigest::from_hex("not-a-digest"),
+        Err(TargetError::MatrixDigestInvalid { value }) if value.as_ref() == "not-a-digest"
+    ));
+    // Changing one recorded state changes the matrix and its digest.
+    let mut flipped = entries.to_vec();
+    flipped[2] = matrix_entry(TargetKind::Binary, Durable, TargetMatrixState::Supported);
+    let flipped = TargetMatrix::new(&declaring, &flipped)
+        .unwrap_or_else(|_| unreachable!("one state change records no duplicate"));
+    assert_eq!(
+        matrix.coverage(&descriptor().digest(), TargetKind::Binary, Durable),
+        Ok(TargetMatrixState::Unsupported)
+    );
+    assert_eq!(
+        flipped.coverage(&descriptor().digest(), TargetKind::Binary, Durable),
+        Ok(TargetMatrixState::Supported)
+    );
+    assert_ne!(flipped.canonical_bytes(), matrix.canonical_bytes());
+    assert_ne!(flipped.digest(), matrix.digest());
+    // One combination recorded twice is rejected rather than deduplicated or
+    // preferred, even when the two entries disagree.
+    let mut duplicated = entries.to_vec();
+    duplicated.push(matrix_entry(
+        TargetKind::Binary,
+        Durable,
+        TargetMatrixState::Supported,
+    ));
+    assert!(matches!(
+        TargetMatrix::new(&declaring, &duplicated),
+        Err(TargetError::MatrixEntryDuplicate { instance, descriptor: reported, kind, mode })
+            if *instance == declaring
+                && reported == descriptor().digest()
+                && kind == TargetKind::Binary
+                && mode == Durable
+    ));
+    // The declaring instance is not an input of the encoding or of the digest.
+    let elsewhere = TargetMatrix::new(&root("other"), &entries)
+        .unwrap_or_else(|_| unreachable!("fixture entries name distinct combinations"));
+    assert_ne!(elsewhere.declaring(), matrix.declaring());
+    assert_eq!(elsewhere.canonical_bytes(), matrix.canonical_bytes());
+    assert_eq!(elsewhere.digest(), matrix.digest());
+}
+
+#[test]
 fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_meaning() {
     assert_eq!(validate_diagnostic_code_registry(), Ok(()));
     let mut meanings = Vec::new();
@@ -1148,7 +1797,7 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
             .map(TargetDiagnosticCode::as_str)
             .to_vec()
     );
-    assert_eq!(registered.len(), 25);
+    assert_eq!(registered.len(), 33);
     assert!(registered.windows(2).all(|pair| pair[0] < pair[1]));
     // Every condition of the target model exposes one of those frozen codes, and
     // no condition borrows another condition's code.
@@ -1179,6 +1828,14 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
             instance: Box::new(declaring.clone()),
             version: 2,
         },
+        TargetError::BranchFactsInactive {
+            instance: Box::new(declaring.clone()),
+            guards: vec![Arc::from("feature-enabled:c")],
+            kinds: vec![DeclaredFactKind::Operation],
+        },
+        TargetError::ClosureDigestInvalid {
+            value: Arc::from("not-a-digest"),
+        },
         TargetError::ConditionalSelectionUnresolved {
             instance: Box::new(declaring.clone()),
             site: Arc::from("crate::main"),
@@ -1186,6 +1843,11 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
                 Arc::from("feature-enabled:c"),
                 Arc::from("descriptor-field:architecture=x86_64"),
             ],
+        },
+        TargetError::DeclaredFactNameInvalid {
+            instance: Box::new(declaring.clone()),
+            kind: DeclaredFactKind::Type,
+            value: Arc::from(""),
         },
         TargetError::DescriptorDigestInvalid {
             value: Arc::from("not-a-digest"),
@@ -1241,6 +1903,27 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
             instance: Box::new(declaring.clone()),
             value: Arc::from("/tmp/schema.json"),
         },
+        TargetError::MatrixCombinationUnsupported {
+            instance: Box::new(declaring.clone()),
+            descriptor: descriptor_digest("matrix"),
+            kind: TargetKind::Test,
+            mode: gantry::mode::SemanticMode::Durable,
+        },
+        TargetError::MatrixCoverageMissing {
+            instance: Box::new(declaring.clone()),
+            descriptor: descriptor_digest("matrix"),
+            kind: TargetKind::Example,
+            mode: gantry::mode::SemanticMode::Portable,
+        },
+        TargetError::MatrixDigestInvalid {
+            value: Arc::from("not-a-digest"),
+        },
+        TargetError::MatrixEntryDuplicate {
+            instance: Box::new(declaring.clone()),
+            descriptor: descriptor_digest("matrix"),
+            kind: TargetKind::Binary,
+            mode: gantry::mode::SemanticMode::Portable,
+        },
         TargetError::ModeNotAdmitted {
             instance: Box::new(declaring.clone()),
             kind: TargetKind::Test,
@@ -1249,6 +1932,10 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
         TargetError::PredicateNameUnknown {
             instance: Box::new(declaring.clone()),
             name: Arc::from("source-form"),
+        },
+        TargetError::SelectionRuleUnsupported {
+            instance: Box::new(declaring.clone()),
+            rule: Arc::from("gnt-conditional-selection/v2"),
         },
         TargetError::WireValueUnknown {
             instance: Box::new(declaring.clone()),

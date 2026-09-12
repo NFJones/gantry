@@ -1711,10 +1711,28 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An artifact-binding record names a version this implementation does not support.",
     },
     DiagnosticCodeDefinition {
+        code: "target-branch-facts-inactive",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "An inactive conditional branch declares facts it must not contribute to the retained closure.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-closure-digest-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A digest spelling of a retained closure is not 64 lowercase hexadecimal digits.",
+    },
+    DiagnosticCodeDefinition {
         code: "target-conditional-selection-unresolved",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
         meaning: "A conditional selection cannot be resolved under the published total rule of its version.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-declared-fact-name-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A declared fact of a conditional branch is not a legal declared name.",
     },
     DiagnosticCodeDefinition {
         code: "target-descriptor-digest-invalid",
@@ -1807,6 +1825,30 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A declared generated-output name is not a legal declared name.",
     },
     DiagnosticCodeDefinition {
+        code: "target-matrix-combination-unsupported",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A target matrix records a target, kind, and mode combination as unsupported.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-matrix-coverage-missing",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A target matrix records no explicit state for a target, kind, and mode combination.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-matrix-digest-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A digest spelling of a target matrix is not 64 lowercase hexadecimal digits.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-matrix-entry-duplicate",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A target matrix records one target, kind, and mode combination twice.",
+    },
+    DiagnosticCodeDefinition {
         code: "target-mode-not-admitted",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
@@ -1817,6 +1859,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
         meaning: "A predicate name is not a member of the sealed predicate vocabulary.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-selection-rule-unsupported",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A conditional declaration names a selection-rule identity this implementation does not support.",
     },
     DiagnosticCodeDefinition {
         code: "target-wire-value-unknown",

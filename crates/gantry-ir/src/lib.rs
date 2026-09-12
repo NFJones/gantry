@@ -105,13 +105,16 @@ pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
 };
 pub use target::{
-    AbiEnvironment, Architecture, ExecutionTargetDescriptor, ExpectedInputs, FeatureDeclaration,
-    FeatureDeclarations, FeatureSolution, FeatureSolutionDigest, GeneratedOutput,
-    GeneratedOutputHash, GeneratedOutputSet, ModeAdmission, OperatingSystemFamily,
-    PredicateOutcome, PredicateOutcomeDigest, PredicateOutcomeSet, TargetArtifactBinding,
-    TargetArtifactBindingDigest, TargetArtifactBindingRecord, TargetDescriptorDigest,
-    TargetDescriptorField, TargetDescriptorRecord, TargetDiagnosticCode, TargetError,
-    TargetFactsDigest, TargetFactsRecord, TargetPredicate, TargetPredicateName, ToolchainIdentity,
+    AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,
+    ConditionalSelectionRule, DeclaredFactKind, DeclaredFacts, ExecutionTargetDescriptor,
+    ExpectedInputs, FeatureDeclaration, FeatureDeclarations, FeatureSolution,
+    FeatureSolutionDigest, GeneratedOutput, GeneratedOutputHash, GeneratedOutputSet, ModeAdmission,
+    OperatingSystemFamily, PredicateOutcome, PredicateOutcomeDigest, PredicateOutcomeSet,
+    RetainedClosure, RetainedClosureDigest, TargetArtifactBinding, TargetArtifactBindingDigest,
+    TargetArtifactBindingRecord, TargetDescriptorDigest, TargetDescriptorField,
+    TargetDescriptorRecord, TargetDiagnosticCode, TargetError, TargetFactsDigest,
+    TargetFactsRecord, TargetMatrix, TargetMatrixDigest, TargetMatrixEntry, TargetMatrixState,
+    TargetPredicate, TargetPredicateName, ToolchainIdentity,
 };
 pub use type_expression::{TypeExpression, TypeExpressionError};
 pub use type_properties::{
