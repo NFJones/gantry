@@ -50,8 +50,10 @@
 //!   a host performed the authentication a binding declares.
 //! * An [`ApprovalDecision`] never joins approval to release authority: a
 //!   [`ReleaseGrant`] is derived only from a [`ReleaseHolderAuthority`], and
-//!   [`ApprovalDecision::release_grant`] refuses every subject that does not name
-//!   exactly the declared protected class and destination pair.
+//!   [`ApprovalDecision::release`] derives the narrowed grant inside its own call
+//!   and consumes it there, so no permission minted from a decision outlives the
+//!   call that checked the subject's exact protected class, destination,
+//!   projection, and charge.
 //! * Reusable authority is never an approval cache. A [`StandingLease`] is
 //!   obtainable only by attenuation of a landed capability instance, carries its
 //!   own identity, lineage, rights, expiration, and revocation contract, and the
@@ -73,7 +75,8 @@ use crate::generated::RecoveryClass;
 use crate::manifest::encode_hex;
 use crate::protected::{
     DeclaredName, DisclosureBudget, DisclosureCharge, ProjectionKind, ProtectedDataClass,
-    ReleaseDestination, ReleaseGrant, ReleaseHolderAuthority, ReleaseProjection, ReleaseSite,
+    ProtectedValue, ReleaseDestination, ReleaseHolderAuthority, ReleaseOutcome, ReleaseProjection,
+    ReleaseSite,
 };
 use crate::{
     CanonicalCallableIdentity, CanonicalImplementationIdentity, CanonicalPath, EffectSet,
@@ -2965,45 +2968,72 @@ impl ApprovalDecision {
         revalidate(subject, self, request)
     }
 
-    /// Returns the release grant of one holder authority for this decision.
+    /// Releases one protected value through one declared release site, deriving the
+    /// narrowed grant inside this call and consuming it there.
     ///
-    /// Approval alone releases nothing: this is the only path from a decision to a
-    /// release permission, and it enforces the whole correspondence between the
-    /// decision and the release it would authorize, in this order:
+    /// Approval alone releases nothing: this method returns no permission and mints
+    /// no permission that outlives the call, so no reusable grant derived from a
+    /// decision can be presented to another site or charged against another budget,
+    /// and the decision's subject keeps binding the release it authorizes. The
+    /// narrowed grant is derived from the presented holder authority exactly as
+    /// `holder.attenuate(&[scope.class()], &[scope.destination()]).grant()` and is
+    /// consumed by [`ReleaseSite::release`] before this function returns.
+    ///
+    /// The whole correspondence between the decision and the release it authorizes
+    /// is enforced, in this order:
     ///
     /// 1. the decision must grant the request;
-    /// 2. the release-holder authority must declare the subject's protected class
-    ///    and destination;
-    /// 3. the logical instant of the release must precede the decision's validity
-    ///    bound (`now_us < expires_at_us`);
-    /// 4. a decision standing on a standing lease must still be permitted by that
-    ///    lease at that instant, so a revoked or expired lease releases nothing;
-    /// 5. the release site must declare the subject's protected class;
-    /// 6. the site's declared projection for the subject's class and destination
-    ///    pair must be exactly the projection the subject's scope declares;
+    /// 2. the released value must be of the protected class the subject names;
+    /// 3. the released destination must be exactly the subject's destination;
+    /// 4. the release-holder authority must declare the subject's protected class
+    ///    and the subject's destination, and must be bound to the release site it
+    ///    authorizes;
+    /// 5. the logical instant of the release must precede the decision's validity
+    ///    bound (`now_us < expires_at_us`), and a decision standing on a standing
+    ///    lease must still be permitted by that lease at that instant, so a revoked
+    ///    or expired lease releases nothing;
+    /// 6. the release site must declare the subject's protected class, and its
+    ///    declared projection for the subject's class and destination pair must be
+    ///    exactly the projection the subject's scope declares;
     /// 7. the disclosure budget must carry exactly the charge the subject's scope
     ///    declares.
     ///
-    /// A release that fails any check yields `None` rather than a narrowed grant,
-    /// and the grant is derived from that holder authority alone, so no authority
-    /// right, capability instance, admission request, or ordinary value substitutes
-    /// for it, and execution authority never implies release.
+    /// A release that fails any of these correspondence checks yields `None` before
+    /// any grant is derived and before the budget is charged. When they all hold,
+    /// the site evaluates the release under its own declaration, and its own
+    /// rejection categories are returned inside `Some`, so a site-level rejection
+    /// such as an exhausted budget never relabels a decision-level outcome. The
+    /// release site's own declaration, the holder authority, and the disclosure
+    /// budget remain independently required: approval complements them, substitutes
+    /// for none of them, and never widens the subject's exact class, destination,
+    /// projection kind, and charge.
     #[must_use]
-    pub fn release_grant(
+    pub fn release(
         &self,
         holder: &ReleaseHolderAuthority,
         site: &ReleaseSite,
-        budget: &DisclosureBudget,
+        value: &ProtectedValue,
+        destination: ReleaseDestination,
+        budget: &mut DisclosureBudget,
         now_us: u64,
-    ) -> Option<ReleaseGrant> {
+    ) -> Option<ReleaseOutcome> {
         if !self.is_positive() {
             return None;
         }
         let scope = self.subject.scope();
+        if value.class() != scope.class() {
+            return None;
+        }
+        if destination != scope.destination() {
+            return None;
+        }
+        if holder.site() != site.name() {
+            return None;
+        }
         if !holder.classes().any(|class| class == scope.class())
             || !holder
                 .destinations()
-                .any(|destination| destination == scope.destination())
+                .any(|declared| declared == scope.destination())
         {
             return None;
         }
@@ -3019,11 +3049,10 @@ impl ApprovalDecision {
         if !budget_charges_scope(budget, *scope) {
             return None;
         }
-        Some(
-            holder
-                .attenuate(&[scope.class()], &[scope.destination()])
-                .grant(),
-        )
+        let grant = holder
+            .attenuate(&[scope.class()], &[scope.destination()])
+            .grant();
+        Some(site.release(&grant, value, destination, budget))
     }
 }
 

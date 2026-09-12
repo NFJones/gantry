@@ -1402,9 +1402,10 @@ fn durable_cuts_commit_in_order_and_classify_resume() {
 }
 
 /// Approval to execute and approval to release stay independent: approval alone
-/// releases nothing, and the only release path is a grant derived from a
+/// releases nothing, the only release path derives a narrowed grant from a
 /// release-holder authority that declares exactly the subject's class and
-/// destination.
+/// destination, and the decision derives and consumes that grant inside its own
+/// call, so no permission derived from a decision outlives it.
 #[test]
 fn approval_alone_releases_nothing_and_holder_authority_is_the_only_release_path() {
     assert_not_impl_any!(
@@ -1443,68 +1444,108 @@ fn approval_alone_releases_nothing_and_holder_authority_is_the_only_release_path
     );
     let decision = decision(&subject);
 
-    // The declared release site, the disclosure budget, and the logical instant
-    // that match this decision's subject exactly.
+    // The declared release site, the protected value, and the logical instant that
+    // match this decision's subject exactly.
     let release_site = ReleaseSite::new(SITE).declare(class, destination, ProjectionKind::Redacted);
-    let matching_budget = DisclosureBudget::new(1, charge(1));
     let authority = holder(
         &[class, ProtectedDataClass::SourceText],
         &[destination, ReleaseDestination::DiagnosticSink],
     );
+    let value = protected(class);
 
-    // Approval alone releases nothing.
+    // Approval alone releases nothing: a holder authority that declares nothing
+    // releases nothing, and a holder that declares another class or another
+    // destination than the subject names releases nothing either, so no release
+    // outcome is ever derived from the decision alone.
     let withholding = holder(&[], &[]);
-    assert_eq!(
-        decision.release_grant(&withholding, &release_site, &matching_budget, 0),
-        None
+    assert!(
+        decision
+            .release(
+                &withholding,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a holder authority that declares nothing releases nothing"
     );
     assert!(
-        !holder(&[class], &[ReleaseDestination::DiagnosticSink])
-            .grant()
-            .is_empty()
+        decision
+            .release(
+                &holder(&[ProtectedDataClass::SourceText], &[destination]),
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a holder authority that does not declare the subject's class releases nothing"
     );
-    assert_eq!(
-        decision.release_grant(
-            &holder(&[ProtectedDataClass::SourceText], &[destination]),
-            &release_site,
-            &matching_budget,
-            0
-        ),
-        None
-    );
-    assert_eq!(
-        decision.release_grant(
-            &holder(&[class], &[ReleaseDestination::DiagnosticSink]),
-            &release_site,
-            &matching_budget,
-            0
-        ),
-        None
+    assert!(
+        decision
+            .release(
+                &holder(&[class], &[ReleaseDestination::DiagnosticSink]),
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a holder authority that does not declare the subject's destination releases nothing"
     );
 
     // The holder authority that declares exactly the subject's pair is the only
-    // source of a grant for a site, budget, and instant that agree with it.
-    let grant = decision
-        .release_grant(&authority, &release_site, &matching_budget, 0)
+    // source of a release for a site, value, budget, and instant that agree with it.
+    // The narrowed grant never leaves the call, so the accepted outcome carries the
+    // subject's own projection instead of a permission that could be presented
+    // anywhere else.
+    let mut matching_budget = DisclosureBudget::new(1, charge(1));
+    let released = decision
+        .release(
+            &authority,
+            &release_site,
+            &value,
+            destination,
+            &mut matching_budget,
+            0,
+        )
         .unwrap_or_else(|| unreachable!("the holder declares the subject's pair"));
-    assert!(grant.covers(class, destination));
-    assert_eq!(grant.class_count(), 1);
-    assert_eq!(grant.destination_count(), 1);
-    assert!(grant.holder().as_str().starts_with("release-holder:"));
-    assert_ne!(
-        grant.holder(),
-        authority.id(),
-        "the grant narrows the holder authority to the subject's exact pair"
+    assert_eq!(
+        released.decision(),
+        ReleaseDecision::Accepted(subject.scope().projection())
     );
-    assert!(grant.is_subset_of(&authority.grant()));
-    assert!(grant.is_strict_subset_of(&authority.grant()));
+    assert_eq!(
+        released.projection().map(|projection| projection.kind()),
+        Some(ProjectionKind::Redacted)
+    );
+    assert!(released.released_value().is_some());
+    assert_eq!(released.budget(), matching_budget);
+    assert_eq!(
+        matching_budget.accepted(),
+        1,
+        "one matching release charges the disclosure budget exactly once"
+    );
 
-    // A negative decision releases nothing, however the holder declares.
+    // A negative decision releases nothing, however the holder declares: a decision
+    // that did not grant the request authorizes no release at all.
     let denial = ApprovalDecision::new(subject.clone(), ApprovalOutcome::Denial, &actor(), 0, None)
         .unwrap_or_else(|_| unreachable!("a one-shot decision needs no lease"));
-    assert_eq!(
-        denial.release_grant(&authority, &release_site, &matching_budget, 0),
-        None
+    assert!(
+        denial
+            .release(
+                &authority,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a denial releases nothing however the holder declares"
     );
     assert!(!denial.is_positive());
 
@@ -1519,7 +1560,8 @@ fn approval_alone_releases_nothing_and_holder_authority_is_the_only_release_path
     );
     assert_eq!(refused.released_value(), None);
     assert_eq!(budget.accepted(), 0);
-    let accepted = release_site.release(&grant, &protected, destination, &mut budget);
+    let narrowed = authority.attenuate(&[class], &[destination]).grant();
+    let accepted = release_site.release(&narrowed, &protected, destination, &mut budget);
     assert!(accepted.released_value().is_some());
     assert_eq!(budget.accepted(), 1);
 }
@@ -2016,15 +2058,17 @@ fn durable_cuts_require_a_committed_positive_decision() {
     );
 }
 
-/// `release_grant` is the only path from a decision to a release permission, so it
-/// enforces the whole correspondence between them: the holder authority, the
-/// decision's validity bound, a standing lease that still permits the instant, the
-/// release site's declared projection for the subject's class and destination, and the
-/// disclosure budget's charge all have to agree with the subject before a grant is
-/// derived. A weaker projection, another charge, or a revoked lease would otherwise
-/// release data the decision never covered.
+/// `ApprovalDecision::release` is the only path from a decision to a released value,
+/// and it derives and consumes its narrowed grant inside the call, so it enforces the
+/// whole correspondence between the decision and the release: the holder authority,
+/// the released destination, the decision's validity bound, a standing lease that
+/// still permits the instant, the release site's declared projection for the subject's
+/// class and destination, and the disclosure budget's charge all have to agree with
+/// the subject before anything is charged or released. A weaker projection, another
+/// charge, another destination, or a revoked lease would otherwise release data the
+/// decision never covered.
 #[test]
-fn release_grant_requires_a_matching_site_budget_instant_and_lease() {
+fn release_requires_a_matching_holder_site_budget_instant_and_lease() {
     let operation = operation_id("crate::read_only", &[0, 1]);
     let class = ProtectedDataClass::ActionArgument;
     let destination = ReleaseDestination::OrdinarySource;
@@ -2039,42 +2083,231 @@ fn release_grant_requires_a_matching_site_budget_instant_and_lease() {
     let decision = decision(&subject);
     let authority = holder(&[class], &[destination]);
     let release_site = ReleaseSite::new(SITE).declare(class, destination, ProjectionKind::Redacted);
-    let budget = DisclosureBudget::new(1, charge(1));
+    let value = protected(class);
 
-    // The matching site, budget, and instant still derive the narrowed grant.
-    let grant = decision
-        .release_grant(&authority, &release_site, &budget, 0)
-        .unwrap_or_else(|| unreachable!("the site, budget, and instant match the subject"));
-    assert!(grant.covers(class, destination));
-
-    // A site that declares a weaker projection than the decision, a site that
-    // declares nothing for the subject's class, a budget charging another amount, and
-    // an instant at the decision's own validity bound all refuse the release.
-    let weaker = ReleaseSite::new(SITE).declare(class, destination, ProjectionKind::Structural);
-    assert_eq!(
-        decision.release_grant(&authority, &weaker, &budget, 0),
-        None,
-        "a weaker projection than the decision declares releases nothing"
-    );
-    assert_eq!(
-        decision.release_grant(&authority, &ReleaseSite::new(SITE), &budget, 0),
-        None,
-        "a site that declares no class of the subject releases nothing"
-    );
-    assert_eq!(
-        decision.release_grant(
+    // The matching holder, site, value, budget, and instant release exactly once, and
+    // the accepted outcome carries the subject's own projection kind, so the grant the
+    // decision derives inside the call is the narrowed one and no reusable permission
+    // escapes it.
+    let mut budget = DisclosureBudget::new(1, charge(1));
+    let released = decision
+        .release(
             &authority,
             &release_site,
-            &DisclosureBudget::new(10, charge(2)),
-            0
-        ),
-        None,
-        "a budget charging another amount than the decision declares releases nothing"
+            &value,
+            destination,
+            &mut budget,
+            0,
+        )
+        .unwrap_or_else(|| unreachable!("the holder, site, budget, and instant match"));
+    assert_eq!(
+        released.decision(),
+        ReleaseDecision::Accepted(subject.scope().projection())
     );
     assert_eq!(
-        decision.release_grant(&authority, &release_site, &budget, decision.expires_at_us()),
-        None,
+        released.projection().map(|projection| projection.kind()),
+        Some(ProjectionKind::Redacted)
+    );
+    assert!(released.released_value().is_some());
+    assert_eq!(released.budget(), budget);
+    assert_eq!(
+        budget.accepted(),
+        1,
+        "one matching release charges the disclosure budget exactly once"
+    );
+
+    // A site that declares a weaker projection than the subject names releases
+    // nothing: the subject's declared projection kind is what a release has to
+    // reproduce, so a site able to accommodate the value structurally never widens the
+    // disclosure the decision was taken over.
+    let weaker = ReleaseSite::new(SITE).declare(class, destination, ProjectionKind::Structural);
+    assert!(
+        decision
+            .release(
+                &authority,
+                &weaker,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a weaker projection than the decision declares releases nothing"
+    );
+
+    // A site that declares nothing for the subject's class releases nothing: the
+    // site's own declaration is independently required, and approval never supplies
+    // it.
+    assert!(
+        decision
+            .release(
+                &authority,
+                &ReleaseSite::new(SITE),
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a site that declares no class of the subject releases nothing"
+    );
+
+    // A budget charging another amount than the subject declares releases nothing: a
+    // release is charged exactly what the decision was taken over.
+    assert!(
+        decision
+            .release(
+                &authority,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(10, charge(2)),
+                0,
+            )
+            .is_none(),
+        "a budget charging another amount than the decision declares releases nothing"
+    );
+
+    // The instant at the decision's own validity bound releases nothing, because the
+    // bound is exclusive, and an instant past it releases nothing either.
+    assert!(
+        decision
+            .release(
+                &authority,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                decision.expires_at_us(),
+            )
+            .is_none(),
         "the decision's own validity bound fences the release"
+    );
+    assert!(
+        decision
+            .release(
+                &authority,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                decision.expires_at_us() + 1,
+            )
+            .is_none(),
+        "an instant past the decision's validity bound fences the release"
+    );
+
+    // A destination other than the subject's releases nothing even though the holder,
+    // site, value, budget, and instant all agree: the destination is part of what the
+    // decision binds, so a decision taken for one destination never releases to
+    // another.
+    assert!(
+        decision
+            .release(
+                &authority,
+                &release_site,
+                &value,
+                ReleaseDestination::DiagnosticSink,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a destination other than the subject's releases nothing"
+    );
+
+    // A holder authority that does not cover the subject's class, or does not cover
+    // the subject's destination, releases nothing even for a matching site, value,
+    // budget, and instant.
+    assert!(
+        decision
+            .release(
+                &holder(&[ProtectedDataClass::SourceText], &[destination]),
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a holder that does not cover the subject's class releases nothing"
+    );
+    assert!(
+        decision
+            .release(
+                &holder(&[class], &[ReleaseDestination::DiagnosticSink]),
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a holder that does not cover the subject's destination releases nothing"
+    );
+
+    // A value of a protected class the subject does not name releases nothing even
+    // though the holder authority covers that class and a site declares it: the
+    // subject names the exact protected class the decision was taken over, so a
+    // class the subject never named is outside the decision's coverage.
+    let other_class = ProtectedDataClass::SourceText;
+    let broad = holder(&[class, other_class], &[destination]);
+    let two_class_site = ReleaseSite::new(SITE)
+        .declare(class, destination, ProjectionKind::Redacted)
+        .declare(other_class, destination, ProjectionKind::Redacted);
+    assert!(
+        decision
+            .release(
+                &broad,
+                &two_class_site,
+                &protected(other_class),
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a value of a class the subject does not name releases nothing"
+    );
+
+    // A holder authority bound to another release site releases nothing here even
+    // though it declares the subject's class and destination: release requires
+    // holder authority over the site it authorizes, so a decision never substitutes
+    // one site's holder for another's.
+    let other_site_name = name("crate::other");
+    let other_binding = ReleaseHolderBindingId::new(&other_site_name, &integration());
+    let elsewhere =
+        ReleaseHolderAuthority::bind(&other_site_name, other_binding, &[class], &[destination])
+            .unwrap_or_else(|_| unreachable!("the fixture binding names its own site"));
+    assert!(
+        decision
+            .release(
+                &elsewhere,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a holder authority bound to another release site releases nothing"
+    );
+
+    // A denial releases nothing however the holder, site, value, budget, and instant
+    // agree: a decision that did not grant the request authorizes no release.
+    let denial = ApprovalDecision::new(subject.clone(), ApprovalOutcome::Denial, &actor(), 0, None)
+        .unwrap_or_else(|_| unreachable!("a one-shot decision needs no lease"));
+    assert!(!denial.is_positive());
+    assert!(
+        denial
+            .release(
+                &authority,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                0,
+            )
+            .is_none(),
+        "a denial releases nothing however the holder declares"
     );
 
     // A decision standing on a revoked lease releases nothing although the same
@@ -2106,13 +2339,28 @@ fn release_grant_requires_a_matching_site_budget_instant_and_lease() {
     assert!(revoked_decision.is_positive());
     assert!(
         live_decision
-            .release_grant(&authority, &release_site, &budget, 10)
+            .release(
+                &authority,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                10,
+            )
             .is_some(),
         "a live lease still releases"
     );
-    assert_eq!(
-        revoked_decision.release_grant(&authority, &release_site, &budget, 10),
-        None,
+    assert!(
+        revoked_decision
+            .release(
+                &authority,
+                &release_site,
+                &value,
+                destination,
+                &mut DisclosureBudget::new(1, charge(1)),
+                10,
+            )
+            .is_none(),
         "a revoked lease releases nothing"
     );
 }
