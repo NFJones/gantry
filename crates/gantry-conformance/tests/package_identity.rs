@@ -216,6 +216,46 @@ fn bound_identity(
     )
 }
 
+/// Derives one identity whose declared target facts are exactly one non-shipping
+/// `test` target, over the digest of the supplied manifest.
+fn non_shipping_identity(name: &str, manifest: &PublicInterfaceManifest) -> PackageIdentity {
+    let facts = TargetFactSet::new(&[TargetFacts::new(TargetKind::Test, None)
+        .unwrap_or_else(|_| unreachable!("a test target declares no entry point"))]);
+    PackageIdentity::derive(PackageIdentityInputs::new(
+        PackageName::new(name).unwrap_or_else(|_| unreachable!("fixture name is valid")),
+        PackageVersion::new("1.0.0").unwrap_or_else(|_| unreachable!("fixture version is valid")),
+        PackageSourceIdentity::new(manifest_digest("source"), ir_digest("ir")),
+        features(&[]),
+        facts,
+        target_selection("selection"),
+        manifest.digest().clone(),
+        GeneratorInputs::empty(),
+    ))
+}
+
+/// Returns one sealed interface whose only surface is one re-export declared by
+/// a non-shipping `test` target over one pinned defining instance.
+fn non_shipping_facade_interface() -> PublicInterfaceManifest {
+    let token_manifest = nominal_interface("Token");
+    let defining = bound_identity("token", "1.0.0", &[], &token_manifest);
+    seal(
+        &[],
+        &["Token"],
+        &[ExportEntry {
+            exported_name: Arc::from("Token"),
+            defining_name: Arc::from("Token"),
+            kind: ItemKind::Nominal,
+            target: TargetKind::Test,
+            defining: defining.clone(),
+        }],
+        &[DependencyInterfacePin {
+            package: defining,
+            interface: token_manifest.digest().clone(),
+        }],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture interface is closed"))
+}
+
 /// Binds one identity to the manifest it was resolved against.
 fn instance(identity: PackageIdentity, manifest: PublicInterfaceManifest) -> PackageInstance {
     PackageInstance::new(identity, manifest)
@@ -607,12 +647,14 @@ fn feature_distinct_siblings_of_one_name_and_version_link_and_resolve_separately
                 exported_name: Arc::from("Token"),
                 defining_name: Arc::from("Token"),
                 kind: ItemKind::Nominal,
+                target: TargetKind::Library,
                 defining: plain.clone(),
             },
             ExportEntry {
                 exported_name: Arc::from("Grant"),
                 defining_name: Arc::from("Grant"),
                 kind: ItemKind::Nominal,
+                target: TargetKind::Library,
                 defining: rich.clone(),
             },
         ],
@@ -1398,6 +1440,7 @@ fn non_exported_items_are_unreachable_through_every_reexport_chain() {
             exported_name: Arc::from("Token"),
             defining_name: Arc::from("Token"),
             kind: ItemKind::Nominal,
+            target: TargetKind::Library,
             defining: core.clone(),
         }],
         &[DependencyInterfacePin {
@@ -1414,6 +1457,7 @@ fn non_exported_items_are_unreachable_through_every_reexport_chain() {
             exported_name: Arc::from("Token"),
             defining_name: Arc::from("Token"),
             kind: ItemKind::Nominal,
+            target: TargetKind::Library,
             defining: middle.clone(),
         }],
         &[DependencyInterfacePin {
@@ -1491,6 +1535,7 @@ fn reexport_preserves_defining_package_identity_kind_and_requirement_facts() {
             exported_name: Arc::from("erase"),
             defining_name: Arc::from("delete"),
             kind: ItemKind::Action,
+            target: TargetKind::Library,
             defining: core.clone(),
         }],
         &[DependencyInterfacePin {
@@ -1588,6 +1633,7 @@ fn reexport_chain_must_terminate_in_a_defining_exported_item() {
                 exported_name: Arc::from("Token"),
                 defining_name: Arc::from("Token"),
                 kind: ItemKind::Nominal,
+                target: TargetKind::Library,
                 defining: previous.clone(),
             }],
             &[DependencyInterfacePin {
@@ -1660,6 +1706,7 @@ fn reexport_chain_must_terminate_in_a_defining_exported_item() {
             exported_name: Arc::from("Token"),
             defining_name: Arc::from("absent"),
             kind: ItemKind::Nominal,
+            target: TargetKind::Library,
             defining: hidden.clone(),
         }],
         &[DependencyInterfacePin {
@@ -1784,6 +1831,7 @@ fn a_terminating_reexport_chain_longer_than_any_fixed_bound_resolves() {
                     Arc::from("next")
                 },
                 kind: ItemKind::Nominal,
+                target: TargetKind::Library,
                 defining: target.clone(),
             }],
             &[DependencyInterfacePin {
@@ -1928,7 +1976,9 @@ fn non_shipping_target_items_never_enter_another_target_public_interface() {
             })
         );
     }
-    // A non-shipping target's own surface is not a shipping interface.
+    // A non-shipping kind short-circuits before any item or export is
+    // inspected, so a non-shipping target's own surface is not a shipping
+    // interface; this pins that early return.
     for non_shipping in [TargetKind::Test, TargetKind::Example, TargetKind::Benchmark] {
         assert!(manifest.check_shipping_surface(non_shipping).is_ok());
     }
@@ -1943,6 +1993,155 @@ fn non_shipping_target_items_never_enter_another_target_public_interface() {
             .iter()
             .any(|item| !item.target().is_shipping())
     );
+    // The re-export half of the same rule: an export that a non-shipping target
+    // declares is never a shipping target's public interface either, even when
+    // every item the manifest records is shipping.
+    let facade = non_shipping_facade_interface();
+    for shipping in [TargetKind::Library, TargetKind::Binary] {
+        assert_eq!(
+            facade.check_shipping_surface(shipping),
+            Err(PackageError::TargetKindInvalid {
+                kind: Arc::from("test"),
+                condition: TargetCondition::NonShippingExportInPublicInterface,
+            })
+        );
+    }
+}
+
+#[test]
+fn a_shipping_instance_never_binds_a_non_shipping_target_item_or_reexport() {
+    // Sealing a manifest is not enough: both halves of GNT-16.6-target-kinds are
+    // re-checked on the mandatory path that binds an instance to the interface
+    // it was resolved against, so no shipping instance can hold a surface that a
+    // non-shipping target declares.
+    let mut probe = nominal_item("Probe", Visibility::Exported);
+    probe.target = TargetKind::Test;
+    let item_manifest = seal(
+        &[nominal_item("Token", Visibility::Exported), probe],
+        &["Token", "Probe"],
+        &[],
+        &[],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture interface is closed"));
+    let library_identity = bound_identity("app", "1.0.0", &[], &item_manifest);
+    assert_eq!(
+        PackageInstance::new(library_identity, item_manifest.clone()),
+        Err(PackageError::TargetKindInvalid {
+            kind: Arc::from("test"),
+            condition: TargetCondition::NonShippingItemInPublicInterface,
+        })
+    );
+    // A package that declares no shipping target is unaffected: the same
+    // manifest binds successfully under a `test` target fact.
+    let test_identity = non_shipping_identity("app", &item_manifest);
+    assert!(PackageInstance::new(test_identity, item_manifest).is_ok());
+
+    let export_manifest = non_shipping_facade_interface();
+    let library_identity = bound_identity("app", "1.0.0", &[], &export_manifest);
+    assert_eq!(
+        PackageInstance::new(library_identity, export_manifest.clone()),
+        Err(PackageError::TargetKindInvalid {
+            kind: Arc::from("test"),
+            condition: TargetCondition::NonShippingExportInPublicInterface,
+        })
+    );
+    let test_identity = non_shipping_identity("app", &export_manifest);
+    assert!(PackageInstance::new(test_identity, export_manifest).is_ok());
+}
+
+#[test]
+fn a_shipping_interface_never_resolves_a_non_shipping_targets_item() {
+    // A test-only defining instance may hold its own test-declared item, and a
+    // facade's own records may be entirely shipping; resolving a name across the
+    // re-export edge must still refuse to put that item into the shipping
+    // facade's public interface.
+    let mut probe = nominal_item("Probe", Visibility::Exported);
+    probe.target = TargetKind::Test;
+    let defining_manifest = seal(&[probe], &["Probe"], &[], &[])
+        .unwrap_or_else(|_| unreachable!("fixture interface is closed"));
+    let defining = non_shipping_identity("defining", &defining_manifest);
+    let facade_manifest = seal(
+        &[],
+        &["Probe"],
+        &[ExportEntry {
+            exported_name: Arc::from("Probe"),
+            defining_name: Arc::from("Probe"),
+            kind: ItemKind::Nominal,
+            target: TargetKind::Library,
+            defining: defining.clone(),
+        }],
+        &[DependencyInterfacePin {
+            package: defining.clone(),
+            interface: defining_manifest.digest().clone(),
+        }],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture facade interface is closed"));
+    let facade = bound_identity("facade", "1.0.0", &[], &facade_manifest);
+    let mut graph = PackageGraph::new();
+    graph
+        .register(instance(defining.clone(), defining_manifest))
+        .unwrap_or_else(|_| unreachable!("the defining instance registers"));
+    graph
+        .register(instance(facade.clone(), facade_manifest.clone()))
+        .unwrap_or_else(|_| unreachable!("the facade instance registers"));
+    graph
+        .link(&facade, &defining)
+        .unwrap_or_else(|_| unreachable!("the facade edge is pinned"));
+    assert_eq!(
+        graph.resolve_name(&facade, "Probe"),
+        Err(PackageError::TargetKindInvalid {
+            kind: Arc::from("test"),
+            condition: TargetCondition::NonShippingItemInPublicInterface,
+        })
+    );
+    // The same name stays reachable from an instance that claims no shipping
+    // target, because such an interface is not shipping authority.
+    let test_facade = non_shipping_identity("test_facade", &facade_manifest);
+    graph
+        .register(instance(test_facade.clone(), facade_manifest))
+        .unwrap_or_else(|_| unreachable!("the non-shipping facade registers"));
+    graph
+        .link(&test_facade, &defining)
+        .unwrap_or_else(|_| unreachable!("the non-shipping facade edge is pinned"));
+    assert!(graph.resolve_name(&test_facade, "Probe").is_ok());
+}
+
+#[test]
+fn export_declaring_target_kind_participates_in_canonical_interface_identity() {
+    let token_manifest = nominal_interface("Token");
+    let defining = bound_identity("token", "1.0.0", &[], &token_manifest);
+    let pin = DependencyInterfacePin {
+        package: defining.clone(),
+        interface: token_manifest.digest().clone(),
+    };
+    let facade = |target: TargetKind| {
+        seal(
+            &[],
+            &["Token"],
+            &[ExportEntry {
+                exported_name: Arc::from("Token"),
+                defining_name: Arc::from("Token"),
+                kind: ItemKind::Nominal,
+                target,
+                defining: defining.clone(),
+            }],
+            std::slice::from_ref(&pin),
+        )
+        .unwrap_or_else(|_| unreachable!("fixture facade interface is closed"))
+    };
+    let shipping = facade(TargetKind::Library);
+    let non_shipping = facade(TargetKind::Test);
+    // The declaring target kind is a recorded manifest fact, so two interfaces
+    // that differ only in it have different canonical bytes and identities; the
+    // canonical encoding names it as well.
+    assert_ne!(shipping.canonical_bytes(), non_shipping.canonical_bytes());
+    assert_ne!(shipping.digest(), non_shipping.digest());
+    let shipping_text = std::str::from_utf8(shipping.canonical_bytes())
+        .unwrap_or_else(|_| unreachable!("canonical bytes are UTF-8"));
+    let non_shipping_text = std::str::from_utf8(non_shipping.canonical_bytes())
+        .unwrap_or_else(|_| unreachable!("canonical bytes are UTF-8"));
+    assert!(shipping_text.contains("\"target\":\"library\""));
+    assert!(non_shipping_text.contains("\"target\":\"test\""));
 }
 
 #[test]
@@ -2326,6 +2525,7 @@ fn interface_digest_binds_into_instance_identity_and_stale_pins_are_rejected() {
                 exported_name: Arc::from("Token"),
                 defining_name: Arc::from("Token"),
                 kind: ItemKind::Nominal,
+                target: TargetKind::Library,
                 defining: bound.clone(),
             }],
             &[],
@@ -2351,6 +2551,7 @@ fn reexport_pins_are_enforced_at_registration_and_resolution() {
             exported_name: Arc::from("Token"),
             defining_name: Arc::from("Token"),
             kind: ItemKind::Nominal,
+            target: TargetKind::Library,
             defining: core_old.clone(),
         }],
         &[DependencyInterfacePin {
@@ -2505,6 +2706,7 @@ fn one_name_recorded_as_both_an_item_and_a_reexport_is_rejected() {
             exported_name: Arc::from("Token"),
             defining_name: Arc::from("Token"),
             kind: ItemKind::Nominal,
+            target: TargetKind::Library,
             defining,
         }],
         &[],

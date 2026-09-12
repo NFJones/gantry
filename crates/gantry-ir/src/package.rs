@@ -226,6 +226,8 @@ pub enum TargetCondition {
     LibraryDeclaresEntryPoint,
     /// A non-shipping target's item appears in another target's public interface.
     NonShippingItemInPublicInterface,
+    /// A non-shipping target's re-export appears in another target's public interface.
+    NonShippingExportInPublicInterface,
 }
 
 impl TargetCondition {
@@ -238,6 +240,7 @@ impl TargetCondition {
             Self::MultipleEntryPoints => "multiple-entry-points",
             Self::LibraryDeclaresEntryPoint => "library-declares-entry-point",
             Self::NonShippingItemInPublicInterface => "non-shipping-item-in-public-interface",
+            Self::NonShippingExportInPublicInterface => "non-shipping-export-in-public-interface",
         }
     }
 }
@@ -1952,6 +1955,8 @@ pub struct ExportEntry {
     pub defining_name: Arc<str>,
     /// The preserved item kind.
     pub kind: ItemKind,
+    /// The target kind whose source declares the re-export.
+    pub target: TargetKind,
     /// The defining package-instance identity, which a facade cannot erase.
     pub defining: PackageIdentity,
 }
@@ -2274,7 +2279,7 @@ impl PublicInterfaceManifest {
         Ok(())
     }
 
-    /// Rejects items a non-shipping target declares in a shipping interface.
+    /// Rejects non-shipping items and re-exports in a shipping interface.
     pub fn check_shipping_surface(&self, kind: TargetKind) -> Result<(), PackageError> {
         if !kind.is_shipping() {
             return Ok(());
@@ -2284,6 +2289,14 @@ impl PublicInterfaceManifest {
                 return Err(PackageError::TargetKindInvalid {
                     kind: Arc::from(item.target.wire_name()),
                     condition: TargetCondition::NonShippingItemInPublicInterface,
+                });
+            }
+        }
+        for export in &self.exports {
+            if !export.target.is_shipping() {
+                return Err(PackageError::TargetKindInvalid {
+                    kind: Arc::from(export.target.wire_name()),
+                    condition: TargetCondition::NonShippingExportInPublicInterface,
                 });
             }
         }
@@ -2332,12 +2345,20 @@ impl PackageInstance {
     /// Binds one identity to the one interface it was resolved against.
     ///
     /// The identity binds the interface digest, so an interface that does not
-    /// match the identity is rejected rather than relinked.
+    /// match the identity is rejected rather than relinked. A shipping
+    /// instance also never binds a public interface that carries a
+    /// non-shipping target's item or re-export, while a package that declares
+    /// no shipping target is unaffected.
     pub fn new(
         identity: PackageIdentity,
         interface: PublicInterfaceManifest,
     ) -> Result<Self, PackageError> {
         interface.check_pinned(identity.interface_digest())?;
+        for facts in identity.inputs().targets().as_slice() {
+            if facts.kind().is_shipping() {
+                interface.check_shipping_surface(facts.kind())?;
+            }
+        }
         Ok(Self {
             identity,
             interface,
@@ -2714,13 +2735,27 @@ impl PackageGraph {
     /// unresolved name. Every link MUST also be pinned by the re-exporting
     /// manifest at exactly the interface digest the graph holds for the defining
     /// instance, so a re-export never reaches whatever interface the graph
-    /// happens to contain.
+    /// happens to contain. A name resolved from an instance that declares a
+    /// shipping target MUST terminate in an item that target kinds can ship, so
+    /// a re-export never routes a non-shipping target's item into a shipping
+    /// public interface.
     pub fn resolve_name(
         &self,
         from: &PackageIdentity,
         name: &str,
     ) -> Result<ResolvedName, PackageError> {
         self.check_pins()?;
+        // Binding covers the manifest's own records; this covers names reached
+        // across dependency edges, however many re-export hops they take.
+        let origin_is_shipping = self.instances.get(from).is_some_and(|instance| {
+            instance
+                .identity()
+                .inputs()
+                .targets()
+                .as_slice()
+                .iter()
+                .any(|facts| facts.kind().is_shipping())
+        });
         let mut current = from.clone();
         let mut lookup: Arc<str> = Arc::from(name);
         let mut chain: Vec<(PackageIdentity, Arc<str>)> = Vec::new();
@@ -2742,6 +2777,12 @@ impl PackageGraph {
                     return Err(PackageError::ItemNotExported {
                         package: current,
                         name: lookup,
+                    });
+                }
+                if origin_is_shipping && !item.target.is_shipping() {
+                    return Err(PackageError::TargetKindInvalid {
+                        kind: Arc::from(item.target.wire_name()),
+                        condition: TargetCondition::NonShippingItemInPublicInterface,
                     });
                 }
                 return Ok(ResolvedName {
@@ -4317,6 +4358,8 @@ fn encode_interface(
         push_json_string(&mut output, &export.exported_name);
         output.push_str(",\"kind\":");
         push_json_string(&mut output, export.kind.wire_name());
+        output.push_str(",\"target\":");
+        push_json_string(&mut output, export.target.wire_name());
         output.push('}');
     }
     output.push_str("],\"items\":[");

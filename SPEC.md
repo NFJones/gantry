@@ -11231,9 +11231,9 @@ name and rely on. Its contents are closed to exactly the following groups:
 4. package-qualified capability and agent requirements, action declarations
    with their recovery classes, fulfilment descriptors, model-visible tool
    contracts, data-release projections, and protected-value transitions;
-5. the edition, the standard-library contract version, target predicates, the
-   selected public features, dependency interface digests, and protocol
-   versions.
+5. the edition, the standard-library contract version, the declaring target
+   kinds of recorded items and re-exports, target predicates, the selected
+   public features, dependency interface digests, and protocol versions.
 
 A manifest that omits a declared member is invalid; it MUST NOT be treated as a
 narrower interface, and a consumer MUST NOT read absence as non-export. A
