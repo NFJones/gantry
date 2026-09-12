@@ -1273,6 +1273,15 @@ fn synthesized_alias_map_is_deterministic_and_rejects_collisions() {
             AliasNamespace::Item,
             CollisionCondition::Case,
         ),
+        // The pinned full case mapping makes `ΑΣ` and `Ας` one spelling, so the
+        // synthesized alias of `ας` collides by case; the toolchain's
+        // `str::to_lowercase` would report no collision for this pair.
+        (
+            "ας",
+            DeclaredNamespaces::new().with_item("ΑΣ"),
+            AliasNamespace::Item,
+            CollisionCondition::Case,
+        ),
         (
             "match",
             DeclaredNamespaces::new().with_reserved_word("match"),

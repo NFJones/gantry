@@ -38,7 +38,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use gantry_core::protocol::ProtocolVersion;
-use gantry_core::unicode::{is_nfc, is_xid_continue, is_xid_start};
+use gantry_core::unicode::{is_nfc, is_xid_continue, is_xid_start, to_full_lowercase};
 
 use crate::authority::digest_fields;
 use crate::generated::RecoveryClass;
@@ -682,8 +682,14 @@ fn validate_identifier(field: &'static str, value: &str) -> Result<(), PackageEr
 }
 
 /// Returns the case-folded comparison skeleton of one spelling.
+///
+/// The fold uses the workspace's pinned full case mappings
+/// (`gantry_core::unicode::to_full_lowercase`) rather than the toolchain's
+/// `str::to_lowercase`, so alias collisions follow the pinned Unicode version and
+/// its context-sensitive final-sigma rule exactly as the identifier model of
+/// `GNT-18.7-case-behaviour` does.
 fn case_fold(value: &str) -> String {
-    value.to_lowercase()
+    to_full_lowercase(value)
 }
 
 /// Returns whether two identities name the same package name and version.
@@ -4550,6 +4556,23 @@ mod tests {
         }
         assert_eq!(collision_condition("serde", "other"), None);
         assert_eq!(collision_condition("other", "serde"), None);
+    }
+
+    /// The case condition folds with the pinned full case mapping, not the
+    /// toolchain's mapping: `ΑΣ` (U+0391 U+03A3) and `Ας` (U+0391 U+03C2) are one
+    /// spelling under the pinned context-sensitive final-sigma rule but two under
+    /// `str::to_lowercase`, so this pair collides only when the pinned mapping is
+    /// used.
+    #[test]
+    fn case_collision_uses_the_pinned_full_case_mapping() {
+        assert_eq!(
+            collision_condition("\u{391}\u{3a3}", "\u{391}\u{3c2}"),
+            Some(CollisionCondition::Case)
+        );
+        assert_eq!(
+            collision_condition("\u{391}\u{3c2}", "\u{391}\u{3a3}"),
+            Some(CollisionCondition::Case)
+        );
     }
 
     #[test]
