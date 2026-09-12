@@ -9,6 +9,7 @@
 //! algorithms, runtime state, host services, and concrete adapters remain
 //! outside this contract crate.
 
+mod agent;
 mod approval;
 mod artifact;
 mod authority;
@@ -37,6 +38,26 @@ mod type_properties;
 mod types;
 mod wait;
 
+// The agent fulfillment, assistant turn, tool, and session model of SPEC.md Section
+// 25 is published here. Its `Turn` is named apart from the landed executable
+// `TaskCompletion` and its `StreamKind` is named apart from the landed operation
+// progress vocabulary, so no name of this crate root is claimed by two vocabularies
+// at once.
+pub use agent::{
+    AGENT_CLAUSES, AGENT_NON_CLAIM_ORDER, AGENT_NON_CLAIMS, AcceptedTurn, AgentBindingRevision,
+    AgentCrashCutClassification, AgentDeclaredInput, AgentDiagnosticCode, AgentError,
+    AgentNonClaim, AgentNonClaimAssertion, AgentRecoveryDecision, AgentRequirement,
+    AgentRequirementId, BindingFact, ChildSession, ChildSessionId, DiscoveryArtifact,
+    DiscoveryPhase, DurableAgentCut, DurableAgentRecord, FinalResult, FulfillmentDescriptor,
+    FulfillmentProperty, FulfillmentState, HandlerKind, HandlerUse, ParentSessionReservation,
+    PreflightReport, PreflightVerdict, ProgressSignal, PropertyVerdict, ProviderNameMap,
+    RawResponse, RejectedPrefix, RepairAttempt, RepairBudget, RepairOutcome, RepairPermit,
+    RepairPolicy, RoundId, RoundState, SemanticStream, SessionDirective, SessionId,
+    SessionReservations, StreamBudget, StreamId, StreamKind, StreamSpec, ToolDescriptor,
+    ToolInvocationId, ToolInvocationRequest, ToolResultRecord, ToolResultVector, ToolSetRevision,
+    ToolSetRevisionId, ToolSlotId, ToolSlotKind, Turn, TurnKind, TurnOutcome, TurnValidationCause,
+    check_agent_non_claims, classify_original_turn, preflight, repair_turn, validate_raw_response,
+};
 pub use approval::{
     ApprovalAuditAccess, ApprovalAuditEvidence, ApprovalAuditView, ApprovalDecision,
     ApprovalDecisionId, ApprovalDiagnosticCode, ApprovalError, ApprovalOutcome,

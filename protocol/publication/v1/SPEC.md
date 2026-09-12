@@ -13326,3 +13326,346 @@ diagnostic, a clause, or an evidence item MUST NOT be read as promising a limit
 outside it, a non-claim MUST NOT be presented as a guarantee, and an implementation
 MUST NOT report a clause of this section as satisfied, partially satisfied, or
 conditionally satisfied where it can only demonstrate one of these limits.
+
+## 25. Agent Fulfillment, Assistant Turns, Tools, and Sessions
+
+<a id="GNT-25.0-agent-fulfillment-assistant-turns-tools-and-sessions"></a>
+
+**[GNT-25.0-agent-fulfillment-assistant-turns-tools-and-sessions] Agent fulfillment,
+assistant turns, tools, and sessions.** This section defines how one package-scoped
+agent requirement declares machine-checkable fulfillment, how fulfillment preflight
+proves a complete compatible binding or names the exact unsupported property, how one
+canonical assistant turn is validated whole before any child dispatch, how a bounded
+repair refuses a rejected prefix, how each round commits one stable identity and the
+durable raw, accepted, tool-result, and final cuts, how package-qualified tool slots
+and immutable tool-set revisions freeze one loop, how source handlers keep ordinary
+callable semantics, how sessions reserve a parent transcript and derive stable child
+sessions, how semantic streams stay typed, bounded, authority-safe, and restart-safe
+while nonsemantic progress stays outside accepted turns, and the explicit non-claims
+of the section. It cites and extends, rather than replaces, the effect contracts of
+`GNT-3-T-EFFECTS` and `GNT-3-T-EFFECT-ROWS`, the capability instance, lineage,
+revocation, and admission contracts of `GNT-3-T-AUTHORITY-INSTANCES`,
+`GNT-3-T-AUTHORITY-LINEAGE`, `GNT-3-T-AUTHORITY-REVOCATION` and
+`GNT-3-T-AUTHORITY-ADMISSION`, the dynamic authorization and authenticated approval
+rules of Section 19 (`GNT-19.*`), the wait, arbitration, and closure rules of Section
+24 (`GNT-24.*`), the abstract requirements of `GNT-6.5-abstract-requirements`, the
+durable cuts of `GNT-11.*`, and the required embedding interfaces of `GNT-15.*`.
+
+The closed vocabulary of this section is exactly the following terms. A clause here
+MUST NOT use an agent term outside this vocabulary, and a term listed below MUST NOT
+be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| agent requirement | One package-scoped requirement that declares what an agent loop needs to be fulfillable. |
+| fulfillment descriptor | The declared property set of one agent requirement, drawn from the closed property vocabulary of `GNT-25.1-agent-requirements-and-fulfillment`. |
+| binding revision | One declared revision of what a provider binding supports, with its explicit provider name map. |
+| preflight | The one check that decides whether a binding revision completely fulfills one agent requirement. |
+| canonical assistant turn | One decoded assistant response that is exactly a final result or a nonempty tool-request set. |
+| tool slot | One stable package-qualified name under which one tool is declared. |
+| tool-set revision | One immutable revision of the tool slots and descriptors one loop may call. |
+| tool invocation | One request position of one accepted tool-request set, named by its round, revision, and position. |
+| round | One assistant turn plus the tool invocations it requests and their settlement. |
+| accepted turn | The one turn classification a round accepts after whole-turn validation. |
+| raw response | The undecoded model output of one round before validation. |
+| tool-result vector | The settled results of one accepted tool-request set in canonical request order. |
+| source handler | One ordinary callable of the declared source language that implements one tool slot. |
+| parent session | The session that owns the transcript a round appends to. |
+| child session | A session derived from one parent session while tool requests are open. |
+| semantic stream | A typed, bounded stream whose items are part of an accepted turn contract. |
+| progress observation | A Section 20 operation-progress observation that no accepted turn or source result observes. |
+| provider name map | The explicit declared mapping from provider tool names to canonical tool slots. |
+| agent non-claim | One published limit of `GNT-25.10-agent-non-claims`. |
+
+**Applicability.** The clauses of this section govern an edition or profile that
+admits package-scoped agent requirements and assistant turns over tools. The v1
+edition described by Sections 1 through 15 does not: its landed model has integration
+operations, hooks, sessions, and the authority-closure facts, but not the fulfillment
+preflight, canonical assistant turn, tool-set revision identity, or round cut of this
+section. An implementation that supports only that model MUST record each clause of
+this section as a profile-based `not-applicable` justification in the sense of
+Sections 2 and 15, and MUST NOT report a clause here as satisfied, partially
+satisfied, conditionally satisfied, or satisfied for a subset of its rules.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the effect
+summary and effect rows of `GNT-3-T-EFFECTS` and `GNT-3-T-EFFECT-ROWS`; the capability
+instance, lineage, revocation, and admission contracts of
+`GNT-3-T-AUTHORITY-INSTANCES`, `GNT-3-T-AUTHORITY-LINEAGE`,
+`GNT-3-T-AUTHORITY-REVOCATION` and `GNT-3-T-AUTHORITY-ADMISSION`; the authorization
+and approval contracts of Section 19; the wait, wakeup, arbitration, and quiescence
+contracts of Section 24; and the durable cut, resume, and protection contracts of
+`GNT-11.*` and `GNT-15.*`. Nothing here introduces a provider response shape as
+semantics: a raw response is undecoded input to `GNT-25.3-assistant-turns`, and no
+provider field name, envelope kind, error code, or display spelling is a normative
+term. Nothing here admits a prefix dispatch: a turn is validated whole and a rejected
+prefix never dispatches a child, as stated by `GNT-25.4-turn-validation-and-repair`.
+Nothing here admits model self-approval: a tool request is a proposal that the landed
+Section 19 approval contracts admit or refuse, never an approval the model grants
+itself. Nothing here introduces a synthetic recovery class for handlers: a handler
+failure is the ordinary failure of the landed operation and fault contracts, and no
+clause here classifies one into a new recovery class. Nothing here admits a mid-loop
+tool mutation: a tool-set revision is immutable once a loop starts, as stated by
+`GNT-25.6-tool-slots-and-tool-set-revisions`. Provider names are explicit data: a
+provider name map is a declared mapping, a provider display name is never authority,
+and discovery is an analyze, link, and preflight boundary that yields a new binding
+artifact rather than mutating an existing revision. Every identity of this section is
+derived from declared fields, and no process identifier, thread identity, clock
+reading, host path, environment fact, locale, socket, network address, or adapter
+handle enters one. Every obligation of this section is decided by an explicit check
+over declared values.
+
+<a id="GNT-25.1-agent-requirements-and-fulfillment"></a>
+
+**[GNT-25.1-agent-requirements-and-fulfillment] Agent requirements and fulfillment.**
+One agent requirement is package-scoped: it names the declaring package it belongs to
+and one stable requirement identity, and it declares exactly one fulfillment
+descriptor. The descriptor MUST declare at least one property drawn from the closed
+property vocabulary, and each property MUST be declared at most once and in canonical
+order. The vocabulary is exactly: modalities, structured output and repair, sessions,
+transcripts, context, streaming, retrieval, tools, limits, and data handling. An empty
+descriptor, an unspecified descriptor, and a wildcard descriptor that claims every
+property without naming any are each refused and named, because a requirement that
+declares nothing checkable cannot be fulfilled or unfulfilled, and a wildcard would
+silently absorb whatever a binding happens to provide.
+
+Fulfillment is machine-checkable. Each declared property names one declared evidence
+check over declared values - a modality set, a structured-output schema with its
+repair rule, a session and transcript contract, a context contract, a stream kind and
+bound, a retrieval contract, a tool-set revision, an explicit limit set, and a data
+handling contract - and no check reads a host, a provider, or a clock. Equal declared
+inputs produce equal requirement identities, and two requirements that differ in the
+package, the identity, or any declared property are distinct requirements.
+
+A requirement is fulfilled only when every declared property is bound by one binding
+revision under `GNT-25.2-fulfillment-preflight`. An absent property is never silently
+dropped, defaulted, or inferred from provider behaviour: the property is exactly the
+one the requirement declared, or the requirement is not fulfilled.
+
+<a id="GNT-25.2-fulfillment-preflight"></a>
+
+**[GNT-25.2-fulfillment-preflight] Fulfillment preflight.** Preflight compares one
+agent requirement with one binding revision before any agent loop, round, or child
+dispatch runs, and it publishes exactly one verdict: complete, unsupported, or
+incomplete. Complete means every declared property of the descriptor is bound by a
+declared fact of the binding revision, and it is the only verdict that admits the
+loop. Unsupported means the binding revision declares that it does not support a
+declared property; the report names exactly the unsupported property, chosen in
+canonical property order when several are unsupported, and the binding is refused.
+Incomplete means the binding revision declares no fact at all for a declared property;
+the report names exactly that property and refuses the binding in the same way. The
+verdict is therefore total and exclusive over declared facts: preflight never silently
+drops a property, never defaults a property to supported, never reports a generic
+unsupported binding without naming the property, and never treats a missing fact as a
+supported fact.
+
+A binding revision declares its facts explicitly, one state per property, and a
+revision that declares one property twice or in noncanonical order is refused rather
+than resolved. The provider name map is part of the revision and is explicit data: it
+maps declared provider names to canonical tool slots, it refuses an empty or wildcard
+mapping, it carries no authority, and it is never consulted for a description or
+display spelling that it does not name. A display name, a provider label, or an
+adapter handle is never an identity and never resolves a tool slot. Discovery is an
+analyze, link, and preflight boundary: it yields a new binding revision artifact with
+its own identity, and it never mutates, widens, or retrofits the revision a running
+loop already holds. Preflight is a check, not an approval: it grants no authority, and
+every tool invocation it admits remains subject to the landed runtime authority and
+approval contracts of Section 19 and `GNT-3-*`.
+
+<a id="GNT-25.3-assistant-turns"></a>
+
+**[GNT-25.3-assistant-turns] Assistant turns.** One canonical assistant turn is
+exactly one of two kinds: a final result, or a nonempty tool-request set. There is no
+third kind, and each of the following is refused rather than coerced into a kind: a
+turn with neither a final result nor a tool request, a turn that carries a final
+result and a tool request together, a turn whose tool-request set is empty, and a turn
+that names a tool slot, tool-set revision, or request position outside the frozen
+loop. A final result is one declared payload and is immutable once accepted; a
+tool-request set is a nonempty sequence of positions, each naming one tool slot of the
+frozen tool-set revision and one invocation identity.
+
+The whole turn is validated before any child dispatch. Validation classifies the raw
+response as exactly one outcome: accepted, refused by the model, malformed, or invalid
+with one typed cause. A refusal and a malformed response are distinct outcomes and are
+never merged: a refusal is a well-formed model decision to produce no result, and a
+malformed response is a response that cannot be decoded into a canonical turn. No
+tool request of a raw response is dispatched, recorded, or reserved as a child before
+its whole turn is accepted, so a turn accepted in part never exists. An invalid turn
+names its cause from the closed cause vocabulary, and the cause stays distinct per
+condition: an empty turn, a mixed final-and-tools turn, an empty tool set, an unknown
+tool slot, a duplicate tool slot, a schema mismatch, a stale tool-set revision, and a
+request position outside the frozen order are different causes and are never reported
+under one generic cause.
+
+<a id="GNT-25.4-turn-validation-and-repair"></a>
+
+**[GNT-25.4-turn-validation-and-repair] Turn validation and repair.** Validation is
+total over the declared causes of `GNT-25.3-assistant-turns`: one raw response
+receives exactly one outcome, the outcome is decided from the declared turn, revision,
+and schema facts alone, and no outcome is decided by a provider, a host, or a clock. A
+rejected turn yields one affine rejected prefix: the requests it named before
+rejection, in declared request order, produced once and consumed once. A rejected
+prefix MUST NOT dispatch: its only admitted consumer is one repair attempt under this
+clause, an attempt to dispatch it directly, to dispatch a suffix of it, or to resume
+it as an accepted turn is refused, and a refusal leaves the round, the prefix, and the
+frozen revision exactly as they were.
+
+Repair is bounded. One repair policy declares a finite positive attempt bound, and
+each repair attempt consumes exactly one unit of that bound. A repair attempt over a
+prefix must produce one whole new raw response that passes whole-turn validation; a
+repair that would exceed the declared bound is refused with the exhaustion reported,
+and no repair attempt ever dispatches a partial result. Repair outcomes are closed:
+accepted, repaired, exhausted, and refused. An implementation MUST NOT retry
+unboundedly, MUST NOT treat exhaustion as acceptance, and MUST NOT let a rejected
+prefix reach a child by way of a repair, a retry, or a resumed cut.
+
+<a id="GNT-25.5-round-identity-and-durable-cuts"></a>
+
+**[GNT-25.5-round-identity-and-durable-cuts] Round identity and durable cuts.** Each
+round carries exactly one stable round identity, derived from declared fields only:
+the owning session, the accepted turn position of that session, and the declared round
+ordinal. Two rounds that differ in any declared input are distinct rounds, and equal
+declared inputs produce equal identities. In durable mode a round commits exactly four
+cuts in order: raw, accepted, tool-result, and final. The raw cut records the
+presented raw response; the accepted cut records the one accepted turn; the tool-result
+cut records the settled tool-result vector; and the final cut records the final result.
+The cut chain only advances: advancing to the same cut is stuttering and commits
+nothing twice, and a cut that would move backwards, skip an uncommitted cut, or commit
+an accepted turn without its raw cut is refused rather than applied.
+
+Recovery resumes from the committed cut alone and never repeats accepted work. From a
+raw cut, recovery resumes whole-turn validation of the same raw response. From an
+accepted cut, recovery resumes child dispatch at the first unsettled request position
+of the committed accepted turn, without repeating the turn, an already settled tool
+position, or any dispatch the accepted cut did not record. From a tool-result cut,
+recovery resumes assembly of the final result from the committed tool-result vector.
+From a final cut, recovery returns the committed final result unchanged. A presented
+cut, turn, position, or final result that differs from the committed one is refused
+without mutating the record, so a replay from a committed prefix reproduces the same
+accepted turn, the same settlement order, and the same final result. A crash is
+classified from the committed cut into exactly one crash-cut class - raw committed,
+accepted committed, tool-results committed, or final committed - and the class names
+the one resume decision above that recovery applies.
+
+<a id="GNT-25.6-tool-slots-and-tool-set-revisions"></a>
+
+**[GNT-25.6-tool-slots-and-tool-set-revisions] Tool slots and tool-set revisions.** A
+tool slot is one stable, package-qualified name: its identity is derived from the
+declared package and the declared slot name, it is never a provider display name, and
+it is never derived from a host handle, a network address, or an adapter fact. The
+same slot identity denotes the same declared tool for the life of the loop, and two
+slots that differ in the package or the slot name are distinct slots.
+
+A tool-set revision is immutable once built. It carries one revision identity derived
+from its ordered descriptors, one declared descriptor per slot, and it refuses a
+second descriptor for one slot, a duplicate provider name, a noncanonical descriptor
+order, and a slot qualified by no package. Once a loop starts, the revision it holds
+is the only revision its rounds may call: an added, removed, or replaced descriptor, a
+widened effect set, a changed schema, and a mutated authority or recovery fact are
+each refused rather than admitted, because a mid-loop mutation would let a later round
+call a tool no accepted turn declared. Each descriptor declares its canonical schema
+digest, its effect set under the landed effect contracts of `GNT-3-T-EFFECTS` and
+`GNT-3-T-EFFECT-ROWS`, its authority requirement under the landed capability
+contracts of `GNT-3-T-AUTHORITY-*` and Section 19, and its recovery facts under the
+landed fault and operation contracts.
+
+A descriptor or schema mismatch fails closed. A tool invocation whose slot is not in
+the frozen revision, whose schema digest differs from the descriptor it names, whose
+effect set exceeds the admitted effect set, or whose authority requirement is not
+admitted by the landed authority contracts is refused with its typed cause, and it is
+never coerced, substituted, or resolved by provider behaviour. A refusal binds no
+child, records no tool result, and leaves the frozen revision and the round exactly as
+they were.
+
+<a id="GNT-25.7-source-handlers"></a>
+
+**[GNT-25.7-source-handlers] Source handlers.** A source handler implements one tool
+slot as one ordinary callable of the declared source language, and it keeps the
+ordinary callable semantics of that language: Fn, FnMut, and FnOnce admission is
+decided by the declared callable kind, captures are the declared captures of the
+callable, and the affine state of the callable follows the landed ownership contracts
+of Sections 5 and 6. A handler callable MUST NOT be given a synthetic admission, a
+synthetic capability, or a synthetic recovery class: its effects are the landed
+effects it declares, its authority is the landed authority it requires, and its
+failures are the ordinary failures of the landed operation and fault contracts.
+
+Consumption is at most once for a single-use handler. An FnOnce handler is consumed by
+its first admitted invocation, a second invocation of the same consumed handler is
+refused rather than replayed, and the refusal names the consumed handler and its slot.
+Fn and FnMut handlers admit repeated invocations under their declared callable kind,
+and no handler is consumed by a refusal, a schema mismatch, a rejected prefix, or a
+repair attempt that never dispatched.
+
+Settlement is ordered and independent of completion order. The tool results of one
+accepted tool-request set settle into one tool-result vector in canonical request
+order: the result of position zero first, then position one, and so on, no matter in
+which order the handler invocations complete, fail, or are observed. A settlement that
+supplies one position twice, omits a position, names a position outside the accepted
+set, or presents a completion order as the settlement order is refused rather than
+reordered, and a result is recorded at most once per position.
+
+<a id="GNT-25.8-sessions-and-child-sessions"></a>
+
+**[GNT-25.8-sessions-and-child-sessions] Sessions and child sessions.** A parent
+session owns the transcript that its rounds append to. While a round holds open tool
+requests, the parent transcript is reserved: the parent session's transcript is not
+re-entered, a second reservation of the same parent transcript for the same round is
+refused as a duplicate reservation, and entering the parent transcript directly while
+the reservation is held is refused rather than interleaved, because interleaving would
+let a child observe a transcript that its own turn has not settled.
+
+A child session is derived from one open reservation: its identity is derived from the
+parent session identity and the declared child ordinal, so equal declared inputs
+produce equal child identities and the same child is the same session across a resume.
+A repeated derivation of the same ordinal returns the same child identity, a
+derivation of another ordinal returns a distinct child, and a child never receives the
+identity of its parent or of another parent's child. Reentry into the parent
+transcript is refused for the whole life of the reservation, and the reservation is
+released only by settlement of the tool-request set or by an explicit withdrawal that
+settles every dependent child rather than leaving it unclassifiable. A refusal here
+settles no child, appends no transcript entry, and leaves the reservation exactly as
+it was.
+
+<a id="GNT-25.9-streaming-and-progress"></a>
+
+**[GNT-25.9-streaming-and-progress] Streaming and progress.** A semantic stream is a
+typed and bounded stream whose items are part of one accepted turn contract. It MUST
+declare its stream kind from the closed stream-kind vocabulary, and it MUST declare a
+finite item bound and a finite byte bound; an untyped stream presented as semantic and
+a semantic stream with an unbounded or absent bound are each refused rather than
+admitted, so no accepted turn depends on an unbounded or unclassified stream. A
+semantic stream is authority-safe: it carries no more authority than the round and
+tool invocation that own it, it carries no protected payload outside the landed
+protection contracts of `GNT-15.*` and Section 21, and a stream item never grants an
+approval. A semantic stream is restart-safe: its durable position advances only by a
+committed cut, a replay resumes after the committed position without repeating an
+item, and a presented position before the committed position is refused rather than
+replayed.
+
+Progress observations are nonsemantic. A progress observation is a Section 20
+operation-progress observation outside every accepted turn: it cannot create,
+change, or complete a final result, it cannot add or settle a tool request, it
+cannot advance a durable cut, it cannot satisfy or fail a fulfillment property, and
+it cannot be presented as the source result of a round. A progress observation that
+would claim the identity, the order, or the settlement of an accepted turn or of a
+semantic stream item is refused rather than admitted.
+
+<a id="GNT-25.10-agent-non-claims"></a>
+
+**[GNT-25.10-agent-non-claims] Explicit non-claims.** This section does not promise
+and MUST NOT be read as promising: that any provider response shape is semantics,
+because a raw response is undecoded input and no provider field name, envelope kind,
+error code, or display spelling is a normative term of this section; that a rejected
+prefix may be dispatched, because a turn is validated whole and a rejected prefix is
+consumed only by repair; that a model may approve its own request, because every tool
+invocation remains subject to the landed Section 19 approval and `GNT-3-*` authority
+contracts and no clause here grants an approval; that a handler failure has a synthetic
+recovery class, because a handler failure is the ordinary failure of the landed
+operation and fault contracts and this section adds no recovery class; that a tool set
+may be mutated mid-loop, because a tool-set revision is immutable once a loop starts
+and a mutation is refused rather than applied; and that a provider display name carries
+authority, because a provider name map is explicit declared data and a display name
+never resolves a slot. The non-claims are a closed vocabulary: a diagnostic, a clause,
+or an evidence item MUST NOT be read as promising a limit outside it, a non-claim MUST
+NOT be presented as a guarantee, and an implementation MUST NOT report a clause of this
+section as satisfied, partially satisfied, or conditionally satisfied where it can only
+demonstrate one of these limits.

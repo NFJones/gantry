@@ -10,43 +10,43 @@
   },
   {
    "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "3069bbd54d5f03bb649a5c822d0e0ca05c09726b1d834737d726d85ff4e5501a"
+   "sha256": "c88775fe21905b81931aa8dafa549a89acc9c964a5ef4d12a1b83e2ca77bdeae"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "f490a3baae980c3f926fde4cff7ac14015117dafa0ac4dbe5f1b835f3c415eb1"
+   "sha256": "bb8b44b2e867c5775cdc53604fcf36a17e3568c4082c935002a974ff2a17f23c"
   },
   {
    "path": "protocol/conformance/analyzer-ir-v1.json",
-   "sha256": "d555000f301c302895597b476f0cde537987a58e929f7190e5568e825a2be425"
+   "sha256": "4bfc3bc65a276e00ea898add1a867c92ef8075cfc29bf856cedba773fa316bf0"
   },
   {
    "path": "protocol/conformance/analyzer-lowering-v1.json",
-   "sha256": "08dc668ca29f317604a804e0c25788ad3c3c91a0170d7e7bfe6f5b4842f4000a"
+   "sha256": "b24bc59664a875774a297bb96538ce80319c0e12f0ba836184c9828b482f00f6"
   },
   {
    "path": "protocol/conformance/analyzer-package-v1.json",
-   "sha256": "d57e26a5ce9b7ee08a23a5d11f787583cde21e1c8f4fab7dd7169e081ce87387"
+   "sha256": "c384cb0c93b554b5e59a1f8defa8ba87add1e833945dee562c49fcf53993526a"
   },
   {
    "path": "protocol/conformance/analyzer-symbols-v1.json",
-   "sha256": "ddc844f1f0077963eac15f47bf01f402585a2ef94bf7d8aa848f756cc28a76f1"
+   "sha256": "e18ce9015597269322747508f2a9ebe063f3b186443b1ca9cc76c835daea9af8"
   },
   {
    "path": "protocol/conformance/analyzer-types-v1.json",
-   "sha256": "66d68672e7183c9da8d5b0c470442c7a42665e4558291fb458c5d955ef63f522"
+   "sha256": "83b9598b10cbbfdd4da3b486c5004ed33451f68fd89b13ac695d44db1764a29d"
   },
   {
    "path": "protocol/conformance/analyzer-validity-v1.json",
-   "sha256": "12c41d5fb37b938bca846d26d6e1c7f0a5eb0a4e4372a895131e610ab3f04b3d"
+   "sha256": "efb674923597078f2e939e79ab520a2a97af8a372a23d5114f100126ffcf87b0"
   },
   {
    "path": "protocol/conformance/analyzer-workflows-v1.json",
-   "sha256": "3fc5ba5fd0cabcd9da13e17e86a7a479870f37799f69301a6312c689c260dfab"
+   "sha256": "6344364b238eec0d451e7da9db7bdc6e5cc5f364a757e3017896fccaa0a3bff8"
   },
   {
    "path": "protocol/conformance/frontend-gate-v1.json",
-   "sha256": "9c0690227ea3f380502c1817800e22d433f27e9c973ffe1345c2cc1537f70a95"
+   "sha256": "4542a56095ca26f3492bd30b85c16324b470d4296db10ee7e4c5467ed2e06af1"
   },
   {
    "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -62,23 +62,23 @@
   },
   {
    "path": "protocol/goldens/ir-contracts-v1.canonical.json",
-   "sha256": "dd087d804471bf567c0a6b2fd850cb2473eadf5075f3c549c682997c8e607ba1"
+   "sha256": "de10525eea78a847e13d532ff9b7801f0cd481e45162c814d7cdb85ced7a9f9c"
   },
   {
    "path": "protocol/goldens/profiles-v1.canonical.json",
-   "sha256": "75fe999fcb9ff1e657cb86c51a674e025c24ba7b8b025ca350faceeffa255c19"
+   "sha256": "1a6bb478c1d2de4e741b15518fdf7bf50a6bacd78f5949d7e64a29dd0e69dab4"
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "50eed9abe5292053d2558c2d0a228aff20278ac5cac828027db5f82b6eb5261f"
+   "sha256": "bf272e2cd2255ed39e24b99e6bdc80001b82dcdea7b3a33fb0976cd521acebce"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "fad034e65cfadda77e824d01b81144604c7f9f89fb67576d8653f7caf89ca0ea"
+   "sha256": "5e26d3056776784a59a2d456df77d5a6ec1dd42f5dcb4ad2e5cbd3fab95f2c67"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
-   "sha256": "70932ed23818fccc39949ec7d019899a559ae88e12f72de501082c18d57fa8b6"
+   "sha256": "72469bdb23090f7f363f17c3c853e50b39b7d7274dde25b105b66a0cfce3a164"
   },
   {
    "path": "protocol/schemas/activity-observation-v1.schema.json",
@@ -174,14 +174,14 @@
  ],
  "profile": "analyzer",
  "review_summary": {
-  "applicable_clause_count": 503,
-  "covered_count": 315,
+  "applicable_clause_count": 514,
+  "covered_count": 326,
   "not_applicable_count": 188
  },
  "section14_excerpt_count": 51,
  "specification": {
   "path": "SPEC.md",
-  "sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e"
+  "sha256": "3cf15c798bc1fa869dd92471fb63520f3360ec06145f4b60ea9ac8564e739a4b"
  },
  "status": "verified",
  "validation_commands": [

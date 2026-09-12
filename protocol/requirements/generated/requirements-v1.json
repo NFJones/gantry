@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e",
-  "byte_length": 802484,
-  "line_count": 13328,
+  "specification_sha256": "3cf15c798bc1fa869dd92471fb63520f3360ec06145f4b60ea9ac8564e739a4b",
+  "byte_length": 826932,
+  "line_count": 13671,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9494,
-      "end_line": 13328,
-      "sha256": "431969b3a2639ab7acad9af899eacc814efa11aa3a7bd694e4bf0102de3205ec",
+      "end_line": 13671,
+      "sha256": "8337f7755a7dbf84562eb445d59a63c38b3feb7c752be0cc95edce12959fe6d5",
       "rationale": null
     }
   ],
@@ -34938,6 +34938,457 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/wait_model.rs#wait_non_claims_are_closed_and_never_presented_as_guarantees"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.0-agent-fulfillment-assistant-turns-tools-and-sessions",
+      "span_start_line": 13329,
+      "span_end_line": 13415,
+      "span_sha256": "4607736d999432ba26d70c9a8f1dcba194db21c1107cb5d3e4b3493c42b0773a",
+      "anchor_line": 13332,
+      "body_start_line": 13333,
+      "body_end_line": 13415,
+      "body_sha256": "b344111d0bb909adbf43ebf3ae65587cc88f6cd43677810b972900c4ee5c847c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13333,
+          "end_line": 13415,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#agent_fulfillment_section_scope_and_closed_vocabulary_is_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.1-agent-requirements-and-fulfillment",
+      "span_start_line": 13416,
+      "span_end_line": 13442,
+      "span_sha256": "ac826e4f4d1aa551a708a29cd89070c23f44b83900ab9ecf2e67dfeee0a2428b",
+      "anchor_line": 13417,
+      "body_start_line": 13418,
+      "body_end_line": 13442,
+      "body_sha256": "45829839dbbcf84db823a872cc3d5af81132450b273335198f3221ca40336873",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13418,
+          "end_line": 13442,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#agent_requirements_declare_machine_checkable_fulfillment_properties"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.2-fulfillment-preflight",
+      "span_start_line": 13443,
+      "span_end_line": 13472,
+      "span_sha256": "413bd09dc5a13bbf843c8b8cf5d8fed190aee732ab3ad4846483c4fcbc9a2f3b",
+      "anchor_line": 13444,
+      "body_start_line": 13445,
+      "body_end_line": 13472,
+      "body_sha256": "90dd67c75d34649e4b940454c77350ab8de1e5ccef7ea295b373a3261bb21e02",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13445,
+          "end_line": 13472,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#preflight_refuses_an_unsupported_property_and_names_it"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.3-assistant-turns",
+      "span_start_line": 13473,
+      "span_end_line": 13497,
+      "span_sha256": "4c25a9954a109e9bce4c8cf967f738d4ebf63b9c90e7b0a5334a84071fd1f70d",
+      "anchor_line": 13474,
+      "body_start_line": 13475,
+      "body_end_line": 13497,
+      "body_sha256": "d5f0f822d2f41e4c40b868a214daae0792f0de4efd5e0529ab95e452079627ce",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13475,
+          "end_line": 13497,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#assistant_turns_are_exactly_final_or_nonempty_tools"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.4-turn-validation-and-repair",
+      "span_start_line": 13498,
+      "span_end_line": 13519,
+      "span_sha256": "7b238fa3ec7f9bbffd572381d4d5534e0b088e06f652bb27bcf55370af02d6f3",
+      "anchor_line": 13499,
+      "body_start_line": 13500,
+      "body_end_line": 13519,
+      "body_sha256": "5dd7646098341a6a10eacd8920018bf68134c4f6d9ef2566d6822787b5483efe",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13500,
+          "end_line": 13519,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#turn_repair_is_bounded_and_a_rejected_prefix_never_dispatches"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.5-round-identity-and-durable-cuts",
+      "span_start_line": 13520,
+      "span_end_line": 13547,
+      "span_sha256": "a2ece6504b0760cb7aeb87197eb74f65d142ca8fc83c52c00ea98795a92c518f",
+      "anchor_line": 13521,
+      "body_start_line": 13522,
+      "body_end_line": 13547,
+      "body_sha256": "cf4483f5ad1cfd43c6b013cfe3f9016d9b05906701f469f2b746050e7d67f538",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13522,
+          "end_line": 13547,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#rounds_have_stable_identity_and_durable_cuts_without_repeats"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.6-tool-slots-and-tool-set-revisions",
+      "span_start_line": 13548,
+      "span_end_line": 13577,
+      "span_sha256": "c9d0cb4aa5d90d83d371dfada4379e7ae20f0fcc579be5aa887526c1241147d9",
+      "anchor_line": 13549,
+      "body_start_line": 13550,
+      "body_end_line": 13577,
+      "body_sha256": "aef811d9b4fef2ae3618546f464b897447b8a7512abf5b0f8be810b3c67378e4",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13550,
+          "end_line": 13577,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#tool_slots_are_package_qualified_and_tool_sets_are_immutable"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.7-source-handlers",
+      "span_start_line": 13578,
+      "span_end_line": 13604,
+      "span_sha256": "7d8bae574d7a0e13457119e8ee1139fb3f86dabfbc363201be270204014f28ca",
+      "anchor_line": 13579,
+      "body_start_line": 13580,
+      "body_end_line": 13604,
+      "body_sha256": "cceb9d9c12aa70f80e9951874442ac6607f222b6e49dcd26a5895fb43441b354",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13580,
+          "end_line": 13604,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#source_handlers_keep_callable_semantics_and_ordered_settlement"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.8-sessions-and-child-sessions",
+      "span_start_line": 13605,
+      "span_end_line": 13626,
+      "span_sha256": "73850fa7b240a458389191d7adc2b99f7a4b563d1e23fc22351dd889d9324fb5",
+      "anchor_line": 13606,
+      "body_start_line": 13607,
+      "body_end_line": 13626,
+      "body_sha256": "dd5ff8bc92a44a670612551cb58e828b3d32cce17f66ee78fdf52aee8eff8743",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13607,
+          "end_line": 13626,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#sessions_reserve_the_parent_and_derive_stable_children"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.9-streaming-and-progress",
+      "span_start_line": 13627,
+      "span_end_line": 13650,
+      "span_sha256": "c4ed6fef6d64e7284716c89611fe7bdb995c2f18cd6cc6a792181feb356ba5a0",
+      "anchor_line": 13628,
+      "body_start_line": 13629,
+      "body_end_line": 13650,
+      "body_sha256": "82eceb3bd50b9c96b5c0a94e1f95f4c456c8b38ce09c939ca85af5f9c34043c6",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13629,
+          "end_line": 13650,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#semantic_streams_are_bounded_and_progress_is_nonsemantic"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-25.10-agent-non-claims",
+      "span_start_line": 13651,
+      "span_end_line": 13671,
+      "span_sha256": "7db71406c4b775896fc70d21b60a4d62872e2769c47ac33f2ebbd89f185c1ff9",
+      "anchor_line": 13652,
+      "body_start_line": 13653,
+      "body_end_line": 13671,
+      "body_sha256": "137554f88687e0478fd9f8ac8347e69fcecce70eaf1dd9154c2cb9056f547333",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 13653,
+          "end_line": 13671,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/agent_spec.rs#agent_non_claims_are_closed_and_never_presented_as_guarantees"
               ],
               "rationale": null
             }

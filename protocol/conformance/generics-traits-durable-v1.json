@@ -1,6 +1,6 @@
 {
  "format": "gantry.generics-traits-durable-evidence/v1",
- "specification_sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e",
+ "specification_sha256": "3cf15c798bc1fa869dd92471fb63520f3360ec06145f4b60ea9ac8564e739a4b",
  "issue": "GNT-GEN-DUR-001",
  "profile": "durable-runtime",
  "entries": [
