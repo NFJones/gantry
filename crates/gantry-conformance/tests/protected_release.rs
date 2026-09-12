@@ -134,15 +134,27 @@ fn disclosure_budget(remaining: u64, charge_value: u64) -> DisclosureBudget {
     DisclosureBudget::new(remaining, charge(charge_value))
 }
 
+/// Binds one holder authority over one named fixture release site.
+///
+/// A binding names exactly one site, so an authority built here authorizes
+/// releases only at `site_name`, and the grants it derives carry that site.
+fn authority_for(
+    site_name: &str,
+    classes: &[ProtectedDataClass],
+    destinations: &[ReleaseDestination],
+) -> ReleaseHolderAuthority {
+    let site = fixture_name(site_name);
+    let binding = ReleaseHolderBindingId::new(&site, &fixture_integration());
+    ReleaseHolderAuthority::bind(&site, binding, classes, destinations)
+        .unwrap_or_else(|_| unreachable!("the fixture binding names its own site"))
+}
+
 /// Binds one holder authority over the fixture release site.
 fn authority(
     classes: &[ProtectedDataClass],
     destinations: &[ReleaseDestination],
 ) -> ReleaseHolderAuthority {
-    let site = fixture_name("crate::release");
-    let binding = ReleaseHolderBindingId::new(&site, &fixture_integration());
-    ReleaseHolderAuthority::bind(&site, binding, classes, destinations)
-        .unwrap_or_else(|_| unreachable!("the fixture binding names its own site"))
+    authority_for("crate::release", classes, destinations)
 }
 
 /// Binds one holder authority that may release nothing.
@@ -532,6 +544,68 @@ fn release_requires_authority_class_and_destination_independently() {
     assert_eq!(
         ReleaseAuthorityError::SiteMismatch.wire_name(),
         "site-mismatch"
+    );
+}
+
+#[test]
+fn release_grant_is_refused_at_another_site_declaring_the_same_pair() {
+    let holder = authority(
+        &[ProtectedDataClass::SourceText],
+        &[ReleaseDestination::OrdinarySource],
+    );
+    let grant = holder.grant();
+    assert_eq!(grant.holder(), holder.id());
+    assert_eq!(grant.site(), "crate::release");
+    assert_eq!(grant.binding().site(), "crate::release");
+    let protected = value(ProtectedDataClass::SourceText);
+    let mut budget = disclosure_budget(2, 1);
+    let elsewhere = ReleaseSite::new("crate::other").declare(
+        ProtectedDataClass::SourceText,
+        ReleaseDestination::OrdinarySource,
+        ProjectionKind::Verbatim,
+    );
+    let refused = elsewhere.release(
+        &grant,
+        &protected,
+        ReleaseDestination::OrdinarySource,
+        &mut budget,
+    );
+    assert_eq!(
+        refused.decision(),
+        ReleaseDecision::Rejected(ReleaseRejection::DestinationMismatch),
+        "a grant carries the site of the authority that derived it, so another site declaring the same class and destination pair authorizes nothing"
+    );
+    assert_eq!(refused.projection(), None);
+    assert_eq!(refused.released_value(), None);
+    assert!(refused.audit_view(&AuditAccess::granted()).is_none());
+    assert_eq!(budget.accepted(), 0);
+    assert_eq!(budget.remaining(), 2, "the refusal charged nothing");
+    let own_site = site(
+        ProtectedDataClass::SourceText,
+        ReleaseDestination::OrdinarySource,
+    );
+    let accepted = own_site.release(
+        &grant,
+        &protected,
+        ReleaseDestination::OrdinarySource,
+        &mut budget,
+    );
+    assert!(
+        matches!(accepted.decision(), ReleaseDecision::Accepted(_)),
+        "the same grant still authorizes the site it was derived for"
+    );
+    assert_eq!(budget.accepted(), 1);
+    let foreign = authority_for(
+        "crate::other",
+        &[ProtectedDataClass::SourceText],
+        &[ReleaseDestination::OrdinarySource],
+    )
+    .grant();
+    let narrowed = grant.attenuate(&foreign);
+    assert_eq!(
+        narrowed.site(),
+        "crate::release",
+        "attenuation narrows permission but never moves a grant to another site"
     );
 }
 
@@ -1375,7 +1449,8 @@ fn codecs_diagnostics_events_tools_and_adapters_preserve_protection() {
         ProjectionKind::Redacted,
     );
     let accepted = diagnostic.release(
-        &authority(
+        &authority_for(
+            "crate::diagnostic",
             &[ProtectedDataClass::SourceText],
             &[ReleaseDestination::DiagnosticSink],
         )

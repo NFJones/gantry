@@ -1327,8 +1327,10 @@ impl ReleaseSite {
     /// Evaluates one release of one protected value.
     ///
     /// The declaration check, class applicability, destination applicability,
-    /// and budget exhaustion all precede any projection of the value, so a
-    /// rejection is payload-independent and never charges the budget.
+    /// the grant's declared release site, and budget exhaustion all precede any
+    /// projection of the value, so a rejection is payload-independent and never
+    /// charges the budget. A grant derived by an authority bound to another site
+    /// is refused as a [`ReleaseRejection::DestinationMismatch`].
     #[must_use]
     pub fn release(
         &self,
@@ -1345,6 +1347,13 @@ impl ReleaseSite {
             return ReleaseOutcome::rejected(ReleaseRejection::DestinationMismatch, *budget);
         };
         if !grant.contains_destination(destination) {
+            return ReleaseOutcome::rejected(ReleaseRejection::DestinationMismatch, *budget);
+        }
+        // A grant carries the release site of the authority that derived it, so
+        // it does not authorize another site's declaration. In the closed
+        // rejection vocabulary that is a destination mismatch, and it is decided
+        // here before any charge or projection of the payload.
+        if grant.site() != self.name() {
             return ReleaseOutcome::rejected(ReleaseRejection::DestinationMismatch, *budget);
         }
         let Some(charged) = budget.after_charge() else {
@@ -1379,10 +1388,13 @@ impl ReleaseSite {
 /// constructor and no deserializer: only a [`ReleaseHolderAuthority`] derives
 /// one, no authority right and no instance substitutes for it, and holding
 /// authority over an operation that handles protected data never creates release
-/// permission.
+/// permission. A grant is derived from one holder authority and carries that
+/// authority's declared release site, so it authorizes releases only at that
+/// site.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReleaseGrant {
     holder: ReleaseHolderId,
+    binding: ReleaseHolderBindingId,
     classes: BTreeSet<ProtectedDataClass>,
     destinations: BTreeSet<ReleaseDestination>,
 }
@@ -1430,6 +1442,24 @@ impl ReleaseGrant {
         self.contains_class(class) && self.contains_destination(destination)
     }
 
+    /// Returns the downstream integration binding this grant was derived under.
+    ///
+    /// The binding names the declared release site of the authority that derived
+    /// the grant.
+    #[must_use]
+    pub const fn binding(&self) -> &ReleaseHolderBindingId {
+        &self.binding
+    }
+
+    /// Returns the declared release site this grant was derived for.
+    ///
+    /// A release site other than this one is not authorized by the grant, so a
+    /// caller can ask a grant where it may be used without evaluating a release.
+    #[must_use]
+    pub fn site(&self) -> &str {
+        self.binding.site()
+    }
+
     /// Returns the declared classes in reporting order.
     pub fn classes(&self) -> impl Iterator<Item = ProtectedDataClass> + '_ {
         PROTECTED_DATA_CLASS_ORDER
@@ -1457,10 +1487,14 @@ impl ReleaseGrant {
     }
 
     /// Returns the intersection of two grants, which only narrows permission.
+    ///
+    /// The result keeps the holder and the declared release site of `self`, so
+    /// attenuation never moves a grant to another site.
     #[must_use]
     pub fn attenuate(&self, other: &Self) -> Self {
         Self {
             holder: self.holder.clone(),
+            binding: self.binding.clone(),
             classes: self.classes.intersection(&other.classes).copied().collect(),
             destinations: self
                 .destinations
@@ -1669,6 +1703,7 @@ impl ReleaseHolderAuthority {
     pub fn grant(&self) -> ReleaseGrant {
         ReleaseGrant {
             holder: self.id.clone(),
+            binding: self.binding.clone(),
             classes: self.classes.clone(),
             destinations: self.destinations.clone(),
         }

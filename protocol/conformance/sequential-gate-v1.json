@@ -158,7 +158,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/protected_release.rs",
-   "sha256": "24e63a080ab21014b94424d7faecf132affa96ad42e7700987c4f16eb589d08e"
+   "sha256": "2fff148b39e79d3ec732d49536e90c90e5cd92671c2a3999db84901a9e3e50f6"
   },
   {
    "path": "crates/gantry-conformance/tests/public_protocol_formats.rs",
