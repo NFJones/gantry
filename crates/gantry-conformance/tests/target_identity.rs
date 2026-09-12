@@ -145,22 +145,31 @@ fn features(names: &[&str]) -> Vec<FeatureName> {
 
 /// Returns the fixture feature declarations of these tests.
 fn declarations() -> FeatureDeclarations {
-    FeatureDeclarations::new(&[
-        FeatureDeclaration::new("a", true, &["b"])
-            .unwrap_or_else(|_| unreachable!("fixture declaration is valid")),
-        FeatureDeclaration::new("b", false, &[])
-            .unwrap_or_else(|_| unreachable!("fixture declaration is valid")),
-        FeatureDeclaration::new("c", false, &["d"])
-            .unwrap_or_else(|_| unreachable!("fixture declaration is valid")),
-        FeatureDeclaration::new("d", false, &[])
-            .unwrap_or_else(|_| unreachable!("fixture declaration is valid")),
-    ])
+    let declaring = declaring();
+    FeatureDeclarations::new(
+        &declaring,
+        &[
+            FeatureDeclaration::new(&declaring, "a", true, &["b"])
+                .unwrap_or_else(|_| unreachable!("fixture declaration is valid")),
+            FeatureDeclaration::new(&declaring, "b", false, &[])
+                .unwrap_or_else(|_| unreachable!("fixture declaration is valid")),
+            FeatureDeclaration::new(&declaring, "c", false, &["d"])
+                .unwrap_or_else(|_| unreachable!("fixture declaration is valid")),
+            FeatureDeclaration::new(&declaring, "d", false, &[])
+                .unwrap_or_else(|_| unreachable!("fixture declaration is valid")),
+        ],
+    )
     .unwrap_or_else(|_| unreachable!("fixture declarations are acyclic"))
+}
+
+/// Returns the fixture declaring package instance of these tests.
+fn declaring() -> PackageIdentity {
+    root("root")
 }
 
 /// Returns one fixture feature solution over the fixture declarations.
 fn solution(requested: &[&str]) -> FeatureSolution {
-    FeatureSolution::unify(&declarations(), &features(requested), &root("root"))
+    FeatureSolution::unify(&declarations(), &features(requested), &declaring())
         .unwrap_or_else(|_| unreachable!("fixture request is declared"))
 }
 
@@ -177,34 +186,29 @@ fn predicates() -> Vec<TargetPredicate> {
 
 /// Returns the fixture declaration of one generated output.
 fn output(name: &str, seed: &str) -> GeneratedOutput {
-    GeneratedOutput {
-        name: Arc::from(name),
-        hash: GeneratedOutputHash::from_hex(&hex(seed))
+    GeneratedOutput::new(
+        &declaring(),
+        name,
+        &GeneratedOutputHash::from_hex(&hex(seed))
             .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal")),
-    }
+    )
+    .unwrap_or_else(|_| unreachable!("fixture output name is a legal declared name"))
 }
 
 /// Returns one fixture generated-output set.
 fn outputs(seed: &str) -> GeneratedOutputSet {
-    GeneratedOutputSet::new(&[output("schema.json", seed)])
+    GeneratedOutputSet::new(&declaring(), &[output("schema.json", seed)])
         .unwrap_or_else(|_| unreachable!("fixture outputs are well formed"))
 }
 
 /// Returns the fixture expected inputs of one artifact.
 fn expected_inputs() -> ExpectedInputs {
-    let descriptor = descriptor();
-    let selected = solution(&["c"]);
-    let outcomes = PredicateOutcomeSet::evaluate(
-        &predicates(),
-        &descriptor,
-        &SelectedFeatureSet::new(&["a", "b", "c", "d"])
-            .unwrap_or_else(|_| unreachable!("fixture features are valid")),
-    );
     ExpectedInputs::new(
+        &declaring(),
         TargetKind::Binary,
-        descriptor,
-        selected,
-        outcomes,
+        descriptor(),
+        solution(&["c"]),
+        &predicates(),
         outputs("out"),
         toolchain(),
         gantry::mode::SemanticMode::Portable,
@@ -235,7 +239,7 @@ fn one_canonical_encoding_and_digest_for_a_descriptor() {
     // record's own version is the descriptor version.
     let record = first.record();
     assert_eq!(record.version(), TargetDescriptorRecord::VERSION);
-    assert_eq!(record.descriptor(), Ok(first.clone()));
+    assert_eq!(record.descriptor(&declaring()), Ok(first.clone()));
 }
 
 #[test]
@@ -306,21 +310,26 @@ fn descriptor_digest_changes_when_any_descriptor_field_changes() {
 
 #[test]
 fn unknown_descriptor_property_and_unsupported_version_are_rejected() {
+    let declaring = declaring();
     assert!(matches!(
-        TargetDescriptorRecord::new(1, &[("host_path", "/tmp/build")]),
-        Err(TargetError::DescriptorPropertyUnknown { property }) if property.as_ref() == "host_path"
+        TargetDescriptorRecord::new(&declaring, 1, &[("host_path", "/tmp/build")]),
+        Err(TargetError::DescriptorPropertyUnknown { instance, property })
+            if *instance == declaring && property.as_ref() == "host_path"
     ));
     assert!(matches!(
-        TargetDescriptorRecord::new(1, &[("abi", "gnu"), ("abi", "musl")]),
-        Err(TargetError::DescriptorPropertyDuplicate { property }) if property.as_ref() == "abi"
+        TargetDescriptorRecord::new(&declaring, 1, &[("abi", "gnu"), ("abi", "musl")]),
+        Err(TargetError::DescriptorPropertyDuplicate { instance, property })
+            if *instance == declaring && property.as_ref() == "abi"
     ));
     assert!(matches!(
-        TargetDescriptorRecord::new(2, &[]),
-        Err(TargetError::DescriptorVersionUnsupported { version: 2 })
+        TargetDescriptorRecord::new(&declaring, 2, &[]),
+        Err(TargetError::DescriptorVersionUnsupported { instance, version: 2 })
+            if *instance == declaring
     ));
     // A missing property is never treated as an empty property: the record is
     // rejected rather than repaired into a descriptor.
     let incomplete = TargetDescriptorRecord::new(
+        &declaring,
         1,
         &[
             ("abi", "gnu"),
@@ -331,12 +340,13 @@ fn unknown_descriptor_property_and_unsupported_version_are_rejected() {
     )
     .unwrap_or_else(|_| unreachable!("fixture record properties are known"));
     assert!(matches!(
-        incomplete.descriptor(),
-        Err(TargetError::DescriptorPropertyMissing { property })
-            if property.as_ref() == "semantic_mode"
+        incomplete.descriptor(&declaring),
+        Err(TargetError::DescriptorPropertyMissing { instance, property })
+            if *instance == declaring && property.as_ref() == "semantic_mode"
     ));
     // A field value outside the closed vocabulary of its version is invalid.
     let outside = TargetDescriptorRecord::new(
+        &declaring,
         1,
         &[
             ("abi", "gnu"),
@@ -349,9 +359,9 @@ fn unknown_descriptor_property_and_unsupported_version_are_rejected() {
     )
     .unwrap_or_else(|_| unreachable!("fixture record properties are known"));
     assert!(matches!(
-        outside.descriptor(),
-        Err(TargetError::WireValueUnknown { field, value })
-            if field == "architecture" && value.as_ref() == "sparc"
+        outside.descriptor(&declaring),
+        Err(TargetError::WireValueUnknown { instance, field, value })
+            if *instance == declaring && field == "architecture" && value.as_ref() == "sparc"
     ));
 }
 
@@ -425,39 +435,42 @@ fn predicate_vocabulary_is_closed() {
     assert_eq!(TargetPredicateName::from_wire_name("host-path"), None);
     assert_eq!(TargetPredicateName::from_wire_name("source-form"), None);
     assert!(matches!(
-        TargetPredicate::decode("source-form", "crate::probe"),
-        Err(TargetError::PredicateNameUnknown { name }) if name.as_ref() == "source-form"
+        TargetPredicate::decode(&declaring(), "source-form", "crate::probe"),
+        Err(TargetError::PredicateNameUnknown { instance, name })
+            if *instance == declaring() && name.as_ref() == "source-form"
     ));
     // The sealed field vocabulary is closed in both field and value.
     assert!(matches!(
-        TargetPredicate::decode("descriptor-field", "host_path=/tmp"),
+        TargetPredicate::decode(&declaring(), "descriptor-field", "host_path=/tmp"),
         Err(TargetError::WireValueUnknown { field, .. }) if field == "descriptor field"
     ));
     assert!(matches!(
-        TargetPredicate::decode("descriptor-field", "architecture=sparc"),
-        Err(TargetError::WireValueUnknown { field, value })
-            if field == "architecture" && value.as_ref() == "sparc"
+        TargetPredicate::decode(&declaring(), "descriptor-field", "architecture=sparc"),
+        Err(TargetError::WireValueUnknown { instance, field, value })
+            if *instance == declaring() && field == "architecture" && value.as_ref() == "sparc"
     ));
     assert_eq!(
-        TargetPredicate::decode("descriptor-field", "architecture=x86_64"),
+        TargetPredicate::decode(&declaring(), "descriptor-field", "architecture=x86_64"),
         Ok(TargetPredicate::DescriptorField(
             TargetDescriptorField::Architecture(Architecture::X86_64)
         ))
     );
     assert_eq!(
-        TargetPredicate::decode("feature-enabled", "c"),
+        TargetPredicate::decode(&declaring(), "feature-enabled", "c"),
         Ok(TargetPredicate::FeatureEnabled(feature("c")))
     );
     assert!(matches!(
-        TargetPredicate::decode("feature-enabled", "not a feature"),
-        Err(TargetError::DeclarationInvalid { field, .. }) if field == "feature"
+        TargetPredicate::decode(&declaring(), "feature-enabled", "not a feature"),
+        Err(TargetError::FeatureNameInvalid { instance, value })
+            if *instance == declaring() && value.as_ref() == "not a feature"
     ));
 }
 
 #[test]
 fn predicate_evaluation_reads_only_descriptor_fields_and_declared_features() {
-    let selected = SelectedFeatureSet::new(&["a", "b", "c", "d"])
-        .unwrap_or_else(|_| unreachable!("fixture features are valid"));
+    // The declaring solution of one package instance is the only feature input:
+    // a caller cannot evaluate a predicate against another instance's features.
+    let selected = solution(&["c"]);
     // Two descriptors that differ only in fields no evaluated predicate reads
     // produce the same outcomes, so the evaluated selection cannot be reading a
     // module or package graph path, another package's features, or host state.
@@ -501,7 +514,7 @@ fn predicate_evaluation_reads_only_descriptor_fields_and_declared_features() {
         .matched
     );
     // A feature predicate reads the declared features alone.
-    let absent = SelectedFeatureSet::empty();
+    let absent = solution(&["b"]);
     assert!(
         !TargetPredicate::FeatureEnabled(feature("c"))
             .evaluate(&linux, &absent)
@@ -516,8 +529,7 @@ fn predicate_evaluation_reads_only_descriptor_fields_and_declared_features() {
 
 #[test]
 fn predicate_outcome_sets_are_order_independent() {
-    let selected = SelectedFeatureSet::new(&["a", "b", "c", "d"])
-        .unwrap_or_else(|_| unreachable!("fixture features are valid"));
+    let selected = solution(&["c"]);
     let descriptor = descriptor();
     let outcomes = predicates()
         .iter()
@@ -564,45 +576,73 @@ fn predicate_outcome_sets_are_order_independent() {
 
 #[test]
 fn feature_declarations_reject_cycles_unknown_names_and_duplicates() {
+    let declaring = declaring();
     let declaration = |name: &str, enables: &[&str]| {
-        FeatureDeclaration::new(name, false, enables)
+        FeatureDeclaration::new(&declaring, name, false, enables)
             .unwrap_or_else(|_| unreachable!("fixture declaration is valid"))
     };
-    // A cycle is invalid rather than ignored, and it reports the offending names.
-    let cycle = FeatureDeclarations::new(&[declaration("a", &["b"]), declaration("b", &["a"])]);
+    // A cycle is invalid rather than ignored, and it reports the offending names
+    // against the instance that declared them.
+    let cycle = FeatureDeclarations::new(
+        &declaring,
+        &[declaration("a", &["b"]), declaration("b", &["a"])],
+    );
     match cycle {
-        Err(TargetError::FeatureCycle { cycle }) => {
+        Err(TargetError::FeatureCycle { instance, cycle }) => {
+            assert_eq!(*instance, declaring);
             let names = cycle.iter().map(FeatureName::as_str).collect::<Vec<_>>();
             assert_eq!(names, vec!["a", "b"]);
         }
         other => unreachable!("a cycle is reported as a cycle: {other:?}"),
     }
     assert!(matches!(
-        FeatureDeclarations::new(&[declaration("a", &["a"])]),
-        Err(TargetError::FeatureCycle { cycle }) if cycle.as_slice() == [feature("a")].as_slice()
+        FeatureDeclarations::new(&declaring, &[declaration("a", &["a"])]),
+        Err(TargetError::FeatureCycle { cycle, .. })
+            if cycle.as_slice() == [feature("a")].as_slice()
     ));
     // A cycle is found wherever it lies, not only at the first declaration.
     assert!(matches!(
-        FeatureDeclarations::new(&[
-            declaration("x", &["y"]),
-            declaration("y", &["z"]),
-            declaration("z", &["x"]),
-        ]),
+        FeatureDeclarations::new(
+            &declaring,
+            &[
+                declaration("x", &["y"]),
+                declaration("y", &["z"]),
+                declaration("z", &["x"]),
+            ]
+        ),
         Err(TargetError::FeatureCycle { .. })
     ));
     // An enabling relation that names an undeclared feature is invalid.
     assert!(matches!(
-        FeatureDeclarations::new(&[declaration("a", &["missing"])]),
-        Err(TargetError::FeatureUnknown { name }) if name == feature("missing")
+        FeatureDeclarations::new(&declaring, &[declaration("a", &["missing"])]),
+        Err(TargetError::FeatureUnknown { instance, name })
+            if *instance == declaring && name == feature("missing")
     ));
     // One feature declared twice by one instance is invalid.
     assert!(matches!(
-        FeatureDeclarations::new(&[declaration("a", &[]), declaration("a", &["b"]), declaration("b", &[])]),
-        Err(TargetError::FeatureDeclarationDuplicate { name }) if name == feature("a")
+        FeatureDeclarations::new(
+            &declaring,
+            &[declaration("a", &[]), declaration("a", &["b"]), declaration("b", &[])]
+        ),
+        Err(TargetError::FeatureDeclarationDuplicate { instance, name })
+            if *instance == declaring && name == feature("a")
+    ));
+    // A feature spelling outside the closed vocabulary is invalid, and the
+    // declaration names the instance that declared it.
+    assert!(matches!(
+        FeatureDeclaration::new(&declaring, "not a feature", false, &[]),
+        Err(TargetError::FeatureNameInvalid { instance, value })
+            if *instance == declaring && value.as_ref() == "not a feature"
     ));
     // Declaration order never changes which names are reported.
-    let first = FeatureDeclarations::new(&[declaration("a", &["b"]), declaration("b", &["a"])]);
-    let second = FeatureDeclarations::new(&[declaration("b", &["a"]), declaration("a", &["b"])]);
+    let first = FeatureDeclarations::new(
+        &declaring,
+        &[declaration("a", &["b"]), declaration("b", &["a"])],
+    );
+    let second = FeatureDeclarations::new(
+        &declaring,
+        &[declaration("b", &["a"]), declaration("a", &["b"])],
+    );
     assert_eq!(first, second);
     assert_eq!(declarations().len(), 4);
     assert_eq!(declarations().defaults(), vec![feature("a")]);
@@ -616,7 +656,7 @@ fn feature_unification_is_deterministic_under_requested_order_permutation() {
         vec![requested[1].clone(), requested[0].clone()],
     ];
     assert_ne!(permutations[0], permutations[1]);
-    let first = FeatureSolution::unify(&declarations(), &permutations[0], &root("root"))
+    let first = FeatureSolution::unify(&declarations(), &permutations[0], &declaring())
         .unwrap_or_else(|_| unreachable!("fixture request is declared"));
     // The selected set is the acyclic closure of the requested features and the
     // default selection, in canonical order.
@@ -630,7 +670,7 @@ fn feature_unification_is_deterministic_under_requested_order_permutation() {
     );
     assert!(first.contains(&feature("d")));
     for permutation in &permutations {
-        let permuted = FeatureSolution::unify(&declarations(), permutation, &root("root"))
+        let permuted = FeatureSolution::unify(&declarations(), permutation, &declaring())
             .unwrap_or_else(|_| unreachable!("fixture request is declared"));
         assert_eq!(permuted.selected(), first.selected());
         assert_eq!(permuted.digest(), first.digest());
@@ -642,7 +682,7 @@ fn feature_unification_is_deterministic_under_requested_order_permutation() {
     }
     // The same requested set in any order yields exactly one solution for one
     // package instance, and the solution names that instance.
-    assert_eq!(first.root(), &root("root"));
+    assert_eq!(first.root(), &declaring());
     // The digest is a pure function of the selected features, so two instances
     // that select the same features share the solution digest, while the root
     // still names the owning instance.
@@ -655,7 +695,7 @@ fn feature_unification_is_deterministic_under_requested_order_permutation() {
 
 #[test]
 fn differing_feature_requests_produce_differing_solutions_and_facts_records() {
-    let empty_request = FeatureSolution::unify(&declarations(), &[], &root("root"))
+    let empty_request = FeatureSolution::unify(&declarations(), &[], &declaring())
         .unwrap_or_else(|_| unreachable!("an empty request is satisfiable"));
     let selected_request = solution(&["c"]);
     assert_ne!(empty_request.selected(), selected_request.selected());
@@ -671,12 +711,12 @@ fn differing_feature_requests_produce_differing_solutions_and_facts_records() {
     assert_ne!(empty_facts.digest(), selected_facts.digest());
     // A request the instance cannot satisfy is a static error rather than a
     // preference, and it names the instance and the offending declarations.
-    match FeatureSolution::unify(&declarations(), &features(&["missing"]), &root("root")) {
+    match FeatureSolution::unify(&declarations(), &features(&["missing"]), &declaring()) {
         Err(TargetError::FeatureRequestUnsatisfiable {
-            root: owner,
+            instance: owner,
             requested,
         }) => {
-            assert_eq!(*owner, root("root"));
+            assert_eq!(*owner, declaring());
             assert_eq!(requested, vec![feature("missing")]);
         }
         other => unreachable!("an unsatisfiable request is reported: {other:?}"),
@@ -721,7 +761,7 @@ fn feature_solution_digest_participates_in_the_facts_record_digest() {
     );
     assert_eq!(
         TargetFactsRecord::new(2, descriptor_digest("d"), solution(&["c"]).digest().clone()),
-        Err(TargetError::DescriptorVersionUnsupported { version: 2 })
+        Err(TargetError::TargetFactsVersionUnsupported { version: 2 })
     );
     // Target facts are composed with the declared kind and entry-point facts
     // elsewhere; the landed identity inputs are unchanged here.
@@ -733,44 +773,70 @@ fn feature_solution_digest_participates_in_the_facts_record_digest() {
 
 #[test]
 fn mode_admission_admits_and_rejects_for_every_target_kind() {
-    let modes = [
-        gantry::mode::SemanticMode::Portable,
-        gantry::mode::SemanticMode::Application,
-        gantry::mode::SemanticMode::Durable,
+    use gantry::mode::SemanticMode::{Application, Durable, Portable};
+
+    let declaring = declaring();
+    let modes = [Portable, Application, Durable];
+    // The expected admission of every target kind, written out here rather than
+    // read back from the table under test, so a wrong, missing, or duplicated
+    // table row fails instead of confirming itself.
+    let expected: [(TargetKind, &[gantry::mode::SemanticMode]); 5] = [
+        (TargetKind::Library, &[Portable, Application]),
+        (TargetKind::Binary, &[Portable, Application, Durable]),
+        (TargetKind::Test, &[Portable]),
+        (TargetKind::Example, &[Portable]),
+        (TargetKind::Benchmark, &[Portable]),
     ];
-    for (kind, admitted) in ModeAdmission::TABLE {
-        assert_eq!(ModeAdmission::admitted_modes(kind), admitted);
+    for (kind, admitted) in expected {
+        assert_eq!(
+            ModeAdmission::admitted_modes(kind),
+            admitted,
+            "the admitted modes of {} are the ones this test states",
+            kind.wire_name()
+        );
         for mode in modes {
             let admits = admitted.contains(&mode);
             assert_eq!(ModeAdmission::admits(kind, mode), admits);
             let verdict = if admits {
                 Ok(())
             } else {
-                Err(TargetError::ModeNotAdmitted { kind, mode })
+                Err(TargetError::ModeNotAdmitted {
+                    instance: Box::new(declaring.clone()),
+                    kind,
+                    mode,
+                })
             };
-            assert_eq!(ModeAdmission::admit_mode(kind, mode), verdict);
+            assert_eq!(ModeAdmission::admit_mode(&declaring, kind, mode), verdict);
         }
         assert!(!admitted.is_empty(), "every kind admits at least one mode");
     }
+    // The table covers the closed `GNT-16.6-target-kinds` vocabulary exactly
+    // once, so no kind lacks an admission and no kind is listed twice.
+    assert_eq!(ModeAdmission::TABLE.len(), TargetKind::ALL.len());
+    let mut covered = ModeAdmission::TABLE.map(|(kind, _)| kind).to_vec();
+    covered.sort();
+    let mut vocabulary = TargetKind::ALL.to_vec();
+    vocabulary.sort();
+    assert_eq!(covered, vocabulary);
     // A non-shipping kind admits only the portable mode, and a library declares
     // no entry point, so durable execution is not admitted for either.
     for kind in [TargetKind::Test, TargetKind::Example, TargetKind::Benchmark] {
         assert!(matches!(
-            ModeAdmission::admit_mode(kind, gantry::mode::SemanticMode::Durable),
-            Err(TargetError::ModeNotAdmitted { kind: reported, mode })
-                if reported == kind && mode == gantry::mode::SemanticMode::Durable
+            ModeAdmission::admit_mode(&declaring, kind, Durable),
+            Err(TargetError::ModeNotAdmitted { instance, kind: reported, mode })
+                if *instance == declaring && reported == kind && mode == Durable
         ));
         assert!(matches!(
-            ModeAdmission::admit_mode(kind, gantry::mode::SemanticMode::Application),
+            ModeAdmission::admit_mode(&declaring, kind, Application),
             Err(TargetError::ModeNotAdmitted { kind: reported, .. }) if reported == kind
         ));
         assert_eq!(
-            ModeAdmission::admit_mode(kind, gantry::mode::SemanticMode::Portable),
+            ModeAdmission::admit_mode(&declaring, kind, Portable),
             Ok(())
         );
     }
     assert!(matches!(
-        ModeAdmission::admit_mode(TargetKind::Library, gantry::mode::SemanticMode::Durable),
+        ModeAdmission::admit_mode(&declaring, TargetKind::Library, Durable),
         Err(TargetError::ModeNotAdmitted {
             kind: TargetKind::Library,
             ..
@@ -782,11 +848,11 @@ fn mode_admission_admits_and_rejects_for_every_target_kind() {
         ModeAdmission::admitted_modes(TargetKind::Binary),
         modes.as_slice()
     );
-    assert!(
-        modes
-            .iter()
-            .all(|mode| ModeAdmission::admit_mode(TargetKind::Binary, *mode) == Ok(()))
-    );
+    assert!(modes.iter().all(|mode| ModeAdmission::admit_mode(
+        &declaring,
+        TargetKind::Binary,
+        *mode
+    ) == Ok(())));
 }
 
 #[test]
@@ -804,6 +870,7 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
     // Every bound input participates in the binding digest.
     let variants = [
         TargetArtifactBinding::new(
+            &declaring(),
             ExecutionTargetDescriptor::VERSION,
             descriptor_digest("other-descriptor"),
             binding.feature_solution_digest().clone(),
@@ -813,6 +880,7 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
             binding.mode(),
         ),
         TargetArtifactBinding::new(
+            &declaring(),
             ExecutionTargetDescriptor::VERSION,
             binding.descriptor_digest().clone(),
             solution(&["b"]).digest().clone(),
@@ -822,6 +890,7 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
             binding.mode(),
         ),
         TargetArtifactBinding::new(
+            &declaring(),
             ExecutionTargetDescriptor::VERSION,
             binding.descriptor_digest().clone(),
             binding.feature_solution_digest().clone(),
@@ -831,6 +900,7 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
             binding.mode(),
         ),
         TargetArtifactBinding::new(
+            &declaring(),
             ExecutionTargetDescriptor::VERSION,
             binding.descriptor_digest().clone(),
             binding.feature_solution_digest().clone(),
@@ -840,6 +910,7 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
             binding.mode(),
         ),
         TargetArtifactBinding::new(
+            &declaring(),
             ExecutionTargetDescriptor::VERSION,
             binding.descriptor_digest().clone(),
             binding.feature_solution_digest().clone(),
@@ -850,6 +921,7 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
             binding.mode(),
         ),
         TargetArtifactBinding::new(
+            &declaring(),
             ExecutionTargetDescriptor::VERSION,
             binding.descriptor_digest().clone(),
             binding.feature_solution_digest().clone(),
@@ -881,6 +953,7 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
     );
     assert_eq!(fixture_binding().check_matches(&expected_inputs()), Ok(()));
     let diverged = TargetArtifactBinding::new(
+        &declaring(),
         ExecutionTargetDescriptor::VERSION,
         descriptor_digest("other-descriptor"),
         binding.feature_solution_digest().clone(),
@@ -892,8 +965,9 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
     .unwrap_or_else(|_| unreachable!("fixture binding is well formed"));
     assert!(matches!(
         diverged.check_matches(&expected_inputs()),
-        Err(TargetError::ArtifactBindingMismatch { field, expected, observed })
-            if field == "descriptor_sha256"
+        Err(TargetError::ArtifactBindingMismatch { instance, field, expected, observed })
+            if *instance == declaring()
+                && field == "descriptor_sha256"
                 && expected.as_ref() == descriptor().digest().as_str()
                 && observed.as_ref() == descriptor_digest("other-descriptor").as_str()
     ));
@@ -908,12 +982,15 @@ fn artifact_binding_digest_changes_when_any_bound_input_changes() {
 
 #[test]
 fn binding_with_a_missing_input_or_unsupported_version_is_rejected_not_repaired() {
+    let declaring = declaring();
     let binding = fixture_binding();
     let record = binding.record();
     assert_eq!(record.version(), TargetArtifactBindingRecord::VERSION);
-    assert_eq!(record.binding(), Ok(binding.clone()));
-    // A binding that omits a bound input is rejected rather than repaired.
+    assert_eq!(record.binding(&declaring), Ok(binding.clone()));
+    // A binding that omits a bound input is rejected rather than repaired, and
+    // the rejection names the instance whose record omitted it.
     let incomplete = TargetArtifactBindingRecord::new(
+        &declaring,
         1,
         &[
             ("descriptor_sha256", binding.descriptor_digest().as_str()),
@@ -932,27 +1009,34 @@ fn binding_with_a_missing_input_or_unsupported_version_is_rejected_not_repaired(
     )
     .unwrap_or_else(|_| unreachable!("fixture record properties are known"));
     assert!(matches!(
-        incomplete.binding(),
-        Err(TargetError::ArtifactBindingMissingInput { input }) if input == "mode"
+        incomplete.binding(&declaring),
+        Err(TargetError::ArtifactBindingMissingInput { instance, input })
+            if *instance == declaring && input == "mode"
     ));
     // An unsupported record version and an unsupported descriptor version are
     // both rejected.
     assert!(matches!(
-        TargetArtifactBindingRecord::new(2, &[]),
-        Err(TargetError::ArtifactBindingVersionUnsupported { version: 2 })
+        TargetArtifactBindingRecord::new(&declaring, 2, &[]),
+        Err(TargetError::ArtifactBindingVersionUnsupported { instance, version: 2 })
+            if *instance == declaring
     ));
     assert!(matches!(
-        TargetArtifactBindingRecord::new(1, &[("host_path", "/tmp")]),
-        Err(TargetError::ArtifactBindingPropertyUnknown { property })
-            if property.as_ref() == "host_path"
+        TargetArtifactBindingRecord::new(&declaring, 1, &[("host_path", "/tmp")]),
+        Err(TargetError::ArtifactBindingPropertyUnknown { instance, property })
+            if *instance == declaring && property.as_ref() == "host_path"
     ));
     assert!(matches!(
-        TargetArtifactBindingRecord::new(1, &[("mode", "portable"), ("mode", "durable")]),
-        Err(TargetError::ArtifactBindingPropertyDuplicate { property })
-            if property.as_ref() == "mode"
+        TargetArtifactBindingRecord::new(
+            &declaring,
+            1,
+            &[("mode", "portable"), ("mode", "durable")]
+        ),
+        Err(TargetError::ArtifactBindingPropertyDuplicate { instance, property })
+            if *instance == declaring && property.as_ref() == "mode"
     ));
     assert!(matches!(
         TargetArtifactBinding::new(
+            &declaring,
             2,
             binding.descriptor_digest().clone(),
             binding.feature_solution_digest().clone(),
@@ -961,36 +1045,70 @@ fn binding_with_a_missing_input_or_unsupported_version_is_rejected_not_repaired(
             binding.toolchain().clone(),
             binding.mode(),
         ),
-        Err(TargetError::DescriptorVersionUnsupported { version: 2 })
+        Err(TargetError::DescriptorVersionUnsupported { instance, version: 2 })
+            if *instance == declaring
+    ));
+    // A generated-output entry that is not the canonical `name:hash` form is an
+    // unknown value of the record rather than a repaired output.
+    let unshaped = TargetArtifactBindingRecord::new(
+        &declaring,
+        1,
+        &[
+            ("descriptor_sha256", binding.descriptor_digest().as_str()),
+            ("descriptor_version", "1"),
+            (
+                "feature_solution_sha256",
+                binding.feature_solution_digest().as_str(),
+            ),
+            ("generated_outputs", "schema.json"),
+            ("mode", "portable"),
+            (
+                "predicate_outcomes_sha256",
+                binding.predicate_outcome_digest().as_str(),
+            ),
+            ("toolchain_sha256", binding.toolchain().as_str()),
+        ],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture record properties are known"));
+    assert!(matches!(
+        unshaped.binding(&declaring),
+        Err(TargetError::WireValueUnknown { instance, field, value })
+            if *instance == declaring
+                && field == "generated_outputs"
+                && value.as_ref() == "schema.json"
     ));
     // An expected input record cannot name a mode the selected kind does not
     // admit, and a mode that disagrees with the descriptor is reported.
     assert!(matches!(
         ExpectedInputs::new(
+            &declaring,
             TargetKind::Test,
             descriptor(),
             solution(&["c"]),
-            PredicateOutcomeSet::empty(),
+            &predicates(),
             outputs("out"),
             toolchain(),
             gantry::mode::SemanticMode::Durable,
         ),
         Err(TargetError::ModeNotAdmitted {
+            instance,
             kind: TargetKind::Test,
             ..
-        })
+        }) if *instance == declaring
     ));
     assert!(matches!(
         ExpectedInputs::new(
+            &declaring,
             TargetKind::Binary,
             descriptor(),
             solution(&["c"]),
-            PredicateOutcomeSet::empty(),
+            &predicates(),
             outputs("out"),
             toolchain(),
             gantry::mode::SemanticMode::Application,
         ),
-        Err(TargetError::ArtifactBindingMismatch { field, .. }) if field == "semantic_mode"
+        Err(TargetError::ArtifactBindingMismatch { instance, field, .. })
+            if *instance == declaring && field == "semantic_mode"
     ));
 }
 
@@ -1030,60 +1148,110 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
             .map(TargetDiagnosticCode::as_str)
             .to_vec()
     );
-    assert_eq!(registered.len(), 18);
+    assert_eq!(registered.len(), 25);
     assert!(registered.windows(2).all(|pair| pair[0] < pair[1]));
     // Every condition of the target model exposes one of those frozen codes, and
     // no condition borrows another condition's code.
+    let declaring = declaring();
     let declared = vec![
+        TargetError::ArtifactBindingDigestInvalid {
+            value: Arc::from("not-a-digest"),
+        },
         TargetError::ArtifactBindingMismatch {
+            instance: Box::new(declaring.clone()),
             field: "mode",
             expected: Arc::from("portable"),
             observed: Arc::from("durable"),
         },
-        TargetError::ArtifactBindingMissingInput { input: "mode" },
+        TargetError::ArtifactBindingMissingInput {
+            instance: Box::new(declaring.clone()),
+            input: "mode",
+        },
         TargetError::ArtifactBindingPropertyDuplicate {
+            instance: Box::new(declaring.clone()),
             property: Arc::from("mode"),
         },
         TargetError::ArtifactBindingPropertyUnknown {
+            instance: Box::new(declaring.clone()),
             property: Arc::from("host_path"),
         },
-        TargetError::ArtifactBindingVersionUnsupported { version: 2 },
-        TargetError::DeclarationInvalid {
-            field: "feature",
-            value: Arc::from("not a feature"),
+        TargetError::ArtifactBindingVersionUnsupported {
+            instance: Box::new(declaring.clone()),
+            version: 2,
+        },
+        TargetError::ConditionalSelectionUnresolved {
+            instance: Box::new(declaring.clone()),
+            site: Arc::from("crate::main"),
+            guards: vec![
+                Arc::from("feature-enabled:c"),
+                Arc::from("descriptor-field:architecture=x86_64"),
+            ],
         },
         TargetError::DescriptorDigestInvalid {
             value: Arc::from("not-a-digest"),
         },
+        TargetError::DescriptorEditionInvalid {
+            value: Arc::from("2026=2027"),
+        },
         TargetError::DescriptorPropertyDuplicate {
+            instance: Box::new(declaring.clone()),
             property: Arc::from("abi"),
         },
         TargetError::DescriptorPropertyMissing {
+            instance: Box::new(declaring.clone()),
             property: Arc::from("abi"),
         },
         TargetError::DescriptorPropertyUnknown {
+            instance: Box::new(declaring.clone()),
             property: Arc::from("host_path"),
         },
-        TargetError::DescriptorVersionUnsupported { version: 2 },
+        TargetError::DescriptorVersionUnsupported {
+            instance: Box::new(declaring.clone()),
+            version: 2,
+        },
+        TargetError::TargetFactsTextInvalid {
+            value: Arc::from("1:descriptor:features:extra"),
+        },
+        TargetError::TargetFactsVersionUnsupported { version: 2 },
         TargetError::FeatureCycle {
+            instance: Box::new(declaring.clone()),
             cycle: vec![feature("a")],
         },
-        TargetError::FeatureDeclarationDuplicate { name: feature("a") },
+        TargetError::FeatureDeclarationDuplicate {
+            instance: Box::new(declaring.clone()),
+            name: feature("a"),
+        },
+        TargetError::FeatureNameInvalid {
+            instance: Box::new(declaring.clone()),
+            value: Arc::from("not a feature"),
+        },
         TargetError::FeatureRequestUnsatisfiable {
-            root: Box::new(root("root")),
+            instance: Box::new(declaring.clone()),
             requested: vec![feature("missing")],
         },
+        TargetError::FeatureSolutionInstanceMismatch {
+            instance: Box::new(declaring.clone()),
+            solution: Box::new(root("other")),
+        },
         TargetError::FeatureUnknown {
+            instance: Box::new(declaring.clone()),
             name: feature("missing"),
         },
+        TargetError::GeneratedOutputNameInvalid {
+            instance: Box::new(declaring.clone()),
+            value: Arc::from("/tmp/schema.json"),
+        },
         TargetError::ModeNotAdmitted {
+            instance: Box::new(declaring.clone()),
             kind: TargetKind::Test,
             mode: gantry::mode::SemanticMode::Durable,
         },
         TargetError::PredicateNameUnknown {
+            instance: Box::new(declaring.clone()),
             name: Arc::from("source-form"),
         },
         TargetError::WireValueUnknown {
+            instance: Box::new(declaring.clone()),
             field: "architecture",
             value: Arc::from("sparc"),
         },
@@ -1093,10 +1261,17 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
         assert!(TargetDiagnosticCode::ALL.contains(&error.code()));
         assert_eq!(error.requirement(), error.code().requirement());
         assert!(error.requirement().starts_with("GNT-17."));
+        // Every condition is renderable, and every rendered diagnostic names
+        // its own frozen code, so a missing or unrelated rendering fails here.
+        let rendered = error.to_string();
+        assert!(!rendered.is_empty());
+        assert!(
+            rendered.contains(error.code().as_str()),
+            "`{rendered}` does not name its code `{}`",
+            error.code().as_str()
+        );
     }
     let mut codes = declared.iter().map(TargetError::code).collect::<Vec<_>>();
     codes.sort();
     assert_eq!(codes, TargetDiagnosticCode::ALL.to_vec());
-    // Each condition is also renderable without exposing host state.
-    assert!(!declared[0].to_string().is_empty());
 }

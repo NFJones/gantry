@@ -16,6 +16,34 @@
 //! predicates produce the same canonical bytes, the same digests, and the same
 //! outcomes under every enumeration order.
 //!
+//! Two kinds of entry point are distinguished here, and the distinction is what
+//! keeps `GNT-17.2-descriptor-normalization-and-target-facts` honest.
+//!
+//! A *value* constructor builds a platform value: the descriptor itself, a
+//! digest spelling, the language-edition read of a descriptor-field value, and
+//! the `GNT-17.2` target-facts composition with its recorded text and version.
+//! A platform value stays instance-free, because an
+//! [`ExecutionTargetDescriptor`] describes a target rather than a declaration:
+//! embedding a declaring instance in one would stop its normalized descriptor
+//! digest from describing the target, and two descriptors of one platform would
+//! stop being the same target.
+//!
+//! A *declaration* constructor or wire-record decode takes the declaring
+//! [`PackageIdentity`]: a descriptor record, a sealed-predicate decode, a
+//! feature declaration set, feature unification, a generated-output
+//! declaration, an expected-input record, an artifact binding and its wire
+//! record, and mode admission. Every diagnostic those entry points raise carries
+//! that instance, as `GNT-17.12-target-resolution-failure` requires, and the
+//! instance is never an input of a canonical encoding or of a digest.
+//!
+//! One condition of `GNT-17.12-target-resolution-failure` is published without a
+//! check here: an unresolvable conditional selection. The decision rule of
+//! `GNT-17.6-conditional-selection-rule` is not modelled by this module — the
+//! declared predicate metadata of `crate::package` records those conditional
+//! forms without resolving them — so
+//! [`TargetDiagnosticCode::ConditionalSelectionUnresolved`] is registered and
+//! anchored, and raised by nothing yet.
+//!
 //! Three records stay distinct. [`ExecutionTargetDescriptor`] is the versioned
 //! closed record of one execution target, [`TargetFactsRecord`] is the
 //! `GNT-17.2` identity composition of descriptor version, normalized descriptor
@@ -25,12 +53,14 @@
 //! `GNT-17.9-build-host-authority`; a recorded build input is recorded
 //! elsewhere, as a declared generator input.
 
-// The diagnostics of this module deliberately carry full package identities,
-// descriptor digests, and offending names so a rejected target selection
-// reports exactly what it disagreed with. Boxing those fields would hide
-// identity behind an allocation at every construction and match site, so this
-// module answers the size lint explicitly instead of weakening its own
-// diagnostics.
+// The diagnostics of this module deliberately carry the declaring package
+// instance, descriptor digests, and offending names so a rejected target
+// selection reports exactly what it disagreed with and against which declaring
+// instance. The declaring instance is boxed so one error stays small enough to
+// pass by value; the remaining identity and name fields stay inline, because
+// boxing those too would hide identity behind an allocation at every
+// construction and match site. This module answers the size lint explicitly
+// instead of weakening its own diagnostics.
 #![allow(clippy::result_large_err)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -42,7 +72,7 @@ use gantry_core::protocol::ProtocolVersion;
 
 use crate::authority::digest_fields;
 use crate::manifest::encode_hex;
-use crate::package::{FeatureName, PackageIdentity, SelectedFeatureSet, TargetKind};
+use crate::package::{FeatureName, PackageIdentity, TargetKind};
 
 /// Domain separator for the canonical target-descriptor encoding.
 const DESCRIPTOR_DOMAIN: &str = "gantry.target-descriptor/v1";
@@ -64,11 +94,18 @@ const ARTIFACT_BINDING_DOMAIN: &str = "gantry.target-artifact-binding/v1";
 /// The codes are frozen: a consumer matches on [`Self::as_str`], and the
 /// meanings are the ones registered for the package category. The variant order
 /// is the sorted code order, so [`Self::ALL`] is already in the order the
-/// registry requires. Every condition of this section that a check can decide
-/// has a code here, so unlike the package model this model has no condition
-/// without a published code and reports none under another condition's code.
+/// registry requires. Every condition this module decides has its own code here,
+/// each code is anchored to the clause that owns the condition it reports, and
+/// no condition is reported under another condition's code. One condition of
+/// `GNT-17.12-target-resolution-failure` is the deliberate exception: an
+/// unresolvable conditional selection is published as
+/// [`Self::ConditionalSelectionUnresolved`] but is raised by no entry point of
+/// this module, because the published total rule of
+/// `GNT-17.6-conditional-selection-rule` that decides it is not modelled here.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TargetDiagnosticCode {
+    /// `target-artifact-binding-digest-invalid`
+    ArtifactBindingDigestInvalid,
     /// `target-artifact-binding-mismatch`
     ArtifactBindingMismatch,
     /// `target-artifact-binding-missing-input`
@@ -79,10 +116,12 @@ pub enum TargetDiagnosticCode {
     ArtifactBindingPropertyUnknown,
     /// `target-artifact-binding-version-unsupported`
     ArtifactBindingVersionUnsupported,
-    /// `target-declaration-invalid`
-    DeclarationInvalid,
+    /// `target-conditional-selection-unresolved`
+    ConditionalSelectionUnresolved,
     /// `target-descriptor-digest-invalid`
     DescriptorDigestInvalid,
+    /// `target-descriptor-edition-invalid`
+    DescriptorEditionInvalid,
     /// `target-descriptor-property-duplicate`
     DescriptorPropertyDuplicate,
     /// `target-descriptor-property-missing`
@@ -91,14 +130,24 @@ pub enum TargetDiagnosticCode {
     DescriptorPropertyUnknown,
     /// `target-descriptor-version-unsupported`
     DescriptorVersionUnsupported,
+    /// `target-facts-text-invalid`
+    TargetFactsTextInvalid,
+    /// `target-facts-version-unsupported`
+    TargetFactsVersionUnsupported,
     /// `target-feature-cycle`
     FeatureCycle,
     /// `target-feature-declaration-duplicate`
     FeatureDeclarationDuplicate,
+    /// `target-feature-name-invalid`
+    FeatureNameInvalid,
     /// `target-feature-request-unsatisfiable`
     FeatureRequestUnsatisfiable,
+    /// `target-feature-solution-instance-mismatch`
+    FeatureSolutionInstanceMismatch,
     /// `target-feature-unknown`
     FeatureUnknown,
+    /// `target-generated-output-name-invalid`
+    GeneratedOutputNameInvalid,
     /// `target-mode-not-admitted`
     ModeNotAdmitted,
     /// `target-predicate-name-unknown`
@@ -109,22 +158,29 @@ pub enum TargetDiagnosticCode {
 
 impl TargetDiagnosticCode {
     /// Every published code, in sorted code order.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 25] = [
+        Self::ArtifactBindingDigestInvalid,
         Self::ArtifactBindingMismatch,
         Self::ArtifactBindingMissingInput,
         Self::ArtifactBindingPropertyDuplicate,
         Self::ArtifactBindingPropertyUnknown,
         Self::ArtifactBindingVersionUnsupported,
-        Self::DeclarationInvalid,
+        Self::ConditionalSelectionUnresolved,
         Self::DescriptorDigestInvalid,
+        Self::DescriptorEditionInvalid,
         Self::DescriptorPropertyDuplicate,
         Self::DescriptorPropertyMissing,
         Self::DescriptorPropertyUnknown,
         Self::DescriptorVersionUnsupported,
+        Self::TargetFactsTextInvalid,
+        Self::TargetFactsVersionUnsupported,
         Self::FeatureCycle,
         Self::FeatureDeclarationDuplicate,
+        Self::FeatureNameInvalid,
         Self::FeatureRequestUnsatisfiable,
+        Self::FeatureSolutionInstanceMismatch,
         Self::FeatureUnknown,
+        Self::GeneratedOutputNameInvalid,
         Self::ModeNotAdmitted,
         Self::PredicateNameUnknown,
         Self::WireValueUnknown,
@@ -134,6 +190,7 @@ impl TargetDiagnosticCode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ArtifactBindingDigestInvalid => "target-artifact-binding-digest-invalid",
             Self::ArtifactBindingMismatch => "target-artifact-binding-mismatch",
             Self::ArtifactBindingMissingInput => "target-artifact-binding-missing-input",
             Self::ArtifactBindingPropertyDuplicate => "target-artifact-binding-property-duplicate",
@@ -141,16 +198,22 @@ impl TargetDiagnosticCode {
             Self::ArtifactBindingVersionUnsupported => {
                 "target-artifact-binding-version-unsupported"
             }
-            Self::DeclarationInvalid => "target-declaration-invalid",
+            Self::ConditionalSelectionUnresolved => "target-conditional-selection-unresolved",
             Self::DescriptorDigestInvalid => "target-descriptor-digest-invalid",
+            Self::DescriptorEditionInvalid => "target-descriptor-edition-invalid",
             Self::DescriptorPropertyDuplicate => "target-descriptor-property-duplicate",
             Self::DescriptorPropertyMissing => "target-descriptor-property-missing",
             Self::DescriptorPropertyUnknown => "target-descriptor-property-unknown",
             Self::DescriptorVersionUnsupported => "target-descriptor-version-unsupported",
+            Self::TargetFactsTextInvalid => "target-facts-text-invalid",
+            Self::TargetFactsVersionUnsupported => "target-facts-version-unsupported",
             Self::FeatureCycle => "target-feature-cycle",
             Self::FeatureDeclarationDuplicate => "target-feature-declaration-duplicate",
+            Self::FeatureNameInvalid => "target-feature-name-invalid",
             Self::FeatureRequestUnsatisfiable => "target-feature-request-unsatisfiable",
+            Self::FeatureSolutionInstanceMismatch => "target-feature-solution-instance-mismatch",
             Self::FeatureUnknown => "target-feature-unknown",
+            Self::GeneratedOutputNameInvalid => "target-generated-output-name-invalid",
             Self::ModeNotAdmitted => "target-mode-not-admitted",
             Self::PredicateNameUnknown => "target-predicate-name-unknown",
             Self::WireValueUnknown => "target-wire-value-unknown",
@@ -161,6 +224,9 @@ impl TargetDiagnosticCode {
     #[must_use]
     pub const fn meaning(self) -> &'static str {
         match self {
+            Self::ArtifactBindingDigestInvalid => {
+                "A digest or identity spelling bound by an artifact binding is not 64 lowercase hexadecimal digits."
+            }
             Self::ArtifactBindingMismatch => {
                 "A recorded artifact binding disagrees with the target inputs it must bind."
             }
@@ -176,11 +242,14 @@ impl TargetDiagnosticCode {
             Self::ArtifactBindingVersionUnsupported => {
                 "An artifact-binding record names a version this implementation does not support."
             }
-            Self::DeclarationInvalid => {
-                "A declared name of this section is not a legal declaration name."
+            Self::ConditionalSelectionUnresolved => {
+                "A conditional selection cannot be resolved under the published total rule of its version."
             }
             Self::DescriptorDigestInvalid => {
-                "A digest spelling is not 64 lowercase hexadecimal digits."
+                "A digest spelling of a target descriptor or of its target facts is not 64 lowercase hexadecimal digits."
+            }
+            Self::DescriptorEditionInvalid => {
+                "A language-edition spelling is not a legal declared edition name."
             }
             Self::DescriptorPropertyDuplicate => {
                 "A target-descriptor record carries one property twice."
@@ -194,13 +263,28 @@ impl TargetDiagnosticCode {
             Self::DescriptorVersionUnsupported => {
                 "A target descriptor names a version this implementation does not support."
             }
+            Self::TargetFactsTextInvalid => {
+                "A recorded target-facts text is not the canonical version:descriptor:features form."
+            }
+            Self::TargetFactsVersionUnsupported => {
+                "A target-facts record names a descriptor version this implementation does not support."
+            }
             Self::FeatureCycle => "A feature enabling relation is cyclic.",
             Self::FeatureDeclarationDuplicate => "One package instance declares one feature twice.",
+            Self::FeatureNameInvalid => {
+                "A feature declaration or a sealed predicate argument is not a legal feature name."
+            }
             Self::FeatureRequestUnsatisfiable => {
                 "No single selected feature solution satisfies the requested feature set."
             }
+            Self::FeatureSolutionInstanceMismatch => {
+                "An expected-input record binds a feature solution of another package instance."
+            }
             Self::FeatureUnknown => {
                 "A feature declaration or a requested feature set names a feature the instance does not declare."
+            }
+            Self::GeneratedOutputNameInvalid => {
+                "A declared generated-output name is not a legal declared name."
             }
             Self::ModeNotAdmitted => {
                 "A semantic mode is not admitted for the selected target kind."
@@ -218,22 +302,32 @@ impl TargetDiagnosticCode {
     #[must_use]
     pub const fn requirement(self) -> &'static str {
         match self {
-            Self::ArtifactBindingMismatch
+            Self::ArtifactBindingDigestInvalid
+            | Self::ArtifactBindingMismatch
             | Self::ArtifactBindingMissingInput
             | Self::ArtifactBindingPropertyDuplicate
             | Self::ArtifactBindingPropertyUnknown
-            | Self::ArtifactBindingVersionUnsupported => "GNT-17.11-target-artifact-binding",
-            Self::DeclarationInvalid | Self::FeatureDeclarationDuplicate => {
-                "GNT-17.4-feature-declaration"
+            | Self::ArtifactBindingVersionUnsupported
+            | Self::GeneratedOutputNameInvalid => "GNT-17.11-target-artifact-binding",
+            Self::ConditionalSelectionUnresolved => "GNT-17.12-target-resolution-failure",
+            Self::DescriptorDigestInvalid
+            | Self::TargetFactsTextInvalid
+            | Self::TargetFactsVersionUnsupported => {
+                "GNT-17.2-descriptor-normalization-and-target-facts"
             }
-            Self::DescriptorDigestInvalid => "GNT-17.2-descriptor-normalization-and-target-facts",
-            Self::DescriptorPropertyDuplicate
+            Self::DescriptorEditionInvalid
+            | Self::DescriptorPropertyDuplicate
             | Self::DescriptorPropertyMissing
             | Self::DescriptorPropertyUnknown
             | Self::DescriptorVersionUnsupported
             | Self::WireValueUnknown => "GNT-17.1-target-descriptor",
-            Self::FeatureCycle | Self::FeatureUnknown => "GNT-17.4-feature-declaration",
-            Self::FeatureRequestUnsatisfiable => "GNT-17.5-feature-unification",
+            Self::FeatureCycle
+            | Self::FeatureDeclarationDuplicate
+            | Self::FeatureNameInvalid
+            | Self::FeatureUnknown => "GNT-17.4-feature-declaration",
+            Self::FeatureRequestUnsatisfiable | Self::FeatureSolutionInstanceMismatch => {
+                "GNT-17.5-feature-unification"
+            }
             Self::ModeNotAdmitted => "GNT-17.10-target-selected-mode-admission",
             Self::PredicateNameUnknown => "GNT-17.3-sealed-predicates",
         }
@@ -244,15 +338,34 @@ impl TargetDiagnosticCode {
 ///
 /// Every variant is a condition this module can decide and none of them is ever
 /// repaired: an unsupported version, an unknown property, an unknown wire
-/// value, an unknown predicate name, a feature cycle, an unknown or duplicate
-/// feature, an unsatisfiable feature request, a non-canonical digest, an
+/// value, an unknown predicate name, an unresolved conditional selection, a
+/// feature cycle, an unknown or duplicate feature, an unsatisfiable feature
+/// request, a feature name outside the closed vocabulary, a non-canonical
+/// digest, a generated-output name outside the declared vocabulary, an
 /// unadmitted mode, a binding mismatch, and a missing binding input are all
 /// reported rather than substituted, preferred, or silently discarded, as
 /// `GNT-17.12-target-resolution-failure` requires.
+///
+/// Every variant a declaration or wire-record entry point raises carries the
+/// declaring `PackageIdentity` as `instance`, so each rendered diagnostic names
+/// the instance that declared the rejected form. The variants of the value
+/// constructors — a digest spelling, the language edition of a descriptor value,
+/// and the text and version of the `GNT-17.2` target-facts record — are
+/// instance-free: the values they reject are platform facts or part of the
+/// identity composition, which is decoded while proving a package identity,
+/// before that identity exists.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TargetError {
+    /// A digest or identity spelling bound by an artifact binding is not a
+    /// lowercase hexadecimal digest.
+    ArtifactBindingDigestInvalid {
+        /// The rejected digest or identity text.
+        value: Arc<str>,
+    },
     /// A recorded binding disagrees with one expected bound input.
     ArtifactBindingMismatch {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The named bound input.
         field: &'static str,
         /// The expected value.
@@ -262,80 +375,142 @@ pub enum TargetError {
     },
     /// A recorded binding omits a bound input of `GNT-17.11-target-artifact-binding`.
     ArtifactBindingMissingInput {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The omitted bound input.
         input: &'static str,
     },
     /// One artifact-binding-record property recorded twice.
     ArtifactBindingPropertyDuplicate {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The duplicated property name.
         property: Arc<str>,
     },
     /// An artifact-binding-record property this version does not define.
     ArtifactBindingPropertyUnknown {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The unknown property name.
         property: Arc<str>,
     },
     /// An artifact-binding-record version this implementation does not support.
     ArtifactBindingVersionUnsupported {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The unsupported version.
         version: u32,
     },
-    /// A declared name that is not a legal declaration name.
-    DeclarationInvalid {
-        /// The named declaration.
-        field: &'static str,
-        /// The rejected spelling.
-        value: Arc<str>,
+    /// A conditional selection the published total rule cannot resolve.
+    ConditionalSelectionUnresolved {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The conditional declaration site whose selection is unresolvable.
+        site: Arc<str>,
+        /// The canonical guard spellings that left the selection undecided.
+        guards: Vec<Arc<str>>,
     },
-    /// A digest that is not 64 lowercase hexadecimal digits.
+    /// A descriptor or target-facts digest that is not 64 lowercase hexadecimal digits.
     DescriptorDigestInvalid {
         /// The rejected digest text.
         value: Arc<str>,
     },
+    /// A language-edition spelling that is not a legal declared edition name.
+    DescriptorEditionInvalid {
+        /// The rejected edition spelling.
+        value: Arc<str>,
+    },
     /// One descriptor-record property recorded twice.
     DescriptorPropertyDuplicate {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The duplicated property name.
         property: Arc<str>,
     },
     /// A descriptor-record property its version defines and the record omits.
     DescriptorPropertyMissing {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The missing property name.
         property: Arc<str>,
     },
     /// A descriptor-record property this version does not define.
     DescriptorPropertyUnknown {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The unknown property name.
         property: Arc<str>,
     },
     /// A descriptor version this implementation does not support.
     DescriptorVersionUnsupported {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The unsupported version.
+        version: u32,
+    },
+    /// A recorded target-facts text that is not the canonical recorded form.
+    TargetFactsTextInvalid {
+        /// The rejected target-facts text.
+        value: Arc<str>,
+    },
+    /// A target-facts record that names an unsupported descriptor version.
+    TargetFactsVersionUnsupported {
+        /// The unsupported descriptor version.
         version: u32,
     },
     /// A cyclic feature enabling relation, reported as one deterministic cycle.
     FeatureCycle {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The offending names, in enabling order from the cycle's least element.
         cycle: Vec<FeatureName>,
     },
     /// One feature declared twice by one package instance.
     FeatureDeclarationDuplicate {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The duplicated feature name.
         name: FeatureName,
     },
+    /// A feature spelling outside the closed declared feature vocabulary.
+    FeatureNameInvalid {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The rejected feature spelling.
+        value: Arc<str>,
+    },
     /// A requested feature set that no single solution satisfies.
     FeatureRequestUnsatisfiable {
-        /// The package instance whose unification failed.
-        root: Box<PackageIdentity>,
+        /// The declaring package instance whose unification failed.
+        instance: Box<PackageIdentity>,
         /// The requested names the instance does not declare, in canonical order.
         requested: Vec<FeatureName>,
     },
+    /// A feature solution of another package instance than the one that binds it.
+    FeatureSolutionInstanceMismatch {
+        /// The declaring package instance that refused the solution.
+        instance: Box<PackageIdentity>,
+        /// The package instance the offered solution belongs to.
+        solution: Box<PackageIdentity>,
+    },
     /// A feature name that its declaring package instance does not declare.
     FeatureUnknown {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The unknown feature name.
         name: FeatureName,
     },
+    /// A declared generated-output name that is not a legal declared name.
+    GeneratedOutputNameInvalid {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The rejected generated-output name.
+        value: Arc<str>,
+    },
     /// A semantic mode the selected target kind does not admit.
     ModeNotAdmitted {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The selected target kind.
         kind: TargetKind,
         /// The unadmitted mode.
@@ -343,11 +518,15 @@ pub enum TargetError {
     },
     /// A predicate name outside the sealed predicate vocabulary.
     PredicateNameUnknown {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The rejected predicate name.
         name: Arc<str>,
     },
     /// A field value outside the closed vocabulary of its record version.
     WireValueUnknown {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
         /// The named field.
         field: &'static str,
         /// The rejected value.
@@ -360,6 +539,9 @@ impl TargetError {
     #[must_use]
     pub const fn code(&self) -> TargetDiagnosticCode {
         match self {
+            Self::ArtifactBindingDigestInvalid { .. } => {
+                TargetDiagnosticCode::ArtifactBindingDigestInvalid
+            }
             Self::ArtifactBindingMismatch { .. } => TargetDiagnosticCode::ArtifactBindingMismatch,
             Self::ArtifactBindingMissingInput { .. } => {
                 TargetDiagnosticCode::ArtifactBindingMissingInput
@@ -373,8 +555,11 @@ impl TargetError {
             Self::ArtifactBindingVersionUnsupported { .. } => {
                 TargetDiagnosticCode::ArtifactBindingVersionUnsupported
             }
-            Self::DeclarationInvalid { .. } => TargetDiagnosticCode::DeclarationInvalid,
+            Self::ConditionalSelectionUnresolved { .. } => {
+                TargetDiagnosticCode::ConditionalSelectionUnresolved
+            }
             Self::DescriptorDigestInvalid { .. } => TargetDiagnosticCode::DescriptorDigestInvalid,
+            Self::DescriptorEditionInvalid { .. } => TargetDiagnosticCode::DescriptorEditionInvalid,
             Self::DescriptorPropertyDuplicate { .. } => {
                 TargetDiagnosticCode::DescriptorPropertyDuplicate
             }
@@ -387,14 +572,25 @@ impl TargetError {
             Self::DescriptorVersionUnsupported { .. } => {
                 TargetDiagnosticCode::DescriptorVersionUnsupported
             }
+            Self::TargetFactsTextInvalid { .. } => TargetDiagnosticCode::TargetFactsTextInvalid,
+            Self::TargetFactsVersionUnsupported { .. } => {
+                TargetDiagnosticCode::TargetFactsVersionUnsupported
+            }
             Self::FeatureCycle { .. } => TargetDiagnosticCode::FeatureCycle,
             Self::FeatureDeclarationDuplicate { .. } => {
                 TargetDiagnosticCode::FeatureDeclarationDuplicate
             }
+            Self::FeatureNameInvalid { .. } => TargetDiagnosticCode::FeatureNameInvalid,
             Self::FeatureRequestUnsatisfiable { .. } => {
                 TargetDiagnosticCode::FeatureRequestUnsatisfiable
             }
+            Self::FeatureSolutionInstanceMismatch { .. } => {
+                TargetDiagnosticCode::FeatureSolutionInstanceMismatch
+            }
             Self::FeatureUnknown { .. } => TargetDiagnosticCode::FeatureUnknown,
+            Self::GeneratedOutputNameInvalid { .. } => {
+                TargetDiagnosticCode::GeneratedOutputNameInvalid
+            }
             Self::ModeNotAdmitted { .. } => TargetDiagnosticCode::ModeNotAdmitted,
             Self::PredicateNameUnknown { .. } => TargetDiagnosticCode::PredicateNameUnknown,
             Self::WireValueUnknown { .. } => TargetDiagnosticCode::WireValueUnknown,
@@ -410,85 +606,167 @@ impl TargetError {
 
 impl fmt::Display for TargetError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Every rendered diagnostic names its frozen code first, so a rendered
+        // text identifies the condition a consumer matches on, and every
+        // condition a declaration or wire record rejects names the declaring
+        // instance it rejected the form for.
+        formatter.write_str(self.code().as_str())?;
+        formatter.write_str(": ")?;
         match self {
+            Self::ArtifactBindingDigestInvalid { value } => write!(
+                formatter,
+                "digest or identity `{value}` is not lowercase hexadecimal"
+            ),
             Self::ArtifactBindingMismatch {
+                instance,
                 field,
                 expected,
                 observed,
             } => write!(
                 formatter,
-                "artifact binding input `{field}` is `{observed}` and must bind `{expected}`"
+                "package `{}` binds input `{field}` as `{observed}` and must bind `{expected}`",
+                instance.as_str()
             ),
-            Self::ArtifactBindingMissingInput { input } => {
+            Self::ArtifactBindingMissingInput { instance, input } => write!(
+                formatter,
+                "package `{}` omits the bound input `{input}`",
+                instance.as_str()
+            ),
+            Self::ArtifactBindingPropertyDuplicate { instance, property } => write!(
+                formatter,
+                "package `{}` records artifact-binding property `{property}` twice",
+                instance.as_str()
+            ),
+            Self::ArtifactBindingPropertyUnknown { instance, property } => write!(
+                formatter,
+                "package `{}` records artifact-binding property `{property}`, which this version does not define",
+                instance.as_str()
+            ),
+            Self::ArtifactBindingVersionUnsupported { instance, version } => write!(
+                formatter,
+                "package `{}` names unsupported artifact-binding version {version}",
+                instance.as_str()
+            ),
+            Self::ConditionalSelectionUnresolved {
+                instance,
+                site,
+                guards,
+            } => {
                 write!(
                     formatter,
-                    "artifact binding omits the bound input `{input}`"
-                )
-            }
-            Self::ArtifactBindingPropertyDuplicate { property } => write!(
-                formatter,
-                "artifact-binding property `{property}` is recorded twice"
-            ),
-            Self::ArtifactBindingPropertyUnknown { property } => write!(
-                formatter,
-                "artifact-binding property `{property}` is not defined by this version"
-            ),
-            Self::ArtifactBindingVersionUnsupported { version } => write!(
-                formatter,
-                "artifact-binding version {version} is not supported"
-            ),
-            Self::DeclarationInvalid { field, value } => {
-                write!(formatter, "declared {field} `{value}` is not a legal name")
+                    "package `{}` cannot resolve the conditional selection at `{site}` under guards ",
+                    instance.as_str()
+                )?;
+                write_guard_list(formatter, guards)
             }
             Self::DescriptorDigestInvalid { value } => {
                 write!(formatter, "digest `{value}` is not lowercase hexadecimal")
             }
-            Self::DescriptorPropertyDuplicate { property } => write!(
+            Self::DescriptorEditionInvalid { value } => {
+                write!(
+                    formatter,
+                    "language edition `{value}` is not a legal edition"
+                )
+            }
+            Self::DescriptorPropertyDuplicate { instance, property } => write!(
                 formatter,
-                "target-descriptor property `{property}` is recorded twice"
+                "package `{}` records target-descriptor property `{property}` twice",
+                instance.as_str()
             ),
-            Self::DescriptorPropertyMissing { property } => write!(
+            Self::DescriptorPropertyMissing { instance, property } => write!(
                 formatter,
-                "target-descriptor record omits the property `{property}`"
+                "package `{}` omits the target-descriptor property `{property}` its version defines",
+                instance.as_str()
             ),
-            Self::DescriptorPropertyUnknown { property } => write!(
+            Self::DescriptorPropertyUnknown { instance, property } => write!(
                 formatter,
-                "target-descriptor property `{property}` is not defined by this version"
+                "package `{}` records target-descriptor property `{property}`, which this version does not define",
+                instance.as_str()
             ),
-            Self::DescriptorVersionUnsupported { version } => write!(
+            Self::DescriptorVersionUnsupported { instance, version } => write!(
                 formatter,
-                "target-descriptor version {version} is not supported"
+                "package `{}` names unsupported target-descriptor version {version}",
+                instance.as_str()
             ),
-            Self::FeatureCycle { cycle } => {
-                formatter.write_str("feature enabling relation is cyclic: ")?;
+            Self::TargetFactsTextInvalid { value } => write!(
+                formatter,
+                "target-facts text `{value}` is not the canonical version:descriptor:features form"
+            ),
+            Self::TargetFactsVersionUnsupported { version } => write!(
+                formatter,
+                "target-facts record names unsupported descriptor version {version}"
+            ),
+            Self::FeatureCycle { instance, cycle } => {
+                write!(
+                    formatter,
+                    "package `{}` has a cyclic feature enabling relation: ",
+                    instance.as_str()
+                )?;
                 write_feature_list(formatter, cycle)
             }
-            Self::FeatureDeclarationDuplicate { name } => {
-                write!(formatter, "feature `{}` is declared twice", name.as_str())
-            }
-            Self::FeatureRequestUnsatisfiable { root, requested } => {
+            Self::FeatureDeclarationDuplicate { instance, name } => write!(
+                formatter,
+                "package `{}` declares feature `{}` twice",
+                instance.as_str(),
+                name.as_str()
+            ),
+            Self::FeatureNameInvalid { instance, value } => write!(
+                formatter,
+                "package `{}` declares `{value}`, which is not a legal feature name",
+                instance.as_str()
+            ),
+            Self::FeatureRequestUnsatisfiable {
+                instance,
+                requested,
+            } => {
                 write!(
                     formatter,
                     "package `{}` cannot unify the requested features ",
-                    root.as_str()
+                    instance.as_str()
                 )?;
                 write_feature_list(formatter, requested)
             }
-            Self::FeatureUnknown { name } => {
-                write!(formatter, "feature `{}` is not declared", name.as_str())
-            }
-            Self::ModeNotAdmitted { kind, mode } => write!(
+            Self::FeatureSolutionInstanceMismatch { instance, solution } => write!(
                 formatter,
-                "the {} target does not admit the {} mode",
+                "package `{}` cannot bind the feature solution of package `{}`",
+                instance.as_str(),
+                solution.as_str()
+            ),
+            Self::FeatureUnknown { instance, name } => write!(
+                formatter,
+                "package `{}` names feature `{}`, which it does not declare",
+                instance.as_str(),
+                name.as_str()
+            ),
+            Self::GeneratedOutputNameInvalid { instance, value } => write!(
+                formatter,
+                "package `{}` declares generated output `{value}`, which is not a legal declared name",
+                instance.as_str()
+            ),
+            Self::ModeNotAdmitted {
+                instance,
+                kind,
+                mode,
+            } => write!(
+                formatter,
+                "package `{}` selects the {} target, which does not admit the {} mode",
+                instance.as_str(),
                 kind.wire_name(),
                 mode.wire_name()
             ),
-            Self::PredicateNameUnknown { name } => {
-                write!(formatter, "predicate `{name}` is not sealed")
-            }
-            Self::WireValueUnknown { field, value } => write!(
+            Self::PredicateNameUnknown { instance, name } => write!(
                 formatter,
-                "{field} value `{value}` is outside the closed vocabulary"
+                "package `{}` names predicate `{name}`, which is not sealed",
+                instance.as_str()
+            ),
+            Self::WireValueUnknown {
+                instance,
+                field,
+                value,
+            } => write!(
+                formatter,
+                "package `{}` records the {field} value `{value}`, which is outside the closed vocabulary",
+                instance.as_str()
             ),
         }
     }
@@ -507,33 +785,46 @@ fn write_feature_list(formatter: &mut fmt::Formatter<'_>, names: &[FeatureName])
     Ok(())
 }
 
-/// Validates one lowercase hexadecimal SHA-256 digest spelling.
-fn validate_digest(value: &str) -> Result<(), TargetError> {
-    if value.len() != 64
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(TargetError::DescriptorDigestInvalid {
-            value: Arc::from(value),
-        });
+/// Writes one comma-separated list of canonical predicate guard spellings.
+fn write_guard_list(formatter: &mut fmt::Formatter<'_>, guards: &[Arc<str>]) -> fmt::Result {
+    for (index, guard) in guards.iter().enumerate() {
+        if index > 0 {
+            formatter.write_str(", ")?;
+        }
+        formatter.write_str(guard)?;
     }
     Ok(())
 }
 
-/// Validates one declared name that the canonical encodings embed verbatim.
-fn validate_declared_name(field: &'static str, value: &str) -> Result<(), TargetError> {
-    if value.is_empty() || value.chars().any(char::is_control) {
-        return Err(TargetError::DeclarationInvalid {
-            field,
-            value: Arc::from(value),
-        });
-    }
-    Ok(())
+/// Returns whether one spelling is exactly a lowercase hexadecimal SHA-256 digest.
+///
+/// One predicate decides the spelling because two clauses own the digests it
+/// rejects: the descriptor digest and the target-facts digest belong to
+/// `GNT-17.2-descriptor-normalization-and-target-facts`, while the toolchain
+/// identity, the declared generated-output hashes, the predicate-outcome
+/// digests, and the feature-solution digests belong to
+/// `GNT-17.11-target-artifact-binding`. Every caller therefore reports the code
+/// of the clause that owns the digest it validates, instead of reporting every
+/// spelling under one clause's code.
+fn is_hex_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+/// Returns whether one declared name is a legal declared name.
+fn is_declared_name(value: &str) -> bool {
+    !value.is_empty() && !value.chars().any(char::is_control)
+}
+
+/// Returns whether one declared generated-output name embeds no record syntax.
+fn is_output_name(name: &str) -> bool {
+    is_declared_name(name) && !name.contains([':', ';', '='])
 }
 
 macro_rules! target_digest_type {
-    ($name:ident, $doc:literal) => {
+    ($name:ident, $invalid:ident, $doc:literal) => {
         #[doc = $doc]
         #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name(Arc<str>);
@@ -541,7 +832,11 @@ macro_rules! target_digest_type {
         impl $name {
             /// Decodes one exact lowercase hexadecimal digest.
             pub fn from_hex(value: &str) -> Result<Self, TargetError> {
-                validate_digest(value)?;
+                if !is_hex_digest(value) {
+                    return Err(TargetError::$invalid {
+                        value: Arc::from(value),
+                    });
+                }
                 Ok(Self(Arc::from(value)))
             }
 
@@ -574,30 +869,37 @@ macro_rules! target_digest_type {
 
 target_digest_type!(
     TargetDescriptorDigest,
+    DescriptorDigestInvalid,
     "One normalized descriptor digest over a canonical descriptor encoding (GNT-17.2-descriptor-normalization-and-target-facts)."
 );
 target_digest_type!(
     FeatureSolutionDigest,
+    ArtifactBindingDigestInvalid,
     "One digest of one selected feature solution (GNT-17.5-feature-unification)."
 );
 target_digest_type!(
     TargetFactsDigest,
+    DescriptorDigestInvalid,
     "One digest of the target facts of one package instance (GNT-17.2-descriptor-normalization-and-target-facts)."
 );
 target_digest_type!(
     PredicateOutcomeDigest,
+    ArtifactBindingDigestInvalid,
     "One digest of every evaluated predicate outcome of one selection (GNT-17.11-target-artifact-binding)."
 );
 target_digest_type!(
     GeneratedOutputHash,
+    ArtifactBindingDigestInvalid,
     "One declared hash of one target-dependent generated output (GNT-17.11-target-artifact-binding)."
 );
 target_digest_type!(
     ToolchainIdentity,
+    ArtifactBindingDigestInvalid,
     "The opaque identity of the toolchain that produced an artifact (GNT-17.11-target-artifact-binding).\n\nThe content is deliberately unspecified here: toolchain identity is owned by TOOLCHAIN-001, so this model records the identity opaquely and never interprets it."
 );
 target_digest_type!(
     TargetArtifactBindingDigest,
+    ArtifactBindingDigestInvalid,
     "One digest over the canonical encoding of one target artifact binding (GNT-17.11-target-artifact-binding)."
 );
 
@@ -755,6 +1057,11 @@ impl ExecutionTargetDescriptor {
     pub const VERSION: u32 = 1;
 
     /// Constructs one descriptor and its single canonical encoding.
+    ///
+    /// This is a value constructor and takes no declaring instance: a descriptor
+    /// describes a target, and its digest MUST keep describing that target. The
+    /// edition rule it enforces is owned by `GNT-17.1-target-descriptor` and is
+    /// decided over the descriptor value, so it reports that clause's code.
     pub fn new(
         architecture: Architecture,
         operating_system: OperatingSystemFamily,
@@ -763,7 +1070,11 @@ impl ExecutionTargetDescriptor {
         stdlib_contract: ProtocolVersion,
         mode: SemanticMode,
     ) -> Result<Self, TargetError> {
-        validate_declared_name("language edition", language_edition)?;
+        if !is_declared_name(language_edition) || language_edition.contains('=') {
+            return Err(TargetError::DescriptorEditionInvalid {
+                value: Arc::from(language_edition),
+            });
+        }
         let normalized = encode_descriptor(
             architecture,
             operating_system,
@@ -871,19 +1182,32 @@ impl TargetDescriptorRecord {
     ];
 
     /// Decodes one closed descriptor record, rejecting unknown properties.
-    pub fn new(version: u32, properties: &[(&str, &str)]) -> Result<Self, TargetError> {
+    ///
+    /// The declaring package instance is required because every rejection of a
+    /// descriptor record is a `GNT-17.12-target-resolution-failure` that MUST
+    /// name the instance whose record was rejected.
+    pub fn new(
+        declaring: &PackageIdentity,
+        version: u32,
+        properties: &[(&str, &str)],
+    ) -> Result<Self, TargetError> {
         if version != Self::VERSION {
-            return Err(TargetError::DescriptorVersionUnsupported { version });
+            return Err(TargetError::DescriptorVersionUnsupported {
+                instance: Box::new(declaring.clone()),
+                version,
+            });
         }
         let mut decoded = BTreeMap::new();
         for (key, value) in properties {
             if !Self::PROPERTIES.contains(key) {
                 return Err(TargetError::DescriptorPropertyUnknown {
+                    instance: Box::new(declaring.clone()),
                     property: Arc::from(*key),
                 });
             }
             if decoded.insert(Arc::from(*key), Arc::from(*value)).is_some() {
                 return Err(TargetError::DescriptorPropertyDuplicate {
+                    instance: Box::new(declaring.clone()),
                     property: Arc::from(*key),
                 });
             }
@@ -930,46 +1254,65 @@ impl TargetDescriptorRecord {
     }
 
     /// Proves one descriptor of this record, or reports the offending property.
-    pub fn descriptor(&self) -> Result<ExecutionTargetDescriptor, TargetError> {
-        let architecture = Architecture::from_wire_name(self.required("architecture")?).ok_or(
-            TargetError::WireValueUnknown {
-                field: "architecture",
-                value: Arc::from(self.required("architecture")?),
-            },
-        )?;
-        let operating_system = OperatingSystemFamily::from_wire_name(self.required("os_family")?)
+    ///
+    /// The declaring instance is a parameter rather than a field of this record,
+    /// because a decoded descriptor still describes a target and never embeds
+    /// the instance that declared it.
+    pub fn descriptor(
+        &self,
+        declaring: &PackageIdentity,
+    ) -> Result<ExecutionTargetDescriptor, TargetError> {
+        let architecture = Architecture::from_wire_name(self.required(declaring, "architecture")?)
             .ok_or(TargetError::WireValueUnknown {
+                instance: Box::new(declaring.clone()),
+                field: "architecture",
+                value: Arc::from(self.required(declaring, "architecture")?),
+            })?;
+        let operating_system = OperatingSystemFamily::from_wire_name(
+            self.required(declaring, "os_family")?,
+        )
+        .ok_or(TargetError::WireValueUnknown {
+            instance: Box::new(declaring.clone()),
             field: "os_family",
-            value: Arc::from(self.required("os_family")?),
+            value: Arc::from(self.required(declaring, "os_family")?),
         })?;
-        let abi_environment = AbiEnvironment::from_wire_name(self.required("abi")?).ok_or(
-            TargetError::WireValueUnknown {
+        let abi_environment = AbiEnvironment::from_wire_name(self.required(declaring, "abi")?)
+            .ok_or(TargetError::WireValueUnknown {
+                instance: Box::new(declaring.clone()),
                 field: "abi",
-                value: Arc::from(self.required("abi")?),
-            },
-        )?;
-        let mode = SemanticMode::from_wire_name(self.required("semantic_mode")?).ok_or(
+                value: Arc::from(self.required(declaring, "abi")?),
+            })?;
+        let mode = SemanticMode::from_wire_name(self.required(declaring, "semantic_mode")?).ok_or(
             TargetError::WireValueUnknown {
+                instance: Box::new(declaring.clone()),
                 field: "semantic_mode",
-                value: Arc::from(self.required("semantic_mode")?),
+                value: Arc::from(self.required(declaring, "semantic_mode")?),
             },
         )?;
-        let stdlib_contract =
-            parse_protocol_version("stdlib_contract", self.required("stdlib_contract")?)?;
+        let stdlib_contract = parse_protocol_version(
+            declaring,
+            "stdlib_contract",
+            self.required(declaring, "stdlib_contract")?,
+        )?;
         ExecutionTargetDescriptor::new(
             architecture,
             operating_system,
             abi_environment,
-            self.required("edition")?,
+            self.required(declaring, "edition")?,
             stdlib_contract,
             mode,
         )
     }
 
-    /// Returns one required property or reports it missing.
-    fn required(&self, key: &'static str) -> Result<&str, TargetError> {
+    /// Returns one required property or reports it missing under one instance.
+    fn required(
+        &self,
+        declaring: &PackageIdentity,
+        key: &'static str,
+    ) -> Result<&str, TargetError> {
         self.property(key)
             .ok_or(TargetError::DescriptorPropertyMissing {
+                instance: Box::new(declaring.clone()),
                 property: Arc::from(key),
             })
     }
@@ -1035,12 +1378,16 @@ pub enum TargetDescriptorField {
 }
 
 impl TargetDescriptorField {
-    /// Constructs one language-edition read under its declaration rules.
+    /// Constructs one language-edition read under the descriptor's edition rules.
+    ///
+    /// The edition rule is owned by `GNT-17.1-target-descriptor` and is decided
+    /// over the descriptor-field value itself, so this one condition is reported
+    /// without a declaring instance: the value it rejects is a platform fact,
+    /// exactly as in [`ExecutionTargetDescriptor::new`]. Every other rejection
+    /// of a predicate decode names the instance that declared the predicate.
     pub fn language_edition(value: &str) -> Result<Self, TargetError> {
-        validate_declared_name("language edition", value)?;
-        if value.contains('=') {
-            return Err(TargetError::DeclarationInvalid {
-                field: "language edition",
+        if !is_declared_name(value) || value.contains('=') {
+            return Err(TargetError::DescriptorEditionInvalid {
                 value: Arc::from(value),
             });
         }
@@ -1076,12 +1423,19 @@ impl TargetDescriptorField {
     }
 
     /// Strictly decodes one exact portable spelling.
-    pub fn from_wire_name(value: &str) -> Result<Self, TargetError> {
+    ///
+    /// The declaring package instance is required because a descriptor-field
+    /// read outside the closed vocabulary is a
+    /// `GNT-17.12-target-resolution-failure` that MUST name the instance that
+    /// declared the read.
+    pub fn from_wire_name(declaring: &PackageIdentity, value: &str) -> Result<Self, TargetError> {
         let (field, argument) = value.split_once('=').ok_or(TargetError::WireValueUnknown {
+            instance: Box::new(declaring.clone()),
             field: "descriptor field",
             value: Arc::from(value),
         })?;
         let unknown = |field: &'static str, argument: &str| TargetError::WireValueUnknown {
+            instance: Box::new(declaring.clone()),
             field,
             value: Arc::from(argument),
         };
@@ -1096,13 +1450,13 @@ impl TargetDescriptorField {
                 .map(Self::AbiEnvironment)
                 .ok_or_else(|| unknown("abi", argument)),
             "edition" => Self::language_edition(argument),
-            "stdlib_contract" => {
-                parse_protocol_version("stdlib_contract", argument).map(Self::StdlibContract)
-            }
+            "stdlib_contract" => parse_protocol_version(declaring, "stdlib_contract", argument)
+                .map(Self::StdlibContract),
             "semantic_mode" => SemanticMode::from_wire_name(argument)
                 .map(Self::SemanticMode)
                 .ok_or_else(|| unknown("semantic_mode", argument)),
             _ => Err(TargetError::WireValueUnknown {
+                instance: Box::new(declaring.clone()),
                 field: "descriptor field",
                 value: Arc::from(field),
             }),
@@ -1165,33 +1519,48 @@ impl TargetPredicate {
     /// A name outside the table is an error rather than an extension point, so
     /// a predicate cannot be defined by source, by a dependency, or by a build
     /// script.
-    pub fn decode(name: &str, argument: &str) -> Result<Self, TargetError> {
+    ///
+    /// The declaring package instance is required because every rejection here
+    /// is a `GNT-17.12-target-resolution-failure` that MUST name the instance
+    /// whose predicate was rejected.
+    pub fn decode(
+        declaring: &PackageIdentity,
+        name: &str,
+        argument: &str,
+    ) -> Result<Self, TargetError> {
         match TargetPredicateName::from_wire_name(name) {
             Some(TargetPredicateName::DescriptorField) => {
-                TargetDescriptorField::from_wire_name(argument).map(Self::DescriptorField)
+                TargetDescriptorField::from_wire_name(declaring, argument)
+                    .map(Self::DescriptorField)
             }
             Some(TargetPredicateName::FeatureEnabled) => FeatureName::new(argument)
                 .map(Self::FeatureEnabled)
-                .map_err(|_| TargetError::DeclarationInvalid {
-                    field: "feature",
+                .map_err(|_| TargetError::FeatureNameInvalid {
+                    instance: Box::new(declaring.clone()),
                     value: Arc::from(argument),
                 }),
             None => Err(TargetError::PredicateNameUnknown {
+                instance: Box::new(declaring.clone()),
                 name: Arc::from(name),
             }),
         }
     }
 
-    /// Evaluates this predicate against one descriptor and one feature set.
+    /// Evaluates this predicate against one descriptor and one solution.
+    ///
+    /// The declaring [`FeatureSolution`], not a bare selected set, is the read:
+    /// a feature predicate reads the declared features of the instance that
+    /// declares the predicate, so a caller cannot evaluate a predicate against
+    /// another instance's features.
     #[must_use]
     pub fn evaluate(
         &self,
         descriptor: &ExecutionTargetDescriptor,
-        features: &SelectedFeatureSet,
+        solution: &FeatureSolution,
     ) -> PredicateOutcome {
         let matched = match self {
             Self::DescriptorField(field) => field.matches(descriptor),
-            Self::FeatureEnabled(name) => features.as_slice().contains(name),
+            Self::FeatureEnabled(name) => solution.contains(name),
         };
         PredicateOutcome {
             predicate: self.clone(),
@@ -1236,15 +1605,19 @@ impl PredicateOutcomeSet {
     }
 
     /// Evaluates every predicate of one sealed selection in any order.
+    ///
+    /// The declared features are read through the declaring solution of one
+    /// package instance, so a selection cannot be evaluated against another
+    /// instance's features.
     #[must_use]
     pub fn evaluate(
         predicates: &[TargetPredicate],
         descriptor: &ExecutionTargetDescriptor,
-        features: &SelectedFeatureSet,
+        solution: &FeatureSolution,
     ) -> Self {
         let outcomes = predicates
             .iter()
-            .map(|predicate| predicate.evaluate(descriptor, features))
+            .map(|predicate| predicate.evaluate(descriptor, solution))
             .collect::<Vec<_>>();
         Self::new(&outcomes)
     }
@@ -1291,16 +1664,24 @@ pub struct FeatureDeclaration {
 
 impl FeatureDeclaration {
     /// Constructs one declaration over the closed feature vocabulary.
-    pub fn new(name: &str, default_enabled: bool, enables: &[&str]) -> Result<Self, TargetError> {
-        let name = FeatureName::new(name).map_err(|_| TargetError::DeclarationInvalid {
-            field: "feature",
+    ///
+    /// A feature declaration is a manifest declaration of one package instance,
+    /// so it takes that instance and names it in every diagnostic it raises.
+    pub fn new(
+        declaring: &PackageIdentity,
+        name: &str,
+        default_enabled: bool,
+        enables: &[&str],
+    ) -> Result<Self, TargetError> {
+        let name = FeatureName::new(name).map_err(|_| TargetError::FeatureNameInvalid {
+            instance: Box::new(declaring.clone()),
             value: Arc::from(name),
         })?;
         let mut enabled = Vec::with_capacity(enables.len());
         for enabled_name in enables {
             enabled.push(FeatureName::new(enabled_name).map_err(|_| {
-                TargetError::DeclarationInvalid {
-                    field: "feature",
+                TargetError::FeatureNameInvalid {
+                    instance: Box::new(declaring.clone()),
                     value: Arc::from(*enabled_name),
                 }
             })?);
@@ -1343,7 +1724,15 @@ impl FeatureDeclarations {
     /// A declaration with an unknown feature name, a feature declared twice, or
     /// a cyclic enabling relation is invalid rather than ignored, and the
     /// offending names are reported.
-    pub fn new(declarations: &[FeatureDeclaration]) -> Result<Self, TargetError> {
+    ///
+    /// The declaring package instance is used for those diagnostics and is not
+    /// stored: this set is a pure declaration set, so two instances that declare
+    /// the same features hold equal sets, and unification stays the only
+    /// operation that binds a set to one instance.
+    pub fn new(
+        declaring: &PackageIdentity,
+        declarations: &[FeatureDeclaration],
+    ) -> Result<Self, TargetError> {
         let mut declarations = declarations.to_vec();
         declarations.sort_by(|left, right| left.name.cmp(&right.name));
         if let Some(pair) = declarations
@@ -1351,6 +1740,7 @@ impl FeatureDeclarations {
             .find(|pair| pair[0].name == pair[1].name)
         {
             return Err(TargetError::FeatureDeclarationDuplicate {
+                instance: Box::new(declaring.clone()),
                 name: pair[0].name.clone(),
             });
         }
@@ -1362,13 +1752,17 @@ impl FeatureDeclarations {
             for enabled in &declaration.enables {
                 if !declared.contains(enabled) {
                     return Err(TargetError::FeatureUnknown {
+                        instance: Box::new(declaring.clone()),
                         name: enabled.clone(),
                     });
                 }
             }
         }
         if let Some(cycle) = find_feature_cycle(&declarations) {
-            return Err(TargetError::FeatureCycle { cycle });
+            return Err(TargetError::FeatureCycle {
+                instance: Box::new(declaring.clone()),
+                cycle,
+            });
         }
         Ok(Self(declarations))
     }
@@ -1509,7 +1903,7 @@ impl FeatureSolution {
             .collect::<Vec<_>>();
         if !undeclared.is_empty() {
             return Err(TargetError::FeatureRequestUnsatisfiable {
-                root: Box::new(root.clone()),
+                instance: Box::new(root.clone()),
                 requested: undeclared,
             });
         }
@@ -1593,13 +1987,21 @@ impl TargetFactsRecord {
     pub const VERSION: u32 = ExecutionTargetDescriptor::VERSION;
 
     /// Composes one target-facts record, rejecting an unsupported version.
+    ///
+    /// This record is the `GNT-17.2` identity composition rather than a
+    /// declaration, so it stays instance-free: it is decoded while proving a
+    /// package identity of `GNT-16.1-package-identity`, before that identity
+    /// exists, so no instance can be named for a recorded version this build
+    /// does not support. A descriptor wire record, whose instance does exist,
+    /// reports the descriptor clause's code for the same condition and names
+    /// that instance.
     pub fn new(
         descriptor_version: u32,
         descriptor: TargetDescriptorDigest,
         features: FeatureSolutionDigest,
     ) -> Result<Self, TargetError> {
         if descriptor_version != Self::VERSION {
-            return Err(TargetError::DescriptorVersionUnsupported {
+            return Err(TargetError::TargetFactsVersionUnsupported {
                 version: descriptor_version,
             });
         }
@@ -1675,39 +2077,21 @@ impl TargetFactsRecord {
     /// repaired, and a record whose version this implementation does not support
     /// is reported as unsupported rather than reinterpreted.
     pub fn from_text(value: &str) -> Result<Self, TargetError> {
+        let invalid = || TargetError::TargetFactsTextInvalid {
+            value: Arc::from(value),
+        };
         let mut parts = value.split(':');
         let (Some(version), Some(descriptor), Some(features)) =
             (parts.next(), parts.next(), parts.next())
         else {
-            return Err(TargetError::DeclarationInvalid {
-                field: "target_selection",
-                value: Arc::from(value),
-            });
+            return Err(invalid());
         };
         if parts.next().is_some() {
-            return Err(TargetError::DeclarationInvalid {
-                field: "target_selection",
-                value: Arc::from(value),
-            });
+            return Err(invalid());
         }
-        let version = version
-            .parse::<u32>()
-            .map_err(|_| TargetError::DeclarationInvalid {
-                field: "target_selection",
-                value: Arc::from(value),
-            })?;
-        let descriptor = TargetDescriptorDigest::from_hex(descriptor).map_err(|_| {
-            TargetError::DeclarationInvalid {
-                field: "target_selection",
-                value: Arc::from(value),
-            }
-        })?;
-        let features = FeatureSolutionDigest::from_hex(features).map_err(|_| {
-            TargetError::DeclarationInvalid {
-                field: "target_selection",
-                value: Arc::from(value),
-            }
-        })?;
+        let version = version.parse::<u32>().map_err(|_| invalid())?;
+        let descriptor = TargetDescriptorDigest::from_hex(descriptor).map_err(|_| invalid())?;
+        let features = FeatureSolutionDigest::from_hex(features).map_err(|_| invalid())?;
         Self::new(version, descriptor, features)
     }
 }
@@ -1765,11 +2149,22 @@ impl ModeAdmission {
     /// A mode the selected target kind does not admit fails before semantic
     /// analysis of an executable begins and is never substituted by another
     /// mode or another target.
-    pub fn admit_mode(kind: TargetKind, mode: SemanticMode) -> Result<(), TargetError> {
+    /// The declaring package instance is required because an unadmitted mode is
+    /// a `GNT-17.10-target-selected-mode-admission` failure of one declared
+    /// selection, and its diagnostic names the instance that made it.
+    pub fn admit_mode(
+        declaring: &PackageIdentity,
+        kind: TargetKind,
+        mode: SemanticMode,
+    ) -> Result<(), TargetError> {
         if Self::admits(kind, mode) {
             return Ok(());
         }
-        Err(TargetError::ModeNotAdmitted { kind, mode })
+        Err(TargetError::ModeNotAdmitted {
+            instance: Box::new(declaring.clone()),
+            kind,
+            mode,
+        })
     }
 }
 
@@ -1784,8 +2179,15 @@ pub struct GeneratedOutput {
 
 impl GeneratedOutput {
     /// Validates one declared generated output.
-    pub fn new(name: &str, hash: &GeneratedOutputHash) -> Result<Self, TargetError> {
-        validate_output_name(name)?;
+    ///
+    /// A generated output is a declaration of one package instance, so it takes
+    /// that instance and names it for every declared name it rejects.
+    pub fn new(
+        declaring: &PackageIdentity,
+        name: &str,
+        hash: &GeneratedOutputHash,
+    ) -> Result<Self, TargetError> {
+        validate_output_name(declaring, name)?;
         Ok(Self {
             name: Arc::from(name),
             hash: hash.clone(),
@@ -1803,10 +2205,13 @@ impl GeneratedOutputSet {
     /// The declared set, not its enumeration, is bound by artifact identity; two
     /// declarations that name one output with two different hashes are
     /// contradictory and are rejected rather than repaired.
-    pub fn new(outputs: &[GeneratedOutput]) -> Result<Self, TargetError> {
+    pub fn new(
+        declaring: &PackageIdentity,
+        outputs: &[GeneratedOutput],
+    ) -> Result<Self, TargetError> {
         let mut outputs = outputs.to_vec();
         for output in &outputs {
-            validate_output_name(&output.name)?;
+            validate_output_name(declaring, &output.name)?;
             GeneratedOutputHash::from_hex(output.hash.as_str())?;
         }
         outputs.sort_by(|left, right| {
@@ -1817,6 +2222,7 @@ impl GeneratedOutputSet {
         for pair in outputs.windows(2) {
             if pair[0].name == pair[1].name && pair[0].hash != pair[1].hash {
                 return Err(TargetError::ArtifactBindingMismatch {
+                    instance: Box::new(declaring.clone()),
                     field: "generated_outputs",
                     expected: Arc::from(pair[0].hash.as_str()),
                     observed: Arc::from(pair[1].hash.as_str()),
@@ -1853,11 +2259,10 @@ impl GeneratedOutputSet {
 }
 
 /// Validates one declared generated-output name.
-fn validate_output_name(name: &str) -> Result<(), TargetError> {
-    validate_declared_name("generated output", name)?;
-    if name.contains([':', ';', '=']) {
-        return Err(TargetError::DeclarationInvalid {
-            field: "generated output",
+fn validate_output_name(declaring: &PackageIdentity, name: &str) -> Result<(), TargetError> {
+    if !is_output_name(name) {
+        return Err(TargetError::GeneratedOutputNameInvalid {
+            instance: Box::new(declaring.clone()),
             value: Arc::from(name),
         });
     }
@@ -1884,26 +2289,45 @@ pub struct ExpectedInputs {
 impl ExpectedInputs {
     /// Constructs one complete expected-input record.
     ///
-    /// The expected mode is the mode the selected target kind admits and the
-    /// exact mode the selected descriptor names, so an input record cannot
-    /// declare a mode the target does not admit.
+    /// The expected outcomes are derived here, from the ordered predicate list
+    /// of the selection and from the declaring solution, so a record can neither
+    /// record an outcome no evaluation produces nor evaluate a predicate against
+    /// another instance's features. The expected mode is the mode the selected
+    /// target kind admits and the exact mode the selected descriptor names, so
+    /// an input record cannot declare a mode the target does not admit.
+    ///
+    // The declaring instance, the selected kind and descriptor, the declaring
+    // solution, the declared predicate list, the declared outputs, the toolchain
+    // identity, and the mode are the closed input vocabulary of
+    // `GNT-17.11-target-artifact-binding`, so the constructor is kept explicit
+    // rather than collapsed into a builder that could omit an input.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        declaring: &PackageIdentity,
         kind: TargetKind,
         descriptor: ExecutionTargetDescriptor,
         solution: FeatureSolution,
-        outcomes: PredicateOutcomeSet,
+        predicates: &[TargetPredicate],
         outputs: GeneratedOutputSet,
         toolchain: ToolchainIdentity,
         mode: SemanticMode,
     ) -> Result<Self, TargetError> {
-        ModeAdmission::admit_mode(kind, mode)?;
+        if solution.root() != declaring {
+            return Err(TargetError::FeatureSolutionInstanceMismatch {
+                instance: Box::new(declaring.clone()),
+                solution: Box::new(solution.root().clone()),
+            });
+        }
+        ModeAdmission::admit_mode(declaring, kind, mode)?;
         if descriptor.mode() != mode {
             return Err(TargetError::ArtifactBindingMismatch {
+                instance: Box::new(declaring.clone()),
                 field: "semantic_mode",
                 expected: Arc::from(descriptor.mode().wire_name()),
                 observed: Arc::from(mode.wire_name()),
             });
         }
+        let outcomes = PredicateOutcomeSet::evaluate(predicates, &descriptor, &solution);
         Ok(Self {
             kind,
             descriptor,
@@ -1934,6 +2358,10 @@ impl ExpectedInputs {
     }
 
     /// Returns every evaluated predicate outcome of this selection.
+    ///
+    /// The outcomes are the ones this record derived from the declared predicate
+    /// list, the selected descriptor, and the declaring solution, so they are
+    /// exactly the outcomes one evaluation of this selection produces.
     #[must_use]
     pub const fn outcomes(&self) -> &PredicateOutcomeSet {
         &self.outcomes
@@ -1958,8 +2386,12 @@ impl ExpectedInputs {
     }
 
     /// Binds every input of this record into one artifact binding.
+    ///
+    /// The binding is declared for the instance the selected solution belongs
+    /// to, which this record proved is the instance that declared it.
     pub fn bind(&self) -> Result<TargetArtifactBinding, TargetError> {
         TargetArtifactBinding::new(
+            self.solution.root(),
             self.descriptor.version(),
             self.descriptor.digest(),
             self.solution.digest().clone(),
@@ -1986,7 +2418,17 @@ pub struct TargetArtifactBinding {
 
 impl TargetArtifactBinding {
     /// Binds every input of one artifact, rejecting an unsupported version.
+    ///
+    /// The declaring package instance is used for the diagnostics of an
+    /// unsupported version and is not stored: a binding records the inputs of
+    /// one artifact, and the landed `GNT-17.11-target-artifact-binding` encoding
+    /// carries no declaring instance, so the instance cannot change any bound
+    /// input or any artifact identity.
+    // The bound inputs are the closed vocabulary of
+    // `GNT-17.11-target-artifact-binding`, so the constructor stays explicit.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        declaring: &PackageIdentity,
         descriptor_version: u32,
         descriptor: TargetDescriptorDigest,
         features: FeatureSolutionDigest,
@@ -1997,6 +2439,7 @@ impl TargetArtifactBinding {
     ) -> Result<Self, TargetError> {
         if descriptor_version != ExecutionTargetDescriptor::VERSION {
             return Err(TargetError::DescriptorVersionUnsupported {
+                instance: Box::new(declaring.clone()),
                 version: descriptor_version,
             });
         }
@@ -2083,9 +2526,15 @@ impl TargetArtifactBinding {
     /// A differing input is reported as expected and observed rather than
     /// repaired, in a fixed input order, so a binding is never silently
     /// reconciled with the inputs it disagrees with.
+    ///
+    /// The comparison is against the outcomes the expected-input record derived
+    /// itself, so a binding that records outcomes no evaluation of this
+    /// selection produces is reported rather than accepted.
     pub fn check_matches(&self, expected: &ExpectedInputs) -> Result<(), TargetError> {
+        let declaring = expected.solution.root();
         let mismatch = |field: &'static str, expected: String, observed: String| {
             Err(TargetError::ArtifactBindingMismatch {
+                instance: Box::new(declaring.clone()),
                 field,
                 expected: Arc::from(expected.as_str()),
                 observed: Arc::from(observed.as_str()),
@@ -2140,7 +2589,7 @@ impl TargetArtifactBinding {
                 self.mode.wire_name().to_owned(),
             );
         }
-        ModeAdmission::admit_mode(expected.kind, self.mode)?;
+        ModeAdmission::admit_mode(declaring, expected.kind, self.mode)?;
         Ok(())
     }
 
@@ -2178,19 +2627,32 @@ impl TargetArtifactBindingRecord {
     ];
 
     /// Decodes one closed artifact-binding record, rejecting unknown properties.
-    pub fn new(version: u32, properties: &[(&str, &str)]) -> Result<Self, TargetError> {
+    ///
+    /// The declaring package instance is required because every rejection of an
+    /// artifact-binding record is a `GNT-17.12-target-resolution-failure` that
+    /// MUST name the instance whose record was rejected.
+    pub fn new(
+        declaring: &PackageIdentity,
+        version: u32,
+        properties: &[(&str, &str)],
+    ) -> Result<Self, TargetError> {
         if version != Self::VERSION {
-            return Err(TargetError::ArtifactBindingVersionUnsupported { version });
+            return Err(TargetError::ArtifactBindingVersionUnsupported {
+                instance: Box::new(declaring.clone()),
+                version,
+            });
         }
         let mut decoded = BTreeMap::new();
         for (key, value) in properties {
             if !Self::PROPERTIES.contains(key) {
                 return Err(TargetError::ArtifactBindingPropertyUnknown {
+                    instance: Box::new(declaring.clone()),
                     property: Arc::from(*key),
                 });
             }
             if decoded.insert(Arc::from(*key), Arc::from(*value)).is_some() {
                 return Err(TargetError::ArtifactBindingPropertyDuplicate {
+                    instance: Box::new(declaring.clone()),
                     property: Arc::from(*key),
                 });
             }
@@ -2237,37 +2699,47 @@ impl TargetArtifactBindingRecord {
     }
 
     /// Proves one binding of this record, or reports the missing bound input.
-    pub fn binding(&self) -> Result<TargetArtifactBinding, TargetError> {
-        let version_text = self.required("descriptor_version")?;
+    ///
+    /// The declaring instance is a parameter rather than a field of this record,
+    /// because the record is a wire record and every binding it proves names the
+    /// instance that recorded it.
+    pub fn binding(
+        &self,
+        declaring: &PackageIdentity,
+    ) -> Result<TargetArtifactBinding, TargetError> {
+        let version_text = self.required(declaring, "descriptor_version")?;
         let descriptor_version =
             version_text
                 .parse::<u32>()
                 .map_err(|_| TargetError::WireValueUnknown {
+                    instance: Box::new(declaring.clone()),
                     field: "descriptor_version",
                     value: Arc::from(version_text),
                 })?;
-        let descriptor = TargetDescriptorDigest::from_hex(self.required("descriptor_sha256")?)?;
-        let features = FeatureSolutionDigest::from_hex(self.required("feature_solution_sha256")?)?;
-        let predicates =
-            PredicateOutcomeDigest::from_hex(self.required("predicate_outcomes_sha256")?)?;
-        let toolchain = ToolchainIdentity::from_hex(self.required("toolchain_sha256")?)?;
-        let mode = SemanticMode::from_wire_name(self.required("mode")?).ok_or(
+        let descriptor =
+            TargetDescriptorDigest::from_hex(self.required(declaring, "descriptor_sha256")?)?;
+        let features =
+            FeatureSolutionDigest::from_hex(self.required(declaring, "feature_solution_sha256")?)?;
+        let predicates = PredicateOutcomeDigest::from_hex(
+            self.required(declaring, "predicate_outcomes_sha256")?,
+        )?;
+        let toolchain = ToolchainIdentity::from_hex(self.required(declaring, "toolchain_sha256")?)?;
+        let mode = SemanticMode::from_wire_name(self.required(declaring, "mode")?).ok_or(
             TargetError::WireValueUnknown {
+                instance: Box::new(declaring.clone()),
                 field: "mode",
-                value: Arc::from(self.required("mode")?),
+                value: Arc::from(self.required(declaring, "mode")?),
             },
         )?;
         let mut outputs = Vec::new();
-        let text = self.required("generated_outputs")?;
+        let text = self.required(declaring, "generated_outputs")?;
         if !text.is_empty() {
             for entry in text.split(';') {
-                let (name, hash) =
-                    entry
-                        .split_once(':')
-                        .ok_or(TargetError::DeclarationInvalid {
-                            field: "generated output",
-                            value: Arc::from(entry),
-                        })?;
+                let (name, hash) = entry.split_once(':').ok_or(TargetError::WireValueUnknown {
+                    instance: Box::new(declaring.clone()),
+                    field: "generated_outputs",
+                    value: Arc::from(entry),
+                })?;
                 outputs.push(GeneratedOutput {
                     name: Arc::from(name),
                     hash: GeneratedOutputHash::from_hex(hash)?,
@@ -2275,20 +2747,28 @@ impl TargetArtifactBindingRecord {
             }
         }
         TargetArtifactBinding::new(
+            declaring,
             descriptor_version,
             descriptor,
             features,
             predicates,
-            GeneratedOutputSet::new(&outputs)?,
+            GeneratedOutputSet::new(declaring, &outputs)?,
             toolchain,
             mode,
         )
     }
 
-    /// Returns one required bound input or reports it missing.
-    fn required(&self, input: &'static str) -> Result<&str, TargetError> {
+    /// Returns one required bound input or reports it missing under one instance.
+    fn required(
+        &self,
+        declaring: &PackageIdentity,
+        input: &'static str,
+    ) -> Result<&str, TargetError> {
         self.property(input)
-            .ok_or(TargetError::ArtifactBindingMissingInput { input })
+            .ok_or(TargetError::ArtifactBindingMissingInput {
+                instance: Box::new(declaring.clone()),
+                input,
+            })
     }
 }
 
@@ -2304,10 +2784,12 @@ fn version_text(version: ProtocolVersion) -> String {
 
 /// Parses one exact `major.minor` standard-library contract version.
 fn parse_protocol_version(
+    declaring: &PackageIdentity,
     field: &'static str,
     value: &str,
 ) -> Result<ProtocolVersion, TargetError> {
     let unknown = || TargetError::WireValueUnknown {
+        instance: Box::new(declaring.clone()),
         field,
         value: Arc::from(value),
     };
@@ -2472,14 +2954,59 @@ fn encode_artifact_binding(
 #[cfg(test)]
 mod tests {
     use super::{
-        AbiEnvironment, Architecture, ExecutionTargetDescriptor, FeatureDeclaration,
-        FeatureDeclarations, ModeAdmission, OperatingSystemFamily, PredicateOutcome,
-        PredicateOutcomeSet, TargetDescriptorField, TargetDescriptorRecord, TargetError,
-        TargetPredicate,
+        AbiEnvironment, Architecture, ExecutionTargetDescriptor, ExpectedInputs,
+        FeatureDeclaration, FeatureDeclarations, FeatureSolution, FeatureSolutionDigest,
+        GeneratedOutput, GeneratedOutputHash, GeneratedOutputSet, ModeAdmission,
+        OperatingSystemFamily, PredicateOutcome, PredicateOutcomeSet, TargetArtifactBinding,
+        TargetDescriptorDigest, TargetDescriptorField, TargetDescriptorRecord, TargetError,
+        TargetFactsRecord, TargetPredicate, ToolchainIdentity,
     };
-    use crate::package::{FeatureName, SelectedFeatureSet, TargetKind};
+    use crate::package::{
+        CanonicalIrDigest, FeatureName, GeneratorInputs, InterfaceDigest, PackageIdentity,
+        PackageIdentityInputs, PackageName, PackageSourceIdentity, PackageVersion,
+        SelectedFeatureSet, SourceManifestDigest, TargetFactSet, TargetKind,
+    };
     use gantry_core::mode::SemanticMode;
     use gantry_core::protocol::ProtocolVersion;
+
+    /// Returns one fixture 64-character lowercase hexadecimal digest text.
+    fn digest_text() -> String {
+        "0123456789abcdef".repeat(4)
+    }
+
+    /// Returns the declaring package instance of one fixture version.
+    fn root_of(version: &str) -> PackageIdentity {
+        let digest = digest_text();
+        PackageIdentity::derive(PackageIdentityInputs::new(
+            PackageName::new("app").unwrap_or_else(|_| unreachable!("fixture name is valid")),
+            PackageVersion::new(version)
+                .unwrap_or_else(|_| unreachable!("fixture version is valid")),
+            PackageSourceIdentity::new(
+                SourceManifestDigest::from_hex(&digest)
+                    .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal")),
+                CanonicalIrDigest::from_hex(&digest)
+                    .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal")),
+            ),
+            SelectedFeatureSet::empty(),
+            TargetFactSet::empty(),
+            TargetFactsRecord::new(
+                1,
+                TargetDescriptorDigest::from_hex(&digest)
+                    .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal")),
+                FeatureSolutionDigest::from_hex(&digest)
+                    .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal")),
+            )
+            .unwrap_or_else(|_| unreachable!("fixture selection names its version")),
+            InterfaceDigest::from_hex(&digest)
+                .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal")),
+            GeneratorInputs::empty(),
+        ))
+    }
+
+    /// Returns the fixture declaring package instance of these tests.
+    fn root() -> PackageIdentity {
+        root_of("1.0.0")
+    }
 
     /// Returns one fixture descriptor under the closed version-1 vocabulary.
     fn descriptor() -> ExecutionTargetDescriptor {
@@ -2499,6 +3026,29 @@ mod tests {
         FeatureName::new(name).unwrap_or_else(|_| unreachable!("fixture feature name"))
     }
 
+    /// Returns the fixture declarations of the declaring instance.
+    fn declarations() -> FeatureDeclarations {
+        let declaring = root();
+        FeatureDeclarations::new(
+            &declaring,
+            &[
+                FeatureDeclaration::new(&declaring, "io", false, &[])
+                    .unwrap_or_else(|_| unreachable!("fixture declaration is well formed")),
+                FeatureDeclaration::new(&declaring, "sync", true, &["io"])
+                    .unwrap_or_else(|_| unreachable!("fixture declaration is well formed")),
+                FeatureDeclaration::new(&declaring, "extra", false, &[])
+                    .unwrap_or_else(|_| unreachable!("fixture declaration is well formed")),
+            ],
+        )
+        .unwrap_or_else(|_| unreachable!("fixture declarations are acyclic"))
+    }
+
+    /// Returns the fixture selected solution of the declaring instance.
+    fn solution() -> FeatureSolution {
+        FeatureSolution::unify(&declarations(), &[feature("io")], &root())
+            .unwrap_or_else(|_| unreachable!("fixture request is declared"))
+    }
+
     #[test]
     fn one_descriptor_has_one_canonical_encoding_and_digest() {
         let first = descriptor();
@@ -2510,32 +3060,34 @@ mod tests {
 
     #[test]
     fn descriptor_record_round_trips_and_rejects_unknown_properties() {
+        let declaring = root();
         let descriptor = descriptor();
         let record = descriptor.record();
         assert_eq!(
-            record.descriptor(),
+            record.descriptor(&declaring),
             Ok(descriptor.clone()),
             "a record of a descriptor proves that descriptor"
         );
         assert!(matches!(
-            TargetDescriptorRecord::new(1, &[("host_path", "/tmp")]),
-            Err(TargetError::DescriptorPropertyUnknown { .. })
+            TargetDescriptorRecord::new(&declaring, 1, &[("host_path", "/tmp")]),
+            Err(TargetError::DescriptorPropertyUnknown { instance, property })
+                if *instance == declaring && property.as_ref() == "host_path"
         ));
         assert!(matches!(
-            TargetDescriptorRecord::new(2, &[]),
-            Err(TargetError::DescriptorVersionUnsupported { version: 2 })
+            TargetDescriptorRecord::new(&declaring, 2, &[]),
+            Err(TargetError::DescriptorVersionUnsupported { instance, version: 2 })
+                if *instance == declaring
         ));
     }
 
     #[test]
     fn predicate_outcomes_are_canonical_and_read_only_the_selection() {
         let descriptor = descriptor();
-        let features = SelectedFeatureSet::new(&["async"])
-            .unwrap_or_else(|_| unreachable!("fixture features"));
+        let solution = solution();
         let field = TargetDescriptorField::Architecture(Architecture::X86_64);
         let empty = TargetDescriptorField::Architecture(Architecture::Aarch64);
         let outcomes = vec![
-            PredicateOutcome::new(TargetPredicate::FeatureEnabled(feature("async")), true),
+            PredicateOutcome::new(TargetPredicate::FeatureEnabled(feature("sync")), true),
             PredicateOutcome::new(TargetPredicate::DescriptorField(field), true),
         ];
         let permuted = vec![outcomes[1].clone(), outcomes[0].clone()];
@@ -2544,29 +3096,120 @@ mod tests {
         assert_eq!(set.digest(), PredicateOutcomeSet::new(&permuted).digest());
         assert!(
             !TargetPredicate::DescriptorField(empty)
-                .evaluate(&descriptor, &features)
+                .evaluate(&descriptor, &solution)
+                .matched
+        );
+        // A feature predicate reads the declaring solution's selected features,
+        // so a declared feature the solution does not select is unmatched.
+        assert!(
+            !TargetPredicate::FeatureEnabled(feature("extra"))
+                .evaluate(&descriptor, &solution)
                 .matched
         );
     }
 
     #[test]
     fn feature_declarations_and_mode_admission_reject_offending_inputs() {
+        let declaring = root();
         assert!(matches!(
-            FeatureDeclarations::new(&[FeatureDeclaration::new("a", false, &["a"])
-                .unwrap_or_else(|_| unreachable!("fixture declaration"))]),
-            Err(TargetError::FeatureCycle { .. })
+            FeatureDeclarations::new(
+                &declaring,
+                &[FeatureDeclaration::new(&declaring, "a", false, &["a"])
+                    .unwrap_or_else(|_| unreachable!("fixture declaration"))]
+            ),
+            Err(TargetError::FeatureCycle { instance, .. }) if *instance == declaring
         ));
         assert_eq!(
-            FeatureDeclarations::new(&[]),
+            FeatureDeclarations::new(&declaring, &[]),
             Ok(FeatureDeclarations::empty())
         );
         assert_eq!(
-            ModeAdmission::admit_mode(TargetKind::Binary, SemanticMode::Durable),
+            ModeAdmission::admit_mode(&declaring, TargetKind::Binary, SemanticMode::Durable),
             Ok(())
         );
         assert!(matches!(
-            ModeAdmission::admit_mode(TargetKind::Test, SemanticMode::Durable),
+            ModeAdmission::admit_mode(&declaring, TargetKind::Test, SemanticMode::Durable),
             Err(TargetError::ModeNotAdmitted { .. })
+        ));
+    }
+
+    #[test]
+    fn expected_inputs_derive_their_own_outcomes_and_bind_them() {
+        let declaring = root();
+        let predicates = [
+            TargetPredicate::DescriptorField(TargetDescriptorField::Architecture(
+                Architecture::X86_64,
+            )),
+            TargetPredicate::FeatureEnabled(feature("extra")),
+        ];
+        let outputs = GeneratedOutputSet::new(
+            &declaring,
+            &[GeneratedOutput::new(
+                &declaring,
+                "schema.json",
+                &GeneratedOutputHash::from_digest([7_u8; 32]),
+            )
+            .unwrap_or_else(|_| unreachable!("fixture output name is legal"))],
+        )
+        .unwrap_or_else(|_| unreachable!("fixture outputs are well formed"));
+        let expected = ExpectedInputs::new(
+            &declaring,
+            TargetKind::Binary,
+            descriptor(),
+            solution(),
+            &predicates,
+            outputs,
+            ToolchainIdentity::from_digest([9_u8; 32]),
+            SemanticMode::Portable,
+        )
+        .unwrap_or_else(|_| unreachable!("fixture inputs name an admitted mode"));
+        assert_eq!(
+            expected.outcomes(),
+            &PredicateOutcomeSet::evaluate(&predicates, &descriptor(), &solution())
+        );
+        assert_eq!(expected.outcomes().len(), 2);
+        assert_eq!(
+            expected
+                .bind()
+                .unwrap_or_else(|_| unreachable!("fixture binding is well formed"))
+                .check_matches(&expected),
+            Ok(())
+        );
+        // A binding that records outcomes no evaluation of this selection
+        // produces is reported against the derived outcomes.
+        let unproduced = TargetArtifactBinding::new(
+            &declaring,
+            ExecutionTargetDescriptor::VERSION,
+            descriptor().digest(),
+            solution().digest().clone(),
+            PredicateOutcomeSet::empty().digest(),
+            expected.outputs().clone(),
+            expected.toolchain().clone(),
+            SemanticMode::Portable,
+        )
+        .unwrap_or_else(|_| unreachable!("fixture binding is well formed"));
+        assert!(matches!(
+            unproduced.check_matches(&expected),
+            Err(TargetError::ArtifactBindingMismatch { field, .. })
+                if field == "predicate_outcomes_sha256"
+        ));
+        // A solution of another instance cannot be bound to this instance.
+        let elsewhere = root_of("2.0.0");
+        let foreign = FeatureSolution::unify(&declarations(), &[feature("io")], &elsewhere)
+            .unwrap_or_else(|_| unreachable!("fixture request is declared"));
+        assert!(matches!(
+            ExpectedInputs::new(
+                &declaring,
+                TargetKind::Binary,
+                descriptor(),
+                foreign,
+                &predicates,
+                GeneratedOutputSet::empty(),
+                ToolchainIdentity::from_digest([9_u8; 32]),
+                SemanticMode::Portable,
+            ),
+            Err(TargetError::FeatureSolutionInstanceMismatch { instance, solution })
+                if *instance == declaring && *solution == elsewhere
         ));
     }
 }

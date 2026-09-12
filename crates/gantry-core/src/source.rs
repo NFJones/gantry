@@ -1675,6 +1675,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A `shared self` declaration is outside zero-argument monomorphic inherent methods.",
     },
     DiagnosticCodeDefinition {
+        code: "target-artifact-binding-digest-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A digest or identity spelling bound by an artifact binding is not 64 lowercase hexadecimal digits.",
+    },
+    DiagnosticCodeDefinition {
         code: "target-artifact-binding-mismatch",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
@@ -1705,16 +1711,22 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An artifact-binding record names a version this implementation does not support.",
     },
     DiagnosticCodeDefinition {
-        code: "target-declaration-invalid",
+        code: "target-conditional-selection-unresolved",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
-        meaning: "A declared name of this section is not a legal declaration name.",
+        meaning: "A conditional selection cannot be resolved under the published total rule of its version.",
     },
     DiagnosticCodeDefinition {
         code: "target-descriptor-digest-invalid",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
-        meaning: "A digest spelling is not 64 lowercase hexadecimal digits.",
+        meaning: "A digest spelling of a target descriptor or of its target facts is not 64 lowercase hexadecimal digits.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-descriptor-edition-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A language-edition spelling is not a legal declared edition name.",
     },
     DiagnosticCodeDefinition {
         code: "target-descriptor-property-duplicate",
@@ -1741,6 +1753,18 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A target descriptor names a version this implementation does not support.",
     },
     DiagnosticCodeDefinition {
+        code: "target-facts-text-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A recorded target-facts text is not the canonical version:descriptor:features form.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-facts-version-unsupported",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A target-facts record names a descriptor version this implementation does not support.",
+    },
+    DiagnosticCodeDefinition {
         code: "target-feature-cycle",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
@@ -1753,16 +1777,34 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "One package instance declares one feature twice.",
     },
     DiagnosticCodeDefinition {
+        code: "target-feature-name-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A feature declaration or a sealed predicate argument is not a legal feature name.",
+    },
+    DiagnosticCodeDefinition {
         code: "target-feature-request-unsatisfiable",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
         meaning: "No single selected feature solution satisfies the requested feature set.",
     },
     DiagnosticCodeDefinition {
+        code: "target-feature-solution-instance-mismatch",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "An expected-input record binds a feature solution of another package instance.",
+    },
+    DiagnosticCodeDefinition {
         code: "target-feature-unknown",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
         meaning: "A feature declaration or a requested feature set names a feature the instance does not declare.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-generated-output-name-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A declared generated-output name is not a legal declared name.",
     },
     DiagnosticCodeDefinition {
         code: "target-mode-not-admitted",
