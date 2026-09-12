@@ -21,7 +21,7 @@ use std::fmt::{Debug, Display};
 
 use gantry::ir::generated::{Effect, RecoveryClass};
 use gantry::ir::{
-    AUTHORITY_RIGHT_ORDER, AdmissionRequest, AncestorFences, ApprovalAuditAccess,
+    AUTHORITY_RIGHT_ORDER, Admission, AdmissionRequest, AncestorFences, ApprovalAuditAccess,
     ApprovalAuditEvidence, ApprovalDecision, ApprovalDiagnosticCode, ApprovalError,
     ApprovalOutcome, ApprovalOutcomeRecord, ApprovalRequestId, ApprovalSubject,
     ApprovalSubjectInputs, ApproverPresentation, AttemptApplicability, AuditTransition,
@@ -298,6 +298,31 @@ fn request(generation: AuthorityGeneration, now_us: u64) -> AdmissionRequest {
     }
 }
 
+/// Admits one fixture dispatch through one authority generation, recovery class,
+/// and declared right, returning the landed admission the instance committed.
+///
+/// A commit point of this model carries that admission, so a fixture that commits
+/// an admission asserts the generation and the settlement rule that actually
+/// admitted the work instead of a bare verdict that something was admitted.
+fn admission_of(
+    generation: AuthorityGeneration,
+    recovery: RecoveryClass,
+    right: AuthorityRight,
+) -> Admission {
+    let mut operator = instance(&AUTHORITY_RIGHT_ORDER);
+    operator
+        .admit(
+            &AdmissionRequest {
+                right,
+                recovery,
+                generation,
+                now_us: 0,
+            },
+            &AncestorFences::none(),
+        )
+        .unwrap_or_else(|_| unreachable!("the widest fixture instance admits this dispatch"))
+}
+
 /// Binds the fixture lease of one attenuated capability instance.
 fn lease_of(
     parent: &AuthorityInstance,
@@ -314,6 +339,38 @@ fn lease_of(
     .unwrap_or_else(|_| unreachable!("the fixture attenuation narrows its parent"))
 }
 
+/// Builds one positive decision over one operation, standing on one lease.
+///
+/// The subject carries the lease's own instance, generation, lineage, and a
+/// validity bound inside the lease, so the decision stands on exactly the lease it
+/// presents and the model's scope check accepts it.
+fn leased_decision(operation: &LogicalOperationId, lease: StandingLease) -> ApprovalDecision {
+    let expires_at_us = lease
+        .expires_at_us()
+        .unwrap_or_else(|| unreachable!("the fixture lease is bounded"));
+    let constraints = DecisionConstraints::new(
+        lease.scope(),
+        expires_at_us,
+        AttemptApplicability::RecoveryPolicy,
+    )
+    .unwrap_or_else(|_| unreachable!("the decision bound stays within the lease"));
+    let subject = build(
+        base_inputs(operation)
+            .with_constraints(constraints)
+            .with_instance(lease.id().clone())
+            .with_generation(lease.instance().generation())
+            .with_lineage(lease.instance().lineage_record()),
+    );
+    ApprovalDecision::new(
+        subject,
+        ApprovalOutcome::PositiveDecision,
+        &actor(),
+        0,
+        Some(lease),
+    )
+    .unwrap_or_else(|_| unreachable!("the decision stands on the lease it declares"))
+}
+
 /// Binds one release-holder authority over the fixture release site.
 fn holder(
     classes: &[ProtectedDataClass],
@@ -323,6 +380,13 @@ fn holder(
     let binding = ReleaseHolderBindingId::new(&site, &integration());
     ReleaseHolderAuthority::bind(&site, binding, classes, destinations)
         .unwrap_or_else(|_| unreachable!("the fixture binding names its own site"))
+}
+
+/// Returns the audit capability the approval evidence store issues for the landed
+/// observe right, which every fixture holder of the widest rights set carries.
+fn audit_access() -> ApprovalAuditAccess {
+    ApprovalAuditAccess::grant(RightsSet::from_rights(&[AuthorityRight::Observe]))
+        .unwrap_or_else(|| unreachable!("the observe right issues the audit capability"))
 }
 
 /// Seals one fixture protected value of one class.
@@ -880,31 +944,32 @@ fn a_standing_lease_is_obtainable_only_by_attenuation_expires_and_is_revocable()
     assert!(!lease.is_revoked());
     assert_eq!(lease.fenced(), None);
 
-    // A lease can be revoked, and a repeated revocation keeps its own point.
+    // A lease can be revoked by a contractual revoker, and a repeated permitted
+    // revocation keeps its own point.
     let point = lease
-        .revoke()
-        .unwrap_or_else(|_| unreachable!("the contractual holder may revoke"));
+        .revoke(parent.id())
+        .unwrap_or_else(|_| unreachable!("the issuer may revoke under this contract"));
     assert_eq!(point.category(), FenceCategory::Revocation);
     assert!(lease.is_revoked());
     assert_eq!(lease.fenced(), Some(FenceCategory::Revocation));
     assert!(!lease.permits(0));
     let repeated = lease
-        .revoke()
+        .revoke(parent.id())
         .unwrap_or_else(|_| unreachable!("a repeated revocation returns its point"));
     assert_eq!(repeated.linearization_point(), point.linearization_point());
 
-    // The revocation contract is decisive: an issuer-only holder cannot revoke.
+    // The revocation contract is decisive and is checked before anything is fenced:
+    // a revoker the contract does not admit is refused without fencing the lease.
+    let issuer_only_holder = issuer_only.id().clone();
     assert_eq!(
-        issuer_only.revoke().err(),
+        issuer_only.revoke(&issuer_only_holder).err(),
         Some(ApprovalError::RevocationNotContractual)
     );
-    assert!(!issuer_only.is_revoked());
-    let point = issuer_only
-        .instance()
-        .lease()
-        .expires_at_us()
-        .unwrap_or_else(|| unreachable!("the fixture lease is bounded"));
-    assert_eq!(point, 50);
+    assert!(
+        !issuer_only.is_revoked(),
+        "a refused revocation fences nothing"
+    );
+    assert_eq!(issuer_only.fenced(), None);
 }
 
 /// Revalidation is fail-closed and reports exactly what it revalidated: staleness
@@ -1142,7 +1207,7 @@ fn revalidation_reports_staleness_and_fencing_without_repair() {
         RevocationContract::IssuerOrHolder,
     );
     let point = revoked
-        .revoke()
+        .revoke(parent.id())
         .unwrap_or_else(|_| unreachable!("the contractual holder may revoke"));
     assert_eq!(point.category(), FenceCategory::Revocation);
     let revoked_decision = ApprovalDecision::new(
@@ -1238,41 +1303,68 @@ fn durable_cuts_commit_in_order_and_classify_resume() {
     assert_eq!(record.cut(), request_cut);
     assert_eq!(record.request(), &ApprovalRequestId::of(&subject));
     assert_eq!(record.operation(), &operation);
+    assert_eq!(record.decision(), None);
+    assert_eq!(record.outcome(), None);
+    assert_eq!(record.classify_resume(), ResumeClass::PendingDecision);
 
-    // A pending decision resumes through its stable identity.
+    // The decision cut is reachable only through commit_decision: the happy path
+    // commits the request, the decision, admission, and dispatch in that order.
+    let decision = decision(&subject);
     let committed = record
         .clone()
-        .advance(decision_cut)
-        .unwrap_or_else(|_| unreachable!("the decision follows the request commit"));
+        .commit_decision(&decision)
+        .unwrap_or_else(|_| unreachable!("the decision is of the committed request"));
+    assert_eq!(committed.cut(), decision_cut);
+    assert_eq!(committed.decision(), Some(&decision.id()));
+    assert_eq!(committed.outcome(), Some(ApprovalOutcome::PositiveDecision));
     assert_eq!(committed.resume(&subject), Ok(decision_cut));
+    assert_eq!(committed.classify_resume(), ResumeClass::SameDecision);
+    assert_eq!(
+        committed.clone().commit_decision(&decision).err(),
+        Some(ApprovalError::CutOutOfOrder {
+            from: decision_cut,
+            to: decision_cut,
+        }),
+        "the decision cut is committed once"
+    );
     let admitted = committed
         .clone()
         .advance(admitted_cut)
         .unwrap_or_else(|_| unreachable!("admission follows the decision commit"));
     assert_eq!(admitted.resume(&subject), Ok(admitted_cut));
+    assert_eq!(admitted.classify_resume(), ResumeClass::SameDecision);
     let dispatched = admitted
         .clone()
         .advance(dispatched_cut)
         .unwrap_or_else(|_| unreachable!("dispatch follows admission"));
-
-    // A crash before dispatch continues under the same decision; a crash after
-    // dispatch hands off to the operation's recovery state.
-    for cut in DurableApprovalCut::ALL {
-        let expected = match cut {
-            DurableApprovalCut::RequestCommitted
-            | DurableApprovalCut::DecisionCommitted
-            | DurableApprovalCut::Admitted => ResumeClass::SameDecision,
-            DurableApprovalCut::Dispatched => ResumeClass::OperationRecovery,
-        };
-        assert_eq!(cut.classify_resume(), expected);
-    }
-    assert_eq!(record.classify_resume(), ResumeClass::SameDecision);
-    assert_eq!(admitted.classify_resume(), ResumeClass::SameDecision);
     assert_eq!(dispatched.classify_resume(), ResumeClass::OperationRecovery);
     assert_eq!(
         dispatched.resume(&subject),
         Ok(dispatched_cut),
         "a dispatch is not re-approved"
+    );
+
+    // The spec-derived mapping is exhaustive: the committed request resumes the
+    // pending wait, a committed decision resumes under the same decision, and only a
+    // dispatch hands off to the target operation's recovery state.
+    for cut in DurableApprovalCut::ALL {
+        let expected = match cut {
+            DurableApprovalCut::RequestCommitted => ResumeClass::PendingDecision,
+            DurableApprovalCut::DecisionCommitted | DurableApprovalCut::Admitted => {
+                ResumeClass::SameDecision
+            }
+            DurableApprovalCut::Dispatched => ResumeClass::OperationRecovery,
+        };
+        assert_eq!(cut.classify_resume(), expected);
+    }
+    assert_eq!(ResumeClass::PendingDecision.wire_name(), "pending-decision");
+    assert_eq!(
+        DurableApprovalCut::ALL
+            .into_iter()
+            .filter(|cut| cut.classify_resume() == ResumeClass::OperationRecovery)
+            .collect::<Vec<_>>(),
+        vec![dispatched_cut],
+        "only a dispatch can have begun external work"
     );
 
     // One logical operation identity never gets a second request.
@@ -1345,33 +1437,55 @@ fn approval_alone_releases_nothing_and_holder_authority_is_the_only_release_path
     assert_eq!(subject.scope().class(), class);
     assert_eq!(subject.scope().destination(), destination);
     assert_eq!(subject.scope().charge().value(), 1);
+    assert_eq!(
+        subject.scope().projection().kind(),
+        ProjectionKind::Redacted
+    );
     let decision = decision(&subject);
+
+    // The declared release site, the disclosure budget, and the logical instant
+    // that match this decision's subject exactly.
+    let release_site = ReleaseSite::new(SITE).declare(class, destination, ProjectionKind::Redacted);
+    let matching_budget = DisclosureBudget::new(1, charge(1));
+    let authority = holder(
+        &[class, ProtectedDataClass::SourceText],
+        &[destination, ReleaseDestination::DiagnosticSink],
+    );
 
     // Approval alone releases nothing.
     let withholding = holder(&[], &[]);
-    assert_eq!(decision.release_grant(&withholding), None);
+    assert_eq!(
+        decision.release_grant(&withholding, &release_site, &matching_budget, 0),
+        None
+    );
     assert!(
         !holder(&[class], &[ReleaseDestination::DiagnosticSink])
             .grant()
             .is_empty()
     );
     assert_eq!(
-        decision.release_grant(&holder(&[ProtectedDataClass::SourceText], &[destination])),
+        decision.release_grant(
+            &holder(&[ProtectedDataClass::SourceText], &[destination]),
+            &release_site,
+            &matching_budget,
+            0
+        ),
         None
     );
     assert_eq!(
-        decision.release_grant(&holder(&[class], &[ReleaseDestination::DiagnosticSink])),
+        decision.release_grant(
+            &holder(&[class], &[ReleaseDestination::DiagnosticSink]),
+            &release_site,
+            &matching_budget,
+            0
+        ),
         None
     );
 
     // The holder authority that declares exactly the subject's pair is the only
-    // source of a grant.
-    let authority = holder(
-        &[class, ProtectedDataClass::SourceText],
-        &[destination, ReleaseDestination::DiagnosticSink],
-    );
+    // source of a grant for a site, budget, and instant that agree with it.
     let grant = decision
-        .release_grant(&authority)
+        .release_grant(&authority, &release_site, &matching_budget, 0)
         .unwrap_or_else(|| unreachable!("the holder declares the subject's pair"));
     assert!(grant.covers(class, destination));
     assert_eq!(grant.class_count(), 1);
@@ -1388,12 +1502,14 @@ fn approval_alone_releases_nothing_and_holder_authority_is_the_only_release_path
     // A negative decision releases nothing, however the holder declares.
     let denial = ApprovalDecision::new(subject.clone(), ApprovalOutcome::Denial, &actor(), 0, None)
         .unwrap_or_else(|_| unreachable!("a one-shot decision needs no lease"));
-    assert_eq!(denial.release_grant(&authority), None);
+    assert_eq!(
+        denial.release_grant(&authority, &release_site, &matching_budget, 0),
+        None
+    );
     assert!(!denial.is_positive());
 
     // Approval is still not a release: the release site's own declaration, the
     // grant, and the disclosure budget each remain independently required.
-    let release_site = ReleaseSite::new(SITE).declare(class, destination, ProjectionKind::Redacted);
     let protected = protected(class);
     let mut budget = DisclosureBudget::new(1, charge(1));
     let refused = release_site.release(&withholding.grant(), &protected, destination, &mut budget);
@@ -1410,7 +1526,8 @@ fn approval_alone_releases_nothing_and_holder_authority_is_the_only_release_path
 
 /// Audit evidence is declared metadata only and is reachable only through the
 /// capability-gated view; it exposes no credential, no protected argument, no
-/// protected content, and no protected comment.
+/// protected content, and no protected comment, and it records an admission only
+/// for the positive decision and the subject that admission actually belongs to.
 #[test]
 fn approval_audit_evidence_requires_the_capability_gated_view() {
     assert_not_impl_any!(
@@ -1422,14 +1539,27 @@ fn approval_audit_evidence_requires_the_capability_gated_view() {
     );
     assert_not_impl_any!(ApprovalAuditAccess: Default, serde::Deserialize<'static>);
 
+    // The view is reachable only under the audit capability, which the evidence
+    // store issues for a bound instance carrying the observe right.
+    let access = audit_access();
+
     let operation = operation_id("crate::read_only", &[0, 1]);
     let protected_arguments = arguments("protected-argument");
     let subject = build(base_inputs(&operation).with_arguments(protected_arguments.clone()));
     let decision = decision(&subject);
     let generation = subject.generation();
-    let admitted = ApprovalAuditEvidence::record(&decision, CommitPointResult::admitted())
+    let admission = admission_of(
+        generation,
+        RecoveryClass::ReadOnly,
+        AuthorityRight::InvokeReadOnly,
+    );
+
+    // An admission recorded under the positive decision that admitted it succeeds,
+    // and the recorded commit point carries that admission itself.
+    let admitted = ApprovalAuditEvidence::record(&decision, CommitPointResult::admitted(admission))
+        .unwrap_or_else(|_| unreachable!("the admission names the subject's generation and rule"))
         .with_transition(AuditTransition::new(AuditTransitionKind::Revocation, 120));
-    let view = admitted.view(&ApprovalAuditAccess::granted());
+    let view = admitted.view(&access);
     assert_eq!(view.request(), &ApprovalRequestId::of(&subject));
     assert_eq!(view.decision(), &decision.id());
     assert_eq!(view.requester().as_str(), "requester-bob");
@@ -1441,7 +1571,26 @@ fn approval_audit_evidence_requires_the_capability_gated_view() {
     assert_eq!(view.issued_at_us(), 0);
     assert_eq!(view.expires_at_us(), decision.expires_at_us());
     assert_eq!(view.outcome(), ApprovalOutcome::PositiveDecision);
-    assert_eq!(view.commit_point(), CommitPointResult::Admitted);
+    assert_eq!(
+        view.commit_point(),
+        CommitPointResult::admitted(admission),
+        "the commit point carries the admission the authority instance committed"
+    );
+    assert!(view.commit_point().is_admitted());
+    assert_eq!(view.commit_point().admission(), Some(&admission));
+    assert_eq!(
+        view.commit_point()
+            .admission()
+            .map(|admission| admission.generation()),
+        Some(generation)
+    );
+    assert_eq!(
+        view.commit_point()
+            .admission()
+            .map(|admission| admission.settlement_rule()),
+        Some(subject.recovery())
+    );
+    assert_eq!(view.commit_point().refusal(), None);
     assert_eq!(view.transitions().len(), 1);
     assert_eq!(
         view.transitions()[0].kind(),
@@ -1457,8 +1606,9 @@ fn approval_audit_evidence_requires_the_capability_gated_view() {
     assert!(!text.contains("GNT"));
     assert!(text.contains("policy-release"));
 
-    // A refusal at the commit point is recorded with its own reason, and a fresh
-    // verdict refuses nothing.
+    // A refusal at the commit point is accepted under any decision outcome, because
+    // a positive decision can be refused at the commit point, and a fresh verdict
+    // refuses nothing at all.
     let stale = build(
         base_inputs(&operation)
             .with_arguments(arguments("protected-argument"))
@@ -1468,10 +1618,13 @@ fn approval_audit_evidence_requires_the_capability_gated_view() {
     let refused = CommitPointResult::refused(verdict)
         .unwrap_or_else(|| unreachable!("a stale verdict refuses the admission"));
     let evidence = ApprovalAuditEvidence::record(&decision, refused)
+        .unwrap_or_else(|_| unreachable!("a refusal is recorded under a positive decision"))
         .with_transition(AuditTransition::new(AuditTransitionKind::Expiry, 200))
         .with_transition(AuditTransition::new(AuditTransitionKind::Supersession, 210));
-    let view = evidence.view(&ApprovalAuditAccess::granted());
+    let view = evidence.view(&access);
     assert_eq!(view.commit_point().wire_name(), "refused");
+    assert!(!view.commit_point().is_admitted());
+    assert_eq!(view.commit_point().admission(), None);
     assert_eq!(
         view.commit_point()
             .refusal()
@@ -1599,5 +1752,447 @@ fn no_constructor_accepts_a_host_path_environment_value_clock_or_locale() {
         actor()
             .canonical_text()
             .contains("attestation=host-session")
+    );
+}
+
+/// Audit evidence records an admission only for the positive decision of the subject
+/// that admission belongs to: a denial admits nothing, and an admission of another
+/// authority generation or another settlement rule is not the subject's admission.
+/// Without those checks the audit record could attribute admitted work to an
+/// approval that never covered it.
+#[test]
+fn approval_audit_admission_must_match_the_decision_subject() {
+    let operation = operation_id("crate::read_only", &[0, 1]);
+    let subject = subject_of(&operation);
+    let decision = decision(&subject);
+    let generation = subject.generation();
+    let admission = admission_of(
+        generation,
+        RecoveryClass::ReadOnly,
+        AuthorityRight::InvokeReadOnly,
+    );
+
+    // The positive decision of the admitted subject is recorded with the admission
+    // the authority instance committed, and the view reports that admission.
+    let admitted = ApprovalAuditEvidence::record(&decision, CommitPointResult::admitted(admission))
+        .unwrap_or_else(|_| unreachable!("the admission is of this subject"));
+    let view = admitted.view(&audit_access());
+    assert!(view.commit_point().is_admitted());
+    assert_eq!(view.commit_point().admission(), Some(&admission));
+    assert_eq!(
+        view.commit_point()
+            .admission()
+            .map(|admission| admission.generation()),
+        Some(generation)
+    );
+    assert_eq!(
+        view.commit_point()
+            .admission()
+            .map(|admission| admission.settlement_rule()),
+        Some(subject.recovery())
+    );
+
+    // A denial admits nothing, so an admission recorded under it is refused under
+    // its own code and its own anchored clause.
+    let denial = ApprovalDecision::new(subject.clone(), ApprovalOutcome::Denial, &actor(), 0, None)
+        .unwrap_or_else(|_| unreachable!("a one-shot decision needs no lease"));
+    let admitted_under_denial =
+        ApprovalAuditEvidence::record(&denial, CommitPointResult::admitted(admission)).err();
+    assert_eq!(
+        admitted_under_denial,
+        Some(ApprovalError::AdmissionWithoutPositiveDecision)
+    );
+    assert_eq!(
+        admitted_under_denial
+            .as_ref()
+            .and_then(|error| error.code()),
+        Some(ApprovalDiagnosticCode::AdmissionWithoutPositiveDecision)
+    );
+    assert_eq!(
+        admitted_under_denial
+            .as_ref()
+            .map(ApprovalError::requirement),
+        Some("GNT-19.6-decision-linearization-and-revalidation")
+    );
+
+    // An admission of another authority generation is not this subject's admission.
+    let mut descended = instance(&AUTHORITY_RIGHT_ORDER)
+        .attenuate(
+            RightsSet::from_rights(&[AuthorityRight::InvokeReadOnly]),
+            AuthorityLeasePolicy::Unleased,
+        )
+        .unwrap_or_else(|_| unreachable!("the attenuation narrows the widest fixture instance"));
+    let descended_generation = descended.generation();
+    assert_ne!(descended_generation, generation);
+    let other_generation = descended
+        .admit(&request(descended_generation, 0), &AncestorFences::none())
+        .unwrap_or_else(|_| unreachable!("the descendant admits read-only dispatch"));
+    let foreign_generation =
+        ApprovalAuditEvidence::record(&decision, CommitPointResult::admitted(other_generation))
+            .err();
+    assert_eq!(
+        foreign_generation,
+        Some(ApprovalError::AdmissionNotOfSubject)
+    );
+    assert_eq!(
+        foreign_generation.as_ref().and_then(|error| error.code()),
+        Some(ApprovalDiagnosticCode::AdmissionNotOfSubject)
+    );
+    assert_eq!(
+        ApprovalError::AdmissionNotOfSubject.requirement(),
+        "GNT-19.10-approval-audit-evidence"
+    );
+
+    // An admission that settles under another recovery class is not one either.
+    let other_rule = admission_of(
+        generation,
+        RecoveryClass::NonIdempotent,
+        AuthorityRight::InvokeNonIdempotent,
+    );
+    assert_eq!(
+        ApprovalAuditEvidence::record(&decision, CommitPointResult::admitted(other_rule)).err(),
+        Some(ApprovalError::AdmissionNotOfSubject),
+        "another settlement rule is not this subject's admission"
+    );
+
+    // A refusal commit point is accepted under a positive decision and under a
+    // denial alike, because a positive decision can be refused at the commit point.
+    let stale = build(
+        base_inputs(&operation)
+            .with_arguments(arguments("other-arguments"))
+            .with_mapping(mapping("other-mapping")),
+    );
+    let refused =
+        CommitPointResult::refused(revalidate(&stale, &decision, &request(generation, 1)))
+            .unwrap_or_else(|| unreachable!("a stale verdict refuses the admission"));
+    assert!(
+        ApprovalAuditEvidence::record(&decision, refused).is_ok(),
+        "a positive decision refused at the commit point is still recorded"
+    );
+    assert!(
+        ApprovalAuditEvidence::record(&denial, refused).is_ok(),
+        "a denial refused at the commit point is still recorded"
+    );
+}
+
+/// The audit capability is the declared-rights gate of the evidence store, not
+/// cryptographic enforcement: it is issued for a rights set that contains the landed
+/// observe right, which is the right of reading the audit record of an admitted
+/// operation, and refused for every rights set without it.
+#[test]
+fn the_audit_capability_is_issued_only_for_the_observe_right() {
+    assert_eq!(
+        ApprovalAuditAccess::grant(RightsSet::from_rights(&[AuthorityRight::Observe])),
+        Some(audit_access())
+    );
+    assert_eq!(
+        ApprovalAuditAccess::grant(instance(&AUTHORITY_RIGHT_ORDER).rights()),
+        Some(audit_access()),
+        "the widest fixture instance carries observe"
+    );
+
+    for rights in [
+        RightsSet::empty(),
+        RightsSet::from_rights(&[AuthorityRight::InvokeReadOnly]),
+        RightsSet::from_rights(&[
+            AuthorityRight::InvokeIdempotent,
+            AuthorityRight::InvokeNonIdempotent,
+            AuthorityRight::Delegate,
+        ]),
+    ] {
+        assert!(
+            !rights.contains(AuthorityRight::Observe),
+            "the refused fixture rights set carries no observe right"
+        );
+        assert_eq!(ApprovalAuditAccess::grant(rights), None);
+    }
+}
+
+/// commit_decision is the only path to the decision cut, and the decision cut is the
+/// only cut that may be committed without one: the admitted cut additionally requires
+/// a committed decision whose outcome granted the request. Without those gates an
+/// admission or a dispatch could be committed for a decision the interaction never
+/// held, and the request identity rule could be bypassed.
+#[test]
+fn durable_cuts_require_a_committed_positive_decision() {
+    let operation = operation_id("crate::read_only", &[0, 1]);
+    let subject = subject_of(&operation);
+    let request_cut = DurableApprovalCut::RequestCommitted;
+    let decision_cut = DurableApprovalCut::DecisionCommitted;
+    let admitted_cut = DurableApprovalCut::Admitted;
+    let record = DurableApprovalRecord::commit_request(&subject);
+    assert_eq!(record.decision(), None);
+    assert_eq!(record.outcome(), None);
+
+    // Advancing to the decision cut without committing a decision is refused, and the
+    // admitted cut is not the immediate successor of the request cut, so no committed
+    // state is ever skipped.
+    assert_eq!(
+        record.clone().advance(decision_cut).err(),
+        Some(ApprovalError::DecisionNotCommitted { to: decision_cut })
+    );
+    assert_eq!(
+        record.clone().advance(admitted_cut).err(),
+        Some(ApprovalError::CutOutOfOrder {
+            from: request_cut,
+            to: admitted_cut,
+        })
+    );
+
+    // A decision of another subject is not the decision of the committed request, and
+    // the refusal names the request identity the decision presented.
+    let foreign_subject = subject_of(&operation_id("crate::other_action", &[0, 1]));
+    let not_of_request = record
+        .clone()
+        .commit_decision(&decision(&foreign_subject))
+        .err();
+    assert_eq!(
+        not_of_request.as_ref().and_then(|error| error.code()),
+        Some(ApprovalDiagnosticCode::DecisionNotOfRequest)
+    );
+    assert_eq!(
+        not_of_request.as_ref().map(ApprovalError::requirement),
+        Some("GNT-19.7-durable-request-and-decision-cuts")
+    );
+    assert!(not_of_request.as_ref().is_some_and(|error| {
+        error
+            .to_string()
+            .contains(ApprovalRequestId::of(&foreign_subject).as_str())
+    }));
+    assert_eq!(
+        record.cut(),
+        request_cut,
+        "a refused decision commit records nothing"
+    );
+
+    // commit_decision records the decision identity and the outcome it committed, and
+    // the decision cut is committed exactly once.
+    let positive = decision(&subject);
+    let committed = record
+        .clone()
+        .commit_decision(&positive)
+        .unwrap_or_else(|_| unreachable!("the decision is of the committed request"));
+    assert_eq!(committed.cut(), decision_cut);
+    assert_eq!(committed.decision(), Some(&positive.id()));
+    assert_eq!(committed.outcome(), Some(ApprovalOutcome::PositiveDecision));
+    assert_eq!(
+        committed.clone().commit_decision(&positive).err(),
+        Some(ApprovalError::CutOutOfOrder {
+            from: decision_cut,
+            to: decision_cut,
+        }),
+        "the decision cut is committed once"
+    );
+    assert!(
+        committed.clone().advance(admitted_cut).is_ok(),
+        "a committed positive decision admits"
+    );
+
+    // A committed decision that denied the request cannot reach the admitted cut, and
+    // the refused advance leaves the interaction at the decision cut.
+    let denial = ApprovalDecision::new(subject.clone(), ApprovalOutcome::Denial, &actor(), 0, None)
+        .unwrap_or_else(|_| unreachable!("a one-shot decision needs no lease"));
+    let denied = record
+        .clone()
+        .commit_decision(&denial)
+        .unwrap_or_else(|_| unreachable!("the denial is of the committed request"));
+    assert_eq!(denied.outcome(), Some(ApprovalOutcome::Denial));
+    assert_eq!(
+        denied.clone().advance(admitted_cut).err(),
+        Some(ApprovalError::AdmissionWithoutPositiveDecision)
+    );
+    assert_eq!(
+        denied
+            .clone()
+            .advance(admitted_cut)
+            .err()
+            .and_then(|error| error.code()),
+        Some(ApprovalDiagnosticCode::AdmissionWithoutPositiveDecision)
+    );
+    assert_eq!(
+        denied.cut(),
+        decision_cut,
+        "a refused advance records nothing"
+    );
+}
+
+/// `release_grant` is the only path from a decision to a release permission, so it
+/// enforces the whole correspondence between them: the holder authority, the
+/// decision's validity bound, a standing lease that still permits the instant, the
+/// release site's declared projection for the subject's class and destination, and the
+/// disclosure budget's charge all have to agree with the subject before a grant is
+/// derived. A weaker projection, another charge, or a revoked lease would otherwise
+/// release data the decision never covered.
+#[test]
+fn release_grant_requires_a_matching_site_budget_instant_and_lease() {
+    let operation = operation_id("crate::read_only", &[0, 1]);
+    let class = ProtectedDataClass::ActionArgument;
+    let destination = ReleaseDestination::OrdinarySource;
+    let subject = subject_of(&operation);
+    assert_eq!(subject.scope().class(), class);
+    assert_eq!(subject.scope().destination(), destination);
+    assert_eq!(
+        subject.scope().projection().kind(),
+        ProjectionKind::Redacted
+    );
+    assert_eq!(subject.scope().charge().value(), 1);
+    let decision = decision(&subject);
+    let authority = holder(&[class], &[destination]);
+    let release_site = ReleaseSite::new(SITE).declare(class, destination, ProjectionKind::Redacted);
+    let budget = DisclosureBudget::new(1, charge(1));
+
+    // The matching site, budget, and instant still derive the narrowed grant.
+    let grant = decision
+        .release_grant(&authority, &release_site, &budget, 0)
+        .unwrap_or_else(|| unreachable!("the site, budget, and instant match the subject"));
+    assert!(grant.covers(class, destination));
+
+    // A site that declares a weaker projection than the decision, a site that
+    // declares nothing for the subject's class, a budget charging another amount, and
+    // an instant at the decision's own validity bound all refuse the release.
+    let weaker = ReleaseSite::new(SITE).declare(class, destination, ProjectionKind::Structural);
+    assert_eq!(
+        decision.release_grant(&authority, &weaker, &budget, 0),
+        None,
+        "a weaker projection than the decision declares releases nothing"
+    );
+    assert_eq!(
+        decision.release_grant(&authority, &ReleaseSite::new(SITE), &budget, 0),
+        None,
+        "a site that declares no class of the subject releases nothing"
+    );
+    assert_eq!(
+        decision.release_grant(
+            &authority,
+            &release_site,
+            &DisclosureBudget::new(10, charge(2)),
+            0
+        ),
+        None,
+        "a budget charging another amount than the decision declares releases nothing"
+    );
+    assert_eq!(
+        decision.release_grant(&authority, &release_site, &budget, decision.expires_at_us()),
+        None,
+        "the decision's own validity bound fences the release"
+    );
+
+    // A decision standing on a revoked lease releases nothing although the same
+    // decision on a live lease does and although both still grant the request:
+    // revocation removes a release permission that approval never restores.
+    let parent = instance_with(
+        &AUTHORITY_RIGHT_ORDER,
+        AuthorityLeasePolicy::Expiring { expires_at_us: 100 },
+    );
+    let live = lease_of(
+        &parent,
+        &[AuthorityRight::Observe, AuthorityRight::InvokeReadOnly],
+        50,
+        RevocationContract::IssuerOrHolder,
+    );
+    let mut revoked = lease_of(
+        &parent,
+        &[AuthorityRight::Observe, AuthorityRight::InvokeReadOnly],
+        50,
+        RevocationContract::IssuerOrHolder,
+    );
+    revoked
+        .revoke(parent.id())
+        .unwrap_or_else(|_| unreachable!("the issuer may revoke under this contract"));
+    assert!(revoked.is_revoked());
+    let live_decision = leased_decision(&operation, live);
+    let revoked_decision = leased_decision(&operation, revoked);
+    assert!(live_decision.is_positive());
+    assert!(revoked_decision.is_positive());
+    assert!(
+        live_decision
+            .release_grant(&authority, &release_site, &budget, 10)
+            .is_some(),
+        "a live lease still releases"
+    );
+    assert_eq!(
+        revoked_decision.release_grant(&authority, &release_site, &budget, 10),
+        None,
+        "a revoked lease releases nothing"
+    );
+}
+
+/// The declared revocation contract is the holder mapping. An issuer-only lease admits
+/// only the issuer, which is the immediate ancestor of the lease instance in its
+/// lineage, and an issuer-or-holder lease admits the lease holder as well. A revoker the
+/// contract does not admit is refused without fencing, so a party the contract does not
+/// name can never fence a live lease, while a repeated permitted revocation keeps the
+/// point the lease already held.
+#[test]
+fn revocation_contract_names_its_permitted_revokers() {
+    let parent = instance_with(
+        &AUTHORITY_RIGHT_ORDER,
+        AuthorityLeasePolicy::Expiring { expires_at_us: 100 },
+    );
+    let mut issuer_only = lease_of(
+        &parent,
+        &[AuthorityRight::Observe],
+        50,
+        RevocationContract::IssuerOnly,
+    );
+    assert_eq!(issuer_only.instance().parent(), Some(parent.id()));
+    assert_eq!(issuer_only.root(), parent.root());
+
+    // Under IssuerOnly the holder is refused and nothing is fenced.
+    let holder_id = issuer_only.id().clone();
+    assert_eq!(
+        issuer_only.revoke(&holder_id).err(),
+        Some(ApprovalError::RevocationNotContractual)
+    );
+    assert!(!issuer_only.is_revoked());
+    assert_eq!(issuer_only.fenced(), None);
+
+    // Under IssuerOnly the issuer may revoke, and a repeated revocation returns the
+    // point the lease already held.
+    let point = issuer_only
+        .revoke(parent.id())
+        .unwrap_or_else(|_| unreachable!("the issuer may revoke under an issuer-only contract"));
+    assert_eq!(point.category(), FenceCategory::Revocation);
+    assert!(issuer_only.is_revoked());
+    assert_eq!(
+        issuer_only
+            .revoke(parent.id())
+            .unwrap_or_else(|_| unreachable!("a repeated revocation returns its point"))
+            .linearization_point(),
+        point.linearization_point()
+    );
+
+    // Under IssuerOrHolder the lease holder may revoke.
+    let mut by_holder = lease_of(
+        &parent,
+        &[AuthorityRight::Observe],
+        50,
+        RevocationContract::IssuerOrHolder,
+    );
+    let holder_id = by_holder.id().clone();
+    assert_eq!(
+        by_holder
+            .revoke(&holder_id)
+            .unwrap_or_else(|_| unreachable!("the holder may revoke under this contract"))
+            .category(),
+        FenceCategory::Revocation
+    );
+
+    // Under IssuerOrHolder the issuer may revoke as well, and for a lease taken
+    // directly from a root instance the issuer is that root.
+    let mut from_root = lease_of(
+        &parent,
+        &[AuthorityRight::Observe],
+        50,
+        RevocationContract::IssuerOrHolder,
+    );
+    assert_eq!(from_root.instance().lineage().last(), Some(parent.id()));
+    let root_id = from_root.root().clone();
+    assert_eq!(
+        from_root
+            .revoke(&root_id)
+            .unwrap_or_else(|_| unreachable!("the root is the issuer of its first descendant"))
+            .category(),
+        FenceCategory::Revocation
     );
 }

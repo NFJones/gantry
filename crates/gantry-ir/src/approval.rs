@@ -41,10 +41,13 @@
 //!   from a provider identifier, correlation token, or transport message number,
 //!   so a provider handle can never be a request identity, a resumption key, or
 //!   evidence that a decision exists.
-//! * An [`AuthenticatedActor`] is obtainable only from a host-attested binding,
-//!   and the attestation kind is part of the value, so no argument, prompt,
-//!   header, environment fact, presentation label, or adapter field becomes an
-//!   approver identity.
+//! * An [`AuthenticatedActor`] is a sealed host-attested type distinct from
+//!   every subject input, obtainable only from a host-attested binding, and the
+//!   attestation kind is part of the value, so no argument, prompt, header,
+//!   environment fact, presentation label, or adapter field participates in an
+//!   approver identity. Host authentication is itself the embedding host's
+//!   obligation: this pure model states the type boundary and never verifies that
+//!   a host performed the authentication a binding declares.
 //! * An [`ApprovalDecision`] never joins approval to release authority: a
 //!   [`ReleaseGrant`] is derived only from a [`ReleaseHolderAuthority`], and
 //!   [`ApprovalDecision::release_grant`] refuses every subject that does not name
@@ -69,8 +72,8 @@ use crate::authority::{
 use crate::generated::RecoveryClass;
 use crate::manifest::encode_hex;
 use crate::protected::{
-    DeclaredName, DisclosureCharge, ProjectionKind, ProtectedDataClass, ReleaseDestination,
-    ReleaseGrant, ReleaseHolderAuthority, ReleaseProjection,
+    DeclaredName, DisclosureBudget, DisclosureCharge, ProjectionKind, ProtectedDataClass,
+    ReleaseDestination, ReleaseGrant, ReleaseHolderAuthority, ReleaseProjection, ReleaseSite,
 };
 use crate::{
     CanonicalCallableIdentity, CanonicalImplementationIdentity, CanonicalPath, EffectSet,
@@ -109,10 +112,18 @@ const ATTESTATION_DOMAIN: &str = "gantry.host-attestation/v1";
 pub enum ApprovalDiagnosticCode {
     /// `approval-adapter-failure`
     AdapterFailure,
+    /// `approval-admission-not-of-subject`
+    AdmissionNotOfSubject,
+    /// `approval-admission-without-positive-decision`
+    AdmissionWithoutPositiveDecision,
     /// `approval-cancellation`
     Cancellation,
     /// `approval-cut-out-of-order`
     CutOutOfOrder,
+    /// `approval-decision-not-committed`
+    DecisionNotCommitted,
+    /// `approval-decision-not-of-request`
+    DecisionNotOfRequest,
     /// `approval-decision-outlives-lease`
     DecisionOutlivesLease,
     /// `approval-denial`
@@ -145,10 +156,14 @@ pub enum ApprovalDiagnosticCode {
 
 impl ApprovalDiagnosticCode {
     /// Every published code, in sorted code order.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 21] = [
         Self::AdapterFailure,
+        Self::AdmissionNotOfSubject,
+        Self::AdmissionWithoutPositiveDecision,
         Self::Cancellation,
         Self::CutOutOfOrder,
+        Self::DecisionNotCommitted,
+        Self::DecisionNotOfRequest,
         Self::DecisionOutlivesLease,
         Self::Denial,
         Self::Expiration,
@@ -170,8 +185,14 @@ impl ApprovalDiagnosticCode {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AdapterFailure => "approval-adapter-failure",
+            Self::AdmissionNotOfSubject => "approval-admission-not-of-subject",
+            Self::AdmissionWithoutPositiveDecision => {
+                "approval-admission-without-positive-decision"
+            }
             Self::Cancellation => "approval-cancellation",
             Self::CutOutOfOrder => "approval-cut-out-of-order",
+            Self::DecisionNotCommitted => "approval-decision-not-committed",
+            Self::DecisionNotOfRequest => "approval-decision-not-of-request",
             Self::DecisionOutlivesLease => "approval-decision-outlives-lease",
             Self::Denial => "approval-denial",
             Self::Expiration => "approval-expiration",
@@ -202,9 +223,21 @@ impl ApprovalDiagnosticCode {
             Self::AdapterFailure => {
                 "The component that carries a request to an approver or a decision back failed; this is its own outcome rather than another outcome's failure."
             }
+            Self::AdmissionNotOfSubject => {
+                "An admission recorded as the commit-point result does not name the subject it is recorded against: its authority generation or its settlement rule disagrees with the subject of the decision."
+            }
+            Self::AdmissionWithoutPositiveDecision => {
+                "An admission, or a durable admitted cut, was recorded for a decision that did not grant the request."
+            }
             Self::Cancellation => "The approval wait was cancelled before any decision.",
             Self::CutOutOfOrder => {
                 "A durable approval cut was reached out of order: a decision before the committed request, or a dispatch before the committed decision."
+            }
+            Self::DecisionNotCommitted => {
+                "A durable approval cut that requires a committed decision was reached with no decision committed."
+            }
+            Self::DecisionNotOfRequest => {
+                "The decision presented for commit is not the decision of the committed request of this interaction."
             }
             Self::DecisionOutlivesLease => {
                 "A decision's validity bound outlives the expiration of the standing lease it stands on."
@@ -252,13 +285,18 @@ impl ApprovalDiagnosticCode {
             | Self::MalformedDecision
             | Self::PositiveDecision
             | Self::UnavailableApprover => "GNT-19.8-approval-outcome-taxonomy",
-            Self::CutOutOfOrder | Self::SecondRequestForOperation => {
-                "GNT-19.7-durable-request-and-decision-cuts"
+            Self::AdmissionWithoutPositiveDecision => {
+                "GNT-19.6-decision-linearization-and-revalidation"
             }
+            Self::CutOutOfOrder
+            | Self::DecisionNotCommitted
+            | Self::DecisionNotOfRequest
+            | Self::SecondRequestForOperation => "GNT-19.7-durable-request-and-decision-cuts",
             Self::DecisionOutlivesLease
             | Self::RevocationNotContractual
             | Self::ScopeMismatch
             | Self::UnboundedLease => "GNT-19.5-decision-scope-and-standing-authority",
+            Self::AdmissionNotOfSubject => "GNT-19.10-approval-audit-evidence",
             Self::IncompleteSubject | Self::InvalidDigest => "GNT-19.2-approval-subject",
             Self::PresentationConcealsScope => "GNT-19.4-approver-presentation-fidelity",
             Self::UnknownRequest => "GNT-19.1-approval-request-identity",
@@ -274,6 +312,13 @@ impl ApprovalDiagnosticCode {
 /// code is published for a condition another registry already owns.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApprovalError {
+    /// An admission recorded as the commit-point result does not name the subject
+    /// it is recorded against: its generation or its settlement rule disagrees
+    /// with the subject of the decision.
+    AdmissionNotOfSubject,
+    /// An admission, or an admitted durable cut, was recorded for a decision that
+    /// did not grant the request.
+    AdmissionWithoutPositiveDecision,
     /// A standing lease could not be derived by attenuation from the presented
     /// capability instance.
     AttenuationRefused {
@@ -286,6 +331,18 @@ pub enum ApprovalError {
         from: DurableApprovalCut,
         /// The cut that was requested.
         to: DurableApprovalCut,
+    },
+    /// A durable cut that requires a committed decision was reached with no
+    /// decision committed.
+    DecisionNotCommitted {
+        /// The cut that requires the committed decision.
+        to: DurableApprovalCut,
+    },
+    /// The decision presented for commit is not the decision of the committed
+    /// request of this interaction.
+    DecisionNotOfRequest {
+        /// The request identity the presented decision names.
+        request: Arc<str>,
     },
     /// A decision's validity bound outlives the lease it stands on.
     DecisionOutlivesLease,
@@ -328,8 +385,14 @@ impl ApprovalError {
     #[must_use]
     pub const fn code(&self) -> Option<ApprovalDiagnosticCode> {
         match self {
+            Self::AdmissionNotOfSubject => Some(ApprovalDiagnosticCode::AdmissionNotOfSubject),
+            Self::AdmissionWithoutPositiveDecision => {
+                Some(ApprovalDiagnosticCode::AdmissionWithoutPositiveDecision)
+            }
             Self::AttenuationRefused { .. } => None,
             Self::CutOutOfOrder { .. } => Some(ApprovalDiagnosticCode::CutOutOfOrder),
+            Self::DecisionNotCommitted { .. } => Some(ApprovalDiagnosticCode::DecisionNotCommitted),
+            Self::DecisionNotOfRequest { .. } => Some(ApprovalDiagnosticCode::DecisionNotOfRequest),
             Self::DecisionOutlivesLease => Some(ApprovalDiagnosticCode::DecisionOutlivesLease),
             Self::IncompleteSubject { .. } => Some(ApprovalDiagnosticCode::IncompleteSubject),
             Self::InvalidDigest { .. } => Some(ApprovalDiagnosticCode::InvalidDigest),
@@ -381,12 +444,26 @@ impl fmt::Display for ApprovalError {
             formatter.write_str(": ")?;
         }
         match self {
+            Self::AdmissionNotOfSubject => formatter
+                .write_str("the admission does not name the subject it is recorded against"),
+            Self::AdmissionWithoutPositiveDecision => {
+                formatter.write_str("an admission requires a decision that granted the request")
+            }
             Self::AttenuationRefused { .. } => formatter.write_str("attenuation refused"),
             Self::CutOutOfOrder { from, to } => write!(
                 formatter,
                 "cut `{}` cannot be reached from `{}`",
                 to.wire_name(),
                 from.wire_name()
+            ),
+            Self::DecisionNotCommitted { to } => write!(
+                formatter,
+                "cut `{}` requires a committed decision",
+                to.wire_name()
+            ),
+            Self::DecisionNotOfRequest { request } => write!(
+                formatter,
+                "decision of request `{request}` is not the committed request of this interaction"
             ),
             Self::DecisionOutlivesLease => {
                 formatter.write_str("the decision outlives the standing lease it stands on")
@@ -535,7 +612,7 @@ approval_digest_type!(
 );
 approval_digest_type!(
     HostAuthorityDigest,
-    "One digest of the host authority that attests one authenticated actor (GNT-19.3-authenticated-approver-identity)."
+    "One digest of the host authority that attests one authenticated actor (GNT-19.3-authenticated-approver-identity). A value decoded by `from_hex` is a host-supplied declaration: this model validates only the spelling, and it never verifies the host authentication the digest stands for."
 );
 
 /// One canonical logical-execution identity.
@@ -715,7 +792,10 @@ impl HostAttestationBindingId {
 /// binding. There is no constructor from free strings, so no argument, prompt,
 /// header, environment fact, presentation label, or adapter field becomes an
 /// approver identity, and an absent, unauthenticated, or ambiguous identity is
-/// not representable as an approval.
+/// not representable as an approval. This is a sealed host-attested type distinct
+/// from every subject input of [`ApprovalSubjectInputs`]: no field of a subject
+/// record supplies, overrides, or shares a value with it. Host authentication is
+/// the embedding host's obligation, which the pure model cannot verify.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthenticatedActor {
     binding: HostAttestationBindingId,
@@ -730,6 +810,13 @@ impl AuthenticatedActor {
     ///
     /// This is the only path to an [`AuthenticatedActor`], and every identity it
     /// carries is a validated declared name rather than free text.
+    ///
+    /// The value is a sealed host-attested type distinct from every subject input:
+    /// no argument, prompt, header, environment fact, presentation label, or
+    /// adapter field participates in actor identity. The call records the declared
+    /// binding as given; host authentication itself is the embedding host's
+    /// obligation, so this pure model cannot verify that the host performed the
+    /// authentication the binding names.
     #[must_use]
     pub fn attest(
         binding: &HostAttestationBindingId,
@@ -890,6 +977,15 @@ impl ProtectedReviewChannel {
 /// channel it was decided on, so it cannot exist without the exact meaning of the
 /// predicate it substitutes, and it can never be decoded back into a faithful
 /// presentation.
+///
+/// [`ApproverPresentation::Faithful`] is a declaration the embedding host makes,
+/// and the model cannot falsify it: nothing here observes what an approver was
+/// actually shown. The two rules this model does enforce about a presentation are
+/// the sealed-predicate requirement, which makes a presentation that withholds or
+/// abstracts an element carry the exact meaning it substitutes, and the
+/// redaction-with-standing-authority rule, which refuses such a presentation
+/// together with reusable standing authority as
+/// [`ApprovalError::PresentationConcealsScope`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApproverPresentation {
     /// The presentation discloses every semantic element of the subject.
@@ -915,7 +1011,9 @@ impl ApproverPresentation {
         self.wire_name()
     }
 
-    /// Returns whether the presentation discloses every semantic element.
+    /// Returns whether the presentation is declared faithful.
+    ///
+    /// The declaration is the host's: the model records it and cannot falsify it.
     #[must_use]
     pub const fn is_faithful(&self) -> bool {
         matches!(self, Self::Faithful)
@@ -1304,13 +1402,45 @@ impl StandingLease {
         self.fenced().is_none() && self.instance.lease().permits(now_us)
     }
 
+    /// Returns the identity of the issuer whose authority this lease stands on.
+    ///
+    /// The issuer is the immediate ancestor of the lease instance in its lineage,
+    /// or the lineage root when the lease instance has no ancestor, so a lease
+    /// attenuated from an already-derived instance names the instance it was
+    /// attenuated from.
+    fn issuer(&self) -> &AuthorityInstanceId {
+        self.instance
+            .parent()
+            .unwrap_or_else(|| self.instance.root())
+    }
+
+    /// Returns whether one identity is admitted by this lease's revocation
+    /// contract.
+    ///
+    /// `IssuerOnly` admits the issuer alone; `IssuerOrHolder` admits the issuer and
+    /// the lease holder.
+    fn admits_revoker(&self, revoker: &AuthorityInstanceId) -> bool {
+        match self.revocation {
+            RevocationContract::IssuerOnly => revoker == self.issuer(),
+            RevocationContract::IssuerOrHolder => {
+                revoker == self.issuer() || revoker == self.instance.id()
+            }
+        }
+    }
+
     /// Revokes this lease at its own linearization point.
     ///
-    /// A holder whose contract is issuer-only cannot revoke, so the refusal is
-    /// reported rather than silently ignored, and a repeated revocation returns
-    /// the point the lease already held.
-    pub fn revoke(&mut self) -> Result<FencePoint, ApprovalError> {
-        if self.revocation == RevocationContract::IssuerOnly {
+    /// The declared revocation contract is the holder mapping.
+    /// [`RevocationContract::IssuerOnly`] admits only the issuer: the immediate
+    /// ancestor [`AuthorityInstance::parent`] of the lease instance, or the lineage
+    /// root [`StandingLease::root`] when the instance has no ancestor.
+    /// [`RevocationContract::IssuerOrHolder`] admits the issuer and the lease
+    /// holder [`StandingLease::id`]. Any other revoker is refused as
+    /// [`ApprovalError::RevocationNotContractual`] without fencing the lease, so a
+    /// non-contractual revocation is reported rather than silently ignored, and a
+    /// repeated permitted revocation returns the point the lease already held.
+    pub fn revoke(&mut self, revoker: &AuthorityInstanceId) -> Result<FencePoint, ApprovalError> {
+        if !self.admits_revoker(revoker) {
             return Err(ApprovalError::RevocationNotContractual);
         }
         Ok(self.instance.revoke())
@@ -2066,13 +2196,6 @@ impl ApprovalOutcome {
     pub const fn is_positive(self) -> bool {
         matches!(self, Self::PositiveDecision)
     }
-
-    /// Returns whether this outcome reports the approval wait rather than the
-    /// external outcome of admitted work.
-    #[must_use]
-    pub const fn is_approval_wait_outcome(self) -> bool {
-        !matches!(self, Self::PositiveDecision)
-    }
 }
 
 /// One recorded outcome of one approval interaction.
@@ -2242,16 +2365,18 @@ impl DurableApprovalCut {
 
     /// Classifies one resumed execution after a crash at this cut.
     ///
-    /// A crash before dispatch continues only under the same still-valid decision
-    /// and operation identity; a crash after dispatch uses the target operation's
-    /// recovery state and never solicits a second approval for work that may
-    /// already have begun.
+    /// The three resumes of `GNT-19.7-durable-request-and-decision-cuts` are
+    /// distinct. A crash at the committed request resumes the pending approval wait
+    /// through its stable identity, before any decision is committed. A crash after
+    /// the decision commit and before dispatch continues only under the same
+    /// still-valid decision and operation identity. A crash after dispatch uses the
+    /// target operation's recovery state and never solicits a second approval for
+    /// work that may already have begun.
     #[must_use]
     pub const fn classify_resume(self) -> ResumeClass {
         match self {
-            Self::RequestCommitted | Self::DecisionCommitted | Self::Admitted => {
-                ResumeClass::SameDecision
-            }
+            Self::RequestCommitted => ResumeClass::PendingDecision,
+            Self::DecisionCommitted | Self::Admitted => ResumeClass::SameDecision,
             Self::Dispatched => ResumeClass::OperationRecovery,
         }
     }
@@ -2260,6 +2385,10 @@ impl DurableApprovalCut {
 /// How one resumed execution continues after a crash.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResumeClass {
+    /// The committed request resumes the pending approval wait through its stable
+    /// identity, before any decision is committed
+    /// (`GNT-19.7-durable-request-and-decision-cuts`).
+    PendingDecision,
     /// The execution continues under the same still-valid decision and operation
     /// identity.
     SameDecision,
@@ -2272,6 +2401,7 @@ impl ResumeClass {
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
         match self {
+            Self::PendingDecision => "pending-decision",
             Self::SameDecision => "same-decision",
             Self::OperationRecovery => "operation-recovery",
         }
@@ -2287,14 +2417,22 @@ impl ResumeClass {
 /// One durable approval interaction, keyed by its stable request identity.
 ///
 /// The record is created only by committing the request cut of one canonical
-/// subject, so there is no way to begin at a later cut, no way to commit a second
-/// request for one logical operation identity, and no cache of decisions: a
-/// pending decision resumes through the identity it was committed under.
+/// subject, so there is no way to begin at a later cut and no cache of decisions: a
+/// pending decision resumes through the identity it was committed under, and the
+/// model refuses a second request for one logical operation identity on resume.
+/// The decision cut is reachable only through [`Self::commit_decision`], so a
+/// committed decision always carries the decision identity and the outcome it was
+/// committed with. Storage-level uniqueness of one pending request per logical
+/// operation identity is the durable journal's obligation under
+/// `GNT-19.7-durable-request-and-decision-cuts`; this model states the identity
+/// rule and the cut order, not the journal's uniqueness constraint.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DurableApprovalRecord {
     request: ApprovalRequestId,
     operation: LogicalOperationId,
     cut: DurableApprovalCut,
+    decision: Option<ApprovalDecisionId>,
+    outcome: Option<ApprovalOutcome>,
 }
 
 impl DurableApprovalRecord {
@@ -2305,6 +2443,8 @@ impl DurableApprovalRecord {
             request: ApprovalRequestId::of(subject),
             operation: subject.operation().clone(),
             cut: DurableApprovalCut::RequestCommitted,
+            decision: None,
+            outcome: None,
         }
     }
 
@@ -2326,10 +2466,94 @@ impl DurableApprovalRecord {
         self.cut
     }
 
+    /// Returns the committed decision identity, when a decision is committed.
+    #[must_use]
+    pub const fn decision(&self) -> Option<&ApprovalDecisionId> {
+        match &self.decision {
+            Some(decision) => Some(decision),
+            None => None,
+        }
+    }
+
+    /// Returns the committed approval outcome, when a decision is committed.
+    #[must_use]
+    pub const fn outcome(&self) -> Option<ApprovalOutcome> {
+        self.outcome
+    }
+
+    /// Commits one decision over the committed request of this interaction.
+    ///
+    /// This is the only path to the [`DurableApprovalCut::DecisionCommitted`] cut.
+    /// A decision presented at another cut is refused as
+    /// [`ApprovalError::CutOutOfOrder`], and a decision whose subject does not
+    /// reproduce the committed request identity is refused as
+    /// [`ApprovalError::DecisionNotOfRequest`], both without recording anything. On
+    /// success the interaction stands at the decision cut and carries the decision
+    /// identity and the outcome it was committed with.
+    pub fn commit_decision(mut self, decision: &ApprovalDecision) -> Result<Self, ApprovalError> {
+        if self.cut != DurableApprovalCut::RequestCommitted {
+            return Err(ApprovalError::CutOutOfOrder {
+                from: self.cut,
+                to: DurableApprovalCut::DecisionCommitted,
+            });
+        }
+        let presented = ApprovalRequestId::of(decision.subject());
+        if presented != self.request {
+            return Err(ApprovalError::DecisionNotOfRequest {
+                request: Arc::from(presented.as_str()),
+            });
+        }
+        self.cut = DurableApprovalCut::DecisionCommitted;
+        self.decision = Some(decision.id());
+        self.outcome = Some(decision.outcome());
+        Ok(self)
+    }
+
     /// Advances this interaction to its immediate successor cut.
+    ///
+    /// The immediate-successor rule of [`DurableApprovalCut::advance`] applies
+    /// first, and every cut that requires committed state is then refused without
+    /// recording anything. The decision cut is never reached here, because
+    /// [`Self::commit_decision`] is its only path. The admitted cut requires a
+    /// committed decision whose outcome granted the request, and the dispatched cut
+    /// requires a committed decision.
     pub fn advance(self, next: DurableApprovalCut) -> Result<Self, ApprovalError> {
         let cut = self.cut.advance(next)?;
-        Ok(Self { cut, ..self })
+        match next {
+            DurableApprovalCut::RequestCommitted => Ok(Self { cut, ..self }),
+            DurableApprovalCut::DecisionCommitted => {
+                Err(ApprovalError::DecisionNotCommitted { to: next })
+            }
+            DurableApprovalCut::Admitted => {
+                self.committed_decision(next)?;
+                if !self.committed_outcome_is_positive() {
+                    return Err(ApprovalError::AdmissionWithoutPositiveDecision);
+                }
+                Ok(Self { cut, ..self })
+            }
+            DurableApprovalCut::Dispatched => {
+                self.committed_decision(next)?;
+                Ok(Self { cut, ..self })
+            }
+        }
+    }
+
+    /// Returns the committed decision identity, or refuses the cut that needs it.
+    fn committed_decision(
+        &self,
+        to: DurableApprovalCut,
+    ) -> Result<&ApprovalDecisionId, ApprovalError> {
+        self.decision
+            .as_ref()
+            .ok_or(ApprovalError::DecisionNotCommitted { to })
+    }
+
+    /// Returns whether the committed outcome granted the request.
+    ///
+    /// A record with no committed decision has no committed outcome either, so this
+    /// reports `false` rather than assuming a decision.
+    fn committed_outcome_is_positive(&self) -> bool {
+        self.outcome.is_some_and(ApprovalOutcome::is_positive)
     }
 
     /// Resumes this interaction for one subject through its stable identity.
@@ -2551,19 +2775,29 @@ impl RefusalReason {
 }
 
 /// One recorded admission or refusal result at the single commit point.
+///
+/// An admitted result carries the [`Admission`] the authority instance actually
+/// committed for the operation, so a commit point names the authority generation
+/// and the settlement rule that admitted the work rather than a bare verdict that
+/// something was admitted. [`Admission`] is `Copy`, so this result stays `Copy`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommitPointResult {
-    /// The operation passed the admission commit point.
-    Admitted,
+    /// The operation passed the admission commit point, carrying the admission the
+    /// authority instance committed.
+    Admitted(Admission),
     /// The operation was refused at the commit point.
     Refused(RefusalReason),
 }
 
 impl CommitPointResult {
     /// Records one admission at the commit point.
+    ///
+    /// The admission is the landed value the authority instance returned for the
+    /// admitted operation, so an admitted commit point always names the generation
+    /// and the settlement rule that admitted it.
     #[must_use]
-    pub const fn admitted() -> Self {
-        Self::Admitted
+    pub const fn admitted(admission: Admission) -> Self {
+        Self::Admitted(admission)
     }
 
     /// Records one refusal, or reports that a fresh verdict refused nothing.
@@ -2575,11 +2809,27 @@ impl CommitPointResult {
         }
     }
 
+    /// Returns whether the operation passed the admission commit point.
+    #[must_use]
+    pub const fn is_admitted(&self) -> bool {
+        matches!(self, Self::Admitted(_))
+    }
+
+    /// Returns the admission the authority instance committed, when the operation
+    /// was admitted.
+    #[must_use]
+    pub const fn admission(&self) -> Option<&Admission> {
+        match self {
+            Self::Admitted(admission) => Some(admission),
+            Self::Refused(_) => None,
+        }
+    }
+
     /// Returns the exact portable spelling.
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
         match self {
-            Self::Admitted => "admitted",
+            Self::Admitted(_) => "admitted",
             Self::Refused(_) => "refused",
         }
     }
@@ -2588,7 +2838,7 @@ impl CommitPointResult {
     #[must_use]
     pub const fn refusal(self) -> Option<RefusalReason> {
         match self {
-            Self::Admitted => None,
+            Self::Admitted(_) => None,
             Self::Refused(reason) => Some(reason),
         }
     }
@@ -2718,14 +2968,34 @@ impl ApprovalDecision {
     /// Returns the release grant of one holder authority for this decision.
     ///
     /// Approval alone releases nothing: this is the only path from a decision to a
-    /// release permission, it requires a positive decision, and it requires a
-    /// release-holder authority that declares exactly the protected class and
-    /// destination the subject names. The grant is derived from that holder
-    /// authority alone, so no authority right, capability instance, admission
-    /// request, or ordinary value substitutes for it, and execution authority never
-    /// implies release.
+    /// release permission, and it enforces the whole correspondence between the
+    /// decision and the release it would authorize, in this order:
+    ///
+    /// 1. the decision must grant the request;
+    /// 2. the release-holder authority must declare the subject's protected class
+    ///    and destination;
+    /// 3. the logical instant of the release must precede the decision's validity
+    ///    bound (`now_us < expires_at_us`);
+    /// 4. a decision standing on a standing lease must still be permitted by that
+    ///    lease at that instant, so a revoked or expired lease releases nothing;
+    /// 5. the release site must declare the subject's protected class;
+    /// 6. the site's declared projection for the subject's class and destination
+    ///    pair must be exactly the projection the subject's scope declares;
+    /// 7. the disclosure budget must carry exactly the charge the subject's scope
+    ///    declares.
+    ///
+    /// A release that fails any check yields `None` rather than a narrowed grant,
+    /// and the grant is derived from that holder authority alone, so no authority
+    /// right, capability instance, admission request, or ordinary value substitutes
+    /// for it, and execution authority never implies release.
     #[must_use]
-    pub fn release_grant(&self, holder: &ReleaseHolderAuthority) -> Option<ReleaseGrant> {
+    pub fn release_grant(
+        &self,
+        holder: &ReleaseHolderAuthority,
+        site: &ReleaseSite,
+        budget: &DisclosureBudget,
+        now_us: u64,
+    ) -> Option<ReleaseGrant> {
         if !self.is_positive() {
             return None;
         }
@@ -2737,12 +3007,54 @@ impl ApprovalDecision {
         {
             return None;
         }
+        if now_us >= self.expires_at_us() {
+            return None;
+        }
+        if !lease_permits(self.lease.as_ref(), now_us) {
+            return None;
+        }
+        if !site_declares_scope_projection(site, *scope) {
+            return None;
+        }
+        if !budget_charges_scope(budget, *scope) {
+            return None;
+        }
         Some(
             holder
                 .attenuate(&[scope.class()], &[scope.destination()])
                 .grant(),
         )
     }
+}
+
+/// Returns whether one optional standing lease still permits admission at
+/// `now_us`.
+///
+/// A decision that stands on no lease is not restricted by a lease; a decision
+/// that stands on one is permitted only while that lease still permits the
+/// instant, so a revoked or expired lease releases nothing.
+fn lease_permits(lease: Option<&StandingLease>, now_us: u64) -> bool {
+    match lease {
+        Some(lease) => lease.permits(now_us),
+        None => true,
+    }
+}
+
+/// Returns whether one release site declares the protected class of a scope and
+/// exactly the projection that scope declares for its class and destination pair.
+///
+/// The site must declare the class, so a site that declares nothing for it refuses
+/// the release, and its declared projection must agree with the scope, so a release
+/// is never granted for a weaker projection than the decision was taken over.
+fn site_declares_scope_projection(site: &ReleaseSite, scope: ProtectedScope) -> bool {
+    site.declares_class(scope.class())
+        && site.projection(scope.class(), scope.destination()) == Some(scope.projection().kind())
+}
+
+/// Returns whether one disclosure budget carries exactly the charge the protected
+/// scope declares.
+fn budget_charges_scope(budget: &DisclosureBudget, scope: ProtectedScope) -> bool {
+    budget.charge() == scope.charge()
 }
 
 /// Revalidates one decision against the subject about to be admitted.
@@ -2904,16 +3216,40 @@ impl AuditTransition {
 /// authenticated actor that decided the request, so observing it is an explicit,
 /// typed act rather than an ordinary field read or rendering. The evidence store
 /// holds this capability and issues it to a holder whose declared rights cover the
-/// audit domain; no ordinary value, identity, or authority right mints one.
+/// audit record of an admitted operation; no ordinary value, identity, or adapter
+/// field mints one, and the capability is a declared-rights gate rather than
+/// cryptographic enforcement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApprovalAuditAccess(());
 
 impl ApprovalAuditAccess {
-    /// Returns the approval-audit capability of the approval evidence store.
+    /// Returns the approval-audit capability of the approval evidence store for one
+    /// holder whose bound instance carries the observe right.
+    ///
+    /// The evidence store issues this capability to a holder whose declared rights
+    /// contain [`AuthorityRight::Observe`], the landed right of reading the audit
+    /// record of an admitted operation; a rights set without it is refused rather
+    /// than narrowed. This constructor is the declared-rights gate, not
+    /// cryptographic enforcement: it checks the rights the holder declares, and this
+    /// pure model cannot verify that a host bound them.
     #[must_use]
-    pub const fn granted() -> Self {
-        Self(())
+    pub const fn grant(rights: RightsSet) -> Option<Self> {
+        if rights.contains(AuthorityRight::Observe) {
+            Some(Self(()))
+        } else {
+            None
+        }
     }
+}
+
+/// Returns whether one admission names the subject it is recorded against.
+///
+/// The admission must have admitted the subject's authority generation and must
+/// settle under the subject's recovery class, so recorded evidence never attributes
+/// another generation's or another settlement rule's admission to this subject.
+fn admission_is_of_subject(admission: &Admission, subject: &ApprovalSubject) -> bool {
+    admission.generation() == subject.generation()
+        && admission.settlement_rule() == subject.recovery()
 }
 
 /// One approval audit record: declared metadata only.
@@ -2946,11 +3282,29 @@ pub struct ApprovalAuditEvidence {
 
 impl ApprovalAuditEvidence {
     /// Records one approval interaction and its commit-point result.
-    #[must_use]
-    pub fn record(decision: &ApprovalDecision, commit_point: CommitPointResult) -> Self {
+    ///
+    /// An admitted commit point is accepted only for a decision that granted the
+    /// request and only for the admission of the subject that decision was taken
+    /// over: the admission must name the subject's authority generation and must
+    /// settle under the subject's recovery class, so evidence never records that
+    /// another generation, or another settlement rule, admitted this subject. A
+    /// refusal commit point is accepted under any decision outcome, because a
+    /// positive decision can be refused at the commit point.
+    pub fn record(
+        decision: &ApprovalDecision,
+        commit_point: CommitPointResult,
+    ) -> Result<Self, ApprovalError> {
+        if let Some(admission) = commit_point.admission() {
+            if !decision.is_positive() {
+                return Err(ApprovalError::AdmissionWithoutPositiveDecision);
+            }
+            if !admission_is_of_subject(admission, decision.subject()) {
+                return Err(ApprovalError::AdmissionNotOfSubject);
+            }
+        }
         let subject = decision.subject();
         let actor = decision.actor();
-        Self {
+        Ok(Self {
             request: ApprovalRequestId::of(subject),
             decision: decision.id(),
             requester: actor.requester().clone(),
@@ -2964,7 +3318,7 @@ impl ApprovalAuditEvidence {
             outcome: decision.outcome(),
             commit_point,
             transitions: Vec::new(),
-        }
+        })
     }
 
     /// Returns this evidence with one later transition appended.
