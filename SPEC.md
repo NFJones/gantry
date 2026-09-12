@@ -12289,3 +12289,210 @@ MUST NOT convert protected content into an ordinary observation, and MUST NOT
 substitute, forge, or reinterpret a host-governed identity. Every refusal of this
 section MUST carry exactly one diagnostic that names the clause that owns it, and a
 condition MUST NOT be reported under another condition's code.
+
+## 21. Secrets and Credentials
+
+<a id="GNT-21.0-secrets-and-credentials"></a>
+
+**[GNT-21.0-secrets-and-credentials] Secrets and credentials.** This section defines
+a secret reference and a credential binding: the unreadable reference, its holder,
+operation, and tenant binding, its lifetime, transfer, and attenuation, its
+generation fencing, its expiry and revocation race behavior, its redaction and
+protected audit evidence, its tenant isolation, its durable revalidation and
+rebinding across resume, and its explicit non-claims. It cites and extends, rather
+than replaces, the landed authority text of `GNT-3-T-AUTHORITY-INSTANCES`,
+`GNT-3-T-AUTHORITY-LINEAGE`, `GNT-3-T-AUTHORITY-REVOCATION` and
+`GNT-3-T-AUTHORITY-ADMISSION`; the protected-value text of
+`GNT-15.10-protected-values`, `GNT-15.10-release-operation` and
+`GNT-15.10-protection-invariants`; the linearization, cut, and audit text of
+`GNT-19.6-decision-linearization-and-revalidation`,
+`GNT-19.7-durable-request-and-decision-cuts` and
+`GNT-19.10-approval-audit-evidence`; and the operation and identity text of
+Section 20.
+
+The closed vocabulary of this section is exactly the following terms. A clause here
+MUST NOT use a secret term outside this vocabulary, and a term listed below MUST NOT
+be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| secret reference | The unreadable, authority-bearing handle of `GNT-21.1-unreadable-secret-references`. |
+| holder binding | The capability instance carrying a credential requirement and its selected implementation binding under `GNT-21.2-secret-authority-binding`. |
+| operation binding | The stable logical operation identity a reference is optionally bound to. |
+| tenant | The host-governed tenant identity of `GNT-21.7-secret-tenant-isolation`. |
+| secret generation | The monotonically advancing authority generation of `GNT-21.4-secret-generation-fencing`. |
+| reference attenuation | The monotone narrowing of `GNT-21.3-secret-lifetime-transfer-and-attenuation`. |
+| reference transfer | The affine move of `GNT-21.3-secret-lifetime-transfer-and-attenuation`. |
+| durable secret cut | The redacted durable record of `GNT-21.8-durable-secret-revalidation`. |
+| secret audit evidence | The capability-gated record of `GNT-21.6-secret-redaction-and-protected-audit`. |
+
+**Applicability.** The clauses of this section govern an edition or profile that
+declares secret references and credential bindings. The v1 edition described by
+Sections 1 through 15 does not: it has no secret-reference identity and no
+credential requirement family. An implementation that supports only that model MUST
+record each clause of this section as a profile-based `not-applicable`
+justification in the sense of Sections 2 and 15, and MUST NOT report a clause here
+as satisfied, partially satisfied, conditionally satisfied, or satisfied for a
+subset of its rules, because a partial claim would assert conformance to behavior
+this specification does not define.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+capability instance identity, rights, generation, lineage, revocation fencing and
+single admission commit point of the authority clauses cited above; the protected
+classes, release destinations, release projections, disclosure budgets and cleanup
+rules of `GNT-15.10-protected-values` and `GNT-15.10-release-operation`; the
+revalidation, durable-cut and audit rules of Section 19; and the operation kinds,
+identity and adapter rules of Section 20. Nothing here introduces a new protected
+class, a new release destination, a package identity, a wire primitive, or a second
+fault taxonomy. Credential-provider content, key-store content, and the encoding a
+provider accepts remain owned by the components that declare them.
+
+<a id="GNT-21.1-unreadable-secret-references"></a>
+
+**[GNT-21.1-unreadable-secret-references] Unreadable secret references.** A secret
+reference is an authority-bearing handle to one credential requirement and never
+the credential material itself. It exposes no value accessor, no byte buffer, no
+ordinary text form, and no serializer: no clause of this section and no function of
+an implementation may yield, copy, render, hash, compare, or otherwise observe the
+material a reference stands for, and there is no ordinary spelling, encoding, debug
+or display rendering, canonical text, or protocol form that carries material. A
+reference that has a material accessor, a public storage field, a `Serialize`-style
+encoding, or an equality that depends on material is not a secret reference under
+this clause, and a diagnostic, event, journal payload, error message, or trace that
+contains material, or a prefix, suffix, digest, or length of it, MUST be refused
+rather than recorded. Redaction is the only rendering of a reference, and the only
+observable identity of a reference is its canonical domain-separated identity, in
+which no material, process identifier, host path, clock reading, or environment
+fact participates.
+
+<a id="GNT-21.2-secret-authority-binding"></a>
+
+**[GNT-21.2-secret-authority-binding] Authority binding to holder, operation, and
+tenant.** A secret reference is bound to exactly one holder - the capability
+instance that carries its credential requirement and selected implementation
+binding - one protected class, one host-governed tenant identity, and, preferably,
+one stable logical operation identity. Source, a model, an adapter, or a
+presentation MUST NOT supply, forge, reinterpret, or broaden any of them, and no
+argument, prompt, header, environment fact, or display label becomes a holder, a
+tenant, or an operation binding. A reference whose holder requirement or binding
+differs from the instance presented at admission, whose tenant differs from the
+authenticated tenant, or whose operation differs from the operation about to be
+dispatched is refused rather than reinterpreted. A reference with no operation
+binding is bound to the holder and the tenant but is not thereby reusable across
+operations, and bearer authority without lineage is not a secret reference.
+
+<a id="GNT-21.3-secret-lifetime-transfer-and-attenuation"></a>
+
+**[GNT-21.3-secret-lifetime-transfer-and-attenuation] Lifetime, transfer, and
+attenuation.** A secret reference carries an explicit lifetime and only ever
+narrows. Attenuation and delegation are monotone: a derived reference MUST NOT add
+or restore a right, extend a lease beyond its parent's, change the protected class,
+change the tenant, or widen the operation binding, and a request that would do any
+of them fails closed rather than being narrowed silently. Transfer moves one
+reference to one new holder under the affine move rule and advances its generation;
+it MUST NOT duplicate the reference, reuse a generation that already settled,
+retired, expired, or was revoked, or weaken any obligation the landed authority and
+protected-value text attaches to it. A reference that was never declared sharable
+reaches a new holder only by transfer, and a holder that transferred a reference
+MUST NOT retain it. Lifetime is a logical instant bound under
+`GNT-3-T-AUTHORITY-INSTANCES`, never a clock reading, a process lifetime, or an
+adapter handle.
+
+<a id="GNT-21.4-secret-generation-fencing"></a>
+
+**[GNT-21.4-secret-generation-fencing] Generation fencing.** Every secret reference
+has exactly one monotonically advancing authority generation, and it is the
+generation of the capability instance that carries it. Admission of one use
+revalidates the presented generation, and a presented generation that is not the
+reference's current generation MUST be refused as stale without mutating any state,
+so a stale presentation never latches a fence. Revocation or expiry fences a
+generation, and a fenced generation MUST NOT be attenuated, delegated, transferred,
+rebound, or reinstated: fencing is not deletion, and the fence category and its
+linearization point remain. A reference is never fenced by another reference's
+generation, and a superseding reference is a new generation identity rather than a
+reopened old one. No implementation and no adapter may substitute a generation,
+decode one from a serialized form, or default one.
+
+<a id="GNT-21.5-secret-expiry-and-revocation-races"></a>
+
+**[GNT-21.5-secret-expiry-and-revocation-races] Expiry and revocation races.** Use
+of a secret reference passes the single admission commit point of
+`GNT-3-T-AUTHORITY-ADMISSION`, and revocation and expiry race with that commit
+point rather than with a caller's check. Revalidation immediately before admission
+revalidates exactly: the presented generation, the holder requirement and binding,
+the tenant, the operation binding, the protected class, the remaining lifetime, and
+the fence state. A revocation or expiry that becomes effective before admission
+fences that admission and MUST NOT admit; a revocation or expiry after host
+acceptance does not rewind already admitted work, which settles under its own
+recovery class. A requested cancellation or revocation MUST NOT be reported as a
+definite not-started effect, and a reference generation is fenced at most once and
+never reinstated, so a late or wrong-generation use is refused rather than
+recorded. Expiry is never inferred from a clock the reference did not
+declare.
+
+<a id="GNT-21.6-secret-redaction-and-protected-audit"></a>
+
+**[GNT-21.6-secret-redaction-and-protected-audit] Redaction and protected audit.**
+Every rendering of a secret reference is redacted: identity, class, holder, tenant,
+operation, generation, outcome, and fence category may appear, and material, its
+length, its digest, a prefix or suffix of it, and any presentation that would let a
+reader narrow it MUST NOT. Audit evidence for one reference identifies at least the
+reference, its holder requirement and binding, its tenant, its protected class, its
+generation, its durable cut, its admission, refusal, revocation, and expiry
+outcomes, and its revocation and expiry transitions at the commit point. It is
+protected audit data under `GNT-15.10-protected-values` reachable only through a
+capability-gated view whose holder holds the observe right, and rendering,
+exporting, aggregating, or diffing it is itself an operation subject to admission.
+Every refusal under this section MUST carry exactly one diagnostic that names the
+clause that owns it, and a condition MUST NOT be reported under another condition's
+code.
+
+<a id="GNT-21.7-secret-tenant-isolation"></a>
+
+**[GNT-21.7-secret-tenant-isolation] Tenant isolation.** A secret reference belongs
+to exactly one authenticated tenant, and the tenant is host-governed under
+`GNT-19.3-authenticated-approver-identity`. A reference of one tenant MUST NOT be
+attenuated, delegated, transferred, rebound, admitted, released, audited, or
+rendered for another tenant, and a presentation that names another tenant is
+refused rather than relabelled. Tenant identity participates in the canonical
+reference identity, so two references that differ only by tenant are distinct
+identities and MUST NOT compare equal, share a generation, share a deduplication
+record, or share an audit record. A cache, a pool, an adapter binding, or a durable
+record MUST NOT serve one tenant with another tenant's reference, and a diagnostic,
+an event, or a telemetry record MUST NOT disclose that another tenant's reference
+exists, nor its holder, its class, or its operation.
+
+<a id="GNT-21.8-durable-secret-revalidation"></a>
+
+**[GNT-21.8-durable-secret-revalidation] Durable revalidation and rebinding across
+resume.** In durable mode a secret reference is recorded only as its redacted
+durable cut, which carries the canonical reference identity, the holder requirement
+and binding, the tenant, the protected class, the generation, the optional
+operation binding, and the cut the reference reached; it carries no material and no
+live provider handle, and a live credential client MUST NOT be serialized,
+journaled, or reconstructed from durable state. A resume that finds a durable cut
+MUST reconstruct the reference only by rebinding to a fresh capability instance of
+the same requirement that satisfies the recorded holder and tenant and advances the
+generation, and MUST revalidate under
+`GNT-19.6-decision-linearization-and-revalidation` before use. A rebound reference
+whose requirement, binding, tenant, class, or operation differs from the recorded
+cut, or whose instance is already fenced, fails closed and MUST be refused rather
+than patched, widened, or reused. A durable cut is never a cache and never a
+standing authorization after resume.
+
+<a id="GNT-21.9-secret-non-claims"></a>
+
+**[GNT-21.9-secret-non-claims] Explicit non-claims.** This section does not promise
+and MUST NOT be read as promising physical zeroization, erasure of copies made
+outside Gantry's control, memory safety against a hostile host, side-channel
+resistance, or protection of material after an authorized protected release. It
+does not provide ordinary extraction: there is no accessor, conversion, serializer,
+or diagnostic that returns credential material, and an implementation MUST NOT
+offer one under another name, under a debug or test-only feature, or through an
+adapter. It does not make ambient discovery, environment scraping, filesystem
+credential lookup, provider default chains, or hardware-keystore enumeration a
+source-visible capability. A deliberately unprotected ordinary byte or string key
+API is not a secret reference and receives none of these guarantees, and an
+implementation MUST NOT report a clause of this section as satisfied, partially
+satisfied, or conditionally satisfied where it can only demonstrate one of these
+limits.

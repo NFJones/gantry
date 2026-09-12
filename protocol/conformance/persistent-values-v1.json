@@ -1,55 +1,55 @@
 {
-  "format": "gantry.persistent-values-evidence/v1",
-  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
-  "issue": "GNT-VAL-002",
-  "entries": [
-    {
-      "requirement": "GNT-5.13-automatic-storage",
-      "clause": "clause-005",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
-    },
-    {
-      "requirement": "GNT-5.13-automatic-storage",
-      "clause": "clause-005",
-      "profile": "durable-runtime",
-      "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
-    },
-    {
-      "requirement": "GNT-5.13-automatic-storage",
-      "clause": "clause-005",
-      "profile": "embedding",
-      "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
-    },
-    {
-      "requirement": "GNT-5.13-automatic-storage",
-      "clause": "clause-005",
-      "profile": "evaluator",
-      "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
-    },
-    {
-      "requirement": "GNT-5.13-automatic-storage",
-      "clause": "clause-006",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
-    },
-    {
-      "requirement": "GNT-5.13-automatic-storage",
-      "clause": "clause-006",
-      "profile": "durable-runtime",
-      "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
-    },
-    {
-      "requirement": "GNT-5.13-automatic-storage",
-      "clause": "clause-006",
-      "profile": "embedding",
-      "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
-    },
-    {
-      "requirement": "GNT-5.13-automatic-storage",
-      "clause": "clause-006",
-      "profile": "evaluator",
-      "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
-    }
-  ]
+ "format": "gantry.persistent-values-evidence/v1",
+ "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
+ "issue": "GNT-VAL-002",
+ "entries": [
+  {
+   "requirement": "GNT-5.13-automatic-storage",
+   "clause": "clause-005",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+  },
+  {
+   "requirement": "GNT-5.13-automatic-storage",
+   "clause": "clause-005",
+   "profile": "durable-runtime",
+   "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+  },
+  {
+   "requirement": "GNT-5.13-automatic-storage",
+   "clause": "clause-005",
+   "profile": "embedding",
+   "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+  },
+  {
+   "requirement": "GNT-5.13-automatic-storage",
+   "clause": "clause-005",
+   "profile": "evaluator",
+   "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+  },
+  {
+   "requirement": "GNT-5.13-automatic-storage",
+   "clause": "clause-006",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+  },
+  {
+   "requirement": "GNT-5.13-automatic-storage",
+   "clause": "clause-006",
+   "profile": "durable-runtime",
+   "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+  },
+  {
+   "requirement": "GNT-5.13-automatic-storage",
+   "clause": "clause-006",
+   "profile": "embedding",
+   "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+  },
+  {
+   "requirement": "GNT-5.13-automatic-storage",
+   "clause": "clause-006",
+   "profile": "evaluator",
+   "evidence": "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+  }
+ ]
 }

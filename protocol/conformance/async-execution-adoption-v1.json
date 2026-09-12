@@ -1,23 +1,23 @@
 {
-  "format": "gantry.async-execution-adoption/v1",
-  "gate": "GNT-ASYNC-GATE-000",
-  "status": "verified",
-  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
-  "amended_profiles": [
-    "analyzer",
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator",
-    "frontend"
-  ],
-  "advertises_profiles": [
-    "analyzer",
-    "concurrent-evaluator",
-    "durable-runtime",
-    "embedding",
-    "evaluator",
-    "frontend"
-  ],
-  "blocked_by": []
+ "format": "gantry.async-execution-adoption/v1",
+ "gate": "GNT-ASYNC-GATE-000",
+ "status": "verified",
+ "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
+ "amended_profiles": [
+  "analyzer",
+  "concurrent-evaluator",
+  "durable-runtime",
+  "embedding",
+  "evaluator",
+  "frontend"
+ ],
+ "advertises_profiles": [
+  "analyzer",
+  "concurrent-evaluator",
+  "durable-runtime",
+  "embedding",
+  "evaluator",
+  "frontend"
+ ],
+ "blocked_by": []
 }

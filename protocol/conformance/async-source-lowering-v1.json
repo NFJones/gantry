@@ -1,81 +1,81 @@
 {
-  "artifacts": [
-    {
-      "path": "crates/gantry-analysis/src/bodies.rs",
-      "sha256": "62717399a88d0b4566379e942cf4b2a03fe5b01ff879aea5a1265e189ab8151d"
-    },
-    {
-      "path": "crates/gantry-analysis/src/executable.rs",
-      "sha256": "4a88ad09163464cc002a24b43fe6c3ac49c724a52b00b58457bd1a9f734dca12"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-      "sha256": "78cb612b3f389a07663eda682c3cae0a30aa6e4fc282f1e021f86cabe4921e0d"
-    },
-    {
-      "path": "protocol/conformance/async-execution-contract-v1.json",
-      "sha256": "4702659d78d03672229a1099964c37e9e1f8357e64a56defa11f65df9fcba09a"
-    }
-  ],
-  "capabilities": [
-    {
-      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#generic_task_bodies_have_closed_distinct_identities",
-      "id": "closed-generic-task-body-identity"
-    },
-    {
-      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#nested_task_bodies_preserve_captures_and_joinall_order",
-      "id": "independent-nested-task-bodies"
-    },
-    {
-      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#join_operand_preserves_surrounding_expression",
-      "id": "join-expression-lowering"
-    },
-    {
-      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#analyzed_task_program_round_trips_through_retained_codec",
-      "id": "retained-task-program-codec"
-    },
-    {
-      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#analyzed_concurrent_entry_reaches_the_existing_profile_rejection",
-      "id": "runtime-profile-rejection"
-    },
-    {
-      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#concurrent_source_lowers_spawn_join_and_typed_captures",
-      "id": "typed-spawn-join-captures"
-    }
-  ],
-  "claim": {
-    "advertises_profiles": [],
-    "assignment_scope": "lowering-relevant slices of the exact frozen GNT-ASYNC-LOWER-001 assignments",
-    "full_clause_coverage": false,
-    "profiles": []
+ "artifacts": [
+  {
+   "path": "crates/gantry-analysis/src/bodies.rs",
+   "sha256": "62717399a88d0b4566379e942cf4b2a03fe5b01ff879aea5a1265e189ab8151d"
   },
-  "exclusions": [
-    "This evidence does not claim runtime coordinator behavior, executor submission, native child scheduling, join settlement, detachment, or cancellation.",
-    "The assigned GNT-3-M-SPAWN clause includes downstream runtime obligations that this lowering evidence does not cover.",
-    "The assigned GNT-15.8 clause includes publication-set and full conformance-corpus obligations that this lowering evidence does not cover.",
-    "This evidence publishes no analyzer, concurrent-evaluator, embedding, evaluator, or durable-runtime profile claim."
-  ],
-  "format": "gantry.async-source-lowering-evidence/v1",
-  "implementation": {
-    "commit": "b91ac8143ecf9847d927126e6ea05b03426bfb9c",
-    "subject": "Lower concurrent source into independent executable task bodies."
+  {
+   "path": "crates/gantry-analysis/src/executable.rs",
+   "sha256": "4a88ad09163464cc002a24b43fe6c3ac49c724a52b00b58457bd1a9f734dca12"
   },
-  "issue": "GNT-ASYNC-LOWER-001",
-  "requirements": [
-    {
-      "clause": "clause-001",
-      "profiles": [
-        "concurrent-evaluator"
-      ],
-      "requirement": "GNT-3-M-SPAWN"
-    },
-    {
-      "clause": "clause-001",
-      "profiles": [
-        "embedding"
-      ],
-      "requirement": "GNT-15.8"
-    }
-  ],
-  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27"
+  {
+   "path": "crates/gantry-conformance/tests/executable_bridge.rs",
+   "sha256": "78cb612b3f389a07663eda682c3cae0a30aa6e4fc282f1e021f86cabe4921e0d"
+  },
+  {
+   "path": "protocol/conformance/async-execution-contract-v1.json",
+   "sha256": "e5bbeaac46489e97131d9df56f0082928bc5ed63f1b79aed3ef25f241d224f19"
+  }
+ ],
+ "capabilities": [
+  {
+   "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#generic_task_bodies_have_closed_distinct_identities",
+   "id": "closed-generic-task-body-identity"
+  },
+  {
+   "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#nested_task_bodies_preserve_captures_and_joinall_order",
+   "id": "independent-nested-task-bodies"
+  },
+  {
+   "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#join_operand_preserves_surrounding_expression",
+   "id": "join-expression-lowering"
+  },
+  {
+   "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#analyzed_task_program_round_trips_through_retained_codec",
+   "id": "retained-task-program-codec"
+  },
+  {
+   "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#analyzed_concurrent_entry_reaches_the_existing_profile_rejection",
+   "id": "runtime-profile-rejection"
+  },
+  {
+   "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#concurrent_source_lowers_spawn_join_and_typed_captures",
+   "id": "typed-spawn-join-captures"
+  }
+ ],
+ "claim": {
+  "advertises_profiles": [],
+  "assignment_scope": "lowering-relevant slices of the exact frozen GNT-ASYNC-LOWER-001 assignments",
+  "full_clause_coverage": false,
+  "profiles": []
+ },
+ "exclusions": [
+  "This evidence does not claim runtime coordinator behavior, executor submission, native child scheduling, join settlement, detachment, or cancellation.",
+  "The assigned GNT-3-M-SPAWN clause includes downstream runtime obligations that this lowering evidence does not cover.",
+  "The assigned GNT-15.8 clause includes publication-set and full conformance-corpus obligations that this lowering evidence does not cover.",
+  "This evidence publishes no analyzer, concurrent-evaluator, embedding, evaluator, or durable-runtime profile claim."
+ ],
+ "format": "gantry.async-source-lowering-evidence/v1",
+ "implementation": {
+  "commit": "b91ac8143ecf9847d927126e6ea05b03426bfb9c",
+  "subject": "Lower concurrent source into independent executable task bodies."
+ },
+ "issue": "GNT-ASYNC-LOWER-001",
+ "requirements": [
+  {
+   "clause": "clause-001",
+   "profiles": [
+    "concurrent-evaluator"
+   ],
+   "requirement": "GNT-3-M-SPAWN"
+  },
+  {
+   "clause": "clause-001",
+   "profiles": [
+    "embedding"
+   ],
+   "requirement": "GNT-15.8"
+  }
+ ],
+ "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b"
 }

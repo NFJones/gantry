@@ -1,15 +1,15 @@
 {
-  "format": "gantry.analyzer-ir-evidence/v1",
-  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
-  "issue": "GNT-AN-001",
-  "entries": [
-    {
-      "requirement": "GNT-3-F-DOMAINS",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-5.19",
-      "clause": "clause-001"
-    }
-  ]
+ "format": "gantry.analyzer-ir-evidence/v1",
+ "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
+ "issue": "GNT-AN-001",
+ "entries": [
+  {
+   "requirement": "GNT-3-F-DOMAINS",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-5.19",
+   "clause": "clause-001"
+  }
+ ]
 }

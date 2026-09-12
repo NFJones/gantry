@@ -27,6 +27,7 @@ mod path;
 mod primitive;
 mod protected;
 mod schema;
+mod secret;
 mod signature;
 mod target;
 mod type_expression;
@@ -138,6 +139,13 @@ pub use protected::{
     ValueActionBoundary, admit_crossing, combined_protection_class,
 };
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
+pub use secret::{
+    DurableSecretReference, SECRET_NON_CLAIM_ORDER, SECRET_NON_CLAIMS, SECRET_OWNING_CLAUSE,
+    SecretAuditAccess, SecretAuditEvidence, SecretAuditOutcome, SecretAuditView, SecretDurableCut,
+    SecretError, SecretHolderBindingId, SecretNonClaim, SecretNonClaimName, SecretReference,
+    SecretReferenceId, SecretResumeClass, SecretRevalidation, SecretStalenessReason,
+    revalidate_secret,
+};
 pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
 };

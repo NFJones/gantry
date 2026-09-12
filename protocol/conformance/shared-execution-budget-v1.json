@@ -1,43 +1,43 @@
 {
-  "format": "gantry.shared-execution-budget-evidence/v1",
-  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
-  "issue": "GNT-ASYNC-BUD-001",
-  "capabilities": [
-    {
-      "id": "canonical-recovery-continuity",
-      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#canonical_budget_and_task_checkpoints_preserve_continuation"
-    },
-    {
-      "id": "compacted-full-equivalence",
-      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#full_and_compacted_prefixes_restore_the_same_budget_frontier"
-    },
-    {
-      "id": "coordinator-scheduler-ownership",
-      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#coordinator_and_scheduler_retain_the_exact_execution_budget_owner"
-    },
-    {
-      "id": "shared-operation-limit",
-      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#root_and_child_share_one_logical_operation_limit"
-    },
-    {
-      "id": "shared-transition-limit",
-      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#root_and_child_share_one_deterministic_transition_limit"
-    },
-    {
-      "id": "task-local-limits",
-      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#loop_and_yield_limits_remain_task_local"
-    },
-    {
-      "id": "torn-capture-rejection",
-      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#continuously_torn_combined_capture_is_rejected"
-    }
-  ],
-  "exclusions": [
-    "GNT-3-M-STATE clause-002 contains machine-state obligations beyond the budget projection proved here and remains open for every profile.",
-    "GNT-3-M-SPAWN source creation, gating, session inheritance, handle ownership, and settlement semantics are not covered by this evidence.",
-    "GNT-15.4-owned-work physical executor ownership, admission permits, reaping, and control-plane progress are not execution-budget claims.",
-    "GNT-15.7 configuration defaults, validation, mutability, identity binding, and the complete embedding contract are not covered by this evidence.",
-    "GNT-ASYNC-DUR-001 stage, commit, and publish atomicity across crash cuts remains excluded from this checkpoint and recovery evidence.",
-    "GNT-ASYNC-REC-001 full process reconstruction, integration reattachment, and resume acceptance remain excluded from this recovery evidence."
-  ]
+ "format": "gantry.shared-execution-budget-evidence/v1",
+ "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
+ "issue": "GNT-ASYNC-BUD-001",
+ "capabilities": [
+  {
+   "id": "canonical-recovery-continuity",
+   "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#canonical_budget_and_task_checkpoints_preserve_continuation"
+  },
+  {
+   "id": "compacted-full-equivalence",
+   "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#full_and_compacted_prefixes_restore_the_same_budget_frontier"
+  },
+  {
+   "id": "coordinator-scheduler-ownership",
+   "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#coordinator_and_scheduler_retain_the_exact_execution_budget_owner"
+  },
+  {
+   "id": "shared-operation-limit",
+   "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#root_and_child_share_one_logical_operation_limit"
+  },
+  {
+   "id": "shared-transition-limit",
+   "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#root_and_child_share_one_deterministic_transition_limit"
+  },
+  {
+   "id": "task-local-limits",
+   "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#loop_and_yield_limits_remain_task_local"
+  },
+  {
+   "id": "torn-capture-rejection",
+   "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#continuously_torn_combined_capture_is_rejected"
+  }
+ ],
+ "exclusions": [
+  "GNT-3-M-STATE clause-002 contains machine-state obligations beyond the budget projection proved here and remains open for every profile.",
+  "GNT-3-M-SPAWN source creation, gating, session inheritance, handle ownership, and settlement semantics are not covered by this evidence.",
+  "GNT-15.4-owned-work physical executor ownership, admission permits, reaping, and control-plane progress are not execution-budget claims.",
+  "GNT-15.7 configuration defaults, validation, mutability, identity binding, and the complete embedding contract are not covered by this evidence.",
+  "GNT-ASYNC-DUR-001 stage, commit, and publish atomicity across crash cuts remains excluded from this checkpoint and recovery evidence.",
+  "GNT-ASYNC-REC-001 full process reconstruction, integration reattachment, and resume acceptance remain excluded from this recovery evidence."
+ ]
 }

@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
-  "byte_length": 729524,
-  "line_count": 12291,
+  "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
+  "byte_length": 743217,
+  "line_count": 12498,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9494,
-      "end_line": 12291,
-      "sha256": "7525265986d98f5ff5b7efbbebf6a67a6eabffcce01ce1e36397e9bf6fe0c55a",
+      "end_line": 12498,
+      "sha256": "3b7a54d4df246a3dfb7a24a206680524a4fc89cef29b89ad1f69ce1474ef7a71",
       "rationale": null
     }
   ],
@@ -33237,6 +33237,427 @@
                 "crates/gantry-conformance/tests/operation_abi.rs#adapter_substitution_cannot_widen_authority_or_reuse_a_retired_identity",
                 "crates/gantry-conformance/tests/operation_abi.rs#a_fenced_generation_or_an_exhausted_observation_budget_refuses_further_observation",
                 "crates/gantry-conformance/tests/operation_abi.rs#the_diagnostic_registry_is_closed_sorted_and_anchored_to_every_clause"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.0-secrets-and-credentials",
+      "span_start_line": 12292,
+      "span_end_line": 12348,
+      "span_sha256": "72adee63bceaf4596bcd87ed3e3c4ddee791810e6a32e817488b7f84a948a278",
+      "anchor_line": 12295,
+      "body_start_line": 12296,
+      "body_end_line": 12348,
+      "body_sha256": "198ccb93620179b1bd62fe7edce01ca0b71c7d98126f7dbd8f62d492605c0a5b",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12296,
+          "end_line": 12348,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#secret_references_are_opaque_and_never_serializable_or_material_readable",
+                "crates/gantry-conformance/tests/secret_model.rs#durable_secret_rebinding_refuses_a_changed_operation_class_tenant_or_fenced_instance"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.1-unreadable-secret-references",
+      "span_start_line": 12349,
+      "span_end_line": 12366,
+      "span_sha256": "afd21d68a52f42a1cab5896f9b5c73e11be61f7251593d3803ad03fc90521a41",
+      "anchor_line": 12350,
+      "body_start_line": 12351,
+      "body_end_line": 12366,
+      "body_sha256": "b0a38f1af28bfc2db23ac5843cd811dbe1a1a89b9319824d3ee0981f01654f69",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12351,
+          "end_line": 12366,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#secret_references_are_opaque_and_never_serializable_or_material_readable",
+                "crates/gantry-conformance/tests/secret_model.rs#secret_reference_identity_is_domain_separated_and_carries_no_material",
+                "crates/gantry-conformance/tests/secret_model.rs#secret_diagnostics_and_redacted_text_never_carry_material_or_its_digest"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.2-secret-authority-binding",
+      "span_start_line": 12367,
+      "span_end_line": 12382,
+      "span_sha256": "b3728fcd277963e72bca15f47db4d3e8237f256f37bc39aa270d48c029f3e6b2",
+      "anchor_line": 12368,
+      "body_start_line": 12369,
+      "body_end_line": 12382,
+      "body_sha256": "ec9a8e2f566594e55f933c67ac059e14167fbafa4f2652ff7ebeeb808cc2791c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12369,
+          "end_line": 12382,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#a_secret_reference_binds_holder_requirement_binding_operation_and_tenant"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.3-secret-lifetime-transfer-and-attenuation",
+      "span_start_line": 12383,
+      "span_end_line": 12399,
+      "span_sha256": "15338dfd5475649b74ad4fde2651d2f6c05d10614d2bfb86586515910cd59ca6",
+      "anchor_line": 12384,
+      "body_start_line": 12385,
+      "body_end_line": 12399,
+      "body_sha256": "b9e26d1bc14acba5d7b53396eb6ececd9789dda03d2fe372bbe062199aaf418e",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12385,
+          "end_line": 12399,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#secret_attenuation_is_monotone_and_never_amplifies_rights_or_lease",
+                "crates/gantry-conformance/tests/secret_model.rs#secret_transfer_is_affine_and_strictly_advances_the_generation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.4-secret-generation-fencing",
+      "span_start_line": 12400,
+      "span_end_line": 12414,
+      "span_sha256": "9faf0b879c67438089be5e55c7c6b507b8e86ba209427586e848d8c4bbd5cc49",
+      "anchor_line": 12401,
+      "body_start_line": 12402,
+      "body_end_line": 12414,
+      "body_sha256": "435aa3c16de50a3cba33b62a71b06e1efe5e630a42182440eba1a7dbe7ef5162",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12402,
+          "end_line": 12414,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#secret_transfer_is_affine_and_strictly_advances_the_generation",
+                "crates/gantry-conformance/tests/secret_model.rs#a_fenced_secret_generation_is_refused_and_never_reinstated",
+                "crates/gantry-conformance/tests/secret_model.rs#a_stale_secret_generation_is_refused_without_latching_a_fence"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.5-secret-expiry-and-revocation-races",
+      "span_start_line": 12415,
+      "span_end_line": 12431,
+      "span_sha256": "edad124ba90c54a0045f456e1197f2eaa50e404dec812e31399bb948b50eeeac",
+      "anchor_line": 12416,
+      "body_start_line": 12417,
+      "body_end_line": 12431,
+      "body_sha256": "6bb5cc6976e20e0d3028d1ec759a49782e8e3c1b5ac5a17ddb8fe9cf66df8ceb",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12417,
+          "end_line": 12431,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#a_stale_secret_generation_is_refused_without_latching_a_fence",
+                "crates/gantry-conformance/tests/secret_model.rs#secret_expiry_and_revocation_race_the_admission_commit_point",
+                "crates/gantry-conformance/tests/secret_model.rs#secret_cancellation_never_reports_a_definite_not_started_effect"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.6-secret-redaction-and-protected-audit",
+      "span_start_line": 12432,
+      "span_end_line": 12448,
+      "span_sha256": "722a76226a052224fde809a4f013fa67aa42c5a0d87d1f7d0e2784c0bbbc698b",
+      "anchor_line": 12433,
+      "body_start_line": 12434,
+      "body_end_line": 12448,
+      "body_sha256": "97d59e54618d8d46f0d9d2d5cdd540384a4b647a3e8dd671335ea49727d969a4",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12434,
+          "end_line": 12448,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#secret_diagnostics_and_redacted_text_never_carry_material_or_its_digest",
+                "crates/gantry-conformance/tests/secret_model.rs#secret_audit_evidence_is_capability_gated_and_names_the_owning_clause"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.7-secret-tenant-isolation",
+      "span_start_line": 12449,
+      "span_end_line": 12463,
+      "span_sha256": "18c70ca2acf93b67449c8a94932216605ececc74d57cfe4a638fb46c52058cc7",
+      "anchor_line": 12450,
+      "body_start_line": 12451,
+      "body_end_line": 12463,
+      "body_sha256": "7e4967e15f7cdfe534a5d4d8cb7d2355cbfc3940073937c78dae0a5205de4b80",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12451,
+          "end_line": 12463,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#secret_references_are_isolated_per_tenant"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.8-durable-secret-revalidation",
+      "span_start_line": 12464,
+      "span_end_line": 12481,
+      "span_sha256": "64f207299ae0107b051fcdfe32e8f25211cc2ddf3602420f8394fd1307870c01",
+      "anchor_line": 12465,
+      "body_start_line": 12466,
+      "body_end_line": 12481,
+      "body_sha256": "5ea865a2cd95a91476f3547fe1522b926a0ce25ca6ce78f1a7171ce2f109d6ed",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12466,
+          "end_line": 12481,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#durable_secret_cuts_revalidate_and_rebind_fail_closed_on_resume",
+                "crates/gantry-conformance/tests/secret_model.rs#durable_secret_rebinding_refuses_a_changed_operation_class_tenant_or_fenced_instance"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-21.9-secret-non-claims",
+      "span_start_line": 12482,
+      "span_end_line": 12498,
+      "span_sha256": "d9a9de88ac2e742b96470e2bdfa7fc5a926c0aafef7ad0d4b50414db856b3120",
+      "anchor_line": 12483,
+      "body_start_line": 12484,
+      "body_end_line": 12498,
+      "body_sha256": "8af1103af4a764d0b82774f1357b0c409e72031b3ced61833c97424669e5be84",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12484,
+          "end_line": 12498,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/secret_model.rs#secret_references_are_opaque_and_never_serializable_or_material_readable",
+                "crates/gantry-conformance/tests/secret_model.rs#durable_secret_rebinding_refuses_a_changed_operation_class_tenant_or_fenced_instance"
               ],
               "rationale": null
             }

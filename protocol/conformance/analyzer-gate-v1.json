@@ -1,196 +1,196 @@
 {
-  "artifacts": [
-    {
-      "path": "crates/gantry-analysis/Cargo.toml",
-      "sha256": "4e9789b631c98491d310c69c2243a7168e5800cf555f25c941eaea04aad18b45"
-    },
-    {
-      "path": "docs/analyzer-package-validity.md",
-      "sha256": "c7099efb64b3331bf94a8a408c8e6f7eedf9c5d80f5495ec52d61fef394418eb"
-    },
-    {
-      "path": "protocol/catalogs/ir-contracts-v1.json",
-      "sha256": "19702ace6d0839bfe461a90fa7599347c0800377ee2c20756cf4cba4e958b3eb"
-    },
-    {
-      "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "ea9badf2730a10d895c8ec04e6a4ba7d9aaa975bf5c6e69ec02ff45507915cc4"
-    },
-    {
-      "path": "protocol/conformance/analyzer-ir-v1.json",
-      "sha256": "ef0f6ceb73cbba2405b18dcb19b3d27b5dca66435cc2b7416a5daddabee74783"
-    },
-    {
-      "path": "protocol/conformance/analyzer-lowering-v1.json",
-      "sha256": "8534d9b2ebc9cfb1e02cb33ffe9267318f0a26e23ba6b9b838b083ba330a50c2"
-    },
-    {
-      "path": "protocol/conformance/analyzer-package-v1.json",
-      "sha256": "8df8e342008164b1ed1723b51113b52ac2bca79f51023bb0df8ec462602bb475"
-    },
-    {
-      "path": "protocol/conformance/analyzer-symbols-v1.json",
-      "sha256": "dcf04022914a673339e8c922d3b201a8a7a1a9a5a4cb308763750fcd09b841ec"
-    },
-    {
-      "path": "protocol/conformance/analyzer-types-v1.json",
-      "sha256": "1a764a4836532f82e0586ca901c573c426025966063ab2e85e30b096d0b46545"
-    },
-    {
-      "path": "protocol/conformance/analyzer-validity-v1.json",
-      "sha256": "1cae87496de0b8a1506158db3b7db874ba781f9c7911c67a0f8f3420f8fe490d"
-    },
-    {
-      "path": "protocol/conformance/analyzer-workflows-v1.json",
-      "sha256": "28b59901b693deca3361ce366fac112c3c3db37375c1120d1f691de6e603aa24"
-    },
-    {
-      "path": "protocol/conformance/frontend-gate-v1.json",
-      "sha256": "28aa99606df53c4b1d468a1f21f504a761c41e5e71437825c464a039cc94275b"
-    },
-    {
-      "path": "protocol/goldens/activity-observation-vectors-v1.json",
-      "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
-    },
-    {
-      "path": "protocol/goldens/analyzer-validity-model-v1.json",
-      "sha256": "25d78122e545e9a091a07c48efb91b940111000cef9bd8a30d21205104ed0b99"
-    },
-    {
-      "path": "protocol/goldens/ir-artifact-vectors-v1.json",
-      "sha256": "dcad0f11779af68d8b2bf9f4a1acd9e117702d3600e5277de7e783717dfb808b"
-    },
-    {
-      "path": "protocol/goldens/ir-contracts-v1.canonical.json",
-      "sha256": "503d045390e40c90ba71be092d9c87588f2d51663e7d584c9648427c65f32a3c"
-    },
-    {
-      "path": "protocol/goldens/profiles-v1.canonical.json",
-      "sha256": "6b37580c56ef8231090275741de92c477018532333a587df4a31108310e679e3"
-    },
-    {
-      "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "744e5361052153202e9e0881ad397319049fea08ea4f6eb20c6cc81a742eff8c"
-    },
-    {
-      "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "aecb4fd49a8f48da21dbccd4818a93e547ef649536018dbcf360176f8c65c919"
-    },
-    {
-      "path": "protocol/requirements/section14-v1.json",
-      "sha256": "f8d0554dca6d6515f85bca5782bb39b53832ad3f8f9e869a0cb29e3c5bffb924"
-    },
-    {
-      "path": "protocol/schemas/activity-observation-v1.schema.json",
-      "sha256": "24821293533841149e962b77c41c5aab9ebdea09401662180fd9a20ed409d9b1"
-    },
-    {
-      "path": "protocol/schemas/canonical-ir-v1.schema.json",
-      "sha256": "af0cece208d873047c35501657e58ef2e9d010a9b869b40143baf4860e416134"
-    },
-    {
-      "path": "protocol/schemas/generated-schema-object-v1.schema.json",
-      "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
-    },
-    {
-      "path": "protocol/schemas/package-services-v1.schema.json",
-      "sha256": "f3477f288c65ac8583322c5ff05b02ed30baab0f560797c380c39b49c1153036"
-    },
-    {
-      "path": "protocol/schemas/package-source-manifest-v1.schema.json",
-      "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
-    },
-    {
-      "path": "protocol/schemas/profile-catalog-v1.schema.json",
-      "sha256": "74b9513e5b7325da1202f5e349c3f6ece75694392b5406773ee98248ef720b80"
-    },
-    {
-      "path": "protocol/schemas/source-map-v1.schema.json",
-      "sha256": "109e2c94cc55bc10458734d042a85775f1c5de98cf6fe0fff5985095ab6ec1fa"
-    }
-  ],
-  "claim": {
-    "advertises_profiles": [
-      "analyzer",
-      "frontend"
-    ],
-    "excludes_profiles": [
-      "concurrent-evaluator",
-      "durable-runtime",
-      "embedding",
-      "evaluator"
-    ],
-    "profiles": [
-      "analyzer",
-      "frontend"
-    ]
+ "artifacts": [
+  {
+   "path": "crates/gantry-analysis/Cargo.toml",
+   "sha256": "4e9789b631c98491d310c69c2243a7168e5800cf555f25c941eaea04aad18b45"
   },
-  "environment_gaps": [
-    "The stable-macOS analyzer and source-provider lanes execute in hosted CI; this Linux gate run does not claim a local macOS result."
-  ],
-  "format": "gantry.analyzer-gate-evidence/v1",
-  "gate": "GNT-GATE-300",
-  "prerequisites": [
-    {
-      "commit": "51b4a96a17c587ef9b2b347e6485c5ee222ea4a0",
-      "issue": "GNT-AN-001",
-      "subject": "Establish canonical IR contracts"
-    },
-    {
-      "commit": "cee8550650c3278e9584e6212c478c4159002184",
-      "issue": "GNT-AN-002",
-      "subject": "Implement analyzer symbol resolution."
-    },
-    {
-      "commit": "e95632ed31695240b7113ffbd4e8f5322418238d",
-      "issue": "GNT-AN-003",
-      "subject": "Implement analyzer type and completion analysis"
-    },
-    {
-      "commit": "b4b22c5a8442ea10de7d304fbe895a0513f738ad",
-      "issue": "GNT-AN-004",
-      "subject": "Implement analyzer workflow ownership and inventories"
-    },
-    {
-      "commit": "7095dbc9244128bce1fd12005b4e2d60cb390f4c",
-      "issue": "GNT-AN-005",
-      "subject": "Implement canonical analyzer lowering artifacts"
-    },
-    {
-      "commit": "081ba1ab60b70efbb2b00c1f313c9e45863f209b",
-      "issue": "GNT-AN-006",
-      "subject": "Expose package analysis through the public facade."
-    },
-    {
-      "commit": "8882f04631578ebe80c16be3e3a03b087550995e",
-      "issue": "GNT-AN-007",
-      "subject": "Document the analyzer package-validity argument."
-    },
-    {
-      "commit": "aadd46fdf22ca9c396b22fdfe061fdc2f9981d2c",
-      "issue": "GNT-FND-007",
-      "subject": "Establish external conformance harness"
-    }
-  ],
-  "profile": "analyzer",
-  "review_summary": {
-    "applicable_clause_count": 462,
-    "covered_count": 274,
-    "not_applicable_count": 188
+  {
+   "path": "docs/analyzer-package-validity.md",
+   "sha256": "c7099efb64b3331bf94a8a408c8e6f7eedf9c5d80f5495ec52d61fef394418eb"
   },
-  "section14_excerpt_count": 51,
-  "specification": {
-    "path": "SPEC.md",
-    "sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27"
+  {
+   "path": "protocol/catalogs/ir-contracts-v1.json",
+   "sha256": "7cdca81c84f41a781855e0382296f972655346f935173c540dce67a7b6589bca"
   },
-  "status": "verified",
-  "validation_commands": [
-    "cargo run --locked -p xtask -- check generated",
-    "cargo run --locked -p xtask -- check governance",
-    "cargo run --locked -p xtask -- check workspace",
-    "cargo check --locked --workspace --all-targets",
-    "cargo clippy --locked --workspace --all-targets -- -D warnings",
-    "cargo fmt --all -- --check",
-    "cargo test --locked --workspace"
+  {
+   "path": "protocol/catalogs/profiles-v1.json",
+   "sha256": "9e6877c5dbd373fa6d8a805b1e6158ab3d82f0d0792466b2748adac2ded84fba"
+  },
+  {
+   "path": "protocol/conformance/analyzer-ir-v1.json",
+   "sha256": "0edbc120dc23382e1d0f0a1c3f83cfe8838e64f241758fc02cbec0ecb1f6688d"
+  },
+  {
+   "path": "protocol/conformance/analyzer-lowering-v1.json",
+   "sha256": "29040ce5d89f19fb690a7f979234fef42ea65bd31cba9f579c875dd7cc88a74e"
+  },
+  {
+   "path": "protocol/conformance/analyzer-package-v1.json",
+   "sha256": "43d19e0f48357a9069a845df67f70f8fccb06978f11607d4b6bbb0019a683292"
+  },
+  {
+   "path": "protocol/conformance/analyzer-symbols-v1.json",
+   "sha256": "541877cbe8b9ae96bf67b70f1ce5417d4d1d82aab5b014fd603941e79027a0b0"
+  },
+  {
+   "path": "protocol/conformance/analyzer-types-v1.json",
+   "sha256": "f0124fbbdc06fdf438d8fc402e2cb4591bdda9ee4e0042bbf8c0dff03c1fd1d9"
+  },
+  {
+   "path": "protocol/conformance/analyzer-validity-v1.json",
+   "sha256": "733a4807e7ca2968a8ecba3b35a709b17487926cef5e490ee5293c51bcb5ba6d"
+  },
+  {
+   "path": "protocol/conformance/analyzer-workflows-v1.json",
+   "sha256": "d2766c2ec5c42793dbbe09782014ccd275e1aa29e7ae9d75f637a43db1eb8020"
+  },
+  {
+   "path": "protocol/conformance/frontend-gate-v1.json",
+   "sha256": "e12c91848f7824d3500c171ef282d16f2b1c62bba824bf7e84cc2cc668d3e082"
+  },
+  {
+   "path": "protocol/goldens/activity-observation-vectors-v1.json",
+   "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
+  },
+  {
+   "path": "protocol/goldens/analyzer-validity-model-v1.json",
+   "sha256": "25d78122e545e9a091a07c48efb91b940111000cef9bd8a30d21205104ed0b99"
+  },
+  {
+   "path": "protocol/goldens/ir-artifact-vectors-v1.json",
+   "sha256": "dcad0f11779af68d8b2bf9f4a1acd9e117702d3600e5277de7e783717dfb808b"
+  },
+  {
+   "path": "protocol/goldens/ir-contracts-v1.canonical.json",
+   "sha256": "70adc3a4d88ae883bdc8417a9429cbbd382f0b421260bf43946de053a354e56a"
+  },
+  {
+   "path": "protocol/goldens/profiles-v1.canonical.json",
+   "sha256": "7f6c154e722b4425d11381af846a30f8d80c03ddd1ff7ce32c09170cc50cec3a"
+  },
+  {
+   "path": "protocol/requirements/generated/requirements-v1.json",
+   "sha256": "5968dabb2dd08aee147e5a2993a789c795e2ddb0ecaf97d10ff866eae5c6563c"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "31a85e8c808453f69b06e4fdc6105c899028e564c772a88feda8b56031594410"
+  },
+  {
+   "path": "protocol/requirements/section14-v1.json",
+   "sha256": "91458f79538ae8073bef326001ac6e26eedb330ad5bb6c2f963132c0a8af765e"
+  },
+  {
+   "path": "protocol/schemas/activity-observation-v1.schema.json",
+   "sha256": "24821293533841149e962b77c41c5aab9ebdea09401662180fd9a20ed409d9b1"
+  },
+  {
+   "path": "protocol/schemas/canonical-ir-v1.schema.json",
+   "sha256": "af0cece208d873047c35501657e58ef2e9d010a9b869b40143baf4860e416134"
+  },
+  {
+   "path": "protocol/schemas/generated-schema-object-v1.schema.json",
+   "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
+  },
+  {
+   "path": "protocol/schemas/package-services-v1.schema.json",
+   "sha256": "f3477f288c65ac8583322c5ff05b02ed30baab0f560797c380c39b49c1153036"
+  },
+  {
+   "path": "protocol/schemas/package-source-manifest-v1.schema.json",
+   "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
+  },
+  {
+   "path": "protocol/schemas/profile-catalog-v1.schema.json",
+   "sha256": "74b9513e5b7325da1202f5e349c3f6ece75694392b5406773ee98248ef720b80"
+  },
+  {
+   "path": "protocol/schemas/source-map-v1.schema.json",
+   "sha256": "109e2c94cc55bc10458734d042a85775f1c5de98cf6fe0fff5985095ab6ec1fa"
+  }
+ ],
+ "claim": {
+  "advertises_profiles": [
+   "analyzer",
+   "frontend"
+  ],
+  "excludes_profiles": [
+   "concurrent-evaluator",
+   "durable-runtime",
+   "embedding",
+   "evaluator"
+  ],
+  "profiles": [
+   "analyzer",
+   "frontend"
   ]
+ },
+ "environment_gaps": [
+  "The stable-macOS analyzer and source-provider lanes execute in hosted CI; this Linux gate run does not claim a local macOS result."
+ ],
+ "format": "gantry.analyzer-gate-evidence/v1",
+ "gate": "GNT-GATE-300",
+ "prerequisites": [
+  {
+   "commit": "51b4a96a17c587ef9b2b347e6485c5ee222ea4a0",
+   "issue": "GNT-AN-001",
+   "subject": "Establish canonical IR contracts"
+  },
+  {
+   "commit": "cee8550650c3278e9584e6212c478c4159002184",
+   "issue": "GNT-AN-002",
+   "subject": "Implement analyzer symbol resolution."
+  },
+  {
+   "commit": "e95632ed31695240b7113ffbd4e8f5322418238d",
+   "issue": "GNT-AN-003",
+   "subject": "Implement analyzer type and completion analysis"
+  },
+  {
+   "commit": "b4b22c5a8442ea10de7d304fbe895a0513f738ad",
+   "issue": "GNT-AN-004",
+   "subject": "Implement analyzer workflow ownership and inventories"
+  },
+  {
+   "commit": "7095dbc9244128bce1fd12005b4e2d60cb390f4c",
+   "issue": "GNT-AN-005",
+   "subject": "Implement canonical analyzer lowering artifacts"
+  },
+  {
+   "commit": "081ba1ab60b70efbb2b00c1f313c9e45863f209b",
+   "issue": "GNT-AN-006",
+   "subject": "Expose package analysis through the public facade."
+  },
+  {
+   "commit": "8882f04631578ebe80c16be3e3a03b087550995e",
+   "issue": "GNT-AN-007",
+   "subject": "Document the analyzer package-validity argument."
+  },
+  {
+   "commit": "aadd46fdf22ca9c396b22fdfe061fdc2f9981d2c",
+   "issue": "GNT-FND-007",
+   "subject": "Establish external conformance harness"
+  }
+ ],
+ "profile": "analyzer",
+ "review_summary": {
+  "applicable_clause_count": 472,
+  "covered_count": 284,
+  "not_applicable_count": 188
+ },
+ "section14_excerpt_count": 51,
+ "specification": {
+  "path": "SPEC.md",
+  "sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b"
+ },
+ "status": "verified",
+ "validation_commands": [
+  "cargo run --locked -p xtask -- check generated",
+  "cargo run --locked -p xtask -- check governance",
+  "cargo run --locked -p xtask -- check workspace",
+  "cargo check --locked --workspace --all-targets",
+  "cargo clippy --locked --workspace --all-targets -- -D warnings",
+  "cargo fmt --all -- --check",
+  "cargo test --locked --workspace"
+ ]
 }

@@ -1,67 +1,67 @@
 {
-  "format": "gantry.concurrent-handle-ownership-evidence/v1",
-  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
-  "issue": "GNT-CON-002",
-  "entries": [
-    {
-      "requirement": "GNT-10.5",
-      "clause": "clause-001",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
-    },
-    {
-      "requirement": "GNT-10.6",
-      "clause": "clause-001",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
-    },
-    {
-      "requirement": "GNT-10.7",
-      "clause": "clause-001",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
-    },
-    {
-      "requirement": "GNT-10.8",
-      "clause": "clause-001",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence"
-    },
-    {
-      "requirement": "GNT-3-M-DETACH",
-      "clause": "clause-001",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence"
-    },
-    {
-      "requirement": "GNT-3-M-TASK-SETTLE",
-      "clause": "clause-002",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
-    },
-    {
-      "requirement": "GNT-3-M-TASK-SETTLE",
-      "clause": "clause-002",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
-    },
-    {
-      "requirement": "GNT-3-M-TASK-SETTLE",
-      "clause": "clause-003",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
-    },
-    {
-      "requirement": "GNT-3-M-TASK-SETTLE",
-      "clause": "clause-003",
-      "profile": "concurrent-evaluator",
-      "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
-    }
-  ],
-  "exclusions": [
-    "Concurrent cancellation, attached-descendant draining, foreground completion, terminal precedence, events, and shutdown remain owned by GNT-CON-003.",
-    "Tokio task services and deterministic executor schedule exploration remain owned by GNT-CON-004.",
-    "The concurrent semantic-refinement argument and bounded model remain owned by GNT-CON-005.",
-    "Durable ownership commits, replay, recovery, and physical persistence are excluded and make no durable-runtime claim."
-  ]
+ "format": "gantry.concurrent-handle-ownership-evidence/v1",
+ "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
+ "issue": "GNT-CON-002",
+ "entries": [
+  {
+   "requirement": "GNT-10.5",
+   "clause": "clause-001",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
+  },
+  {
+   "requirement": "GNT-10.6",
+   "clause": "clause-001",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
+  },
+  {
+   "requirement": "GNT-10.7",
+   "clause": "clause-001",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
+  },
+  {
+   "requirement": "GNT-10.8",
+   "clause": "clause-001",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence"
+  },
+  {
+   "requirement": "GNT-3-M-DETACH",
+   "clause": "clause-001",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence"
+  },
+  {
+   "requirement": "GNT-3-M-TASK-SETTLE",
+   "clause": "clause-002",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
+  },
+  {
+   "requirement": "GNT-3-M-TASK-SETTLE",
+   "clause": "clause-002",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
+  },
+  {
+   "requirement": "GNT-3-M-TASK-SETTLE",
+   "clause": "clause-003",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
+  },
+  {
+   "requirement": "GNT-3-M-TASK-SETTLE",
+   "clause": "clause-003",
+   "profile": "concurrent-evaluator",
+   "evidence": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
+  }
+ ],
+ "exclusions": [
+  "Concurrent cancellation, attached-descendant draining, foreground completion, terminal precedence, events, and shutdown remain owned by GNT-CON-003.",
+  "Tokio task services and deterministic executor schedule exploration remain owned by GNT-CON-004.",
+  "The concurrent semantic-refinement argument and bounded model remain owned by GNT-CON-005.",
+  "Durable ownership commits, replay, recovery, and physical persistence are excluded and make no durable-runtime claim."
+ ]
 }

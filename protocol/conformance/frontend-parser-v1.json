@@ -1,84 +1,84 @@
 {
-  "format": "gantry.frontend-parser-evidence/v1",
-  "specification_sha256": "82b5d1cd3e8dcb3a5db8a9e5c12f647cee6c7dbb803373d5c257df114fc5cd27",
-  "issue": "GNT-FE-002",
-  "grammar_entries": [
-    {
-      "requirement": "GNT-13.0",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.1",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.1",
-      "clause": "clause-002"
-    },
-    {
-      "requirement": "GNT-13.1",
-      "clause": "clause-003"
-    },
-    {
-      "requirement": "GNT-13.3",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.4",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.5",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.5",
-      "clause": "clause-002"
-    },
-    {
-      "requirement": "GNT-13.6",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.7",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.8",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.8",
-      "clause": "clause-002"
-    },
-    {
-      "requirement": "GNT-13.9",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-13.9",
-      "clause": "clause-002"
-    },
-    {
-      "requirement": "GNT-4.10",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-4.11",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-4.5",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-4.7",
-      "clause": "clause-001"
-    },
-    {
-      "requirement": "GNT-4.8",
-      "clause": "clause-001"
-    }
-  ],
-  "section14_excerpt_count": 51
+ "format": "gantry.frontend-parser-evidence/v1",
+ "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
+ "issue": "GNT-FE-002",
+ "grammar_entries": [
+  {
+   "requirement": "GNT-13.0",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.1",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.1",
+   "clause": "clause-002"
+  },
+  {
+   "requirement": "GNT-13.1",
+   "clause": "clause-003"
+  },
+  {
+   "requirement": "GNT-13.3",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.4",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.5",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.5",
+   "clause": "clause-002"
+  },
+  {
+   "requirement": "GNT-13.6",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.7",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.8",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.8",
+   "clause": "clause-002"
+  },
+  {
+   "requirement": "GNT-13.9",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-13.9",
+   "clause": "clause-002"
+  },
+  {
+   "requirement": "GNT-4.10",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-4.11",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-4.5",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-4.7",
+   "clause": "clause-001"
+  },
+  {
+   "requirement": "GNT-4.8",
+   "clause": "clause-001"
+  }
+ ],
+ "section14_excerpt_count": 51
 }
