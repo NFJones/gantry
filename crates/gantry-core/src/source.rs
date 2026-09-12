@@ -1279,16 +1279,46 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A spawned task references a handle owned by another task.",
     },
     DiagnosticCodeDefinition {
+        code: "identifier-case-collision",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "Two identifier spellings differ only by the pinned full case mapping.",
+    },
+    DiagnosticCodeDefinition {
         code: "identifier-confusable-collision",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::IdentifierSecurity,
         meaning: "Distinct identifier spellings share one Unicode 16 confusable skeleton.",
     },
     DiagnosticCodeDefinition {
+        code: "identifier-name-exceeds-maximum",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "A name exceeds the declared maximum length of its namespace.",
+    },
+    DiagnosticCodeDefinition {
+        code: "identifier-normalization-collision",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "Two identifier spellings differ only by Unicode 16 normalization.",
+    },
+    DiagnosticCodeDefinition {
         code: "identifier-not-nfc",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::IdentifierSecurity,
         meaning: "An identifier spelling is not already Unicode 16 NFC.",
+    },
+    DiagnosticCodeDefinition {
+        code: "identifier-reserved-word-collision",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "A compared identifier spelling is a reserved word in its namespace.",
+    },
+    DiagnosticCodeDefinition {
+        code: "identifier-reserved-word-occupancy",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "A name equal to a reserved word is used in a lookup namespace.",
     },
     DiagnosticCodeDefinition {
         code: "identifier-script-warning",
@@ -1301,6 +1331,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::IdentifierSecurity,
         meaning: "An identifier contains a Unicode scalar excluded by Gantry security rules.",
+    },
+    DiagnosticCodeDefinition {
+        code: "identifier-truncation-collision",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "Two identifier spellings are equal after truncation to the declared maximum length of their namespace.",
     },
     DiagnosticCodeDefinition {
         code: "immutable-assignment",

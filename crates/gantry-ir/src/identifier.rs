@@ -76,43 +76,69 @@ const SCRIPT_INHERITED: &str = "Zinh";
 
 /// One frozen published diagnostic identity of this model.
 ///
-/// The codes are frozen and are the ones already registered for the identifier
-/// category; a consumer matches on [`Self::as_str`], and no code is invented
-/// here. The variant order is the sorted code order, so [`Self::ALL`] is already
-/// in the order the registry requires.
+/// Every code of this model is registered in the workspace
+/// `DIAGNOSTIC_CODE_REGISTRY` and is mirrored here, so a consumer matches on
+/// [`Self::as_str`] and no code is invented here: the conformance lane keeps the
+/// published set and this enum in agreement on spelling, meaning, phase, and
+/// category. The variant order is the sorted code order, so [`Self::ALL`] is
+/// already in the order the registry requires.
 ///
 /// A condition this module can decide but that has no published code is a typed
 /// [`IdentifierError`] variant whose [`IdentifierError::code`] is `None`; such a
 /// condition MUST NOT be reported under another condition's code.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IdentifierDiagnosticCode {
+    /// `identifier-case-collision`
+    CaseCollision,
     /// `identifier-confusable-collision`
     ConfusableCollision,
+    /// `identifier-name-exceeds-maximum`
+    NameExceedsMaximum,
+    /// `identifier-normalization-collision`
+    NormalizationCollision,
     /// `identifier-not-nfc`
     NotNfc,
+    /// `identifier-reserved-word-collision`
+    ReservedWordCollision,
+    /// `identifier-reserved-word-occupancy`
+    ReservedWordOccupancy,
     /// `identifier-script-warning`
     ScriptWarning,
     /// `identifier-security`
     IdentifierSecurity,
+    /// `identifier-truncation-collision`
+    TruncationCollision,
 }
 
 impl IdentifierDiagnosticCode {
     /// Every published code of this model, in sorted code order.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 10] = [
+        Self::CaseCollision,
         Self::ConfusableCollision,
+        Self::NameExceedsMaximum,
+        Self::NormalizationCollision,
         Self::NotNfc,
+        Self::ReservedWordCollision,
+        Self::ReservedWordOccupancy,
         Self::ScriptWarning,
         Self::IdentifierSecurity,
+        Self::TruncationCollision,
     ];
 
     /// Returns the exact frozen code spelling.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::CaseCollision => "identifier-case-collision",
             Self::ConfusableCollision => "identifier-confusable-collision",
+            Self::NameExceedsMaximum => "identifier-name-exceeds-maximum",
+            Self::NormalizationCollision => "identifier-normalization-collision",
             Self::NotNfc => "identifier-not-nfc",
+            Self::ReservedWordCollision => "identifier-reserved-word-collision",
+            Self::ReservedWordOccupancy => "identifier-reserved-word-occupancy",
             Self::ScriptWarning => "identifier-script-warning",
             Self::IdentifierSecurity => "identifier-security",
+            Self::TruncationCollision => "identifier-truncation-collision",
         }
     }
 
@@ -120,13 +146,31 @@ impl IdentifierDiagnosticCode {
     #[must_use]
     pub const fn meaning(self) -> &'static str {
         match self {
+            Self::CaseCollision => {
+                "Two identifier spellings differ only by the pinned full case mapping."
+            }
             Self::ConfusableCollision => {
                 "Distinct identifier spellings share one Unicode 16 confusable skeleton."
             }
+            Self::NameExceedsMaximum => {
+                "A name exceeds the declared maximum length of its namespace."
+            }
+            Self::NormalizationCollision => {
+                "Two identifier spellings differ only by Unicode 16 normalization."
+            }
             Self::NotNfc => "An identifier spelling is not already Unicode 16 NFC.",
+            Self::ReservedWordCollision => {
+                "A compared identifier spelling is a reserved word in its namespace."
+            }
+            Self::ReservedWordOccupancy => {
+                "A name equal to a reserved word is used in a lookup namespace."
+            }
             Self::ScriptWarning => "An identifier is outside one Recommended single-script set.",
             Self::IdentifierSecurity => {
                 "An identifier contains a Unicode scalar excluded by Gantry security rules."
+            }
+            Self::TruncationCollision => {
+                "Two identifier spellings are equal after truncation to the declared maximum length of their namespace."
             }
         }
     }
@@ -135,6 +179,12 @@ impl IdentifierDiagnosticCode {
     #[must_use]
     pub const fn requirement(self) -> &'static str {
         match self {
+            Self::CaseCollision
+            | Self::NormalizationCollision
+            | Self::ReservedWordCollision
+            | Self::TruncationCollision => "GNT-18.6-collision-relation",
+            Self::NameExceedsMaximum => "GNT-18.8-truncation-behaviour",
+            Self::ReservedWordOccupancy => "GNT-18.5-reserved-word-occupancy",
             Self::ConfusableCollision | Self::ScriptWarning => {
                 "GNT-18.4-confusable-and-script-policy"
             }
@@ -328,12 +378,12 @@ impl CollisionCondition {
     #[must_use]
     pub const fn code(self) -> Option<IdentifierDiagnosticCode> {
         match self {
+            Self::Exact => None,
+            Self::Case => Some(IdentifierDiagnosticCode::CaseCollision),
+            Self::Truncation => Some(IdentifierDiagnosticCode::TruncationCollision),
+            Self::Normalization => Some(IdentifierDiagnosticCode::NormalizationCollision),
+            Self::ReservedWord => Some(IdentifierDiagnosticCode::ReservedWordCollision),
             Self::Confusable => Some(IdentifierDiagnosticCode::ConfusableCollision),
-            Self::Exact
-            | Self::Case
-            | Self::Truncation
-            | Self::Normalization
-            | Self::ReservedWord => None,
         }
     }
 
@@ -1888,6 +1938,10 @@ impl IdentifierError {
             Self::NotNfc { .. } => Some(IdentifierDiagnosticCode::NotNfc),
             Self::Collision { condition, .. } => condition.code(),
             Self::ScriptOutsideRecommended { .. } => Some(IdentifierDiagnosticCode::ScriptWarning),
+            Self::ReservedWordUnusable { .. } => {
+                Some(IdentifierDiagnosticCode::ReservedWordOccupancy)
+            }
+            Self::NameExceedsMaximum { .. } => Some(IdentifierDiagnosticCode::NameExceedsMaximum),
             Self::EmptySpelling
             | Self::TooLong { .. }
             | Self::NotXidStart { .. }
@@ -1901,8 +1955,6 @@ impl IdentifierError {
             | Self::MalformedIdentityProperty { .. }
             | Self::InvalidDigest { .. }
             | Self::DomainNotSourceAdmissible { .. }
-            | Self::ReservedWordUnusable { .. }
-            | Self::NameExceedsMaximum { .. }
             | Self::InvalidNamespaceMaximum { .. }
             | Self::ExternalNameDuplicate { .. }
             | Self::NonInjectiveMapping { .. }
@@ -1923,9 +1975,13 @@ impl IdentifierError {
             | Self::NotXidContinue { .. }
             | Self::DomainNotSourceAdmissible { .. } => "GNT-18.3-source-spelling-admission",
             Self::UnknownDomain { .. } => "GNT-18.1-symbolic-identity-domains",
-            Self::UnknownCollisionCondition { .. }
-            | Self::Collision { .. }
-            | Self::InvalidNamespaceMaximum { .. } => "GNT-18.6-collision-relation",
+            Self::UnknownCollisionCondition { .. } | Self::InvalidNamespaceMaximum { .. } => {
+                "GNT-18.6-collision-relation"
+            }
+            Self::Collision { condition, .. } => match condition.code() {
+                Some(code) => code.requirement(),
+                None => "GNT-18.6-collision-relation",
+            },
             Self::UnsupportedIdentityVersion { .. }
             | Self::UnknownIdentityProperty { .. }
             | Self::MissingIdentityProperty { .. }

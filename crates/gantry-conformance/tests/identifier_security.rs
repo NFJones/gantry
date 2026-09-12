@@ -493,12 +493,20 @@ fn the_collision_relation_is_symmetric_and_reports_all_six_conditions() {
         reported, all,
         "every condition of the vocabulary is reported"
     );
-    // Only the confusable condition has a published code, and no condition borrows one.
+    // Each condition with a published code reports it, `exact` reports none, and no
+    // condition borrows another condition's code.
     for condition in CollisionCondition::ALL {
-        let expected = if condition == CollisionCondition::Confusable {
-            Some(IdentifierDiagnosticCode::ConfusableCollision)
-        } else {
-            None
+        let expected = match condition {
+            CollisionCondition::Case => Some(IdentifierDiagnosticCode::CaseCollision),
+            CollisionCondition::Truncation => Some(IdentifierDiagnosticCode::TruncationCollision),
+            CollisionCondition::Normalization => {
+                Some(IdentifierDiagnosticCode::NormalizationCollision)
+            }
+            CollisionCondition::ReservedWord => {
+                Some(IdentifierDiagnosticCode::ReservedWordCollision)
+            }
+            CollisionCondition::Confusable => Some(IdentifierDiagnosticCode::ConfusableCollision),
+            CollisionCondition::Exact => None,
         };
         assert_eq!(condition.code(), expected);
     }
@@ -557,7 +565,10 @@ fn reserved_word_occupancy_is_rejected_in_a_lookup_namespace() {
                 IdentifierError::ReservedWordUnusable { domain, name }
                     if *domain == SymbolicDomain::ToolName && name.as_ref() == "if"
             ));
-            assert_eq!(error.code(), None);
+            assert_eq!(
+                error.code(),
+                Some(IdentifierDiagnosticCode::ReservedWordOccupancy)
+            );
             assert_eq!(error.requirement(), "GNT-18.5-reserved-word-occupancy");
         }
         Ok(_) => unreachable!("a reserved word is never usable in a lookup namespace"),
@@ -582,7 +593,10 @@ fn reserved_word_occupancy_is_rejected_in_a_lookup_namespace() {
                         && *maximum == 4
                         && name.as_ref() == "abcdef"
             ));
-            assert_eq!(error.code(), None);
+            assert_eq!(
+                error.code(),
+                Some(IdentifierDiagnosticCode::NameExceedsMaximum)
+            );
             assert_eq!(error.requirement(), "GNT-18.8-truncation-behaviour");
         }
         Ok(_) => unreachable!("a name beyond the declared maximum is never truncated"),
@@ -610,7 +624,7 @@ fn case_and_truncation_collisions_are_reported_and_never_silently_resolved() {
     let case = collision_condition(&spelling("paypal"), &spelling("Paypal"), &wide)
         .unwrap_or_else(|| unreachable!("case is a collision condition"));
     assert_eq!(case.condition(), CollisionCondition::Case);
-    assert_eq!(case.code(), None);
+    assert_eq!(case.code(), Some(IdentifierDiagnosticCode::CaseCollision));
     assert_eq!(case.first(), "Paypal");
     assert_eq!(case.second(), "paypal");
     let truncation = collision_condition(&spelling("abcdef"), &spelling("abcd"), &narrow)
@@ -875,7 +889,7 @@ fn identifier_diagnostic_codes_agree_with_the_workspace_registry() {
             .map(IdentifierDiagnosticCode::as_str)
             .to_vec()
     );
-    assert_eq!(registered.len(), 4);
+    assert_eq!(registered.len(), 10);
     assert!(registered.windows(2).all(|pair| pair[0] < pair[1]));
 
     // Every condition exposes its frozen code, and no condition borrows another's.
@@ -915,6 +929,53 @@ fn identifier_diagnostic_codes_agree_with_the_workspace_registry() {
                 scripts: vec![script('a'), script(scalar(0x430))],
             },
             Some(IdentifierDiagnosticCode::ScriptWarning),
+        ),
+        (
+            IdentifierError::Collision {
+                first: Arc::from("paypal"),
+                second: Arc::from("PAYPAL"),
+                condition: CollisionCondition::Case,
+            },
+            Some(IdentifierDiagnosticCode::CaseCollision),
+        ),
+        (
+            IdentifierError::Collision {
+                first: Arc::from("paypal"),
+                second: Arc::from(decomposed.as_str()),
+                condition: CollisionCondition::Normalization,
+            },
+            Some(IdentifierDiagnosticCode::NormalizationCollision),
+        ),
+        (
+            IdentifierError::Collision {
+                first: Arc::from("paypal"),
+                second: Arc::from("paypal"),
+                condition: CollisionCondition::ReservedWord,
+            },
+            Some(IdentifierDiagnosticCode::ReservedWordCollision),
+        ),
+        (
+            IdentifierError::Collision {
+                first: Arc::from("paypal"),
+                second: Arc::from("payp"),
+                condition: CollisionCondition::Truncation,
+            },
+            Some(IdentifierDiagnosticCode::TruncationCollision),
+        ),
+        (
+            IdentifierError::ReservedWordUnusable {
+                domain: SymbolicDomain::ToolName,
+                name: Arc::from("paypal"),
+            },
+            Some(IdentifierDiagnosticCode::ReservedWordOccupancy),
+        ),
+        (
+            IdentifierError::NameExceedsMaximum {
+                domain: SymbolicDomain::ToolName,
+                maximum: 4,
+                name: Arc::from("paypal"),
+            },
+            Some(IdentifierDiagnosticCode::NameExceedsMaximum),
         ),
         (
             IdentifierError::Collision {
@@ -970,6 +1031,11 @@ fn identifier_diagnostic_codes_agree_with_the_workspace_registry() {
         assert!(error.requirement().starts_with("GNT-18."), "{error}");
         if let Some(code) = error.code() {
             assert!(code.requirement().starts_with("GNT-18."), "{error}");
+            assert_eq!(
+                error.requirement(),
+                code.requirement(),
+                "a coded condition never disagrees about its owning clause: {error}"
+            );
         }
     }
     // A condition with no published code never borrows another condition's code.
@@ -1014,15 +1080,6 @@ fn identifier_diagnostic_codes_agree_with_the_workspace_registry() {
         LookupNamespace::new(0)
             .err()
             .unwrap_or_else(|| unreachable!("a non-positive maximum is rejected")),
-        namespace(4)
-            .admit(SymbolicDomain::ToolName, &spelling("abcdef"))
-            .err()
-            .unwrap_or_else(|| unreachable!("a name beyond the maximum is rejected")),
-        namespace(4)
-            .with_reserved_word("abcdef")
-            .admit(SymbolicDomain::ToolName, &spelling("abcdef"))
-            .err()
-            .unwrap_or_else(|| unreachable!("a reserved word is never usable")),
         DisplayLabel::bounded(identity(SymbolicDomain::ToolName, "paypal"), 1)
             .err()
             .unwrap_or_else(|| unreachable!("a label beyond its bound is rejected")),
@@ -1031,8 +1088,8 @@ fn identifier_diagnostic_codes_agree_with_the_workspace_registry() {
         assert_eq!(error.code(), None, "{error} must not borrow another code");
         assert!(error.requirement().starts_with("GNT-18."), "{error}");
     }
-    // The XID admission failures and the reserved-word and truncation conditions have
-    // no registered code, and none of them is reported as `identifier-security`.
+    // The XID admission failures have no registered code, and neither of them is
+    // reported as `identifier-security`.
     assert!(
         IdentifierError::NotXidStart { scalar: '1' }
             .code()
