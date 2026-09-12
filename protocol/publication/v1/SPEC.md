@@ -12496,3 +12496,256 @@ API is not a secret reference and receives none of these guarantees, and an
 implementation MUST NOT report a clause of this section as satisfied, partially
 satisfied, or conditionally satisfied where it can only demonstrate one of these
 limits.
+
+## 22. Cooperative Stop and Hard Cancellation
+
+<a id="GNT-22.0-cooperative-stop-and-hard-cancellation"></a>
+
+**[GNT-22.0-cooperative-stop-and-hard-cancellation] Cooperative stop and hard
+cancellation.** This section defines application-level stop: the stop request and its
+cause, cooperative observation and propagation, admission closure, safe points and
+suspension, the declared grace and drain with their ownership, grace expiry and hard
+cancellation, the single published outcome of each task, durable stop cuts and
+replay, late-result and stale-generation fencing, and the explicit non-claims of the
+section. It cites and extends, rather than replaces, the landed lifecycle and
+shutdown text of `GNT-3-M-LIFECYCLES`, `GNT-10.12`, `GNT-10.13` and `GNT-10.14`; the
+monotone cancellation contract of `GNT-15.3`; the sealed emergency cleanup of
+`GNT-15.10-emergency-cleanup`; and the operation interruption, settlement-winner and
+fencing rules of `GNT-20.5-interruption-cancellation-and-late-completion` and
+`GNT-20.10-retirement-and-stale-owner-fencing`.
+
+The closed vocabulary of this section is exactly the following terms. A clause here
+MUST NOT use a stop term outside this vocabulary, and a term listed below MUST NOT be
+given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| stop request | The canonical declaration of `GNT-22.1-stop-request-identity-and-cause`. |
+| stop cause | One member of the closed cause vocabulary of `GNT-22.1-stop-request-identity-and-cause`. |
+| stop request identity | The stable Gantry-owned identity of one stop request. |
+| cooperative observation | The bounded observation of `GNT-22.2-cooperative-stop-observation-and-propagation`. |
+| safe point | One member of the closed observation vocabulary of `GNT-22.4-safe-points-and-suspension`. |
+| admission closure | The refusal of new application work of `GNT-22.3-admission-closure-during-stop`. |
+| grace | The declared cooperative-settlement budget of `GNT-22.5-grace-and-drain-ownership`. |
+| drain | The declared descendant-and-cleanup budget of `GNT-22.5-grace-and-drain-ownership`. |
+| escalation | The single irreversible linearization point of `GNT-22.6-grace-expiry-and-hard-cancellation`. |
+| hard cancellation | The noncatchable cancellation made effective at escalation. |
+| stop outcome | One member of the closed task-outcome vocabulary of `GNT-22.7-outcome-winner-and-single-publication`. |
+| durable stop cut | One committed cut of `GNT-22.8-durable-stop-cuts-and-replay`. |
+| late result | A result arriving after its task published an outcome, under `GNT-22.9-late-result-and-stale-generation-fencing`. |
+| stop non-claim | One published limit of `GNT-22.10-stop-non-claims`. |
+
+**Applicability.** The clauses of this section govern an edition or profile that
+admits application-level cooperative stop and hard cancellation. The v1 edition
+described by Sections 1 through 15 does not: its landed shutdown lifecycle has the
+`running`, `shutting-down(cause, effective-grace, effective-drain, cohort)` and
+`terminated(report)` states but no application stop-request identity, no safe-point
+vocabulary, and no durable stop cut. An implementation that supports only that model
+MUST record each clause of this section as a profile-based `not-applicable`
+justification in the sense of Sections 2 and 15, and MUST NOT report a clause here as
+satisfied, partially satisfied, conditionally satisfied, or satisfied for a subset of
+its rules.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+lifecycle state machine, exactly-once settlement, and foreground and terminal
+completion rules of `GNT-3-M-LIFECYCLES`; the shutdown operation, its cohort and its
+finite graceful timeout of `GNT-10.12`, `GNT-10.13` and `GNT-10.14`; the monotone
+one-way cancellation token of `GNT-15.3` and of the landed host contracts; the
+sealed emergency cleanup of `GNT-15.10-emergency-cleanup`; and the operation
+interruption, settlement-winner and generation-fencing rules of Section 20. The
+phases defined here refine the landed `running`, `shutting-down` and `terminated`
+states without renaming them, and no phase returns to `running`. Nothing here
+introduces a fourth task status, a second fault taxonomy, an ambient asynchronous
+handler, or a new host signal contract.
+
+<a id="GNT-22.1-stop-request-identity-and-cause"></a>
+
+**[GNT-22.1-stop-request-identity-and-cause] Stop request identity and cause.** A
+stop request is the canonical declaration of one cause, one declared grace and
+drain, and one explicit logical instant. Its cause is exactly one member of the
+closed vocabulary: an operator signal, a supervisor request, or an invariant
+failure. The first two belong to the landed `requested` cause class and the third
+carries the landed `poisoned` class, so no stop invents a cause class and no
+diagnostic, event, or report carries an improvised cause; a cause outside the
+vocabulary is refused rather than mapped onto the nearest declared one. A stop
+request has exactly one stable Gantry-owned identity, derived from the declared
+cause and cause class, the declared grace and drain, and the declared logical
+instant, so equal requests produce equal identities and requests that differ in any
+declared field are distinct. The identity has no free constructor, no deserializer,
+and no spelling supplied by a caller: no process identifier, signal number, clock
+reading, host path, environment fact, or adapter handle becomes or extends a stop
+identity, and creating a request changes no lifecycle state. A request joins a held
+request of the same cause, and an invariant-failure request MAY supersede a held
+requested-class cause under the landed `poisoned` rule; it MUST present the budgets
+already declared, because a stop declaration is made once. The declaration instant and
+the budgets in force remain those the first request fixed, so a superseding request
+replaces only the cause, and a presented instant is admitted only when it preserves
+the monotone instant order of `GNT-22.2-cooperative-stop-observation-and-propagation`.
+Any other combination is refused as a cause conflict rather than silently merged or
+reordered.
+
+<a id="GNT-22.2-cooperative-stop-observation-and-propagation"></a>
+
+**[GNT-22.2-cooperative-stop-observation-and-propagation] Cooperative stop
+observation and propagation.** Cooperative stop is observed only at the safe points
+of `GNT-22.4-safe-points-and-suspension`, and observing it returns evidence only: it
+changes no source state, no task outcome, and no durable record. The first request
+closes admission, fixes the declaration instant and the declared grace and drain in force,
+moves the lifecycle into the landed `shutting-down` state. A held request propagates
+to every owned child as the same request identity and cause, so propagation creates
+no second identity, no second cause, and no second transition; a child that cannot
+join refuses the propagation rather than starting its own stop. Already admitted
+work settles under its own recovery class, and a task that already published an
+outcome is left untouched: cooperative stop never fabricates, rewinds, or
+reclassifies a settled outcome. Cooperative phase transitions - propagation, cohort
+registration, and cohort closure - require a held request, and the logical instants
+observed by one coordinator are monotone, so an instant earlier than the
+coordinator's watermark is refused rather than reordered after later work.
+
+<a id="GNT-22.3-admission-closure-during-stop"></a>
+
+**[GNT-22.3-admission-closure-during-stop] Admission closure during stop.** The
+first stop request closes admission of new application work at the same point it is
+recorded: after closure no new application work is queued, buffered, admitted,
+scheduled, or started, and an admission attempt is refused rather than accepted and
+then dropped. Work already admitted before closure is not rewound: it settles under
+its own recovery class under `GNT-22.2`, and a stopped lifecycle MUST NOT admit a
+replacement for it. Admission closure is monotone and is never reopened, including
+by a superseding request, by a repeated request, by recovery, or by an adapter; an
+attempt that would reopen admission is refused rather than treated as a new
+lifecycle. The refusal names the attempted instant and is attributable to this
+clause.
+
+<a id="GNT-22.4-safe-points-and-suspension"></a>
+
+**[GNT-22.4-safe-points-and-suspension] Safe points and suspension.** Cooperative
+stop is observable exactly at these source points and at no others: operation
+admission, workflow-frame entry, workflow-frame return, loop condition, loop back
+edge, wait or park, and an explicit cancellation check of the source. No ad hoc
+poll, adapter callback, provider notification, timer, asynchronous handler, or host
+mechanism becomes a safe point, and no clause here permits a source to suspend
+cooperatively at another point. Observation at a safe point reports the held request
+identity, its cause, and the safe point that produced it; it is evidence only. After
+hard cancellation has linearized, cooperative stop MUST NOT be observed or suspended
+at any safe point: an observation attempt is refused as an error rather than
+reported as a cooperative stop, because hard cancellation is not catchable by
+source. A safe point that cannot observe cooperatively therefore cannot defer,
+swallow, or convert hard cancellation.
+
+<a id="GNT-22.5-grace-and-drain-ownership"></a>
+
+**[GNT-22.5-grace-and-drain-ownership] Grace and drain ownership.** A stop request
+declares one positive finite grace and one positive finite drain, in logical
+microseconds. A zero budget is refused, because a zero budget declares no budget
+rather than a budget of zero instants, and there is no default policy: a coordinator
+never acquires a grace or drain it did not declare. Grace bounds cooperative
+settlement from the declared request instant and expires at that deadline; drain
+bounds descendant drain and cleanup work after escalation and expires at its own
+deadline. Deadlines saturate rather than wrap, so a declared budget never produces a
+deadline earlier than the instant it was declared at. The shutdown cohort is
+monotone: registration grows it by one member, and closure - which enters the
+cooperative drain phase - refuses growth, so after closure no new cooperative work
+joins the cohort. Closure is idempotent, a superseding request MUST NOT re-declare
+the budgets already in force, and termination is refused before the cohort closes.
+Grace, drain, cohort, and deadlines are declared values carried by the request and
+its report; they are never inferred from a clock, a process lifetime, or an adapter
+handle.
+
+<a id="GNT-22.6-grace-expiry-and-hard-cancellation"></a>
+
+**[GNT-22.6-grace-expiry-and-hard-cancellation] Grace expiry and hard
+cancellation.** Grace expiry has exactly one irreversible linearization point: the
+first escalation, which is admitted only at or after the declared grace deadline. An
+escalation presented before that deadline is refused rather than treated as grace
+expiry, so the single point is never earlier than the deadline the request declared.
+Hard cancellation becomes effective at that point, the cohort
+closes at the same point, and every still-nonterminal task of the lifecycle is
+settled once as escalated while every already-settled outcome is preserved. A
+repeated escalation is stuttering: it reports the recorded point, mutates nothing,
+and never creates a second point or a second winner. Escalation without a held stop
+request, escalation after termination, and an instant preceding the coordinator
+watermark are refused rather than inferred or reordered. Hard cancellation is
+monotone and noncatchable: no handler, scope, callback, recovery clause, adapter, or
+supervisor observes, defers, dismisses, catches, or converts it, and it MUST NOT be
+presented as a domain outcome, a domain failure, or an ordinary completion. After
+escalation only descendant drain and sealed emergency release under
+`GNT-15.10-emergency-cleanup` are admitted; source cleanup is forbidden and its
+admission is refused, because no source scope runs cleanup for a hard cancellation.
+Escalation does not rewind accepted work: work already admitted settles under its
+own recovery class, and hard cancellation never reclassifies an ambiguous external
+outcome.
+
+<a id="GNT-22.7-outcome-winner-and-single-publication"></a>
+
+**[GNT-22.7-outcome-winner-and-single-publication] Outcome winner and single
+publication.** Each task publishes exactly one terminal outcome, and the outcome
+vocabulary is closed: the task completed under its own recovery class, the task
+failed under its own recovery class including a contained panic, the task's own
+monotone cancellation mark settled it, or hard cancellation settled a
+still-nonterminal task. The first three carry the landed `succeeded`, `failed` and
+`cancelled` task statuses, and the escalation member publishes the landed
+`cancelled` status rather than a fourth one, so escalation never creates or claims a
+new task status. Only hard cancellation may publish the escalation member, and
+escalation MUST NOT overwrite an outcome that already settled: an escalation over a
+settled outcome, a second publication, and escalation after termination are refused
+without mutating the task. Termination produces one immutable stop report computed
+from declared fields and the single escalation point, carrying no process fact,
+signal number, or clock reading; a repeated termination observes the same report
+rather than recomputing a winner, and a terminated coordinator is never escalated
+again. Each task's publication is therefore linearizable: exactly one outcome per
+task, and exactly one report per lifecycle.
+
+<a id="GNT-22.8-durable-stop-cuts-and-replay"></a>
+
+**[GNT-22.8-durable-stop-cuts-and-replay] Durable stop cuts and replay.** In
+durable mode a stop lifecycle commits exactly three cuts in order: the stop request
+with admission closed, grace expiry with hard cancellation at one point, and the
+terminal stop report. A cut only ever advances: advancing to the same cut is
+stuttering and commits nothing twice, and a cut that would move backwards is
+refused, so a replay never rewrites escalation into a cooperative stop and never
+re-decides the escalation point. Recovery from a committed cut classifies what it
+resumes from that cut alone: a committed request resumes cooperative settlement, a
+committed grace-expiry cut resumes with hard cancellation already effective and
+escalation already decided, and a committed terminal cut resumes from an immutable
+report. A replay from a committed prefix therefore reproduces the same winner and
+the same report, and no recovery path solicits, repeats, or re-derives a stop
+request, an escalation instant, or a task outcome that the committed prefix already
+fixed.
+
+<a id="GNT-22.9-late-result-and-stale-generation-fencing"></a>
+
+**[GNT-22.9-late-result-and-stale-generation-fencing] Late-result and
+stale-generation fencing.** Every arriving task result names the owner generation it
+belongs to and the explicit logical instant it arrived at. Before any publication
+mutates state, the fence checks the result against the task's published state and
+refuses, without latching a fence and without rewriting an outcome: a result naming
+an owner generation the task does not hold, a result that arrived at or before the
+instant of the published outcome, and any other second completion. A task that
+published an outcome is immutable: a refused late or stale result leaves the
+published outcome, its instant, and the task's generation exactly as they were, and
+MUST NOT be recorded as a new outcome, a reclassification, or an operation result.
+The generation vocabulary is the landed owner generation of
+`GNT-20.10-retirement-and-stale-owner-fencing`, never a second fence vocabulary, and
+a stale-generation or late-result refusal is distinguishable from a second
+publication and from hard cancellation. Escalation is never reported as an ordinary
+result: a result that claims the escalation member is refused, because escalation is
+published by the stop coordinator rather than carried as a domain outcome.
+
+<a id="GNT-22.10-stop-non-claims"></a>
+
+**[GNT-22.10-stop-non-claims] Explicit non-claims.** This section does not promise
+and MUST NOT be read as promising: that hard cancellation is catchable by source, or
+that any handler, scope, callback, or recovery clause can observe, defer, or dismiss
+it; that an ambient asynchronous handler becomes a stop source, because every stop
+request is an explicit request of `GNT-22.1`; that a provider, adapter, or
+integration cancellation is or becomes an application stop; that any source cleanup
+runs after hard cancellation, because only descendant drain and sealed emergency
+release are admitted after escalation; or that a forcibly terminated process
+publishes a stop report. This section does not promise erasure of work already
+admitted, rollback of accepted external effects, an unspecified wall-clock bound for
+descendant drain, or cleanup of a process the host terminated. The non-claims are a
+closed vocabulary: a report, a clause, or an evidence item MUST NOT be read as
+promising a limit outside it, a non-claim MUST NOT be presented as a guarantee, and
+an implementation MUST NOT report a clause of this section as satisfied, partially
+satisfied, or conditionally satisfied where it can only demonstrate one of these
+limits.

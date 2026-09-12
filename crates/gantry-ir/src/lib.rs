@@ -20,6 +20,7 @@ mod facts;
 pub mod generated;
 mod generic;
 pub mod identifier;
+mod lifecycle;
 mod manifest;
 mod operation;
 mod package;
@@ -93,6 +94,13 @@ pub use identifier::{
     IdentityVersion, LookupNamespace, NameSpelling, SPELLING_LIMIT_BYTES, ScriptClassification,
     ScriptSet, SourceSpelling, SymbolicDomain, SymbolicIdentityDigest, SymbolicIdentityRecord,
     collision_condition, generated_alias, share_one_skeleton,
+};
+pub use lifecycle::{
+    AdmittedWork, CooperativeObservation, DurableStopCut, EscalatedWork, Escalation, GracePolicy,
+    LIFECYCLE_STOP_CLAUSES, LateResultFence, STOP_NON_CLAIM_ORDER, STOP_NON_CLAIMS, SafePoint,
+    StopCause, StopCauseClass, StopCoordinator, StopCrashCutClassification, StopDiagnosticCode,
+    StopError, StopNonClaim, StopNonClaimName, StopReport, StopRequest, StopRequestId,
+    StopRequestJoin, StopState, StopTransition, TaskOutcome, TaskResult, TaskStopState,
 };
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
 pub use operation::{

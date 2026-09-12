@@ -1,6 +1,6 @@
 {
  "format": "gantry.task-supervision-evidence/v1",
- "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
+ "specification_sha256": "ae4a1bfea85114d1b4640cbe66e04a5d43d439b6820ac2106ec6d23be93aed01",
  "issue": "GNT-ASYNC-SUP-001",
  "requirements": [
   {

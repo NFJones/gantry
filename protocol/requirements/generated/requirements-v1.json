@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "78f1abb72dd3ca9248671f9eb4760721c267b72d684f0bbba462e360f3fe330b",
-  "byte_length": 743217,
-  "line_count": 12498,
+  "specification_sha256": "ae4a1bfea85114d1b4640cbe66e04a5d43d439b6820ac2106ec6d23be93aed01",
+  "byte_length": 760710,
+  "line_count": 12751,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9494,
-      "end_line": 12498,
-      "sha256": "3b7a54d4df246a3dfb7a24a206680524a4fc89cef29b89ad1f69ce1474ef7a71",
+      "end_line": 12751,
+      "sha256": "0c6ccecd577f6b5f9148f8d9adfcfcfe3bc5e2206a1cd88d4a4d65f1c7ef82e5",
       "rationale": null
     }
   ],
@@ -33658,6 +33658,466 @@
               "evidence": [
                 "crates/gantry-conformance/tests/secret_model.rs#secret_references_are_opaque_and_never_serializable_or_material_readable",
                 "crates/gantry-conformance/tests/secret_model.rs#durable_secret_rebinding_refuses_a_changed_operation_class_tenant_or_fenced_instance"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.0-cooperative-stop-and-hard-cancellation",
+      "span_start_line": 12499,
+      "span_end_line": 12559,
+      "span_sha256": "b55d36419629d9b9a814936a3fa7306bb8df2143dc4899880f4e666d0cbede76",
+      "anchor_line": 12502,
+      "body_start_line": 12503,
+      "body_end_line": 12559,
+      "body_sha256": "daf232077f9b5f89cfce8a207224cab001cee5a3e6845ef5cf44a8942dff8729",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12503,
+          "end_line": 12559,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#stop_request_identity_is_derived_from_declared_fields_and_closed_cause_vocabulary",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#diagnostic_codes_are_frozen_unique_and_owned_by_exactly_one_clause"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.1-stop-request-identity-and-cause",
+      "span_start_line": 12560,
+      "span_end_line": 12585,
+      "span_sha256": "359b21a091f65a45d4a48aa0d1d486438c338a746d88d651f22fb71df560af69",
+      "anchor_line": 12561,
+      "body_start_line": 12562,
+      "body_end_line": 12585,
+      "body_sha256": "50f48d75ab8382dd80b1c28f40f16ac23413ad57f08c00d0244f82d110138450",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12562,
+          "end_line": 12585,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#stop_request_identity_is_derived_from_declared_fields_and_closed_cause_vocabulary",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#cause_outside_the_closed_vocabulary_is_refused_rather_than_mapped",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#request_stop_closes_admission_and_joins_or_supersedes_the_held_cause"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.2-cooperative-stop-observation-and-propagation",
+      "span_start_line": 12586,
+      "span_end_line": 12603,
+      "span_sha256": "501c04b878935940ec3ce857de389d9f883d4f4e1061f65697868d2f5e5fa659",
+      "anchor_line": 12587,
+      "body_start_line": 12588,
+      "body_end_line": 12603,
+      "body_sha256": "f691675a5532b46316655dcd5a61b7dcf68aaf056d6d03c8d04f12915334955b",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12588,
+          "end_line": 12603,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#cooperative_observation_is_evidence_only_and_propagation_reuses_the_held_identity",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#cooperative_transitions_require_a_held_request_and_monotone_instants"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.3-admission-closure-during-stop",
+      "span_start_line": 12604,
+      "span_end_line": 12617,
+      "span_sha256": "a899092e6b82cc050477bf49526152b6c26e79cab812bc71e56315d225e0e654",
+      "anchor_line": 12605,
+      "body_start_line": 12606,
+      "body_end_line": 12617,
+      "body_sha256": "49cc284f373ae6e15e2b3e829903fca6c83cd7e3a3e2460a2052a4f71ba3c060",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12606,
+          "end_line": 12617,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#admission_closure_refuses_new_work_and_is_never_reopened"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.4-safe-points-and-suspension",
+      "span_start_line": 12618,
+      "span_end_line": 12633,
+      "span_sha256": "135f9d68580cf1c238110f061dabd88ff429404feabefda1ef5e372d40d3f127",
+      "anchor_line": 12619,
+      "body_start_line": 12620,
+      "body_end_line": 12633,
+      "body_sha256": "f9e146a7e8601228671974c924bede674829ded5df2518114778e979973b5bfd",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12620,
+          "end_line": 12633,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#safe_point_vocabulary_is_closed_and_observation_stops_after_escalation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.5-grace-and-drain-ownership",
+      "span_start_line": 12634,
+      "span_end_line": 12652,
+      "span_sha256": "683ffa3593815e1874e5bffe02efbbf5c2c566f0f1995e237521d0f4882da564",
+      "anchor_line": 12635,
+      "body_start_line": 12636,
+      "body_end_line": 12652,
+      "body_sha256": "43673a017f2303007ec75b292d28ac78491702813b35e5153a4591974c051a57",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12636,
+          "end_line": 12652,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#grace_policy_refuses_zero_budgets_and_saturating_deadlines",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#cohort_grows_monotonically_and_closure_is_idempotent"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.6-grace-expiry-and-hard-cancellation",
+      "span_start_line": 12653,
+      "span_end_line": 12676,
+      "span_sha256": "987a6abc15d4d167627dff2ecf384a800fe54af0e7df616d4dafa18ff86d0982",
+      "anchor_line": 12654,
+      "body_start_line": 12655,
+      "body_end_line": 12676,
+      "body_sha256": "b51b8a2a11d3547e3aafb4b8bb1dcde02e73e45a5ec5e4a3565a5c0a718afdba",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12655,
+          "end_line": 12676,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#escalation_linearizes_once_and_preserves_settled_outcomes",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#escalation_refuses_without_request_after_termination_and_non_monotone_instants",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#only_descendant_drain_and_emergency_release_are_admitted_after_escalation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.7-outcome-winner-and-single-publication",
+      "span_start_line": 12677,
+      "span_end_line": 12696,
+      "span_sha256": "5d83f1c990fcd345cbfc4c32ed5893b00b659182866e767f5c52a81eb5006a53",
+      "anchor_line": 12678,
+      "body_start_line": 12679,
+      "body_end_line": 12696,
+      "body_sha256": "7862211279feff6cb96c3f3bf240787219f23b32e86e23dd230c1a54c3d9bbc1",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12679,
+          "end_line": 12696,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#task_outcome_vocabulary_maps_to_landed_statuses_and_escalation_is_not_a_domain_outcome",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#each_task_publishes_exactly_one_outcome_and_escalation_never_overwrites_a_settled_one",
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#termination_produces_one_immutable_report_and_repeats_observe_it"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.8-durable-stop-cuts-and-replay",
+      "span_start_line": 12697,
+      "span_end_line": 12713,
+      "span_sha256": "82046bd1b2ccf4c640a98d4538fdce7242ea732a68dc406cb30add07578fe864",
+      "anchor_line": 12698,
+      "body_start_line": 12699,
+      "body_end_line": 12713,
+      "body_sha256": "7f6751956a13456db494461dd42173bf34f1149d4470c9ade795cf8065aed26d",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12699,
+          "end_line": 12713,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#durable_cuts_advance_monotonically_and_classify_recovery"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.9-late-result-and-stale-generation-fencing",
+      "span_start_line": 12714,
+      "span_end_line": 12732,
+      "span_sha256": "6da74ae1bcc655429e223ad551f3dfede74360052489d3f02a5513b607fe9cc0",
+      "anchor_line": 12715,
+      "body_start_line": 12716,
+      "body_end_line": 12732,
+      "body_sha256": "18f02def8d758ac01f01d9663fe8c788cb626cc13e1ede79abf4c51c28f4cbc9",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12716,
+          "end_line": 12732,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#late_and_stale_results_are_fenced_without_mutating_the_published_outcome"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-22.10-stop-non-claims",
+      "span_start_line": 12733,
+      "span_end_line": 12751,
+      "span_sha256": "2e86a9d33c54c66aba9b1134f4b9e230608cc2cedfc6cd36232c2938fecb099b",
+      "anchor_line": 12734,
+      "body_start_line": 12735,
+      "body_end_line": 12751,
+      "body_sha256": "ac8c18490493727becb67321a9793e465d542bc7bba790028a6cf1d7aaf465c8",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 12735,
+          "end_line": 12751,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/lifecycle_stop.rs#stop_non_claims_are_closed_ordered_and_refused_as_guarantees"
               ],
               "rationale": null
             }
