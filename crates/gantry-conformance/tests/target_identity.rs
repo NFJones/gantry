@@ -289,7 +289,29 @@ fn matrix_entry(
     mode: gantry::mode::SemanticMode,
     state: TargetMatrixState,
 ) -> TargetMatrixEntry {
-    TargetMatrixEntry::new(descriptor().digest(), kind, mode, state)
+    matrix_entry_for("matrix", kind, mode, state)
+}
+
+/// Returns one selected-feature-solution digest of this lane.
+fn solution_digest(seed: &str) -> FeatureSolutionDigest {
+    FeatureSolutionDigest::from_hex(&hex(seed))
+        .unwrap_or_else(|_| unreachable!("fixture digest is lowercase hexadecimal"))
+}
+
+/// Returns one matrix entry under one named feature solution.
+fn matrix_entry_for(
+    solution_seed: &str,
+    kind: TargetKind,
+    mode: gantry::mode::SemanticMode,
+    state: TargetMatrixState,
+) -> TargetMatrixEntry {
+    TargetMatrixEntry::new(
+        descriptor().digest(),
+        solution_digest(solution_seed),
+        kind,
+        mode,
+        state,
+    )
 }
 
 #[test]
@@ -1295,20 +1317,36 @@ fn conditional_selection_rule_is_total_and_order_independent() {
     let mut reversed_outcomes = in_order.clone();
     reversed_outcomes.reverse();
     let selected_branch = selection
-        .retain_one(&in_order)
+        .retain_one(&declaring, &in_order)
+        .unwrap_or_else(|_| unreachable!("a declaration site with branches is resolvable"))
         .unwrap_or_else(|| unreachable!("one declared branch is retained"));
     assert!(selected_branch.retained());
     assert_eq!(Some(selected_branch.declaration()), Some(&declarations[0]));
     assert_eq!(
-        selection.retain_one(&in_order),
-        selection.retain_one(&reversed_outcomes)
+        selection.retain_one(&declaring, &in_order),
+        selection.retain_one(&declaring, &reversed_outcomes)
     );
     // A declaration none of whose branches is retained retains no branch.
     let unretained = [declarations[1].clone(), declarations[2].clone()]
         .iter()
         .map(|declaration| selection.evaluate(declaration, &target, &selected))
         .collect::<Vec<_>>();
-    assert_eq!(selection.retain_one(&unretained), None);
+    assert_eq!(selection.retain_one(&declaring, &unretained), Ok(None));
+    // A declaration site that offers no branch at all cannot be resolved, and
+    // the rejection names the declaring instance and the published rule rather
+    // than resolving to an empty selection.
+    match selection.retain_one(&declaring, &[]) {
+        Err(TargetError::ConditionalSelectionUnresolved {
+            instance,
+            site,
+            guards,
+        }) => {
+            assert_eq!(*instance, declaring);
+            assert_eq!(site.as_ref(), ConditionalSelectionRule::IDENTITY);
+            assert!(guards.is_empty());
+        }
+        other => unreachable!("an empty declaration site is unresolvable: {other:?}"),
+    }
 }
 
 #[test]
@@ -1528,12 +1566,18 @@ fn target_matrix_coverage_rejects_an_unattested_combination() {
         .unwrap_or_else(|_| unreachable!("fixture entries name distinct combinations"));
     assert_eq!(matrix.declaring(), &declaring);
     assert_eq!(
-        matrix.coverage(supported.descriptor(), supported.kind(), supported.mode()),
+        matrix.coverage(
+            supported.descriptor(),
+            supported.solution(),
+            supported.kind(),
+            supported.mode()
+        ),
         Ok(TargetMatrixState::Supported)
     );
     assert_eq!(
         matrix.coverage(
             unsupported.descriptor(),
+            unsupported.solution(),
             unsupported.kind(),
             unsupported.mode()
         ),
@@ -1542,35 +1586,87 @@ fn target_matrix_coverage_rejects_an_unattested_combination() {
     // A state is explicit rather than assumed: a combination with no entry is
     // unattested, and the rejection names the combination and the instance.
     let absent = descriptor_digest("absent");
-    match matrix.coverage(&absent, TargetKind::Example, Portable) {
+    match matrix.coverage(
+        &absent,
+        &solution_digest("matrix"),
+        TargetKind::Example,
+        Portable,
+    ) {
         Err(TargetError::MatrixCoverageMissing {
             instance,
             descriptor: reported,
+            solution,
             kind,
             mode,
         }) => {
             assert_eq!(*instance, declaring);
             assert_eq!(reported, absent);
+            assert_eq!(solution, solution_digest("matrix"));
             assert_eq!(kind, TargetKind::Example);
             assert_eq!(mode, Portable);
         }
         other => unreachable!("an unattested combination is reported: {other:?}"),
     }
     assert!(matches!(
-        matrix.admit(&absent, TargetKind::Example, Portable),
+        matrix.admit(
+            &absent,
+            &solution_digest("matrix"),
+            TargetKind::Example,
+            Portable
+        ),
         Err(TargetError::MatrixCoverageMissing { .. })
     ));
+    // The feature solution is part of the combination: one descriptor, kind,
+    // and mode under another solution is a different combination rather than a
+    // second state for the same one.
+    let other_solution = matrix_entry_for(
+        "other-solution",
+        TargetKind::Binary,
+        Portable,
+        TargetMatrixState::Unsupported,
+    );
+    let widened = TargetMatrix::new(&declaring, &[supported.clone(), other_solution.clone()])
+        .unwrap_or_else(|_| unreachable!("the two entries name distinct combinations"));
+    assert_eq!(
+        widened.coverage(
+            other_solution.descriptor(),
+            other_solution.solution(),
+            other_solution.kind(),
+            other_solution.mode()
+        ),
+        Ok(TargetMatrixState::Unsupported)
+    );
+    assert_eq!(
+        widened.coverage(
+            supported.descriptor(),
+            supported.solution(),
+            supported.kind(),
+            supported.mode()
+        ),
+        Ok(TargetMatrixState::Supported)
+    );
+    assert_ne!(widened.digest(), matrix.digest());
     // A combination recorded for another kind is not coverage for this one, and
     // a matrix with no entry covers nothing at all.
     assert!(matches!(
-        matrix.coverage(unsupported.descriptor(), TargetKind::Example, Durable),
+        matrix.coverage(
+            unsupported.descriptor(),
+            unsupported.solution(),
+            TargetKind::Example,
+            Durable
+        ),
         Err(TargetError::MatrixCoverageMissing { .. })
     ));
     let empty = TargetMatrix::new(&declaring, &[])
         .unwrap_or_else(|_| unreachable!("an empty matrix records no duplicate"));
     assert_eq!(empty.entries().len(), 0);
     assert!(matches!(
-        empty.admit(supported.descriptor(), TargetKind::Binary, Portable),
+        empty.admit(
+            supported.descriptor(),
+            supported.solution(),
+            TargetKind::Binary,
+            Portable
+        ),
         Err(TargetError::MatrixCoverageMissing { .. })
     ));
     // The state vocabulary is closed: a spelling it does not name is not a
@@ -1604,25 +1700,42 @@ fn unsupported_target_combination_fails_with_a_diagnostic_naming_the_declaring_i
     // The combination is recorded, and it is recorded as unsupported rather than
     // left unattested.
     assert_eq!(
-        matrix.coverage(unsupported.descriptor(), TargetKind::Test, Durable),
+        matrix.coverage(
+            unsupported.descriptor(),
+            unsupported.solution(),
+            TargetKind::Test,
+            Durable
+        ),
         Ok(TargetMatrixState::Unsupported)
     );
-    match matrix.admit(unsupported.descriptor(), TargetKind::Test, Durable) {
+    match matrix.admit(
+        unsupported.descriptor(),
+        unsupported.solution(),
+        TargetKind::Test,
+        Durable,
+    ) {
         Err(TargetError::MatrixCombinationUnsupported {
             instance,
             descriptor: reported,
+            solution,
             kind,
             mode,
         }) => {
             assert_eq!(*instance, declaring);
             assert_eq!(reported, *unsupported.descriptor());
+            assert_eq!(solution, *unsupported.solution());
             assert_eq!(kind, TargetKind::Test);
             assert_eq!(mode, Durable);
         }
         other => unreachable!("an unsupported combination is reported: {other:?}"),
     }
     let error = matrix
-        .admit(unsupported.descriptor(), TargetKind::Test, Durable)
+        .admit(
+            unsupported.descriptor(),
+            unsupported.solution(),
+            TargetKind::Test,
+            Durable,
+        )
         .err()
         .unwrap_or_else(|| unreachable!("the fixture combination is unsupported"));
     assert_eq!(
@@ -1637,7 +1750,12 @@ fn unsupported_target_combination_fails_with_a_diagnostic_naming_the_declaring_i
     // The unsupported combination fails before any binding is produced: the step
     // that would bind the artifact is unreachable for it.
     let attempt = || -> Result<TargetArtifactBinding, TargetError> {
-        matrix.admit(unsupported.descriptor(), TargetKind::Test, Durable)?;
+        matrix.admit(
+            unsupported.descriptor(),
+            unsupported.solution(),
+            TargetKind::Test,
+            Durable,
+        )?;
         ExpectedInputs::new(
             &declaring,
             TargetKind::Test,
@@ -1668,7 +1786,12 @@ fn unsupported_target_combination_fails_with_a_diagnostic_naming_the_declaring_i
     // An explicitly supported combination is admitted here, so the matrix is not
     // refusing every combination.
     assert_eq!(
-        matrix.admit(unsupported.descriptor(), TargetKind::Binary, Portable),
+        matrix.admit(
+            unsupported.descriptor(),
+            unsupported.solution(),
+            TargetKind::Binary,
+            Portable
+        ),
         Ok(())
     );
 }
@@ -1688,6 +1811,7 @@ fn target_matrix_digest_is_order_independent() {
         matrix_entry(TargetKind::Binary, Durable, TargetMatrixState::Unsupported),
         TargetMatrixEntry::new(
             descriptor_digest("other"),
+            solution_digest("matrix"),
             TargetKind::Test,
             Portable,
             TargetMatrixState::Supported,
@@ -1728,11 +1852,21 @@ fn target_matrix_digest_is_order_independent() {
     let flipped = TargetMatrix::new(&declaring, &flipped)
         .unwrap_or_else(|_| unreachable!("one state change records no duplicate"));
     assert_eq!(
-        matrix.coverage(&descriptor().digest(), TargetKind::Binary, Durable),
+        matrix.coverage(
+            &descriptor().digest(),
+            &solution_digest("matrix"),
+            TargetKind::Binary,
+            Durable
+        ),
         Ok(TargetMatrixState::Unsupported)
     );
     assert_eq!(
-        flipped.coverage(&descriptor().digest(), TargetKind::Binary, Durable),
+        flipped.coverage(
+            &descriptor().digest(),
+            &solution_digest("matrix"),
+            TargetKind::Binary,
+            Durable
+        ),
         Ok(TargetMatrixState::Supported)
     );
     assert_ne!(flipped.canonical_bytes(), matrix.canonical_bytes());
@@ -1747,9 +1881,10 @@ fn target_matrix_digest_is_order_independent() {
     ));
     assert!(matches!(
         TargetMatrix::new(&declaring, &duplicated),
-        Err(TargetError::MatrixEntryDuplicate { instance, descriptor: reported, kind, mode })
+        Err(TargetError::MatrixEntryDuplicate { instance, descriptor: reported, solution, kind, mode })
             if *instance == declaring
                 && reported == descriptor().digest()
+                && solution == solution_digest("matrix")
                 && kind == TargetKind::Binary
                 && mode == Durable
     ));
@@ -1906,12 +2041,14 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
         TargetError::MatrixCombinationUnsupported {
             instance: Box::new(declaring.clone()),
             descriptor: descriptor_digest("matrix"),
+            solution: solution_digest("matrix"),
             kind: TargetKind::Test,
             mode: gantry::mode::SemanticMode::Durable,
         },
         TargetError::MatrixCoverageMissing {
             instance: Box::new(declaring.clone()),
             descriptor: descriptor_digest("matrix"),
+            solution: solution_digest("matrix"),
             kind: TargetKind::Example,
             mode: gantry::mode::SemanticMode::Portable,
         },
@@ -1921,6 +2058,7 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
         TargetError::MatrixEntryDuplicate {
             instance: Box::new(declaring.clone()),
             descriptor: descriptor_digest("matrix"),
+            solution: solution_digest("matrix"),
             kind: TargetKind::Binary,
             mode: gantry::mode::SemanticMode::Portable,
         },

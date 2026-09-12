@@ -48,10 +48,10 @@
 //! condition of `GNT-17.12-target-resolution-failure` is therefore published
 //! without a check here: because that rule is total, no conditional selection
 //! this model can build is unresolvable, so
-//! [`TargetDiagnosticCode::ConditionalSelectionUnresolved`] stays registered and
-//! anchored and is raised by nothing yet. The declared predicate metadata of
-//! `crate::package` still records those conditional forms without resolving
-//! them.
+//! [`TargetDiagnosticCode::ConditionalSelectionUnresolved`] is raised for the one
+//! selection this model cannot decide: a declaration site that offers no branch
+//! at all, which [`ConditionalSelectionRule::retain_one`] reports naming the
+//! declaring instance instead of treating it as an empty selection.
 //!
 //! The retained closure of `GNT-17.7-inactive-code-policy` is the union of the
 //! retained branches' declared facts — one canonical, sorted, deduplicated set
@@ -126,10 +126,10 @@ const TARGET_MATRIX_DOMAIN: &str = "gantry.target-matrix/v1";
 /// no condition is reported under another condition's code. One condition of
 /// `GNT-17.12-target-resolution-failure` is the deliberate exception: an
 /// unresolvable conditional selection is published as
-/// [`Self::ConditionalSelectionUnresolved`] but is raised by no entry point of
-/// this module, because the total rule of `GNT-17.6-conditional-selection-rule`
-/// that this module models decides every guard set it is given, so no selection
-/// this model can build is unresolvable.
+/// [`Self::ConditionalSelectionUnresolved`] for the one condition this model
+/// cannot decide: a declaration site that offers no branch at all. Every guard
+/// set that does exist is decided by the total rule of
+/// `GNT-17.6-conditional-selection-rule`, so no other selection is unresolvable.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TargetDiagnosticCode {
     /// `target-artifact-binding-digest-invalid`
@@ -628,6 +628,8 @@ pub enum TargetError {
         instance: Box<PackageIdentity>,
         /// The normalized digest of the descriptor the combination names.
         descriptor: TargetDescriptorDigest,
+        /// The selected feature solution of the combination.
+        solution: FeatureSolutionDigest,
         /// The target kind of the combination.
         kind: TargetKind,
         /// The semantic mode of the combination.
@@ -639,6 +641,8 @@ pub enum TargetError {
         instance: Box<PackageIdentity>,
         /// The normalized digest of the descriptor the combination names.
         descriptor: TargetDescriptorDigest,
+        /// The selected feature solution of the combination.
+        solution: FeatureSolutionDigest,
         /// The target kind of the combination.
         kind: TargetKind,
         /// The semantic mode of the combination.
@@ -655,6 +659,8 @@ pub enum TargetError {
         instance: Box<PackageIdentity>,
         /// The normalized digest of the descriptor the combination names.
         descriptor: TargetDescriptorDigest,
+        /// The selected feature solution of the combination.
+        solution: FeatureSolutionDigest,
         /// The target kind of the combination.
         kind: TargetKind,
         /// The semantic mode of the combination.
@@ -944,11 +950,12 @@ impl fmt::Display for TargetError {
             Self::MatrixCombinationUnsupported {
                 instance,
                 descriptor,
+                solution,
                 kind,
                 mode,
             } => write!(
                 formatter,
-                "package `{}` records the {} target `{descriptor}` in the {} mode as unsupported",
+                "package `{}` records the {} target `{descriptor}` with feature solution `{solution}` in the {} mode as unsupported",
                 instance.as_str(),
                 kind.wire_name(),
                 mode.wire_name()
@@ -956,11 +963,12 @@ impl fmt::Display for TargetError {
             Self::MatrixCoverageMissing {
                 instance,
                 descriptor,
+                solution,
                 kind,
                 mode,
             } => write!(
                 formatter,
-                "package `{}` records no matrix state for the {} target `{descriptor}` in the {} mode",
+                "package `{}` records no matrix state for the {} target `{descriptor}` with feature solution `{solution}` in the {} mode",
                 instance.as_str(),
                 kind.wire_name(),
                 mode.wire_name()
@@ -972,11 +980,12 @@ impl fmt::Display for TargetError {
             Self::MatrixEntryDuplicate {
                 instance,
                 descriptor,
+                solution,
                 kind,
                 mode,
             } => write!(
                 formatter,
-                "package `{}` records the {} target `{descriptor}` in the {} mode twice",
+                "package `{}` records the {} target `{descriptor}` with feature solution `{solution}` in the {} mode twice",
                 instance.as_str(),
                 kind.wire_name(),
                 mode.wire_name()
@@ -2392,12 +2401,25 @@ impl ConditionalSelectionRule {
     /// never of the position of a candidate in the list; two candidates with
     /// equal encodings are equal branches. No candidate is retained by the
     /// guard rule exactly when none of them is returned.
-    #[must_use]
-    pub fn retain_one<'a>(&self, outcomes: &'a [BranchOutcome]) -> Option<&'a BranchOutcome> {
-        outcomes
+    pub fn retain_one<'a>(
+        &self,
+        declaring: &PackageIdentity,
+        outcomes: &'a [BranchOutcome],
+    ) -> Result<Option<&'a BranchOutcome>, TargetError> {
+        if outcomes.is_empty() {
+            // A site that offers no branch has nothing the total rule can
+            // decide, so it is reported as an unresolvable conditional selection
+            // rather than resolved to an empty selection.
+            return Err(TargetError::ConditionalSelectionUnresolved {
+                instance: Box::new(declaring.clone()),
+                site: Arc::from(self.identity()),
+                guards: Vec::new(),
+            });
+        }
+        Ok(outcomes
             .iter()
             .filter(|outcome| outcome.retained)
-            .min_by_key(|outcome| branch_encoding(&outcome.declaration))
+            .min_by_key(|outcome| branch_encoding(&outcome.declaration)))
     }
 }
 
@@ -2816,13 +2838,15 @@ impl TargetMatrixState {
 
 /// One analyzed combination of a target matrix (`GNT-17.8-target-matrix`).
 ///
-/// The combination is the normalized descriptor digest, the target kind, and the
-/// semantic mode, and its state is explicit. The selected feature solution stays a
-/// `GNT-17.11-target-artifact-binding` input of the one artifact a binding records,
-/// so no feature selection is inferred from an entry here.
+/// The combination is the normalized descriptor digest, the selected feature
+/// solution, the target kind, and the semantic mode, and its state is explicit.
+/// The feature solution is part of the combination because
+/// `GNT-17.8-target-matrix` names it as one, so two entries that differ only in
+/// their solution digest are two combinations rather than one.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct TargetMatrixEntry {
     descriptor: TargetDescriptorDigest,
+    solution: FeatureSolutionDigest,
     kind: TargetKind,
     mode: SemanticMode,
     state: TargetMatrixState,
@@ -2838,12 +2862,14 @@ impl TargetMatrixEntry {
     #[must_use]
     pub const fn new(
         descriptor: TargetDescriptorDigest,
+        solution: FeatureSolutionDigest,
         kind: TargetKind,
         mode: SemanticMode,
         state: TargetMatrixState,
     ) -> Self {
         Self {
             descriptor,
+            solution,
             kind,
             mode,
             state,
@@ -2854,6 +2880,12 @@ impl TargetMatrixEntry {
     #[must_use]
     pub const fn descriptor(&self) -> &TargetDescriptorDigest {
         &self.descriptor
+    }
+
+    /// Returns the digest of the selected feature solution of this combination.
+    #[must_use]
+    pub const fn solution(&self) -> &FeatureSolutionDigest {
+        &self.solution
     }
 
     /// Returns the target kind of this combination.
@@ -2877,7 +2909,10 @@ impl TargetMatrixEntry {
     /// Returns whether this entry names the combination another entry names.
     #[must_use]
     fn names_same_combination(&self, other: &Self) -> bool {
-        self.descriptor == other.descriptor && self.kind == other.kind && self.mode == other.mode
+        self.descriptor == other.descriptor
+            && self.solution == other.solution
+            && self.kind == other.kind
+            && self.mode == other.mode
     }
 
     /// Returns whether this entry covers one combination.
@@ -2885,10 +2920,14 @@ impl TargetMatrixEntry {
     fn covers(
         &self,
         descriptor: &TargetDescriptorDigest,
+        solution: &FeatureSolutionDigest,
         kind: TargetKind,
         mode: SemanticMode,
     ) -> bool {
-        self.descriptor == *descriptor && self.kind == kind && self.mode == mode
+        self.descriptor == *descriptor
+            && self.solution == *solution
+            && self.kind == kind
+            && self.mode == mode
     }
 }
 
@@ -2924,6 +2963,7 @@ impl TargetMatrix {
                 return Err(TargetError::MatrixEntryDuplicate {
                     instance: Box::new(declaring.clone()),
                     descriptor: pair[0].descriptor.clone(),
+                    solution: pair[0].solution.clone(),
                     kind: pair[0].kind,
                     mode: pair[0].mode,
                 });
@@ -2960,16 +3000,18 @@ impl TargetMatrix {
     pub fn coverage(
         &self,
         descriptor: &TargetDescriptorDigest,
+        solution: &FeatureSolutionDigest,
         kind: TargetKind,
         mode: SemanticMode,
     ) -> Result<TargetMatrixState, TargetError> {
         self.entries
             .iter()
-            .find(|entry| entry.covers(descriptor, kind, mode))
+            .find(|entry| entry.covers(descriptor, solution, kind, mode))
             .map(TargetMatrixEntry::state)
             .ok_or_else(|| TargetError::MatrixCoverageMissing {
                 instance: Box::new(self.declaring.clone()),
                 descriptor: descriptor.clone(),
+                solution: solution.clone(),
                 kind,
                 mode,
             })
@@ -2984,14 +3026,16 @@ impl TargetMatrix {
     pub fn admit(
         &self,
         descriptor: &TargetDescriptorDigest,
+        solution: &FeatureSolutionDigest,
         kind: TargetKind,
         mode: SemanticMode,
     ) -> Result<(), TargetError> {
-        match self.coverage(descriptor, kind, mode)? {
+        match self.coverage(descriptor, solution, kind, mode)? {
             TargetMatrixState::Supported => Ok(()),
             TargetMatrixState::Unsupported => Err(TargetError::MatrixCombinationUnsupported {
                 instance: Box::new(self.declaring.clone()),
                 descriptor: descriptor.clone(),
+                solution: solution.clone(),
                 kind,
                 mode,
             }),
@@ -4049,6 +4093,8 @@ fn encode_target_matrix(entries: &[TargetMatrixEntry]) -> Vec<u8> {
         push_json_string(&mut output, entry.kind().wire_name());
         output.push_str(",\"mode\":");
         push_json_string(&mut output, entry.mode().wire_name());
+        output.push_str(",\"solution_sha256\":");
+        push_json_string(&mut output, entry.solution().as_str());
         output.push_str(",\"state\":");
         push_json_string(&mut output, entry.state().wire_name());
         output.push('}');
