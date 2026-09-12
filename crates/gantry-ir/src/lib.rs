@@ -106,15 +106,17 @@ pub use signature::{
 };
 pub use target::{
     AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,
-    ConditionalSelectionRule, DeclaredFactKind, DeclaredFacts, ExecutionTargetDescriptor,
-    ExpectedInputs, FeatureDeclaration, FeatureDeclarations, FeatureSolution,
-    FeatureSolutionDigest, GeneratedOutput, GeneratedOutputHash, GeneratedOutputSet, ModeAdmission,
-    OperatingSystemFamily, PredicateOutcome, PredicateOutcomeDigest, PredicateOutcomeSet,
-    RetainedClosure, RetainedClosureDigest, TargetArtifactBinding, TargetArtifactBindingDigest,
-    TargetArtifactBindingRecord, TargetDescriptorDigest, TargetDescriptorField,
-    TargetDescriptorRecord, TargetDiagnosticCode, TargetError, TargetFactsDigest,
-    TargetFactsRecord, TargetMatrix, TargetMatrixDigest, TargetMatrixEntry, TargetMatrixState,
-    TargetPredicate, TargetPredicateName, ToolchainIdentity,
+    BuildHostAuthority, BuildHostAuthorityDigest, BuildHostCapability, BuildInput,
+    BuildInputDigest, BuildInputRecord, BuildInputRecordDigest, ConditionalSelectionRule,
+    DeclaredFactKind, DeclaredFacts, ExecutionTargetDescriptor, ExpectedInputs, FeatureDeclaration,
+    FeatureDeclarations, FeatureSolution, FeatureSolutionDigest, GeneratedOutput,
+    GeneratedOutputHash, GeneratedOutputSet, ModeAdmission, OperatingSystemFamily,
+    PredicateOutcome, PredicateOutcomeDigest, PredicateOutcomeSet, RetainedClosure,
+    RetainedClosureDigest, RunnerAdmission, RunnerCapability, TargetArtifactBinding,
+    TargetArtifactBindingDigest, TargetArtifactBindingRecord, TargetDescriptorDigest,
+    TargetDescriptorField, TargetDescriptorRecord, TargetDiagnosticCode, TargetError,
+    TargetFactsDigest, TargetFactsRecord, TargetMatrix, TargetMatrixDigest, TargetMatrixEntry,
+    TargetMatrixState, TargetPredicate, TargetPredicateName, ToolchainIdentity,
 };
 pub use type_expression::{TypeExpression, TypeExpressionError};
 pub use type_properties::{

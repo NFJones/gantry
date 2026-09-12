@@ -1717,6 +1717,42 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An inactive conditional branch declares facts it must not contribute to the retained closure.",
     },
     DiagnosticCodeDefinition {
+        code: "target-build-host-authority-digest-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A digest spelling of a declared build-host authority is not 64 lowercase hexadecimal digits.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-build-host-capability-unknown",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A declared build-host capability is not a member of the closed build-host capability vocabulary.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-build-host-data-name-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A declared build-host name is not a legal declared name.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-build-input-digest-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A digest spelling of one recorded build input is not 64 lowercase hexadecimal digits.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-build-input-name-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A recorded build input is not a legal declared name.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-build-input-record-digest-invalid",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A digest spelling of a recorded build-input record is not 64 lowercase hexadecimal digits.",
+    },
+    DiagnosticCodeDefinition {
         code: "target-closure-digest-invalid",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
@@ -1859,6 +1895,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
         meaning: "A predicate name is not a member of the sealed predicate vocabulary.",
+    },
+    DiagnosticCodeDefinition {
+        code: "target-runner-capability-missing",
+        phase: DiagnosticPhase::Package,
+        category: DiagnosticCategory::Package,
+        meaning: "A build runs a produced executable without the explicit runner capability.",
     },
     DiagnosticCodeDefinition {
         code: "target-selection-rule-unsupported",

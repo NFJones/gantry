@@ -71,8 +71,11 @@
 //! digest, and feature-solution digest, and [`TargetArtifactBinding`] is the
 //! `GNT-17.11` record of every input one artifact was produced from. The build
 //! host is never an input of any of them under
-//! `GNT-17.9-build-host-authority`; a recorded build input is recorded
-//! elsewhere, as a declared generator input.
+//! `GNT-17.9-build-host-authority`: a build-host fact participates in artifact
+//! identity only as a recorded build input, which is [`BuildInputRecord`], and
+//! the declared build-host authority one generator invocation receives is
+//! [`BuildHostAuthority`], a distinct type with no conversion to any of the three
+//! records above.
 
 // The diagnostics of this module deliberately carry the declaring package
 // instance, descriptor digests, and offending names so a rejected target
@@ -116,6 +119,12 @@ const RETAINED_CLOSURE_DOMAIN: &str = "gantry.target-retained-closure/v1";
 /// Domain separator for the canonical target-matrix encoding.
 const TARGET_MATRIX_DOMAIN: &str = "gantry.target-matrix/v1";
 
+/// Domain separator for the canonical declared build-host-authority encoding.
+const BUILD_HOST_AUTHORITY_DOMAIN: &str = "gantry.target-build-host-authority/v1";
+
+/// Domain separator for the canonical recorded-build-inputs encoding.
+const BUILD_INPUT_RECORD_DOMAIN: &str = "gantry.target-build-inputs/v1";
+
 /// One frozen published diagnostic identity of the target model.
 ///
 /// The codes are frozen: a consumer matches on [`Self::as_str`], and the
@@ -146,6 +155,23 @@ pub enum TargetDiagnosticCode {
     ArtifactBindingVersionUnsupported,
     /// `target-branch-facts-inactive`
     BranchFactsInactive,
+    /// `target-build-host-authority-digest-invalid`
+    BuildHostAuthorityDigestInvalid,
+    /// `target-build-host-capability-unknown`
+    BuildHostCapabilityUnknown,
+    /// `target-build-host-data-name-invalid`
+    ///
+    /// Owns one condition of `GNT-17.9-build-host-authority`: a declared
+    /// build-host name — the declared build-host data of a [`BuildHostAuthority`]
+    /// or the declared name of a [`RunnerCapability`] — is not a legal declared
+    /// name.
+    BuildHostDataNameInvalid,
+    /// `target-build-input-digest-invalid`
+    BuildInputDigestInvalid,
+    /// `target-build-input-name-invalid`
+    BuildInputNameInvalid,
+    /// `target-build-input-record-digest-invalid`
+    BuildInputRecordDigestInvalid,
     /// `target-closure-digest-invalid`
     ClosureDigestInvalid,
     /// `target-conditional-selection-unresolved`
@@ -194,6 +220,8 @@ pub enum TargetDiagnosticCode {
     ModeNotAdmitted,
     /// `target-predicate-name-unknown`
     PredicateNameUnknown,
+    /// `target-runner-capability-missing`
+    RunnerCapabilityMissing,
     /// `target-selection-rule-unsupported`
     SelectionRuleUnsupported,
     /// `target-wire-value-unknown`
@@ -202,7 +230,7 @@ pub enum TargetDiagnosticCode {
 
 impl TargetDiagnosticCode {
     /// Every published code, in sorted code order.
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 40] = [
         Self::ArtifactBindingDigestInvalid,
         Self::ArtifactBindingMismatch,
         Self::ArtifactBindingMissingInput,
@@ -210,6 +238,12 @@ impl TargetDiagnosticCode {
         Self::ArtifactBindingPropertyUnknown,
         Self::ArtifactBindingVersionUnsupported,
         Self::BranchFactsInactive,
+        Self::BuildHostAuthorityDigestInvalid,
+        Self::BuildHostCapabilityUnknown,
+        Self::BuildHostDataNameInvalid,
+        Self::BuildInputDigestInvalid,
+        Self::BuildInputNameInvalid,
+        Self::BuildInputRecordDigestInvalid,
         Self::ClosureDigestInvalid,
         Self::ConditionalSelectionUnresolved,
         Self::DeclaredFactNameInvalid,
@@ -234,6 +268,7 @@ impl TargetDiagnosticCode {
         Self::MatrixEntryDuplicate,
         Self::ModeNotAdmitted,
         Self::PredicateNameUnknown,
+        Self::RunnerCapabilityMissing,
         Self::SelectionRuleUnsupported,
         Self::WireValueUnknown,
     ];
@@ -251,6 +286,12 @@ impl TargetDiagnosticCode {
                 "target-artifact-binding-version-unsupported"
             }
             Self::BranchFactsInactive => "target-branch-facts-inactive",
+            Self::BuildHostAuthorityDigestInvalid => "target-build-host-authority-digest-invalid",
+            Self::BuildHostCapabilityUnknown => "target-build-host-capability-unknown",
+            Self::BuildHostDataNameInvalid => "target-build-host-data-name-invalid",
+            Self::BuildInputDigestInvalid => "target-build-input-digest-invalid",
+            Self::BuildInputNameInvalid => "target-build-input-name-invalid",
+            Self::BuildInputRecordDigestInvalid => "target-build-input-record-digest-invalid",
             Self::ClosureDigestInvalid => "target-closure-digest-invalid",
             Self::ConditionalSelectionUnresolved => "target-conditional-selection-unresolved",
             Self::DeclaredFactNameInvalid => "target-declared-fact-name-invalid",
@@ -275,6 +316,7 @@ impl TargetDiagnosticCode {
             Self::MatrixEntryDuplicate => "target-matrix-entry-duplicate",
             Self::ModeNotAdmitted => "target-mode-not-admitted",
             Self::PredicateNameUnknown => "target-predicate-name-unknown",
+            Self::RunnerCapabilityMissing => "target-runner-capability-missing",
             Self::SelectionRuleUnsupported => "target-selection-rule-unsupported",
             Self::WireValueUnknown => "target-wire-value-unknown",
         }
@@ -304,6 +346,22 @@ impl TargetDiagnosticCode {
             }
             Self::BranchFactsInactive => {
                 "An inactive conditional branch declares facts it must not contribute to the retained closure."
+            }
+            Self::BuildHostAuthorityDigestInvalid => {
+                "A digest spelling of a declared build-host authority is not 64 lowercase hexadecimal digits."
+            }
+            Self::BuildHostCapabilityUnknown => {
+                "A declared build-host capability is not a member of the closed build-host capability vocabulary."
+            }
+            Self::BuildHostDataNameInvalid => {
+                "A declared build-host name is not a legal declared name."
+            }
+            Self::BuildInputDigestInvalid => {
+                "A digest spelling of one recorded build input is not 64 lowercase hexadecimal digits."
+            }
+            Self::BuildInputNameInvalid => "A recorded build input is not a legal declared name.",
+            Self::BuildInputRecordDigestInvalid => {
+                "A digest spelling of a recorded build-input record is not 64 lowercase hexadecimal digits."
             }
             Self::ClosureDigestInvalid => {
                 "A digest spelling of a retained closure is not 64 lowercase hexadecimal digits."
@@ -373,6 +431,9 @@ impl TargetDiagnosticCode {
             Self::PredicateNameUnknown => {
                 "A predicate name is not a member of the sealed predicate vocabulary."
             }
+            Self::RunnerCapabilityMissing => {
+                "A build runs a produced executable without the explicit runner capability."
+            }
             Self::SelectionRuleUnsupported => {
                 "A conditional declaration names a selection-rule identity this implementation does not support."
             }
@@ -421,6 +482,13 @@ impl TargetDiagnosticCode {
             | Self::MatrixCoverageMissing
             | Self::MatrixDigestInvalid
             | Self::MatrixEntryDuplicate => "GNT-17.8-target-matrix",
+            Self::BuildHostAuthorityDigestInvalid
+            | Self::BuildHostCapabilityUnknown
+            | Self::BuildHostDataNameInvalid
+            | Self::BuildInputDigestInvalid
+            | Self::BuildInputNameInvalid
+            | Self::BuildInputRecordDigestInvalid
+            | Self::RunnerCapabilityMissing => "GNT-17.9-build-host-authority",
             Self::SelectionRuleUnsupported => "GNT-17.6-conditional-selection-rule",
         }
     }
@@ -501,6 +569,46 @@ pub enum TargetError {
         guards: Vec<Arc<str>>,
         /// The declared fact kinds that branch contributed, in vocabulary order.
         kinds: Vec<DeclaredFactKind>,
+    },
+    /// A declared build-host-authority digest that is not lowercase hexadecimal.
+    BuildHostAuthorityDigestInvalid {
+        /// The rejected digest text.
+        value: Arc<str>,
+    },
+    /// A declared build-host capability outside the closed build-host vocabulary.
+    BuildHostCapabilityUnknown {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The rejected capability spelling.
+        value: Arc<str>,
+    },
+    /// A declared build-host name that is not a legal declared name.
+    ///
+    /// Both declared build-host data of a [`BuildHostAuthority`] and the declared
+    /// name of a [`RunnerCapability`] are declared names of the build host, so
+    /// one condition owns both spellings.
+    BuildHostDataNameInvalid {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The rejected declared name.
+        value: Arc<str>,
+    },
+    /// A recorded build-input digest that is not lowercase hexadecimal.
+    BuildInputDigestInvalid {
+        /// The rejected digest text.
+        value: Arc<str>,
+    },
+    /// A recorded build-input name that is not a legal declared name.
+    BuildInputNameInvalid {
+        /// The declaring package instance.
+        instance: Box<PackageIdentity>,
+        /// The rejected declared name.
+        value: Arc<str>,
+    },
+    /// A recorded build-input-record digest that is not lowercase hexadecimal.
+    BuildInputRecordDigestInvalid {
+        /// The rejected digest text.
+        value: Arc<str>,
     },
     /// A retained-closure digest that is not 64 lowercase hexadecimal digits.
     ClosureDigestInvalid {
@@ -682,6 +790,11 @@ pub enum TargetError {
         /// The rejected predicate name.
         name: Arc<str>,
     },
+    /// A run of a produced executable without the explicit runner capability.
+    RunnerCapabilityMissing {
+        /// The declaring package instance whose build refused the run.
+        instance: Box<PackageIdentity>,
+    },
     /// A selection-rule identity this implementation does not support.
     SelectionRuleUnsupported {
         /// The declaring package instance.
@@ -722,6 +835,18 @@ impl TargetError {
                 TargetDiagnosticCode::ArtifactBindingVersionUnsupported
             }
             Self::BranchFactsInactive { .. } => TargetDiagnosticCode::BranchFactsInactive,
+            Self::BuildHostAuthorityDigestInvalid { .. } => {
+                TargetDiagnosticCode::BuildHostAuthorityDigestInvalid
+            }
+            Self::BuildHostCapabilityUnknown { .. } => {
+                TargetDiagnosticCode::BuildHostCapabilityUnknown
+            }
+            Self::BuildHostDataNameInvalid { .. } => TargetDiagnosticCode::BuildHostDataNameInvalid,
+            Self::BuildInputDigestInvalid { .. } => TargetDiagnosticCode::BuildInputDigestInvalid,
+            Self::BuildInputNameInvalid { .. } => TargetDiagnosticCode::BuildInputNameInvalid,
+            Self::BuildInputRecordDigestInvalid { .. } => {
+                TargetDiagnosticCode::BuildInputRecordDigestInvalid
+            }
             Self::ClosureDigestInvalid { .. } => TargetDiagnosticCode::ClosureDigestInvalid,
             Self::ConditionalSelectionUnresolved { .. } => {
                 TargetDiagnosticCode::ConditionalSelectionUnresolved
@@ -768,6 +893,7 @@ impl TargetError {
             Self::MatrixEntryDuplicate { .. } => TargetDiagnosticCode::MatrixEntryDuplicate,
             Self::ModeNotAdmitted { .. } => TargetDiagnosticCode::ModeNotAdmitted,
             Self::PredicateNameUnknown { .. } => TargetDiagnosticCode::PredicateNameUnknown,
+            Self::RunnerCapabilityMissing { .. } => TargetDiagnosticCode::RunnerCapabilityMissing,
             Self::SelectionRuleUnsupported { .. } => TargetDiagnosticCode::SelectionRuleUnsupported,
             Self::WireValueUnknown { .. } => TargetDiagnosticCode::WireValueUnknown,
         }
@@ -837,6 +963,33 @@ impl fmt::Display for TargetError {
                 write!(formatter, " that contributes ")?;
                 write_fact_kind_list(formatter, kinds)
             }
+            Self::BuildHostAuthorityDigestInvalid { value } => write!(
+                formatter,
+                "build-host-authority digest `{value}` is not lowercase hexadecimal"
+            ),
+            Self::BuildHostCapabilityUnknown { instance, value } => write!(
+                formatter,
+                "package `{}` declares build-host capability `{value}`, which is outside the closed build-host capability vocabulary",
+                instance.as_str()
+            ),
+            Self::BuildHostDataNameInvalid { instance, value } => write!(
+                formatter,
+                "package `{}` declares build-host name `{value}`, which is not a legal declared name",
+                instance.as_str()
+            ),
+            Self::BuildInputDigestInvalid { value } => write!(
+                formatter,
+                "build-input digest `{value}` is not lowercase hexadecimal"
+            ),
+            Self::BuildInputNameInvalid { instance, value } => write!(
+                formatter,
+                "package `{}` records build input `{value}`, which is not a legal declared name",
+                instance.as_str()
+            ),
+            Self::BuildInputRecordDigestInvalid { value } => write!(
+                formatter,
+                "build-input-record digest `{value}` is not lowercase hexadecimal"
+            ),
             Self::ClosureDigestInvalid { value } => write!(
                 formatter,
                 "retained-closure digest `{value}` is not lowercase hexadecimal"
@@ -1004,6 +1157,11 @@ impl fmt::Display for TargetError {
             Self::PredicateNameUnknown { instance, name } => write!(
                 formatter,
                 "package `{}` names predicate `{name}`, which is not sealed",
+                instance.as_str()
+            ),
+            Self::RunnerCapabilityMissing { instance } => write!(
+                formatter,
+                "package `{}` runs a produced executable without an explicit runner capability",
                 instance.as_str()
             ),
             Self::SelectionRuleUnsupported { instance, rule } => write!(
@@ -3867,6 +4025,468 @@ impl TargetArtifactBindingRecord {
     }
 }
 
+/// The closed vocabulary of build-host capabilities one generator may be granted
+/// (`GNT-17.9-build-host-authority`).
+///
+/// Every member names work a generator performs on the build host under declared
+/// authority, so each spelling is a build-host capability and is never
+/// execution-target authority: no member admits an operation of the analyzed
+/// program, grants a right over the execution target, or stands in for the
+/// explicit runner capability of [`RunnerCapability`]. This vocabulary is
+/// deliberately disjoint from the execution-target authority vocabulary of
+/// [`crate::AuthorityRight`], which is what a [`crate::RightsSet`] is a set of,
+/// and no conversion between the two exists or may be added: a generator that
+/// received execution-target authority would be the very conflation
+/// `GNT-17.9-build-host-authority` forbids.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum BuildHostCapability {
+    /// Invoke the declared toolchain for one artifact.
+    InvokeDeclaredToolchain,
+    /// Read the declared inputs of one generator invocation.
+    ReadDeclaredInputs,
+    /// Read the declared sources of one package instance.
+    ReadDeclaredSources,
+    /// Record one build input into artifact identity.
+    RecordBuildInputs,
+    /// Write the declared generated outputs of one artifact.
+    WriteDeclaredOutputs,
+}
+
+impl BuildHostCapability {
+    /// Every capability of the closed build-host vocabulary, in sorted spelling order.
+    pub const ALL: [Self; 5] = [
+        Self::InvokeDeclaredToolchain,
+        Self::ReadDeclaredInputs,
+        Self::ReadDeclaredSources,
+        Self::RecordBuildInputs,
+        Self::WriteDeclaredOutputs,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::InvokeDeclaredToolchain => "invoke-declared-toolchain",
+            Self::ReadDeclaredInputs => "read-declared-inputs",
+            Self::ReadDeclaredSources => "read-declared-sources",
+            Self::RecordBuildInputs => "record-build-inputs",
+            Self::WriteDeclaredOutputs => "write-declared-outputs",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.wire_name() == value)
+    }
+}
+
+target_digest_type!(
+    BuildHostAuthorityDigest,
+    BuildHostAuthorityDigestInvalid,
+    "One digest over the canonical encoding of one declared build-host authority (GNT-17.9-build-host-authority)."
+);
+target_digest_type!(
+    BuildInputDigest,
+    BuildInputDigestInvalid,
+    "One recorded digest of one build input (GNT-17.9-build-host-authority)."
+);
+target_digest_type!(
+    BuildInputRecordDigest,
+    BuildInputRecordDigestInvalid,
+    "One digest over the canonical encoding of one recorded build-input record (GNT-17.9-build-host-authority)."
+);
+
+/// The declared build-host capabilities and declared build-host data one
+/// generator invocation receives (`GNT-17.9-build-host-authority`).
+///
+/// This type is a distinct type with no bridge to execution-target authority.
+/// There is deliberately no `From`, no `Into`, no `as_target`-style conversion,
+/// and no function that turns a [`BuildHostAuthority`] into an
+/// [`ExecutionTargetDescriptor`], a [`TargetFactsRecord`], a
+/// [`TargetArtifactBinding`], or any [`crate::AuthorityRight`] set, and none may
+/// be added: a generator receives declared build-host authority and never
+/// execution-target authority, and the two capability vocabularies stay disjoint.
+/// A build-host fact enters artifact identity only as a recorded build input,
+/// which is [`BuildInputRecord`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BuildHostAuthority {
+    declaring: PackageIdentity,
+    capabilities: Vec<BuildHostCapability>,
+    data: Vec<Arc<str>>,
+    canonical: Arc<[u8]>,
+}
+
+impl BuildHostAuthority {
+    /// Declares the build-host authority one generator invocation receives.
+    ///
+    /// The granted capabilities are a set, so the given order is not part of the
+    /// declaration and a capability declared twice grants nothing twice. A
+    /// declared data name that is empty or carries a control character is
+    /// rejected against the declaring instance rather than ignored. The declaring
+    /// instance is never an input of the canonical encoding or of the digest, so
+    /// two invocations of one instance that declare the same authority produce
+    /// the same bytes and the same digest.
+    pub fn new(
+        declaring: &PackageIdentity,
+        capabilities: &[BuildHostCapability],
+        data: &[&str],
+    ) -> Result<Self, TargetError> {
+        let capabilities = BuildHostCapability::ALL
+            .into_iter()
+            .filter(|candidate| capabilities.contains(candidate))
+            .collect::<Vec<_>>();
+        let data = declared_build_host_names(declaring, data)?;
+        let canonical = encode_build_host_authority(&capabilities, &data);
+        Ok(Self {
+            declaring: declaring.clone(),
+            capabilities,
+            data,
+            canonical: Arc::from(canonical.into_boxed_slice()),
+        })
+    }
+
+    /// Decodes one declared build-host authority from its wire spellings.
+    ///
+    /// A capability spelling outside the closed build-host vocabulary is an error
+    /// rather than an extension point: it is reported against the declaring
+    /// instance instead of being dropped, so a generator can never receive
+    /// authority this model does not name.
+    pub fn decode(
+        declaring: &PackageIdentity,
+        capabilities: &[&str],
+        data: &[&str],
+    ) -> Result<Self, TargetError> {
+        let mut declared = Vec::with_capacity(capabilities.len());
+        for value in capabilities {
+            let capability = BuildHostCapability::from_wire_name(value).ok_or_else(|| {
+                TargetError::BuildHostCapabilityUnknown {
+                    instance: Box::new(declaring.clone()),
+                    value: Arc::from(*value),
+                }
+            })?;
+            declared.push(capability);
+        }
+        Self::new(declaring, &declared, data)
+    }
+
+    /// Returns the package instance that declared this authority.
+    #[must_use]
+    pub const fn declaring(&self) -> &PackageIdentity {
+        &self.declaring
+    }
+
+    /// Returns the granted build-host capabilities in vocabulary order.
+    #[must_use]
+    pub fn capabilities(&self) -> &[BuildHostCapability] {
+        &self.capabilities
+    }
+
+    /// Returns whether one build-host capability is granted.
+    #[must_use]
+    pub fn grants(&self, capability: BuildHostCapability) -> bool {
+        self.capabilities.contains(&capability)
+    }
+
+    /// Returns the declared build-host data names in canonical order.
+    #[must_use]
+    pub fn data(&self) -> &[Arc<str>] {
+        &self.data
+    }
+
+    /// Returns whether this authority declares no capability and no data.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.capabilities.is_empty() && self.data.is_empty()
+    }
+
+    /// Returns the one canonical byte encoding of this declaration.
+    #[must_use]
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.canonical
+    }
+
+    /// Returns the digest over those canonical bytes.
+    #[must_use]
+    pub fn digest(&self) -> BuildHostAuthorityDigest {
+        BuildHostAuthorityDigest::from_digest(digest_fields(
+            BUILD_HOST_AUTHORITY_DOMAIN,
+            &[&self.canonical],
+        ))
+    }
+
+    /// Admits running one produced executable for the execution target.
+    ///
+    /// Running is never implied by a granted build-host capability and is never
+    /// inferred from the build host: it requires the explicit
+    /// [`RunnerCapability`], and an absent capability is reported against the
+    /// declaring instance rather than silently admitted. An admitted run is a
+    /// build-host fact, so it becomes a recorded build input through
+    /// [`RunnerAdmission::record`].
+    pub fn admit_run(
+        &self,
+        runner: Option<&RunnerCapability>,
+    ) -> Result<RunnerAdmission, TargetError> {
+        match runner {
+            Some(capability) => Ok(RunnerAdmission {
+                capability: capability.clone(),
+            }),
+            None => Err(TargetError::RunnerCapabilityMissing {
+                instance: Box::new(self.declaring.clone()),
+            }),
+        }
+    }
+}
+
+/// Validates one declared build-host data name list into canonical order.
+///
+/// The given order is not part of the declaration: the returned names are sorted
+/// and deduplicated, and a name that is not a legal declared name is rejected
+/// against the declaring instance rather than ignored.
+fn declared_build_host_names(
+    declaring: &PackageIdentity,
+    data: &[&str],
+) -> Result<Vec<Arc<str>>, TargetError> {
+    let mut names = BTreeSet::new();
+    for value in data {
+        if !is_declared_name(value) {
+            return Err(TargetError::BuildHostDataNameInvalid {
+                instance: Box::new(declaring.clone()),
+                value: Arc::from(*value),
+            });
+        }
+        names.insert(Arc::from(*value));
+    }
+    Ok(names.into_iter().collect())
+}
+
+/// The explicit capability a build must hold to run a produced executable for
+/// the execution target (`GNT-17.9-build-host-authority`).
+///
+/// Running is not a build-host capability and not execution-target authority: it
+/// admits running a produced executable during the build and nothing an operation
+/// of the analyzed program declares. This type is deliberately not a member of
+/// [`BuildHostCapability`], so no granted build-host capability can stand in for
+/// it, and [`BuildHostAuthority::admit_run`] admits a run only when a value of
+/// this type is present.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunnerCapability {
+    declaring: PackageIdentity,
+    name: Arc<str>,
+}
+
+impl RunnerCapability {
+    /// Declares the explicit runner capability of one package instance.
+    ///
+    /// The name is a declared name of the declaring instance: an empty name or a
+    /// name carrying a control character is reported against that instance rather
+    /// than ignored.
+    pub fn new(declaring: &PackageIdentity, name: &str) -> Result<Self, TargetError> {
+        if !is_declared_name(name) {
+            return Err(TargetError::BuildHostDataNameInvalid {
+                instance: Box::new(declaring.clone()),
+                value: Arc::from(name),
+            });
+        }
+        Ok(Self {
+            declaring: declaring.clone(),
+            name: Arc::from(name),
+        })
+    }
+
+    /// Returns the package instance that declared this capability.
+    #[must_use]
+    pub const fn declaring(&self) -> &PackageIdentity {
+        &self.declaring
+    }
+
+    /// Returns the declared name of this capability.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the recorded build-input name of one admitted run.
+    ///
+    /// The name is derived from the declared capability, so two different runner
+    /// capabilities never record the same build-input name.
+    #[must_use]
+    pub fn recorded_name(&self) -> String {
+        format!("runner-capability:{}", self.name)
+    }
+}
+
+/// One admitted run of one produced executable during the build.
+///
+/// The only way to obtain one is [`BuildHostAuthority::admit_run`] with the
+/// explicit [`RunnerCapability`], so no other code path can act as if a run were
+/// admitted.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunnerAdmission {
+    capability: RunnerCapability,
+}
+
+impl RunnerAdmission {
+    /// Returns the explicit runner capability that admitted this run.
+    #[must_use]
+    pub const fn capability(&self) -> &RunnerCapability {
+        &self.capability
+    }
+
+    /// Records this admitted run as one build input of `GNT-17.9-build-host-authority`.
+    ///
+    /// Running a produced executable is a build-host fact, so it enters artifact
+    /// identity only as a recorded build input: the recorded name is the declared
+    /// runner capability's recorded name and the recorded digest is the digest of
+    /// the run.
+    pub fn record(&self, digest: &str) -> Result<BuildInput, TargetError> {
+        BuildInput::new(
+            self.capability.declaring(),
+            &self.capability.recorded_name(),
+            digest,
+        )
+    }
+}
+
+/// One recorded build input of one artifact (`GNT-17.9-build-host-authority`).
+///
+/// A build-host fact enters artifact identity only as an entry of this shape: a
+/// declared name and the recorded digest of the fact, never a host path, a
+/// machine name, or any other ambient spelling.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct BuildInput {
+    /// The declared build-input name.
+    pub name: Arc<str>,
+    /// The recorded digest of the build input.
+    pub digest: BuildInputDigest,
+}
+
+impl BuildInput {
+    /// Validates one recorded build input.
+    ///
+    /// A build input is recorded by one package instance, so it takes that
+    /// instance and names it for every name and digest spelling it rejects. The
+    /// digest is given as its spelling, so a recording that is not 64 lowercase
+    /// hexadecimal digits is rejected rather than repaired.
+    pub fn new(declaring: &PackageIdentity, name: &str, digest: &str) -> Result<Self, TargetError> {
+        if !is_declared_name(name) {
+            return Err(TargetError::BuildInputNameInvalid {
+                instance: Box::new(declaring.clone()),
+                value: Arc::from(name),
+            });
+        }
+        Ok(Self {
+            name: Arc::from(name),
+            digest: BuildInputDigest::from_hex(digest)?,
+        })
+    }
+}
+
+/// The recorded build inputs one build's build-host facts became
+/// (`GNT-17.9-build-host-authority`).
+///
+/// The entries are one canonical, sorted, deduplicated set of (name, digest)
+/// pairs, so the order a build records them in is not part of the record and a
+/// recording repeated twice records nothing twice. The recorded entry *is* the
+/// pair: a name recorded with two different digests is two recorded pairs,
+/// because two values were recorded for two facts under that name. Nothing else
+/// about the build host is recorded, so no host path, locale, clock, or
+/// discovered service can enter artifact identity through this record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BuildInputRecord {
+    declaring: PackageIdentity,
+    entries: Vec<BuildInput>,
+    canonical: Arc<[u8]>,
+}
+
+impl BuildInputRecord {
+    /// Builds one canonical recorded build-input set from any recording order.
+    ///
+    /// A recorded name that is not a legal declared name and a recorded digest
+    /// that is not 64 lowercase hexadecimal digits are rejected against the
+    /// declaring instance rather than dropped, so a build-host fact cannot enter
+    /// artifact identity in a form this model does not name.
+    pub fn new(declaring: &PackageIdentity, entries: &[BuildInput]) -> Result<Self, TargetError> {
+        let mut entries = entries.to_vec();
+        for entry in &entries {
+            if !is_declared_name(&entry.name) {
+                return Err(TargetError::BuildInputNameInvalid {
+                    instance: Box::new(declaring.clone()),
+                    value: entry.name.clone(),
+                });
+            }
+            BuildInputDigest::from_hex(entry.digest.as_str())?;
+        }
+        entries.sort();
+        entries.dedup();
+        let canonical = encode_build_inputs(&entries);
+        Ok(Self {
+            declaring: declaring.clone(),
+            entries,
+            canonical: Arc::from(canonical.into_boxed_slice()),
+        })
+    }
+
+    /// Returns the package instance whose build recorded these inputs.
+    #[must_use]
+    pub const fn declaring(&self) -> &PackageIdentity {
+        &self.declaring
+    }
+
+    /// Returns every recorded build input in canonical order.
+    #[must_use]
+    pub fn entries(&self) -> &[BuildInput] {
+        &self.entries
+    }
+
+    /// Returns the recorded digest of one build-input name.
+    ///
+    /// A name recorded more than once is reported by its first canonical pair,
+    /// because the entries are ordered by name and then by digest.
+    #[must_use]
+    pub fn digest_of(&self, name: &str) -> Option<&BuildInputDigest> {
+        self.entries
+            .iter()
+            .find(|entry| entry.name.as_ref() == name)
+            .map(|entry| &entry.digest)
+    }
+
+    /// Returns whether no build input was recorded.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Returns the number of distinct recorded pairs.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Returns the one canonical byte encoding of this record.
+    #[must_use]
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.canonical
+    }
+
+    /// Returns the digest over those canonical bytes.
+    #[must_use]
+    pub fn digest(&self) -> BuildInputRecordDigest {
+        BuildInputRecordDigest::from_digest(digest_fields(
+            BUILD_INPUT_RECORD_DOMAIN,
+            &[&self.canonical],
+        ))
+    }
+}
+
 /// Returns the canonical decimal text of one record version.
 fn version_number(version: u32) -> String {
     version.to_string()
@@ -4007,6 +4627,51 @@ fn output_text_from(outputs: &[GeneratedOutput]) -> String {
         output.push_str(entry.hash.as_str());
     }
     output
+}
+
+/// Returns the one canonical encoding of one declared build-host authority.
+///
+/// The capabilities are written in vocabulary order and the declared data names
+/// in canonical order, so the bytes are a function of the declared authority
+/// alone: the declaring instance, the build machine, the execution target, and
+/// every other ambient fact are absent from the encoding.
+fn encode_build_host_authority(capabilities: &[BuildHostCapability], data: &[Arc<str>]) -> Vec<u8> {
+    let mut output = String::from("{\"build_host_capabilities\":[");
+    for (index, capability) in capabilities.iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        push_json_string(&mut output, capability.wire_name());
+    }
+    output.push_str("],\"build_host_data\":[");
+    for (index, name) in data.iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        push_json_string(&mut output, name);
+    }
+    output.push_str("],\"version_of_record\":1}");
+    output.into_bytes()
+}
+
+/// Returns the one canonical encoding of one recorded build-input set.
+///
+/// The encoding is over the entries in canonical order, so it is a function of
+/// the recorded pair set and not of the order the pairs were recorded in.
+fn encode_build_inputs(entries: &[BuildInput]) -> Vec<u8> {
+    let mut output = String::from("[");
+    for (index, entry) in entries.iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        output.push_str("{\"digest\":");
+        push_json_string(&mut output, entry.digest.as_str());
+        output.push_str(",\"name\":");
+        push_json_string(&mut output, &entry.name);
+        output.push('}');
+    }
+    output.push(']');
+    output.into_bytes()
 }
 
 /// Returns the one canonical encoding of one artifact binding.

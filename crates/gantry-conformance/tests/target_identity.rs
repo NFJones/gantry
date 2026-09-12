@@ -11,17 +11,20 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use gantry::ir::{
-    AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome, CanonicalIrDigest,
-    ConditionalSelectionRule, DeclaredFactKind, DeclaredFacts, ExecutionTargetDescriptor,
-    ExpectedInputs, FeatureDeclaration, FeatureDeclarations, FeatureName, FeatureSolution,
-    FeatureSolutionDigest, GeneratedOutput, GeneratedOutputHash, GeneratedOutputSet,
-    GeneratorInputs, InterfaceDigest, ModeAdmission, OperatingSystemFamily, PackageIdentity,
-    PackageIdentityInputs, PackageName, PackageSourceIdentity, PackageVersion, PredicateOutcome,
-    PredicateOutcomeSet, RetainedClosure, RetainedClosureDigest, SelectedFeatureSet,
-    SourceManifestDigest, TargetArtifactBinding, TargetArtifactBindingRecord,
-    TargetDescriptorDigest, TargetDescriptorField, TargetDescriptorRecord, TargetDiagnosticCode,
-    TargetError, TargetFactSet, TargetFactsRecord, TargetKind, TargetMatrix, TargetMatrixDigest,
-    TargetMatrixEntry, TargetMatrixState, TargetPredicate, TargetPredicateName, ToolchainIdentity,
+    AUTHORITY_RIGHT_ORDER, AbiEnvironment, Architecture, AuthorityRight, BranchDeclaration,
+    BranchMatch, BranchOutcome, BuildHostAuthority, BuildHostAuthorityDigest, BuildHostCapability,
+    BuildInput, BuildInputDigest, BuildInputRecord, BuildInputRecordDigest, CanonicalIrDigest,
+    CanonicalPath, ConditionalSelectionRule, DeclaredFactKind, DeclaredFacts,
+    ExecutionTargetDescriptor, ExpectedInputs, FeatureDeclaration, FeatureDeclarations,
+    FeatureName, FeatureSolution, FeatureSolutionDigest, GeneratedOutput, GeneratedOutputHash,
+    GeneratedOutputSet, GeneratorInputs, InterfaceDigest, ModeAdmission, OperatingSystemFamily,
+    PackageIdentity, PackageIdentityInputs, PackageName, PackageSourceIdentity, PackageVersion,
+    PredicateOutcome, PredicateOutcomeSet, RetainedClosure, RetainedClosureDigest,
+    RunnerCapability, SelectedFeatureSet, SourceManifestDigest, TargetArtifactBinding,
+    TargetArtifactBindingRecord, TargetDescriptor, TargetDescriptorDigest, TargetDescriptorField,
+    TargetDescriptorRecord, TargetDiagnosticCode, TargetError, TargetFactSet, TargetFactsRecord,
+    TargetKind, TargetMatrix, TargetMatrixDigest, TargetMatrixEntry, TargetMatrixState,
+    TargetPredicate, TargetPredicateName, TargetSet, ToolchainIdentity,
 };
 use gantry::portable::DiagnosticCategory;
 use gantry::protocol::ProtocolVersion;
@@ -1932,7 +1935,7 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
             .map(TargetDiagnosticCode::as_str)
             .to_vec()
     );
-    assert_eq!(registered.len(), 33);
+    assert_eq!(registered.len(), 40);
     assert!(registered.windows(2).all(|pair| pair[0] < pair[1]));
     // Every condition of the target model exposes one of those frozen codes, and
     // no condition borrows another condition's code.
@@ -1967,6 +1970,27 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
             instance: Box::new(declaring.clone()),
             guards: vec![Arc::from("feature-enabled:c")],
             kinds: vec![DeclaredFactKind::Operation],
+        },
+        TargetError::BuildHostAuthorityDigestInvalid {
+            value: Arc::from("not-a-digest"),
+        },
+        TargetError::BuildHostCapabilityUnknown {
+            instance: Box::new(declaring.clone()),
+            value: Arc::from("observe"),
+        },
+        TargetError::BuildHostDataNameInvalid {
+            instance: Box::new(declaring.clone()),
+            value: Arc::from(""),
+        },
+        TargetError::BuildInputDigestInvalid {
+            value: Arc::from("not-a-digest"),
+        },
+        TargetError::BuildInputNameInvalid {
+            instance: Box::new(declaring.clone()),
+            value: Arc::from(""),
+        },
+        TargetError::BuildInputRecordDigestInvalid {
+            value: Arc::from("not-a-digest"),
         },
         TargetError::ClosureDigestInvalid {
             value: Arc::from("not-a-digest"),
@@ -2071,6 +2095,9 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
             instance: Box::new(declaring.clone()),
             name: Arc::from("source-form"),
         },
+        TargetError::RunnerCapabilityMissing {
+            instance: Box::new(declaring.clone()),
+        },
         TargetError::SelectionRuleUnsupported {
             instance: Box::new(declaring.clone()),
             rule: Arc::from("gnt-conditional-selection/v2"),
@@ -2099,4 +2126,455 @@ fn every_target_diagnostic_code_is_registered_sorted_unique_with_a_non_empty_mea
     let mut codes = declared.iter().map(TargetError::code).collect::<Vec<_>>();
     codes.sort();
     assert_eq!(codes, TargetDiagnosticCode::ALL.to_vec());
+}
+
+#[test]
+fn running_a_produced_executable_requires_the_explicit_runner_capability() {
+    let declaring = declaring();
+    let authority = BuildHostAuthority::new(
+        &declaring,
+        &[
+            BuildHostCapability::RecordBuildInputs,
+            BuildHostCapability::InvokeDeclaredToolchain,
+        ],
+        &["declared-sources"],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture authority declares closed vocabulary members"));
+    assert!(authority.grants(BuildHostCapability::RecordBuildInputs));
+    assert_eq!(
+        authority.capabilities(),
+        &[
+            BuildHostCapability::InvokeDeclaredToolchain,
+            BuildHostCapability::RecordBuildInputs
+        ][..]
+    );
+    // A granted build-host capability never implies a run: without the explicit
+    // runner capability the run is refused, and the diagnostic names the
+    // declaring instance rather than the build host.
+    assert!(matches!(
+        authority.admit_run(None),
+        Err(TargetError::RunnerCapabilityMissing { instance }) if *instance == declaring
+    ));
+    // The runner capability is declared by the instance and is not a build-host
+    // capability, so no granted capability can stand in for it.
+    let runner = RunnerCapability::new(&declaring, "run-produced-executable")
+        .unwrap_or_else(|_| unreachable!("fixture runner name is a legal declared name"));
+    assert_eq!(runner.declaring(), &declaring);
+    assert_eq!(runner.name(), "run-produced-executable");
+    assert_eq!(BuildHostCapability::from_wire_name(runner.name()), None);
+    // With the capability present the run is admitted, and a refused run is never
+    // silently treated as admitted.
+    assert!(authority.admit_run(None).is_err());
+    let admitted = authority
+        .admit_run(Some(&runner))
+        .unwrap_or_else(|_| unreachable!("an explicit runner capability admits the run"));
+    assert_eq!(admitted.capability(), &runner);
+    // An admitted run is a build-host fact, so it becomes a recorded build input
+    // under a name derived from the declared capability, and a recording that is
+    // not a digest is rejected rather than repaired.
+    assert!(matches!(
+        admitted.record("not-a-digest"),
+        Err(TargetError::BuildInputDigestInvalid { value }) if value.as_ref() == "not-a-digest"
+    ));
+    let run = admitted
+        .record(&hex("run"))
+        .unwrap_or_else(|_| unreachable!("fixture run digest is lowercase hexadecimal"));
+    assert_eq!(run.name.as_ref(), runner.recorded_name().as_str());
+    let record = BuildInputRecord::new(&declaring, std::slice::from_ref(&run))
+        .unwrap_or_else(|_| unreachable!("fixture recorded input is well formed"));
+    assert_eq!(record.len(), 1);
+    assert_eq!(record.digest_of(&runner.recorded_name()), Some(&run.digest));
+}
+
+#[test]
+fn build_input_record_digest_changes_with_a_recorded_input_and_is_order_independent() {
+    let declaring = declaring();
+    let toolchain_input = BuildInput::new(&declaring, "toolchain", &hex("toolchain-input"))
+        .unwrap_or_else(|_| unreachable!("fixture build input is well formed"));
+    let schema_input = BuildInput::new(&declaring, "generated-schema", &hex("schema-input"))
+        .unwrap_or_else(|_| unreachable!("fixture build input is well formed"));
+    let run_input = BuildInput::new(
+        &declaring,
+        "runner-capability:run-produced-executable",
+        &hex("run-input"),
+    )
+    .unwrap_or_else(|_| unreachable!("fixture build input is well formed"));
+    let entries = vec![
+        toolchain_input.clone(),
+        schema_input.clone(),
+        run_input.clone(),
+    ];
+    let record = BuildInputRecord::new(&declaring, &entries)
+        .unwrap_or_else(|_| unreachable!("fixture recorded inputs are well formed"));
+    assert_eq!(record.len(), entries.len());
+    // The entries are held in canonical order, so the record is a function of the
+    // recorded set and not of the recording order.
+    assert!(record.entries().windows(2).all(|pair| pair[0] < pair[1]));
+    let mut reversed = entries.clone();
+    reversed.reverse();
+    let permuted = BuildInputRecord::new(&declaring, &reversed)
+        .unwrap_or_else(|_| unreachable!("a permutation records no new pair"));
+    assert_eq!(permuted.entries(), record.entries());
+    assert_eq!(permuted.canonical_bytes(), record.canonical_bytes());
+    assert_eq!(permuted.digest(), record.digest());
+    let mut rotated = entries.clone();
+    rotated.rotate_left(1);
+    let permuted = BuildInputRecord::new(&declaring, &rotated)
+        .unwrap_or_else(|_| unreachable!("a rotation records no new pair"));
+    assert_eq!(permuted.digest(), record.digest());
+    // A recording repeated twice records nothing twice.
+    let mut repeated = entries.clone();
+    repeated.push(toolchain_input.clone());
+    let repeated = BuildInputRecord::new(&declaring, &repeated)
+        .unwrap_or_else(|_| unreachable!("a repeated recording records no new pair"));
+    assert_eq!(repeated.entries(), record.entries());
+    assert_eq!(repeated.digest(), record.digest());
+    // Changing one recorded input changes the canonical bytes and the digest.
+    let changed = BuildInputRecord::new(
+        &declaring,
+        &[
+            toolchain_input.clone(),
+            schema_input.clone(),
+            BuildInput::new(
+                &declaring,
+                "runner-capability:run-produced-executable",
+                &hex("other-run-input"),
+            )
+            .unwrap_or_else(|_| unreachable!("fixture build input is well formed")),
+        ],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture recorded inputs are well formed"));
+    assert_ne!(changed.canonical_bytes(), record.canonical_bytes());
+    assert_ne!(changed.digest(), record.digest());
+    assert_eq!(
+        changed.digest_of("generated-schema"),
+        Some(&schema_input.digest)
+    );
+    // The record digest round-trips as one lowercase hexadecimal spelling.
+    assert_eq!(record.digest().as_str().len(), 64);
+    assert_eq!(
+        BuildInputRecordDigest::from_hex(record.digest().as_str()),
+        Ok(record.digest())
+    );
+    assert_eq!(
+        BuildInputDigest::from_hex(toolchain_input.digest.as_str()),
+        Ok(toolchain_input.digest.clone())
+    );
+    assert!(matches!(
+        BuildInputRecordDigest::from_hex("not-a-digest"),
+        Err(TargetError::BuildInputRecordDigestInvalid { value })
+            if value.as_ref() == "not-a-digest"
+    ));
+    // A name outside the declared vocabulary and a digest that is not lowercase
+    // hexadecimal are rejected rather than dropped, and an uppercase spelling is
+    // not repaired.
+    assert!(matches!(
+        BuildInput::new(&declaring, "", &hex("empty-name")),
+        Err(TargetError::BuildInputNameInvalid { instance, value })
+            if *instance == declaring && value.as_ref().is_empty()
+    ));
+    assert!(matches!(
+        BuildInput::new(&declaring, "toolchain", "not-a-digest"),
+        Err(TargetError::BuildInputDigestInvalid { value })
+            if value.as_ref() == "not-a-digest"
+    ));
+    assert!(matches!(
+        BuildInput::new(&declaring, "toolchain", &"0123456789ABCDEF".repeat(4)),
+        Err(TargetError::BuildInputDigestInvalid { .. })
+    ));
+    // The declaring instance is not an input of the encoding or of the digest.
+    let elsewhere = BuildInputRecord::new(&root("other"), &entries)
+        .unwrap_or_else(|_| unreachable!("fixture recorded inputs are well formed"));
+    assert_ne!(elsewhere.declaring(), record.declaring());
+    assert_eq!(elsewhere.canonical_bytes(), record.canonical_bytes());
+    assert_eq!(elsewhere.digest(), record.digest());
+}
+
+#[test]
+fn build_host_authority_is_never_execution_target_authority() {
+    let declaring = declaring();
+    // The closed build-host capability vocabulary and the execution-target
+    // authority vocabulary of this crate are disjoint: no build-host capability is
+    // an execution-target authority right and no authority right is a build-host
+    // capability, so neither vocabulary can be spelled through the other.
+    for capability in BuildHostCapability::ALL {
+        assert_eq!(capability.as_str(), capability.wire_name());
+        assert_eq!(
+            AuthorityRight::from_wire_name(capability.wire_name()),
+            None,
+            "`{}` is a build-host capability, not an execution-target authority right",
+            capability.wire_name()
+        );
+    }
+    for right in AUTHORITY_RIGHT_ORDER {
+        assert_eq!(
+            BuildHostCapability::from_wire_name(right.wire_name()),
+            None,
+            "`{}` is an execution-target authority right, not a build-host capability",
+            right.wire_name()
+        );
+    }
+    // The explicit runner capability is deliberately neither vocabulary.
+    let runner = RunnerCapability::new(&declaring, "run-produced-executable")
+        .unwrap_or_else(|_| unreachable!("fixture runner name is a legal declared name"));
+    assert_eq!(BuildHostCapability::from_wire_name(runner.name()), None);
+    assert_eq!(AuthorityRight::from_wire_name(runner.name()), None);
+
+    // No conversion exists by construction: there is no `From`, `Into`, or
+    // `as_target`-style bridge between a `BuildHostAuthority` and an
+    // execution-target descriptor, its facts record, or an artifact binding, and
+    // no such value is an input of the authority's canonical bytes or digest. Two
+    // different descriptors therefore yield the same build-host digest for the
+    // same declared authority and the same recorded build inputs.
+    let x86 = descriptor();
+    let arm = descriptor_with(
+        Architecture::Aarch64,
+        OperatingSystemFamily::Linux,
+        AbiEnvironment::Gnu,
+        "2026",
+        stdlib(1, 0),
+        gantry::mode::SemanticMode::Portable,
+    );
+    assert_ne!(x86.digest(), arm.digest());
+    let under_x86 = BuildHostAuthority::new(
+        &declaring,
+        &[BuildHostCapability::ReadDeclaredSources],
+        &["declared-sources"],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture authority declares closed vocabulary members"));
+    let under_arm = BuildHostAuthority::new(
+        &declaring,
+        &[BuildHostCapability::ReadDeclaredSources],
+        &["declared-sources"],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture authority declares closed vocabulary members"));
+    assert_eq!(under_x86.canonical_bytes(), under_arm.canonical_bytes());
+    assert_eq!(under_x86.digest(), under_arm.digest());
+    let encoded = String::from_utf8_lossy(under_x86.canonical_bytes()).into_owned();
+    assert!(!encoded.contains(x86.digest().as_str()));
+    assert!(!encoded.contains(arm.digest().as_str()));
+    assert_eq!(
+        BuildHostAuthorityDigest::from_hex(under_x86.digest().as_str()),
+        Ok(under_x86.digest())
+    );
+    assert!(matches!(
+        BuildHostAuthorityDigest::from_hex("not-a-digest"),
+        Err(TargetError::BuildHostAuthorityDigestInvalid { value })
+            if value.as_ref() == "not-a-digest"
+    ));
+
+    // The two descriptors do differ in the records that *are* target identity:
+    // one feature solution composes two different target-facts records over them.
+    let shared = solution(&["c"]);
+    let facts_x86 = TargetFactsRecord::for_selection(&x86, &shared)
+        .unwrap_or_else(|_| unreachable!("fixture selection names its version"));
+    let facts_arm = TargetFactsRecord::for_selection(&arm, &shared)
+        .unwrap_or_else(|_| unreachable!("fixture selection names its version"));
+    assert_ne!(facts_x86.digest(), facts_arm.digest());
+    assert_ne!(under_x86.digest().as_str(), facts_x86.digest().as_str());
+    assert_eq!(under_x86.digest(), under_arm.digest());
+}
+
+#[test]
+fn a_build_host_authority_outside_the_closed_vocabulary_is_rejected_not_ignored() {
+    let declaring = declaring();
+    // A capability spelling outside the closed build-host vocabulary is an error
+    // rather than an extension point, and an authority right is never accepted as
+    // a build-host capability.
+    assert_eq!(
+        BuildHostCapability::from_wire_name("invoke-declared-toolchainset"),
+        None
+    );
+    assert_eq!(
+        BuildHostCapability::from_wire_name("InvokeDeclaredToolchain"),
+        None
+    );
+    assert!(matches!(
+        BuildHostAuthority::decode(&declaring, &["read-declared-sources", "observe"], &[]),
+        Err(TargetError::BuildHostCapabilityUnknown { instance, value })
+            if *instance == declaring && value.as_ref() == "observe"
+    ));
+    // A rejected capability is reported rather than dropped from a longer list.
+    assert!(matches!(
+        BuildHostAuthority::decode(
+            &declaring,
+            &["read-declared-sources", "run-produced-executable"],
+            &[]
+        ),
+        Err(TargetError::BuildHostCapabilityUnknown { instance, value })
+            if *instance == declaring && value.as_ref() == "run-produced-executable"
+    ));
+    // A declared data name outside the declared-name vocabulary is rejected too,
+    // for the wire constructor, the declaration constructor, and the runner
+    // capability alike, rather than being ignored.
+    assert!(matches!(
+        BuildHostAuthority::decode(&declaring, &["read-declared-sources"], &[""]),
+        Err(TargetError::BuildHostDataNameInvalid { instance, value })
+            if *instance == declaring && value.as_ref().is_empty()
+    ));
+    assert!(matches!(
+        BuildHostAuthority::decode(&declaring, &["read-declared-sources"], &["bad\u{7}name"]),
+        Err(TargetError::BuildHostDataNameInvalid { instance, value })
+            if *instance == declaring && value.as_ref() == "bad\u{7}name"
+    ));
+    assert!(matches!(
+        BuildHostAuthority::new(
+            &declaring,
+            &[BuildHostCapability::ReadDeclaredSources],
+            &["declared-sources", ""]
+        ),
+        Err(TargetError::BuildHostDataNameInvalid { instance, value })
+            if *instance == declaring && value.as_ref().is_empty()
+    ));
+    assert!(matches!(
+        RunnerCapability::new(&declaring, ""),
+        Err(TargetError::BuildHostDataNameInvalid { instance, value })
+            if *instance == declaring && value.as_ref().is_empty()
+    ));
+    assert!(matches!(
+        RunnerCapability::new(&declaring, "bad\u{7}name"),
+        Err(TargetError::BuildHostDataNameInvalid { .. })
+    ));
+
+    // Every closed member round-trips under its exact spelling, and an accepted
+    // authority keeps exactly the declared members in vocabulary order with the
+    // declared data names in canonical order.
+    for capability in BuildHostCapability::ALL {
+        assert_eq!(
+            BuildHostCapability::from_wire_name(capability.wire_name()),
+            Some(capability)
+        );
+    }
+    let authority = BuildHostAuthority::decode(
+        &declaring,
+        &[
+            "write-declared-outputs",
+            "read-declared-sources",
+            "read-declared-sources",
+        ],
+        &["declared-sources", "declared-inputs", "declared-sources"],
+    )
+    .unwrap_or_else(|_| unreachable!("fixture spellings are closed members"));
+    assert_eq!(
+        authority.capabilities(),
+        &[
+            BuildHostCapability::ReadDeclaredSources,
+            BuildHostCapability::WriteDeclaredOutputs
+        ][..]
+    );
+    assert_eq!(
+        authority
+            .data()
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>(),
+        ["declared-inputs", "declared-sources"]
+    );
+    assert!(!authority.is_empty());
+    assert!(!authority.grants(BuildHostCapability::RecordBuildInputs));
+    // No build-host authority is granted by a target fact: the empty declaration
+    // stays empty and is spelled by its own canonical bytes.
+    let none = BuildHostAuthority::new(&declaring, &[], &[])
+        .unwrap_or_else(|_| unreachable!("no declaration declares no rejected name"));
+    assert!(none.is_empty());
+    assert_eq!(
+        none.canonical_bytes(),
+        br#"{"build_host_capabilities":[],"build_host_data":[],"version_of_record":1}"#
+    );
+}
+
+#[test]
+fn one_declared_target_set_over_two_descriptors_produces_distinct_target_identity() {
+    use gantry::mode::SemanticMode::Portable;
+
+    let declaring = declaring();
+    // One declared target set, one declared entry point, and one feature solution
+    // are shared by both descriptors: only the descriptor differs.
+    let entry = CanonicalPath::new("crate::main")
+        .unwrap_or_else(|_| unreachable!("fixture entry point is canonical"));
+    let targets = TargetSet::new(&[
+        TargetDescriptor::new(
+            TargetKind::Binary,
+            "app-x86-64",
+            std::slice::from_ref(&entry),
+        )
+        .unwrap_or_else(|_| unreachable!("a binary declares exactly one entry point")),
+        TargetDescriptor::new(
+            TargetKind::Binary,
+            "app-aarch64",
+            std::slice::from_ref(&entry),
+        )
+        .unwrap_or_else(|_| unreachable!("a binary declares exactly one entry point")),
+    ])
+    .unwrap_or_else(|_| unreachable!("fixture target names are distinct"));
+    assert_eq!(targets.targets().len(), 2);
+    assert!(targets.has_shipping_target());
+    let x86 = descriptor();
+    let arm = descriptor_with(
+        Architecture::Aarch64,
+        OperatingSystemFamily::Linux,
+        AbiEnvironment::Gnu,
+        "2026",
+        stdlib(1, 0),
+        Portable,
+    );
+    let shared = solution(&["c"]);
+
+    // Two descriptors over the one declared target set have different normalized
+    // descriptor digests, and the same feature solution composes two different
+    // target-facts records over them.
+    assert_ne!(x86.digest(), arm.digest());
+    let facts = [
+        TargetFactsRecord::for_selection(&x86, &shared)
+            .unwrap_or_else(|_| unreachable!("fixture selection names its version")),
+        TargetFactsRecord::for_selection(&arm, &shared)
+            .unwrap_or_else(|_| unreachable!("fixture selection names its version")),
+    ];
+    assert_ne!(facts[0].canonical_bytes(), facts[1].canonical_bytes());
+    assert_ne!(facts[0].digest(), facts[1].digest());
+    assert_eq!(facts[0].descriptor_digest(), &x86.digest());
+    assert_eq!(facts[1].descriptor_digest(), &arm.digest());
+    assert_eq!(facts[0].feature_solution_digest(), shared.digest());
+    assert_eq!(facts[1].feature_solution_digest(), shared.digest());
+
+    // One artifact per descriptor: the same declared feature solution, the same
+    // declared outputs, and the same toolchain identity produce two different
+    // bindings, so one target is never silently substituted for the other.
+    let binding_of = |descriptor: &ExecutionTargetDescriptor| {
+        ExpectedInputs::new(
+            &declaring,
+            TargetKind::Binary,
+            descriptor.clone(),
+            shared.clone(),
+            &predicates(),
+            outputs("out"),
+            toolchain(),
+            Portable,
+        )
+        .unwrap_or_else(|_| unreachable!("fixture inputs name an admitted mode"))
+        .bind()
+        .unwrap_or_else(|_| unreachable!("fixture binding is well formed"))
+    };
+    let x86_binding = binding_of(&x86);
+    let arm_binding = binding_of(&arm);
+    assert_eq!(x86_binding.descriptor_digest(), &x86.digest());
+    assert_eq!(arm_binding.descriptor_digest(), &arm.digest());
+    assert_ne!(x86_binding.canonical_bytes(), arm_binding.canonical_bytes());
+    assert_ne!(x86_binding.digest(), arm_binding.digest());
+    // Binding the same descriptor twice reproduces one identity, so the
+    // difference above is the target rather than the order of binding.
+    assert_eq!(binding_of(&x86).digest(), x86_binding.digest());
+
+    // Both artifacts belong to the one declared target set: each declared binary
+    // target names exactly the shared shipping entry point, and neither target
+    // replaces the other.
+    for name in ["app-x86-64", "app-aarch64"] {
+        let declared = targets
+            .targets()
+            .iter()
+            .find(|target| target.name() == name)
+            .unwrap_or_else(|| unreachable!("the declared target set declares `{name}`"));
+        assert_eq!(declared.kind(), TargetKind::Binary);
+        assert_eq!(declared.entry_points(), std::slice::from_ref(&entry));
+    }
 }
