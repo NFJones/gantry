@@ -1,6 +1,6 @@
 {
  "format": "gantry.journal-storage-evidence/v1",
- "specification_sha256": "3cf15c798bc1fa869dd92471fb63520f3360ec06145f4b60ea9ac8564e739a4b",
+ "specification_sha256": "b7b42e3621dc9f90d60f3061548839b25c777bd91af06cb854612676a686d404",
  "issue": "GNT-DUR-001",
  "capabilities": [
   {

@@ -13669,3 +13669,570 @@ or an evidence item MUST NOT be read as promising a limit outside it, a non-clai
 NOT be presented as a guarantee, and an implementation MUST NOT report a clause of this
 section as satisfied, partially satisfied, or conditionally satisfied where it can only
 demonstrate one of these limits.
+
+## 26. Bounded Untrusted Compilation and Cache Semantics
+
+<a id="GNT-26.0-bounded-untrusted-compilation-and-cache-semantics"></a>
+
+**[GNT-26.0-bounded-untrusted-compilation-and-cache-semantics] Bounded untrusted
+compilation and cache semantics.** This section defines how one compilation activity
+declares the untrusted inputs it observes, how the stages of a toolchain and the units
+that bound them are named by closed vocabularies, how every stage that runs is governed
+by one declared finite positive limit per unit it charges and is cut off fail-closed
+before it can retain partial semantics or partial authority, how structural expansion is
+bounded by interning canonical keys rather than by native stack or by memory exhaustion,
+how completion evidence and atomic publication keep a cut-off run from publishing
+anything, how cancellation settles once with one typed settlement, how an artifact
+loader validates version, structure, limits, digest, and referenced identities before any
+precomputed fact is trusted, how cache identity, validation, poisoning, and replacement
+keep one poisoned entry from being reused, how a clean build and an incremental build
+publish byte-identical canonical artifacts, how obsolete editor work is fenced from
+publishing stale facts, how generators are confined to declared host capabilities and
+declared inputs and outputs whose hashes enter the lockfile and artifact identity, how
+toolchain identity content is owned here, and the explicit non-claims of the section. It
+cites and extends, rather than replaces, the landed frontend and generic-analysis
+resource limits of `GNT-4.17-frontend-resource-limits` and
+`GNT-4.17-generic-analysis-limits` together with the landed `FrontendLimits` counters
+that carry them, the machine-usable bounded diagnostics of `GNT-12.11` and
+`GNT-12.11-generic-diagnostics`, the compatibility classes of `GNT-11.6` and
+`GNT-11.6-compatibility-classes`, the package-source manifest of `GNT-11.6` and
+`GNT-11.6-package-source-manifest`, the build-host authority and artifact binding of
+`GNT-17.9-build-host-authority` and `GNT-17.11-target-artifact-binding`, the cancellation
+and shutdown contracts of `GNT-10.12`, `GNT-10.13`, and `GNT-10.14` as extended by
+Section 22, the durable contracts of `GNT-11.*`, and the required embedding interfaces of
+`GNT-15.*`.
+
+The closed vocabulary of this section is exactly the following terms. A clause here MUST
+NOT use a toolchain term outside this vocabulary, and a term listed below MUST NOT be
+given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| compilation activity | One bounded attempt to turn one declared input inventory into published artifacts under one toolchain budget. |
+| untrusted input | One declared input of one compilation activity, drawn from the closed kind vocabulary of `GNT-26.1-untrusted-input-inventory`. |
+| input inventory | The exact declared set of untrusted inputs one compilation activity observes, with one declared digest per input. |
+| stage | One named unit of compilation work drawn from the closed stage vocabulary of `GNT-26.2-stage-and-unit-vocabulary`. |
+| budget unit | One named dimension of charged work drawn from the closed unit vocabulary of `GNT-26.2-stage-and-unit-vocabulary`. |
+| stage budget | The declared finite positive limit of one stage for each unit that stage charges. |
+| toolchain budget | One declared limits revision together with the stage budgets that belong to it. |
+| budget observation | The declared record of one charge against one stage, unit, limit, and observed count. |
+| cutoff | One fail-closed end of one stage, naming one budget observation and one closed cutoff reason. |
+| stage run | One affine, unclonable run of one stage under one admitted stage budget. |
+| completion evidence | The affine witness that one stage run finished within its declared budget, and the only key to publication. |
+| sealed artifact | One published artifact whose only constructor requires completion evidence. |
+| sealed authority closure | One published authority closure whose only constructor requires completion evidence. |
+| cancellation settlement | One typed settlement of one cancellation request at one stage. |
+| artifact loader | The check that validates version, structure, limits, digest, and referenced identities before a precomputed fact is trusted. |
+| cache key | The canonical digest over the declared identity inputs one cache entry is valid for. |
+| cache validation | One closed reuse verdict for one cache entry. |
+| poisoning latch | The irreversible mark that refuses every reuse of one cache entry until it is replaced under a new key. |
+| canonical output | One build's artifact digest, authority-closure digest, and per-stage digests in canonical order. |
+| editor generation | The declared monotone generation under which one editor session may publish facts. |
+| generator grant | The declared host capabilities, inputs, and outputs one generator invocation receives. |
+| toolchain identity | The versioned canonical digest over sorted component digests, the limits revision, and the target descriptor digest. |
+| compilation non-claim | One published limit of `GNT-26.14-compilation-non-claims`. |
+
+**Applicability.** The clauses of this section govern an edition or profile that compiles
+packages under declared budgets and reuses compiled artifacts. The landed v1 frontend and
+analyzer already decide some of these clauses, and those clauses MUST be recorded under
+this section rather than exempted from it: the resource-bound stage charges of
+`GNT-26.3-finite-stage-budgets-and-fail-closed-cutoff` over the landed `FrontendLimits`
+counters, which the landed `maximum_source_tokens`, `maximum_diagnostics_per_activity`,
+`maximum_package_source_manifest_bytes`, `maximum_canonical_ir_bytes`,
+`maximum_source_map_bytes`, `maximum_generated_schema_bytes`,
+`maximum_constructed_type_depth`, `maximum_generic_instantiations_per_activity`, and
+`maximum_trait_resolution_steps_per_activity` fields already bound; the bounded,
+machine-usable diagnostics of `GNT-12.11` that `GNT-26.14-compilation-non-claims` cites
+and that `GNT-26.7-artifact-loader-validation` keeps machine-readable on refusal; and the
+structural depth, interning, and memoization bounds of
+`GNT-26.4-structural-expansion-bounds`, which the landed constructed-type-depth and
+instantiation counters already charge. Those clauses are recorded `covered` for the
+analyzer profile with the pure-model lane
+`crates/gantry-conformance/tests/toolchain_bounded.rs` as evidence, exactly as Section 25
+records its own rows `covered` for the analyzer profile with its pure-model lane, because
+a pure model decides their declared obligations without a host, a clock, or an
+environment.
+
+The remaining clauses are profile-gated for the runtime facilities they claim:
+package resolution with retained caches, sandboxed generators under declared build-
+host authority, editor services, the linking, optimization, documentation, and
+generation-ingestion stages, and authority-closure publication. An implementation
+that claims one of those facilities MUST record the facility-specific obligations
+it does not provide as profile-based `not-applicable` justifications in the sense of
+Sections 2 and 15, and MUST NOT report one of them as satisfied, partially
+satisfied, conditionally satisfied, or satisfied for a subset of its rules; an
+implementation that provides none of them owes no such justification, because the
+analyzer profile claims no such facility. The declared semantics this section fixes
+are decided by the landed pure model and its lane and are recorded `covered` for the
+analyzer profile, as Section 25 does: budget vocabulary and fail-closed
+cutoff, structural bounds, sealing from completion evidence, cancellation settlement,
+loader validation, cache identity and the poison latch, validated reuse,
+clean/incremental equivalence, editor generation fencing, generator confinement, and
+toolchain identity composition.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the frontend
+and generic-analysis resource limits, their exact `frontend-resource-limit` codes, their
+checked arithmetic, and their activity-policy status under
+`GNT-4.17-frontend-resource-limits` and `GNT-4.17-generic-analysis-limits`; the
+diagnostic categories, severities, spans, and reserved codes of `GNT-12.11` and
+`GNT-12.11-generic-diagnostics`; the compatibility classes of `GNT-11.6` and
+`GNT-11.6-compatibility-classes`; the package-source manifest of `GNT-11.6` and
+`GNT-11.6-package-source-manifest`; build-host authority, descriptor normalization,
+feature unification, target resolution, artifact binding, and the opaque toolchain
+identity field of `GNT-17.9-build-host-authority` and `GNT-17.11-target-artifact-binding`;
+the shutdown, unclean-drop, and cancellation contracts of `GNT-10.12`, `GNT-10.13`, and
+`GNT-10.14` and their Section 22 extensions; and the durable cut, resume, and protection
+contracts of `GNT-11.*` and `GNT-15.*`. Nothing here introduces a host budget as
+semantics: a stage budget is declared policy over a compilation activity and never a
+durable execution identity, and no resident-memory, allocator-byte, CPU-step, wall-clock,
+or stack reading is a unit of this section. Nothing here admits a cutoff that publishes: a
+cutoff settles one stage fail-closed and publishes no artifact, no authority closure, and
+no cache entry, as stated by `GNT-26.3-finite-stage-budgets-and-fail-closed-cutoff` and
+`GNT-26.5-completion-evidence-and-atomic-publication`. Nothing here admits cycle
+detection by exhaustion: a structural cycle is decided from interned canonical keys,
+never from a native call stack, an allocation failure, a timeout, or a memory reading, as
+stated by `GNT-26.4-structural-expansion-bounds`. Nothing here grants authority:
+completion evidence admits publication and never grants a capability, and every authority
+closure remains subject to the landed capability contracts of `GNT-3-T-AUTHORITY-*` and
+Section 19. Nothing here trusts a precomputed fact: a cache entry and a loaded artifact
+are trusted only after the declared checks of `GNT-26.7-artifact-loader-validation` and
+`GNT-26.9-cache-validation-and-poisoning`, and an unvalidated fact is never substituted
+for a computed one. Nothing here redefines the toolchain identity field of
+`GNT-17.11-target-artifact-binding`: that clause binds the identity opaquely and
+`GNT-26.13-toolchain-identity` owns its content, so the content is a declared
+cross-reference and never a replacement of that binding. Every identity of this section
+is derived from declared fields, and no process identifier, thread identity, clock
+reading, host path, environment fact, locale, installed-program name, socket, network
+address, or adapter handle enters one. Every obligation of this section is decided by an
+explicit check over declared values.
+
+<a id="GNT-26.1-untrusted-input-inventory"></a>
+
+**[GNT-26.1-untrusted-input-inventory] Untrusted input inventory.** Every input one
+compilation activity observes is declared before the activity runs, and the declaration
+is an inventory of untrusted inputs drawn from a closed kind vocabulary: source text, a
+package-source manifest, a lockfile, a feature selection, a target descriptor, a
+dependency interface or artifact, a generator output, a cache entry, editor work, and
+toolchain configuration. Each declared input carries one declared digest of the exact
+bytes or declared values it names, and two inputs of one kind that name the same declared
+identity are one declared input rather than two. An inventory MUST declare at least one
+input, MUST list its inputs in canonical order, MUST NOT declare one kind twice under one
+declared identity, and MUST refuse an input whose kind is outside the closed vocabulary.
+
+The inventory is total over what the activity observes. An input that is not declared is
+never read, and a compilation activity MUST NOT read a host path, an environment fact, a
+locale, a clock reading, an installed-program name, a discovered service, or a network
+address merely because it is reachable. A presented input whose declared digest differs
+from the digest the activity observes is refused rather than substituted, so a stale or
+foreign input never enters the activity under a declared identity it does not have.
+
+The inventory digest is derived from the declared kinds, identities, and digests alone,
+so equal declared inventories produce equal digests and two activities that differ in any
+declared input have distinct inventory digests. The inventory digest participates in
+artifact identity as the declared untrusted-input fact of the activity, and it is never
+derived from the order in which an implementation happened to discover its inputs.
+
+<a id="GNT-26.2-stage-and-unit-vocabulary"></a>
+
+**[GNT-26.2-stage-and-unit-vocabulary] Stage and unit vocabulary.** The stages of
+compilation are exactly parse, name-resolution, type-effect-checking, trait-solving,
+generic-instantiation, schema-construction, authority-closure, linking, optimization,
+documentation, diagnostic-rendering, generation-ingestion, cache-validation, and
+editor-indexing. There is no fifteenth stage, and an implementation MUST refuse a stage
+name outside this vocabulary rather than treat it as an extension point. The units in
+which stage work is charged are exactly depth, count, bytes, work, and memory. There is no
+sixth unit, and a charge that names a unit outside this vocabulary is refused rather than
+approximated by another unit.
+
+Each stage declares exactly the units it charges, and a stage MUST NOT charge a unit its
+declaration does not name. Parsing charges depth, count, bytes, and work;
+name-resolution charges depth, count, and work; type-and-effect checking charges depth,
+count, work, and memory; trait solving charges depth, count, and work; generic
+instantiation charges depth, count, work, and memory; schema construction charges depth,
+count, bytes, and work; authority closure charges count, work, and memory; linking
+charges count, bytes, work, and memory; optimization charges depth, count, work, and
+memory; documentation charges count, bytes, and work; diagnostic rendering charges count
+and bytes; generation ingestion charges count, bytes, and work; cache validation charges
+count, bytes, and work; and editor indexing charges depth, count, and work. A stage
+declaration that names a unit outside this table is refused rather than charged anyway.
+
+A stage and a unit are portable spellings, not local labels. Two activities that name the
+same stage charge the same work, and a display name, a log label, a progress label, a
+process name, or an implementation-private phase name is never a stage identity of this
+section. Bounding a stage never narrows the landed meaning of the analysis that stage
+performs.
+
+<a id="GNT-26.3-finite-stage-budgets-and-fail-closed-cutoff"></a>
+
+**[GNT-26.3-finite-stage-budgets-and-fail-closed-cutoff] Finite stage budgets and
+fail-closed cutoff.** One toolchain budget declares one limits revision and one stage
+budget per stage that may run. A stage budget declares a finite positive limit for every
+unit its stage charges, and it MUST NOT declare a limit outside that set. An absent limit,
+a zero limit, a duplicate unit, a noncanonical unit order, an empty stage budget, a
+duplicate stage budget, a noncanonical stage order, and a zero limits revision are each
+refused before any stage runs, because a stage whose bound is not declared has no bound,
+and an unbounded or zero-bounded stage is not admitted by this section. Every declared
+limit is no greater than `2^63 - 1`, so no limit arithmetic wraps.
+
+A stage runs at most once per activity under one admitted stage budget. The run charges a
+unit by observing a count and comparing it with the declared limit before the work or the
+output it would retain is retained. All charge arithmetic is checked and MUST NOT wrap. A
+charge that names a unit its stage does not charge is refused rather than charged to
+another unit, and a charge that stays within its declared limit leaves the run exactly as
+it was apart from the recorded charge.
+
+A charge that exceeds its declared limit ends the stage fail-closed as one cutoff. The
+cutoff names exactly one budget observation, which records the stage, the unit, the
+declared limit, and the observed count, and exactly one reason from the closed cutoff
+reason vocabulary: a declared-limit exceedance, a cancellation, or a structural cycle. A
+cutoff MUST NOT be reported for a charge that does not exceed its declared limit, and the
+first observed exceedance is the reported one: source order, module order, worker
+assignment, allocation strategy, and a cold or warm cache MUST NOT change which charge is
+reported first.
+
+A cutoff is fail-closed. It publishes no artifact, no authority closure, no cache entry,
+no generated output, and no diagnostic prefix beyond the retained prefix the landed
+`maximum_diagnostics_per_activity` contract of `GNT-4.17-frontend-resource-limits`
+already fixes, and it retains no partial semantics, no partial type or effect fact, no
+partial trait solution, no partial instantiation, no partial schema, and no partial
+authority closure that later work could observe. A cutoff MUST NOT be reported as a
+source-invalid judgment: exceeding a declared limit is the operational
+`frontend-resource-limit` result of `GNT-4.17-frontend-resource-limits` for a landed
+counter and an operational stage-budget failure of this section otherwise, and neither is
+evidence that the package is source-invalid. An earlier source diagnostic or an earlier
+resource-limit result MUST NOT be replaced by a later charge.
+
+Stage budgets are activity policy, not durable execution identity. Counters reset once at
+the start of each admitted activity and are shared by every stage of that activity;
+raising a limit may permit a later activity to decide the judgment, and MUST NOT change
+the meaning of the source both activities admit. A resume from retained canonical
+artifacts charges no source-analysis stage again, and a resume MUST NOT reparse retained
+source merely to reapply a different budget. These counters bound declared compilation
+work and are not allocator-byte, resident-memory, parser-stack, CPU-step, or wall-clock
+budgets; passing a stage budget is no claim that the stage is native-stack-safe, which
+remains the landed obligation of `GNT-4.17-frontend-resource-limits`.
+
+<a id="GNT-26.4-structural-expansion-bounds"></a>
+
+**[GNT-26.4-structural-expansion-bounds] Structural expansion bounds.** Every stage that
+expands a structure — a constructed type, a generic instantiation, a trait obligation and
+its candidate set, a schema node, a canonical artifact reference, and a dependency
+interface reference — is bounded by the depth and count limits it declares under
+`GNT-26.3-finite-stage-budgets-and-fail-closed-cutoff`, and by bytes, work, and memory
+where the stage declares them. Expansion MUST charge before it retains, and MUST refuse a
+node deeper than the declared maximum depth before retaining it rather than after
+observing it. The landed constructed-type-depth, generic-instantiation, and
+trait-resolution counters of `GNT-4.17-generic-analysis-limits` keep their landed units,
+codes, and charging points; this clause adds no charge to them and MUST NOT reinterpret
+one of them.
+
+Cycles are decided structurally. An expansion interns one canonical key per node on the
+current open expansion path, and the frontier reports exactly four outcomes for one
+interned key: the key is new on this path, the key was interned before and is closed and
+is therefore reused rather than re-expanded, the key is currently open and is therefore a
+structural cycle, or the key is deeper than the declared maximum depth and is therefore
+refused. A reused key is not charged again, so memoization cannot change which charge
+fails first. A repeated open key is a structural cycle and MUST NOT be reported as a
+depth exceedance, and a depth refusal MUST NOT be reported as a cycle.
+
+Structural cycles are never detected by exhaustion. A stage MUST NOT decide a cycle from a
+native call stack, a stack-overflow guard, an allocation failure, an out-of-memory
+condition, a deadline, a timeout, a thread stack size, or a count of host interrupts,
+because each of those readings is a host fact, is not reproducible from declared inputs,
+and can leave partial retained structure behind. A structural cycle and a depth refusal
+each end the stage as one cutoff under
+`GNT-26.3-finite-stage-budgets-and-fail-closed-cutoff` whose reason is the structural
+cycle reason or the declared-limit reason respectively, and each publishes nothing: after
+either, no expanded node, no partial instantiation, no partial obligation set, and no
+partial schema is observable, and a later stage MUST NOT resume from the discarded work.
+
+<a id="GNT-26.5-completion-evidence-and-atomic-publication"></a>
+
+**[GNT-26.5-completion-evidence-and-atomic-publication] Completion evidence and atomic
+publication.** A stage that finished within every declared limit of its admitted stage
+budget mints exactly one completion evidence value, and a stage that ended as a cutoff
+mints none. Completion evidence is affine: it is produced once, consumed once, and never
+duplicated, copied, replayed, or reconstructed from a name, a digest, a log entry, a
+progress observation, or a cutoff. Completion evidence names the stage that finished, the
+charges it observed, and the limits revision it ran under, and it is derived from those
+declared values alone.
+
+Publication requires completion evidence. The only constructors of a sealed artifact and
+of a sealed authority closure take completion evidence as an argument, so a run that was
+cut off cannot publish an artifact or an authority closure: the evidence value it would
+have to present does not exist for it, and the impossibility is structural rather than a
+runtime check an implementation could forget. An attempt to publish from a cutoff is
+refused with a typed refusal that names the missing completion evidence, and it publishes
+nothing. One completion evidence value seals exactly one published fact, so a second
+publication of one stage requires a second finished run rather than a reused witness.
+
+Publication is atomic. A published artifact and a published authority closure become
+observable only as complete values: a partially written artifact, a partially closed
+authority set, an artifact whose canonical encoding was interrupted by a cutoff or by a
+cancellation, and an artifact whose bytes exist without its identity are each
+unobservable, and none of them is a published fact of this section. An oversized artifact
+has no accepted artifact identity and its partial or complete digest MUST NOT be exposed
+as one, exactly as `GNT-4.17-frontend-resource-limits` already requires for the landed
+artifact byte limits. An authority closure is published only for the authority the
+activity actually admitted: completion evidence admits publication and grants no
+capability, and every closure remains subject to the landed capability, lineage,
+revocation, and admission contracts of `GNT-3-T-AUTHORITY-*` and Section 19.
+
+<a id="GNT-26.6-cancellation-settlement"></a>
+
+**[GNT-26.6-cancellation-settlement] Cancellation settlement.** A cancellation request
+against one compilation activity settles exactly once per stage, and the settlement is
+one value drawn from a closed settlement vocabulary: the stage had not started, so
+cancellation settled without running stage work; the stage was running, so the run
+settled at one observation as a cancellation cutoff; or the stage had already finished
+within its declared budget, so cancellation changed nothing and the finished stage keeps
+its completion evidence. A settlement that names a stage outside the activity, a second
+settlement of one stage, and a settlement that reports a cutoff for a stage that finished
+are each refused rather than merged, and a cancellation MUST NOT be reported as a
+declared-limit exceedance or as a structural cycle.
+
+A cancellation settlement publishes nothing. It mints no completion evidence for the
+work it discards, so a cancelled stage cannot seal an artifact or an authority closure,
+and no partial semantics, partial instantiation, partial schema, partial authority
+closure, and no cache entry from the discarded run become observable. A cancellation that
+arrives after a stage published does not withdraw the publication; a cancellation that
+arrives before a stage published leaves the published set exactly as it was. Cancellation
+of one execution MUST NOT cancel unrelated executions owned by the same interpreter, and
+this clause inherits, rather than restates, the shutdown, unclean-drop, execution
+cancellation, drain, abortion, and terminal-precedence contracts of `GNT-10.12`,
+`GNT-10.13`, and `GNT-10.14` and their Section 22 extensions. This section adds no
+cancellation category, no cancellation precedence rule, and no durable cancellation
+record; the settled delivery of a cancellation remains the landed one.
+
+<a id="GNT-26.7-artifact-loader-validation"></a>
+
+**[GNT-26.7-artifact-loader-validation] Artifact loader validation.** A precomputed
+artifact is untrusted until a loader accepts it. One loader validates exactly six
+declared properties before any precomputed fact is trusted, in this order: the artifact
+version is the version the loader supports; the presented bytes decode as the declared
+canonical structure; the referenced identities are canonical, meaning strictly
+increasing and free of a duplicate; the artifact is within the declared byte limit; the
+presented digest equals the digest of the presented bytes; and every referenced identity
+is one the activity declared. A loader that must validate a version, a structure, a
+limit, a digest, or a reference it cannot decide MUST refuse rather than accept.
+
+Each refusal is typed and closed. The refusal reasons are exactly an unsupported version,
+a malformed structure, noncanonical references, an exceeded limit, a digest mismatch, and
+an unknown referenced identity, and each reason owns one code. Refusal reasons are never
+merged: an oversized artifact is not a malformed artifact, a digest mismatch is not an
+unknown reference, and an unsupported version is not a malformed structure. Each refusal
+names the loader check it failed and carries no precomputed fact of the refused artifact.
+
+A refusal yields no fact at all. A rejected artifact contributes no type, effect, schema,
+authority, or dependency fact to any later stage, MUST NOT be partially trusted,
+partially decoded, or repaired in place, and MUST NOT be substituted for a computed
+result. A refused artifact leaves the activity's published set, its cache, and its
+lockfile exactly as they were. Accepting an artifact yields exactly the facts the
+declared checks admitted, and a fact that the artifact does not carry is never inferred
+from the artifact's version, its name, or the identity of its producer.
+
+Loading is a separate stage from computing. `cache-validation` charges its own declared
+units, and a loader MUST NOT charge, reuse, or spend a computation stage's budget, so a
+load that is refused does not consume the limit of the stage that produced the artifact.
+
+<a id="GNT-26.8-cache-identity"></a>
+
+**[GNT-26.8-cache-identity] Cache identity.** One cache key is the canonical digest over
+exactly the declared identity inputs of the cached result: the source digest, the
+package-source manifest digest of `GNT-11.6-package-source-manifest`, the selected
+feature set, the target selection under `GNT-17.5-feature-unification` and
+`GNT-17.11-target-artifact-binding`, the interface digests of the dependencies the result
+was computed against, the toolchain identity of
+`GNT-26.13-toolchain-identity`, the limits revision of the toolchain budget, and the
+declared stage configuration. The input set is closed: a cache key that omits one of these
+inputs is refused rather than published under an incomplete identity, and a key that could
+be satisfied by two different declared input sets is not a cache key of this section.
+
+Derivation is canonical and total over declared values. Equal declared inputs produce
+equal cache keys, inputs that differ in any declared field produce distinct cache keys,
+and the feature set, the dependency interfaces, and the stage configuration are compared
+in canonical order so the order in which they were declared is never part of the key. The
+stage configuration is a declared value, so adding or removing a configured stage changes
+the key.
+
+A cache key MUST NOT be derived from a host path, a build directory, a machine name, a
+user name, a clock reading, a locale, an environment fact, a process identifier, a
+random value, a file modification time, or the order in which files were discovered. Two
+activities on two machines that declare the same inputs therefore derive the same key, and
+the key is the whole identity of a reusable result: a result reused under a key it was
+not computed for is a bug, not a heuristic miss, and `GNT-26.9-cache-validation-and-poisoning`
+decides whether the entry behind a key may be reused at all.
+
+<a id="GNT-26.9-cache-validation-and-poisoning"></a>
+
+**[GNT-26.9-cache-validation-and-poisoning] Cache validation and poisoning.** Reuse of
+one cache entry requires validation of that entry against the declared inputs of the
+reusing activity and against the declared cache limits, and validation is total and
+exclusive over a closed outcome vocabulary: valid, stale, malformed, oversized,
+digest-mismatch, and poisoned. Validation decides in one declared order: a poisoned entry
+is reported poisoned before any other outcome; a presented entry that does not decode as
+the declared canonical structure is malformed; an entry beyond the declared byte limit is
+oversized; a presented digest that differs from the digest of the presented bytes is a
+digest mismatch; an entry whose declared input digests, toolchain identity, or limits
+revision differ from the reusing activity's is stale; and an entry that passes every check
+is valid. A stale entry MUST NOT be repaired in place, an oversized entry MUST NOT be
+truncated and reused, and a digest mismatch MUST NOT be resolved by preferring either
+digest.
+
+Only a valid entry may be reused. Reuse of a stale, malformed, oversized,
+digest-mismatched, or poisoned entry is refused, and a refusal to reuse MUST NOT be
+reported as a hit, as a partial hit, or as a valid entry with a warning. Validation is a
+check on identity, structure, size, and digest; it is not a claim that the reused result
+is semantically valid, and a reused result carries the same declared facts a computed
+result of the same key would carry.
+
+Poisoning latches. An entry is poisoned when an activity discovers that its recorded
+facts, structure, authority, or digests are untrustworthy; the mark is irreversible for
+that entry, MUST NOT be cleared by a later successful validation, by a restart, by a
+partial rewrite, or by an elapsed period, and every later validation of that entry reports
+poisoned regardless of the other checks. A poisoned entry refuses reuse until it is
+replaced, and its replacement MUST be published under a key different from the poisoned
+key: replacing one entry under the same key it was poisoned under is refused, because the
+same declared identity inputs cannot be trusted again. Replacement publishes a new entry
+in one step, so a replacement is never observable in part, and the poisoned entry is never
+observable again after its replacement.
+
+<a id="GNT-26.10-clean-incremental-equivalence"></a>
+
+**[GNT-26.10-clean-incremental-equivalence] Clean and incremental equivalence.** A clean
+build and an incremental build that declare the same untrusted input inventory, the same
+toolchain identity, and the same limits revision MUST publish byte-identical canonical
+artifacts and byte-identical authority closures. Byte-identical means identical canonical
+encoding: the same artifact bytes, the same authority-closure bytes, and the same per-stage
+output digests, and the equality is decided over the canonical encodings and never over a
+display form, a log line, a file name, a file modification time, or an output position.
+
+Canonical output is order independent. The per-stage outputs of one build are compared in
+canonical stage order, so the order in which stages ran, the order in which cached and
+recomputed stages were mixed, the order in which the cache was consulted, and the number
+of stages served from a cache MUST NOT change the canonical output or its digest. Two
+builds whose stage outputs differ only in declaration order MUST be reported equal, and
+two builds that differ in any stage output MUST be reported unequal.
+
+A divergence is refused and named. When one clean build and one incremental build with the
+same declared inputs publish different canonical output, the divergence MUST be reported
+as a failure that names the first differing stage in canonical order together with both
+digests, MUST NOT be reported as equality with a warning, and MUST NOT be resolved by
+preferring the clean output, the incremental output, the newer output, or the larger
+output. An incremental build MAY reuse cached stages only for cache entries that
+`GNT-26.9-cache-validation-and-poisoning` reports valid, so a build that reused a stale,
+malformed, oversized, digest-mismatched, or poisoned entry and thereby diverged is
+refused rather than published.
+
+<a id="GNT-26.11-editor-work-fencing"></a>
+
+**[GNT-26.11-editor-work-fencing] Editor work fencing.** One editor session publishes
+analyzed facts under exactly one editor generation, and the generation is a declared
+monotone value: a session MUST have a generation, a superseded session produces its
+successor's generation and nothing else, and a generation MUST NOT decrease, be reused,
+or be reassigned to a different session. Publication of editor facts is admitted for the
+work of the session's own generation only.
+
+Obsolete editor work never publishes. Work whose generation is older than the session's
+generation is refused with a typed refusal that names the stale generation, work whose
+generation is newer than the session's generation is refused until it is admitted under
+its own session, and work that names no generation is refused. A superseded session cannot
+publish at all, because superseding consumes it: the obsolete session yields the
+successor session rather than retaining a capability to publish, so stale publication is
+unrepresentable rather than merely refused at runtime.
+
+A refusal publishes nothing and changes nothing: it installs no fact for any position, no
+diagnostic, no schema, and no partial update, and it MUST NOT be reported as a successful
+publication of an older or a partial result. Editor facts are never a durable execution
+identity, and a later compilation activity MUST NOT treat published editor facts as
+declared untrusted inputs unless the activity declares them in its input inventory under
+`GNT-26.1-untrusted-input-inventory`.
+
+<a id="GNT-26.12-generator-confinement"></a>
+
+**[GNT-26.12-generator-confinement] Generator confinement.** One generator invocation
+receives exactly one declared generator grant: declared build-host capabilities drawn from
+the closed build-host vocabulary of `GNT-17.9-build-host-authority`, declared inputs with
+one recorded digest per input, and declared outputs with one recorded hash per output. A
+generator MUST NOT receive a capability, an input, or an output its grant does not
+declare, an undeclared capability MUST NOT be exercised merely because the build host
+provides it, and an undeclared input MUST NOT be read and an undeclared output MUST NOT be
+written. A capability outside the closed build-host vocabulary is refused rather than
+widened into an ambient host capability.
+
+Ambient authority and execution-target authority are both refused. A generator never
+receives execution-target authority, under any spelling, because the build host and the
+execution target are strictly distinct under `GNT-17.9-build-host-authority`; there is no
+conversion from a build-host grant into target authority, execution rights, or a
+descriptor fact, and this section adds none. A build-host fact enters artifact identity
+only as a recorded build input: a host path, a machine name, a user name, a locale, an
+environment fact, a clock reading, a discovered service, and an installed-program name are
+never generator inputs and never enter artifact identity.
+
+Generator facts are hashed into identity. The declared input digests and the declared
+output hashes enter the lockfile and the artifact identity of `GNT-17.11-target-artifact-binding`,
+so a changed declared input, a changed declared output, an added declared input, and an
+added declared output each change artifact identity, and a generator invocation whose
+declared output is not the declared hash is refused rather than published. Running a
+produced executable during the build is never implied by the grant: it requires the
+explicit runner capability of `GNT-17.9-build-host-authority`, an absent one is refused
+rather than inferred from the build host or from a granted build-host capability, and an
+admitted run becomes one recorded build input that enters artifact identity.
+
+<a id="GNT-26.13-toolchain-identity"></a>
+
+**[GNT-26.13-toolchain-identity] Toolchain identity.** The content of the toolchain
+identity field that `GNT-17.11-target-artifact-binding` binds opaquely is owned here. One
+toolchain identity is a versioned canonical digest over exactly three declared inputs: the
+sorted set of one digest per declared toolchain component, the limits revision of the
+toolchain budget, and the target descriptor digest of
+`GNT-17.2-descriptor-normalization-and-target-facts`. The component set is closed over a
+declared component vocabulary that names at least the parser, the name resolver, the
+type-and-effect checker, the trait solver, the instantiator, the schema constructor,
+the linker, the optimizer, the documentation generator, the diagnostic renderer, the
+generation ingestor, and the cache validator; a component is declared at most once, a
+component set MUST NOT be empty, and a component digest MUST NOT be a display version, a
+release string, a package version, or a discovered executable path.
+
+The identity is total and injective over declared inputs. Equal declared component
+digests, equal limits revision, and an equal target descriptor digest produce an equal
+toolchain identity; changing any one component digest, the limits revision, or the target
+descriptor digest changes the identity; and the declared order of the components is never
+part of the identity. The identity carries its version, so a later content revision is a
+different version rather than a silent reinterpretation of one digest.
+
+The identity MUST NOT be derived from a host path, a build directory, a machine name, a
+user name, a locale, an environment fact, a clock reading, a process identifier, a random
+value, and no installed-toolchain discovery spelling, `--version` rendering, or program
+probe result is a component digest of this section. Because `GNT-17.11-target-artifact-binding`
+binds the identity and this clause owns its content, a change of content MUST change
+artifact identity, and an unrelated change of what a toolchain prints MUST NOT.
+
+<a id="GNT-26.14-compilation-non-claims"></a>
+
+**[GNT-26.14-compilation-non-claims] Explicit non-claims.** This section does not promise
+and MUST NOT be read as promising: that any activity terminates within any budget, because
+the section declares finite budgets and a fail-closed cutoff and makes no promise that any
+declared input set finishes inside them; detection of exhaustion it cannot safely report,
+because resident-memory, allocator, CPU-step, and wall-clock exhaustion remain the
+implementation-specific `implementation-resource-exhaustion` failure of
+`GNT-4.17-frontend-resource-limits` and are not a unit, a counter, or a cutoff reason of
+this section; semantic validity of a reused result beyond the declared checks, because
+`GNT-26.9-cache-validation-and-poisoning` decides identity, structure, size, and digest and
+claims nothing further; operating-system sandbox isolation of a generator, because
+`GNT-26.12-generator-confinement` confines a generator to declared capabilities, inputs,
+outputs, and hashes and claims no kernel, container, or process-isolation property;
+freshness or latency of editor facts, because `GNT-26.11-editor-work-fencing` fences
+publication by generation and declares no schedule, no clock, and no latency bound;
+byte-identical output across different toolchain identities or limits revisions, because
+`GNT-26.10-clean-incremental-equivalence` compares two builds only under the same declared
+inputs, toolchain identity, and limits revision; authority from completion evidence,
+because completion evidence admits publication and grants no capability and every closure
+remains subject to the landed authority contracts; and absence of malicious content in an
+accepted artifact, because `GNT-26.7-artifact-loader-validation` validates the declared
+version, structure, references, limit, and digest and claims no property the artifact does
+not carry. The non-claims are a closed vocabulary: a diagnostic, a clause, or an evidence
+item MUST NOT be read as promising a limit outside it, a non-claim MUST NOT be presented as
+a guarantee, and an implementation MUST NOT report a clause of this section as satisfied,
+partially satisfied, or conditionally satisfied where it can only demonstrate one of these
+limits.

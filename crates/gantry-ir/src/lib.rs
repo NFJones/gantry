@@ -33,6 +33,7 @@ mod schema;
 mod secret;
 mod signature;
 mod target;
+pub mod toolchain;
 mod type_expression;
 mod type_properties;
 mod types;
@@ -206,6 +207,28 @@ pub use target::{
     TargetDescriptorField, TargetDescriptorRecord, TargetDiagnosticCode, TargetError,
     TargetFactsDigest, TargetFactsRecord, TargetMatrix, TargetMatrixDigest, TargetMatrixEntry,
     TargetMatrixState, TargetPredicate, TargetPredicateName, ToolchainIdentity,
+};
+// The bounded untrusted compilation and cache model of SPEC.md Section 26 is published
+// here, except for its `ToolchainIdentity`, which the landed target model already
+// publishes under that exact name for the opaque field of
+// `GNT-17.11-target-artifact-binding`. The Section 26 identity owns the *content* of
+// that field, so it stays reachable as `gantry_ir::toolchain::ToolchainIdentity`, in the
+// same way the identifier model keeps its three shared names module-qualified.
+pub use toolchain::{
+    AdmittedGeneratorRun, ArtifactLoader, ArtifactRefusalReason, BudgetObservation, BudgetUnit,
+    COMPILATION_NON_CLAIM_ORDER, COMPILATION_NON_CLAIMS, CacheEntry, CacheKey, CacheKeyInputs,
+    CacheLimits, CacheObservation, CacheValidation, CancellationSettlement,
+    CancellationSettlementKind, CanonicalOutput, CompilationActivity, CompilationError,
+    CompilationNonClaim, CompilationNonClaimAssertion, CompletionEvidence, Cutoff, CutoffReason,
+    DeclaredDigest, DeclaredGeneratorInput, DeclaredGeneratorOutput, DeclaredRunnerCapability,
+    EditorSession, EditorWork, FrontierKey, FrontierKind, FrontierOutcome, GeneratorGrant,
+    GeneratorIdentityFold, LoadedArtifact, MAXIMUM_STAGE_LIMIT, PresentedArtifact, PublishedFacts,
+    RecordedBuildInput, SealedArtifact, SealedAuthorityClosure, StageBudget, StageConfiguration,
+    StageProgress, StageRun, StructuralFrontier, TOOLCHAIN_CLAUSES, ToolchainBudget,
+    ToolchainComponent, ToolchainComponentKind, ToolchainDiagnosticCode, ToolchainIdentityInputs,
+    ToolchainStage, UntrustedInput, UntrustedInputInventory, UntrustedInputKind, ValidatedReuse,
+    check_clean_incremental_equivalence, check_compilation_non_claims,
+    refuse_publication_after_cutoff,
 };
 pub use type_expression::{TypeExpression, TypeExpressionError};
 pub use type_properties::{

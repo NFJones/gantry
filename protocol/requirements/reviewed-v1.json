@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "3cf15c798bc1fa869dd92471fb63520f3360ec06145f4b60ea9ac8564e739a4b",
+ "specification_sha256": "b7b42e3621dc9f90d60f3061548839b25c777bd91af06cb854612676a686d404",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9494,
-   "end_line": 13671,
+   "end_line": 14238,
    "rationale": null
   }
  ],
@@ -34614,6 +34614,591 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/agent_spec.rs#agent_non_claims_are_closed_and_never_presented_as_guarantees"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.0-bounded-untrusted-compilation-and-cache-semantics",
+   "span_start_line": 13672,
+   "span_end_line": 13807,
+   "anchor_line": 13675,
+   "body_start_line": 13676,
+   "body_end_line": 13807,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13676,
+     "end_line": 13807,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#bounded_compilation_section_scope_and_closed_vocabulary_is_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.1-untrusted-input-inventory",
+   "span_start_line": 13808,
+   "span_end_line": 13833,
+   "anchor_line": 13809,
+   "body_start_line": 13810,
+   "body_end_line": 13833,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13810,
+     "end_line": 13833,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#untrusted_inputs_are_closed_declared_and_never_ambient"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.2-stage-and-unit-vocabulary",
+   "span_start_line": 13834,
+   "span_end_line": 13863,
+   "anchor_line": 13835,
+   "body_start_line": 13836,
+   "body_end_line": 13863,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13836,
+     "end_line": 13863,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#stage_and_unit_vocabulary_is_closed_and_every_stage_names_its_units"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.3-finite-stage-budgets-and-fail-closed-cutoff",
+   "span_start_line": 13864,
+   "span_end_line": 13913,
+   "anchor_line": 13865,
+   "body_start_line": 13866,
+   "body_end_line": 13913,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13866,
+     "end_line": 13913,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#stage_budgets_refuse_absent_or_zero_limits_and_cut_off_fail_closed"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.4-structural-expansion-bounds",
+   "span_start_line": 13914,
+   "span_end_line": 13947,
+   "anchor_line": 13915,
+   "body_start_line": 13916,
+   "body_end_line": 13947,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13916,
+     "end_line": 13947,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#structural_expansion_detects_cycles_and_refuses_depth_without_native_stack"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.5-completion-evidence-and-atomic-publication",
+   "span_start_line": 13948,
+   "span_end_line": 13979,
+   "anchor_line": 13949,
+   "body_start_line": 13950,
+   "body_end_line": 13979,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13950,
+     "end_line": 13979,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#only_a_finished_run_mints_completion_evidence_that_seals_artifacts"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.6-cancellation-settlement",
+   "span_start_line": 13980,
+   "span_end_line": 14005,
+   "anchor_line": 13981,
+   "body_start_line": 13982,
+   "body_end_line": 14005,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13982,
+     "end_line": 14005,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#cancellation_settles_once_typed_and_never_publishes_partial_work"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.7-artifact-loader-validation",
+   "span_start_line": 14006,
+   "span_end_line": 14036,
+   "anchor_line": 14007,
+   "body_start_line": 14008,
+   "body_end_line": 14036,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14008,
+     "end_line": 14036,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#artifact_loader_refuses_each_typed_reason_before_trusting_facts"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.8-cache-identity",
+   "span_start_line": 14037,
+   "span_end_line": 14064,
+   "anchor_line": 14038,
+   "body_start_line": 14039,
+   "body_end_line": 14064,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14039,
+     "end_line": 14064,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#cache_keys_cover_every_declared_input_and_change_with_each"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.9-cache-validation-and-poisoning",
+   "span_start_line": 14065,
+   "span_end_line": 14098,
+   "anchor_line": 14066,
+   "body_start_line": 14067,
+   "body_end_line": 14098,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14067,
+     "end_line": 14098,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#cache_validation_reports_each_verdict_and_the_poison_latch_refuses_reuse"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.10-clean-incremental-equivalence",
+   "span_start_line": 14099,
+   "span_end_line": 14125,
+   "anchor_line": 14100,
+   "body_start_line": 14101,
+   "body_end_line": 14125,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14101,
+     "end_line": 14125,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#clean_and_incremental_builds_publish_identical_canonical_output"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.11-editor-work-fencing",
+   "span_start_line": 14126,
+   "span_end_line": 14149,
+   "anchor_line": 14127,
+   "body_start_line": 14128,
+   "body_end_line": 14149,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14128,
+     "end_line": 14149,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#stale_editor_generations_cannot_publish_facts"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.12-generator-confinement",
+   "span_start_line": 14150,
+   "span_end_line": 14180,
+   "anchor_line": 14151,
+   "body_start_line": 14152,
+   "body_end_line": 14180,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14152,
+     "end_line": 14180,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#generators_are_confined_to_declared_capabilities_inputs_and_outputs"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.13-toolchain-identity",
+   "span_start_line": 14181,
+   "span_end_line": 14209,
+   "anchor_line": 14182,
+   "body_start_line": 14183,
+   "body_end_line": 14209,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14183,
+     "end_line": 14209,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#toolchain_identity_changes_when_a_component_or_the_limits_revision_changes"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-26.14-compilation-non-claims",
+   "span_start_line": 14210,
+   "span_end_line": 14238,
+   "anchor_line": 14211,
+   "body_start_line": 14212,
+   "body_end_line": 14238,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14212,
+     "end_line": 14238,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/toolchain_bounded.rs#compilation_non_claims_are_closed_and_never_presented_as_guarantees"
        ],
        "rationale": null
       }
