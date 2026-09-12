@@ -9,6 +9,7 @@
 //! algorithms, runtime state, host services, and concrete adapters remain
 //! outside this contract crate.
 
+mod approval;
 mod artifact;
 mod authority;
 mod callable_identity;
@@ -31,6 +32,19 @@ mod type_expression;
 mod type_properties;
 mod types;
 
+pub use approval::{
+    ApprovalAuditAccess, ApprovalAuditEvidence, ApprovalAuditView, ApprovalDecision,
+    ApprovalDecisionId, ApprovalDiagnosticCode, ApprovalError, ApprovalOutcome,
+    ApprovalOutcomeRecord, ApprovalRequestId, ApprovalSubject, ApprovalSubjectDigest,
+    ApprovalSubjectInputs, ApproverPresentation, AttemptApplicability, AuditTransition,
+    AuditTransitionKind, AuthenticatedActor, CommitPointResult, DecisionConstraints, DecisionScope,
+    DurableApprovalCut, DurableApprovalRecord, ExternalTargetRef, FenceReason,
+    HostAttestationBindingId, HostAttestationKind, HostAuthorityDigest, LeaseScope,
+    LogicalExecutionId, LogicalOperationId, MappingRevision, PolicyRevision,
+    ProtectedReviewChannel, ProtectedScope, RefusalReason, ResumeClass, Revalidation,
+    RevocationContract, SealedPredicate, SemanticArgumentDigest, StalenessReason, StandingLease,
+    revalidate,
+};
 pub use artifact::{ArtifactEncodingError, ArtifactLimits, BoundedArtifact};
 pub use authority::{
     AUTHORITY_RIGHT_ORDER, Admission, AdmissionRequest, AncestorFences, AuthorityBindingId,
