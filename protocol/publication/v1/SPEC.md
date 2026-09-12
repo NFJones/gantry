@@ -64,6 +64,7 @@
   - [16. Packages, Manifests, and Public Interfaces](#16-packages-manifests-and-public-interfaces)
   - [17. Targets, Features, and Conditional Compilation](#17-targets-features-and-conditional-compilation)
   - [18. Identity Domains and Identifier Security](#18-identity-domains-and-identifier-security)
+  - [19. Dynamic Authorization and Authenticated Approval](#19-dynamic-authorization-and-authenticated-approval)
 
 <!-- In all code blocks rust syntax highlighting is used deliberately. Eventually, these can be changed to gantry -->
 
@@ -806,6 +807,7 @@ than one block.
 | Packages, manifests, and public interfaces | `GNT-16.0`, `GNT-16.1-package-identity`, `GNT-16.2-package-instances`, `GNT-16.3-dependency-aliases`, `GNT-16.4-visibility`, `GNT-16.5-reexports`, `GNT-16.6-target-kinds`, `GNT-16.7-public-interface-manifest`, `GNT-16.8-compatibility-axes`, `GNT-16.9-resolution-order-independence` |
 | Targets, features, and conditional compilation | `GNT-17.0`, `GNT-17.1-target-descriptor`, `GNT-17.2-descriptor-normalization-and-target-facts`, `GNT-17.3-sealed-predicates`, `GNT-17.4-feature-declaration`, `GNT-17.5-feature-unification`, `GNT-17.6-conditional-selection-rule`, `GNT-17.7-inactive-code-policy`, `GNT-17.8-target-matrix`, `GNT-17.9-build-host-authority`, `GNT-17.10-target-selected-mode-admission`, `GNT-17.11-target-artifact-binding`, `GNT-17.12-target-resolution-failure`, `GNT-17.13-runtime-availability-separation` |
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
+| Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -11794,3 +11796,216 @@ identity version. Changing any of them requires a new identity version, and an
 implementation MUST NOT silently re-interpret a recorded identity, an alias map,
 or an external-name mapping under a different identity version, and it MUST
 reject an identity recorded under an unsupported version.
+
+## 19. Dynamic Authorization and Authenticated Approval
+
+<a id="GNT-19.0"></a>
+
+This section defines approval request identity, the approved subject,
+authenticated approver identity, presentation fidelity, decision scope and
+standing authority, decision linearization and revalidation, durable request and
+decision cuts, the approval outcome taxonomy, execution and release separation,
+and approval audit evidence. It extends and cites the landed protected-value text
+of `GNT-15.10-protected-values` and the landed authority text of
+`GNT-3-T-AUTHORITY-LINEAGE`, `GNT-3-T-AUTHORITY-REVOCATION` and
+`GNT-3-T-AUTHORITY-ADMISSION` rather than replacing them, and it states no
+obligation that a check cannot decide.
+
+The closed vocabulary of this section is exactly the following terms. A clause
+here MUST NOT use an approval term outside this vocabulary, and a term listed
+below MUST NOT be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| approval request | The canonical record of one request for a decision, under `GNT-19.1-approval-request-identity`. |
+| approval request identity | The stable Gantry-owned identity of one approval request. |
+| approval subject | The canonical semantic subject bound by `GNT-19.2-approval-subject`. |
+| approver presentation | The bounded rendering an approver is shown, under `GNT-19.4-approver-presentation-fidelity`. |
+| authenticated approver | The host-governed actor or service identity of `GNT-19.3-authenticated-approver-identity`. |
+| decision scope | The exact operation identity, attempts, lifetime, and constraints one decision covers. |
+| standing authority | A reusable attenuated capability or bounded lease under `GNT-19.5-decision-scope-and-standing-authority`; it is never an approval cache. |
+| decision staleness | The state of a decision whose bound subject no longer matches the operation about to be admitted. |
+| admission linearization | The single commit point of `GNT-3-T-AUTHORITY-ADMISSION` at which an operation passes or fails admission. |
+| durable approval cut | A committed durable record: the canonical request, or the authenticated decision, of `GNT-19.7-durable-request-and-decision-cuts`. |
+| approval outcome | One member of the closed outcome vocabulary of `GNT-19.8-approval-outcome-taxonomy`. |
+| approval-adapter failure | A failure of the component that carries a request to an approver or a decision back; it is its own outcome. |
+| approval audit evidence | The capability-gated record of `GNT-19.10-approval-audit-evidence`. |
+
+**Applicability.** The clauses of this section govern an edition or profile that
+evaluates dynamic policy and admits authenticated approval transitions. The v1
+edition described by Sections 1 through 15 does not: it has no policy or
+approval subject domain, no approval-aware admission requirement, and its landed
+admission rule of `GNT-3-T-AUTHORITY-ADMISSION` consults approval state only
+where a declaration requires one, which no v1 declaration does. An
+implementation that supports only that model MUST record each clause of this
+section as a profile-based `not-applicable` justification in the sense of
+Sections 2 and 15, and MUST NOT report a clause here as satisfied, partially
+satisfied, conditionally satisfied, or satisfied for a subset of its rules,
+because the behavior those rules constrain is not defined for that model and a
+partial claim would assert conformance to behavior this specification does not
+define. Non-applicability is a property of the claimed edition and profile, not
+of a particular request, decision, or approver. The execution and release
+separation of `GNT-19.9` is the single exception: it records an obligation the
+landed protected-value text of `GNT-15.10-release-operation` and
+`GNT-15.10-protection-invariants` already enforces for every profile, so those
+rules are decidable and enforced in v1 rather than newly granted there.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+protected classes, release holders, release projections, and disclosure budgets
+of `GNT-15.10-protected-values`, `GNT-15.10-semantic-envelope`,
+`GNT-15.10-release-operation`, `GNT-15.10-emergency-cleanup` and
+`GNT-15.10-protection-invariants`; the capability instance identity, rights,
+generation, lineage, revocation fencing, and single admission commit point of
+`GNT-3-T-AUTHORITY-INSTANCES`, `GNT-3-T-AUTHORITY-LINEAGE`,
+`GNT-3-T-AUTHORITY-REVOCATION` and `GNT-3-T-AUTHORITY-ADMISSION`; the rebinding
+rules of `GNT-7.2-authority-rebinding` and the abstract requirement and exact
+operation-site identities of `GNT-6.5-abstract-requirements`; the independent
+compatibility classes of `GNT-11.6-compatibility-classes`; and the package
+identity rules of Section 16, the target-selected mode admission of
+`GNT-17.10-target-selected-mode-admission`, and the canonical symbolic identity
+and typed-identity authority of Section 18 and `GNT-18.12-typed-identity-authority`.
+Nothing here introduces a protected class, a release destination, an identity
+input, a compatibility axis, a lookup namespace, a new revision kind, or a second
+fault taxonomy, and no clause here may be read as amending any of the sections
+listed above. Approval-adapter content, policy-language content, and the
+presentation format an approver sees remain owned by the components that declare
+them.
+
+<a id="GNT-19.1-approval-request-identity"></a>
+
+**[GNT-19.1-approval-request-identity] Approval request identity.** An approval
+request has exactly one stable Gantry-owned identity, established when the
+request is created and independent of the process, session, approver, or adapter
+that carries it. It is distinct from the operation identity of
+`GNT-6.5-abstract-requirements`, from the decision the request receives, and from
+any provider request identifier, correlation token, or transport message number.
+A provider identifier MAY be recorded as a reference and MUST NOT serve as the
+request identity, as a resumption key, or as evidence that a decision exists.
+
+<a id="GNT-19.2-approval-subject"></a>
+
+**[GNT-19.2-approval-subject] Approval subject.** The canonical semantic subject
+binds exactly these inputs and no others: the logical execution and task; the
+operation declaration and its source site; the stable logical operation identity;
+the semantic arguments or their canonical digest; a bounded approver
+presentation; the selected capability instance with its authority-requirement
+identity, instance identity, and generation; the authority lineage; the mapping
+revision; the effective policy revision; the recovery class; the external target
+and effect summary; the protected class, destination, release projection, and
+disclosure budget the operation would reach; and the decision's scope, expiry,
+attempt applicability, and constraints. Two requests are one subject if and only
+if their canonical subject bytes are identical, and a subject MUST NOT be
+reconstructed from a presentation, a provider handle, or a mutable configuration.
+
+<a id="GNT-19.3-authenticated-approver-identity"></a>
+
+**[GNT-19.3-authenticated-approver-identity] Authenticated approver identity.**
+Requester, approver, tenant, and policy identity are host-governed and MUST be
+established by the embedding host from its own authenticated state. Source, a
+model, or an adapter MUST NOT supply, forge, reinterpret, or broaden them, and no
+argument, prompt, header, environment fact, presentation label, or
+adapter-supplied field becomes an approver identity. Those identities, the
+decision that names them, and the explanatory comment an approver records are
+protected audit data under `GNT-15.10-protected-values`, and they MUST NOT cross
+a value-action boundary absent a separate declared release under
+`GNT-15.10-release-operation`. An absent, unauthenticated, or ambiguous approver
+identity is not an approval.
+
+<a id="GNT-19.4-approver-presentation-fidelity"></a>
+
+**[GNT-19.4-approver-presentation-fidelity] Approver presentation fidelity.** A
+presentation is bounded and MUST faithfully disclose every semantic element of
+the subject that the decision will authorize under `GNT-19.2-approval-subject`. A
+redacted or summarized presentation MUST NOT pretend to authorize concealed
+semantics: where it withholds or abstracts a protected argument, an operation it
+does not name, or a destination it does not name, the decision MUST NOT be
+treated as covering them. A policy that cannot show a protected argument MUST
+route the request to a separately authorized protected review channel, or decide
+it on a sealed, versioned predicate whose exact meaning is part of the request
+subject, and MUST NOT substitute a display label, a truncated value, a digest,
+or a model-generated summary. Presentation is never approval for what it hides.
+
+<a id="GNT-19.5-decision-scope-and-standing-authority"></a>
+
+**[GNT-19.5-decision-scope-and-standing-authority] Decision scope and standing
+authority.** The default is one decision for one logical operation identity,
+covering only the transport attempts and retries that the operation's own
+recovery class and retry policy already permit, and no other operation, argument
+set, or destination. Reusable authority is never the default: it MUST be issued
+explicitly as an attenuated capability instance derived under
+`GNT-3-T-AUTHORITY-LINEAGE`, or as a bounded lease with its own identity,
+lineage, rights, expiration, revocation contract, and delegation contract.
+Reusable authority MUST NOT be an approval cache: reuse across a new logical
+operation identity, a changed argument, a widened destination, a newer policy
+revision, or a later authority generation is a defect rather than a decision.
+
+<a id="GNT-19.6-decision-linearization-and-revalidation"></a>
+
+**[GNT-19.6-decision-linearization-and-revalidation] Decision linearization and
+revalidation.** After a positive decision and immediately before host admission
+at the single commit point of `GNT-3-T-AUTHORITY-ADMISSION`, the implementation
+MUST revalidate exactly: the arguments about to be dispatched; the selected
+capability instance and its descendant lineage; the authority generation; the
+mapping revision; the effective policy revision; the release scope; and the
+decision's remaining lifetime. Revalidation is fail-closed, and a mismatch MUST
+NOT dispatch. A semantic change makes the decision stale, and a stale decision
+MUST NOT be silently patched, reinterpreted, or repaired by widening its scope.
+Revocation or expiry under `GNT-3-T-AUTHORITY-REVOCATION` before admission fences
+that admission; revocation after host acceptance does not rewind work already
+admitted, which settles under its own recovery class.
+
+<a id="GNT-19.7-durable-request-and-decision-cuts"></a>
+
+**[GNT-19.7-durable-request-and-decision-cuts] Durable request and decision
+cuts.** In durable mode the canonical request is committed before the
+implementation waits on an external approver, and the authenticated decision is
+committed before dispatch; both are durable approval cuts keyed by the request
+identity of `GNT-19.1-approval-request-identity`. A pending decision resumes
+through that stable identity and MUST NOT create a second request for one
+logical operation identity. A crash after the decision commit and before
+dispatch continues only under the same still-valid decision and operation
+identity. A crash after dispatch uses the target operation's recovery state and
+MUST NOT solicit or apply a second approval for work that may already have begun.
+
+<a id="GNT-19.8-approval-outcome-taxonomy"></a>
+
+**[GNT-19.8-approval-outcome-taxonomy] Approval outcome taxonomy.** The bounded
+outcomes are exactly: a positive decision; denial; expiration; cancellation of
+the approval wait; approval-adapter failure; malformed decision; and an
+unavailable approver. Each is distinct and carries its own diagnostic, and none
+MUST be reported as another or collapsed into one generic failure. No outcome may
+become an unknown outcome for an operation that was definitely not admitted: an
+operation that never passed the admission commit point has no effect and no
+external outcome, and MUST NOT be reported as ambiguous. No outcome may erase an
+unknown outcome once target work may have begun: an ambiguous external outcome
+stays ambiguous under its recovery class and MUST NOT be reclassified as denied,
+expired, cancelled, or failed.
+
+<a id="GNT-19.9-execution-and-release-separation"></a>
+
+**[GNT-19.9-execution-and-release-separation] Execution and release
+separation.** Authorization to execute an operation and authorization to release
+its data are independent, as the landed `GNT-15.10-release-operation` and
+`GNT-15.10-protection-invariants` rules enforce for every profile, including v1.
+One decision covers both only when its subject under `GNT-19.2-approval-subject`
+names both the operation and the exact destination-specific release projection,
+including the protected class, the destination, and the disclosure budget.
+Approval to run a tool, an action, a model operation, or an integration operation
+does not expose its result, output, error, or diagnostic to a model, an approver,
+source, or telemetry. Approval to release does not grant authority to rerun the
+operation, to dispatch a variant, to widen the destination, or to release
+another class, and MUST NOT be recorded as an execution decision.
+
+<a id="GNT-19.10-approval-audit-evidence"></a>
+
+**[GNT-19.10-approval-audit-evidence] Approval audit evidence.** Audit evidence
+for one approval interaction identifies at least the request, the decision, the
+authenticated actor or service that decided it, the policy and its effective
+revision, the scope and constraints the decision carries, its validity bounds,
+the admission or refusal result at the commit point, and every later revocation,
+expiry, or supersession. It MUST NOT expose credentials, approval secrets,
+protected arguments, protected contents, the protected comment of
+`GNT-19.3-authenticated-approver-identity`, or a presentation that concealed
+semantics. It is reachable only through a capability-gated audit view whose
+holder holds declared rights over the audit domain, and rendering, exporting, or
+aggregating it is itself an operation subject to admission.

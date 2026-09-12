@@ -1,11 +1,11 @@
 {
- "specification_sha256": "335c102e7b6354ff08dd2544b1a00afcd8c68a379f26a4678004dd3ba2e7b416",
+ "specification_sha256": "4945d9f08bd1385e062b483e6b6f3d337e12c33a450dc3adf9e512eea3776945",
  "excerpts": [
   {
    "key": "section14-excerpt-001",
    "section": "14.1 Minimal package entry point",
-   "start_line": 8346,
-   "end_line": 8354,
+   "start_line": 8348,
+   "end_line": 8356,
    "classification": "complete-positive",
    "state": "covered",
    "evidence": [
@@ -15,8 +15,8 @@
   {
    "key": "section14-excerpt-002",
    "section": "14.1 Minimal package entry point",
-   "start_line": 8376,
-   "end_line": 8395,
+   "start_line": 8378,
+   "end_line": 8397,
    "classification": "complete-positive",
    "state": "covered",
    "evidence": [
@@ -26,8 +26,8 @@
   {
    "key": "section14-excerpt-003",
    "section": "14.2 Modules, imports, and package-wide agents",
-   "start_line": 8410,
-   "end_line": 8423,
+   "start_line": 8412,
+   "end_line": 8425,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -37,8 +37,8 @@
   {
    "key": "section14-excerpt-004",
    "section": "14.2 Modules, imports, and package-wide agents",
-   "start_line": 8427,
-   "end_line": 8439,
+   "start_line": 8429,
+   "end_line": 8441,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -48,8 +48,8 @@
   {
    "key": "section14-excerpt-005",
    "section": "14.2 Modules, imports, and package-wide agents",
-   "start_line": 8443,
-   "end_line": 8453,
+   "start_line": 8445,
+   "end_line": 8455,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -59,8 +59,8 @@
   {
    "key": "section14-excerpt-006",
    "section": "14.3 Primitive values, structs, tagged values, and structural routing",
-   "start_line": 8462,
-   "end_line": 8497,
+   "start_line": 8464,
+   "end_line": 8499,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -70,8 +70,8 @@
   {
    "key": "section14-excerpt-007",
    "section": "14.3 Primitive values, structs, tagged values, and structural routing",
-   "start_line": 8505,
-   "end_line": 8553,
+   "start_line": 8507,
+   "end_line": 8555,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -81,8 +81,8 @@
   {
    "key": "section14-excerpt-008",
    "section": "14.3 Primitive values, structs, tagged values, and structural routing",
-   "start_line": 8566,
-   "end_line": 8580,
+   "start_line": 8568,
+   "end_line": 8582,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -92,8 +92,8 @@
   {
    "key": "section14-excerpt-009",
    "section": "14.3 Primitive values, structs, tagged values, and structural routing",
-   "start_line": 8588,
-   "end_line": 8608,
+   "start_line": 8590,
+   "end_line": 8610,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -103,8 +103,8 @@
   {
    "key": "section14-excerpt-010",
    "section": "14.4 Inherent methods and scoped agent selection",
-   "start_line": 8615,
-   "end_line": 8643,
+   "start_line": 8617,
+   "end_line": 8645,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -114,8 +114,8 @@
   {
    "key": "section14-excerpt-011",
    "section": "14.4 Inherent methods and scoped agent selection",
-   "start_line": 8656,
-   "end_line": 8670,
+   "start_line": 8658,
+   "end_line": 8672,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -125,8 +125,8 @@
   {
    "key": "section14-excerpt-012",
    "section": "14.5 Prompt strings, interpolation, and escaping",
-   "start_line": 8679,
-   "end_line": 8685,
+   "start_line": 8681,
+   "end_line": 8687,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -136,8 +136,8 @@
   {
    "key": "section14-excerpt-013",
    "section": "14.5 Prompt strings, interpolation, and escaping",
-   "start_line": 8691,
-   "end_line": 8695,
+   "start_line": 8693,
+   "end_line": 8697,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -147,8 +147,8 @@
   {
    "key": "section14-excerpt-014",
    "section": "14.5 Prompt strings, interpolation, and escaping",
-   "start_line": 8703,
-   "end_line": 8711,
+   "start_line": 8705,
+   "end_line": 8713,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -158,8 +158,8 @@
   {
    "key": "section14-excerpt-015",
    "section": "14.5 Prompt strings, interpolation, and escaping",
-   "start_line": 8715,
-   "end_line": 8720,
+   "start_line": 8717,
+   "end_line": 8722,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -169,8 +169,8 @@
   {
    "key": "section14-excerpt-016",
    "section": "14.5 Prompt strings, interpolation, and escaping",
-   "start_line": 8725,
-   "end_line": 8730,
+   "start_line": 8727,
+   "end_line": 8732,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -180,8 +180,8 @@
   {
    "key": "section14-excerpt-017",
    "section": "14.5 Prompt strings, interpolation, and escaping",
-   "start_line": 8735,
-   "end_line": 8764,
+   "start_line": 8737,
+   "end_line": 8766,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -191,8 +191,8 @@
   {
    "key": "section14-excerpt-018",
    "section": "14.5 Prompt strings, interpolation, and escaping",
-   "start_line": 8770,
-   "end_line": 8778,
+   "start_line": 8772,
+   "end_line": 8780,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -202,8 +202,8 @@
   {
    "key": "section14-excerpt-019",
    "section": "14.6 Reusable model judgments and conditional chains",
-   "start_line": 8782,
-   "end_line": 8800,
+   "start_line": 8784,
+   "end_line": 8802,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -213,8 +213,8 @@
   {
    "key": "section14-excerpt-020",
    "section": "14.6 Reusable model judgments and conditional chains",
-   "start_line": 8806,
-   "end_line": 8821,
+   "start_line": 8808,
+   "end_line": 8823,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -224,8 +224,8 @@
   {
    "key": "section14-excerpt-021",
    "section": "14.6 Reusable model judgments and conditional chains",
-   "start_line": 8832,
-   "end_line": 8840,
+   "start_line": 8834,
+   "end_line": 8842,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -235,8 +235,8 @@
   {
    "key": "section14-excerpt-022",
    "section": "14.7 Finite, general, pre-test, and post-test loops",
-   "start_line": 8850,
-   "end_line": 8856,
+   "start_line": 8852,
+   "end_line": 8858,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -246,8 +246,8 @@
   {
    "key": "section14-excerpt-023",
    "section": "14.7 Finite, general, pre-test, and post-test loops",
-   "start_line": 8862,
-   "end_line": 8874,
+   "start_line": 8864,
+   "end_line": 8876,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -257,8 +257,8 @@
   {
    "key": "section14-excerpt-024",
    "section": "14.7 Finite, general, pre-test, and post-test loops",
-   "start_line": 8876,
-   "end_line": 8891,
+   "start_line": 8878,
+   "end_line": 8893,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -268,8 +268,8 @@
   {
    "key": "section14-excerpt-025",
    "section": "14.7 Finite, general, pre-test, and post-test loops",
-   "start_line": 8893,
-   "end_line": 8901,
+   "start_line": 8895,
+   "end_line": 8903,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -279,8 +279,8 @@
   {
    "key": "section14-excerpt-026",
    "section": "14.8 Parallel homogeneous work and `List<T>` joins",
-   "start_line": 8911,
-   "end_line": 8928,
+   "start_line": 8913,
+   "end_line": 8930,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -290,8 +290,8 @@
   {
    "key": "section14-excerpt-027",
    "section": "14.9 Parallel heterogeneous work and `Tuple<...>` joins",
-   "start_line": 8938,
-   "end_line": 8951,
+   "start_line": 8940,
+   "end_line": 8953,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -301,8 +301,8 @@
   {
    "key": "section14-excerpt-028",
    "section": "14.9 Parallel heterogeneous work and `Tuple<...>` joins",
-   "start_line": 8956,
-   "end_line": 8959,
+   "start_line": 8958,
+   "end_line": 8961,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -312,8 +312,8 @@
   {
    "key": "section14-excerpt-029",
    "section": "14.10 `joinall()`, Unit tasks, and detachment",
-   "start_line": 8979,
-   "end_line": 8992,
+   "start_line": 8981,
+   "end_line": 8994,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -323,8 +323,8 @@
   {
    "key": "section14-excerpt-030",
    "section": "14.10 `joinall()`, Unit tasks, and detachment",
-   "start_line": 8994,
-   "end_line": 9006,
+   "start_line": 8996,
+   "end_line": 9008,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -334,8 +334,8 @@
   {
    "key": "section14-excerpt-031",
    "section": "14.10 `joinall()`, Unit tasks, and detachment",
-   "start_line": 9010,
-   "end_line": 9022,
+   "start_line": 9012,
+   "end_line": 9024,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -345,8 +345,8 @@
   {
    "key": "section14-excerpt-032",
    "section": "14.10 `joinall()`, Unit tasks, and detachment",
-   "start_line": 9030,
-   "end_line": 9040,
+   "start_line": 9032,
+   "end_line": 9042,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -356,8 +356,8 @@
   {
    "key": "section14-excerpt-033",
    "section": "14.10 `joinall()`, Unit tasks, and detachment",
-   "start_line": 9046,
-   "end_line": 9058,
+   "start_line": 9048,
+   "end_line": 9060,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -367,8 +367,8 @@
   {
    "key": "section14-excerpt-034",
    "section": "14.11 Nested modules and qualified paths",
-   "start_line": 9062,
-   "end_line": 9091,
+   "start_line": 9064,
+   "end_line": 9093,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -378,8 +378,8 @@
   {
    "key": "section14-excerpt-035",
    "section": "14.11 Nested modules and qualified paths",
-   "start_line": 9099,
-   "end_line": 9106,
+   "start_line": 9101,
+   "end_line": 9108,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -389,8 +389,8 @@
   {
    "key": "section14-excerpt-036",
    "section": "14.12 Explicit harness actions and named prompt inputs",
-   "start_line": 9113,
-   "end_line": 9157,
+   "start_line": 9115,
+   "end_line": 9159,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -400,8 +400,8 @@
   {
    "key": "section14-excerpt-037",
    "section": "14.13 Explicit operation failure handling with `attempt`",
-   "start_line": 9173,
-   "end_line": 9187,
+   "start_line": 9175,
+   "end_line": 9189,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -411,8 +411,8 @@
   {
    "key": "section14-excerpt-038",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9210,
-   "end_line": 9217,
+   "start_line": 9212,
+   "end_line": 9219,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -422,8 +422,8 @@
   {
    "key": "section14-excerpt-039",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9222,
-   "end_line": 9240,
+   "start_line": 9224,
+   "end_line": 9242,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -433,8 +433,8 @@
   {
    "key": "section14-excerpt-040",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9247,
-   "end_line": 9259,
+   "start_line": 9249,
+   "end_line": 9261,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -444,8 +444,8 @@
   {
    "key": "section14-excerpt-041",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9264,
-   "end_line": 9275,
+   "start_line": 9266,
+   "end_line": 9277,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -455,8 +455,8 @@
   {
    "key": "section14-excerpt-042",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9281,
-   "end_line": 9291,
+   "start_line": 9283,
+   "end_line": 9293,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -466,8 +466,8 @@
   {
    "key": "section14-excerpt-043",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9296,
-   "end_line": 9304,
+   "start_line": 9298,
+   "end_line": 9306,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -477,8 +477,8 @@
   {
    "key": "section14-excerpt-044",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9309,
-   "end_line": 9319,
+   "start_line": 9311,
+   "end_line": 9321,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -488,8 +488,8 @@
   {
    "key": "section14-excerpt-045",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9325,
-   "end_line": 9335,
+   "start_line": 9327,
+   "end_line": 9337,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -499,8 +499,8 @@
   {
    "key": "section14-excerpt-046",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9341,
-   "end_line": 9352,
+   "start_line": 9343,
+   "end_line": 9354,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -510,8 +510,8 @@
   {
    "key": "section14-excerpt-047",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9357,
-   "end_line": 9372,
+   "start_line": 9359,
+   "end_line": 9374,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -521,8 +521,8 @@
   {
    "key": "section14-excerpt-048",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9377,
-   "end_line": 9395,
+   "start_line": 9379,
+   "end_line": 9397,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -532,8 +532,8 @@
   {
    "key": "section14-excerpt-049",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9400,
-   "end_line": 9410,
+   "start_line": 9402,
+   "end_line": 9412,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -543,8 +543,8 @@
   {
    "key": "section14-excerpt-050",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9414,
-   "end_line": 9450,
+   "start_line": 9416,
+   "end_line": 9452,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
@@ -554,8 +554,8 @@
   {
    "key": "section14-excerpt-051",
    "section": "14.14 Common invalid forms and their corrections",
-   "start_line": 9455,
-   "end_line": 9485,
+   "start_line": 9457,
+   "end_line": 9487,
    "classification": "focused-fragment",
    "state": "covered",
    "evidence": [
