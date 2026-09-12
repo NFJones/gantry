@@ -1,238 +1,238 @@
 {
-  "artifacts": [
-    {
-      "path": "SPEC.md",
-      "sha256": "d1ab4b6ab20bdddfb4955210c7441b72e65ddeef929172ec8046624751db8a83"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/authority_lineage.rs",
-      "sha256": "5f1383286bbd3bd0744885bc66b60bd5cc3ad37610828ae0bc6f3283f530781a"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/automatic_durable_root.rs",
-      "sha256": "af6eb95d0e7e752f475fbde43b6fb9cea141dbb024b76e0b823b72650ed4810c"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/durable_events.rs",
-      "sha256": "6e7876f1877e55a665572685b28aa4ed968fd556ae32a33c3f8063f5ebd50f46"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/durable_gate.rs",
-      "sha256": "16dbc8618521e1c0a5dedebc305d6ee8911fed81eb7ad475be69c4adff2e2a08"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/durable_recovery.rs",
-      "sha256": "9626da2228fd5731d2e9ea277896ebe4dbacbbbb7f1fb12d3ab446d4c44fe56b"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/durable_refinement_model.rs",
-      "sha256": "fd4363ecd496192b68245b3dc96e229e7f4fa3f3f614d0f00649d7fc457cbbc1"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/durable_start.rs",
-      "sha256": "7956e0c8b99f3c13471d660c22ad0eba949237c05bcba71f7f38e51c9b7893df"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/journal_storage.rs",
-      "sha256": "a7e7af4ff4f96301977c6f5af7064e5c431468c2d0ea7ff2754683e367b21589"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/source_spawn.rs",
-      "sha256": "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/sqlite_storage.rs",
-      "sha256": "f17685224167e329e79f258686bbbe82918d257dd97d52abc15ad11e398514c7"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/type_properties.rs",
-      "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
-    },
-    {
-      "path": "crates/gantry/src/lib.rs",
-      "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
-    },
-    {
-      "path": "docs/durable-runtime-refinement.md",
-      "sha256": "5c45f47225e87c82a7432d1b9c1f5151a97f5f544c7c7e165349ac796117b486"
-    },
-    {
-      "path": "docs/sqlite-journal-storage.md",
-      "sha256": "8e82161ae7d6b8e590e6f524dd994593b899abb26b76d90551ca1917206a183a"
-    },
-    {
-      "path": "protocol/conformance/durable-events-v1.json",
-      "sha256": "247f7e3ee9d77d8cb2287c6507d03bb0672922cd72e0c8b4a7670d0a38a56f73"
-    },
-    {
-      "path": "protocol/conformance/durable-recovery-v1.json",
-      "sha256": "7f5e3c0b4c0ce843813576508c823f277c38cb3f117904fb99f0c273a95e5e35"
-    },
-    {
-      "path": "protocol/conformance/durable-refinement-v1.json",
-      "sha256": "eabf98796110149aeaddd7fedd08fb21d37aae9f644192bd986009bc4f97ed5b"
-    },
-    {
-      "path": "protocol/conformance/durable-start-v1.json",
-      "sha256": "00f017130019f91660c0131e3f47ca65aa5fe24e0a3e29cd6fa427123d484e9f"
-    },
-    {
-      "path": "protocol/conformance/journal-storage-v1.json",
-      "sha256": "869adef99446205e71e6eed9223a6cf1124aa075d2434591edc38b440c8d988f"
-    },
-    {
-      "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "19c4bf15ab17dbcbb4f9db0bcbb8828fc572631a468c892eb32602e117fe18ab"
-    },
-    {
-      "path": "protocol/conformance/source-spawn-v1.json",
-      "sha256": "b650cac9a9465665f73b9244d872659c3b4756b0f1d9ea3cb4eb8471a6fccaaa"
-    },
-    {
-      "path": "protocol/conformance/sqlite-storage-v1.json",
-      "sha256": "93e3ef62886cedf5c2cb047bbacd5628f8f6c070accd7745e2713cbcf32059bb"
-    },
-    {
-      "path": "protocol/goldens/durable-events-v1.json",
-      "sha256": "836a7d6da3ae28598d804889eee00a143137fa844fe13023df71e53da42e4294"
-    },
-    {
-      "path": "protocol/goldens/durable-recovery-v1.json",
-      "sha256": "6a1dfbe46e5acfad3083c1f07d0e23fe40e1e43145b6b77e1fb455e6a7e7fc82"
-    },
-    {
-      "path": "protocol/goldens/durable-refinement-model-v1.json",
-      "sha256": "621d7c89e236fde9c7353e40750e848f4899d1e86cad15c2f493e90730efb966"
-    },
-    {
-      "path": "protocol/goldens/durable-start-v1.json",
-      "sha256": "e172bb98d05baa6f93edf7e28e8580bb170319db968f56391687d41d58e8ec9e"
-    },
-    {
-      "path": "protocol/goldens/journal-storage-v1.json",
-      "sha256": "0ba3f85bba95f7ee7f59c6917b948c77ed4b0d505de6ee56913595162cd94949"
-    },
-    {
-      "path": "protocol/publication/artifacts-v1.json",
-      "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"
-    },
-    {
-      "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "703fca9b2555bc962cbc36cf1849507b7341a3f24a7b40746f7aeca7b66f51fb"
-    },
-    {
-      "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "4d0488c44220417e2defc6bc12911b90d1d701803518145993d5d2a2a3ec4591"
-    },
-    {
-      "path": "protocol/requirements/section14-v1.json",
-      "sha256": "498b0cc2045661117c5ee396fcd45f57b45ddc82f8ed8a005e745774d71658d7"
-    }
-  ],
-  "claim": {
-    "advertises_profiles": [
-      "analyzer",
-      "durable-runtime",
-      "embedding",
-      "evaluator",
-      "frontend"
-    ],
-    "excludes_capabilities": [
-      "combined-concurrent-durable"
-    ],
-    "excludes_profiles": [
-      "concurrent-evaluator"
-    ],
-    "profiles": [
-      "analyzer",
-      "durable-runtime",
-      "embedding",
-      "evaluator",
-      "frontend"
-    ]
+ "artifacts": [
+  {
+   "path": "SPEC.md",
+   "sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e"
   },
-  "environment_gaps": [
-    "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result or a qualified stable-media power-loss environment."
-  ],
-  "evidence_anchor_count": 124,
-  "format": "gantry.durable-gate-evidence/v1",
-  "gate": "GNT-GATE-600",
-  "prerequisites": [
-    {
-      "commit": "c25ed214ed78bde04f463d2800ca2915de3a8954",
-      "issue": "GNT-DUR-003",
-      "subject": "Implement durable start and resume preflight."
-    },
-    {
-      "commit": "c3e7de8c63a40ffbd35aac14a9d8bd04028f5783",
-      "issue": "GNT-DUR-004",
-      "subject": "Implement durable lifecycle control."
-    },
-    {
-      "commit": "a45452092bf5fa807e7aef8196b801d0c1a68f75",
-      "issue": "GNT-DUR-005",
-      "subject": "Implement journal-first durable events."
-    },
-    {
-      "commit": "067255908bf89ea4c100c8f6cbbffe9e58b0b788",
-      "issue": "GNT-DUR-006",
-      "subject": "Model durable runtime refinement"
-    },
-    {
-      "commit": "4976e758eb2cc681527998b662f3e204eef13b1d",
-      "issue": "GNT-SPEC-001",
-      "subject": "Define the lifecycle formal kernel."
-    },
-    {
-      "commit": "4d14aede55c527cf027ada62ae9b65b3747cf314",
-      "issue": "GNT-SQL-002",
-      "subject": "Add SQLite physical fault evidence."
-    }
-  ],
-  "required_evidence": [
-    "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement",
-    "crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery",
-    "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions",
-    "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch",
-    "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay",
-    "crates/gantry-conformance/tests/durable_start.rs#durable_cancellation_commits_once_before_terminal_observation_and_release",
-    "crates/gantry-conformance/tests/durable_start.rs#durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent",
-    "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries",
-    "crates/gantry-conformance/tests/journal_storage.rs#public_in_memory_store_passes_the_common_atomic_fenced_contract",
-    "crates/gantry-conformance/tests/sqlite_storage.rs#bundled_sqlite_fault_matrix_preserves_atomic_sequence_and_payload_prefixes",
-    "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_cross_process_owner_exclusion_and_crash_reclamation",
-    "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_strict_power_loss_policy_matches_environment_qualification"
-  ],
-  "review_summary": {
-    "applicable_clause_count": 377,
-    "covered_count": 363,
-    "not_applicable_count": 14,
-    "profile": "durable-runtime"
+  {
+   "path": "crates/gantry-conformance/tests/authority_lineage.rs",
+   "sha256": "5f1383286bbd3bd0744885bc66b60bd5cc3ad37610828ae0bc6f3283f530781a"
   },
-  "section14_excerpt_count": 51,
-  "semantic_evidence": {
-    "argument": "docs/durable-runtime-refinement.md",
-    "counterexample_count": 15,
-    "explored_state_count": 3724,
-    "manifest": "protocol/conformance/durable-refinement-v1.json",
-    "maximum_depth": 15,
-    "model": "protocol/goldens/durable-refinement-model-v1.json",
-    "terminal_state_count": 2772
+  {
+   "path": "crates/gantry-conformance/tests/automatic_durable_root.rs",
+   "sha256": "af6eb95d0e7e752f475fbde43b6fb9cea141dbb024b76e0b823b72650ed4810c"
   },
-  "specification": {
-    "path": "SPEC.md",
-    "sha256": "d1ab4b6ab20bdddfb4955210c7441b72e65ddeef929172ec8046624751db8a83"
+  {
+   "path": "crates/gantry-conformance/tests/durable_events.rs",
+   "sha256": "6e7876f1877e55a665572685b28aa4ed968fd556ae32a33c3f8063f5ebd50f46"
   },
-  "status": "verified",
-  "validation_commands": [
-    "cargo +1.91.0 check --locked --workspace --all-targets --all-features",
-    "cargo +1.97.1 check --locked --workspace --all-targets --all-features",
-    "cargo +stable check --locked --workspace --all-targets --all-features",
-    "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-    "cargo fmt --all -- --check",
-    "cargo run --locked -p xtask -- check generated",
-    "cargo run --locked -p xtask -- check governance",
-    "cargo run --locked -p xtask -- check workspace",
-    "cargo test --locked --workspace --all-targets --all-features"
+  {
+   "path": "crates/gantry-conformance/tests/durable_gate.rs",
+   "sha256": "16dbc8618521e1c0a5dedebc305d6ee8911fed81eb7ad475be69c4adff2e2a08"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/durable_recovery.rs",
+   "sha256": "9626da2228fd5731d2e9ea277896ebe4dbacbbbb7f1fb12d3ab446d4c44fe56b"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/durable_refinement_model.rs",
+   "sha256": "fd4363ecd496192b68245b3dc96e229e7f4fa3f3f614d0f00649d7fc457cbbc1"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/durable_start.rs",
+   "sha256": "7956e0c8b99f3c13471d660c22ad0eba949237c05bcba71f7f38e51c9b7893df"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/journal_storage.rs",
+   "sha256": "a7e7af4ff4f96301977c6f5af7064e5c431468c2d0ea7ff2754683e367b21589"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/source_spawn.rs",
+   "sha256": "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/sqlite_storage.rs",
+   "sha256": "f17685224167e329e79f258686bbbe82918d257dd97d52abc15ad11e398514c7"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/type_properties.rs",
+   "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
+  },
+  {
+   "path": "crates/gantry/src/lib.rs",
+   "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
+  },
+  {
+   "path": "docs/durable-runtime-refinement.md",
+   "sha256": "5c45f47225e87c82a7432d1b9c1f5151a97f5f544c7c7e165349ac796117b486"
+  },
+  {
+   "path": "docs/sqlite-journal-storage.md",
+   "sha256": "8e82161ae7d6b8e590e6f524dd994593b899abb26b76d90551ca1917206a183a"
+  },
+  {
+   "path": "protocol/conformance/durable-events-v1.json",
+   "sha256": "f1555ba1b3989fcb1a67fa263d7826c1902ea0b92f18877400b1e176ec58dd63"
+  },
+  {
+   "path": "protocol/conformance/durable-recovery-v1.json",
+   "sha256": "abe74727b4a3a976278ec3d0bb91bb13e1ab1595bb32198a81d48910c2d9feec"
+  },
+  {
+   "path": "protocol/conformance/durable-refinement-v1.json",
+   "sha256": "5212a9a300a84054c959990410a7fa87f6d9e91324b2834367262b0f7d3cf998"
+  },
+  {
+   "path": "protocol/conformance/durable-start-v1.json",
+   "sha256": "3bafeeceafa7955d421d881eff55f26cffd01fb82269ee5cb0b32eff25440faf"
+  },
+  {
+   "path": "protocol/conformance/journal-storage-v1.json",
+   "sha256": "4ac0479037d8f08f6853d7244c9177678596b8df9b2e8e3d1c2a9e7813c3d305"
+  },
+  {
+   "path": "protocol/conformance/sequential-gate-v1.json",
+   "sha256": "3ae627c4ca93d1f7ff1503f178efe2499b808f5cd4c196b72fe2da09620fff82"
+  },
+  {
+   "path": "protocol/conformance/source-spawn-v1.json",
+   "sha256": "f379072f02f3406e2f691e27c47179fdfb26ec974a86c3595b07859dd89a1d83"
+  },
+  {
+   "path": "protocol/conformance/sqlite-storage-v1.json",
+   "sha256": "93e3ef62886cedf5c2cb047bbacd5628f8f6c070accd7745e2713cbcf32059bb"
+  },
+  {
+   "path": "protocol/goldens/durable-events-v1.json",
+   "sha256": "836a7d6da3ae28598d804889eee00a143137fa844fe13023df71e53da42e4294"
+  },
+  {
+   "path": "protocol/goldens/durable-recovery-v1.json",
+   "sha256": "6a1dfbe46e5acfad3083c1f07d0e23fe40e1e43145b6b77e1fb455e6a7e7fc82"
+  },
+  {
+   "path": "protocol/goldens/durable-refinement-model-v1.json",
+   "sha256": "621d7c89e236fde9c7353e40750e848f4899d1e86cad15c2f493e90730efb966"
+  },
+  {
+   "path": "protocol/goldens/durable-start-v1.json",
+   "sha256": "e172bb98d05baa6f93edf7e28e8580bb170319db968f56391687d41d58e8ec9e"
+  },
+  {
+   "path": "protocol/goldens/journal-storage-v1.json",
+   "sha256": "0ba3f85bba95f7ee7f59c6917b948c77ed4b0d505de6ee56913595162cd94949"
+  },
+  {
+   "path": "protocol/publication/artifacts-v1.json",
+   "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"
+  },
+  {
+   "path": "protocol/requirements/generated/requirements-v1.json",
+   "sha256": "50eed9abe5292053d2558c2d0a228aff20278ac5cac828027db5f82b6eb5261f"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "fad034e65cfadda77e824d01b81144604c7f9f89fb67576d8653f7caf89ca0ea"
+  },
+  {
+   "path": "protocol/requirements/section14-v1.json",
+   "sha256": "70932ed23818fccc39949ec7d019899a559ae88e12f72de501082c18d57fa8b6"
+  }
+ ],
+ "claim": {
+  "advertises_profiles": [
+   "analyzer",
+   "durable-runtime",
+   "embedding",
+   "evaluator",
+   "frontend"
+  ],
+  "excludes_capabilities": [
+   "combined-concurrent-durable"
+  ],
+  "excludes_profiles": [
+   "concurrent-evaluator"
+  ],
+  "profiles": [
+   "analyzer",
+   "durable-runtime",
+   "embedding",
+   "evaluator",
+   "frontend"
   ]
+ },
+ "environment_gaps": [
+  "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result or a qualified stable-media power-loss environment."
+ ],
+ "evidence_anchor_count": 124,
+ "format": "gantry.durable-gate-evidence/v1",
+ "gate": "GNT-GATE-600",
+ "prerequisites": [
+  {
+   "commit": "c25ed214ed78bde04f463d2800ca2915de3a8954",
+   "issue": "GNT-DUR-003",
+   "subject": "Implement durable start and resume preflight."
+  },
+  {
+   "commit": "c3e7de8c63a40ffbd35aac14a9d8bd04028f5783",
+   "issue": "GNT-DUR-004",
+   "subject": "Implement durable lifecycle control."
+  },
+  {
+   "commit": "a45452092bf5fa807e7aef8196b801d0c1a68f75",
+   "issue": "GNT-DUR-005",
+   "subject": "Implement journal-first durable events."
+  },
+  {
+   "commit": "067255908bf89ea4c100c8f6cbbffe9e58b0b788",
+   "issue": "GNT-DUR-006",
+   "subject": "Model durable runtime refinement"
+  },
+  {
+   "commit": "4976e758eb2cc681527998b662f3e204eef13b1d",
+   "issue": "GNT-SPEC-001",
+   "subject": "Define the lifecycle formal kernel."
+  },
+  {
+   "commit": "4d14aede55c527cf027ada62ae9b65b3747cf314",
+   "issue": "GNT-SQL-002",
+   "subject": "Add SQLite physical fault evidence."
+  }
+ ],
+ "required_evidence": [
+  "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement",
+  "crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery",
+  "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions",
+  "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch",
+  "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay",
+  "crates/gantry-conformance/tests/durable_start.rs#durable_cancellation_commits_once_before_terminal_observation_and_release",
+  "crates/gantry-conformance/tests/durable_start.rs#durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent",
+  "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries",
+  "crates/gantry-conformance/tests/journal_storage.rs#public_in_memory_store_passes_the_common_atomic_fenced_contract",
+  "crates/gantry-conformance/tests/sqlite_storage.rs#bundled_sqlite_fault_matrix_preserves_atomic_sequence_and_payload_prefixes",
+  "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_cross_process_owner_exclusion_and_crash_reclamation",
+  "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_strict_power_loss_policy_matches_environment_qualification"
+ ],
+ "review_summary": {
+  "applicable_clause_count": 377,
+  "covered_count": 363,
+  "not_applicable_count": 14,
+  "profile": "durable-runtime"
+ },
+ "section14_excerpt_count": 51,
+ "semantic_evidence": {
+  "argument": "docs/durable-runtime-refinement.md",
+  "counterexample_count": 15,
+  "explored_state_count": 3724,
+  "manifest": "protocol/conformance/durable-refinement-v1.json",
+  "maximum_depth": 15,
+  "model": "protocol/goldens/durable-refinement-model-v1.json",
+  "terminal_state_count": 2772
+ },
+ "specification": {
+  "path": "SPEC.md",
+  "sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e"
+ },
+ "status": "verified",
+ "validation_commands": [
+  "cargo +1.91.0 check --locked --workspace --all-targets --all-features",
+  "cargo +1.97.1 check --locked --workspace --all-targets --all-features",
+  "cargo +stable check --locked --workspace --all-targets --all-features",
+  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+  "cargo fmt --all -- --check",
+  "cargo run --locked -p xtask -- check generated",
+  "cargo run --locked -p xtask -- check governance",
+  "cargo run --locked -p xtask -- check workspace",
+  "cargo test --locked --workspace --all-targets --all-features"
+ ]
 }

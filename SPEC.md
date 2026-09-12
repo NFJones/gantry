@@ -12975,3 +12975,354 @@ promising a limit outside it, a non-claim MUST NOT be presented as a guarantee, 
 implementation MUST NOT report a clause of this section as satisfied, partially
 satisfied, or conditionally satisfied where it can only demonstrate one of these
 limits.
+
+## 24. Waits, Wakeups, Arbitration, and Quiescence
+
+<a id="GNT-24.0-waits-wakeups-arbitration-and-quiescence"></a>
+
+**[GNT-24.0-waits-wakeups-arbitration-and-quiescence] Waits, wakeups, arbitration,
+and quiescence.** This section defines how one suspended wait is registered and
+rechecked in one atomic step, how a wait is identified and fenced across a reused
+waiter, which wake causes exist and who owns a wake, how producer loss and resource
+closure settle dependent waits, how `select` and `race` freeze a snapshot and commit
+one permanent winner, how a quiescent lifecycle is classified, how a durable wait is
+committed and reconstructed, and the explicit non-claims of the section. It cites and
+extends, rather than replaces, the landed operation contracts of Section 20
+(`GNT-20.1` through `GNT-20.11`), the cooperative stop and hard cancellation rules of
+Section 22, the cancellation rule of `GNT-15.3`, the protected-data and
+protected-diagnostic rules of `GNT-15.10` and the protection store, the task
+lifecycle of `GNT-3-M-LIFECYCLES`, and the shutdown operation, its cohort, and its
+finite graceful timeout of `GNT-10.12`, `GNT-10.13` and `GNT-10.14`.
+
+The closed vocabulary of this section is exactly the following terms. A clause here
+MUST NOT use a wait term outside this vocabulary, and a term listed below MUST NOT be
+given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| wait | One suspension of one source point on one waitable resource, named by its waiter identity. |
+| waiter identity | The stable identity of one wait, derived from declared fields only, as defined by `GNT-24.2-wait-identity-and-generations`. |
+| readiness recheck | The one observation that, taken together with registration, decides whether a wake is already pending. |
+| wake | One delivery of one member of the closed wake-cause set of `GNT-24.3-wake-causes-and-wake-ownership` to one live wait. |
+| wake owner | The one wait that owns one wake; no wake has two owners and no wait has two winners. |
+| waitable-resource generation | The landed resource generation of `GNT-20.2-logical-operation-and-resource-generation-identity` that a wait observes. |
+| stale wake | A wake that does not name the waiter-generation fence the live wait holds, or that names a waiter the wait set no longer holds live. |
+| withdrawal | The retirement of one wait by its own owner; a withdrawal retires the fence the wait holds and settles no member of the closed wake-cause set, so it is not a wake. |
+| arbitration | One `select` or `race` over one frozen snapshot of armed alternatives, decided under `GNT-24.6-select-and-race-snapshots-and-winner-permanence`. |
+| winner | The one alternative an arbitration commits, which is never re-chosen. |
+| quiescence class | One member of the closed five-member class set of `GNT-24.8-quiescence-classification`. |
+| wait non-claim | One published limit of `GNT-24.10-wait-non-claims`. |
+
+**Applicability.** The clauses of this section govern an edition or profile that
+admits suspended waits and arbitration over them. The v1 edition described by
+Sections 1 through 15 does not: its landed model has tasks, operations, cancellation,
+and recovery, but no waiter identity, no readiness recheck, no wake-cause set, no
+arbitration arm, and no wait-graph diagnostic. An implementation that supports only
+that model MUST record each clause of this section as a profile-based
+`not-applicable` justification in the sense of Sections 2 and 15, and MUST NOT report
+a clause here as satisfied, partially satisfied, conditionally satisfied, or
+satisfied for a subset of its rules.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the
+operation kinds, receiver arrangement, progress observation, interruption, and
+late-completion rules of `GNT-20.1` through `GNT-20.5`; the ambiguous-effect and
+retry-eligibility classification of `GNT-20.6`; the resource state after failure, the
+half-close rules, and the adapter obligations of `GNT-20.7`, `GNT-20.8` and
+`GNT-20.11`; the owner generation and its stale-owner fencing of
+`GNT-20.10-retirement-and-stale-owner-fencing`; the cooperative stop, admission
+closure, and hard cancellation rules of Section 22; the shutdown operation, its
+cohort, its finite graceful timeout, and its unclean-drop path of `GNT-10.12`,
+`GNT-10.13` and `GNT-10.14`; the cancellation rule of `GNT-15.3`; and protected data
+and its protected diagnostics of `GNT-15.10` and the protection store. Nothing here
+introduces a second generation vocabulary: the owner generation of `GNT-20.10` and
+the resource generation of `GNT-20.2` remain the landed counters, and the
+waiter-generation fence of `GNT-24.2-wait-identity-and-generations` only records
+which registration of one waiter slot a wake observes. Nothing here introduces a
+second cancellation vocabulary: a cancellation wake is the landed `GNT-15.3` or
+Section 22 cancellation, never a third cancellation. Nothing here introduces a
+protected class: the protected classes and their disclosure rules remain those of
+Sections 15 and 21. Nothing here introduces a new identity input: every identity of
+this section is derived from declared fields, and no process identifier, thread
+identity, signal number, clock reading, host path, environment fact, locale, socket,
+or adapter handle enters one. Every obligation of this section is decided by an
+explicit check over declared values, and this section states no obligation that no
+check can decide.
+
+<a id="GNT-24.1-atomic-registration-and-readiness-recheck"></a>
+
+**[GNT-24.1-atomic-registration-and-readiness-recheck] Atomic registration and
+readiness recheck.** Registration of a waiter and the readiness recheck of the
+waitable resource it observes form one atomic linearization step. There is no
+declared state in which a waiter is registered and the resource has not been
+rechecked against it, and no declared state in which the resource has been rechecked
+and the waiter is not yet registered, so one step decides exactly one of two
+outcomes. That step publishes its outcome before source suspends: either the wait is
+registered, so every wake that linearizes later is delivered to a live waiter, or the
+wait is already ready with the cause the recheck observed, so the wake consumed at
+the same step is not lost. A delivery of the closed cause set of
+`GNT-24.3-wake-causes-and-wake-ownership` - a send, a task settlement, or an operation
+completion - a resource closure, a timer firing, a stop request of
+`GNT-22.1-stop-request-identity-and-cause`, or a cancellation of `GNT-15.3` that
+linearizes at or before the step is therefore observed as ready rather than lost between
+the check and the suspension, and one that linearizes after the step is delivered to the
+registered waiter rather than dropped.
+Suspension is admitted only by the decision the atomic step published: a suspension
+attempted with no published registration decision, a suspension attempted after the
+step decided that the wait was already ready, and a second registration of one wait
+are each refused rather than deferred, because each would leave either a wake with no
+waiter or one waiter with two decisions. The decision is monotone and single: a
+published readiness is never withdrawn, a registered waiter is never re-registered by
+a later recheck, and a refusal leaves both the published decision and the waiter
+identity exactly as they were.
+
+<a id="GNT-24.2-wait-identity-and-generations"></a>
+
+**[GNT-24.2-wait-identity-and-generations] Wait identity and generations.** A wait
+carries one stable waiter identity, the owning task of `GNT-3-M-LIFECYCLES`, the
+waitable-resource identity and generation of
+`GNT-20.2-logical-operation-and-resource-generation-identity`, and one declared
+waiter-generation fence. The waiter identity is derived under its own domain
+separator from the owning task, the waitable-resource identity, the resource
+generation, one declared registration ordinal of the waiter slot, and one declared
+waiter-generation fence of that registration, and from nothing else: no process
+identifier, thread identity, clock reading, host path,
+environment fact, locale, socket, or adapter handle enters the derivation, so equal
+declared inputs produce equal identities and two waits that differ in any declared
+input are distinct identities. The waiter-generation fence is monotone per waiter
+slot and is not a second generation vocabulary: the owner generation of
+`GNT-20.10-retirement-and-stale-owner-fencing` and the resource generation remain the
+landed counters, and the fence only records which registration of one slot a wake
+observes. Waiter reuse is explicit: after a wait settles, the same slot may host a
+new wait only under a strictly greater registration ordinal and a strictly greater
+fence, so a reused slot never accepts the identity, the fence, or the readiness of
+its predecessor. The wake-cause vocabulary is closed: exactly the five members of
+`GNT-24.3-wake-causes-and-wake-ownership`, each with one frozen spelling and one
+frozen meaning, and no clause of this section introduces a sixth cause, an
+implementation-defined cause, or a cause inferred from a payload.
+
+<a id="GNT-24.3-wake-causes-and-wake-ownership"></a>
+
+**[GNT-24.3-wake-causes-and-wake-ownership] Wake causes and wake ownership.** The
+wake-cause vocabulary is exactly five causes: delivery, resource closure,
+cancellation, a stop request, and timeout. The five stay distinct, each is reported
+under its own frozen spelling, and no wake is reported under another cause or under a
+generic or unspecified cause. Delivery is a send, a task settlement, or an operation
+completion of the awaited operation or value under Section 20; resource closure is the
+closure of the awaited resource under
+`GNT-20.7-resource-state-after-failure-and-poisoning` and
+`GNT-20.8-half-close-and-post-failure-ownership`; cancellation is the landed
+cancellation of `GNT-15.3` or of Section 22; a stop request is the cooperative stop
+request of `GNT-22.1-stop-request-identity-and-cause`, whose identity and cause stay
+distinct from cancellation; and timeout is the expiry of a declared wait deadline in
+logical microseconds, declared as a value and never read from a clock. Waiter removal
+by the owner of a wait is a withdrawal rather than a wake cause: it retires the fence
+the wait holds and settles no member of this set, so no clause of this section reports
+a removal as a wake and the vocabulary is never widened to a sixth cause. A wake is
+delivered to exactly one live wait, and each wake has exactly one owner: the first
+admissible wake of one wait fixes its single source-visible winner, and a later wake of the same
+wait is refused as a second wake rather than becoming a second winner, reclassified,
+merged, or silently dropped. The five causes race at one declared linearization
+point: a wake that linearizes at or before the atomic step of
+`GNT-24.1-atomic-registration-and-readiness-recheck` is the readiness that step
+publishes, and a wake that linearizes after it is delivered to the registered waiter,
+so no interleaving of the five causes loses a wake, produces two winners for one
+wait, or leaves a wake owned by no wait.
+
+<a id="GNT-24.4-stale-wake-fencing-and-waiter-reuse"></a>
+
+**[GNT-24.4-stale-wake-fencing-and-waiter-reuse] Stale-wake fencing and waiter
+reuse.** A wake names the waiter identity it addresses and the waiter-generation fence
+it observes, and it is admissible only against the live wait that holds both. A wake
+naming a waiter the wait set does not hold live, a wake that does not name the fence
+the live wait holds, a wake that names a fence the slot already retired - the stale
+wake of a reused waiter - and a duplicate of a wake already applied to that wait are
+each refused without mutating any wait state, and each refusal names the waiter, the
+held fence, and the presented fence. Fencing is one-way: the first settlement of a
+wait retires its fence, a retired fence is never revived, a slot never returns to an
+earlier registration ordinal, and neither a stale wake nor a duplicate wake can
+resume a reused task, a reused waiter identity, or a reused resource generation. A
+refusal is distinguishable from a first wake, from a second wake of a live wait, from
+a cancellation, and from a resource closure, and it leaves the recorded winner, the
+held fence, and the slot's current generation exactly as they were. A registration
+presented for a slot whose retired ordinal or fence is not strictly less than the
+presented one is refused rather than admitted, so reuse can only move forward, and a
+registration that names a waiter identity the slot already holds live is refused as a
+duplicate waiter rather than accepted as a fresh wait.
+
+<a id="GNT-24.5-producer-loss-and-closure"></a>
+
+**[GNT-24.5-producer-loss-and-closure] Producer loss and closure.** Dropping the last
+sender, requester, producer, or resource owner of a waitable resource closes that
+resource generation under the type contract of the awaited value, and closure settles
+every live wait of that resource generation rather than leaving any of them
+unclassifiable. Closure settles in one declared order each wait that has no winner
+yet, with the resource-closure cause of
+`GNT-24.3-wake-causes-and-wake-ownership`; it preserves without rewrite each wait that
+already has a winner, and it reports both the settled set and the preserved set, so a
+caller can decide the outcome of every dependent wait from declared values. After
+closure no wait of the closed resource generation remains live with no cause, so no
+permanent unclassifiable wait exists and every dependent wait has exactly one
+source-visible outcome. A closure of a resource generation the wait set does not know,
+a repeated closure that would re-settle an already settled wait, and a closure that
+would revive a retired fence are refused rather than treated as a new or second
+closure. Waiter removal by its own owner follows the same rule: removing a wait
+withdraws it, retiring the fence it holds and settling it as a withdrawal rather than
+dropping it, and an owner that retires without settling its waits leaves those waits
+classifiable as orphaned work
+under `GNT-24.8-quiescence-classification`, never unclassifiable and never silently
+discarded.
+
+<a id="GNT-24.6-select-and-race-snapshots-and-winner-permanence"></a>
+
+**[GNT-24.6-select-and-race-snapshots-and-winner-permanence] Select and race
+snapshots and winner permanence.** One `select` or one `race` freezes exactly one
+snapshot of the armed alternatives it observes. The snapshot is the declared arm set:
+for each arm, its declared position in the arm order, its waiter identity, and its
+waitable-resource generation. The snapshot is immutable for the life of the
+arbitration: an arm presented after the snapshot, a wake observed for an arm outside
+the snapshot, and a re-read that would widen the arm set are each refused rather than
+admitted, so no later arrival enters an arbitration it did not freeze. An arm set that
+arms one waiter identity twice is refused as a repeated armed alternative rather than
+frozen, because one wait has exactly one winner and a repeated alternative is not a
+second fresh wait. Decision
+observes one declared arbitration instant: an arm is eligible exactly when a wake of
+the closed cause set is observed for it at that instant, an arbitration with no
+eligible arm stays unresolved and a later decision observes the same snapshot, and
+eligibility is never inferred from a later observation of the same resource. Tie
+behaviour is declared rather than observed: when more than one arm is eligible at the
+arbitration instant, the committed winner is the eligible arm with the lowest declared
+position in the arm order, and the decision records every contending arm, so no
+scheduling order, arrival order, host fact, or clock reading decides a tie. The winner
+is permanent: the first decision commits exactly one winner, a later decision of the
+same arbitration is refused as a second decision whether or not it is identical, a
+committed winner is never re-chosen, never re-evaluated, and never replaced, including
+by the recovery of `GNT-24.9-durable-wait-and-winner-reconstruction`, and a refused
+decision leaves the committed winner, its arm position, and the frozen snapshot
+exactly as they were.
+
+<a id="GNT-24.7-losing-arm-ownership-and-nondeterminism"></a>
+
+**[GNT-24.7-losing-arm-ownership-and-nondeterminism] Losing-arm ownership and
+nondeterminism.** Every armed alternative of one arbitration that is not the committed
+winner is a losing arm, and each losing arm is settled exactly once under this clause.
+An arbitration with a committed winner yields exactly one losing-arm settlement, which
+is affine: it is produced once, consumed once, and cannot be copied, duplicated, or
+replayed, so no losing arm is left with unspecified ownership and none is settled
+twice. The settlement records exactly one declared disposition per losing arm: the
+arm's wait is cancelled with the cancellation cause of
+`GNT-24.3-wake-causes-and-wake-ownership`, or the arm's wait is retained for its owner
+unchanged. The settlement refuses a disposition for the committed winner, a repeated
+disposition, a disposition for an arm outside the frozen snapshot, and a missing
+disposition, and it is refused entirely before a winner is committed, so ownership is
+decided only after the winner is permanent. Application nondeterminism is permitted
+only within the declared envelope: where more than one arm is eligible at the
+arbitration instant, the application-visible choice may differ between runs, but only
+among the eligible arms of the frozen snapshot, each of which is a declared value. A
+choice outside the eligible set, a choice among arms of another snapshot, and a choice
+derived from a host fact, an arrival order, a scheduling order, or a clock reading are
+refused, because each would leave the outcome undecidable from declared values.
+
+<a id="GNT-24.8-quiescence-classification"></a>
+
+**[GNT-24.8-quiescence-classification] Quiescence classification.** One quiescent
+observation is classified into exactly one of five classes, and the class vocabulary
+is closed: externally wakeable idle, internally wakeable idle, closed-wait deadlock,
+completion, and orphaned work. The classifier is decided from declared wait and edge
+facts only: the live waits of each owner, the live waits blocked on an internal edge
+of the same lifecycle, the live waits whose only remaining prerequisite is an external
+host prerequisite the type contract permits to remain pending, the admitted
+nonterminal work units, the admitted work units an internal wake can resume, and the
+waits whose owner retired without settling them. It reads no clock, no process fact,
+no adapter handle, and no host state, so equal declared facts produce the same class.
+
+The class is decided in this order. Orphaned work is the state in which waits of a
+retired owner remain, or in which admitted nonterminal work remains with no owner able
+to advance it. Completion is the state with no live wait and no admitted nonterminal
+work. With no live wait and admitted nonterminal work remaining, the class is
+internally wakeable idle, because the remaining pending work is work this lifecycle
+can itself wake or schedule. With live waits remaining, closed-wait deadlock is the
+state in which every live wait is blocked on an internal edge of the same lifecycle,
+no external prerequisite is pending, and no admitted work can be scheduled to break
+the cycle. Otherwise externally wakeable idle is the class when at least one live wait
+remains whose only remaining prerequisite is an external prerequisite permitted to
+remain pending, and internally wakeable idle is the class in the remaining case,
+because the remaining pending work is then work this lifecycle can itself wake or
+schedule. The five classes are therefore total and mutually exclusive over declared
+facts, and malformed facts - more blocked live waits than live waits, or more
+resumable work units than admitted nonterminal work units - are refused rather than
+mapped onto a class.
+
+The soundness rule is explicit. A pending host prerequisite that the type contract
+permits to remain pending is not a deadlock: a wait whose only remaining prerequisite
+is such an external prerequisite is classified as externally wakeable idle and never
+as closed-wait deadlock, and this section never reports deadlock detection for
+genuinely pending external work. The external prerequisites a wait observes are the
+landed operation and resource contracts of Sections 20 and 22; this section adds no
+third prerequisite state and observes no host.
+
+A closed-wait deadlock is reported once as a bounded protected wait-graph diagnostic.
+The diagnostic names the waiting identities, the internal edge count, the class, and
+the clause anchors that own it, and it is bounded by a declared maximum node and edge
+count: a graph beyond that bound is refused rather than truncated, so a diagnostic
+never presents a partial graph as a complete one. The diagnostic carries declared
+metadata, identities, and codes only: no field of it can hold a payload byte, a
+protected content, a secret, or a value derived from one, and a diagnostic that
+relates to protected data is itself protected under `GNT-15.10`, reachable only
+through the landed protected-diagnostic rules and the protection store. Classification
+is evidence only: it settles no task, closes no resource, and rewinds no accepted
+work, and the declared remedy for a closed-wait deadlock is the ordinary cancellation
+and cleanup of `GNT-15.3` and Section 22 rather than a second fault or cancellation
+taxonomy.
+
+<a id="GNT-24.9-durable-wait-and-winner-reconstruction"></a>
+
+**[GNT-24.9-durable-wait-and-winner-reconstruction] Durable wait and winner
+reconstruction.** In durable mode a wait commits exactly four cuts in order:
+registration, ownership, readiness, and the decision. The decision cut is the selected
+wake or the deadlock transition of `GNT-24.8-quiescence-classification`, and it is
+committed before source consumes the result, so a result a source observes is a
+committed result and never a value the durable record has yet to fix. A wake decision
+is committed only over a committed readiness that recorded its cause, because the wake
+a decision selects is the readiness the wait observed. A cut only ever
+advances: advancing to the same cut is stuttering and commits nothing twice, and a cut
+that would move backwards or skip an uncommitted cut is refused rather than applied. A
+decision is committed once: a repeated decision observes the committed winner or the
+committed deadlock rather than re-deciding, overwriting, or re-deriving either, so no
+source observes a winner that a later cut could change.
+
+Recovery from a committed cut classifies what it resumes from that cut alone. A
+committed registration cut resumes registration of the same waiter identity, the same
+owner, and the same resource generation. A committed ownership cut resumes the armed
+wait of `GNT-24.6-select-and-race-snapshots-and-winner-permanence`. A committed
+readiness cut resumes the ready cause it recorded. A committed decision cut resumes
+the committed winner or the committed deadlock. Recovery reconstructs the same wait
+set: the same waiter identities, the same fences, the same owners, and the same
+resource generations, and it reattaches only permitted external prerequisites.
+Presented prerequisites outside the permitted set are refused rather than reattached,
+a prerequisite that was not presented is not invented, and the reconstructed
+prerequisite set is a subset of the presented set that the type contract permits.
+Recovery never turns a committed wake into a different winner: a presented winner that
+differs from the committed one, a presented wake over a committed deadlock, and a
+presented deadlock over a committed wake are each refused without mutating the record,
+so a replay from a committed prefix reproduces the same winner and the same
+classification.
+
+<a id="GNT-24.10-wait-non-claims"></a>
+
+**[GNT-24.10-wait-non-claims] Explicit non-claims.** This section does not promise and
+MUST NOT be read as promising: unbounded fairness or latency, because it declares no
+schedule and no clock and makes no promise that any wait is woken within any number of
+logical instants; deadlock detection for genuinely pending external work, because a
+pending host prerequisite the type contract permits to remain pending is classified as
+externally wakeable idle and never as closed-wait deadlock; shared-memory thread
+semantics, because a waiter identity names one declared wait and never a thread, a
+process, a memory location, or an execution context, and no clause here promises that a
+wake is observed by a particular thread or at a particular point of a machine; or
+disclosure of a protected payload in a diagnostic, because a wait diagnostic carries
+declared metadata, identities, and codes only and a diagnostic that relates to
+protected data is reachable only through the protected-diagnostic rules of
+`GNT-15.10` and the protection store. The non-claims are a closed vocabulary: a
+diagnostic, a clause, or an evidence item MUST NOT be read as promising a limit
+outside it, a non-claim MUST NOT be presented as a guarantee, and an implementation
+MUST NOT report a clause of this section as satisfied, partially satisfied, or
+conditionally satisfied where it can only demonstrate one of these limits.

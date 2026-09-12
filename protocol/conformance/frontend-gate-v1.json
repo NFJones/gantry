@@ -1,156 +1,156 @@
 {
-  "artifacts": [
-    {
-      "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "39aab780615f991f14ae1de76f49e40d51e453da4a00f73540d76bbe926f8a64"
-    },
-    {
-      "path": "protocol/conformance/frontend-lexical-v1.json",
-      "sha256": "fb0ca80adc4a04b44954686304d30b2329a716ae0661e903a0869b4957a4b4b1"
-    },
-    {
-      "path": "protocol/conformance/frontend-package-v1.json",
-      "sha256": "2f6dcef0e2bdee5030583588a77090ca24ee6449ec61123d1a7948852aeb472b"
-    },
-    {
-      "path": "protocol/conformance/frontend-parser-v1.json",
-      "sha256": "fc1ca717a51311ca62c9b07d0e8f466f6dc02881ad4e76cb22f08f132402e6f8"
-    },
-    {
-      "path": "protocol/conformance/source-substrate-gate-v1.json",
-      "sha256": "9a336b44889eb502d26b044eae97ffea1fb123d647e465cbd5169b45d02ff615"
-    },
-    {
-      "path": "protocol/goldens/activity-observation-vectors-v1.json",
-      "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
-    },
-    {
-      "path": "protocol/goldens/diagnostic-machine-v1.json",
-      "sha256": "456fa349437d36d2d9f0c5ae310f1a539f9ba9c492b14a4449f2f84190704bab"
-    },
-    {
-      "path": "protocol/goldens/diagnostic-presentation-v1.json",
-      "sha256": "27b2a321347f99fe5376277a7af7323d6b8e0ec04fc4ee976ff7b834688c3351"
-    },
-    {
-      "path": "protocol/goldens/profiles-v1.canonical.json",
-      "sha256": "e2f3aaf3fd4e8adeb6d5b17c61e76c5fda400de0824d5016eed5115c41abed42"
-    },
-    {
-      "path": "protocol/goldens/source-substrate-vectors-v1.json",
-      "sha256": "7b5d656a1b7df33808a5e86b57d32e92debf534744c74d5a5b94b86297523ed2"
-    },
-    {
-      "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "703fca9b2555bc962cbc36cf1849507b7341a3f24a7b40746f7aeca7b66f51fb"
-    },
-    {
-      "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "4d0488c44220417e2defc6bc12911b90d1d701803518145993d5d2a2a3ec4591"
-    },
-    {
-      "path": "protocol/requirements/section14-v1.json",
-      "sha256": "498b0cc2045661117c5ee396fcd45f57b45ddc82f8ed8a005e745774d71658d7"
-    },
-    {
-      "path": "protocol/schemas/activity-observation-v1.schema.json",
-      "sha256": "24821293533841149e962b77c41c5aab9ebdea09401662180fd9a20ed409d9b1"
-    },
-    {
-      "path": "protocol/schemas/profile-catalog-v1.schema.json",
-      "sha256": "74b9513e5b7325da1202f5e349c3f6ece75694392b5406773ee98248ef720b80"
-    },
-    {
-      "path": "protocol/schemas/source-substrate-v1.schema.json",
-      "sha256": "e98037704d9a66a3479d30ab726b4968fb4b98cf72dc06effbb406f6ed36595c"
-    }
-  ],
-  "claim": {
-    "advertises_profiles": [
-      "frontend"
-    ],
-    "excludes_profiles": [
-      "analyzer",
-      "concurrent-evaluator",
-      "durable-runtime",
-      "embedding",
-      "evaluator"
-    ],
-    "profiles": [
-      "frontend"
-    ]
+ "artifacts": [
+  {
+   "path": "protocol/catalogs/profiles-v1.json",
+   "sha256": "f490a3baae980c3f926fde4cff7ac14015117dafa0ac4dbe5f1b835f3c415eb1"
   },
-  "environment_gaps": [
-    "The stable-macOS source-provider race lane executes in hosted CI; this Linux gate run does not claim a local macOS result."
-  ],
-  "format": "gantry.frontend-gate-evidence/v1",
-  "gate": "GNT-GATE-200",
-  "prerequisites": [
-    {
-      "commit": "cfcf4c1ab8ecf1eba50a1de723dd2a585c1b9f8d",
-      "issue": "GNT-FE-001",
-      "subject": "Close lexical conformance evidence."
-    },
-    {
-      "commit": "54637517a73752d3643ad6dd65407b44a8864f9b",
-      "issue": "GNT-FE-002",
-      "subject": "Close parser conformance evidence."
-    },
-    {
-      "commit": "93004874961b3b57da808d02f718e7bfae3d1811",
-      "issue": "GNT-FE-003",
-      "subject": "Close package frontend evidence."
-    },
-    {
-      "commit": "8cafc91ed85ca5e6acebf604dc09480f6788b229",
-      "issue": "GNT-FND-003",
-      "subject": "Scope requirement evidence by profile."
-    },
-    {
-      "commit": "aadd46fdf22ca9c396b22fdfe061fdc2f9981d2c",
-      "issue": "GNT-FND-007",
-      "subject": "Establish external conformance harness"
-    },
-    {
-      "commit": "ee5bdb0e0e781e7c78195df4c781b947f2c4edab",
-      "issue": "GNT-GATE-000",
-      "subject": "Close foundation conformance gate"
-    },
-    {
-      "commit": "373d20f5fe4ed8e9e1cae1114716e0f2d53c9c81",
-      "issue": "GNT-GATE-100",
-      "subject": "Close source substrate gate."
-    },
-    {
-      "commit": "530e6b569afa4ab0c48c7bf0857cfdb833920430",
-      "issue": "GNT-OBS-001",
-      "subject": "Implement shared activity event delivery"
-    },
-    {
-      "commit": "41945853eeaa440b105a335c494a247c2be0c3b2",
-      "issue": "GNT-SVC-001",
-      "subject": "Implement package identity and UTC services"
-    }
-  ],
-  "profile": "frontend",
-  "review_summary": {
-    "applicable_clause_count": 74,
-    "covered_count": 58,
-    "not_applicable_count": 16
+  {
+   "path": "protocol/conformance/frontend-lexical-v1.json",
+   "sha256": "279697df6ca6a31dc6908151c4ce8d9f57abb57fea67bd96779e3b87fa44ddc4"
   },
-  "section14_excerpt_count": 51,
-  "specification": {
-    "path": "SPEC.md",
-    "sha256": "d1ab4b6ab20bdddfb4955210c7441b72e65ddeef929172ec8046624751db8a83"
+  {
+   "path": "protocol/conformance/frontend-package-v1.json",
+   "sha256": "115363e6fec0ed9fbcec6bd21d9c2047fd5f1d7d540d2ba24ce68b88eeec396b"
   },
-  "status": "verified",
-  "validation_commands": [
-    "cargo run --locked -p xtask -- check generated",
-    "cargo run --locked -p xtask -- check governance",
-    "cargo run --locked -p xtask -- check workspace",
-    "cargo fmt --all -- --check",
-    "cargo check --locked --workspace --all-targets --all-features",
-    "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-    "cargo test --locked --workspace --all-targets --all-features --no-fail-fast"
+  {
+   "path": "protocol/conformance/frontend-parser-v1.json",
+   "sha256": "2f97c77315a54c3e8660134d3add6bbaea7f4576686130c5e58e1cda6ab07780"
+  },
+  {
+   "path": "protocol/conformance/source-substrate-gate-v1.json",
+   "sha256": "ed23b845a327b7ec9a67469f77709d3751b15c4e6829abfb788870345836ddf0"
+  },
+  {
+   "path": "protocol/goldens/activity-observation-vectors-v1.json",
+   "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
+  },
+  {
+   "path": "protocol/goldens/diagnostic-machine-v1.json",
+   "sha256": "456fa349437d36d2d9f0c5ae310f1a539f9ba9c492b14a4449f2f84190704bab"
+  },
+  {
+   "path": "protocol/goldens/diagnostic-presentation-v1.json",
+   "sha256": "27b2a321347f99fe5376277a7af7323d6b8e0ec04fc4ee976ff7b834688c3351"
+  },
+  {
+   "path": "protocol/goldens/profiles-v1.canonical.json",
+   "sha256": "75fe999fcb9ff1e657cb86c51a674e025c24ba7b8b025ca350faceeffa255c19"
+  },
+  {
+   "path": "protocol/goldens/source-substrate-vectors-v1.json",
+   "sha256": "7b5d656a1b7df33808a5e86b57d32e92debf534744c74d5a5b94b86297523ed2"
+  },
+  {
+   "path": "protocol/requirements/generated/requirements-v1.json",
+   "sha256": "50eed9abe5292053d2558c2d0a228aff20278ac5cac828027db5f82b6eb5261f"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "fad034e65cfadda77e824d01b81144604c7f9f89fb67576d8653f7caf89ca0ea"
+  },
+  {
+   "path": "protocol/requirements/section14-v1.json",
+   "sha256": "70932ed23818fccc39949ec7d019899a559ae88e12f72de501082c18d57fa8b6"
+  },
+  {
+   "path": "protocol/schemas/activity-observation-v1.schema.json",
+   "sha256": "24821293533841149e962b77c41c5aab9ebdea09401662180fd9a20ed409d9b1"
+  },
+  {
+   "path": "protocol/schemas/profile-catalog-v1.schema.json",
+   "sha256": "74b9513e5b7325da1202f5e349c3f6ece75694392b5406773ee98248ef720b80"
+  },
+  {
+   "path": "protocol/schemas/source-substrate-v1.schema.json",
+   "sha256": "e98037704d9a66a3479d30ab726b4968fb4b98cf72dc06effbb406f6ed36595c"
+  }
+ ],
+ "claim": {
+  "advertises_profiles": [
+   "frontend"
+  ],
+  "excludes_profiles": [
+   "analyzer",
+   "concurrent-evaluator",
+   "durable-runtime",
+   "embedding",
+   "evaluator"
+  ],
+  "profiles": [
+   "frontend"
   ]
+ },
+ "environment_gaps": [
+  "The stable-macOS source-provider race lane executes in hosted CI; this Linux gate run does not claim a local macOS result."
+ ],
+ "format": "gantry.frontend-gate-evidence/v1",
+ "gate": "GNT-GATE-200",
+ "prerequisites": [
+  {
+   "commit": "cfcf4c1ab8ecf1eba50a1de723dd2a585c1b9f8d",
+   "issue": "GNT-FE-001",
+   "subject": "Close lexical conformance evidence."
+  },
+  {
+   "commit": "54637517a73752d3643ad6dd65407b44a8864f9b",
+   "issue": "GNT-FE-002",
+   "subject": "Close parser conformance evidence."
+  },
+  {
+   "commit": "93004874961b3b57da808d02f718e7bfae3d1811",
+   "issue": "GNT-FE-003",
+   "subject": "Close package frontend evidence."
+  },
+  {
+   "commit": "8cafc91ed85ca5e6acebf604dc09480f6788b229",
+   "issue": "GNT-FND-003",
+   "subject": "Scope requirement evidence by profile."
+  },
+  {
+   "commit": "aadd46fdf22ca9c396b22fdfe061fdc2f9981d2c",
+   "issue": "GNT-FND-007",
+   "subject": "Establish external conformance harness"
+  },
+  {
+   "commit": "ee5bdb0e0e781e7c78195df4c781b947f2c4edab",
+   "issue": "GNT-GATE-000",
+   "subject": "Close foundation conformance gate"
+  },
+  {
+   "commit": "373d20f5fe4ed8e9e1cae1114716e0f2d53c9c81",
+   "issue": "GNT-GATE-100",
+   "subject": "Close source substrate gate."
+  },
+  {
+   "commit": "530e6b569afa4ab0c48c7bf0857cfdb833920430",
+   "issue": "GNT-OBS-001",
+   "subject": "Implement shared activity event delivery"
+  },
+  {
+   "commit": "41945853eeaa440b105a335c494a247c2be0c3b2",
+   "issue": "GNT-SVC-001",
+   "subject": "Implement package identity and UTC services"
+  }
+ ],
+ "profile": "frontend",
+ "review_summary": {
+  "applicable_clause_count": 74,
+  "covered_count": 58,
+  "not_applicable_count": 16
+ },
+ "section14_excerpt_count": 51,
+ "specification": {
+  "path": "SPEC.md",
+  "sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e"
+ },
+ "status": "verified",
+ "validation_commands": [
+  "cargo run --locked -p xtask -- check generated",
+  "cargo run --locked -p xtask -- check governance",
+  "cargo run --locked -p xtask -- check workspace",
+  "cargo fmt --all -- --check",
+  "cargo check --locked --workspace --all-targets --all-features",
+  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+  "cargo test --locked --workspace --all-targets --all-features --no-fail-fast"
+ ]
 }

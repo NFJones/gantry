@@ -1,236 +1,236 @@
 {
-  "artifacts": [
-    {
-      "path": "crates/gantry-analysis/src/bodies.rs",
-      "sha256": "62717399a88d0b4566379e942cf4b2a03fe5b01ff879aea5a1265e189ab8151d"
-    },
-    {
-      "path": "crates/gantry-analysis/src/capabilities.rs",
-      "sha256": "4dbad143d4d4a6bfe46c5cd400d5be2c30fe9be8817432deb1728008e4e164fc"
-    },
-    {
-      "path": "crates/gantry-analysis/src/effects.rs",
-      "sha256": "b47f0c16989cdefad2f25f35f3b41633c6c1f7b0f10f179144b7b0297ceb65c6"
-    },
-    {
-      "path": "crates/gantry-analysis/src/generics.rs",
-      "sha256": "80885c76b33cad5c41798780ecb49049d0f72ffba69668158010c05ada25785f"
-    },
-    {
-      "path": "crates/gantry-analysis/src/lowering.rs",
-      "sha256": "6227c1fbff80d450f86141a68917db806e2741d1ba8e4f073ad661d591db386d"
-    },
-    {
-      "path": "crates/gantry-analysis/src/schemas.rs",
-      "sha256": "40a4b790ff13b28c5574ef4d150885d0f865e7d7194532c96b4abf6e80b5006a"
-    },
-    {
-      "path": "crates/gantry-analysis/src/types.rs",
-      "sha256": "3fd94cfae0a3d71ae3b9a8ff546485e34396d44aa649f5fe4879f2639b1711ca"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
-      "sha256": "22691fa2379cff6b7829f1230d1a31397dda030e8cb977f0f72d0fcd6f89a7ca"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
-      "sha256": "1015892343f4f2b21fadbaba117fa0bde439ce50f05f66465752a58f083cda2a"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-      "sha256": "9e40c4815b675cceba1a86227ecb780e72e6b0ce46dcec9f66e41f992febd29f"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
-      "sha256": "fbbe7cc1b2676774f4e143187b19a30a0311b17c617649618bc1aec5c5f2e3ba"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/external_facade_matrix.rs",
-      "sha256": "39785c2a3cf8f65b6d7d63ff246285ee3cc8420fbcad3460bd2180ada8b7190d"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
-      "sha256": "736071b95e8854ab039f95c2624319a0fdb099660bba204b40c0bf0b7f414b14"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
-      "sha256": "58d9fa6c149a449816558e1c02c559e5add8d11a434ae3321670b058f06a7808"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/ir_contracts.rs",
-      "sha256": "a30040599cc1e5021ad0fe4fbee013963e1f0a9b0b2dac923698f38a2bd0c2f3"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
-      "sha256": "7aea4d069a22a45a91065a400f71b559505db881ce52dbb1be346c9bc7f6051a"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/type_properties.rs",
-      "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
-    },
-    {
-      "path": "crates/gantry-conformance/tests/validate_package.rs",
-      "sha256": "287d1c2a5c6b28edf94bb2d856bcd57617231eeaa388a23245ada63a4402694f"
-    },
-    {
-      "path": "crates/gantry-ir/src/lib.rs",
-      "sha256": "db788a993d6b091ce45ac9dbe0b6cc6c1a7ade94879f35b689cbea40f4a57880"
-    },
-    {
-      "path": "crates/gantry-ir/src/type_properties.rs",
-      "sha256": "df81e1309abc00f64fa18b6b503adce483343e239533321749848f4f1a9c92c8"
-    },
-    {
-      "path": "crates/gantry/src/lib.rs",
-      "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
-    },
-    {
-      "path": "crates/gantry/src/validate.rs",
-      "sha256": "fa88f88e67d8cb33b3ac73f8e33d8f04968ed526310afb72334661d545e6ac09"
-    },
-    {
-      "path": "docs/analyzer-generics-and-traits.md",
-      "sha256": "9b9907140f2aeaac14146ffab6339f25effaf08f969fb097516f041b6580f349"
-    },
-    {
-      "path": "docs/analyzer-package-validity.md",
-      "sha256": "c7099efb64b3331bf94a8a408c8e6f7eedf9c5d80f5495ec52d61fef394418eb"
-    },
-    {
-      "path": "protocol/catalogs/ir-contracts-v1.json",
-      "sha256": "6339c4e525d77058d2dd359c0a92c64a9fa5aa1829566f235d324c80eeee1b74"
-    },
-    {
-      "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "39aab780615f991f14ae1de76f49e40d51e453da4a00f73540d76bbe926f8a64"
-    },
-    {
-      "path": "protocol/conformance/analyzer-validity-v1.json",
-      "sha256": "8d79adb432a16c6c94e73115107b6d65ca9bb14d46894aeaa5f8721d17bdae77"
-    },
-    {
-      "path": "protocol/conformance/generics-traits-frontend-v1.json",
-      "sha256": "5ae2339457f351e0cea5c522a09552dde29be4f101311cd0e631fa7d31c67fe3"
-    },
-    {
-      "path": "protocol/conformance/generics-traits-ir-v1.json",
-      "sha256": "da919a2d17e558ef31ebc730dff9eb6058fe1e15fd875b0adcca49471a6f9b17"
-    },
-    {
-      "path": "protocol/goldens/analyzer-validity-model-v1.json",
-      "sha256": "25d78122e545e9a091a07c48efb91b940111000cef9bd8a30d21205104ed0b99"
-    },
-    {
-      "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "703fca9b2555bc962cbc36cf1849507b7341a3f24a7b40746f7aeca7b66f51fb"
-    },
-    {
-      "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "4d0488c44220417e2defc6bc12911b90d1d701803518145993d5d2a2a3ec4591"
-    },
-    {
-      "path": "protocol/requirements/section14-v1.json",
-      "sha256": "498b0cc2045661117c5ee396fcd45f57b45ddc82f8ed8a005e745774d71658d7"
-    },
-    {
-      "path": "protocol/schemas/canonical-ir-v1.schema.json",
-      "sha256": "af0cece208d873047c35501657e58ef2e9d010a9b869b40143baf4860e416134"
-    },
-    {
-      "path": "protocol/schemas/generated-schema-object-v1.schema.json",
-      "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
-    },
-    {
-      "path": "protocol/schemas/package-source-manifest-v1.schema.json",
-      "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
-    },
-    {
-      "path": "protocol/schemas/source-map-v1.schema.json",
-      "sha256": "109e2c94cc55bc10458734d042a85775f1c5de98cf6fe0fff5985095ab6ec1fa"
-    }
-  ],
-  "claim": {
-    "advertises_profiles": [
-      "analyzer",
-      "frontend"
-    ],
-    "excludes_profiles": [
-      "concurrent-evaluator",
-      "durable-runtime",
-      "embedding",
-      "evaluator"
-    ],
-    "profiles": [
-      "analyzer",
-      "frontend"
-    ]
+ "artifacts": [
+  {
+   "path": "crates/gantry-analysis/src/bodies.rs",
+   "sha256": "62717399a88d0b4566379e942cf4b2a03fe5b01ff879aea5a1265e189ab8151d"
   },
-  "environment_gaps": [
-    "The analyzer and frontend claims are qualified on the recorded Linux cells; hosted macOS qualification is not claimed by this evidence gate."
-  ],
-  "format": "gantry.analyzer-gate-evidence/v1",
-  "gate": "GNT-GEN-GATE-300",
-  "prerequisites": [
-    {
-      "commit": "71e6834b841e1a87acd61d66c88a9da62ef95726",
-      "issue": "GNT-GEN-AN-001",
-      "subject": "Implement generic type analysis."
-    },
-    {
-      "commit": "baca937f1e51c2e4ac88bce7dfaaef8073930d39",
-      "issue": "GNT-GEN-AN-002",
-      "subject": "Implement static trait resolution and coherence."
-    },
-    {
-      "commit": "cc1cc69a54568fdc10bfd1a6e749bd6d49285e45",
-      "issue": "GNT-GEN-AN-003",
-      "subject": "Implement generic body monomorphization and effects."
-    },
-    {
-      "commit": "d0016d93e3338405e7eb5f99983e719fa48b6c39",
-      "issue": "GNT-GEN-AN-004",
-      "subject": "Emit concrete schemas and closed executable artifacts."
-    },
-    {
-      "commit": "b5fffb5d7391911d319672a50e76c4bb45657986",
-      "issue": "GNT-GEN-API-001",
-      "subject": "Expose generic analysis through facade and CLI."
-    },
-    {
-      "commit": "29253e9cc4eaf8d74690f7bb2d7bebe026472e02",
-      "issue": "GNT-GEN-PROOF-001",
-      "subject": "Extend analyzer package-validity argument."
-    }
-  ],
-  "profile": "analyzer",
-  "review_summary": {
-    "applicable_clause_count": 492,
-    "covered_count": 304,
-    "not_applicable_count": 188
+  {
+   "path": "crates/gantry-analysis/src/capabilities.rs",
+   "sha256": "4dbad143d4d4a6bfe46c5cd400d5be2c30fe9be8817432deb1728008e4e164fc"
   },
-  "section14_excerpt_count": 51,
-  "specification": {
-    "path": "SPEC.md",
-    "sha256": "d1ab4b6ab20bdddfb4955210c7441b72e65ddeef929172ec8046624751db8a83"
+  {
+   "path": "crates/gantry-analysis/src/effects.rs",
+   "sha256": "b47f0c16989cdefad2f25f35f3b41633c6c1f7b0f10f179144b7b0297ceb65c6"
   },
-  "status": "verified",
-  "validation_commands": [
-    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just check",
-    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just clippy",
-    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just fmt",
-    "RUSTUP_TOOLCHAIN=1.97.1 timeout 600s just test",
-    "RUSTUP_TOOLCHAIN=stable timeout 300s just check",
-    "RUSTUP_TOOLCHAIN=stable timeout 300s just clippy",
-    "RUSTUP_TOOLCHAIN=stable timeout 300s just fmt",
-    "RUSTUP_TOOLCHAIN=stable timeout 600s just test",
-    "cargo +1.97.1 run --locked -p xtask -- check generated",
-    "cargo +1.97.1 run --locked -p xtask -- check governance",
-    "cargo +1.97.1 run --locked -p xtask -- check workspace",
-    "cargo +1.97.1 test -p gantry-conformance --test analyzer_gate -- --nocapture",
-    "cargo +stable run --locked -p xtask -- check generated",
-    "cargo +stable run --locked -p xtask -- check governance",
-    "cargo +stable run --locked -p xtask -- check workspace",
-    "cargo +stable test -p gantry-conformance --test analyzer_gate -- --nocapture",
-    "git diff --check"
+  {
+   "path": "crates/gantry-analysis/src/generics.rs",
+   "sha256": "80885c76b33cad5c41798780ecb49049d0f72ffba69668158010c05ada25785f"
+  },
+  {
+   "path": "crates/gantry-analysis/src/lowering.rs",
+   "sha256": "6227c1fbff80d450f86141a68917db806e2741d1ba8e4f073ad661d591db386d"
+  },
+  {
+   "path": "crates/gantry-analysis/src/schemas.rs",
+   "sha256": "40a4b790ff13b28c5574ef4d150885d0f865e7d7194532c96b4abf6e80b5006a"
+  },
+  {
+   "path": "crates/gantry-analysis/src/types.rs",
+   "sha256": "3fd94cfae0a3d71ae3b9a8ff546485e34396d44aa649f5fe4879f2639b1711ca"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
+   "sha256": "22691fa2379cff6b7829f1230d1a31397dda030e8cb977f0f72d0fcd6f89a7ca"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
+   "sha256": "1015892343f4f2b21fadbaba117fa0bde439ce50f05f66465752a58f083cda2a"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/analyzer_types.rs",
+   "sha256": "9e40c4815b675cceba1a86227ecb780e72e6b0ce46dcec9f66e41f992febd29f"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
+   "sha256": "fbbe7cc1b2676774f4e143187b19a30a0311b17c617649618bc1aec5c5f2e3ba"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/external_facade_matrix.rs",
+   "sha256": "39785c2a3cf8f65b6d7d63ff246285ee3cc8420fbcad3460bd2180ada8b7190d"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
+   "sha256": "736071b95e8854ab039f95c2624319a0fdb099660bba204b40c0bf0b7f414b14"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
+   "sha256": "58d9fa6c149a449816558e1c02c559e5add8d11a434ae3321670b058f06a7808"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/ir_contracts.rs",
+   "sha256": "a30040599cc1e5021ad0fe4fbee013963e1f0a9b0b2dac923698f38a2bd0c2f3"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
+   "sha256": "7aea4d069a22a45a91065a400f71b559505db881ce52dbb1be346c9bc7f6051a"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/type_properties.rs",
+   "sha256": "04008798b717922d279c27c67f87d2ea331b6c617fdfeaed6229f26b49121eb9"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/validate_package.rs",
+   "sha256": "287d1c2a5c6b28edf94bb2d856bcd57617231eeaa388a23245ada63a4402694f"
+  },
+  {
+   "path": "crates/gantry-ir/src/lib.rs",
+   "sha256": "21bd3727f89bcadc22753f112c07956af4eb9434c111a8aff0ad3b2e23c5046e"
+  },
+  {
+   "path": "crates/gantry-ir/src/type_properties.rs",
+   "sha256": "df81e1309abc00f64fa18b6b503adce483343e239533321749848f4f1a9c92c8"
+  },
+  {
+   "path": "crates/gantry/src/lib.rs",
+   "sha256": "7b02f95923f53f8f5fcd1e90fdd879d7713b6be5eb040a94431580c4c18ff3ed"
+  },
+  {
+   "path": "crates/gantry/src/validate.rs",
+   "sha256": "fa88f88e67d8cb33b3ac73f8e33d8f04968ed526310afb72334661d545e6ac09"
+  },
+  {
+   "path": "docs/analyzer-generics-and-traits.md",
+   "sha256": "9b9907140f2aeaac14146ffab6339f25effaf08f969fb097516f041b6580f349"
+  },
+  {
+   "path": "docs/analyzer-package-validity.md",
+   "sha256": "c7099efb64b3331bf94a8a408c8e6f7eedf9c5d80f5495ec52d61fef394418eb"
+  },
+  {
+   "path": "protocol/catalogs/ir-contracts-v1.json",
+   "sha256": "3069bbd54d5f03bb649a5c822d0e0ca05c09726b1d834737d726d85ff4e5501a"
+  },
+  {
+   "path": "protocol/catalogs/profiles-v1.json",
+   "sha256": "f490a3baae980c3f926fde4cff7ac14015117dafa0ac4dbe5f1b835f3c415eb1"
+  },
+  {
+   "path": "protocol/conformance/analyzer-validity-v1.json",
+   "sha256": "12c41d5fb37b938bca846d26d6e1c7f0a5eb0a4e4372a895131e610ab3f04b3d"
+  },
+  {
+   "path": "protocol/conformance/generics-traits-frontend-v1.json",
+   "sha256": "a4286368ac3f0637e6a7c5bf83f56b76986fe358f540818e94cd9d8d96e015ba"
+  },
+  {
+   "path": "protocol/conformance/generics-traits-ir-v1.json",
+   "sha256": "f79924ea3831271be99d4bd18e858e85762c9a57d91fa5d4cf592554acf513df"
+  },
+  {
+   "path": "protocol/goldens/analyzer-validity-model-v1.json",
+   "sha256": "25d78122e545e9a091a07c48efb91b940111000cef9bd8a30d21205104ed0b99"
+  },
+  {
+   "path": "protocol/requirements/generated/requirements-v1.json",
+   "sha256": "50eed9abe5292053d2558c2d0a228aff20278ac5cac828027db5f82b6eb5261f"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "fad034e65cfadda77e824d01b81144604c7f9f89fb67576d8653f7caf89ca0ea"
+  },
+  {
+   "path": "protocol/requirements/section14-v1.json",
+   "sha256": "70932ed23818fccc39949ec7d019899a559ae88e12f72de501082c18d57fa8b6"
+  },
+  {
+   "path": "protocol/schemas/canonical-ir-v1.schema.json",
+   "sha256": "af0cece208d873047c35501657e58ef2e9d010a9b869b40143baf4860e416134"
+  },
+  {
+   "path": "protocol/schemas/generated-schema-object-v1.schema.json",
+   "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
+  },
+  {
+   "path": "protocol/schemas/package-source-manifest-v1.schema.json",
+   "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
+  },
+  {
+   "path": "protocol/schemas/source-map-v1.schema.json",
+   "sha256": "109e2c94cc55bc10458734d042a85775f1c5de98cf6fe0fff5985095ab6ec1fa"
+  }
+ ],
+ "claim": {
+  "advertises_profiles": [
+   "analyzer",
+   "frontend"
+  ],
+  "excludes_profiles": [
+   "concurrent-evaluator",
+   "durable-runtime",
+   "embedding",
+   "evaluator"
+  ],
+  "profiles": [
+   "analyzer",
+   "frontend"
   ]
+ },
+ "environment_gaps": [
+  "The analyzer and frontend claims are qualified on the recorded Linux cells; hosted macOS qualification is not claimed by this evidence gate."
+ ],
+ "format": "gantry.analyzer-gate-evidence/v1",
+ "gate": "GNT-GEN-GATE-300",
+ "prerequisites": [
+  {
+   "commit": "71e6834b841e1a87acd61d66c88a9da62ef95726",
+   "issue": "GNT-GEN-AN-001",
+   "subject": "Implement generic type analysis."
+  },
+  {
+   "commit": "baca937f1e51c2e4ac88bce7dfaaef8073930d39",
+   "issue": "GNT-GEN-AN-002",
+   "subject": "Implement static trait resolution and coherence."
+  },
+  {
+   "commit": "cc1cc69a54568fdc10bfd1a6e749bd6d49285e45",
+   "issue": "GNT-GEN-AN-003",
+   "subject": "Implement generic body monomorphization and effects."
+  },
+  {
+   "commit": "d0016d93e3338405e7eb5f99983e719fa48b6c39",
+   "issue": "GNT-GEN-AN-004",
+   "subject": "Emit concrete schemas and closed executable artifacts."
+  },
+  {
+   "commit": "b5fffb5d7391911d319672a50e76c4bb45657986",
+   "issue": "GNT-GEN-API-001",
+   "subject": "Expose generic analysis through facade and CLI."
+  },
+  {
+   "commit": "29253e9cc4eaf8d74690f7bb2d7bebe026472e02",
+   "issue": "GNT-GEN-PROOF-001",
+   "subject": "Extend analyzer package-validity argument."
+  }
+ ],
+ "profile": "analyzer",
+ "review_summary": {
+  "applicable_clause_count": 503,
+  "covered_count": 315,
+  "not_applicable_count": 188
+ },
+ "section14_excerpt_count": 51,
+ "specification": {
+  "path": "SPEC.md",
+  "sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e"
+ },
+ "status": "verified",
+ "validation_commands": [
+  "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just check",
+  "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just clippy",
+  "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just fmt",
+  "RUSTUP_TOOLCHAIN=1.97.1 timeout 600s just test",
+  "RUSTUP_TOOLCHAIN=stable timeout 300s just check",
+  "RUSTUP_TOOLCHAIN=stable timeout 300s just clippy",
+  "RUSTUP_TOOLCHAIN=stable timeout 300s just fmt",
+  "RUSTUP_TOOLCHAIN=stable timeout 600s just test",
+  "cargo +1.97.1 run --locked -p xtask -- check generated",
+  "cargo +1.97.1 run --locked -p xtask -- check governance",
+  "cargo +1.97.1 run --locked -p xtask -- check workspace",
+  "cargo +1.97.1 test -p gantry-conformance --test analyzer_gate -- --nocapture",
+  "cargo +stable run --locked -p xtask -- check generated",
+  "cargo +stable run --locked -p xtask -- check governance",
+  "cargo +stable run --locked -p xtask -- check workspace",
+  "cargo +stable test -p gantry-conformance --test analyzer_gate -- --nocapture",
+  "git diff --check"
+ ]
 }

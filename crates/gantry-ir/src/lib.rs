@@ -35,6 +35,7 @@ mod target;
 mod type_expression;
 mod type_properties;
 mod types;
+mod wait;
 
 pub use approval::{
     ApprovalAuditAccess, ApprovalAuditEvidence, ApprovalAuditView, ApprovalDecision,
@@ -191,3 +192,21 @@ pub use type_properties::{
     SourceProtectionClass, TransferEligibility, ValueResourceClass,
 };
 pub use types::{TypeDescriptor, TypeDescriptorError};
+// The wait, wakeup, arbitration, and quiescence model of SPEC.md Section 24 is
+// published here. Its `WaitGeneration` is named apart from the landed
+// `OwnerGeneration` and `ResourceGenerationId` it cites, its `DurableWaitCut` is named
+// apart from the landed lifecycle `DurableStopCut`, and its `WakeCause` is named apart
+// from the landed lifecycle `StopCause`, so no name of this crate root is claimed by
+// two vocabularies at once.
+pub use wait::{
+    Arbitration, ArbitrationDecision, ArbitrationSnapshot, ArmDisposition, ArmDispositionKind,
+    ArmId, ArmObservation, ArmedAlternative, ArmedWinner, ClosureReport, DurableWaitCut,
+    DurableWaitRecord, IdentityInput, LosingArmSettlement, LosingArmSettlementReport,
+    NondeterminismEnvelope, PrerequisiteRef, QuiescenceClass, QuiescenceFacts, QuiescenceOutcome,
+    QuiescenceRemedy, ReadinessObservation, RegistrationOutcome, WAIT_CLAUSES,
+    WAIT_GRAPH_MAX_EDGES, WAIT_GRAPH_MAX_NODES, WAIT_NON_CLAIM_ORDER, WAIT_NON_CLAIMS,
+    WaitDecision, WaitDiagnosticCode, WaitError, WaitGeneration, WaitGraphDiagnostic, WaitId,
+    WaitNonClaimAssertion, WaitNonClaimName, WaitOwnerId, WaitRecoveryClass, WaitRecoveryDecision,
+    WaitRegistration, WaitResourceId, WaitSet, WakeCause, WakeOutcome, WakeRecord,
+    WithdrawalRecord, check_wait_non_claims, classify_quiescence, observe_quiescence,
+};

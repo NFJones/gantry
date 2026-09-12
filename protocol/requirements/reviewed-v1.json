@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "d1ab4b6ab20bdddfb4955210c7441b72e65ddeef929172ec8046624751db8a83",
+ "specification_sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9494,
-   "end_line": 12977,
+   "end_line": 13328,
    "rationale": null
   }
  ],
@@ -33756,6 +33756,435 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/fault_containment.rs#containment_non_claim_vocabulary_is_closed_ordered_and_distinct"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.0-waits-wakeups-arbitration-and-quiescence",
+   "span_start_line": 12978,
+   "span_end_line": 13049,
+   "anchor_line": 12981,
+   "body_start_line": 12982,
+   "body_end_line": 13049,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 12982,
+     "end_line": 13049,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#section_publishes_the_eleven_wait_clause_anchors_in_order"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.1-atomic-registration-and-readiness-recheck",
+   "span_start_line": 13050,
+   "span_end_line": 13076,
+   "anchor_line": 13051,
+   "body_start_line": 13052,
+   "body_end_line": 13076,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13052,
+     "end_line": 13076,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#registration_and_readiness_recheck_linearize_before_suspension"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.2-wait-identity-and-generations",
+   "span_start_line": 13077,
+   "span_end_line": 13101,
+   "anchor_line": 13078,
+   "body_start_line": 13079,
+   "body_end_line": 13101,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13079,
+     "end_line": 13101,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#wait_identity_fences_a_reused_slot_by_declared_registration"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.3-wake-causes-and-wake-ownership",
+   "span_start_line": 13102,
+   "span_end_line": 13129,
+   "anchor_line": 13103,
+   "body_start_line": 13104,
+   "body_end_line": 13129,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13104,
+     "end_line": 13129,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#wake_causes_are_closed_and_each_wake_has_exactly_one_owner"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.4-stale-wake-fencing-and-waiter-reuse",
+   "span_start_line": 13130,
+   "span_end_line": 13150,
+   "anchor_line": 13131,
+   "body_start_line": 13132,
+   "body_end_line": 13150,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13132,
+     "end_line": 13150,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#stale_and_duplicate_wakes_cannot_resume_a_reused_waiter"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.5-producer-loss-and-closure",
+   "span_start_line": 13151,
+   "span_end_line": 13173,
+   "anchor_line": 13152,
+   "body_start_line": 13153,
+   "body_end_line": 13173,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13153,
+     "end_line": 13173,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#producer_loss_closes_dependent_waiters_without_unclassifiable_waits"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.6-select-and-race-snapshots-and-winner-permanence",
+   "span_start_line": 13174,
+   "span_end_line": 13201,
+   "anchor_line": 13175,
+   "body_start_line": 13176,
+   "body_end_line": 13201,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13176,
+     "end_line": 13201,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#arbitration_freezes_a_snapshot_and_keeps_one_permanent_winner"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.7-losing-arm-ownership-and-nondeterminism",
+   "span_start_line": 13202,
+   "span_end_line": 13223,
+   "anchor_line": 13203,
+   "body_start_line": 13204,
+   "body_end_line": 13223,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13204,
+     "end_line": 13223,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#losing_arms_settle_ownership_inside_the_nondeterminism_envelope"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.8-quiescence-classification",
+   "span_start_line": 13224,
+   "span_end_line": 13275,
+   "anchor_line": 13225,
+   "body_start_line": 13226,
+   "body_end_line": 13275,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13226,
+     "end_line": 13275,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#quiescence_classes_are_closed_and_exempt_pending_external_prerequisites"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.9-durable-wait-and-winner-reconstruction",
+   "span_start_line": 13276,
+   "span_end_line": 13308,
+   "anchor_line": 13277,
+   "body_start_line": 13278,
+   "body_end_line": 13308,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13278,
+     "end_line": 13308,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#durable_wait_cuts_reconstruct_without_re_choosing_a_winner"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-24.10-wait-non-claims",
+   "span_start_line": 13309,
+   "span_end_line": 13328,
+   "anchor_line": 13310,
+   "body_start_line": 13311,
+   "body_end_line": 13328,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 13311,
+     "end_line": 13328,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/wait_model.rs#wait_non_claims_are_closed_and_never_presented_as_guarantees"
        ],
        "rationale": null
       }

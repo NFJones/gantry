@@ -1,254 +1,254 @@
 {
-  "artifacts": [
-    {
-      "path": "crates/gantry-conformance/tests/source_spawn.rs",
-      "sha256": "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"
-    },
-    {
-      "path": "protocol/conformance/async-cancellation-v1.json",
-      "sha256": "76420cf6997794d43d252ea392ae2318e8f727a5090fcc2c1b5b598a3d138850"
-    },
-    {
-      "path": "protocol/conformance/async-execution-contract-v1.json",
-      "sha256": "da0b87a49976fb1095491084d69c2d70019736d1eb94bdf1d604d67ddf00b7f0"
-    },
-    {
-      "path": "protocol/conformance/async-execution-observation-v1.json",
-      "sha256": "7a11cf53b7bd5ca787d5338d24e06c2982b634ec69360be0a34a6a32cfd9d15d"
-    },
-    {
-      "path": "protocol/conformance/automatic-durable-root-v1.json",
-      "sha256": "b9cee4d6ce60b59f2d1e96d018722026217c09c35c3b8b6b72c5e73b1490b90d"
-    },
-    {
-      "path": "protocol/conformance/automatic-root-start-v1.json",
-      "sha256": "de0612fc6e94f60885ae3ca74b918b069c846d9574c49d967583d98c12032d22"
-    },
-    {
-      "path": "protocol/conformance/durable-recovery-v1.json",
-      "sha256": "7f5e3c0b4c0ce843813576508c823f277c38cb3f117904fb99f0c273a95e5e35"
-    },
-    {
-      "path": "protocol/conformance/durable-start-v1.json",
-      "sha256": "00f017130019f91660c0131e3f47ca65aa5fe24e0a3e29cd6fa427123d484e9f"
-    },
-    {
-      "path": "protocol/conformance/execution-api-v1.json",
-      "sha256": "beccc5661732e2f4ba41502667f33ff96036454e0e49774bb539773bdb511f35"
-    },
-    {
-      "path": "protocol/conformance/execution-coordinator-v1.json",
-      "sha256": "ae6ffadeb8a928639046ace21fa9b59026917debd8617323600493eab4ed55d0"
-    },
-    {
-      "path": "protocol/conformance/executor-services-v1.json",
-      "sha256": "459298d4eba8e13b683dabf82cd6fb098c7eab998de5ef504a99a8de1d087ae3"
-    },
-    {
-      "path": "protocol/conformance/interpreter-lifecycle-v1.json",
-      "sha256": "ec3abe144881ba82d269250af9ded2dd61a824ee4a68f0e8272b6986c96dad8b"
-    },
-    {
-      "path": "protocol/conformance/interpreter-ownership-v1.json",
-      "sha256": "a3956361aab2e0f81c92c1e07a34e55b1a66c44e0d96c16a36dae47bbfc330d1"
-    },
-    {
-      "path": "protocol/conformance/revent-ownership-v1.json",
-      "sha256": "9a23b157304272f8b39569ed7a06e94c2911ac780901deff7c165b7a4e28828c"
-    },
-    {
-      "path": "protocol/conformance/runtime-sessions-v1.json",
-      "sha256": "28e0fd4ba69d26014dc206a97d61502ca45fa463ce66a6b0f98a6747c6dd0dca"
-    },
-    {
-      "path": "protocol/conformance/source-spawn-v1.json",
-      "sha256": "b650cac9a9465665f73b9244d872659c3b4756b0f1d9ea3cb4eb8471a6fccaaa"
-    },
-    {
-      "path": "protocol/conformance/task-driver-v1.json",
-      "sha256": "1391b9c4a35a1be25a98e13a45eaf2ef3a88ca30a9452c341efb632148909bbe"
-    },
-    {
-      "path": "protocol/conformance/task-supervision-v1.json",
-      "sha256": "8eb2bd8aaa583ffe47fb70bf8ee2cf5a5b31d4aaf33480edb13524844d28b89a"
-    },
-    {
-      "path": "protocol/conformance/tokio-executor-v1.json",
-      "sha256": "87b913ffa667929e5a3070ae1f2fa9152d62db5606f662f03d2753117672e5b8"
-    }
-  ],
-  "assignment_authentication": {
-    "assignment_count": 18,
-    "contract": "protocol/conformance/async-execution-contract-v1.json",
-    "owner": "GNT-ASYNC-GATE-100",
-    "profile_row_count": 48,
-    "sha256": "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49c9f3c0f0d6d889102"
+ "artifacts": [
+  {
+   "path": "crates/gantry-conformance/tests/source_spawn.rs",
+   "sha256": "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"
   },
-  "claim": {
-    "advertises_profiles": [],
-    "excludes_capabilities": [
-      "blocking-isolation",
-      "cli-policy",
-      "full-task-graph-recovery",
-      "profile-publication",
-      "source-child-concurrency"
-    ],
-    "profiles": []
+  {
+   "path": "protocol/conformance/async-cancellation-v1.json",
+   "sha256": "4d9f03324fdee2c9bd12f8c8b950bd1709c8d0f1bf5720369e79509fdefdfb81"
   },
-  "format": "gantry.async-execution-evidence-gate/v1",
-  "gate": "GNT-ASYNC-GATE-100",
-  "portable_root_outcomes": {
-    "compares_only": "portable foreground and terminal outcomes",
-    "crosses": [
-      "executor-yield",
-      "runtime-session-establishment",
-      "host-operation-dispatch"
-    ],
-    "equivalence": "crates/gantry-conformance/tests/async_execution_gate.rs#deterministic_and_tokio_runtimes_produce_the_same_portable_root_outcome",
-    "executors": [
-      "deterministic",
-      "tokio-current-thread",
-      "tokio-multi-thread"
-    ]
+  {
+   "path": "protocol/conformance/async-execution-contract-v1.json",
+   "sha256": "6e09c56a2a8f290b41cf2581af5d7d759a7be3004d934e12c0518860b4a2ce1a"
   },
-  "prerequisites": [
-    {
-      "commit": "b5b7ec5832e10698d01ff21dd20de540ba446d3f",
-      "issue": "GNT-ASYNC-API-001",
-      "subject": "Replace manual driving with observation APIs"
-    },
-    {
-      "commit": "199d8f0d76a1ee2d1082325ae5ab7dae4cc6ab5a",
-      "issue": "GNT-ASYNC-REVENT-001",
-      "subject": "Own sequential event delivery barriers"
-    },
-    {
-      "commit": "6eeba18a52e7df31599996acf433d4575100961a",
-      "issue": "GNT-ASYNC-TOKIO-001",
-      "subject": "Qualify Tokio executor semantics."
-    }
+  {
+   "path": "protocol/conformance/async-execution-observation-v1.json",
+   "sha256": "7bc78720bec05f8defb85efb5da0876cab9bb326ea8dfb0585932d650fddc0f2"
+  },
+  {
+   "path": "protocol/conformance/automatic-durable-root-v1.json",
+   "sha256": "378c0dabbb19840e4009c5efbd47f0c52f39b41fd33e326e6dc4bf76b9bab3e7"
+  },
+  {
+   "path": "protocol/conformance/automatic-root-start-v1.json",
+   "sha256": "6dbce7eb4e123877e6f64169377a38d4d5be9c5dd8b781d33bdcb0b43c85c3c5"
+  },
+  {
+   "path": "protocol/conformance/durable-recovery-v1.json",
+   "sha256": "abe74727b4a3a976278ec3d0bb91bb13e1ab1595bb32198a81d48910c2d9feec"
+  },
+  {
+   "path": "protocol/conformance/durable-start-v1.json",
+   "sha256": "3bafeeceafa7955d421d881eff55f26cffd01fb82269ee5cb0b32eff25440faf"
+  },
+  {
+   "path": "protocol/conformance/execution-api-v1.json",
+   "sha256": "40ae619b256bfedcc873281fa015c93d135a288ae23beab4d2f837c508da8ec6"
+  },
+  {
+   "path": "protocol/conformance/execution-coordinator-v1.json",
+   "sha256": "ddc4d91fced3f4e722618e81412de20f83a11252efebeb8a5c9942574d62546c"
+  },
+  {
+   "path": "protocol/conformance/executor-services-v1.json",
+   "sha256": "91e508ba8936b70649a8331fdf142132daf85f33c93e93ea40683ac1c1913506"
+  },
+  {
+   "path": "protocol/conformance/interpreter-lifecycle-v1.json",
+   "sha256": "2c14f4dd7bf530ae7f971fe4e4ab316fc5babe28a2d24d50a7f4ec07d12786e7"
+  },
+  {
+   "path": "protocol/conformance/interpreter-ownership-v1.json",
+   "sha256": "77975ff0b157be233c2203bf4fd5c514a28e3a787cb1001e9a6388c7ecbeb5af"
+  },
+  {
+   "path": "protocol/conformance/revent-ownership-v1.json",
+   "sha256": "8dc04ed45713e4d2086c439c2e3d0fa2b0c1b976b30f0944cf9b60bc8cfa1b6d"
+  },
+  {
+   "path": "protocol/conformance/runtime-sessions-v1.json",
+   "sha256": "95477d370dc16166f1b90de8b828a39b71b09c0701a6bc9e41ecbffabd142c84"
+  },
+  {
+   "path": "protocol/conformance/source-spawn-v1.json",
+   "sha256": "f379072f02f3406e2f691e27c47179fdfb26ec974a86c3595b07859dd89a1d83"
+  },
+  {
+   "path": "protocol/conformance/task-driver-v1.json",
+   "sha256": "84ce1248533adc748a2cdb123d64063710790e4b484e79dc9f29360f0f7b8ed9"
+  },
+  {
+   "path": "protocol/conformance/task-supervision-v1.json",
+   "sha256": "5f43c87b1590d67b821f05e2a851a02e1697433ecfa698de1453c0bba1dc9266"
+  },
+  {
+   "path": "protocol/conformance/tokio-executor-v1.json",
+   "sha256": "bd928fe27cc7ca505bb45cc019d53fe7b7457cea60caf9fd2281973e29b8608b"
+  }
+ ],
+ "assignment_authentication": {
+  "assignment_count": 18,
+  "contract": "protocol/conformance/async-execution-contract-v1.json",
+  "owner": "GNT-ASYNC-GATE-100",
+  "profile_row_count": 48,
+  "sha256": "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49c9f3c0f0d6d889102"
+ },
+ "claim": {
+  "advertises_profiles": [],
+  "excludes_capabilities": [
+   "blocking-isolation",
+   "cli-policy",
+   "full-task-graph-recovery",
+   "profile-publication",
+   "source-child-concurrency"
   ],
-  "required_evidence": [
-    {
-      "category": "adapter-behavior",
-      "evidence": "crates/gantry-conformance/tests/scripted_integration.rs#scripted_adapter_exercises_preflight_hook_and_cancellation_contracts"
-    },
-    {
-      "category": "api-privacy",
-      "evidence": "crates/gantry-conformance/tests/external_facade_matrix.rs#legacy_execution_surface_is_unavailable_to_external_consumers"
-    },
-    {
-      "category": "automatic-durable-root",
-      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically"
-    },
-    {
-      "category": "automatic-root",
-      "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#independently_accepted_roots_make_executor_owned_progress"
-    },
-    {
-      "category": "cancellation",
-      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#facade_cancellation_of_a_running_durable_root_commits_before_signalling"
-    },
-    {
-      "category": "coordinator",
-      "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#task_settlement_and_completion_publish_before_waiter_notification"
-    },
-    {
-      "category": "driver",
-      "evidence": "crates/gantry-conformance/tests/task_driver.rs#driver_yields_and_supervision_observes_physical_completion_after_semantic_settlement"
-    },
-    {
-      "category": "durable-commit",
-      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#accepted_durable_root_runs_on_the_executor_and_commits_before_observation"
-    },
-    {
-      "category": "durable-failure",
-      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_commit_failure_reports_run_failure_and_preserves_sequence_one"
-    },
-    {
-      "category": "event-barrier",
-      "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#nondurable_root_events_keep_semantic_order_after_start_and_await_observers_drop"
-    },
-    {
-      "category": "executor-services",
-      "evidence": "crates/gantry-conformance/tests/executor_services.rs#checked_in_executor_evidence_is_narrow_and_current"
-    },
-    {
-      "category": "immediate-poll",
-      "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#immediate_executor_poll_cannot_cross_the_accepted_root_gate"
-    },
-    {
-      "category": "lifecycle",
-      "evidence": "crates/gantry-conformance/tests/interpreter_lifecycle.rs#shutdown_races_transfer_admission_and_snapshot_first_durations"
-    },
-    {
-      "category": "ownership",
-      "evidence": "crates/gantry-conformance/tests/interpreter_ownership.rs#dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator"
-    },
-    {
-      "category": "resume-rollback",
-      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#resume_executor_rejection_rolls_back_and_releases_the_owner_once"
-    },
-    {
-      "category": "resume-terminal",
-      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#terminal_resume_accepts_without_submitting_a_root_driver"
-    },
-    {
-      "category": "runtime-portability",
-      "evidence": "crates/gantry-conformance/tests/tokio_executor.rs#caller_owned_runtime_matrix_keeps_runnable_work_making_progress"
-    },
-    {
-      "category": "session",
-      "evidence": "crates/gantry-conformance/tests/runtime_sessions.rs#concurrent_runtime_session_waiters_share_one_must_settle_success"
-    },
-    {
-      "category": "shutdown",
-      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#facade_shutdown_cancels_a_running_durable_root_only_after_commit"
-    },
-    {
-      "category": "start-failure",
-      "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#post_acceptance_submission_failure_returns_accepted_and_settles_the_root"
-    },
-    {
-      "category": "supervision",
-      "evidence": "crates/gantry-conformance/tests/task_supervision.rs#semantic_settlement_retains_capacity_until_physical_reaping"
-    }
+  "profiles": []
+ },
+ "format": "gantry.async-execution-evidence-gate/v1",
+ "gate": "GNT-ASYNC-GATE-100",
+ "portable_root_outcomes": {
+  "compares_only": "portable foreground and terminal outcomes",
+  "crosses": [
+   "executor-yield",
+   "runtime-session-establishment",
+   "host-operation-dispatch"
   ],
-  "specification_sha256": "d1ab4b6ab20bdddfb4955210c7441b72e65ddeef929172ec8046624751db8a83",
-  "status": "verified",
-  "validation_commands": [
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_cancellation",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_contract_gate",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_execution_gate",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test automatic_durable_root",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test automatic_root_start",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test conformance_publication",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test durable_events",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test durable_recovery",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test durable_start",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test execution_coordinator",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test executor_services",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test external_facade_matrix",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test interpreter_lifecycle",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test interpreter_ownership",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test logical_sessions",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test revent_ownership",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test runtime_sessions",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test scripted_integration",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test source_spawn",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test source_spawn_tokio",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test task_driver",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test task_supervision",
-    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test tokio_executor",
-    "timeout 120s rustup run 1.97.1 cargo fmt --all --check",
-    "timeout 300s rustup run 1.97.1 cargo check --locked --workspace --all-targets --all-features",
-    "timeout 300s rustup run 1.97.1 cargo clippy --locked -p gantry-conformance --test async_execution_gate -- -D warnings",
-    "timeout 600s rustup run 1.97.1 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-    "timeout 900s rustup run 1.97.1 cargo test --locked --workspace --all-targets --all-features --no-fail-fast",
-    "timeout 120s rustup run 1.97.1 cargo run --locked -p xtask -- check governance",
-    "timeout 900s python3 release/verify-package-set.py",
-    "timeout 120s rustup run 1.97.1 cargo run --locked -p xtask -- check generated",
-    "timeout 120s rustup run 1.97.1 cargo run --locked -p xtask -- check workspace",
-    "timeout 120s git diff --check"
+  "equivalence": "crates/gantry-conformance/tests/async_execution_gate.rs#deterministic_and_tokio_runtimes_produce_the_same_portable_root_outcome",
+  "executors": [
+   "deterministic",
+   "tokio-current-thread",
+   "tokio-multi-thread"
   ]
+ },
+ "prerequisites": [
+  {
+   "commit": "b5b7ec5832e10698d01ff21dd20de540ba446d3f",
+   "issue": "GNT-ASYNC-API-001",
+   "subject": "Replace manual driving with observation APIs"
+  },
+  {
+   "commit": "199d8f0d76a1ee2d1082325ae5ab7dae4cc6ab5a",
+   "issue": "GNT-ASYNC-REVENT-001",
+   "subject": "Own sequential event delivery barriers"
+  },
+  {
+   "commit": "6eeba18a52e7df31599996acf433d4575100961a",
+   "issue": "GNT-ASYNC-TOKIO-001",
+   "subject": "Qualify Tokio executor semantics."
+  }
+ ],
+ "required_evidence": [
+  {
+   "category": "adapter-behavior",
+   "evidence": "crates/gantry-conformance/tests/scripted_integration.rs#scripted_adapter_exercises_preflight_hook_and_cancellation_contracts"
+  },
+  {
+   "category": "api-privacy",
+   "evidence": "crates/gantry-conformance/tests/external_facade_matrix.rs#legacy_execution_surface_is_unavailable_to_external_consumers"
+  },
+  {
+   "category": "automatic-durable-root",
+   "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically"
+  },
+  {
+   "category": "automatic-root",
+   "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#independently_accepted_roots_make_executor_owned_progress"
+  },
+  {
+   "category": "cancellation",
+   "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#facade_cancellation_of_a_running_durable_root_commits_before_signalling"
+  },
+  {
+   "category": "coordinator",
+   "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#task_settlement_and_completion_publish_before_waiter_notification"
+  },
+  {
+   "category": "driver",
+   "evidence": "crates/gantry-conformance/tests/task_driver.rs#driver_yields_and_supervision_observes_physical_completion_after_semantic_settlement"
+  },
+  {
+   "category": "durable-commit",
+   "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#accepted_durable_root_runs_on_the_executor_and_commits_before_observation"
+  },
+  {
+   "category": "durable-failure",
+   "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_commit_failure_reports_run_failure_and_preserves_sequence_one"
+  },
+  {
+   "category": "event-barrier",
+   "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#nondurable_root_events_keep_semantic_order_after_start_and_await_observers_drop"
+  },
+  {
+   "category": "executor-services",
+   "evidence": "crates/gantry-conformance/tests/executor_services.rs#checked_in_executor_evidence_is_narrow_and_current"
+  },
+  {
+   "category": "immediate-poll",
+   "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#immediate_executor_poll_cannot_cross_the_accepted_root_gate"
+  },
+  {
+   "category": "lifecycle",
+   "evidence": "crates/gantry-conformance/tests/interpreter_lifecycle.rs#shutdown_races_transfer_admission_and_snapshot_first_durations"
+  },
+  {
+   "category": "ownership",
+   "evidence": "crates/gantry-conformance/tests/interpreter_ownership.rs#dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator"
+  },
+  {
+   "category": "resume-rollback",
+   "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#resume_executor_rejection_rolls_back_and_releases_the_owner_once"
+  },
+  {
+   "category": "resume-terminal",
+   "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#terminal_resume_accepts_without_submitting_a_root_driver"
+  },
+  {
+   "category": "runtime-portability",
+   "evidence": "crates/gantry-conformance/tests/tokio_executor.rs#caller_owned_runtime_matrix_keeps_runnable_work_making_progress"
+  },
+  {
+   "category": "session",
+   "evidence": "crates/gantry-conformance/tests/runtime_sessions.rs#concurrent_runtime_session_waiters_share_one_must_settle_success"
+  },
+  {
+   "category": "shutdown",
+   "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#facade_shutdown_cancels_a_running_durable_root_only_after_commit"
+  },
+  {
+   "category": "start-failure",
+   "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#post_acceptance_submission_failure_returns_accepted_and_settles_the_root"
+  },
+  {
+   "category": "supervision",
+   "evidence": "crates/gantry-conformance/tests/task_supervision.rs#semantic_settlement_retains_capacity_until_physical_reaping"
+  }
+ ],
+ "specification_sha256": "e23f7dbd65bd7dcf748d71fd14eea8e37a3375d139c83d8fcb3d2ab9f272ae2e",
+ "status": "verified",
+ "validation_commands": [
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_cancellation",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_contract_gate",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_execution_gate",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test automatic_durable_root",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test automatic_root_start",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test conformance_publication",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test durable_events",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test durable_recovery",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test durable_start",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test execution_coordinator",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test executor_services",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test external_facade_matrix",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test interpreter_lifecycle",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test interpreter_ownership",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test logical_sessions",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test revent_ownership",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test runtime_sessions",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test scripted_integration",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test source_spawn",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test source_spawn_tokio",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test task_driver",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test task_supervision",
+  "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test tokio_executor",
+  "timeout 120s rustup run 1.97.1 cargo fmt --all --check",
+  "timeout 300s rustup run 1.97.1 cargo check --locked --workspace --all-targets --all-features",
+  "timeout 300s rustup run 1.97.1 cargo clippy --locked -p gantry-conformance --test async_execution_gate -- -D warnings",
+  "timeout 600s rustup run 1.97.1 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+  "timeout 900s rustup run 1.97.1 cargo test --locked --workspace --all-targets --all-features --no-fail-fast",
+  "timeout 120s rustup run 1.97.1 cargo run --locked -p xtask -- check governance",
+  "timeout 900s python3 release/verify-package-set.py",
+  "timeout 120s rustup run 1.97.1 cargo run --locked -p xtask -- check generated",
+  "timeout 120s rustup run 1.97.1 cargo run --locked -p xtask -- check workspace",
+  "timeout 120s git diff --check"
+ ]
 }
