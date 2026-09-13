@@ -29,6 +29,7 @@ mod package;
 mod path;
 mod primitive;
 mod protected;
+pub mod registry;
 mod schema;
 mod secret;
 mod signature;
