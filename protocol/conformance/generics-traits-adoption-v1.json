@@ -2,7 +2,7 @@
  "format": "gantry.language-adoption/v1",
  "gate": "GNT-GEN-GATE-000",
  "status": "verified",
- "specification_sha256": "b7b42e3621dc9f90d60f3061548839b25c777bd91af06cb854612676a686d404",
+ "specification_sha256": "0c22afd15222d40671ee8348162a505fac512b0918b1689569ff720533b0e2d8",
  "amended_profiles": [
   "analyzer",
   "concurrent-evaluator",

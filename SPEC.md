@@ -14448,7 +14448,10 @@ carries its version, so a later content revision is a different version rather t
 reinterpretation of one snapshot, and an implementation MUST refuse a snapshot whose declared
 version it does not decide rather than interpret it under a version it does.
 
-The required client verification algorithm is normative and ordered. A client parses the
+The required client verification algorithm is normative and ordered. A client first recovers
+exactly one declaration subject for every consumed entry by comparing both the canonical source
+identity and the declared package subject; a local dependency alias is not that subject and
+MUST NOT be used to borrow another package's declaration. It then parses the
 declared snapshot version; selects the trust root declared for the source identity under
 `GNT-27.4-trust-roots-and-delegated-authority`; verifies the signature chain from that root
 through the declared delegations that cover the namespace and publisher of each entry it will
@@ -14460,7 +14463,16 @@ canonicality and collision status of every consumed name under
 and revocation state under `GNT-27.8-publication-immutability`, `GNT-27.9-yank-semantics`, and
 `GNT-27.10-security-revocation-and-durable-execution-policy`; and verifies every bound
 artifact, dependency, and interface digest against the lockfile evidence of
-`GNT-27.12-lockfile-evidence-binding` before any source is parsed. Every step is decided over
+`GNT-27.12-lockfile-evidence-binding` before any source is parsed. The complete authenticated
+advisory evidence set is an explicit input to this algorithm and carries a signature by an
+authority selected for its canonical source. The proof's claimed publisher MUST name the exact
+key that signed it, and that publisher MUST be authorized for the namespace and package of
+every consumed entry. Its canonical set digest, including the domain-separated digest of an
+empty set, MUST bind that source, the snapshot sequence and identity, and the selected root
+policy; the root-policy digest has a distinct domain from the advisory-set digest. An unsigned,
+forged, truncated, differently bound, or incompletely authorized set is incomplete; omitted
+evidence fails closed as incomplete retained lifecycle facts before root, snapshot-signature,
+freshness, or content checks. Every step is decided over
 declared values, the algorithm is total over its declared inputs, and an entry that passes
 every step is admitted with its declared identity while an entry that fails any step is
 refused with one trust failure naming the causing declaration.
@@ -14628,7 +14640,9 @@ digest comparison. Evicting a cached snapshot MUST NOT lower the retained minimu
 state, and an implementation MUST NOT re-derive that state from whatever snapshots happen to
 be cached after an eviction. Online and offline verification compare the complete retained
 advisory set with the authenticated advisory facts effective for the source and selected root
-policy; a missing, extra, cross-source, or root-policy-incompatible fact is incomplete retained
+policy at the retained sequence; a newly proven current set may then advance that retained set
+only with its own context-bound completeness proof and the ordinary sequence and digest checks.
+A missing, extra, cross-source, or root-policy-incompatible fact is incomplete retained
 lifecycle evidence and fails closed rather than defaulting to an empty advisory set.
 
 Freeze is detected, not assumed. A source identity declares a maximum staleness, and a
@@ -14824,7 +14838,10 @@ source is parsed. One failure names the causing declaration, that is the depende
 declaration, manifest position, or dependency edge that presented the input; the declared
 source identity and kind; the metadata entry, publication, or artifact the failure concerns
 when the failure concerns one; the requirement anchor of this section whose check failed; and
-one reason drawn from a closed vocabulary.
+one reason drawn from a closed vocabulary. Snapshot-wide evidence failures are attributed to
+an exact source-and-package declaration of a consumed entry in canonical entry order; an
+explicit snapshot declaration that is not one of those exact declarations is missing
+attribution, and a same-source declaration for another package MUST NOT receive the failure.
 
 The closed failure reason vocabulary is exactly: an absent trust root, an unauthorized signing
 authority, an insufficient delegation scope, an incomplete delegation chain, an expired or

@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "b7b42e3621dc9f90d60f3061548839b25c777bd91af06cb854612676a686d404",
+ "specification_sha256": "0c22afd15222d40671ee8348162a505fac512b0918b1689569ff720533b0e2d8",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9494,
-   "end_line": 14238,
+   "end_line": 14905,
    "rationale": null
   }
  ],
@@ -35199,6 +35199,612 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/toolchain_bounded.rs#compilation_non_claims_are_closed_and_never_presented_as_guarantees"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.0-authenticated-package-acquisition-and-registry-trust",
+   "span_start_line": 14239,
+   "span_end_line": 14361,
+   "anchor_line": 14242,
+   "body_start_line": 14243,
+   "body_end_line": 14361,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14243,
+     "end_line": 14361,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_1_a_declaration_binds_one_canonical_source_identity",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_2_canonical_names_admit_one_byte_representation",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_3_a_snapshot_verifies_or_refuses_with_its_causing_entry",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_4_explicit_roots_and_narrowing_delegations_decide_authority",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_5_rotation_and_compromise_decide_the_signing_key",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_6_expiry_fails_closed_and_a_pinned_path_reports_its_age",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_7_a_rollback_or_a_freeze_is_refused_against_retained_state",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_8_a_publication_tuple_never_names_two_byte_sets",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_9_a_yank_stops_new_resolution_without_rewriting_a_lockfile",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_10_a_revocation_refuses_a_build_without_substituting_code",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_11_pinned_checkouts_vendored_trees_and_mirrors_present_one_universe",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_12_lockfile_evidence_binds_every_declaration_before_parsing",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_14_registry_non_claims_remain_limits_not_guarantees"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.1-immutable-source-identity-and-source-kind-vocabulary",
+   "span_start_line": 14362,
+   "span_end_line": 14399,
+   "anchor_line": 14362,
+   "body_start_line": 14363,
+   "body_end_line": 14399,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14363,
+     "end_line": 14399,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_1_a_declaration_binds_one_canonical_source_identity"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.2-canonical-publication-names-and-external-name-mapping",
+   "span_start_line": 14400,
+   "span_end_line": 14436,
+   "anchor_line": 14400,
+   "body_start_line": 14401,
+   "body_end_line": 14436,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14401,
+     "end_line": 14436,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_2_canonical_names_admit_one_byte_representation"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.3-authenticated-metadata-snapshot-and-client-verification",
+   "span_start_line": 14437,
+   "span_end_line": 14487,
+   "anchor_line": 14437,
+   "body_start_line": 14438,
+   "body_end_line": 14487,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14438,
+     "end_line": 14487,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_3_a_snapshot_verifies_or_refuses_with_its_causing_entry",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_advisory_set_proofs_reject_truncation_forgery_and_rebinding",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_explicit_advisories_and_exact_package_subjects_fail_closed",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_advisory_proof_rejects_a_known_key_for_another_publisher",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_advisory_proof_authority_covers_every_snapshot_entry"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.4-trust-roots-and-delegated-authority",
+   "span_start_line": 14488,
+   "span_end_line": 14527,
+   "anchor_line": 14488,
+   "body_start_line": 14489,
+   "body_end_line": 14527,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14489,
+     "end_line": 14527,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_4_explicit_roots_and_narrowing_delegations_decide_authority"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.5-signing-key-rotation-and-compromise-recovery",
+   "span_start_line": 14528,
+   "span_end_line": 14578,
+   "anchor_line": 14528,
+   "body_start_line": 14529,
+   "body_end_line": 14578,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14529,
+     "end_line": 14578,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_5_rotation_and_compromise_decide_the_signing_key"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.6-expiry-freshness-and-offline-mode",
+   "span_start_line": 14579,
+   "span_end_line": 14611,
+   "anchor_line": 14579,
+   "body_start_line": 14580,
+   "body_end_line": 14611,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14580,
+     "end_line": 14611,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_6_expiry_fails_closed_and_a_pinned_path_reports_its_age"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.7-rollback-and-freeze-resistance",
+   "span_start_line": 14612,
+   "span_end_line": 14656,
+   "anchor_line": 14612,
+   "body_start_line": 14613,
+   "body_end_line": 14656,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14613,
+     "end_line": 14656,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_7_a_rollback_or_a_freeze_is_refused_against_retained_state",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_explicit_advisories_and_exact_package_subjects_fail_closed",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_advisory_proof_advances_an_older_retained_set"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.8-publication-immutability",
+   "span_start_line": 14657,
+   "span_end_line": 14685,
+   "anchor_line": 14657,
+   "body_start_line": 14658,
+   "body_end_line": 14685,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14658,
+     "end_line": 14685,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_8_a_publication_tuple_never_names_two_byte_sets"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.9-yank-semantics",
+   "span_start_line": 14686,
+   "span_end_line": 14716,
+   "anchor_line": 14686,
+   "body_start_line": 14687,
+   "body_end_line": 14716,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14687,
+     "end_line": 14716,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_9_a_yank_stops_new_resolution_without_rewriting_a_lockfile"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.10-security-revocation-and-durable-execution-policy",
+   "span_start_line": 14717,
+   "span_end_line": 14750,
+   "anchor_line": 14717,
+   "body_start_line": 14718,
+   "body_end_line": 14750,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14718,
+     "end_line": 14750,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_10_a_revocation_refuses_a_build_without_substituting_code"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.11-vcs-path-and-vendor-source-verification",
+   "span_start_line": 14751,
+   "span_end_line": 14789,
+   "anchor_line": 14751,
+   "body_start_line": 14752,
+   "body_end_line": 14789,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14752,
+     "end_line": 14789,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_11_pinned_checkouts_vendored_trees_and_mirrors_present_one_universe"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.12-lockfile-evidence-binding",
+   "span_start_line": 14790,
+   "span_end_line": 14832,
+   "anchor_line": 14790,
+   "body_start_line": 14791,
+   "body_end_line": 14832,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14791,
+     "end_line": 14832,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_12_lockfile_evidence_binds_every_declaration_before_parsing"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.13-trust-failure-attribution",
+   "span_start_line": 14833,
+   "span_end_line": 14875,
+   "anchor_line": 14833,
+   "body_start_line": 14834,
+   "body_end_line": 14875,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14834,
+     "end_line": 14875,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_explicit_advisories_and_exact_package_subjects_fail_closed",
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_snapshot_evidence_rejects_a_same_source_wrong_subject_attribution"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-27.14-registry-non-claims",
+   "span_start_line": 14876,
+   "span_end_line": 14905,
+   "anchor_line": 14876,
+   "body_start_line": 14877,
+   "body_end_line": 14905,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 14877,
+     "end_line": 14905,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/registry_trust.rs#gnt_27_14_registry_non_claims_remain_limits_not_guarantees"
        ],
        "rationale": null
       }

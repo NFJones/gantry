@@ -318,6 +318,10 @@ const ROTATION_DOMAIN: &str = "gantry.registry-rotation-evidence/v1";
 const COMPROMISE_DOMAIN: &str = "gantry.registry-compromise-evidence/v1";
 /// Domain separator for advisory authorization digests.
 const ADVISORY_DOMAIN: &str = "gantry.registry-advisory/v1";
+/// Domain separator for authenticated complete advisory-set proofs.
+const ADVISORY_SET_DOMAIN: &str = "gantry.registry-advisory-set/v1";
+/// Domain separator for root-selection policy digests.
+const ROOT_POLICY_DOMAIN: &str = "gantry.registry-root-policy/v1";
 /// Domain separator for the canonical lockfile encoding.
 const LOCKFILE_DOMAIN: &str = "gantry.registry-lockfile/v1";
 /// Domain separator for one lockfile record's evidence digest.
@@ -2026,27 +2030,31 @@ impl DeclarationCoordinate {
     }
 }
 
-/// One dependency declaration and the one source identity it binds.
+/// One dependency declaration, package subject, and source identity it binds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceDeclaration {
     index: usize,
     coordinate: DeclarationCoordinate,
     alias: RegistryName,
+    package: RegistryName,
     identity: SourceIdentity,
 }
 
 impl SourceDeclaration {
-    /// Validates one declaration by index, exact coordinate, alias, and bound identity.
+    /// Validates one declaration by index, exact coordinate, local alias, package subject, and
+    /// bound identity.
     pub fn new(
         index: usize,
         coordinate: &str,
         alias: &str,
+        package: &str,
         identity: SourceIdentity,
     ) -> Result<Self, RegistryError> {
         Ok(Self {
             index,
             coordinate: DeclarationCoordinate::new(coordinate)?,
             alias: RegistryName::new(RegistryNameKind::DependencyAlias, alias)?,
+            package: RegistryName::new(RegistryNameKind::Package, package)?,
             identity,
         })
     }
@@ -2067,6 +2075,12 @@ impl SourceDeclaration {
     #[must_use]
     pub const fn alias(&self) -> &RegistryName {
         &self.alias
+    }
+
+    /// Returns the exact package subject this declaration owns at its bound source.
+    #[must_use]
+    pub const fn package(&self) -> &RegistryName {
+        &self.package
     }
 
     /// Returns the bound canonical source identity.
@@ -6933,6 +6947,24 @@ impl RootSelectionPolicy {
         Self::Enumerated(roots)
     }
 
+    /// Returns the canonical digest of this exact root-selection declaration.
+    #[must_use]
+    fn canonical_digest(&self) -> [u8; 32] {
+        let mut fields = Vec::new();
+        match self {
+            Self::Unspecified => fields.push(b"unspecified".as_slice()),
+            Self::Selected(root) => {
+                fields.push(b"selected".as_slice());
+                fields.push(root.as_str().as_bytes());
+            }
+            Self::Enumerated(roots) => {
+                fields.push(b"enumerated".as_slice());
+                fields.extend(roots.iter().map(|root| root.as_str().as_bytes()));
+            }
+        }
+        digest_fields(ROOT_POLICY_DOMAIN, &fields)
+    }
+
     /// Returns whether this policy permits one root identity.
     #[must_use]
     fn permits(&self, root: &RootId) -> bool {
@@ -6999,6 +7031,122 @@ impl RootSelectionPolicy {
     }
 }
 
+/// One signed proof that an advisory set is complete for one snapshot verification.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdvisorySetProof {
+    source: SourceIdentity,
+    sequence: u64,
+    snapshot: SnapshotIdentity,
+    root_policy: RootSelectionPolicy,
+    advisory_digest: [u8; 32],
+    publisher: PublisherIdentity,
+    signature: DeclaredSignature,
+}
+
+impl AdvisorySetProof {
+    /// Signs the canonical advisory set for one source, snapshot, and root-selection policy.
+    #[must_use]
+    pub fn authenticated(
+        snapshot: &MetadataSnapshot,
+        advisories: &AdvisoryStore,
+        root_policy: RootSelectionPolicy,
+        publisher: PublisherIdentity,
+        signer: &KeyRecord,
+    ) -> Self {
+        let source = snapshot.source().clone();
+        let sequence = snapshot.sequence();
+        let identity = snapshot.identity();
+        let advisory_digest =
+            advisories.canonical_digest(&source, sequence, &identity, &root_policy);
+        let payload = Self::payload(
+            &source,
+            sequence,
+            &identity,
+            &root_policy,
+            advisory_digest,
+            &publisher,
+        );
+        Self {
+            source,
+            sequence,
+            snapshot: identity,
+            root_policy,
+            advisory_digest,
+            publisher,
+            signature: declared_signature(signer, payload),
+        }
+    }
+
+    /// Returns the canonical payload digest that the proof signature covers.
+    #[must_use]
+    fn payload(
+        source: &SourceIdentity,
+        sequence: u64,
+        snapshot: &SnapshotIdentity,
+        root_policy: &RootSelectionPolicy,
+        advisory_digest: [u8; 32],
+        publisher: &PublisherIdentity,
+    ) -> [u8; 32] {
+        digest_fields(
+            ADVISORY_SET_DOMAIN,
+            &[
+                b"proof",
+                source.digest().as_slice(),
+                sequence.to_be_bytes().as_slice(),
+                snapshot.digest().as_slice(),
+                root_policy.canonical_digest().as_slice(),
+                advisory_digest.as_slice(),
+                publisher.name().spelling().as_bytes(),
+                publisher.key().as_str().as_bytes(),
+            ],
+        )
+    }
+
+    /// Returns whether this proof is bound to the exact presented verification context.
+    fn binds(
+        &self,
+        snapshot: &MetadataSnapshot,
+        advisories: &AdvisoryStore,
+        root_policy: &RootSelectionPolicy,
+    ) -> bool {
+        self.source == *snapshot.source()
+            && self.sequence == snapshot.sequence()
+            && self.snapshot == snapshot.identity()
+            && self.root_policy == *root_policy
+            && self.advisory_digest
+                == advisories.canonical_digest(
+                    snapshot.source(),
+                    snapshot.sequence(),
+                    &snapshot.identity(),
+                    root_policy,
+                )
+    }
+
+    /// Returns the proof signer identity.
+    #[must_use]
+    pub const fn publisher(&self) -> &PublisherIdentity {
+        &self.publisher
+    }
+
+    /// Returns the declared proof signature.
+    #[must_use]
+    pub const fn signature(&self) -> &DeclaredSignature {
+        &self.signature
+    }
+}
+
+/// The presented completeness proof for authenticated advisory lifecycle evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum AdvisoryEvidence {
+    /// The caller did not declare the advisory evidence set.
+    Undeclared,
+    /// The caller presented an advisory set and its signed completeness proof.
+    Presented {
+        advisories: AdvisoryStore,
+        proof: AdvisorySetProof,
+    },
+}
+
 /// One explicitly supplied verification input.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerificationInput<'a> {
@@ -7006,7 +7154,7 @@ pub struct VerificationInput<'a> {
     snapshot: &'a MetadataSnapshot,
     signatures: &'a [DeclaredSignature],
     retained: &'a [RetainedState],
-    advisories: Option<&'a AdvisoryStore>,
+    advisories: AdvisoryEvidence,
     publications: &'a PublicationLedger,
     observation: EpochObservation,
     freshness: FreshnessMode,
@@ -7031,7 +7179,7 @@ impl<'a> VerificationInput<'a> {
             snapshot,
             signatures,
             retained,
-            advisories: None,
+            advisories: AdvisoryEvidence::Undeclared,
             publications,
             observation,
             freshness,
@@ -7064,10 +7212,14 @@ impl<'a> VerificationInput<'a> {
         self.retained
     }
 
-    /// Returns this input with the complete authenticated advisory lifecycle evidence.
+    /// Returns this input with authenticated advisory evidence and its signed completeness proof.
     #[must_use]
-    pub fn with_advisories(mut self, advisories: &'a AdvisoryStore) -> Self {
-        self.advisories = Some(advisories);
+    pub fn with_advisory_proof(
+        mut self,
+        advisories: AdvisoryStore,
+        proof: AdvisorySetProof,
+    ) -> Self {
+        self.advisories = AdvisoryEvidence::Presented { advisories, proof };
         self
     }
 
@@ -7112,15 +7264,6 @@ impl<'a> VerificationInput<'a> {
     pub const fn root_selection(&self) -> &RootSelectionPolicy {
         &self.root_policy
     }
-
-    /// Returns the explicitly presented declaration for snapshot-wide evidence.
-    fn snapshot_declaration(&self) -> Option<&'a SourceDeclaration> {
-        self.snapshot_declaration.and_then(|index| {
-            self.declarations.iter().find(|declaration| {
-                declaration.index() == index && declaration.identity() == self.snapshot.source()
-            })
-        })
-    }
 }
 
 /// The authority that admitted one entry of one verified snapshot.
@@ -7162,6 +7305,7 @@ pub struct VerifiedSnapshot<'a> {
     freshness: FreshnessReport,
     authorities: Vec<EntryAuthority>,
     root_policy: RootSelectionPolicy,
+    advisory_facts: Vec<[u8; 32]>,
 }
 
 impl<'a> VerifiedSnapshot<'a> {
@@ -7225,6 +7369,12 @@ impl<'a> VerifiedSnapshot<'a> {
         &self.root_policy
     }
 
+    /// Returns the canonical advisory facts authenticated with this snapshot.
+    #[must_use]
+    pub fn advisory_facts(&self) -> &[[u8; 32]] {
+        &self.advisory_facts
+    }
+
     /// Returns the authority that admitted one entry.
     #[must_use]
     pub fn authority(&self, entry: usize) -> Option<&EntryAuthority> {
@@ -7271,9 +7421,10 @@ impl<'a> VerifiedSnapshot<'a> {
 impl TrustStore {
     /// Derives the durable source state that a verified snapshot contributes.
     ///
-    /// The returned state retains the snapshot content, its exclusive expiry, and every
-    /// source-scoped rotation or compromise fact effective at that sequence. Callers persist
-    /// this declared value rather than reconstructing lifecycle history from a cache.
+    /// The returned state retains the snapshot content, its exclusive expiry, every
+    /// source-scoped rotation or compromise fact effective at that sequence, and exactly the
+    /// advisory facts authenticated during verification. Callers persist this declared value
+    /// rather than reconstructing lifecycle history from a cache.
     #[must_use]
     pub fn retained_state(&self, verified: &VerifiedSnapshot<'_>) -> RetainedState {
         let snapshot = verified.snapshot();
@@ -7289,29 +7440,14 @@ impl TrustStore {
         let retained = rotation_facts
             .into_iter()
             .fold(retained, |state, fact| state.with_rotation_fact(fact));
-        revocation_facts
+        let retained = revocation_facts
             .into_iter()
-            .fold(retained, |state, fact| state.with_revocation_fact(fact))
-    }
-
-    /// Derives durable source state including authenticated advisory facts admitted by this
-    /// store under the verified root policy.
-    #[must_use]
-    pub fn retained_state_with_advisories(
-        &self,
-        verified: &VerifiedSnapshot<'_>,
-        advisories: &AdvisoryStore,
-    ) -> RetainedState {
-        advisories
-            .lifecycle_facts(
-                verified.snapshot().source(),
-                verified.snapshot().sequence(),
-                verified.root_policy(),
-            )
-            .into_iter()
-            .fold(self.retained_state(verified), |state, fact| {
-                state.with_advisory_fact(fact)
-            })
+            .fold(retained, |state, fact| state.with_revocation_fact(fact));
+        verified
+            .advisory_facts()
+            .iter()
+            .copied()
+            .fold(retained, |state, fact| state.with_advisory_fact(fact))
     }
 
     /// Returns canonical authenticated lifecycle facts effective for one source sequence.
@@ -7358,10 +7494,10 @@ impl TrustStore {
     /// declaration binds is refused as [`RegistryError::AttributionMissing`] before any
     /// other check reads that entry, so no refusal is ever reported without attribution.
     ///
-    /// A refusal that concerns the snapshot rather than one entry is attributed to the
-    /// declaration that binds the first entry in canonical order, so the attribution of a
-    /// snapshot-level refusal is a function of the declared entry set and not of the order in
-    /// which entries or declarations were supplied.
+    /// A refusal that concerns the snapshot rather than one entry is attributed to the first
+    /// exact entry declaration in canonical entry order. An explicit snapshot declaration must
+    /// be one of those exact declarations, so a same-source declaration for another package can
+    /// never receive blame for snapshot-wide evidence.
     pub fn verify<'a>(
         &'a self,
         input: &'a VerificationInput<'a>,
@@ -7382,19 +7518,15 @@ impl TrustStore {
         validate_declaration_indices(declarations)?;
         let mut attributed: Vec<&'a SourceDeclaration> = Vec::new();
         for (index, entry) in entries.iter().enumerate() {
-            let candidates = declarations
+            let exact = declarations
                 .iter()
-                .filter(|declaration| declaration.identity() == entry.source())
-                .collect::<Vec<_>>();
-            let exact = candidates
-                .iter()
-                .copied()
-                .filter(|declaration| declaration.alias().spelling() == entry.package().spelling())
+                .filter(|declaration| {
+                    declaration.identity() == entry.source()
+                        && declaration.package() == entry.package()
+                })
                 .collect::<Vec<_>>();
             if exact.len() == 1 {
                 attributed.push(exact[0]);
-            } else if exact.is_empty() && candidates.len() == 1 {
-                attributed.push(candidates[0]);
             } else {
                 return Err(RegistryRefusal::unbound(
                     RegistryError::AttributionMissing {
@@ -7407,10 +7539,12 @@ impl TrustStore {
             }
         }
         let entry_anchor = attributed[0];
-        let snapshot_anchor = input.snapshot_declaration();
-        let snapshot_refusal = |condition| {
-            snapshot_anchor.map_or_else(
-                || {
+        let snapshot_anchor = match input.snapshot_declaration {
+            Some(index) => attributed
+                .iter()
+                .copied()
+                .find(|declaration| declaration.index() == index)
+                .ok_or_else(|| {
                     RegistryRefusal::unbound(
                         RegistryError::AttributionMissing {
                             declared: declarations.len(),
@@ -7419,10 +7553,17 @@ impl TrustStore {
                         0,
                         snapshot.source().clone(),
                     )
-                },
-                |declaration| declaration.refusal(condition),
-            )
+                })?,
+            None => entry_anchor,
         };
+        let snapshot_refusal = |condition| snapshot_anchor.refusal(condition);
+        if matches!(input.advisories, AdvisoryEvidence::Undeclared) {
+            return Err(snapshot_refusal(
+                RegistryError::RetainedLifecycleFactsMissing {
+                    source: snapshot.source().clone(),
+                },
+            ));
+        }
         let roots = self
             .roots
             .iter()
@@ -7432,6 +7573,34 @@ impl TrustStore {
             .root_selection()
             .validate_for(snapshot.source(), &roots)
             .map_err(snapshot_refusal)?;
+        let (advisories, proof) = match &input.advisories {
+            AdvisoryEvidence::Undeclared => {
+                unreachable!("undeclared advisory evidence is refused before verification")
+            }
+            AdvisoryEvidence::Presented { advisories, proof } => (advisories, proof),
+        };
+        if !proof.binds(snapshot, advisories, input.root_selection())
+            || !self.verifies(
+                proof.signature(),
+                AdvisorySetProof::payload(
+                    snapshot.source(),
+                    snapshot.sequence(),
+                    &snapshot.identity(),
+                    input.root_selection(),
+                    advisories.canonical_digest(
+                        snapshot.source(),
+                        snapshot.sequence(),
+                        &snapshot.identity(),
+                        input.root_selection(),
+                    ),
+                    proof.publisher(),
+                ),
+            )
+        {
+            return Err(snapshot_refusal(RegistryError::SignatureUnverified {
+                key: proof.signature().key().clone(),
+            }));
+        }
         let content = snapshot.content_digest();
         let verifying = input
             .signatures()
@@ -7476,26 +7645,33 @@ impl TrustStore {
                 grant,
             });
         }
-        let freshness = match snapshot_anchor {
-            Some(declaration) => evaluate_freshness(
-                snapshot,
-                input.observation(),
-                input.freshness(),
-                declaration,
-            )?,
-            None => {
-                let report = evaluate_freshness(
-                    snapshot,
-                    input.observation(),
-                    input.freshness(),
-                    entry_anchor,
-                );
-                match report {
-                    Ok(report) => report,
-                    Err(refusal) => return Err(snapshot_refusal(refusal.condition().clone())),
-                }
-            }
-        };
+        if proof.signature().key() != proof.publisher().key() {
+            return Err(snapshot_refusal(RegistryError::PublisherUnauthorized {
+                publisher: Arc::from(proof.publisher().name().spelling()),
+                key: proof.signature().key().clone(),
+                defect: AuthorizationDefect::UnverifiedSigner,
+            }));
+        }
+        for (index, entry) in entries.iter().enumerate() {
+            self.authorize_coordinates_at(
+                attributed[index],
+                AuthorityQuery {
+                    source: snapshot.source(),
+                    publisher: proof.publisher(),
+                    namespace: entry.namespace(),
+                    package: entry.package(),
+                    sequence: snapshot.sequence(),
+                    epoch: snapshot.issue_epoch(),
+                    root_policy: Some(input.root_selection()),
+                },
+            )?;
+        }
+        let freshness = evaluate_freshness(
+            snapshot,
+            input.observation(),
+            input.freshness(),
+            snapshot_anchor,
+        )?;
         for (index, entry) in entries.iter().enumerate() {
             let declaration = attributed[index];
             let retained = input
@@ -7527,13 +7703,11 @@ impl TrustStore {
             };
             let (rotation_facts, revocation_facts) =
                 self.lifecycle_facts(entry.source(), snapshot.sequence(), input.root_selection());
-            let advisory_facts = input.advisories.map_or_else(Vec::new, |advisories| {
-                advisories.lifecycle_facts(
-                    entry.source(),
-                    snapshot.sequence(),
-                    input.root_selection(),
-                )
-            });
+            let advisory_facts = advisories.lifecycle_facts(
+                entry.source(),
+                retained.minimum_sequence(),
+                input.root_selection(),
+            );
             if !retained.has_lifecycle_facts(
                 &rotation_facts,
                 &revocation_facts,
@@ -7647,6 +7821,11 @@ impl TrustStore {
             freshness,
             authorities,
             root_policy: input.root_selection().clone(),
+            advisory_facts: advisories.lifecycle_facts(
+                snapshot.source(),
+                snapshot.sequence(),
+                input.root_selection(),
+            ),
         })
     }
 }
@@ -10520,6 +10699,30 @@ impl AdvisoryStore {
         self.advisories.is_empty()
     }
 
+    /// Returns the canonical digest of every advisory fact effective for this context.
+    fn canonical_digest(
+        &self,
+        source: &SourceIdentity,
+        sequence: u64,
+        snapshot: &SnapshotIdentity,
+        root_policy: &RootSelectionPolicy,
+    ) -> [u8; 32] {
+        let facts = self.lifecycle_facts(source, sequence, root_policy);
+        let source_digest = source.digest();
+        let sequence = sequence.to_be_bytes();
+        let snapshot_digest = snapshot.digest();
+        let root_policy_digest = root_policy.canonical_digest();
+        let mut fields = vec![
+            b"set".as_slice(),
+            source_digest.as_slice(),
+            sequence.as_slice(),
+            snapshot_digest.as_slice(),
+            root_policy_digest.as_slice(),
+        ];
+        fields.extend(facts.iter().map(|fact| fact.as_slice()));
+        digest_fields(ADVISORY_SET_DOMAIN, &fields)
+    }
+
     /// Returns canonical advisory lifecycle facts effective for one source and root policy.
     fn lifecycle_facts(
         &self,
@@ -10649,9 +10852,20 @@ mod tests {
         }
     }
 
-    /// Returns one source declaration.
-    fn declaration(index: usize, alias: &str, identity: SourceIdentity) -> SourceDeclaration {
-        match SourceDeclaration::new(index, &format!("test:declaration:{index}"), alias, identity) {
+    /// Returns one source declaration with an explicit package subject.
+    fn declaration(
+        index: usize,
+        alias: &str,
+        package: &str,
+        identity: SourceIdentity,
+    ) -> SourceDeclaration {
+        match SourceDeclaration::new(
+            index,
+            &format!("test:declaration:{index}"),
+            alias,
+            package,
+            identity,
+        ) {
             Ok(declaration) => declaration,
             Err(error) => panic!("the declared declaration is valid: {error:?}"),
         }
@@ -10794,6 +11008,37 @@ mod tests {
         (store, retained, signatures)
     }
 
+    /// Builds verification input with a signed proof for an authenticated empty advisory set.
+    fn verification_input<'a>(
+        declarations: &'a [SourceDeclaration],
+        snapshot: &'a MetadataSnapshot,
+        signatures: &'a [DeclaredSignature],
+        retained: &'a [RetainedState],
+        publications: &'a PublicationLedger,
+        observation: EpochObservation,
+        freshness: FreshnessMode,
+    ) -> VerificationInput<'a> {
+        let advisories = AdvisoryStore::new();
+        let signer = key(snapshot.entries()[0].publisher().key().as_str());
+        let proof = AdvisorySetProof::authenticated(
+            snapshot,
+            &advisories,
+            RootSelectionPolicy::Unspecified,
+            snapshot.entries()[0].publisher().clone(),
+            &signer,
+        );
+        VerificationInput::new(
+            declarations,
+            snapshot,
+            signatures,
+            retained,
+            publications,
+            observation,
+            freshness,
+        )
+        .with_advisory_proof(advisories, proof)
+    }
+
     /// Returns one ledger whose occupancy entered through snapshot verification.
     fn ledger_of(
         declaration: &SourceDeclaration,
@@ -10802,7 +11047,7 @@ mod tests {
         let (store, retained, signatures) = authenticated_fixture(declaration, snapshot);
         let declarations = [declaration.clone()];
         let empty = PublicationLedger::new();
-        let input = VerificationInput::new(
+        let input = verification_input(
             &declarations,
             snapshot,
             &signatures,
@@ -10831,7 +11076,7 @@ mod tests {
         let (store, retained, signatures) = authenticated_fixture(declaration, snapshot);
         let declarations = [declaration.clone()];
         let empty = PublicationLedger::new();
-        let input = VerificationInput::new(
+        let input = verification_input(
             &declarations,
             snapshot,
             &signatures,
@@ -10966,8 +11211,8 @@ mod tests {
             Err(error) => panic!("the declared identity is valid: {error:?}"),
         };
         let declarations = vec![
-            declaration(0, "widget", registry.clone()),
-            declaration(1, "widget_vcs", vcs.clone()),
+            declaration(0, "widget", "widget", registry.clone()),
+            declaration(1, "widget_vcs", "widget_vcs", vcs.clone()),
         ];
         assert!(matches!(
             resolve_source(&declarations, &declarations[0], &registry),
@@ -11167,7 +11412,7 @@ mod tests {
             "manifest-a",
             "artifact-a",
         );
-        let inside_declaration = declaration(0, "widget", inside.source().clone());
+        let inside_declaration = declaration(0, "widget", "widget", inside.source().clone());
         assert!(store.authorize(&inside_declaration, &inside, 2).is_ok());
         let outside = entry(
             "acme",
@@ -11177,7 +11422,7 @@ mod tests {
             "manifest-b",
             "artifact-b",
         );
-        let outside_declaration = declaration(1, "gadget", outside.source().clone());
+        let outside_declaration = declaration(1, "gadget", "gadget", outside.source().clone());
         match store.authorize(&outside_declaration, &outside, 2) {
             Err(refusal) => {
                 assert_eq!(
@@ -11196,7 +11441,8 @@ mod tests {
             "manifest-c",
             "artifact-c",
         );
-        let stranger_declaration = declaration(2, "stranger", stranger.source().clone());
+        let stranger_declaration =
+            declaration(2, "stranger", "stranger", stranger.source().clone());
         match store.authorize(&stranger_declaration, &stranger, 2) {
             Err(refusal) => {
                 assert_eq!(refusal.code(), None);
@@ -11211,7 +11457,7 @@ mod tests {
     fn registry_rotation_requires_evidence_under_both_keys() {
         let old = key("old-key");
         let new = key("new-key");
-        let declaration = declaration(0, "widget", source_of("acme", "widget"));
+        let declaration = declaration(0, "widget", "widget", source_of("acme", "widget"));
         let source = declaration.identity().clone();
         let scope = scope_of_package("acme", "widget");
         let acme = publisher("acme", old.key().as_str());
@@ -11294,7 +11540,7 @@ mod tests {
             "manifest-a",
             "artifact-a",
         );
-        let declaration = declaration(0, "widget", entry.source().clone());
+        let declaration = declaration(0, "widget", "widget", entry.source().clone());
         assert!(store.authorize(&declaration, &entry, 9).is_ok());
         let scope = scope_of_package("acme", "widget");
         let declarer = publisher("acme", "acme-key");
@@ -11343,12 +11589,12 @@ mod tests {
         };
         let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
         let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
-        let declaration = declaration(0, "widget", widget.source().clone());
+        let declaration = declaration(0, "widget", "widget", widget.source().clone());
         let declarations = vec![declaration.clone()];
         let ledger = ledger_of(&declaration, &snapshot);
         let retained = RetainedState::for_source(widget.source().clone(), 1);
         let signatures = vec![declared_signature(&record, snapshot.content_digest())];
-        let fresh = VerificationInput::new(
+        let fresh = verification_input(
             &declarations,
             &snapshot,
             &signatures,
@@ -11378,7 +11624,7 @@ mod tests {
                 .offline_witness(declaration.identity(), 200)
                 .is_ok()
         );
-        let expired = VerificationInput::new(
+        let expired = verification_input(
             &declarations,
             &snapshot,
             &signatures,
@@ -11404,7 +11650,7 @@ mod tests {
             }
             Ok(_) => panic!("an observation past the declared expiry is refused"),
         }
-        let offline = VerificationInput::new(
+        let offline = verification_input(
             &declarations,
             &snapshot,
             &signatures,
@@ -11423,7 +11669,7 @@ mod tests {
                 panic!("a pinned observation inside its validity is admitted: {refusal}")
             }
         }
-        let expired_offline = VerificationInput::new(
+        let expired_offline = verification_input(
             &declarations,
             &snapshot,
             &signatures,
@@ -11443,7 +11689,7 @@ mod tests {
             Ok(_) => panic!("an offline witness never extends snapshot validity"),
         }
         let rolled_back = RetainedState::for_source(widget.source().clone(), 9);
-        let rollback = VerificationInput::new(
+        let rollback = verification_input(
             &declarations,
             &snapshot,
             &signatures,
@@ -11458,7 +11704,7 @@ mod tests {
         }
         let equivocated = RetainedState::for_source(widget.source().clone(), 1)
             .with_content(4, declared("other-content"));
-        let freeze = VerificationInput::new(
+        let freeze = verification_input(
             &declarations,
             &snapshot,
             &signatures,
@@ -11483,7 +11729,7 @@ mod tests {
             &record,
             unbound_snapshot.content_digest(),
         )];
-        let unbound = VerificationInput::new(
+        let unbound = verification_input(
             &declarations,
             &unbound_snapshot,
             &unbound_signatures,
@@ -11509,7 +11755,7 @@ mod tests {
     /// `GNT-27.8` requires one authenticated tuple to name one set of bytes forever.
     #[test]
     fn registry_publications_are_immutable() {
-        let declaration = declaration(0, "widget", source_of("acme", "widget"));
+        let declaration = declaration(0, "widget", "widget", source_of("acme", "widget"));
         let acme = publisher("acme", "acme-key");
         let first = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
         let first_snapshot = snapshot_of(3, 100, 200, std::slice::from_ref(&first));
@@ -11531,7 +11777,7 @@ mod tests {
             &key("acme-key"),
             changed_snapshot.content_digest(),
         )];
-        let changed_input = VerificationInput::new(
+        let changed_input = verification_input(
             std::slice::from_ref(&declaration),
             &changed_snapshot,
             &changed_signatures,
@@ -11560,7 +11806,7 @@ mod tests {
         let acme = publisher("acme", "acme-key");
         let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
         let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
-        let declaration = declaration(0, "widget", widget.source().clone());
+        let declaration = declaration(0, "widget", "widget", widget.source().clone());
         let declarations = vec![declaration.clone()];
         let record = record_of(&widget, &snapshot, &declaration);
         assert_eq!(record.evidence(), record.attest());
@@ -11581,7 +11827,7 @@ mod tests {
         );
         let (store, retained, signatures) = authenticated_fixture(&declaration, &snapshot);
         let empty = PublicationLedger::new();
-        let verification = VerificationInput::new(
+        let verification = verification_input(
             std::slice::from_ref(&declaration),
             &snapshot,
             &signatures,
@@ -11629,7 +11875,7 @@ mod tests {
         }
         let unbound = vec![
             declaration.clone(),
-            self::declaration(1, "gadget", source_of("acme", "gadget")),
+            self::declaration(1, "gadget", "gadget", source_of("acme", "gadget")),
         ];
         match lockfile.bind(&unbound, &[&snapshot]) {
             Err(refusal) => {
@@ -11664,7 +11910,7 @@ mod tests {
         let yanked = published.clone().with_publication(PublicationState::Yanked);
         let published_snapshot = snapshot_of(3, 100, 200, std::slice::from_ref(&published));
         let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&yanked));
-        let declaration = declaration(0, "widget", yanked.source().clone());
+        let declaration = declaration(0, "widget", "widget", yanked.source().clone());
         let declarations = vec![declaration.clone()];
         let root = root(
             "acme-root",
@@ -11683,7 +11929,7 @@ mod tests {
             &record,
             published_snapshot.content_digest(),
         )];
-        let published_input = VerificationInput::new(
+        let published_input = verification_input(
             &declarations,
             &published_snapshot,
             &published_signatures,
@@ -11700,7 +11946,7 @@ mod tests {
         let retained = RetainedState::for_source(declaration.identity().clone(), 4)
             .with_content(4, snapshot.content_digest());
         let signatures = vec![declared_signature(&record, snapshot.content_digest())];
-        let input = VerificationInput::new(
+        let input = verification_input(
             &declarations,
             &snapshot,
             &signatures,
@@ -11770,7 +12016,7 @@ mod tests {
             Ok(store) => store,
             Err(error) => panic!("the declared store is valid: {error:?}"),
         };
-        let declaration = declaration(0, "widget", source_of("acme", "widget"));
+        let declaration = declaration(0, "widget", "widget", source_of("acme", "widget"));
         let scope = match AdvisoryScope::new(
             source_of("acme", "widget"),
             "acme",
@@ -11888,7 +12134,7 @@ mod tests {
             Ok(pin) => pin,
             Err(error) => panic!("the declared pin is valid: {error:?}"),
         };
-        let declaration = declaration(0, "widget", source.clone());
+        let declaration = declaration(0, "widget", "widget", source.clone());
         let clean =
             PinnedTree::observed(source.clone(), Some(commit.clone()), declared("content-a"));
         match verify_pinned_tree(&declaration, &pin, &clean) {

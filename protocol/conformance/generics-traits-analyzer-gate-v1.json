@@ -74,7 +74,7 @@
   },
   {
    "path": "crates/gantry-ir/src/lib.rs",
-   "sha256": "59abbaa5a08bce49b190af52ac92ff8471279d2e219f0e4ff7a9f73718a47ee4"
+   "sha256": "86ab79ca01fbce8a83952d835a18f36492a250fdab14fade985291d29616a84a"
   },
   {
    "path": "crates/gantry-ir/src/type_properties.rs",
@@ -98,23 +98,23 @@
   },
   {
    "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "00d6864ec199c9955e02e89c1d088bbbc74c708366ca6871bd1140094fc8af76"
+   "sha256": "1cf2ce5142763984e36555bc512212e103c6cef8772f0c4d3bea26b29556d4d3"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "8332da59ef7527fd2e366bb7883ba9a6e0306cb622e4e03832fc57b47f28235a"
+   "sha256": "73e92f1d03299721bdb83f1ba1dee28b18213d646effde7b183c89d055b07525"
   },
   {
    "path": "protocol/conformance/analyzer-validity-v1.json",
-   "sha256": "163cea8e44f7d00c87e9e3226c147c1e5a1854a8555507b45d53291e3b7db343"
+   "sha256": "c9cca4638d17c05b3f86092b278d2360fb8a4e57f8273015aea5c0d5daf5092d"
   },
   {
    "path": "protocol/conformance/generics-traits-frontend-v1.json",
-   "sha256": "006e17430c3b39d8ab25b3ff5fba464958506eec07d083776b2974b099acf19b"
+   "sha256": "88880615f4b8f5bfd68916611834cb9397772f1a491d08b29114ec3e79c447e9"
   },
   {
    "path": "protocol/conformance/generics-traits-ir-v1.json",
-   "sha256": "8afa598eef9dad2774c742383630c0942265675469760aebb3c07943f26534b5"
+   "sha256": "6c4f392544e1161964b6a89345f692b37159315ed491870d2f06af00cf37c07e"
   },
   {
    "path": "protocol/goldens/analyzer-validity-model-v1.json",
@@ -122,15 +122,15 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "7476d32a1e29db6d195efe43dd993286ce4b0793510367744f19ec220db58310"
+   "sha256": "20437ece13927d7761fe3c164ce488c2c30784f72e802643bb82800178336d26"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "ab5eac9b8343c96d54dbf72e766d1d9a6c463d8b9eed83261ad5972a78959862"
+   "sha256": "6c8a7e696261093ed2cfd25adb0789849c99a7cbf164f6ff62e211f8117c258e"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
-   "sha256": "bd0b79b232c2c2e26d554a79fae977403555d7de23712890649196ecd57c27cb"
+   "sha256": "7cc2fa5e112cf5aae40d4ada7ef20c545b172021a78bf3546a458ddf2c6f7498"
   },
   {
    "path": "protocol/schemas/canonical-ir-v1.schema.json",
@@ -204,14 +204,14 @@
  ],
  "profile": "analyzer",
  "review_summary": {
-  "applicable_clause_count": 529,
-  "covered_count": 341,
+  "applicable_clause_count": 544,
+  "covered_count": 356,
   "not_applicable_count": 188
  },
  "section14_excerpt_count": 51,
  "specification": {
   "path": "SPEC.md",
-  "sha256": "b7b42e3621dc9f90d60f3061548839b25c777bd91af06cb854612676a686d404"
+  "sha256": "0c22afd15222d40671ee8348162a505fac512b0918b1689569ff720533b0e2d8"
  },
  "status": "verified",
  "validation_commands": [

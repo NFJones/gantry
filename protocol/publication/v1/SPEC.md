@@ -14236,3 +14236,670 @@ item MUST NOT be read as promising a limit outside it, a non-claim MUST NOT be p
 a guarantee, and an implementation MUST NOT report a clause of this section as satisfied,
 partially satisfied, or conditionally satisfied where it can only demonstrate one of these
 limits.
+
+## 27. Authenticated Package Acquisition and Registry Trust
+
+<a id="GNT-27.0-authenticated-package-acquisition-and-registry-trust"></a>
+
+**[GNT-27.0-authenticated-package-acquisition-and-registry-trust] Authenticated package
+acquisition and registry trust.** This section defines how one dependency declaration binds
+a canonical source identity beside a package name, how source kinds are named by one closed
+vocabulary with no fallback between kinds, how package, namespace, publisher, and
+dependency-alias names acquire one canonical byte representation and one equality relation,
+how resolution consumes one versioned authenticated metadata snapshot that binds names,
+versions, artifact digests, dependency metadata, publication state, and publisher or signer
+authorization under one declared trust root, how namespace and publisher authority is
+delegated with explicit scope narrowing and no ambient or fallback trust, how signing keys
+rotate under dual-validity evidence and how compromise recovery revokes affected authority,
+how expiry and freshness fail closed while an explicitly configured offline mode reports the
+age of a pinned previously verified snapshot instead of claiming an online check, how
+rollback and freeze are resisted against one retained minimum trusted state with monotone
+sequence evidence, how publication identity is immutable for one authenticated
+`(namespace, package, version)` tuple, how a yank removes a release from ordinary new
+resolution without invalidating a verified lockfile or an offline build and without a
+silent lockfile rewrite, how a security revocation enters as a separate authenticated
+advisory or policy input with explicit scope and severity and how a durable execution
+retains its pinned artifact under an explicit cancellation, drain, or migration policy, how
+source-control, path, and vendored sources are verified, how lockfile evidence binds
+canonical source identity, authenticated snapshot or equivalent proof, version, features,
+targets, dependencies, interface digests, and generator inputs before any source is parsed,
+how every trust or freshness failure identifies its causing declaration, and the explicit
+non-claims of the section. It cites and extends, rather than replaces, the landed package
+identity, package-instance, dependency-alias, visibility, reexport, target-kind,
+public-interface, compatibility-axis, and resolution-order contracts of `GNT-16.*` together
+with `GNT-16.1-package-identity`, `GNT-16.2-package-instances`,
+`GNT-16.3-dependency-aliases`, and `GNT-16.7-public-interface-manifest`, the package-source
+manifest and compatibility classes of `GNT-11.6`, `GNT-11.6-package-source-manifest`, and
+`GNT-11.6-compatibility-classes`, build-host authority and target artifact binding of
+`GNT-17.9-build-host-authority` and `GNT-17.11-target-artifact-binding`, the identity
+domains and external-name mapping of `GNT-18.*` together with
+`GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`,
+`GNT-18.9-external-name-mapping`, and `GNT-18.10-generated-alias-derivation`, and the
+bounded compilation and cache contracts of `GNT-26.*`, whose landed text this section does
+not redefine.
+
+The closed vocabulary of this section is exactly the following terms. A clause here MUST NOT
+use an acquisition or registry-trust term outside this vocabulary, and a term listed below
+MUST NOT be given a second meaning by another clause of this section.
+
+| Term | Meaning in this section |
+| --- | --- |
+| source identity | The canonical authenticated identity of one acquisition source, drawn from the versioned identifier domain of `GNT-27.1-immutable-source-identity-and-source-kind-vocabulary`, and never a package name, a display name, a uniform resource locator spelling, or a host path. |
+| source kind | One member of the closed kind vocabulary of `GNT-27.1-immutable-source-identity-and-source-kind-vocabulary`, exactly registry, vcs, path, or vendored. |
+| metadata snapshot | The versioned authenticated metadata record of `GNT-27.3-authenticated-metadata-snapshot-and-client-verification` that binds names, versions, artifact digests, dependency metadata, publication state, and publisher or signer authorization under one trust root. |
+| trust root | The declared root of authority under which one metadata snapshot is verified, drawn from the declared root set of `GNT-27.4-trust-roots-and-delegated-authority`. |
+| delegation | One explicit scope-narrowing grant of namespace, publisher, or name-set authority from a trust root or from an already delegated authority to one signing authority, as fixed by `GNT-27.4-trust-roots-and-delegated-authority`. |
+| revocation | One authenticated advisory or policy input of `GNT-27.10-security-revocation-and-durable-execution-policy` that names affected artifact identities with explicit scope and severity, distinct from a yank. |
+| yank | One authenticated publication-state change of `GNT-27.9-yank-semantics` that removes one exact release from ordinary new resolution while leaving a verified lockfile and an offline build of it reproducible. |
+| lockfile evidence | The declared record of `GNT-27.12-lockfile-evidence-binding` that binds the source identity, snapshot proof, version, features, targets, dependency identities, interface digests, and generator inputs one installation verifies before source parsing. |
+| trust failure | One closed reason of `GNT-27.13-trust-failure-attribution` that names the causing declaration and the requirement anchor whose check failed. |
+
+**Applicability.** The clauses of this section govern an edition or profile that acquires
+packages from a declared source identity under a declared trust root. The landed v1 model
+already decides some of these clauses, and those clauses MUST be recorded under this section
+rather than exempted from it: the identity and kind vocabulary of
+`GNT-27.1-immutable-source-identity-and-source-kind-vocabulary`; the name canonicality rules
+of `GNT-27.2-canonical-publication-names-and-external-name-mapping`; the snapshot binding
+and required client verification algorithm of
+`GNT-27.3-authenticated-metadata-snapshot-and-client-verification`; trust-root and delegation
+evaluation of `GNT-27.4-trust-roots-and-delegated-authority`; rotation of
+`GNT-27.5-signing-key-rotation-and-compromise-recovery`; expiry and offline reporting of
+`GNT-27.6-expiry-freshness-and-offline-mode`; rollback and freeze resistance of
+`GNT-27.7-rollback-and-freeze-resistance`; publication immutability of
+`GNT-27.8-publication-immutability`; yank and revocation eligibility of
+`GNT-27.9-yank-semantics` and `GNT-27.10-security-revocation-and-durable-execution-policy`;
+source verification of `GNT-27.11-vcs-path-and-vendor-source-verification`; lockfile
+evidence binding of `GNT-27.12-lockfile-evidence-binding`; and failure attribution of
+`GNT-27.13-trust-failure-attribution`. Those clauses are decided by the landed pure model
+with the pure-model lane `crates/gantry-conformance/tests/registry_trust.rs` as evidence and
+are recorded `covered` for the analyzer profile exactly as Section 25 and Section 26 record
+their own rows `covered` for the analyzer profile with their pure-model lanes, because a
+pure model decides their declared obligations without a host, a clock, or an environment.
+
+The remaining clauses are profile-gated for the network, registry-protocol, and runtime
+facilities they claim: live registry transport, transparency-log operation, and the durable
+execution migration policy of
+`GNT-27.10-security-revocation-and-durable-execution-policy`. An implementation that claims
+one of those facilities MUST record the facility-specific obligations it does not provide as
+profile-based `not-applicable` justifications in the sense of Sections 2 and 15, and MUST NOT
+report one of them as satisfied, partially satisfied, conditionally satisfied, or satisfied
+for a subset of its rules; an implementation that provides none of them owes no such
+justification, because the analyzer profile claims no such facility. The declared semantics
+this section fixes are decided by the landed pure model and its lane: source identity and
+kind vocabulary, canonical names with external-name mapping, snapshot binding and
+verification order, trust-root and delegation scope, rotation with compromise recovery,
+expiry, freshness, and offline age reporting, rollback and freeze detection, publication
+immutability, yank semantics, revocation scope and severity, source-control, path, and
+vendor verification, lockfile evidence fields, and failure attribution.
+
+**Boundary.** This section does not redefine, narrow, or relax landed text: the package
+identity, package-instance, dependency-alias, visibility, reexport, target-kind,
+public-interface manifest, compatibility-axis, and resolution-order-independence contracts
+of `GNT-16.*`; the package-source manifest and compatibility classes of `GNT-11.6`,
+`GNT-11.6-package-source-manifest`, and `GNT-11.6-compatibility-classes`; build-host
+authority, descriptor normalization, target selection, target artifact binding, and target
+resolution failure of `GNT-17.*`; the symbolic identity domains, canonical symbolic
+identity, source-spelling admission, confusable and script policy, reserved-word occupancy,
+collision relation, case and truncation behaviour, external-name mapping, generated-alias
+derivation, hostile-label rendering, typed identity authority, and identity version pinning
+of `GNT-18.*`; and the budget, cutoff, sealing, loader, cache, equivalence, fencing,
+generator, toolchain-identity, and non-claim contracts of `GNT-26.*`. Nothing here admits
+ambient trust: authority comes only from a declared root through declared delegations, as
+`GNT-27.4-trust-roots-and-delegated-authority` states, and a cryptographic signature that no
+declared authority covers admits nothing. Nothing here treats authenticity as code safety:
+`GNT-27.3-authenticated-metadata-snapshot-and-client-verification` and
+`GNT-27.12-lockfile-evidence-binding` establish who authorized which declared bytes, and
+capability and agent requirement inspection, sandboxed build generation, untrusted-input
+compiler limits, interface verification, policy, and tests remain mandatory after provenance
+succeeds. Nothing here makes absent metadata a permission: a missing snapshot, an unknown
+kind, an unresolved alias, and an unverifiable lockfile record each fail closed rather than
+falling back to another kind, another root, another mirror, or a cached entry. Every
+identity of this section is derived from declared fields, and no process identifier, thread
+identity, clock reading, host path, environment fact, locale, installed-program name,
+socket, network address, or adapter handle enters one. Every obligation of this section is
+decided by an explicit check over declared values.
+
+<a id="GNT-27.1-immutable-source-identity-and-source-kind-vocabulary"></a>
+
+**[GNT-27.1-immutable-source-identity-and-source-kind-vocabulary] Immutable source identity
+and closed source-kind vocabulary.** Every dependency declaration binds exactly one source
+identity, and a source identity is a canonical authenticated identity drawn from a declared
+versioned identifier domain rather than a display name, a package name, a uniform resource
+locator spelling, a host path, or a registry alias. Two declarations that name one source
+identity denote one source, a declaration that names no source identity is refused rather
+than defaulted to a registry, and a source identity MUST NOT be derived from an environment
+fact, a locale, a user name, a machine name, a clock reading, a process identifier, a random
+value, a socket or network address, an adapter handle, or the order in which a client
+happened to discover its sources.
+
+The source kinds are exactly registry, vcs, path, and vendored. There is no fifth kind, and
+an implementation MUST refuse a source kind outside this vocabulary rather than treat it as
+an extension point. Kinds occupy distinct namespaces: one package name in two kinds names two
+distinct sources, so a private registry dependency, a source-control dependency, a path
+dependency, and a vendored dependency MUST NOT be unified, merged, or substituted for one
+another because their names coincide. There is no fallback between kinds: a declaration whose
+name is absent from its declared kind fails closed rather than being satisfied from another
+kind, and a resolver MUST NOT satisfy a private dependency silently from a public package, a
+mirror, a local directory, or a vendored copy of the same name. An attempted substitution
+whose declared identity text names a source of another kind is refused as the source-kind
+fallback failure of `GNT-27.13-trust-failure-attribution`, rather than reported as an
+undeclared source identity or resolved through a kind-specific fallback.
+
+An alias is configuration, not identity. A registry alias, a mirror name, and a local source
+spelling are declared configuration conveniences that bind one local spelling to one
+authenticated source identity; an alias MUST NOT be used as a source identity in a lockfile,
+a signature, a public interface, a policy decision, or a registry index, and an alias MUST
+NOT be admitted as a semantic identity of its own. Rebinding an alias changes which
+authenticated identity one local spelling names, and when a rebinding changes the source
+identity a dependency resolves to, it is a lockfile-affecting change that requires an
+explicit lock update rather than a silent substitution. Two aliases that bind the same
+authenticated source identity name one source, while the declared kind remains part of what
+distinguishes two sources, so one name served under two kinds is two source identities rather
+than one.
+
+<a id="GNT-27.2-canonical-publication-names-and-external-name-mapping"></a>
+
+**[GNT-27.2-canonical-publication-names-and-external-name-mapping] Canonical publication
+names and external-name mapping.** Package, namespace, publisher, and dependency-alias names
+have exactly one canonical byte representation and one equality relation, and a name used in
+a manifest, a lockfile, a registry index, a signature, a public interface, a diagnostic, or a
+policy decision MUST be that canonical representation rather than a spelling the
+canonicalization would change. Canonicalization is total, deterministic, idempotent, and
+versioned: it depends on the declared name domain and the declared edition rules alone, and
+it MUST NOT depend on a host locale, a time zone, a clock reading, a filesystem spelling, a
+filesystem case sensitivity, a display width, or a terminal capability. Two names the
+declared equality relation relates are one name and MUST NOT name two publications, and two
+names outside that relation are two names that MUST NOT be merged by normalization or by
+visual resemblance.
+
+A registry MUST reject a noncanonical publication name and a canonical collision rather than
+silently normalizing either. A presented name that is not canonical under the declared rules
+is refused with its declaration identified; a presented name whose canonical form equals the
+canonical form of a name already published in the same domain is refused as a collision; and
+a registry MUST NOT publish, overwrite, or alias a second publication under a name that
+collides canonically with an existing one. Each refusal names the rule it applies and the
+declaration it refuses, as `GNT-27.13-trust-failure-attribution` requires, and a registry
+MUST NOT resolve a collision by precedence, by publication order, by digest order, or by
+which entry a snapshot happens to list first.
+
+Names of this section inherit the identity rules of their domain. Where these names use the
+source identifier domain, the pinned `UTF-8` encoding, normalization, identifier,
+default-ignorable, bidirectional-control, and confusable-diagnostic rules of `GNT-18.*`
+apply and are not restated here. Where a registry deliberately admits a broader external name
+domain, that external name remains a typed package identity: it MUST be mapped to an explicit
+collision-free source alias in the sense of `GNT-18.9-external-name-mapping` and
+`GNT-18.10-generated-alias-derivation`, the mapping MUST be total and injective over the
+declared external domain, and no mapping step MUST let an external name become source syntax
+by normalization, case folding, truncation, or visual resemblance. A mapping that would give
+two external names one alias, or one external name two aliases, is refused rather than
+resolved by precedence.
+
+<a id="GNT-27.3-authenticated-metadata-snapshot-and-client-verification"></a>
+
+**[GNT-27.3-authenticated-metadata-snapshot-and-client-verification] Authenticated metadata
+snapshot and client verification.** Registry resolution consumes exactly one versioned
+authenticated metadata snapshot for one source identity under one declared trust root. One
+snapshot binds, for every entry it carries, the canonical package name, the namespace and
+publisher the entry belongs to, the exact package version, the digest of each published
+artifact together with its target facts, the dependency metadata of that version, the
+publication state of that version, the publisher or signer authorization that admits it, the
+declared validity window, and the declared monotone sequence of the snapshot. The snapshot
+carries its version, so a later content revision is a different version rather than a silent
+reinterpretation of one snapshot, and an implementation MUST refuse a snapshot whose declared
+version it does not decide rather than interpret it under a version it does.
+
+The required client verification algorithm is normative and ordered. A client first recovers
+exactly one declaration subject for every consumed entry by comparing both the canonical source
+identity and the declared package subject; a local dependency alias is not that subject and
+MUST NOT be used to borrow another package's declaration. It then parses the
+declared snapshot version; selects the trust root declared for the source identity under
+`GNT-27.4-trust-roots-and-delegated-authority`; verifies the signature chain from that root
+through the declared delegations that cover the namespace and publisher of each entry it will
+consume; checks the declared validity window and freshness under
+`GNT-27.6-expiry-freshness-and-offline-mode`; checks the declared sequence and digest against
+the retained minimum trusted state under `GNT-27.7-rollback-and-freeze-resistance`; checks the
+canonicality and collision status of every consumed name under
+`GNT-27.2-canonical-publication-names-and-external-name-mapping`; resolves publication, yank,
+and revocation state under `GNT-27.8-publication-immutability`, `GNT-27.9-yank-semantics`, and
+`GNT-27.10-security-revocation-and-durable-execution-policy`; and verifies every bound
+artifact, dependency, and interface digest against the lockfile evidence of
+`GNT-27.12-lockfile-evidence-binding` before any source is parsed. The complete authenticated
+advisory evidence set is an explicit input to this algorithm and carries a signature by an
+authority selected for its canonical source. The proof's claimed publisher MUST name the exact
+key that signed it, and that publisher MUST be authorized for the namespace and package of
+every consumed entry. Its canonical set digest, including the domain-separated digest of an
+empty set, MUST bind that source, the snapshot sequence and identity, and the selected root
+policy; the root-policy digest has a distinct domain from the advisory-set digest. An unsigned,
+forged, truncated, differently bound, or incompletely authorized set is incomplete; omitted
+evidence fails closed as incomplete retained lifecycle facts before root, snapshot-signature,
+freshness, or content checks. Every step is decided over
+declared values, the algorithm is total over its declared inputs, and an entry that passes
+every step is admitted with its declared identity while an entry that fails any step is
+refused with one trust failure naming the causing declaration.
+
+Consuming a snapshot is never a grant. An admitted entry does not make the bytes it names
+trusted compiler input: the finite budgets, fail-closed cutoffs, structural validation,
+sealing, and loader contracts of `GNT-26.*` still apply afterwards, and a snapshot, an index
+entry, a signature, and a provenance statement MUST NOT be read as a capability, an
+authority, or a safety judgment. An implementation MUST NOT act on an entry beyond the
+declared fields this algorithm verifies, and MUST NOT admit an entry whose consuming step was
+skipped because an earlier step already appeared to succeed.
+
+<a id="GNT-27.4-trust-roots-and-delegated-authority"></a>
+
+**[GNT-27.4-trust-roots-and-delegated-authority] Trust roots and delegated authority.** The
+authority under which a snapshot is verified is declared, never ambient. One trust root is a
+declared root key set together with its declared identifier, and it MUST be declared for the
+source identity it governs by configuration or by a declared policy input of the profile;
+there is no implicit root, no root discovered from a network response, no root taken from the
+presented snapshot, and no root inherited from another source identity merely because the two
+share a kind. A presented snapshot whose signing authority is not reachable from the declared
+root through declared delegations is refused as unauthorized even when its signature verifies
+cryptographically, because cryptographic validity is not declared authority.
+
+Delegation narrows scope explicitly. A delegation grants one signing authority the authority
+to publish under an enumerated namespace, publisher, or name set, for a declared validity
+window, and it MUST NOT be wider than the authority its delegator holds: a delegation that
+names a namespace its delegator does not cover, that omits an explicit scope while claiming
+general authority, or that outlives its delegator's validity window is refused rather than
+narrowed silently. Delegation chains are finite and totally ordered, a self-cycle, a
+repeated-key cycle, and a cycle through any already admitted ancestor are each refused before
+admission rather than traversed, and an entry published under delegated authority MUST present
+the complete chain from the declared root to the signing authority so the chain is verifiable
+from declared values alone. A delegation declared after its delegator or any ancestor was
+superseded for the delegation's scope at its declared epoch and sequence is refused rather
+than anchored through retired authority; this does not invalidate a delegation admitted before
+that retirement beyond its own declared validity rules.
+
+There is no ambient trust and no fallback trust. A key reachable only outside the declared
+chain, an expired delegation, a delegation for a different namespace or publisher, and a
+signature produced after the delegation that authorizes it ended MUST each be refused rather
+than accepted through another root, another source identity, another kind, another mirror, or
+a snapshot admitted earlier under authority that has since narrowed. When two declared roots
+cover one source identity, an entry MUST be verified under one declared root and MUST NOT be
+admitted by the disjunction of two roots unless a declared policy input enumerates that
+disjunction explicitly; scope narrowing is never decided by whichever root verifies first,
+and a delegated authority MUST NOT extend its own scope by re-delegating authority it does
+not hold. Every public low-level authority API and its shared grant boundary MUST require the
+presented source identity to equal the declaration's source identity and otherwise refuse the
+declaration with `SourceNotDeclared` attribution before evaluating roots, delegations,
+rotations, compromises, or root-selection policy.
+
+<a id="GNT-27.5-signing-key-rotation-and-compromise-recovery"></a>
+
+**[GNT-27.5-signing-key-rotation-and-compromise-recovery] Signing-key rotation and compromise
+recovery.** A rotation replaces one signing authority with a successor under declared
+dual-validity evidence. A presented rotation MUST carry evidence that the successor is
+authorized either by a delegation from an authority that holds the same scope or a wider one,
+or by an authorization signed by the retiring key inside a declared overlap window, and the
+rotation MUST declare that overlap window explicitly. The independently delegated alternative
+does not require retired-key material or a retired-key signature; the retiring-key alternative
+does. During the overlap window both authorities admit
+and an entry signed by either is verified; after the window closes only the successor admits,
+and a snapshot signed only by a retired key beyond its overlap fails closed rather than being
+admitted because it once verified. The overlap window is compared over declared values under
+`GNT-27.6-expiry-freshness-and-offline-mode` and never by reading a host clock.
+
+Compromise recovery revokes affected authority rather than trusting a repaired key. When
+authority is reported compromised, recovery revokes the compromised authority and every
+delegation it issued within their declared scopes, records that revocation as an
+authenticated policy input under
+`GNT-27.10-security-revocation-and-durable-execution-policy`, and re-establishes the retained
+minimum trusted state so a later snapshot that would roll the revocation back fails closed
+under `GNT-27.7-rollback-and-freeze-resistance`. A compromised authority MUST NOT be
+re-admitted by a later rotation, by an alias rebinding, or by a snapshot signed by an
+authority descended from it, and an entry admitted only under revoked authority MUST be
+re-verified rather than retained silently.
+
+Rotation and recovery are declared evidence, not history. The rotation record, the overlap
+window, the successor authorization, and the revocation each carry the declaring authority,
+the scope it affects, and the sequence under which it was observed, and an implementation
+MUST refuse a rotation whose evidence is incomplete rather than complete it by inference from
+key order, key identifier rendering, signature order, or a presented snapshot. A successor
+key identifier has exactly one canonical declared material: conflicting presented material for
+an already declared identifier is refused, every rotation signature is verified against that
+canonical material, and a rejected rotation leaves the material and lifecycle state unchanged.
+Rotation admission has one sealed finite candidate-set boundary for one source and root-policy
+decision. A resolver MUST verify every candidate's presented signatures before context
+deduplication, and MUST compare every candidate in that sealed set before retaining any of them.
+The complete evidence order is the declared rotation context followed by the absence or presence,
+key identity, and declared value of the optional retiring signature and then the key identity and
+declared value of the required successor signature; an absent retiring signature sorts before a
+present one. Invalid candidates are aggregated by this fixed verification precedence: conflicting
+successor material, absent successor material, invalid successor signature, absent retiring
+material, then invalid or missing retiring signature, with the complete evidence order breaking a
+tie. After every candidate has validated, equal contexts retain exactly their first complete
+evidence form in that order. A competing or backdated rotation from one authority refuses the
+entire set without retaining a candidate. Reversed permutations of one sealed candidate set MUST
+produce the same retained lifecycle state and the same refusal classification. A resolver MUST
+NOT select among successor records by arrival order or iteration order.
+Nothing here admits a key authorized by another key with no declared delegation, and nothing
+here treats a re-signed snapshot as evidence that a rotation happened.
+
+<a id="GNT-27.6-expiry-freshness-and-offline-mode"></a>
+
+**[GNT-27.6-expiry-freshness-and-offline-mode] Expiry, freshness, and offline mode.** One
+snapshot declares a validity window and a monotone sequence, and expiry fails closed. A
+snapshot whose declared validity window has ended, whose declared validity window has not yet
+begun, whose declared sequence is absent, or whose declared digest differs from the digest a
+client computes over the declared snapshot content is refused before any entry it carries is
+consumed. Freshness is one declared comparison between the declared validity window and one
+declared observed instant that the profile supplies as an explicit input; the comparison MUST
+NOT read a host clock, a time zone, a locale, an uptime counter, a file modification time, or
+a monotonic counter as the observed instant, and an absent observed instant is a trust
+failure rather than an implicit online check.
+
+Offline operation is explicit and reports age. An explicitly configured offline mode MAY use
+one pinned previously verified snapshot for the declared source identity, and it MUST report
+the declared age of that snapshot, expressed as the declared difference between the observed
+instant and the snapshot's declared validity start together with the snapshot sequence,
+rather than reporting or implying that an online freshness check was made. Offline mode MUST
+NOT be entered implicitly, MUST NOT be selected because a network request failed, returned
+nothing, or returned something unverifiable, and MUST NOT widen the entries a pinned snapshot
+admits beyond the authority under which that snapshot was verified. A pinned snapshot
+verified under authority that has since been revoked or narrowed is refused in offline mode
+exactly as it is refused online.
+
+Freshness never becomes permission and staleness never becomes a default. An entry admitted
+from a pinned snapshot is admitted under the declared validity of that snapshot, an
+implementation MUST NOT extend a validity window to admit an entry, MUST NOT treat a longer
+offline period as widening a scope, and MUST NOT report an offline result as fresh, as
+online, or as verified against a current snapshot. When no pinned snapshot exists for the
+declared source identity, offline resolution fails closed rather than falling back to a
+cached entry of another source identity, another kind, another namespace, or another trust
+root.
+
+<a id="GNT-27.7-rollback-and-freeze-resistance"></a>
+
+**[GNT-27.7-rollback-and-freeze-resistance] Rollback and freeze resistance.** A client
+retains one minimum trusted state per source identity: the greatest declared snapshot
+sequence it has admitted together with the digest of that snapshot, and the rotation and
+revocation facts it has admitted under
+`GNT-27.5-signing-key-rotation-and-compromise-recovery` and
+`GNT-27.10-security-revocation-and-durable-execution-policy`, including every authenticated
+advisory fact effective for the source under the root policy that admitted it. A presented snapshot whose
+declared sequence is lower than the retained sequence is refused as a rollback, and a
+presented snapshot whose declared sequence equals the retained sequence while its declared
+digest differs is refused as an equivocation, because one sequence MUST NOT name two snapshot
+contents. Each refusal attributes the presented declaration and the retained evidence under
+`GNT-27.13-trust-failure-attribution`.
+
+Exactly one retained state supplies those facts for each source identity in one verification
+or rewrite decision. A duplicated retained state, even when its declared values agree, is
+ambiguous evidence and MUST be refused rather than selected by input, cache, or iteration
+order; a missing retained state likewise MUST NOT be synthesized from another source. The
+greatest state used for yank closure is this same unique authenticated retained state.
+
+Retained state is declared evidence and never an artefact of a host or a cache. The retained
+sequence, the retained digest, the retained revocation set, the retained rotation facts, and the
+retained authenticated advisory set
+are durable declared values; they MUST NOT be derived from a file modification time, a
+download order, a cache eviction policy, a directory listing order, a network round trip, or
+a clock reading, and a cache hit MUST NOT exempt a presented snapshot from the sequence and
+digest comparison. Evicting a cached snapshot MUST NOT lower the retained minimum trusted
+state, and an implementation MUST NOT re-derive that state from whatever snapshots happen to
+be cached after an eviction. Online and offline verification compare the complete retained
+advisory set with the authenticated advisory facts effective for the source and selected root
+policy at the retained sequence; a newly proven current set may then advance that retained set
+only with its own context-bound completeness proof and the ordinary sequence and digest checks.
+A missing, extra, cross-source, or root-policy-incompatible fact is incomplete retained
+lifecycle evidence and fails closed rather than defaulting to an empty advisory set.
+
+Freeze is detected, not assumed. A source identity declares a maximum staleness, and a
+snapshot whose declared validity window has ended without an admitted successor within that
+declared maximum staleness is refused as a freeze rather than accepted as the latest available
+metadata; the refusal names the declared maximum staleness and the last admitted sequence. A
+monotone sequence advances only with evidence for the snapshot it names: a sequence number
+presented without verifiable snapshot content for that sequence MUST NOT advance the retained
+state, so neither an attacker nor an accident can freeze or unfreeze a source by presenting a
+larger number alone.
+
+<a id="GNT-27.8-publication-immutability"></a>
+
+**[GNT-27.8-publication-immutability] Publication immutability.** Once a source has
+authenticated one `(namespace, package, version)` tuple, that tuple MUST NOT name different
+bytes: the manifest, the source tree, the generated declarations, the public interface, and
+every published artifact of that tuple are fixed by the first authenticated publication under
+that source identity, and a later snapshot that presents different bytes for the same tuple
+is refused as an immutability violation rather than accepted as a correction. A correction
+requires a new version, a new publication under the tuple that names it, and a lock update
+that records the new version explicitly.
+
+Immutability is scoped by source identity and kind. A tuple is interpreted within one
+authenticated source identity, so a registry source, a source-control repository, a path
+source, and a vendored source MAY each publish the same name and version as distinct
+immutable publications under `GNT-27.1-immutable-source-identity-and-source-kind-vocabulary`,
+and one of them MUST NOT be substituted for another because their tuples coincide. Within one
+source identity, two presentations of the same tuple with different artifact digests,
+different manifest digests, or different interface digests are a contradiction rather than
+two candidates, and resolution MUST refuse the presented tuple instead of choosing by digest
+order, by publication order, or by which snapshot arrived first.
+
+Immutability is checked from declared digests before source is parsed. A client compares the
+digests bound by the presented snapshot against the digests retained for the tuple in the
+minimum trusted state of `GNT-27.7-rollback-and-freeze-resistance` and against the evidence
+recorded by `GNT-27.12-lockfile-evidence-binding`, and it MUST complete that comparison before
+parsing a manifest, a source tree, a generated declaration, or a precompiled artifact. A yank
+and a security revocation never make a tuple mutable: neither may rewrite the bytes a tuple
+names, and neither admits a second publication under that tuple.
+
+<a id="GNT-27.9-yank-semantics"></a>
+
+**[GNT-27.9-yank-semantics] Yank semantics.** A yank is one authenticated publication-state
+change that removes one exact release from ordinary new resolution, and it MUST be presented
+by the snapshot under the authority of `GNT-27.4-trust-roots-and-delegated-authority` rather
+than by a client-side list, a local configuration fact, or a network response outside the
+verified snapshot. A resolution that would newly select a yanked release MUST refuse that
+release and MUST report the refused release identity together with the declaring snapshot
+sequence, and it MUST NOT select the release because a version requirement admits it, because
+no other version matches, or because a cached index still lists it. A yanked release remains
+immutable under `GNT-27.8-publication-immutability`: its bytes and its digests do not change.
+
+A verified lockfile and an offline build outlive a yank. An existing lockfile entry that
+names a yanked release remains valid, an installation and an offline build from that verified
+lockfile remain reproducible, and a resolver MUST NOT silently rewrite the lockfile to avoid
+the yanked release. A lock update that removes a yanked release is an explicit recorded
+update: it names the yanked release, the replacement release with its own verified identity,
+and the evidence that admitted the replacement, and an implementation MUST NOT present such
+an update as an ordinary resolution result. A yank MUST NOT be read as a revocation and MUST
+NOT be reported as a security statement, because revocation is a separate authenticated input
+under `GNT-27.10-security-revocation-and-durable-execution-policy`.
+
+Yank state comes from the greatest admitted snapshot. Because a yank is one publication-state
+change inside one snapshot sequence, an implementation MUST decide yank state from the
+greatest admitted sequence of `GNT-27.7-rollback-and-freeze-resistance` and MUST NOT decide it
+by merging several snapshots, by preferring a snapshot that lists fewer yanks, or by
+remembering a yank that a later admitted snapshot no longer reports. A yank for a release of
+another source identity or another kind MUST NOT affect this source identity, and a durable
+execution that would newly select a yanked release retains its pinned artifact under the same
+policy `GNT-27.10-security-revocation-and-durable-execution-policy` fixes for revocation.
+
+<a id="GNT-27.10-security-revocation-and-durable-execution-policy"></a>
+
+**[GNT-27.10-security-revocation-and-durable-execution-policy] Security revocation and
+durable execution policy.** A security revocation is a separate authenticated advisory or
+policy input, distinct from a yank, that names affected artifact identities with an explicit
+scope and an explicit severity. Revocation scope is exactly one or more named artifact
+identities, each one a source identity together with a namespace, a package, a version, and an
+artifact digest, and a revocation MUST NOT name a scope it does not enumerate: it MUST NOT be
+widened to a namespace, a publisher, a package name, a version range, or another source
+identity by interpretation, and it MUST NOT be narrowed to admit an artifact it names.
+Revocation severity is drawn from a closed vocabulary, exactly advisory-only,
+refuse-new-resolution, refuse-new-build, and refuse-all-execution, and a severity outside that
+vocabulary is refused rather than mapped to another.
+
+A revocation is an input to policy and never a silent resolver rewrite. Policy may reject a
+new build or a new execution that uses an affected artifact, and when it does, the decision,
+its scope, and its severity are declared and recorded; a resolver MUST NOT silently rewrite a
+lockfile, MUST NOT reinterpret an already linked executable, and MUST NOT substitute different
+code into a durable execution because a revocation exists. A revocation MUST NOT change the
+identity, the digests, or the publication state of any release, MUST NOT be reported as a
+yank, and MUST NOT be admitted from a source that is not authenticated under the declared
+trust root of the source identity it affects.
+
+A durable execution retains its pinned artifact and follows an explicit policy. A durable
+execution that pinned an affected artifact retains that pinned artifact; changing what it
+executes requires an explicit cancellation, drain, or migration policy that names the
+affected artifacts, the replacement artifacts with their verified identities, the point at
+which the change takes effect, and the recorded approval, and that execution MUST NOT be
+altered in place, re-linked against different bytes, or resumed under a substituted artifact.
+The durable cancellation, drain, and migration facilities are profile-gated, so an
+implementation that claims one of them MUST record the facility-specific obligations it does
+not provide as a profile-based `not-applicable` justification in the sense of Sections 2 and
+15, and an implementation that provides none of them owes no such justification.
+
+<a id="GNT-27.11-vcs-path-and-vendor-source-verification"></a>
+
+**[GNT-27.11-vcs-path-and-vendor-source-verification] Source-control, path, and vendored
+source verification.** A source-control dependency binds an immutable commit together with
+the normalized source-tree identity its artifact build uses, and a movable branch name, a tag,
+a default-branch spelling, and a revision expression MUST NOT be a lockfile identity: a
+presented reference that is not an immutable revision is refused rather than resolved at
+acquisition time. When a declaration names both a revision and a source-tree identity, the
+delivered tree MUST reproduce the declared source-tree identity, and a delivered tree whose
+identity differs is refused as a verification failure rather than re-hashed into a new
+identity.
+
+Final acquisition compares the delivered source identity, namespace, package, exact version,
+publication state, target-qualified artifacts, and every source-, namespace-, package-,
+version-, target-, and snapshot-qualified dependency coordinate to the verified lockfile
+record before parsing. A delivery whose dependency coordinates differ is refused as a changed
+delivery rather than accepted because its top-level release coordinate or byte digests match.
+
+A path dependency used for a reproducible build is snapshotted or hashed into the lockfile and
+the artifact identity of `GNT-17.11-target-artifact-binding`, with an explicit lock update when
+its content changes. A dependency declared by path MUST be verified against its declared
+content hash before its source is parsed, and content that differs from that hash is refused
+rather than silently re-hashed, re-locked, or treated as an updated path source. No host path
+enters a lockfile identity, an artifact identity, or a diagnostic as semantics: a path source
+is named by its declared source identity and its declared content hash, never by a directory
+spelling, a mount point, a user name, or an absolute location.
+
+Vendoring and mirror substitution serve the same authenticated snapshot. A vendored copy and a
+registry or source-control mirror MUST preserve the original source identity and its
+verification evidence, MUST present the same authenticated snapshot that source identity
+declares, and MUST NOT launder a dependency into an unauthenticated local path or into a
+different nominal universe that shares a name and a version. A mirror substitution whose
+snapshot differs from the authenticated snapshot of the source identity it claims is a
+verification failure rather than a faster route to the same package. A build MAY deliberately
+accept an unpublished local workspace package, and in that case the resulting identity MUST
+remain distinct from a registry release with the same name and version, MUST be recorded as a
+local source identity rather than as the registry source identity, and MUST be reported as an
+unpublished dependency rather than presented as a verified release.
+
+<a id="GNT-27.12-lockfile-evidence-binding"></a>
+
+**[GNT-27.12-lockfile-evidence-binding] Lockfile evidence binding.** A lockfile records, for
+every resolved dependency, the canonical source identity, the authenticated metadata snapshot
+or an equivalent proof under the declared trust root, the exact package version, the complete
+source and artifact digests of that version, the selected features and target facts, the
+dependency identities it resolves, the public-interface digest, and the generator inputs
+already required by `GNT-26.12-generator-confinement`. Every one of those fields is a declared
+value, and a lockfile MUST NOT record a source identity as an alias, a uniform resource
+locator spelling, a mirror name, a host path, a download order, a cache location, or a clock
+reading.
+
+Installation verifies all bound identities and digests before it parses anything. A client
+MUST verify the recorded source identity and kind, the recorded snapshot or equivalent proof
+and its authority under `GNT-27.4-trust-roots-and-delegated-authority`, the recorded version
+against the publication state of `GNT-27.8-publication-immutability`, and every recorded digest
+before it parses a downloaded manifest, a source tree, a generated declaration, or a
+precompiled artifact. A lockfile whose evidence cannot be verified, whose evidence is
+incomplete, or whose recorded digests disagree with the delivered bytes is refused as a whole
+rather than honored partially, and no dependency of that lockfile is installed on the strength
+of a subset of its evidence.
+
+A client admits immutable publication-ledger occupancy only after it has verified the entire
+snapshot under its declared trust root and recovered exactly one declaration for every entry.
+Source-declaration indices are unique for one verification decision, and lockfile binding is
+one-to-one: exactly one record binds each declaration and exactly one declaration owns each
+record before an evidence gate exists. Raw entries and a partially verified snapshot MUST NOT
+create names or publication history, and a refusal for one entry leaves the ledger unchanged.
+Historical lockfile evidence is restored only from an authenticated published snapshot whose
+retained sequence and content match that snapshot; it MUST NOT be reconstructed from a later
+yanked or revoked presentation. Fresh resolution mints new lockfile evidence only through the
+current verified admission and therefore remains subject to the current yank and revocation
+policy.
+
+Verification is not trust. Verifying the bound identity and digests does not make the verified
+bytes trusted compiler input: the finite budgets, fail-closed cutoffs, structural validation,
+artifact loader, cache validation, and sealing contracts of `GNT-26.*` still apply afterwards,
+and the capability, sandbox, interface, policy, and test obligations of the profile remain
+mandatory after provenance succeeds. Lockfile evidence binds what was selected; it never
+establishes that the selected input is safe, correct, compatible, or well-behaved, and a
+verified lockfile MUST NOT be read as granting authority to a dependency, to a generator, or
+to a build step.
+
+<a id="GNT-27.13-trust-failure-attribution"></a>
+
+**[GNT-27.13-trust-failure-attribution] Trust failure attribution.** Every trust failure and
+every freshness failure of this section identifies the declaration that caused it before any
+source is parsed. One failure names the causing declaration, that is the dependency
+declaration, manifest position, or dependency edge that presented the input; the declared
+source identity and kind; the metadata entry, publication, or artifact the failure concerns
+when the failure concerns one; the requirement anchor of this section whose check failed; and
+one reason drawn from a closed vocabulary. Snapshot-wide evidence failures are attributed to
+an exact source-and-package declaration of a consumed entry in canonical entry order; an
+explicit snapshot declaration that is not one of those exact declarations is missing
+attribution, and a same-source declaration for another package MUST NOT receive the failure.
+
+The closed failure reason vocabulary is exactly: an absent trust root, an unauthorized signing
+authority, an insufficient delegation scope, an incomplete delegation chain, an expired or
+not-yet-valid delegation, an expired metadata snapshot, a missing observed instant, a stale
+snapshot, a rolled-back sequence, an equivocated sequence, a detected freeze, a noncanonical
+publication name, a malformed publication name, a canonical name collision, a publication
+immutability violation, a yanked release, a revoked artifact, an unverified source revision,
+an unverified source-tree identity, an unverifiable lockfile record, an invalid lockfile
+record, an unavailable pinned snapshot, a disjunctive trust decision that no declared policy
+input enumerates, a malformed source identity, a source-kind fallback, an undeclared source
+identity, a configuration alias used as an identity, an invalid declaration, an invalid
+acquisition declaration, an invalid security-advisory declaration, an unsupported snapshot
+version, an invalid snapshot entry, an inconsistent snapshot epoch, a compromised signing
+authority, a superseded signing authority, invalid rotation evidence, missing retained
+snapshot content, ambiguous retained state, incomplete retained lifecycle facts, a refused
+artifact substitution, and missing failure attribution. There is no other reason, a failure
+MUST NOT be reported under a reason outside this vocabulary, and an implementation MUST NOT
+report a failure as satisfied, partially satisfied, conditionally satisfied, or satisfied for
+a subset of its rules.
+
+Attribution is machine-usable and stops resolution. One failure is reportable as a structured
+record that carries the causing declaration, the reason, and the requirement anchor as
+declared values, in the manner of the machine-usable diagnostics of `GNT-12.11`, and it MUST
+NOT be rendered as free-form prose in place of the structured fields. A trust failure or a
+freshness failure MUST stop resolution for the affected dependency before package code or
+metadata can influence dependency solving, analysis, diagnostics, or build execution, and MUST
+NOT be reported as a warning that permits resolution to continue under a nominal identity the
+declaration does not have. A failure MUST NOT be attributed to a rule that does not decide it,
+and no host path, network address, clock reading, or cache state is the cause of a failure of
+this section.
+
+<a id="GNT-27.14-registry-non-claims"></a>
+
+**[GNT-27.14-registry-non-claims] Explicit non-claims.** This section does not promise and
+MUST NOT be read as promising: that a verified signature or provenance statement makes source
+safe, correct, or behaviorally compatible, because
+`GNT-27.3-authenticated-metadata-snapshot-and-client-verification` establishes declared
+authorization over declared bytes and claims nothing about behaviour, and capability and agent
+requirement inspection, sandboxed build generation, untrusted-input compiler limits, interface
+verification, policy, and tests remain mandatory after provenance succeeds; that a transparency
+log is operated, that append-only behaviour is enforced, or that equivocation is detected,
+because such a log may strengthen audit and equivocation detection and is not a substitute for
+the normative client verification algorithm and trusted-root lifecycle of this section; that a
+registry is honest beyond the entries verified under a declared root, because an entry no
+declared authority covers is refused rather than trusted; that a mirror, a vendored copy, or a
+mirror substitution serves the same nominal universe, because
+`GNT-27.11-vcs-path-and-vendor-source-verification` compares one declared authenticated
+snapshot and claims nothing further; that a yank is a security statement, because a yank
+changes ordinary new resolution and `GNT-27.10-security-revocation-and-durable-execution-policy`
+owns revocation; that a revocation prevents an already linked executable from running, because
+revocation is a declared policy input and the resolver never rewrites, reinterprets, or
+substitutes an existing artifact; that an offline result is current, because
+`GNT-27.6-expiry-freshness-and-offline-mode` reports declared age and never claims an online
+check; that resolution terminates or succeeds, because this section fixes declared checks and
+declared refusals and promises no schedule and no availability; and that a durable execution
+migrates automatically, because the cancellation, drain, and migration facilities are
+profile-gated and this section fixes only the policy such a facility must follow. The
+non-claims are a closed vocabulary: a diagnostic, a clause, or an evidence item MUST NOT be
+read as promising a property outside it, a non-claim MUST NOT be presented as a guarantee, and
+an implementation MUST NOT report a clause of this section as satisfied, partially satisfied,
+or conditionally satisfied where it can only demonstrate one of these limits.

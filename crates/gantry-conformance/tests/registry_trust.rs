@@ -31,22 +31,22 @@
 
 use gantry::ir::TargetKind;
 use gantry::ir::registry::{
-    AcquisitionRouteKind, AdvisoryBoundary, AdvisoryScope, AdvisoryStore, AliasBinding,
-    AliasBindings, AuthorityScope, AuthorizationDefect, CommitId, Compromise, ConfigurationAlias,
-    DeclaredSignature, Delegation, DelegationTiming, DeliveredRelease, EntryAuthority,
-    EpochObservation, EvidenceDefect, ExternalAliasMap, ExternalName, FreshnessMode, KeyId,
-    KeyRecord, LockedDependency, Lockfile, LockfileInputs, LockfileRecord, MetadataSnapshot,
-    MirrorBinding, MirrorDefect, PathPin, PinDefect, PinnedTree, PublicationDefect,
-    PublicationLedger, PublicationNameSet, PublicationState, PublisherIdentity, REGISTRY_CLAUSES,
-    REGISTRY_NON_CLAIM_ORDER, REGISTRY_NON_CLAIMS, RegistryDiagnosticCode, RegistryError,
-    RegistryName, RegistryNameKind, RegistryNonClaim, RegistryNonClaimAssertion, RegistryRefusal,
-    RetainedState, RootId, RootSelectionPolicy, RotationContext, RotationDefect, RotationEvidence,
-    RotationSignatures, RotationTiming, RunRequest, SecurityAdvisory, Severity, SnapshotDependency,
-    SnapshotEntry, SourceAlias, SourceDeclaration, SourceIdentity, SourceKind, TargetArtifact,
-    TrustFailureReason, TrustRoot, TrustStore, VcsPin, VendorDefect, VendorDirectory, VendorEntry,
-    VerificationInput, VerifiedSnapshot, check_registry_non_claims, collision, declared_signature,
-    resolve_new_release, resolve_source, verify_mirror, verify_path_tree, verify_pinned_tree,
-    verify_vendor,
+    AcquisitionRouteKind, AdvisoryBoundary, AdvisoryScope, AdvisorySetProof, AdvisoryStore,
+    AliasBinding, AliasBindings, AuthorityScope, AuthorizationDefect, CommitId, Compromise,
+    ConfigurationAlias, DeclaredSignature, Delegation, DelegationTiming, DeliveredRelease,
+    EntryAuthority, EpochObservation, EvidenceDefect, ExternalAliasMap, ExternalName,
+    FreshnessMode, KeyId, KeyRecord, LockedDependency, Lockfile, LockfileInputs, LockfileRecord,
+    MetadataSnapshot, MirrorBinding, MirrorDefect, PathPin, PinDefect, PinnedTree,
+    PublicationDefect, PublicationLedger, PublicationNameSet, PublicationState, PublisherIdentity,
+    REGISTRY_CLAUSES, REGISTRY_NON_CLAIM_ORDER, REGISTRY_NON_CLAIMS, RegistryDiagnosticCode,
+    RegistryError, RegistryName, RegistryNameKind, RegistryNonClaim, RegistryNonClaimAssertion,
+    RegistryRefusal, RetainedState, RootId, RootSelectionPolicy, RotationContext, RotationDefect,
+    RotationEvidence, RotationSignatures, RotationTiming, RunRequest, SecurityAdvisory, Severity,
+    SnapshotDependency, SnapshotEntry, SourceAlias, SourceDeclaration, SourceIdentity, SourceKind,
+    TargetArtifact, TrustFailureReason, TrustRoot, TrustStore, VcsPin, VendorDefect,
+    VendorDirectory, VendorEntry, VerificationInput, VerifiedSnapshot, check_registry_non_claims,
+    collision, declared_signature, resolve_new_release, resolve_source, verify_mirror,
+    verify_path_tree, verify_pinned_tree, verify_vendor,
 };
 use sha2::{Digest, Sha256};
 
@@ -153,16 +153,39 @@ fn registry_source(namespace: &str, package: &str) -> SourceIdentity {
     )
 }
 
-/// Returns one source declaration.
-fn source_declaration(index: usize, alias: &str, identity: SourceIdentity) -> SourceDeclaration {
+/// Returns one source declaration with an explicit package subject.
+fn source_declaration(
+    index: usize,
+    alias: &str,
+    package: &str,
+    identity: SourceIdentity,
+) -> SourceDeclaration {
     accept(
         SourceDeclaration::new(
             index,
             &format!("manifest:dependency:{index}"),
             alias,
+            package,
             identity,
         ),
         "the declared source declaration is valid",
+    )
+}
+
+/// Returns one source declaration with an explicit package subject.
+#[allow(clippy::result_large_err)]
+fn source_declaration_for(
+    index: usize,
+    alias: &str,
+    package: &str,
+    identity: SourceIdentity,
+) -> Result<SourceDeclaration, RegistryError> {
+    SourceDeclaration::new(
+        index,
+        &format!("manifest:dependency:{index}"),
+        alias,
+        package,
+        identity,
     )
 }
 
@@ -281,12 +304,108 @@ fn authenticated_fixture(
     (trust, retained, signatures)
 }
 
+/// Builds verification input with a signed proof for the authenticated empty advisory set.
+fn verification_input<'a>(
+    declarations: &'a [SourceDeclaration],
+    snapshot: &'a MetadataSnapshot,
+    signatures: &'a [DeclaredSignature],
+    retained: &'a [RetainedState],
+    publications: &'a PublicationLedger,
+    observation: EpochObservation,
+    freshness: FreshnessMode,
+) -> VerificationInput<'a> {
+    verification_input_with_advisories(
+        declarations,
+        snapshot,
+        signatures,
+        retained,
+        publications,
+        observation,
+        freshness,
+        AdvisoryStore::new(),
+    )
+}
+
+/// Builds verification input with a signed proof for the supplied advisory set.
+#[allow(clippy::too_many_arguments)]
+fn verification_input_with_advisories<'a>(
+    declarations: &'a [SourceDeclaration],
+    snapshot: &'a MetadataSnapshot,
+    signatures: &'a [DeclaredSignature],
+    retained: &'a [RetainedState],
+    publications: &'a PublicationLedger,
+    observation: EpochObservation,
+    freshness: FreshnessMode,
+    advisories: AdvisoryStore,
+) -> VerificationInput<'a> {
+    verification_input_with_advisories_and_policy(
+        declarations,
+        snapshot,
+        signatures,
+        retained,
+        publications,
+        observation,
+        freshness,
+        advisories,
+        RootSelectionPolicy::Unspecified,
+    )
+}
+
+/// Builds verification input with a signed proof for the supplied advisory set and root policy.
+#[allow(clippy::too_many_arguments)]
+fn verification_input_with_advisories_and_policy<'a>(
+    declarations: &'a [SourceDeclaration],
+    snapshot: &'a MetadataSnapshot,
+    signatures: &'a [DeclaredSignature],
+    retained: &'a [RetainedState],
+    publications: &'a PublicationLedger,
+    observation: EpochObservation,
+    freshness: FreshnessMode,
+    advisories: AdvisoryStore,
+    root_policy: RootSelectionPolicy,
+) -> VerificationInput<'a> {
+    let signer = key(snapshot.entries()[0].publisher().key().as_str());
+    let proof = AdvisorySetProof::authenticated(
+        snapshot,
+        &advisories,
+        root_policy.clone(),
+        snapshot.entries()[0].publisher().clone(),
+        &signer,
+    );
+    VerificationInput::new(
+        declarations,
+        snapshot,
+        signatures,
+        retained,
+        publications,
+        observation,
+        freshness,
+    )
+    .with_root_selection(root_policy)
+    .with_advisory_proof(advisories, proof)
+}
+
 /// Returns one ledger whose occupancy entered only through snapshot verification.
 fn ledger_of(declaration: &SourceDeclaration, snapshot: &MetadataSnapshot) -> PublicationLedger {
     let (trust, retained, signatures) = authenticated_fixture(declaration, snapshot);
-    let declarations = [declaration.clone()];
+    let declarations = snapshot
+        .entries()
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            accept(
+                source_declaration_for(
+                    index,
+                    &format!("fixture_{index}"),
+                    entry.package().spelling(),
+                    entry.source().clone(),
+                ),
+                "the fixture declaration owns the entry package subject",
+            )
+        })
+        .collect::<Vec<_>>();
     let empty = PublicationLedger::new();
-    let input = VerificationInput::new(
+    let input = verification_input(
         &declarations,
         snapshot,
         &signatures,
@@ -334,9 +453,24 @@ fn record_with_inputs(
     inputs: LockfileInputs,
 ) -> LockfileRecord {
     let (trust, retained, signatures) = authenticated_fixture(declaration, snapshot);
-    let declarations = [declaration.clone()];
+    let declarations = snapshot
+        .entries()
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            accept(
+                source_declaration_for(
+                    index,
+                    &format!("record_{index}"),
+                    entry.package().spelling(),
+                    entry.source().clone(),
+                ),
+                "the record fixture declaration owns the entry package subject",
+            )
+        })
+        .collect::<Vec<_>>();
     let empty = PublicationLedger::new();
-    let input = VerificationInput::new(
+    let input = verification_input(
         &declarations,
         snapshot,
         &signatures,
@@ -507,8 +641,8 @@ fn gnt_27_1_a_declaration_binds_one_canonical_source_identity() {
     assert!(SourceIdentity::path("/home/neil/widget").is_err());
     assert!(SourceIdentity::vendored("../widget").is_err());
     let declarations = vec![
-        source_declaration(0, "widget", registry.clone()),
-        source_declaration(1, "widget_vcs", checkout.clone()),
+        source_declaration(0, "widget", "widget", registry.clone()),
+        source_declaration(1, "widget_vcs", "widget_vcs", checkout.clone()),
     ];
 
     // An admissible path: the declared identity resolves to exactly its own declaration.
@@ -718,13 +852,13 @@ fn gnt_27_3_a_snapshot_verifies_or_refuses_with_its_causing_entry() {
     assert_eq!(snapshot.entries().len(), 2);
     assert_eq!(snapshot.expiry_epoch(), 200);
     let declarations = vec![
-        source_declaration(0, "widget", widget.source().clone()),
-        source_declaration(1, "gadget", gadget.source().clone()),
+        source_declaration(0, "widget", "widget", widget.source().clone()),
+        source_declaration(1, "gadget", "gadget", gadget.source().clone()),
     ];
     let ledger = ledger_of(&declarations[0], &snapshot);
     let retained = [RetainedState::for_source(widget.source().clone(), 1)];
     let signatures = vec![declared_signature(&acme_key, snapshot.content_digest())];
-    let input = VerificationInput::new(
+    let input = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -772,7 +906,7 @@ fn gnt_27_3_a_snapshot_verifies_or_refuses_with_its_causing_entry() {
         acme_key.key().clone(),
         digest("forged-signature"),
     )];
-    let forged_input = VerificationInput::new(
+    let forged_input = verification_input(
         &declarations,
         &snapshot,
         &forged,
@@ -803,7 +937,7 @@ fn gnt_27_3_a_snapshot_verifies_or_refuses_with_its_causing_entry() {
         std::slice::from_ref(&widget.clone().with_source(foreign.clone())),
     );
     let unbound_signatures = vec![declared_signature(&acme_key, unbound.content_digest())];
-    let unbound_input = VerificationInput::new(
+    let unbound_input = verification_input(
         &declarations,
         &unbound,
         &unbound_signatures,
@@ -914,7 +1048,7 @@ fn gnt_27_4_explicit_roots_and_narrowing_delegations_decide_authority() {
         "manifest-a",
         "artifact-a",
     );
-    let inside_declaration = source_declaration(0, "widget", inside.source().clone());
+    let inside_declaration = source_declaration(0, "widget", "widget", inside.source().clone());
     let grant = admit(
         store.authorize(&inside_declaration, &inside, 2),
         "the narrowed delegate is authorized inside its scope",
@@ -928,7 +1062,8 @@ fn gnt_27_4_explicit_roots_and_narrowing_delegations_decide_authority() {
         Some("widget")
     );
     let rooted = entry("acme", "widget", "0.9.0", &acme, "manifest-c", "artifact-c");
-    let rooted_declaration = source_declaration(1, "widget_root", rooted.source().clone());
+    let rooted_declaration =
+        source_declaration(1, "widget_root", "widget_root", rooted.source().clone());
     let grant = admit(
         store.authorize(&rooted_declaration, &rooted, 2),
         "the root itself is authorized across its scope",
@@ -945,7 +1080,7 @@ fn gnt_27_4_explicit_roots_and_narrowing_delegations_decide_authority() {
         "manifest-b",
         "artifact-b",
     );
-    let outside_declaration = source_declaration(1, "gadget", outside.source().clone());
+    let outside_declaration = source_declaration(1, "gadget", "gadget", outside.source().clone());
     let refusal = refuse(
         store.authorize(&outside_declaration, &outside, 2),
         "an out-of-scope entry is refused",
@@ -970,7 +1105,8 @@ fn gnt_27_4_explicit_roots_and_narrowing_delegations_decide_authority() {
         "manifest-d",
         "artifact-d",
     );
-    let stranger_declaration = source_declaration(2, "stranger", stranger.source().clone());
+    let stranger_declaration =
+        source_declaration(2, "stranger", "stranger", stranger.source().clone());
     let refusal = refuse(
         store.authorize(&stranger_declaration, &stranger, 2),
         "an unnamed publisher holds no authority",
@@ -1037,7 +1173,7 @@ fn gnt_27_5_rotation_and_compromise_decide_the_signing_key() {
     );
     let refusal = refuse(
         store.rotate(
-            &source_declaration(0, "widget", registry_source("acme", "widget")),
+            &source_declaration(0, "widget", "widget", registry_source("acme", "widget")),
             one_sided,
             std::slice::from_ref(&next),
         ),
@@ -1061,7 +1197,8 @@ fn gnt_27_5_rotation_and_compromise_decide_the_signing_key() {
         declared_signature(&old, payload),
         declared_signature(&next, payload),
     );
-    let rotation_declaration = source_declaration(0, "widget", registry_source("acme", "widget"));
+    let rotation_declaration =
+        source_declaration(0, "widget", "widget", registry_source("acme", "widget"));
     admit(
         store.rotate(&rotation_declaration, evidence, std::slice::from_ref(&next)),
         "evidence under both keys rotates the key",
@@ -1079,7 +1216,7 @@ fn gnt_27_5_rotation_and_compromise_decide_the_signing_key() {
         "manifest-b",
         "artifact-b",
     );
-    let upgraded_declaration = source_declaration(0, "widget", upgraded.source().clone());
+    let upgraded_declaration = source_declaration(0, "widget", "widget", upgraded.source().clone());
     let upgraded_grant = admit(
         store.authorize(&upgraded_declaration, &upgraded, 5),
         "the rotated key holds the retired key's authority",
@@ -1095,7 +1232,12 @@ fn gnt_27_5_rotation_and_compromise_decide_the_signing_key() {
 
     // Metadata signed only by the retired key after the rotation is refused.
     let retired = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
-    let retired_declaration = source_declaration(1, "widget_retired", retired.source().clone());
+    let retired_declaration = source_declaration(
+        1,
+        "widget_retired",
+        "widget_retired",
+        retired.source().clone(),
+    );
     let refusal = refuse(
         store.authorize(&retired_declaration, &retired, 5),
         "a superseded key signs nothing after its rotation",
@@ -1182,7 +1324,7 @@ fn gnt_27_6_expiry_fails_closed_and_a_pinned_path_reports_its_age() {
     );
     let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
-    let declaration = source_declaration(0, "widget", widget.source().clone());
+    let declaration = source_declaration(0, "widget", "widget", widget.source().clone());
     let declarations = vec![declaration.clone()];
     let ledger = ledger_of(&declaration, &snapshot);
     let retained = RetainedState::for_source(widget.source().clone(), 1);
@@ -1190,7 +1332,7 @@ fn gnt_27_6_expiry_fails_closed_and_a_pinned_path_reports_its_age() {
     assert_eq!(snapshot.issue_epoch(), 100);
 
     // An admissible path: an online observation inside the declared window verifies.
-    let online = VerificationInput::new(
+    let online = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1216,7 +1358,7 @@ fn gnt_27_6_expiry_fails_closed_and_a_pinned_path_reports_its_age() {
     );
 
     // An observation past the declared expiry fails closed.
-    let expired = VerificationInput::new(
+    let expired = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1237,7 +1379,7 @@ fn gnt_27_6_expiry_fails_closed_and_a_pinned_path_reports_its_age() {
     );
     assert!(refusal.is_bound());
     assert_eq!(refusal.causing_entry(), None);
-    let early = VerificationInput::new(
+    let early = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1253,7 +1395,7 @@ fn gnt_27_6_expiry_fails_closed_and_a_pinned_path_reports_its_age() {
     );
 
     // An explicit offline witness admits only the same snapshot during its own validity window.
-    let offline = VerificationInput::new(
+    let offline = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1270,7 +1412,7 @@ fn gnt_27_6_expiry_fails_closed_and_a_pinned_path_reports_its_age() {
     assert_ne!(verified.freshness().mode(), FreshnessMode::Online);
 
     // A witness cannot extend the snapshot's declared expiry.
-    let beyond = VerificationInput::new(
+    let beyond = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1313,7 +1455,7 @@ fn gnt_27_7_a_rollback_or_a_freeze_is_refused_against_retained_state() {
     );
     let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
-    let declaration = source_declaration(0, "widget", widget.source().clone());
+    let declaration = source_declaration(0, "widget", "widget", widget.source().clone());
     let declarations = vec![declaration.clone()];
     let ledger = ledger_of(&declaration, &snapshot);
     let signatures = vec![declared_signature(&acme_key, snapshot.content_digest())];
@@ -1321,7 +1463,7 @@ fn gnt_27_7_a_rollback_or_a_freeze_is_refused_against_retained_state() {
     // An admissible path: the retained sequence itself carries the same content.
     let monotone = RetainedState::for_source(widget.source().clone(), 4)
         .with_content(4, snapshot.content_digest());
-    let accepted = VerificationInput::new(
+    let accepted = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1347,7 +1489,7 @@ fn gnt_27_7_a_rollback_or_a_freeze_is_refused_against_retained_state() {
     ] {
         let refusal = refuse_snapshot(
             &store,
-            &VerificationInput::new(
+            &verification_input(
                 &declarations,
                 &snapshot,
                 &signatures,
@@ -1367,7 +1509,7 @@ fn gnt_27_7_a_rollback_or_a_freeze_is_refused_against_retained_state() {
 
     // A snapshot older than the retained minimum is a rollback.
     let advanced = RetainedState::for_source(widget.source().clone(), 5);
-    let rollback = VerificationInput::new(
+    let rollback = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1392,7 +1534,7 @@ fn gnt_27_7_a_rollback_or_a_freeze_is_refused_against_retained_state() {
     // One retained sequence that now carries another content is a freeze or equivocation.
     let equivocated = RetainedState::for_source(widget.source().clone(), 1)
         .with_content(4, digest("other-content"));
-    let frozen = VerificationInput::new(
+    let frozen = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1416,7 +1558,7 @@ fn gnt_27_7_a_rollback_or_a_freeze_is_refused_against_retained_state() {
         .with_content(4, snapshot.content_digest())
         .with_maximum_staleness(25)
         .with_expiry_epoch(100);
-    let frozen = VerificationInput::new(
+    let frozen = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1461,7 +1603,7 @@ fn gnt_27_8_a_publication_tuple_never_names_two_byte_sets() {
     );
     let published = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let _replay = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
-    let declaration = source_declaration(0, "widget", published.source().clone());
+    let declaration = source_declaration(0, "widget", "widget", published.source().clone());
 
     // An authenticated snapshot, not a raw publication record, occupies the ledger.
     let published_snapshot = snapshot_of(3, 100, 200, std::slice::from_ref(&published));
@@ -1471,7 +1613,7 @@ fn gnt_27_8_a_publication_tuple_never_names_two_byte_sets() {
         authenticated_fixture(&declaration, &published_snapshot);
     let replay_declarations = [declaration.clone()];
     let replay_empty = PublicationLedger::new();
-    let replay_input = VerificationInput::new(
+    let replay_input = verification_input(
         &replay_declarations,
         &published_snapshot,
         &replay_signatures,
@@ -1494,7 +1636,7 @@ fn gnt_27_8_a_publication_tuple_never_names_two_byte_sets() {
     let declarations = vec![declaration.clone()];
     let signatures = vec![declared_signature(&acme_key, snapshot.content_digest())];
     let retained = RetainedState::for_source(changed.source().clone(), 1);
-    let input = VerificationInput::new(
+    let input = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1528,7 +1670,7 @@ fn gnt_27_8_a_publication_tuple_never_names_two_byte_sets() {
         corrected_snapshot.content_digest(),
     )];
     let verification_ledger = ledger.clone();
-    let corrected_input = VerificationInput::new(
+    let corrected_input = verification_input(
         &declarations,
         &corrected_snapshot,
         &corrected_signatures,
@@ -1555,7 +1697,7 @@ fn gnt_27_9_a_yank_stops_new_resolution_without_rewriting_a_lockfile() {
     let yanked = published.clone().with_publication(PublicationState::Yanked);
     let published_snapshot = snapshot_of(3, 100, 200, std::slice::from_ref(&published));
     let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&yanked));
-    let declaration = source_declaration(0, "widget", yanked.source().clone());
+    let declaration = source_declaration(0, "widget", "widget", yanked.source().clone());
     let declarations = vec![declaration.clone()];
     let acme_root = root(
         "acme-root",
@@ -1575,7 +1717,7 @@ fn gnt_27_9_a_yank_stops_new_resolution_without_rewriting_a_lockfile() {
         &acme_key,
         published_snapshot.content_digest(),
     )];
-    let published_input = VerificationInput::new(
+    let published_input = verification_input(
         &declarations,
         &published_snapshot,
         &published_signatures,
@@ -1589,7 +1731,7 @@ fn gnt_27_9_a_yank_stops_new_resolution_without_rewriting_a_lockfile() {
     let retained = RetainedState::for_source(declaration.identity().clone(), 4)
         .with_content(4, snapshot.content_digest());
     let signatures = vec![declared_signature(&acme_key, snapshot.content_digest())];
-    let input = VerificationInput::new(
+    let input = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -1677,7 +1819,7 @@ fn gnt_27_10_a_revocation_refuses_a_build_without_substituting_code() {
         &[acme_key.clone(), stranger_key.clone()],
         &[],
     );
-    let declaration = source_declaration(0, "widget", registry_source("acme", "widget"));
+    let declaration = source_declaration(0, "widget", "widget", registry_source("acme", "widget"));
     let scope = accept(
         AdvisoryScope::new(
             registry_source("acme", "widget"),
@@ -1892,7 +2034,7 @@ fn gnt_27_11_pinned_checkouts_vendored_trees_and_mirrors_present_one_universe() 
         VcsPin::new(vcs.clone(), &spelling, digest("content-a")),
         "the declared version-control pin is valid",
     );
-    let declaration = source_declaration(0, "widget", vcs.clone());
+    let declaration = source_declaration(0, "widget", "widget", vcs.clone());
 
     // An admissible path: a clean checkout at the pinned commit and content verifies.
     let clean = PinnedTree::observed(
@@ -1969,7 +2111,7 @@ fn gnt_27_11_pinned_checkouts_vendored_trees_and_mirrors_present_one_universe() 
         PathPin::new(path.clone(), digest("content-a")),
         "the declared path pin is valid",
     );
-    let path_declaration = source_declaration(1, "widget_path", path.clone());
+    let path_declaration = source_declaration(1, "widget_path", "widget_path", path.clone());
     let path_tree = PinnedTree::observed(path.clone(), None, digest("content-a"));
     assert_eq!(
         admit(
@@ -1993,7 +2135,10 @@ fn gnt_27_11_pinned_checkouts_vendored_trees_and_mirrors_present_one_universe() 
     let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
     let original_source = widget.source().clone();
-    let vendor_declaration = source_declaration(2, "widget_vendored", original_source.clone());
+    let vendor_declaration = accept(
+        source_declaration_for(2, "widget_vendored", "widget", original_source.clone()),
+        "the vendored declaration owns the widget package subject",
+    );
     let vendor_root = root(
         "acme-vendor-root",
         original_source.clone(),
@@ -2013,7 +2158,7 @@ fn gnt_27_11_pinned_checkouts_vendored_trees_and_mirrors_present_one_universe() 
         &key("acme-key"),
         snapshot.content_digest(),
     )];
-    let vendor_input = VerificationInput::new(
+    let vendor_input = verification_input(
         &vendor_declarations,
         &snapshot,
         &vendor_signatures,
@@ -2094,7 +2239,7 @@ fn gnt_27_11_pinned_checkouts_vendored_trees_and_mirrors_present_one_universe() 
         &key("acme-key"),
         other_universe.content_digest(),
     )];
-    let other_input = VerificationInput::new(
+    let other_input = verification_input(
         &vendor_declarations,
         &other_universe,
         &other_signatures,
@@ -2156,7 +2301,10 @@ fn gnt_27_11_pinned_checkouts_vendored_trees_and_mirrors_present_one_universe() 
 
     // A mirror is admitted only when it presents the same authenticated snapshot identity.
     let mirror_source = registry_source("acme", "widget");
-    let mirror_declaration = source_declaration(3, "widget_mirror", mirror_source.clone());
+    let mirror_declaration = accept(
+        source_declaration_for(3, "widget_mirror", "widget", mirror_source.clone()),
+        "the mirror declaration owns the widget package subject",
+    );
     let mirror = accept(
         MirrorBinding::new(
             "mirror.example.invalid",
@@ -2217,8 +2365,8 @@ fn gnt_27_12_lockfile_evidence_binds_every_declaration_before_parsing() {
     );
     let snapshot = snapshot_of(4, 100, 200, &[widget.clone(), gadget.clone()]);
     let declarations = vec![
-        source_declaration(0, "widget", widget.source().clone()),
-        source_declaration(1, "gadget", gadget.source().clone()),
+        source_declaration(0, "widget", "widget", widget.source().clone()),
+        source_declaration(1, "gadget", "gadget", gadget.source().clone()),
     ];
     let widget_record = record_of(&widget, &snapshot, &declarations[0]);
     let gadget_record = record_of(&gadget, &snapshot, &declarations[1]);
@@ -2240,7 +2388,7 @@ fn gnt_27_12_lockfile_evidence_binds_every_declaration_before_parsing() {
     let retained = [RetainedState::for_source(widget.source().clone(), 4)
         .with_content(4, snapshot.content_digest())];
     let signatures = vec![declared_signature(&acme_key, snapshot.content_digest())];
-    let verification = VerificationInput::new(
+    let verification = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -2275,7 +2423,7 @@ fn gnt_27_12_lockfile_evidence_binds_every_declaration_before_parsing() {
     let incomplete = vec![
         declarations[0].clone(),
         declarations[1].clone(),
-        source_declaration(2, "extra", registry_source("acme", "extra")),
+        source_declaration(2, "extra", "extra", registry_source("acme", "extra")),
     ];
     let refusal = refuse(
         verified.bind_lockfile(&lockfile, &incomplete),
@@ -2329,7 +2477,7 @@ fn gnt_27_12_lockfile_evidence_binds_every_declaration_before_parsing() {
     let other = snapshot_of(5, 100, 200, &[widget.clone(), gadget]);
     let other_ledger = ledger_of(&declarations[0], &other);
     let other_signatures = vec![declared_signature(&acme_key, other.content_digest())];
-    let other_verification = VerificationInput::new(
+    let other_verification = verification_input(
         &declarations,
         &other,
         &other_signatures,
@@ -2360,7 +2508,7 @@ fn gnt_27_12_lockfile_evidence_binds_every_declaration_before_parsing() {
         SourceIdentity::path(widget.source().canonical_text()),
         "the declared identity text is valid",
     );
-    let foreign_declaration = source_declaration(0, "widget", other_source);
+    let foreign_declaration = source_declaration(0, "widget", "widget", other_source);
     let refusal = refuse(
         verified.bind_lockfile(&lockfile, std::slice::from_ref(&foreign_declaration)),
         "evidence bound to another source is stale",
@@ -2410,14 +2558,14 @@ fn gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration() {
     );
     let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
-    let declaration = source_declaration(0, "widget", widget.source().clone());
+    let declaration = source_declaration(0, "widget", "widget", widget.source().clone());
     let declarations = vec![declaration.clone()];
     let ledger = ledger_of(&declaration, &snapshot);
     let retained = RetainedState::for_source(widget.source().clone(), 1);
     let signatures = vec![declared_signature(&acme_key, snapshot.content_digest())];
 
     // An admissible path: every admitted entry names the declaration that bound it.
-    let input = VerificationInput::new(
+    let input = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -2441,7 +2589,7 @@ fn gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration() {
     );
 
     // A freshness refusal names the declaration and no causing entry.
-    let expired = VerificationInput::new(
+    let expired = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -2468,7 +2616,7 @@ fn gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration() {
     );
 
     let no_retained: [RetainedState; 0] = [];
-    let expired_before_retained_state = VerificationInput::new(
+    let expired_before_retained_state = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -2498,6 +2646,14 @@ fn gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration() {
         &acme_key,
         stranger_snapshot.content_digest(),
     )];
+    let advisory_set = AdvisoryStore::new();
+    let advisory_proof = AdvisorySetProof::authenticated(
+        &stranger_snapshot,
+        &advisory_set,
+        RootSelectionPolicy::Unspecified,
+        acme.clone(),
+        &acme_key,
+    );
     let stranger_input = VerificationInput::new(
         &declarations,
         &stranger_snapshot,
@@ -2506,7 +2662,8 @@ fn gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration() {
         &ledger,
         EpochObservation::at(150),
         FreshnessMode::online(),
-    );
+    )
+    .with_advisory_proof(advisory_set, advisory_proof);
     let refusal = refuse_snapshot(&store, &stranger_input);
     assert_eq!(
         refusal.code(),
@@ -2539,7 +2696,7 @@ fn gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration() {
         &acme_key,
         unbound_snapshot.content_digest(),
     )];
-    let unbound = VerificationInput::new(
+    let unbound = verification_input(
         &declarations,
         &unbound_snapshot,
         &unbound_signatures,
@@ -2564,7 +2721,7 @@ fn gnt_27_13_every_trust_and_freshness_refusal_names_its_declaration() {
 
     // An empty declaration list cannot attribute a refusal to any declaration.
     let none: Vec<SourceDeclaration> = Vec::new();
-    let empty_input = VerificationInput::new(
+    let empty_input = verification_input(
         &none,
         &snapshot,
         &signatures,
@@ -2671,7 +2828,7 @@ fn gnt_27_4_topological_delegation_and_root_selection_are_explicit() {
         &[child, parent],
     );
     let delegated = entry("acme", "widget", "1.0.0", &leaf, "manifest-a", "artifact-a");
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let grant = admit(
         store.authorize(&declaration, &delegated, 2),
         "a complete delegation chain is admitted independently of input order",
@@ -2748,7 +2905,7 @@ fn gnt_27_4_topological_delegation_and_root_selection_are_explicit() {
     let ledger = ledger_of(&declaration, &snapshot);
     let retained = RetainedState::for_source(source, 1);
     let signatures = vec![declared_signature(&root_key, snapshot.content_digest())];
-    let unspecified = VerificationInput::new(
+    let unspecified = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -2772,7 +2929,11 @@ fn gnt_27_4_topological_delegation_and_root_selection_are_explicit() {
         "GNT-27.4-trust-roots-and-delegated-authority"
     );
 
-    let selected = VerificationInput::new(
+    let selected_policy = RootSelectionPolicy::selected(accept(
+        RootId::new("acme-root"),
+        "the declared root identity is valid",
+    ));
+    let selected = verification_input_with_advisories_and_policy(
         &declarations,
         &snapshot,
         &signatures,
@@ -2780,11 +2941,9 @@ fn gnt_27_4_topological_delegation_and_root_selection_are_explicit() {
         &ledger,
         EpochObservation::at(150),
         FreshnessMode::online(),
-    )
-    .with_root_selection(RootSelectionPolicy::selected(accept(
-        RootId::new("acme-root"),
-        "the declared root identity is valid",
-    )));
+        AdvisoryStore::new(),
+        selected_policy,
+    );
     assert_eq!(
         admit_snapshot(&multi_root_store, &selected)
             .authority(0)
@@ -2812,7 +2971,7 @@ fn gnt_27_4_authority_apis_require_the_declared_source() {
         std::slice::from_ref(&root_key),
         &[],
     );
-    let declaration = source_declaration(0, "widget", declaration_source.clone());
+    let declaration = source_declaration(0, "widget", "widget", declaration_source.clone());
     let entry = entry_for_source(
         rooted_source.clone(),
         "acme",
@@ -2886,7 +3045,7 @@ fn gnt_27_5_lifecycle_admission_is_atomic_and_retained() {
     let scope = scope_of_package("acme", "widget");
     let root = root("acme-root", source.clone(), acme.clone(), scope.clone());
     let mut store = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let timing = accept(
         RotationTiming::new(4, 4, 5),
         "the declared rotation timing is valid",
@@ -2961,7 +3120,7 @@ fn gnt_27_5_lifecycle_admission_is_atomic_and_retained() {
     let ledger = ledger_of(&declaration, &snapshot);
     let signatures = vec![declared_signature(&next, snapshot.content_digest())];
     let missing_facts = RetainedState::for_source(source.clone(), 1);
-    let input = VerificationInput::new(
+    let input = verification_input(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -2983,7 +3142,7 @@ fn gnt_27_5_lifecycle_admission_is_atomic_and_retained() {
     let retained = missing_facts
         .with_rotation_fact(store.rotations()[0].evidence_digest())
         .with_lifecycle_root_policy(RootSelectionPolicy::Unspecified);
-    let input = VerificationInput::new(
+    let input = verification_input(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -3014,7 +3173,7 @@ fn gnt_27_5_rotation_overlap_uses_declared_epoch() {
     let scope = scope_of_package("acme", "widget");
     let root = root("acme-root", source.clone(), acme.clone(), scope.clone());
     let mut store = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let timing = accept(
         RotationTiming::new(4, 100, 200),
         "the declared epoch overlap is valid",
@@ -3052,7 +3211,7 @@ fn gnt_27_5_rotation_overlap_uses_declared_epoch() {
         .with_rotation_fact(evidence.evidence_digest())
         .with_lifecycle_root_policy(RootSelectionPolicy::Unspecified);
     let during_signatures = vec![declared_signature(&old, during.content_digest())];
-    let during_input = VerificationInput::new(
+    let during_input = verification_input(
         std::slice::from_ref(&declaration),
         &during,
         &during_signatures,
@@ -3066,7 +3225,7 @@ fn gnt_27_5_rotation_overlap_uses_declared_epoch() {
     let after = snapshot_of(11, 200, 250, std::slice::from_ref(&retired));
     let after_ledger = ledger_of(&declaration, &after);
     let after_signatures = vec![declared_signature(&old, after.content_digest())];
-    let after_input = VerificationInput::new(
+    let after_input = verification_input(
         std::slice::from_ref(&declaration),
         &after,
         &after_signatures,
@@ -3135,8 +3294,8 @@ fn gnt_27_12_whole_lockfile_closure_and_acquisition_admission() {
     let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a")
         .with_dependency(declared_dependency);
     let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
-    let declaration = source_declaration(0, "widget", source.clone());
-    let dependency_declaration = source_declaration(1, "helper", dependency_source);
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
+    let dependency_declaration = source_declaration(1, "helper", "helper", dependency_source);
     let dependency_record = record_of(&dependency, &dependency_snapshot, &dependency_declaration);
     let locked_dependency = accept(
         LockedDependency::new(
@@ -3170,7 +3329,7 @@ fn gnt_27_12_whole_lockfile_closure_and_acquisition_admission() {
     let (history_trust, history_retained, history_signatures) =
         authenticated_fixture(&declaration, &snapshot);
     let empty = PublicationLedger::new();
-    let history_input = VerificationInput::new(
+    let history_input = verification_input(
         std::slice::from_ref(&declaration),
         &snapshot,
         &history_signatures,
@@ -3209,7 +3368,7 @@ fn gnt_27_12_whole_lockfile_closure_and_acquisition_admission() {
     let ledger = ledger_of(&declaration, &snapshot);
     let retained = RetainedState::for_source(source, 1);
     let signatures = vec![declared_signature(&acme_key, snapshot.content_digest())];
-    let input = VerificationInput::new(
+    let input = verification_input(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -3225,7 +3384,7 @@ fn gnt_27_12_whole_lockfile_closure_and_acquisition_admission() {
         &acme_key,
         dependency_snapshot.content_digest(),
     )];
-    let dependency_input = VerificationInput::new(
+    let dependency_input = verification_input(
         std::slice::from_ref(&dependency_declaration),
         &dependency_snapshot,
         &dependency_signatures,
@@ -3497,13 +3656,13 @@ fn gnt_27_5_later_compromise_rejects_older_online_and_offline_snapshots() {
     );
     let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let snapshot = snapshot_of(5, 100, 200, std::slice::from_ref(&widget));
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let declarations = vec![declaration.clone()];
     let ledger = ledger_of(&declaration, &snapshot);
     let retained =
         RetainedState::for_source(source.clone(), 5).with_content(5, snapshot.content_digest());
     let signatures = vec![declared_signature(&acme_key, snapshot.content_digest())];
-    let before_compromise = VerificationInput::new(
+    let before_compromise = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -3537,7 +3696,7 @@ fn gnt_27_5_later_compromise_rejects_older_online_and_offline_snapshots() {
         "the later compromise is retained",
     );
 
-    let online = VerificationInput::new(
+    let online = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -3560,7 +3719,7 @@ fn gnt_27_5_later_compromise_rejects_older_online_and_offline_snapshots() {
         "GNT-27.5-signing-key-rotation-and-compromise-recovery"
     );
 
-    let offline = VerificationInput::new(
+    let offline = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -3587,7 +3746,7 @@ fn gnt_27_5_successor_waits_for_its_effective_epoch() {
     let scope = scope_of_package("acme", "widget");
     let root = root("acme-root", source.clone(), acme.clone(), scope.clone());
     let mut store = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let timing = accept(
         RotationTiming::new(4, 100, 200),
         "the declared effective epoch is valid",
@@ -3632,7 +3791,7 @@ fn gnt_27_5_successor_waits_for_its_effective_epoch() {
     let before = snapshot_of(10, 99, 200, std::slice::from_ref(&successor));
     let before_ledger = ledger_of(&declaration, &before);
     let before_signatures = vec![declared_signature(&next, before.content_digest())];
-    let before_input = VerificationInput::new(
+    let before_input = verification_input(
         std::slice::from_ref(&declaration),
         &before,
         &before_signatures,
@@ -3649,7 +3808,7 @@ fn gnt_27_5_successor_waits_for_its_effective_epoch() {
     let effective = snapshot_of(11, 100, 200, std::slice::from_ref(&successor));
     let effective_ledger = ledger_of(&declaration, &effective);
     let effective_signatures = vec![declared_signature(&next, effective.content_digest())];
-    let effective_input = VerificationInput::new(
+    let effective_input = verification_input(
         std::slice::from_ref(&declaration),
         &effective,
         &effective_signatures,
@@ -3706,7 +3865,7 @@ fn gnt_27_13_failure_reasons_are_reachable_and_anchored() {
         &[root_key.clone(), delegate_key.clone()],
         &[delayed],
     );
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let delegated = entry(
         "acme",
         "widget",
@@ -3748,7 +3907,7 @@ fn gnt_27_13_failure_reasons_are_reachable_and_anchored() {
     let ledger = ledger_of(&declaration, &snapshot);
     let retained = RetainedState::for_source(source, 1);
     let signatures = vec![declared_signature(&root_key, snapshot.content_digest())];
-    let missing = VerificationInput::new(
+    let missing = verification_input(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -3762,7 +3921,7 @@ fn gnt_27_13_failure_reasons_are_reachable_and_anchored() {
     assert_eq!(refusal.reason(), TrustFailureReason::MissingObservedInstant);
     assert_eq!(refusal.requirement_anchor(), refusal.reason().anchor());
 
-    let unavailable = VerificationInput::new(
+    let unavailable = verification_input(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -3826,7 +3985,7 @@ fn gnt_27_registry_aliases_roots_and_vendors_are_coordinate_exact() {
     );
     let second = root("second-root", source.clone(), root_publisher.clone(), scope);
     let store = store_of(&[first, second], std::slice::from_ref(&root_key), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let entry = entry(
         "acme",
         "widget",
@@ -4085,7 +4244,7 @@ fn gnt_27_5_lifecycle_facts_remain_bound_to_their_admitting_root() {
     let first = root("first-root", source.clone(), acme.clone(), scope.clone());
     let second = root("second-root", source.clone(), acme.clone(), scope.clone());
     let mut store = store_of(&[first, second], std::slice::from_ref(&old), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let timing = accept(
         RotationTiming::new(4, 4, 5),
         "the declared rotation timing is valid",
@@ -4138,7 +4297,7 @@ fn gnt_27_5_lifecycle_facts_remain_bound_to_their_admitting_root() {
         .with_rotation_fact(evidence.evidence_digest())
         .with_lifecycle_root_policy(first_policy.clone());
     let signatures = vec![declared_signature(&old, snapshot.content_digest())];
-    let input = VerificationInput::new(
+    let input = verification_input_with_advisories_and_policy(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -4146,8 +4305,9 @@ fn gnt_27_5_lifecycle_facts_remain_bound_to_their_admitting_root() {
         &ledger,
         EpochObservation::at(5),
         FreshnessMode::online(),
-    )
-    .with_root_selection(second_policy.clone());
+        AdvisoryStore::new(),
+        second_policy.clone(),
+    );
     assert!(matches!(
         refuse_snapshot(&store, &input).condition(),
         RegistryError::RetainedLifecycleFactsMissing { .. }
@@ -4177,7 +4337,7 @@ fn gnt_27_5_lifecycle_facts_remain_bound_to_their_admitting_root() {
             "the second root identity is valid",
         ),
     ]);
-    let input = VerificationInput::new(
+    let input = verification_input_with_advisories_and_policy(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -4185,8 +4345,9 @@ fn gnt_27_5_lifecycle_facts_remain_bound_to_their_admitting_root() {
         &ledger,
         EpochObservation::at(6),
         FreshnessMode::online(),
-    )
-    .with_root_selection(compatible);
+        AdvisoryStore::new(),
+        compatible,
+    );
     admit_snapshot(&store, &input);
 }
 
@@ -4201,7 +4362,7 @@ fn gnt_27_5_compromise_uses_its_authenticated_observation_epoch() {
     let scope = scope_of_package("acme", "widget");
     let root = root("acme-root", source.clone(), acme.clone(), scope.clone());
     let mut store = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let rotation_timing = accept(
         RotationTiming::new(4, 4, 5),
         "the declared rotation timing is valid",
@@ -4311,7 +4472,7 @@ fn gnt_27_5_rotation_accepts_an_independently_delegated_successor() {
         &[recovery.clone(), next.clone()],
         std::slice::from_ref(&successor_delegation),
     );
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let timing = accept(
         RotationTiming::new(4, 4, 5),
         "the declared rotation timing is valid",
@@ -4409,7 +4570,7 @@ fn gnt_27_5_retired_key_cannot_rotate_again_later() {
     let scope = scope_of_package("acme", "widget");
     let root = root("acme-root", source.clone(), acme.clone(), scope.clone());
     let mut store = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
 
     let initial_timing = accept(
         RotationTiming::new(4, 4, 5),
@@ -4487,7 +4648,7 @@ fn gnt_27_5_retired_key_cannot_delegate_after_overlap() {
         scope.clone(),
     );
     let mut store = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
 
     let timing = accept(
         RotationTiming::new(4, 4, 5),
@@ -4594,7 +4755,7 @@ fn gnt_27_5_retired_ancestor_cannot_extend_an_existing_delegation_chain() {
         &[old.clone(), parent_key.clone(), child_key],
         &[],
     );
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let parent_timing = accept(
         DelegationTiming::new(0, u64::MAX, 1),
         "the initial parent delegation timing is valid",
@@ -4711,7 +4872,7 @@ fn gnt_27_5_retirement_is_current_and_successors_can_redelegate() {
         &[old.clone(), next.clone(), child_key],
         &[],
     );
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let rotation_timing = accept(
         RotationTiming::new(4, 4, 5),
         "the declared rotation timing is valid",
@@ -4868,7 +5029,7 @@ fn gnt_27_5_identical_lifecycle_evidence_retains_every_admitting_root() {
     let first = root("first-root", source.clone(), acme.clone(), scope.clone());
     let second = root("second-root", source.clone(), acme.clone(), scope.clone());
     let mut store = store_of(&[first, second], std::slice::from_ref(&old), &[]);
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let timing = accept(
         RotationTiming::new(4, 4, 5),
         "the declared rotation timing is valid",
@@ -4949,7 +5110,7 @@ fn gnt_27_5_identical_lifecycle_evidence_retains_every_admitting_root() {
         .with_rotation_fact(evidence.evidence_digest())
         .with_lifecycle_root_policy(second_policy.clone());
     let signatures = vec![declared_signature(&next, snapshot.content_digest())];
-    let input = VerificationInput::new(
+    let input = verification_input_with_advisories_and_policy(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -4957,8 +5118,9 @@ fn gnt_27_5_identical_lifecycle_evidence_retains_every_admitting_root() {
         &ledger,
         EpochObservation::at(6),
         FreshnessMode::online(),
-    )
-    .with_root_selection(second_policy);
+        AdvisoryStore::new(),
+        second_policy,
+    );
     admit_snapshot(&store, &input);
 }
 
@@ -4969,7 +5131,11 @@ fn gnt_27_snapshot_admission_and_lockfile_binding_reject_forged_entries() {
     let acme_key = key("acme-key");
     let acme = publisher("acme", "acme-key");
     let source = registry_source("acme", "widget");
-    let declaration = source_declaration(0, "widget", source.clone());
+    let lower_declaration = source_declaration(0, "widget", "widget", source.clone());
+    let declaration = accept(
+        source_declaration_for(0, "widget", "Widget", source.clone()),
+        "the collision declaration owns the presented package subject",
+    );
     let root = root(
         "acme-root",
         source.clone(),
@@ -4985,13 +5151,13 @@ fn gnt_27_snapshot_admission_and_lockfile_binding_reject_forged_entries() {
     let colliding = entry("acme", "Widget", "2.0.0", &acme, "manifest-b", "artifact-b");
     let lower_snapshot = snapshot_of(3, 100, 200, std::slice::from_ref(&lower));
     let collision_snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&colliding));
-    let collision_ledger = ledger_of(&declaration, &lower_snapshot);
+    let collision_ledger = ledger_of(&lower_declaration, &lower_snapshot);
     let retained = RetainedState::for_source(source.clone(), 1);
     let collision_signatures = vec![declared_signature(
         &acme_key,
         collision_snapshot.content_digest(),
     )];
-    let collision_input = VerificationInput::new(
+    let collision_input = verification_input(
         std::slice::from_ref(&declaration),
         &collision_snapshot,
         &collision_signatures,
@@ -5017,7 +5183,7 @@ fn gnt_27_snapshot_admission_and_lockfile_binding_reject_forged_entries() {
         acme_key.key().clone(),
         digest("forged-collision-signature"),
     )];
-    let precedence_input = VerificationInput::new(
+    let precedence_input = verification_input(
         std::slice::from_ref(&declaration),
         &collision_snapshot,
         &forged_signatures,
@@ -5047,10 +5213,10 @@ fn gnt_27_snapshot_admission_and_lockfile_binding_reject_forged_entries() {
     let forged = lower.clone().with_dependency(dependency);
     let original_snapshot = snapshot_of(5, 100, 200, std::slice::from_ref(&lower));
     let (original_trust, original_retained, original_signatures) =
-        authenticated_fixture(&declaration, &original_snapshot);
+        authenticated_fixture(&lower_declaration, &original_snapshot);
     let original_empty = PublicationLedger::new();
-    let original_input = VerificationInput::new(
-        std::slice::from_ref(&declaration),
+    let original_input = verification_input(
+        std::slice::from_ref(&lower_declaration),
         &original_snapshot,
         &original_signatures,
         std::slice::from_ref(&original_retained),
@@ -5065,7 +5231,7 @@ fn gnt_27_snapshot_admission_and_lockfile_binding_reject_forged_entries() {
                 &forged,
                 &original_verified,
                 &original_retained,
-                &declaration,
+                &lower_declaration,
                 LockfileInputs::default(),
             ),
             "a record cannot bind a same-coordinate entry absent from the authenticated snapshot",
@@ -5078,10 +5244,10 @@ fn gnt_27_snapshot_admission_and_lockfile_binding_reject_forged_entries() {
     ));
     let forged_snapshot = snapshot_of(6, 100, 200, std::slice::from_ref(&forged));
     let (forged_trust, forged_retained, forged_signatures) =
-        authenticated_fixture(&declaration, &forged_snapshot);
+        authenticated_fixture(&lower_declaration, &forged_snapshot);
     let forged_empty = PublicationLedger::new();
-    let forged_input = VerificationInput::new(
-        std::slice::from_ref(&declaration),
+    let forged_input = verification_input(
+        std::slice::from_ref(&lower_declaration),
         &forged_snapshot,
         &forged_signatures,
         std::slice::from_ref(&forged_retained),
@@ -5096,7 +5262,7 @@ fn gnt_27_snapshot_admission_and_lockfile_binding_reject_forged_entries() {
                 &forged,
                 &forged_verified,
                 &forged_retained,
-                &declaration,
+                &lower_declaration,
                 LockfileInputs {
                     targets: forged
                         .target_artifacts()
@@ -5124,7 +5290,7 @@ fn gnt_27_9_post_lockfile_yank_refuses_a_silent_rewrite() {
     let acme_key = key("acme-key");
     let acme = publisher("acme", "acme-key");
     let source = registry_source("acme", "widget");
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let root = root(
         "acme-root",
         source.clone(),
@@ -5152,7 +5318,7 @@ fn gnt_27_9_post_lockfile_yank_refuses_a_silent_rewrite() {
         &acme_key,
         current_snapshot.content_digest(),
     )];
-    let current_input = VerificationInput::new(
+    let current_input = verification_input(
         std::slice::from_ref(&declaration),
         &current_snapshot,
         &current_signatures,
@@ -5219,8 +5385,11 @@ fn gnt_27_11_vcs_and_path_acquisition_require_verified_source_proofs() {
     );
     let vcs_snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&vcs_entry));
     let path_snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&path_entry));
-    let vcs_declaration = source_declaration(0, "widget", vcs_source.clone());
-    let path_declaration = source_declaration(1, "path_widget", path_source.clone());
+    let vcs_declaration = source_declaration(0, "widget", "widget", vcs_source.clone());
+    let path_declaration = accept(
+        source_declaration_for(1, "path_widget", "path-widget", path_source.clone()),
+        "the path declaration owns the path-widget package subject",
+    );
     let store = store_of(
         &[
             root(
@@ -5248,7 +5417,7 @@ fn gnt_27_11_vcs_and_path_acquisition_require_verified_source_proofs() {
         &acme_key,
         path_snapshot.content_digest(),
     )];
-    let vcs_input = VerificationInput::new(
+    let vcs_input = verification_input(
         std::slice::from_ref(&vcs_declaration),
         &vcs_snapshot,
         &vcs_signatures,
@@ -5258,7 +5427,7 @@ fn gnt_27_11_vcs_and_path_acquisition_require_verified_source_proofs() {
         FreshnessMode::online(),
     );
     let vcs_verified = admit_snapshot(&store, &vcs_input);
-    let path_input = VerificationInput::new(
+    let path_input = verification_input(
         std::slice::from_ref(&path_declaration),
         &path_snapshot,
         &path_signatures,
@@ -5363,7 +5532,7 @@ fn gnt_27_12_collection_attestations_cannot_be_retagged() {
     let acme = publisher("acme", "acme-key");
     let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
-    let declaration = source_declaration(0, "widget", widget.source().clone());
+    let declaration = source_declaration(0, "widget", "widget", widget.source().clone());
     let common = digest("retagged-collection-value");
     let targets: Vec<_> = widget
         .target_artifacts()
@@ -5402,7 +5571,7 @@ fn gnt_27_12_collection_attestations_cannot_be_retagged() {
 #[test]
 fn gnt_27_13_reason_owned_anchors_cover_every_error_surface() {
     let source = registry_source("acme", "widget");
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let alternate_kind = accept(
         SourceIdentity::path(source.canonical_text()),
         "the alternate source kind is valid",
@@ -5449,7 +5618,7 @@ fn gnt_27_13_reason_owned_anchors_cover_every_error_surface() {
     let ledger = PublicationLedger::new();
     let attribution = refuse_snapshot(
         &store,
-        &VerificationInput::new(
+        &verification_input(
             std::slice::from_ref(&declaration),
             &unbound_snapshot,
             &signatures,
@@ -5480,8 +5649,8 @@ fn gnt_27_9_multi_source_rewrite_checks_every_greatest_snapshot() {
         "manifest-b",
         "artifact-b",
     );
-    let primary_declaration = source_declaration(0, "widget", primary.source().clone());
-    let helper_declaration = source_declaration(1, "helper", helper.source().clone());
+    let primary_declaration = source_declaration(0, "widget", "widget", primary.source().clone());
+    let helper_declaration = source_declaration(1, "helper", "helper", helper.source().clone());
     let store = store_of(
         &[
             root(
@@ -5523,7 +5692,7 @@ fn gnt_27_9_multi_source_rewrite_checks_every_greatest_snapshot() {
     )];
     let primary_ledger = ledger_of(&primary_declaration, &current_primary);
     let helper_ledger = ledger_of(&helper_declaration, &current_helper);
-    let primary_input = VerificationInput::new(
+    let primary_input = verification_input(
         std::slice::from_ref(&primary_declaration),
         &current_primary,
         &primary_signatures,
@@ -5532,7 +5701,7 @@ fn gnt_27_9_multi_source_rewrite_checks_every_greatest_snapshot() {
         EpochObservation::at(150),
         FreshnessMode::online(),
     );
-    let helper_input = VerificationInput::new(
+    let helper_input = verification_input(
         std::slice::from_ref(&helper_declaration),
         &current_helper,
         &helper_signatures,
@@ -5614,7 +5783,7 @@ fn gnt_27_registry_repair_boundaries_refuse_fresh_evidence_bypasses() {
     let acme = publisher("acme", "acme-key");
     let published = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let source = published.source().clone();
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let declarations = [declaration.clone()];
     let store = store_of(
         std::slice::from_ref(&root(
@@ -5631,7 +5800,7 @@ fn gnt_27_registry_repair_boundaries_refuse_fresh_evidence_bypasses() {
     let retained =
         RetainedState::for_source(source.clone(), 4).with_content(4, snapshot.content_digest());
     let signatures = [declared_signature(&acme_key, snapshot.content_digest())];
-    let verification = VerificationInput::new(
+    let verification = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -5654,7 +5823,7 @@ fn gnt_27_registry_repair_boundaries_refuse_fresh_evidence_bypasses() {
     let missing_digest = RetainedState::for_source(source.clone(), 4);
     let refusal = refuse_snapshot(
         &store,
-        &VerificationInput::new(
+        &verification_input(
             &declarations,
             &snapshot,
             &signatures,
@@ -5682,7 +5851,7 @@ fn gnt_27_registry_repair_boundaries_refuse_fresh_evidence_bypasses() {
         &acme_key,
         yanked_snapshot.content_digest(),
     )];
-    let yanked_input = VerificationInput::new(
+    let yanked_input = verification_input(
         &declarations,
         &yanked_snapshot,
         &yanked_signatures,
@@ -5804,11 +5973,14 @@ fn gnt_27_registry_repair_boundaries_refuse_fresh_evidence_bypasses() {
         digest("foreign-source"),
     );
     let foreign_snapshot = snapshot_of(6, 100, 200, std::slice::from_ref(&foreign));
-    let foreign_declaration = source_declaration(1, "foreign", foreign.source().clone());
+    let foreign_declaration = accept(
+        source_declaration_for(1, "foreign", "widget", foreign.source().clone()),
+        "the foreign declaration owns the widget package subject",
+    );
     let (foreign_trust, foreign_retained, foreign_signatures) =
         authenticated_fixture(&foreign_declaration, &foreign_snapshot);
     let empty = PublicationLedger::new();
-    let foreign_input = VerificationInput::new(
+    let foreign_input = verification_input(
         std::slice::from_ref(&foreign_declaration),
         &foreign_snapshot,
         &foreign_signatures,
@@ -5926,7 +6098,7 @@ fn gnt_27_5_rejects_conflicting_successor_material_atomically() {
         declared_signature(&old, payload),
         declared_signature(&successor, payload),
     );
-    let declaration = source_declaration(0, "widget", source);
+    let declaration = source_declaration(0, "widget", "widget", source);
 
     let refusal = refuse(
         store.rotate(&declaration, evidence, std::slice::from_ref(&conflicting)),
@@ -5992,7 +6164,7 @@ fn gnt_27_5_sealed_competing_rotations_have_identical_permutations() {
         declared_signature(&old, second_payload),
         declared_signature(&second_successor, second_payload),
     );
-    let declaration = source_declaration(0, "widget", source);
+    let declaration = source_declaration(0, "widget", "widget", source);
 
     let mut forward = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
     let forward_refusal = refuse(
@@ -6064,7 +6236,7 @@ fn gnt_27_5_sealed_equal_context_forged_duplicates_have_identical_permutations()
         declared_signature(&old, payload),
         DeclaredSignature::declared(successor.key().clone(), digest("forged-rotation")),
     );
-    let declaration = source_declaration(0, "widget", source);
+    let declaration = source_declaration(0, "widget", "widget", source);
 
     let mut forward = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
     let forward_refusal = refuse(
@@ -6135,7 +6307,7 @@ fn gnt_27_5_sealed_equal_context_signature_defects_have_fixed_precedence() {
         declared_signature(&old, payload),
         DeclaredSignature::declared(successor.key().clone(), digest("forged-successor-rotation")),
     );
-    let declaration = source_declaration(0, "widget", source);
+    let declaration = source_declaration(0, "widget", "widget", source);
 
     let mut forward = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
     let forward_refusal = refuse(
@@ -6237,7 +6409,7 @@ fn gnt_27_5_sealed_equal_context_valid_forms_retain_one_canonical_representation
         ),
         "the successor-only rotation evidence is valid",
     );
-    let declaration = source_declaration(0, "widget", source);
+    let declaration = source_declaration(0, "widget", "widget", source);
 
     let mut forward = store_of(
         std::slice::from_ref(&root),
@@ -6323,7 +6495,7 @@ fn gnt_27_5_sealed_backdated_rotations_have_identical_permutations() {
         declared_signature(&old, late_payload),
         declared_signature(&successor, late_payload),
     );
-    let declaration = source_declaration(0, "widget", source);
+    let declaration = source_declaration(0, "widget", "widget", source);
 
     let mut forward = store_of(std::slice::from_ref(&root), std::slice::from_ref(&old), &[]);
     let forward_refusal = refuse(
@@ -6434,8 +6606,8 @@ fn gnt_27_12_rejects_duplicate_declaration_indices_before_binding() {
     let acme = publisher("acme", "acme-key");
     let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
     let snapshot = snapshot_of(4, 100, 200, std::slice::from_ref(&widget));
-    let declaration = source_declaration(0, "widget", widget.source().clone());
-    let duplicate = source_declaration(0, "widget_other", widget.source().clone());
+    let declaration = source_declaration(0, "widget", "widget", widget.source().clone());
+    let duplicate = source_declaration(0, "widget_other", "widget_other", widget.source().clone());
     let declarations = [declaration.clone()];
     let duplicates = [declaration.clone(), duplicate];
     let ledger = ledger_of(&declaration, &snapshot);
@@ -6452,7 +6624,7 @@ fn gnt_27_12_rejects_duplicate_declaration_indices_before_binding() {
         std::slice::from_ref(&acme_key),
         &[],
     );
-    let duplicate_input = VerificationInput::new(
+    let duplicate_input = verification_input(
         &duplicates,
         &snapshot,
         &signatures,
@@ -6470,7 +6642,7 @@ fn gnt_27_12_rejects_duplicate_declaration_indices_before_binding() {
         }
     ));
 
-    let input = VerificationInput::new(
+    let input = verification_input(
         &declarations,
         &snapshot,
         &signatures,
@@ -6500,7 +6672,7 @@ fn gnt_27_12_rejects_duplicate_declaration_indices_before_binding() {
 #[test]
 fn gnt_27_1_classifies_cross_kind_substitution_as_fallback() {
     let declared = registry_source("acme", "widget");
-    let declaration = source_declaration(0, "widget", declared.clone());
+    let declaration = source_declaration(0, "widget", "widget", declared.clone());
     let declarations = [declaration.clone()];
     let requested = accept(
         SourceIdentity::path("registry:acme-registry"),
@@ -6531,7 +6703,7 @@ fn gnt_27_1_classifies_cross_kind_substitution_as_fallback() {
 #[test]
 fn gnt_27_7_retains_authenticated_advisory_lifecycle_facts() {
     let source = registry_source("acme", "widget");
-    let declaration = source_declaration(0, "widget", source.clone());
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
     let acme_key = key("acme-key");
     let acme = publisher("acme", "acme-key");
     let root = root(
@@ -6575,7 +6747,7 @@ fn gnt_27_7_retains_authenticated_advisory_lifecycle_facts() {
             &declaration,
             advisory.clone(),
             declared_signature(&acme_key, advisory.digest()),
-            acme,
+            acme.clone(),
             &trust,
             snapshot.sequence(),
         ),
@@ -6585,7 +6757,7 @@ fn gnt_27_7_retains_authenticated_advisory_lifecycle_facts() {
         .with_content(snapshot.sequence(), snapshot.content_digest())
         .with_lifecycle_root_policy(RootSelectionPolicy::Unspecified)
         .with_advisory_fact(advisory.digest());
-    let online = VerificationInput::new(
+    let online = verification_input_with_advisories(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -6593,21 +6765,64 @@ fn gnt_27_7_retains_authenticated_advisory_lifecycle_facts() {
         &ledger,
         EpochObservation::at(150),
         FreshnessMode::online(),
+        advisories.clone(),
     )
-    .with_advisories(&advisories)
     .with_snapshot_declaration(declaration.index());
     let verified = admit_snapshot(&trust, &online);
     assert_eq!(
-        trust
-            .retained_state_with_advisories(&verified, &advisories)
-            .advisory_facts(),
+        trust.retained_state(&verified).advisory_facts(),
         &[advisory.digest()]
+    );
+    let empty_replacement = AdvisoryStore::new();
+    let replacement_advisory = accept(
+        SecurityAdvisory::new(
+            "GNT-27.10-substituted-advisory",
+            accept(
+                AdvisoryScope::new(
+                    source.clone(),
+                    "acme",
+                    "widget",
+                    "1.0.0",
+                    &[accept(
+                        TargetArtifact::new(TargetKind::Library, digest("artifact-a")),
+                        "the substituted advisory target artifact is valid",
+                    )],
+                ),
+                "the substituted advisory scope is valid",
+            ),
+            Severity::AdvisoryOnly,
+        ),
+        "the substituted advisory is valid",
+    );
+    let mut different_replacement = AdvisoryStore::new();
+    admit(
+        different_replacement.admit(
+            &declaration,
+            replacement_advisory.clone(),
+            declared_signature(&acme_key, replacement_advisory.digest()),
+            acme,
+            &trust,
+            snapshot.sequence(),
+        ),
+        "the substituted advisory is independently authenticated",
+    );
+    assert!(empty_replacement.is_empty());
+    assert!(!different_replacement.is_empty());
+    assert_ne!(
+        verified.advisory_facts(),
+        &[replacement_advisory.digest()],
+        "the verified snapshot retains the accepted set rather than later evidence"
+    );
+    assert_eq!(
+        trust.retained_state(&verified).advisory_facts(),
+        &[advisory.digest()],
+        "durable state cannot be replaced by empty or different fresh evidence"
     );
     let offline_witness = accept(
         verified.offline_witness(declaration.identity(), 150),
         "the verified snapshot mints an offline witness",
     );
-    let offline = VerificationInput::new(
+    let offline = verification_input_with_advisories(
         std::slice::from_ref(&declaration),
         &snapshot,
         &signatures,
@@ -6615,8 +6830,8 @@ fn gnt_27_7_retains_authenticated_advisory_lifecycle_facts() {
         &ledger,
         EpochObservation::at(150),
         FreshnessMode::offline(offline_witness),
+        advisories.clone(),
     )
-    .with_advisories(&advisories)
     .with_snapshot_declaration(declaration.index());
     admit_snapshot(&trust, &offline);
 
@@ -6628,7 +6843,7 @@ fn gnt_27_7_retains_authenticated_advisory_lifecycle_facts() {
             .clone()
             .with_advisory_fact(digest("extra-advisory-fact")),
     ] {
-        let input = VerificationInput::new(
+        let input = verification_input_with_advisories(
             std::slice::from_ref(&declaration),
             &snapshot,
             &signatures,
@@ -6636,8 +6851,8 @@ fn gnt_27_7_retains_authenticated_advisory_lifecycle_facts() {
             &ledger,
             EpochObservation::at(150),
             FreshnessMode::online(),
+            advisories.clone(),
         )
-        .with_advisories(&advisories)
         .with_snapshot_declaration(declaration.index());
         let refusal = refuse_snapshot(&trust, &input);
         assert!(matches!(
@@ -6650,4 +6865,562 @@ fn gnt_27_7_retains_authenticated_advisory_lifecycle_facts() {
         );
         assert_eq!(refusal.declaration_index(), declaration.index());
     }
+}
+
+/// `GNT-27.3`, `GNT-27.7`, and `GNT-27.13` require a verification caller to present
+/// advisory evidence explicitly and require every entry to match its declaration's exact
+/// source and package subject rather than borrowing a same-source declaration.
+#[test]
+fn gnt_27_explicit_advisories_and_exact_package_subjects_fail_closed() {
+    let source = registry_source("acme", "widget");
+    let acme_key = key("acme-key");
+    let acme = publisher("acme", "acme-key");
+    let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
+    let snapshot = snapshot_of(5, 100, 200, std::slice::from_ref(&widget));
+    let declaration = accept(
+        source_declaration_for(0, "widget_alias", "widget", source.clone()),
+        "an alias may differ from the exact package subject",
+    );
+    let trust = store_of(
+        std::slice::from_ref(&root(
+            "acme-root",
+            source.clone(),
+            acme,
+            scope_of_package("acme", "widget"),
+        )),
+        std::slice::from_ref(&acme_key),
+        &[],
+    );
+    let ledger = ledger_of(&declaration, &snapshot);
+    let retained = RetainedState::for_source(source.clone(), snapshot.sequence())
+        .with_content(snapshot.sequence(), snapshot.content_digest());
+    let signatures = [declared_signature(&acme_key, snapshot.content_digest())];
+
+    let declared_empty = verification_input(
+        std::slice::from_ref(&declaration),
+        &snapshot,
+        &signatures,
+        std::slice::from_ref(&retained),
+        &ledger,
+        EpochObservation::at(150),
+        FreshnessMode::online(),
+    )
+    .with_snapshot_declaration(declaration.index());
+    let verified = admit_snapshot(&trust, &declared_empty);
+    let witness = accept(
+        verified.offline_witness(declaration.identity(), 150),
+        "the explicitly evidenced snapshot mints an offline witness",
+    );
+
+    for freshness in [FreshnessMode::online(), FreshnessMode::offline(witness)] {
+        let omitted = VerificationInput::new(
+            std::slice::from_ref(&declaration),
+            &snapshot,
+            &signatures,
+            std::slice::from_ref(&retained),
+            &ledger,
+            EpochObservation::at(150),
+            freshness,
+        )
+        .with_snapshot_declaration(declaration.index());
+        let refusal = refuse_snapshot(&trust, &omitted);
+        assert!(matches!(
+            refusal.condition(),
+            RegistryError::RetainedLifecycleFactsMissing { .. }
+        ));
+        assert!(refusal.is_bound());
+        assert_eq!(refusal.declaration_index(), declaration.index());
+    }
+
+    let forged = [DeclaredSignature::declared(
+        acme_key.key().clone(),
+        digest("forged"),
+    )];
+    let precedence = VerificationInput::new(
+        std::slice::from_ref(&declaration),
+        &snapshot,
+        &forged,
+        std::slice::from_ref(&retained),
+        &ledger,
+        EpochObservation::at(150),
+        FreshnessMode::online(),
+    )
+    .with_snapshot_declaration(declaration.index());
+    assert!(matches!(
+        refuse_snapshot(&trust, &precedence).condition(),
+        RegistryError::RetainedLifecycleFactsMissing { .. }
+    ));
+
+    let mismatched = accept(
+        source_declaration_for(1, "widget_alias", "gadget", source.clone()),
+        "the mismatched subject declaration is structurally valid",
+    );
+    let empty = PublicationLedger::new();
+    let mismatch = verification_input(
+        std::slice::from_ref(&mismatched),
+        &snapshot,
+        &signatures,
+        std::slice::from_ref(&retained),
+        &empty,
+        EpochObservation::at(150),
+        FreshnessMode::online(),
+    );
+    let refusal = refuse_snapshot(&trust, &mismatch);
+    assert!(matches!(
+        refusal.condition(),
+        RegistryError::AttributionMissing { .. }
+    ));
+    assert!(!refusal.is_bound());
+    assert_eq!(refusal.declaration_identity(), &source);
+    assert!(empty.is_empty());
+}
+
+/// `GNT-27.3` and `GNT-27.7` reject an advisory proof unless its authenticated canonical set
+/// binds the exact source, snapshot sequence, root policy, and signature; an omitted set still
+/// has precedence over every signature failure.
+#[test]
+fn gnt_27_advisory_set_proofs_reject_truncation_forgery_and_rebinding() {
+    let source = registry_source("acme", "widget");
+    let acme_key = key("acme-key");
+    let acme = publisher("acme", "acme-key");
+    let declaration = accept(
+        source_declaration_for(0, "widget_alias", "widget", source.clone()),
+        "the proof fixture declaration owns the widget package subject",
+    );
+    let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
+    let snapshot = snapshot_of(5, 100, 200, std::slice::from_ref(&widget));
+    let trust = store_of(
+        std::slice::from_ref(&root(
+            "acme-root",
+            source.clone(),
+            acme.clone(),
+            scope_of_package("acme", "widget"),
+        )),
+        std::slice::from_ref(&acme_key),
+        &[],
+    );
+    let ledger = ledger_of(&declaration, &snapshot);
+    let retained = RetainedState::for_source(source.clone(), snapshot.sequence())
+        .with_content(snapshot.sequence(), snapshot.content_digest());
+    let signatures = [declared_signature(&acme_key, snapshot.content_digest())];
+
+    let advisory = accept(
+        SecurityAdvisory::new(
+            "GNT-27-advisory-proof",
+            accept(
+                AdvisoryScope::new(
+                    source.clone(),
+                    "acme",
+                    "widget",
+                    "1.0.0",
+                    &[accept(
+                        TargetArtifact::new(TargetKind::Library, digest("artifact-a")),
+                        "the advisory target artifact is valid",
+                    )],
+                ),
+                "the advisory scope is valid",
+            ),
+            Severity::AdvisoryOnly,
+        ),
+        "the advisory is valid",
+    );
+    let advisory_signature = declared_signature(&acme_key, advisory.digest());
+    let mut complete = AdvisoryStore::new();
+    admit(
+        complete.admit(
+            &declaration,
+            advisory,
+            advisory_signature,
+            acme.clone(),
+            &trust,
+            snapshot.sequence(),
+        ),
+        "the advisory is authenticated",
+    );
+    let complete_proof = AdvisorySetProof::authenticated(
+        &snapshot,
+        &complete,
+        RootSelectionPolicy::Unspecified,
+        acme.clone(),
+        &acme_key,
+    );
+    let truncated = VerificationInput::new(
+        std::slice::from_ref(&declaration),
+        &snapshot,
+        &signatures,
+        std::slice::from_ref(&retained),
+        &ledger,
+        EpochObservation::at(150),
+        FreshnessMode::online(),
+    )
+    .with_advisory_proof(AdvisoryStore::new(), complete_proof)
+    .with_snapshot_declaration(declaration.index());
+    assert!(matches!(
+        refuse_snapshot(&trust, &truncated).condition(),
+        RegistryError::SignatureUnverified { .. }
+    ));
+
+    let empty = AdvisoryStore::new();
+    let forged = AdvisorySetProof::authenticated(
+        &snapshot,
+        &empty,
+        RootSelectionPolicy::Unspecified,
+        acme.clone(),
+        &key("forged-key"),
+    );
+    let forged = VerificationInput::new(
+        std::slice::from_ref(&declaration),
+        &snapshot,
+        &signatures,
+        std::slice::from_ref(&retained),
+        &ledger,
+        EpochObservation::at(150),
+        FreshnessMode::online(),
+    )
+    .with_advisory_proof(empty, forged)
+    .with_snapshot_declaration(declaration.index());
+    assert!(matches!(
+        refuse_snapshot(&trust, &forged).condition(),
+        RegistryError::SignatureUnverified { .. }
+    ));
+
+    let foreign_entry = entry(
+        "other",
+        "widget",
+        "1.0.0",
+        &acme,
+        "manifest-b",
+        "artifact-b",
+    );
+    let foreign = snapshot_of(5, 100, 200, std::slice::from_ref(&foreign_entry));
+    let wrong_source = AdvisorySetProof::authenticated(
+        &foreign,
+        &AdvisoryStore::new(),
+        RootSelectionPolicy::Unspecified,
+        acme.clone(),
+        &acme_key,
+    );
+    let wrong_sequence = AdvisorySetProof::authenticated(
+        &snapshot_of(6, 100, 200, std::slice::from_ref(&widget)),
+        &AdvisoryStore::new(),
+        RootSelectionPolicy::Unspecified,
+        acme.clone(),
+        &acme_key,
+    );
+    let selected_policy = RootSelectionPolicy::selected(accept(
+        RootId::new("acme-root"),
+        "the selected root is valid",
+    ));
+    let wrong_policy = AdvisorySetProof::authenticated(
+        &snapshot,
+        &AdvisoryStore::new(),
+        selected_policy,
+        acme,
+        &acme_key,
+    );
+    for proof in [wrong_source, wrong_sequence, wrong_policy] {
+        let input = VerificationInput::new(
+            std::slice::from_ref(&declaration),
+            &snapshot,
+            &signatures,
+            std::slice::from_ref(&retained),
+            &ledger,
+            EpochObservation::at(150),
+            FreshnessMode::online(),
+        )
+        .with_advisory_proof(AdvisoryStore::new(), proof)
+        .with_snapshot_declaration(declaration.index());
+        assert!(matches!(
+            refuse_snapshot(&trust, &input).condition(),
+            RegistryError::SignatureUnverified { .. }
+        ));
+    }
+
+    let forged_snapshot_signatures = [DeclaredSignature::declared(
+        acme_key.key().clone(),
+        digest("forged"),
+    )];
+    let omitted = VerificationInput::new(
+        std::slice::from_ref(&declaration),
+        &snapshot,
+        &forged_snapshot_signatures,
+        std::slice::from_ref(&retained),
+        &ledger,
+        EpochObservation::at(150),
+        FreshnessMode::online(),
+    )
+    .with_snapshot_declaration(declaration.index());
+    assert!(matches!(
+        refuse_snapshot(&trust, &omitted).condition(),
+        RegistryError::RetainedLifecycleFactsMissing { .. }
+    ));
+}
+
+/// `GNT-27.3` binds an advisory completeness proof's claimed publisher to the key that signed
+/// it, even when a different known key can otherwise verify the proof payload.
+#[test]
+fn gnt_27_advisory_proof_rejects_a_known_key_for_another_publisher() {
+    let source = registry_source("acme", "widget");
+    let acme_key = key("acme-key");
+    let reviewer_key = key("reviewer-key");
+    let acme = publisher("acme", "acme-key");
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
+    let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
+    let snapshot = snapshot_of(5, 100, 200, std::slice::from_ref(&widget));
+    let trust = store_of(
+        std::slice::from_ref(&root(
+            "acme-root",
+            source.clone(),
+            acme.clone(),
+            scope_of_package("acme", "widget"),
+        )),
+        &[acme_key.clone(), reviewer_key.clone()],
+        &[],
+    );
+    let retained = RetainedState::for_source(source, snapshot.sequence())
+        .with_content(snapshot.sequence(), snapshot.content_digest());
+    let signatures = [declared_signature(&acme_key, snapshot.content_digest())];
+    let proof = AdvisorySetProof::authenticated(
+        &snapshot,
+        &AdvisoryStore::new(),
+        RootSelectionPolicy::Unspecified,
+        acme,
+        &reviewer_key,
+    );
+    let refusal = refuse_snapshot(
+        &trust,
+        &VerificationInput::new(
+            std::slice::from_ref(&declaration),
+            &snapshot,
+            &signatures,
+            std::slice::from_ref(&retained),
+            &PublicationLedger::new(),
+            EpochObservation::at(150),
+            FreshnessMode::online(),
+        )
+        .with_advisory_proof(AdvisoryStore::new(), proof),
+    );
+    assert!(matches!(
+        refusal.condition(),
+        RegistryError::PublisherUnauthorized {
+            defect: AuthorizationDefect::UnverifiedSigner,
+            ..
+        }
+    ));
+    assert_eq!(refusal.declaration_index(), declaration.index());
+}
+
+/// `GNT-27.3` authorizes the proof publisher across every consumed package, not only the first
+/// entry that happened to anchor the snapshot.
+#[test]
+fn gnt_27_advisory_proof_authority_covers_every_snapshot_entry() {
+    let source = registry_source("acme", "workspace");
+    let acme_key = key("acme-key");
+    let reviewer_key = key("reviewer-key");
+    let acme = publisher("acme", "acme-key");
+    let reviewer = publisher("reviewer", "reviewer-key");
+    let widget = entry_for_source(
+        source.clone(),
+        "acme",
+        "widget",
+        "1.0.0",
+        &acme,
+        "manifest-widget",
+        "artifact-widget",
+        digest("source-widget"),
+    );
+    let gadget = entry_for_source(
+        source.clone(),
+        "acme",
+        "gadget",
+        "1.0.0",
+        &acme,
+        "manifest-gadget",
+        "artifact-gadget",
+        digest("source-gadget"),
+    );
+    let snapshot = snapshot_of(5, 100, 200, &[widget, gadget]);
+    let widget_declaration = source_declaration(0, "widget", "widget", source.clone());
+    let gadget_declaration = source_declaration(1, "gadget", "gadget", source.clone());
+    let declarations = [widget_declaration.clone(), gadget_declaration.clone()];
+    let reviewer_delegation = delegation(
+        source.clone(),
+        acme.clone(),
+        reviewer.clone(),
+        scope_of_package("acme", "widget"),
+        1,
+        &acme_key,
+    );
+    let trust = store_of(
+        std::slice::from_ref(&root(
+            "acme-root",
+            source.clone(),
+            acme.clone(),
+            scope_of_namespace("acme"),
+        )),
+        &[acme_key.clone(), reviewer_key.clone()],
+        std::slice::from_ref(&reviewer_delegation),
+    );
+    let retained = RetainedState::for_source(source, snapshot.sequence())
+        .with_content(snapshot.sequence(), snapshot.content_digest());
+    let signatures = [declared_signature(&acme_key, snapshot.content_digest())];
+    let proof = AdvisorySetProof::authenticated(
+        &snapshot,
+        &AdvisoryStore::new(),
+        RootSelectionPolicy::Unspecified,
+        reviewer,
+        &reviewer_key,
+    );
+    let refusal = refuse_snapshot(
+        &trust,
+        &VerificationInput::new(
+            &declarations,
+            &snapshot,
+            &signatures,
+            std::slice::from_ref(&retained),
+            &PublicationLedger::new(),
+            EpochObservation::at(150),
+            FreshnessMode::online(),
+        )
+        .with_advisory_proof(AdvisoryStore::new(), proof),
+    );
+    assert!(matches!(
+        refusal.condition(),
+        RegistryError::DelegationOutOfScope { .. }
+    ));
+    assert_eq!(refusal.declaration_index(), gadget_declaration.index());
+}
+
+/// `GNT-27.7` permits a newly proven current advisory set to advance an older authenticated
+/// retained set; the verifier compares retained lifecycle facts at the retained sequence while
+/// preserving the normal rollback and freeze checks for the new snapshot.
+#[test]
+fn gnt_27_advisory_proof_advances_an_older_retained_set() {
+    let source = registry_source("acme", "widget");
+    let acme_key = key("acme-key");
+    let acme = publisher("acme", "acme-key");
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
+    let trust = store_of(
+        std::slice::from_ref(&root(
+            "acme-root",
+            source.clone(),
+            acme.clone(),
+            scope_of_package("acme", "widget"),
+        )),
+        std::slice::from_ref(&acme_key),
+        &[],
+    );
+    let previous_entry = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
+    let previous = snapshot_of(4, 100, 200, std::slice::from_ref(&previous_entry));
+    let previous_signatures = [declared_signature(&acme_key, previous.content_digest())];
+    let initial_retained = RetainedState::for_source(source.clone(), 0);
+    let previous_ledger = PublicationLedger::new();
+    let previous_input = verification_input(
+        std::slice::from_ref(&declaration),
+        &previous,
+        &previous_signatures,
+        std::slice::from_ref(&initial_retained),
+        &previous_ledger,
+        EpochObservation::at(150),
+        FreshnessMode::online(),
+    );
+    let previous_verified = admit_snapshot(&trust, &previous_input);
+    let retained = trust.retained_state(&previous_verified);
+
+    let current_entry = entry("acme", "widget", "1.1.0", &acme, "manifest-b", "artifact-b");
+    let current = snapshot_of(5, 150, 250, std::slice::from_ref(&current_entry));
+    let advisory = accept(
+        SecurityAdvisory::new(
+            "GNT-27-current-advisory",
+            accept(
+                AdvisoryScope::new(
+                    source,
+                    "acme",
+                    "widget",
+                    "1.1.0",
+                    &[accept(
+                        TargetArtifact::new(TargetKind::Library, digest("artifact-b")),
+                        "the current advisory target is valid",
+                    )],
+                ),
+                "the current advisory scope is valid",
+            ),
+            Severity::AdvisoryOnly,
+        ),
+        "the current advisory is valid",
+    );
+    let mut advisories = AdvisoryStore::new();
+    admit(
+        advisories.admit(
+            &declaration,
+            advisory.clone(),
+            declared_signature(&acme_key, advisory.digest()),
+            acme,
+            &trust,
+            current.sequence(),
+        ),
+        "the current advisory is authenticated",
+    );
+    let current_signatures = [declared_signature(&acme_key, current.content_digest())];
+    let current_ledger = PublicationLedger::new();
+    let current_input = verification_input_with_advisories(
+        std::slice::from_ref(&declaration),
+        &current,
+        &current_signatures,
+        std::slice::from_ref(&retained),
+        &current_ledger,
+        EpochObservation::at(175),
+        FreshnessMode::online(),
+        advisories.clone(),
+    );
+    let current_verified = admit_snapshot(&trust, &current_input);
+    assert_eq!(
+        trust.retained_state(&current_verified).advisory_facts(),
+        &[advisory.digest()]
+    );
+}
+
+/// `GNT-27.13` refuses a snapshot-wide evidence attribution that names a same-source
+/// declaration for another package instead of blaming that declaration for the failure.
+#[test]
+fn gnt_27_snapshot_evidence_rejects_a_same_source_wrong_subject_attribution() {
+    let source = registry_source("acme", "widget");
+    let acme_key = key("acme-key");
+    let acme = publisher("acme", "acme-key");
+    let widget = entry("acme", "widget", "1.0.0", &acme, "manifest-a", "artifact-a");
+    let snapshot = snapshot_of(5, 100, 200, std::slice::from_ref(&widget));
+    let declaration = source_declaration(0, "widget", "widget", source.clone());
+    let wrong_subject = source_declaration(1, "gadget", "gadget", source.clone());
+    let declarations = [declaration.clone(), wrong_subject.clone()];
+    let trust = store_of(
+        std::slice::from_ref(&root(
+            "acme-root",
+            source.clone(),
+            acme,
+            scope_of_package("acme", "widget"),
+        )),
+        std::slice::from_ref(&acme_key),
+        &[],
+    );
+    let retained = RetainedState::for_source(source.clone(), snapshot.sequence())
+        .with_content(snapshot.sequence(), snapshot.content_digest());
+    let signatures = [declared_signature(&acme_key, snapshot.content_digest())];
+    let ledger = PublicationLedger::new();
+    let input = verification_input(
+        &declarations,
+        &snapshot,
+        &signatures,
+        std::slice::from_ref(&retained),
+        &ledger,
+        EpochObservation::at(150),
+        FreshnessMode::online(),
+    )
+    .with_snapshot_declaration(wrong_subject.index());
+    let refusal = refuse_snapshot(&trust, &input);
+    assert!(matches!(
+        refusal.condition(),
+        RegistryError::AttributionMissing { .. }
+    ));
+    assert!(!refusal.is_bound());
+    assert_eq!(refusal.declaration_identity(), &source);
 }
