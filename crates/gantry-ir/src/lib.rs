@@ -30,6 +30,7 @@ mod path;
 mod primitive;
 mod protected;
 pub mod registry;
+mod resource;
 mod schema;
 mod secret;
 mod signature;
@@ -134,11 +135,12 @@ pub use identifier::{
     collision_condition, generated_alias, share_one_skeleton,
 };
 pub use lifecycle::{
-    AdmittedWork, CooperativeObservation, DurableStopCut, EscalatedWork, Escalation, GracePolicy,
-    LIFECYCLE_STOP_CLAUSES, LateResultFence, STOP_NON_CLAIM_ORDER, STOP_NON_CLAIMS, SafePoint,
-    StopCause, StopCauseClass, StopCoordinator, StopCrashCutClassification, StopDiagnosticCode,
-    StopError, StopNonClaim, StopNonClaimName, StopReport, StopRequest, StopRequestId,
-    StopRequestJoin, StopState, StopTransition, TaskOutcome, TaskResult, TaskStopState,
+    AdmittedWork, CooperativeObservation, DurableStopCut, EmergencyCleanupWitness, EscalatedWork,
+    Escalation, GracePolicy, LIFECYCLE_STOP_CLAUSES, LateResultFence, STOP_NON_CLAIM_ORDER,
+    STOP_NON_CLAIMS, SafePoint, StopCause, StopCauseClass, StopCoordinator,
+    StopCrashCutClassification, StopDiagnosticCode, StopError, StopNonClaim, StopNonClaimName,
+    StopReport, StopRequest, StopRequestId, StopRequestJoin, StopState, StopTransition,
+    TaskOutcome, TaskResult, TaskStopState,
 };
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
 pub use operation::{
@@ -183,6 +185,14 @@ pub use protected::{
     ReleaseHolderAuthority, ReleaseHolderBindingId, ReleaseHolderId, ReleaseOutcome,
     ReleaseProjection, ReleaseRejection, ReleaseSite, ReleasedValue, SemanticEnvelope,
     ValueActionBoundary, admit_crossing, combined_protection_class,
+};
+// The Section 28 resource-accounting model publishes whole-resource lifetime state
+// separately from Section 20's operation `ResourceState`; it is a pure declaration
+// model and does not add runtime registry, evaluator, journal, or host behavior.
+pub use resource::{
+    Charge, DurableResourceRecord, EmergencyReleaseWitness, LivenessRoot, LogicalMeasure,
+    PoisonWitness, Quota, QuotaFamily, QuotaOwner, RESOURCE_CLAUSES, ResourceAction, ResourceError,
+    ResourceLedger, ResourceLifetimeState, RetentionFence, SettlementBaseline,
 };
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
 pub use secret::{

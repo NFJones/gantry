@@ -801,6 +801,24 @@ pub struct Escalation {
     preserved_outcomes: u64,
 }
 
+/// A sealed admission of the emergency-release cleanup permitted by hard cancellation.
+///
+/// This witness has no public constructor. It is obtainable only from an
+/// [`Escalation`] that the coordinator issued at its hard-cancellation
+/// linearization point.
+#[derive(Debug)]
+pub struct EmergencyCleanupWitness {
+    at_us: u64,
+}
+
+impl EmergencyCleanupWitness {
+    /// Returns the hard-cancellation linearization instant that admitted cleanup.
+    #[must_use]
+    pub const fn at_us(&self) -> u64 {
+        self.at_us
+    }
+}
+
 impl Escalation {
     /// Returns the request this escalation belongs to.
     #[must_use]
@@ -830,6 +848,12 @@ impl Escalation {
     #[must_use]
     pub const fn preserved_outcomes(&self) -> u64 {
         self.preserved_outcomes
+    }
+
+    /// Admits the sealed emergency-release cleanup available after hard cancellation.
+    #[must_use]
+    pub const fn admit_emergency_release(&self) -> EmergencyCleanupWitness {
+        EmergencyCleanupWitness { at_us: self.at_us }
     }
 }
 

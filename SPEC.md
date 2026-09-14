@@ -66,6 +66,7 @@
   - [18. Identity Domains and Identifier Security](#18-identity-domains-and-identifier-security)
   - [19. Dynamic Authorization and Authenticated Approval](#19-dynamic-authorization-and-authenticated-approval)
   - [20. Value Actions and Live-Resource Operations](#20-value-actions-and-live-resource-operations)
+  - [28. Resource Accounting and Lifetime Contract](#28-resource-accounting-and-lifetime-contract)
 
 <!-- In all code blocks rust syntax highlighting is used deliberately. Eventually, these can be changed to gantry -->
 
@@ -14903,3 +14904,134 @@ non-claims are a closed vocabulary: a diagnostic, a clause, or an evidence item 
 read as promising a property outside it, a non-claim MUST NOT be presented as a guarantee, and
 an implementation MUST NOT report a clause of this section as satisfied, partially satisfied,
 or conditionally satisfied where it can only demonstrate one of these limits.
+
+## 28. Resource Accounting and Lifetime Contract
+
+<a id="GNT-28.0-resource-accounting-and-lifetime-contract"></a>
+
+**[GNT-28.0-resource-accounting-and-lifetime-contract] Resource accounting and lifetime
+contract.** This section defines closed liveness roots, logical measures independent of physical
+representation, atomic charging for copy, move, loan, update, and release, whole-resource
+lifetime settlement, closed quota families and owners, bounded renewal, deterministic durable
+reconstruction, and retention, compaction, retirement, and deletion fences. It extends without
+redefining the ownership, receiver-loan, operation identity, operation `ResourceState`, poison,
+retention, and stale-owner contracts of `GNT-20.*`, and the stop and sealed emergency-cleanup
+contracts of `GNT-22.*` and `GNT-15.10`. The pure model is `crates/gantry-ir/src/resource.rs`
+and its analyzer-profile evidence lane is
+`crates/gantry-conformance/tests/resource_accounting.rs`.
+
+**Applicability.** These clauses apply to an implementation that declares the Section 28 pure
+resource-accounting model. They define model facts only: no clause here creates a runtime
+registry, evaluator behavior, checkpoint, journal schema, host trait, scheduler, or runtime
+integration claim. The analyzer profile records every clause `covered` only for the declared
+pure model and its conformance lane.
+
+**Boundary.** `ResourceState` remains the Section 20 state of one operation. The
+whole-resource lifetime state defined here is distinct and MUST NOT be substituted for an
+operation state. Owner generations, receiver loans, operation generations, stop, and emergency
+cleanup retain their landed meanings; this section introduces no second ownership, operation,
+or cleanup authority.
+
+<a id="GNT-28.1-resource-identity-and-closed-liveness-roots"></a>
+
+**[GNT-28.1-resource-identity-and-closed-liveness-roots] Resource identity and closed liveness
+roots.** A resource remains live only through one or more members of the closed root vocabulary:
+resource, owner, loan, and durable-record. There is no ambient root and no fifth root. A root
+outside that vocabulary is refused rather than treated as an extension, a cache entry, a host
+handle, a process, or a runtime reachability fact. A receiver loan is the sealed Section 20 loan
+of its exact resource generation and is never an ownership transfer. Retirement and deletion are
+refused while any declared root remains live; closing a root records only its removal from this
+pure ledger and is neither ownership transfer nor a runtime reachability decision.
+
+<a id="GNT-28.2-logical-measures-and-representation-equivalence"></a>
+
+**[GNT-28.2-logical-measures-and-representation-equivalence] Logical measures and representation
+equivalence.** The closed logical measure vocabulary is bytes, handles, and operations. A quota
+charges the declared logical measure, not allocation size, pointer width, compression, encoding,
+cache layout, address, or another physical representation. Two representations with the same
+declared logical charge vector are accounting-equivalent; two different vectors are not made
+equivalent by their representation. An implementation MUST NOT derive a measure from host
+allocation behavior or silently exchange one measure for another.
+
+<a id="GNT-28.3-atomic-copy-move-loan-update-and-release-charging"></a>
+
+**[GNT-28.3-atomic-copy-move-loan-update-and-release-charging] Atomic copy, move, loan, update,
+and release charging.** Copy, move, loan, update, and release are the closed action vocabulary.
+Each action presents one explicit vector of owner-family, quota-family, and nonnegative logical
+charges. The entire vector is checked before any member commits: an undeclared quota, overflow,
+or exhausted quota refuses the action and leaves every quota unchanged. A successful vector
+commits exactly once. This accounting does not alter the landed ownership disposition of a copy,
+move, or loan; it records only the declared charge.
+
+<a id="GNT-28.4-resource-lifetime-finish-poison-and-emergency-release"></a>
+
+**[GNT-28.4-resource-lifetime-finish-poison-and-emergency-release] Resource lifetime, finish,
+poison, and emergency release.** The closed whole-resource lifetime states are active,
+finishing, finished, poisoned, emergency-released, retired, and deleted. Ordinary charging is
+admitted only while active. Finish advances active to finishing and finishing to finished;
+poison is terminal for ordinary use only with a sealed witness derived from the Section 20
+failure settlement whose closed failure classification leaves the resource poisoned; sealed
+emergency cleanup produces emergency-released rather than a normal finish only with a sealed
+witness of effective Section 22 hard cancellation; and no terminal state reopens. A missing or
+inapplicable witness is refused. These states are not Section 20 operation `ResourceState`, and a
+transition here MUST NOT rewrite an operation state.
+
+<a id="GNT-28.5-closed-quota-families-and-owners"></a>
+
+**[GNT-28.5-closed-quota-families-and-owners] Closed quota families and owners.** Quota families
+are exactly bytes, handles, and operations, mapped respectively to the same-named logical
+measures. Quota owners are exactly resource, owner, and durable-record. A quota key is one
+owner-family and quota-family pair; duplicate keys, unknown keys, and a charge against an
+undeclared key are refused rather than selected by input order or defaulted. No quota family or
+owner is inferred from a host, an adapter, a task, a journal, or a runtime configuration.
+
+<a id="GNT-28.6-bounded-renewal-and-exhaustion"></a>
+
+**[GNT-28.6-bounded-renewal-and-exhaustion] Bounded renewal and exhaustion.** A quota declares a
+finite ceiling and a finite count of remaining renewals. Renewal presents the current owner
+generation and is admitted only from the eligible non-terminal active lifetime; it is refused
+when that generation is stale, when the renewal count is exhausted, or when increasing the ceiling
+would overflow. A successful renewal consumes exactly one remaining renewal. Exhaustion is a
+refusal, not an implicit renewal, wraparound, or transfer to another quota owner.
+
+<a id="GNT-28.7-durable-resource-reconstruction"></a>
+
+**[GNT-28.7-durable-resource-reconstruction] Durable resource reconstruction.** A durable
+resource record contains exactly the declared owner generation, whole-resource lifetime state,
+distinct operation state, and quota map required to reconstruct the same pure ledger. Rebuilding
+from that record reproduces those facts exactly and does not discover a live host resource,
+adapter, path, clock, process, environment fact, or journal implementation. This clause defines
+the portable reconstruction model only and does not define durable runtime recovery or a journal
+schema.
+
+<a id="GNT-28.8-retention-and-compaction-fences"></a>
+
+**[GNT-28.8-retention-and-compaction-fences] Retention and compaction fences.** Retention is
+bounded by explicit owner-generation and logical-instant fences. Both bounds zero is unbounded
+and refused. Compaction MAY retain the durable reconstruction facts, but MUST preserve their
+owner, lifetime, operation-state, and quota meanings exactly; it MUST NOT make an unexpired
+fence expire, discard a required liveness root, or fabricate a charge. Logical instants are
+declared inputs and are never clock readings.
+
+<a id="GNT-28.9-retirement-deletion-and-stale-owner-fences"></a>
+
+**[GNT-28.9-retirement-deletion-and-stale-owner-fences] Retirement, deletion, and stale-owner
+fences.** Retirement is admitted only from a settled eligible lifetime after every declared
+liveness root closes and an explicit retention fence expires. The retirement request presents the
+current owner generation exactly and separately declares a successor generation that strictly
+succeeds it; the ledger retains both the settlement baseline and that advanced successor fence.
+This follows `GNT-20.10-retirement-and-stale-owner-fencing`: before retirement, a differing
+owner witness is refused because it is not the current owner, while after retirement a generation
+that does not succeed the retained fence is stale. A retired resource fences stale owners from
+ordinary charging and renewal, and deletion is admitted only from retired with no live roots.
+Deletion does not reassign, revive, or reconstruct the resource; a genuinely later owner requires
+a distinct declared resource record.
+
+<a id="GNT-28.10-resource-accounting-non-claims"></a>
+
+**[GNT-28.10-resource-accounting-non-claims] Resource accounting non-claims.** This section does
+not promise a runtime resource registry, evaluator integration, host allocation accounting,
+checkpoint format, journal schema, runtime compaction implementation, automatic quota renewal,
+automatic resource revival, or host-resource reconstruction. These non-claims are closed: a
+model fact or test MUST NOT be presented as a runtime guarantee, and an implementation MUST NOT
+claim runtime integration merely because it implements this pure model.
