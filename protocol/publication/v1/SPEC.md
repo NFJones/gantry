@@ -67,6 +67,7 @@
   - [19. Dynamic Authorization and Authenticated Approval](#19-dynamic-authorization-and-authenticated-approval)
   - [20. Value Actions and Live-Resource Operations](#20-value-actions-and-live-resource-operations)
   - [28. Resource Accounting and Lifetime Contract](#28-resource-accounting-and-lifetime-contract)
+  - [29. Portable Host-Domain and Standard Host-Family Contracts](#29-portable-host-domain-and-standard-host-family-contracts)
 
 <!-- In all code blocks rust syntax highlighting is used deliberately. Eventually, these can be changed to gantry -->
 
@@ -811,6 +812,7 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
+| Portable host-domain and standard host-family contracts | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -15035,3 +15037,73 @@ checkpoint format, journal schema, runtime compaction implementation, automatic 
 automatic resource revival, or host-resource reconstruction. These non-claims are closed: a
 model fact or test MUST NOT be presented as a runtime guarantee, and an implementation MUST NOT
 claim runtime integration merely because it implements this pure model.
+
+## 29. Portable Host-Domain and Standard Host-Family Contracts
+
+<a id="GNT-29.0-portable-host-domain-and-standard-host-family-contracts"></a>
+
+**[GNT-29.0-portable-host-domain-and-standard-host-family-contracts] Portable host-domain and standard host-family contracts.** This section defines the closed portable host-domain vocabulary, its category matrix, standard host-family declarations, and adapter declaration evidence. Its pure model is `crates/gantry-ir/src/host_domain.rs`, its canonical catalog is `protocol/catalogs/host-domain-contracts-v1.json`, and its analyzer-profile evidence lane is `crates/gantry-conformance/tests/host_domain.rs`. Publication ownership is `gantry.ir`; this section introduces no protocol family.
+
+**Applicability.** These clauses apply only to the declared pure model. They define neither a runtime adapter, host trait, checkpoint, evaluator change, host resource, service discovery, nor execution behavior. The analyzer profile records the pure model only.
+
+**Boundary.** Section 20 continues to own operation identity, receiver arrangement, settlement, progress observation, post-failure state, effect certainty, and owner generation. Section 15.8 owns protocol-family versioning; this section emits vocabulary and goldens under the existing `gantry.ir` publication ownership and creates no parallel protocol family.
+
+<a id="GNT-29.1-channel-separation"></a>
+
+**[GNT-29.1-channel-separation] Channel separation.** One host operation outcome is exactly success, one source-visible portable domain error, or one operational adapter failure. An operational failure is never encoded as a domain error, and a domain error is never reclassified as generic adapter failure. Native detail belongs to the adapter declaration or operational channel and never becomes a portable domain field.
+
+<a id="GNT-29.2-reader-writer-seek-progress"></a>
+
+**[GNT-29.2-reader-writer-seek-progress] Reader, Writer, and Seek progress.** Reader EOF maps exactly to Section 20 `eof`; a short read maps exactly to `short-read`; a short write maps exactly to `short-write`; no observed advance maps to `not-started`; and a successful Seek or completed non-stream operation maps exactly to `committed-progress`. EOF, short progress, interruption, cancellation, and ambiguous settlement remain distinct and retain the Section 20 progress and settlement rules.
+
+<a id="GNT-29.3-portable-domain-error-envelope"></a>
+
+**[GNT-29.3-portable-domain-error-envelope] Portable domain-error envelope.** A source-visible host-domain error contains exactly one closed family, one category admitted by that family, and one bounded portable message. Every family category matrix row ends in `unclassified`; unknown categories and a category from another family are refused rather than widened or guessed.
+
+<a id="GNT-29.4-console-contract"></a>
+
+**[GNT-29.4-console-contract] Console contract.** The console family categories are closed, interrupted, read, write, and unclassified. Console declarations are application-target declarations and carry no terminal handle, terminal capability, terminal escape sequence, or host-specific error detail in the portable envelope.
+
+<a id="GNT-29.5-filesystem-and-environment-contracts"></a>
+
+**[GNT-29.5-filesystem-and-environment-contracts] Filesystem and environment contracts.** Filesystem categories are access-denied, already-exists, missing, read, write, and unclassified; environment categories are access-denied, missing, read, write, and unclassified. Both are application-target declarations only. A path, environment spelling, filesystem layout, or native code is neither a portable category nor a source-visible portable detail.
+
+<a id="GNT-29.6-dns-socket-tls-and-http-contracts"></a>
+
+**[GNT-29.6-dns-socket-tls-and-http-contracts] DNS, socket, TLS, and HTTP contracts.** DNS categories are lookup, name-not-found, temporary, and unclassified; socket categories are bind, connect, read, write, and unclassified; TLS categories are certificate, handshake, protocol, and unclassified; HTTP categories are body, protocol, request, response, and unclassified. These are application-target declarations only and do not define network transport, trust policy, listener behavior, or protocol implementation.
+
+<a id="GNT-29.7-process-contract"></a>
+
+**[GNT-29.7-process-contract] Process contract.** Process categories are exit, launch, reap, signal, wait, and unclassified. Only a process mapping may declare confinement, standard-I/O arrangement, and supervision state. Confinement is exactly confined or audited-unconfined; standard I/O is exactly inherit, piped, or null; supervision progresses through declared launched, waited, and reaped facts under one owner, and this declaration does not launch, signal, wait for, or reap a process.
+
+<a id="GNT-29.8-time-randomness-and-secret-contracts"></a>
+
+**[GNT-29.8-time-randomness-and-secret-contracts] Time, randomness, and secret contracts.** Time categories are clock-unavailable, deadline, sleep, and unclassified; randomness categories are entropy-unavailable, invalid-request, and unclassified; secret categories are access-denied, missing, provider-failure, and unclassified. These are application-target declarations only and grant neither clock access, entropy, secret material, credential authority, nor durable access to a secret.
+
+<a id="GNT-29.9-codec-contract"></a>
+
+**[GNT-29.9-codec-contract] Codec contract.** Codec categories are decode, encode, malformed-input, resource-limit, and unclassified. Codec declarations apply to portable, application, and durable targets, but never grant an external operation, a protected-data release, or a durable capability. A codec category is an error classification, not a data-protection, authority, or persistence claim.
+
+<a id="GNT-29.10-target-applicability"></a>
+
+**[GNT-29.10-target-applicability] Target applicability.** A mapping declares its target explicitly. Console, filesystem, environment, DNS, socket, TLS, HTTP, process, time, randomness, and secret apply only to application; codec applies to portable, application, and durable. A declared mapping for an inapplicable target is refused rather than substituted, deferred, or inferred from the host.
+
+<a id="GNT-29.11-adapter-declaration-obligations"></a>
+
+**[GNT-29.11-adapter-declaration-obligations] Adapter declaration obligations.** An adapter declaration names explicit native-to-portable mappings. For each family it declares, it declares every category of that family, including unclassified, exactly once; empty native mapping detail, duplicate category coverage, and incomplete coverage are refused. A declaration is evidence only and MUST NOT be read as an implementation, binding, capability grant, or runtime availability claim.
+
+<a id="GNT-29.12-adapter-diagnostics"></a>
+
+**[GNT-29.12-adapter-diagnostics] Adapter diagnostics.** The frozen diagnostics are `host-domain-mismatched-family-category`, `host-domain-invalid-portable-detail`, `host-domain-incomplete-adapter-declaration`, `host-domain-target-mapping-inapplicable`, `host-domain-process-declaration-outside-process`, `host-domain-process-owner-mismatch`, and `host-domain-invalid-process-lifecycle-transition`. Each names one owning clause and no diagnostic code is shared by another refusal condition.
+
+<a id="GNT-29.13-process-confinement-and-supervision"></a>
+
+**[GNT-29.13-process-confinement-and-supervision] Process confinement and supervision.** Process declaration facts are valid only with a declared process mapping. A confined declaration and an audited-unconfined declaration remain distinct; neither claims operating-system sandbox isolation. Process standard-I/O and lifecycle facts are one owner’s declared arrangement and transition evidence, not a second ownership transfer, process registry, or supervisory runtime.
+
+<a id="GNT-29.14-native-detail-exclusion"></a>
+
+**[GNT-29.14-native-detail-exclusion] Native-detail exclusion.** Portable fields contain only the closed family, admitted category, and bounded portable message. Native codes, errno values, exception classes, host paths, provider messages, handles, socket addresses, process identifiers, and platform detail are excluded from portable domain errors. An invalid portable detail is refused rather than redacted into a category.
+
+<a id="GNT-29.15-host-contract-non-claims"></a>
+
+**[GNT-29.15-host-contract-non-claims] Host-contract non-claims.** This section does not promise a runtime adapter, host trait, host operation, host allocation, service discovery, terminal behavior, filesystem access, environment access, network transport, TLS validation, HTTP implementation, process launch, sandbox isolation, clock, randomness, secret access, codec implementation, checkpoint, evaluator behavior, durable recovery, or external or durable grant. Its model facts and tests MUST NOT be presented as any such guarantee.

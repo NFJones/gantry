@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/host-domain-contracts/v1/schema.json",
+  "title": "Gantry Host-Domain Contracts v1 Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "catalog",
+    "major",
+    "minor",
+    "schema",
+    "schema_path",
+    "specification_revision",
+    "families",
+    "negative_fixtures"
+  ],
+  "properties": {
+    "catalog": { "const": "gantry.host-domain-contracts" },
+    "major": { "const": 1 },
+    "minor": { "const": 0 },
+    "schema": { "const": "gantry.host-domain-contracts/v1" },
+    "schema_path": { "const": "protocol/schemas/host-domain-contracts-v1.schema.json" },
+    "specification_revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "families": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["wire", "rust", "categories", "targets"],
+        "properties": {
+          "wire": { "type": "string", "pattern": "^[a-z]+(?:-[a-z]+)*$" },
+          "rust": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$" },
+          "categories": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z]+(?:-[a-z]+)*$" } },
+          "targets": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["application", "durable", "portable"] } }
+        }
+      }
+    },
+    "negative_fixtures": { "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z]+(?:-[a-z]+)*$" } }
+  }
+}

@@ -3,6 +3,7 @@
 mod conformance;
 mod embedding;
 mod general_purpose;
+mod host_domain;
 mod ir;
 mod portable;
 mod publication;
@@ -41,6 +42,7 @@ struct ProfileInput {
 
 /// Generates all currently materialized protocol bindings.
 pub(crate) fn generate(root: &Path) -> Result<(), String> {
+    let host_domain_changed = host_domain::generate(root)?;
     let profiles_changed = generate_protocol(root)?;
     let embedding_changed = embedding::generate(root)?;
     let general_purpose_changed = general_purpose::generate(root)?;
@@ -55,6 +57,7 @@ pub(crate) fn generate(root: &Path) -> Result<(), String> {
     if !profiles_changed
         && !embedding_changed
         && !general_purpose_changed
+        && !host_domain_changed
         && !conformance_changed
         && !ir_changed
         && !portable_changed
@@ -67,6 +70,7 @@ pub(crate) fn generate(root: &Path) -> Result<(), String> {
 
 /// Checks all currently materialized generated protocol bindings without writing.
 pub(crate) fn check_generated(root: &Path) -> Result<(), String> {
+    host_domain::check_generated(root)?;
     let catalog = load_catalog(root)?;
     let expected = render_rust(&catalog);
     let path = root.join(OUTPUT_PATH);

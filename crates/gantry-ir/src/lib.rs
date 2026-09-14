@@ -21,6 +21,7 @@ mod facts;
 pub mod fault;
 pub mod generated;
 mod generic;
+mod host_domain;
 pub mod identifier;
 mod lifecycle;
 mod manifest;
@@ -121,6 +122,15 @@ pub use generic::{
     ExecutableProjection, GenericAnalysisFacts, GenericContractError, GenericTemplate,
     ImplementationHead, Predicate, ResolvedCall, SourceOriginSet, TraitContract,
     TraitMethodContract, TraitReference,
+};
+// Section 29 declares portable host-domain vocabulary and adapter declarations only.
+// It introduces no runtime adapter, host trait, checkpoint, evaluator, or host behavior.
+pub use generated::{HostDomainCategory, HostDomainFamily, HostTarget};
+pub use host_domain::{
+    AdapterContractDeclaration, HOST_DOMAIN_CLAUSES, HostDomainDiagnosticCode, HostDomainError,
+    HostDomainErrorKind, HostOperationFailure, HostOperationOutcome, HostProgress, HostSettlement,
+    HostSettlementError, NativeMappingDeclaration, PORTABLE_MESSAGE_MAX_BYTES, ProcessConfinement,
+    ProcessLifecycle, ProcessStdio, ProcessSupervision,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and
