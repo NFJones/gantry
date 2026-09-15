@@ -851,6 +851,7 @@ fn resolve_source_types(
         .map(|symbol| (symbol.id, symbol))
         .collect::<BTreeMap<_, _>>();
     let mut resolved = BTreeMap::<NodeId, TypeFact>::new();
+    let nested = nested_type_member_nodes(source.tree())?;
 
     for (index, node) in source.tree().nodes().iter().enumerate() {
         if !matches!(node.form(), SyntaxForm::ValueType) {
@@ -863,6 +864,7 @@ fn resolve_source_types(
             &resolved,
             &references,
             &symbols,
+            &nested,
             diagnostics,
         )? {
             resolved.insert(
@@ -877,6 +879,38 @@ fn resolve_source_types(
     Ok(resolved)
 }
 
+/// Collects every type node that is a component of another type expression.
+///
+/// A component is a member of a built-in or declared application, or a parameter or
+/// result of a callable form, because a callable annotation retains its parameter and
+/// result types as children of its own node. The collected set keeps the two callable
+/// occurrence classes disjoint: an annotation position is never a component of another
+/// type expression, and a nested component never is an annotation position.
+fn nested_type_member_nodes(tree: &SyntaxTree) -> Result<BTreeSet<NodeId>, AnalysisError> {
+    let mut nested = BTreeSet::new();
+    for (index, node) in tree.nodes().iter().enumerate() {
+        if !matches!(node.form(), SyntaxForm::ValueType) {
+            continue;
+        }
+        let id = NodeId::from_index(index);
+        nested.extend(type_member_nodes(tree, id)?);
+        if let Some(callable) = direct_child_form(tree, id, SyntaxForm::CallableType) {
+            nested.extend(
+                tree.node(callable)
+                    .ok_or(AnalysisError::Invariant)?
+                    .children()
+                    .iter()
+                    .copied()
+                    .filter(|child| {
+                        tree.node(*child)
+                            .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+                    }),
+            );
+        }
+    }
+    Ok(nested)
+}
+
 /// Resolves one type node after all nested member nodes have been processed.
 fn resolve_type_node(
     tree: &SyntaxTree,
@@ -884,6 +918,7 @@ fn resolve_type_node(
     resolved: &BTreeMap<NodeId, TypeFact>,
     references: &BTreeMap<SourceSpan, SymbolId>,
     symbols: &BTreeMap<SymbolId, &Symbol>,
+    nested: &BTreeSet<NodeId>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
@@ -895,14 +930,28 @@ fn resolve_type_node(
 
     if let Some(callable) = direct_child_form(tree, id, SyntaxForm::CallableType) {
         let reuse_kind = callable_reuse_kind(tree, callable)?;
+        let (occurrence, message) = if nested.contains(&id) {
+            (
+                "nested-component",
+                "a source callable type nested in another type expression is recognised but not admitted by this revision",
+            )
+        } else {
+            (
+                "annotation",
+                "a source callable type in an annotation position is recognised but not admitted by this revision",
+            )
+        };
         diagnostics.push(type_diagnostic(
             "callable-type-unadmitted",
-            "a source callable type is recognised but not admitted by this revision",
+            message,
             tree.node(callable)
                 .ok_or(AnalysisError::Invariant)?
                 .span()
                 .clone(),
-            [("reuse_kind", reuse_kind.as_str())],
+            [
+                ("reuse_kind", reuse_kind.as_str()),
+                ("occurrence", occurrence),
+            ],
         )?);
         return Ok(None);
     }

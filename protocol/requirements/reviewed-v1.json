@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "dad113990a3f53ff69176872128c489a277af7cc13166e2b79777a467b6142b6",
+ "specification_sha256": "43d968bd54e89d77148d30fc19b371adece4b75addb52688428885141cc0f2c5",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9497,
-   "end_line": 15549,
+   "end_line": 15551,
    "rationale": null
   }
  ],
@@ -40434,10 +40434,10 @@
   {
    "id": "GNT-37.0-callable-values-and-frame-admission",
    "span_start_line": 15496,
-   "span_end_line": 15502,
+   "span_end_line": 15504,
    "anchor_line": 15499,
    "body_start_line": 15500,
-   "body_end_line": 15502,
+   "body_end_line": 15504,
    "profiles": [
     "analyzer"
    ],
@@ -40449,7 +40449,7 @@
     {
      "key": "clause-001",
      "start_line": 15500,
-     "end_line": 15502,
+     "end_line": 15504,
      "profiles": [
       "analyzer"
      ],
@@ -40472,11 +40472,11 @@
   },
   {
    "id": "GNT-37.1-reuse-kinds-and-canonical-shape",
-   "span_start_line": 15503,
-   "span_end_line": 15506,
-   "anchor_line": 15503,
-   "body_start_line": 15504,
-   "body_end_line": 15506,
+   "span_start_line": 15505,
+   "span_end_line": 15508,
+   "anchor_line": 15505,
+   "body_start_line": 15506,
+   "body_end_line": 15508,
    "profiles": [
     "analyzer"
    ],
@@ -40487,8 +40487,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15504,
-     "end_line": 15506,
+     "start_line": 15506,
+     "end_line": 15508,
      "profiles": [
       "analyzer"
      ],
@@ -40512,11 +40512,11 @@
   },
   {
    "id": "GNT-37.2-bounded-logical-frame-admission",
-   "span_start_line": 15507,
-   "span_end_line": 15510,
-   "anchor_line": 15507,
-   "body_start_line": 15508,
-   "body_end_line": 15510,
+   "span_start_line": 15509,
+   "span_end_line": 15512,
+   "anchor_line": 15509,
+   "body_start_line": 15510,
+   "body_end_line": 15512,
    "profiles": [
     "analyzer"
    ],
@@ -40527,8 +40527,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15508,
-     "end_line": 15510,
+     "start_line": 15510,
+     "end_line": 15512,
      "profiles": [
       "analyzer"
      ],
@@ -40552,11 +40552,11 @@
   },
   {
    "id": "GNT-37.3-explicit-captures-and-capture-plans",
-   "span_start_line": 15511,
-   "span_end_line": 15514,
-   "anchor_line": 15511,
-   "body_start_line": 15512,
-   "body_end_line": 15514,
+   "span_start_line": 15513,
+   "span_end_line": 15516,
+   "anchor_line": 15513,
+   "body_start_line": 15514,
+   "body_end_line": 15516,
    "profiles": [
     "analyzer"
    ],
@@ -40567,8 +40567,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15512,
-     "end_line": 15514,
+     "start_line": 15514,
+     "end_line": 15516,
      "profiles": [
       "analyzer"
      ],
@@ -40592,11 +40592,11 @@
   },
   {
    "id": "GNT-37.4-reuse-kinds-and-affine-consumption",
-   "span_start_line": 15515,
-   "span_end_line": 15518,
-   "anchor_line": 15515,
-   "body_start_line": 15516,
-   "body_end_line": 15518,
+   "span_start_line": 15517,
+   "span_end_line": 15520,
+   "anchor_line": 15517,
+   "body_start_line": 15518,
+   "body_end_line": 15520,
    "profiles": [
     "analyzer"
    ],
@@ -40607,8 +40607,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15516,
-     "end_line": 15518,
+     "start_line": 15518,
+     "end_line": 15520,
      "profiles": [
       "analyzer"
      ],
@@ -40632,11 +40632,11 @@
   },
   {
    "id": "GNT-37.5-settlement-and-poisoning",
-   "span_start_line": 15519,
-   "span_end_line": 15522,
-   "anchor_line": 15519,
-   "body_start_line": 15520,
-   "body_end_line": 15522,
+   "span_start_line": 15521,
+   "span_end_line": 15524,
+   "anchor_line": 15521,
+   "body_start_line": 15522,
+   "body_end_line": 15524,
    "profiles": [
     "analyzer"
    ],
@@ -40647,8 +40647,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15520,
-     "end_line": 15522,
+     "start_line": 15522,
+     "end_line": 15524,
      "profiles": [
       "analyzer"
      ],
@@ -40672,11 +40672,11 @@
   },
   {
    "id": "GNT-37.6-exact-effect-rows",
-   "span_start_line": 15523,
-   "span_end_line": 15526,
-   "anchor_line": 15523,
-   "body_start_line": 15524,
-   "body_end_line": 15526,
+   "span_start_line": 15525,
+   "span_end_line": 15528,
+   "anchor_line": 15525,
+   "body_start_line": 15526,
+   "body_end_line": 15528,
    "profiles": [
     "analyzer"
    ],
@@ -40687,8 +40687,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15524,
-     "end_line": 15526,
+     "start_line": 15526,
+     "end_line": 15528,
      "profiles": [
       "analyzer"
      ],
@@ -40711,11 +40711,11 @@
   },
   {
    "id": "GNT-37.7-durable-capture-projection",
-   "span_start_line": 15527,
-   "span_end_line": 15530,
-   "anchor_line": 15527,
-   "body_start_line": 15528,
-   "body_end_line": 15530,
+   "span_start_line": 15529,
+   "span_end_line": 15532,
+   "anchor_line": 15529,
+   "body_start_line": 15530,
+   "body_end_line": 15532,
    "profiles": [
     "analyzer"
    ],
@@ -40726,8 +40726,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15528,
-     "end_line": 15530,
+     "start_line": 15530,
+     "end_line": 15532,
      "profiles": [
       "analyzer"
      ],
@@ -40750,11 +40750,11 @@
   },
   {
    "id": "GNT-37.8-durable-round-trips-and-identity",
-   "span_start_line": 15531,
-   "span_end_line": 15534,
-   "anchor_line": 15531,
-   "body_start_line": 15532,
-   "body_end_line": 15534,
+   "span_start_line": 15533,
+   "span_end_line": 15536,
+   "anchor_line": 15533,
+   "body_start_line": 15534,
+   "body_end_line": 15536,
    "profiles": [
     "analyzer"
    ],
@@ -40765,8 +40765,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15532,
-     "end_line": 15534,
+     "start_line": 15534,
+     "end_line": 15536,
      "profiles": [
       "analyzer"
      ],
@@ -40789,11 +40789,11 @@
   },
   {
    "id": "GNT-37.9-canonical-encoding-and-order-independence",
-   "span_start_line": 15535,
-   "span_end_line": 15538,
-   "anchor_line": 15535,
-   "body_start_line": 15536,
-   "body_end_line": 15538,
+   "span_start_line": 15537,
+   "span_end_line": 15540,
+   "anchor_line": 15537,
+   "body_start_line": 15538,
+   "body_end_line": 15540,
    "profiles": [
     "analyzer"
    ],
@@ -40804,8 +40804,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15536,
-     "end_line": 15538,
+     "start_line": 15538,
+     "end_line": 15540,
      "profiles": [
       "analyzer"
      ],
@@ -40828,11 +40828,11 @@
   },
   {
    "id": "GNT-37.10-direct-call-and-receiver-compatibility",
-   "span_start_line": 15539,
-   "span_end_line": 15542,
-   "anchor_line": 15539,
-   "body_start_line": 15540,
-   "body_end_line": 15542,
+   "span_start_line": 15541,
+   "span_end_line": 15544,
+   "anchor_line": 15541,
+   "body_start_line": 15542,
+   "body_end_line": 15544,
    "profiles": [
     "analyzer"
    ],
@@ -40843,8 +40843,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15540,
-     "end_line": 15542,
+     "start_line": 15542,
+     "end_line": 15544,
      "profiles": [
       "analyzer"
      ],
@@ -40867,11 +40867,11 @@
   },
   {
    "id": "GNT-37.11-refusal-discipline-and-atomicity",
-   "span_start_line": 15543,
-   "span_end_line": 15546,
-   "anchor_line": 15543,
-   "body_start_line": 15544,
-   "body_end_line": 15546,
+   "span_start_line": 15545,
+   "span_end_line": 15548,
+   "anchor_line": 15545,
+   "body_start_line": 15546,
+   "body_end_line": 15548,
    "profiles": [
     "analyzer"
    ],
@@ -40882,8 +40882,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15544,
-     "end_line": 15546,
+     "start_line": 15546,
+     "end_line": 15548,
      "profiles": [
       "analyzer"
      ],
@@ -40906,11 +40906,11 @@
   },
   {
    "id": "GNT-37.12-callable-non-claims",
-   "span_start_line": 15547,
-   "span_end_line": 15549,
-   "anchor_line": 15547,
-   "body_start_line": 15548,
-   "body_end_line": 15549,
+   "span_start_line": 15549,
+   "span_end_line": 15551,
+   "anchor_line": 15549,
+   "body_start_line": 15550,
+   "body_end_line": 15551,
    "profiles": [
     "analyzer"
    ],
@@ -40921,8 +40921,8 @@
    "clauses": [
     {
      "key": "clause-001",
-     "start_line": 15548,
-     "end_line": 15549,
+     "start_line": 15550,
+     "end_line": 15551,
      "profiles": [
       "analyzer"
      ],

@@ -1,6 +1,6 @@
 {
  "format": "gantry.revent-ownership-evidence/v1",
- "specification_sha256": "dad113990a3f53ff69176872128c489a277af7cc13166e2b79777a467b6142b6",
+ "specification_sha256": "43d968bd54e89d77148d30fc19b371adece4b75addb52688428885141cc0f2c5",
  "issue": "GNT-ASYNC-REVENT-001",
  "requirements": [
   {

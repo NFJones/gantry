@@ -5602,58 +5602,82 @@ fn public_skippable_loop_reinitialization_owes_the_fresh_value() {
 #[test]
 fn public_callable_type_annotations_are_refused_without_internal_failure() {
     let root = TempDirectory::new();
-    for (source, reuse_kind) in [
-        ("fn main(callback: Fn(Int) -> Int) -> Int { 0 }", "Fn"),
-        ("fn main(callback: FnMut() -> Int) -> Int { 0 }", "FnMut"),
+    for (source, reuse_kind, occurrence) in [
+        (
+            "fn main(callback: Fn(Int) -> Int) -> Int { 0 }",
+            "Fn",
+            "annotation",
+        ),
+        (
+            "fn main(callback: FnMut() -> Int) -> Int { 0 }",
+            "FnMut",
+            "annotation",
+        ),
         (
             "fn main(callback: FnOnce(Int, String) -> Bool) -> Int { 0 }",
             "FnOnce",
+            "annotation",
         ),
         (
             "struct Holder { callback: Fn(Int) -> Int } fn main() -> Int { 0 }",
             "Fn",
+            "annotation",
         ),
-        ("fn main(callback: List<Fn(Int) -> Int>) -> Int { 0 }", "Fn"),
+        (
+            "fn main(callback: List<Fn(Int) -> Int>) -> Int { 0 }",
+            "Fn",
+            "nested-component",
+        ),
         (
             "fn hold<T>(callback: Fn(T) -> T) -> Int { 0 } fn main() -> Int { 0 }",
             "Fn",
+            "annotation",
         ),
-        ("fn main() -> Fn(Int) -> Int { 0 }", "Fn"),
+        ("fn main() -> Fn(Int) -> Int { 0 }", "Fn", "annotation"),
         (
             "fn main() -> Int { let callback: Fn(Int) -> Int = 0; 0 }",
             "Fn",
+            "annotation",
         ),
         (
             "trait Render { pure fn render(self, cb: Fn(Int) -> Int) -> Int; } fn main() -> Int { 0 }",
             "Fn",
+            "annotation",
         ),
         (
             "trait Render { fn render(self, cb: Fn(Int) -> Int) -> Int effects { prompt }; } fn main() -> Int { 0 }",
             "Fn",
+            "annotation",
         ),
         (
             "trait Render { fn render(self) -> Fn(Int) -> Int effects { prompt }; } fn main() -> Int { 0 }",
             "Fn",
+            "annotation",
         ),
         (
             "trait Render { pure fn render(self, cb: Int) -> Int; } struct Item {} impl Render for Item { pure fn render(self, cb: Fn(Int) -> Int) -> Int { 0 } } fn main() -> Int { 0 }",
             "Fn",
+            "annotation",
         ),
         (
             "trait Callable { pure fn call(self) -> Int; } impl Callable for Fn(Int) -> Int { pure fn call(self) -> Int { 0 } } fn main() -> Int { 0 }",
             "Fn",
+            "annotation",
         ),
         (
             "struct Box2<T> { value: T } impl Box2<Fn(Int) -> Int> { fn get(self) -> Int { 0 } } fn main() -> Int { 0 }",
             "Fn",
+            "nested-component",
         ),
         (
             "trait Callable { pure fn call(self) -> Int; } impl Callable for Option<Fn(Int) -> Int> { pure fn call(self) -> Int { 0 } } fn main() -> Int { 0 }",
             "Fn",
+            "nested-component",
         ),
         (
             "struct Box2<T> { value: T } impl Box2<Option<Fn(Int) -> Int>> { fn get(self) -> Int { 0 } } fn main() -> Int { 0 }",
             "Fn",
+            "nested-component",
         ),
     ] {
         root.write(source);
@@ -5688,6 +5712,12 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
             "source: {source}; fields: {:?}",
             refusal.fields
         );
+        assert_eq!(
+            refusal.fields.get("occurrence").map(AsRef::as_ref),
+            Some(occurrence),
+            "source: {source}; fields: {:?}",
+            refusal.fields
+        );
     }
     // A declared type whose name precedes no parameter list keeps its meaning.
     root.write("struct Fn { value: Int } fn main(callback: Fn) -> Int { 0 }");
@@ -5701,6 +5731,38 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
         "{:?}",
         accepted.diagnostics()
     );
+}
+
+/// A callable type that is itself a component of another callable form reports the nested
+/// class, so admitting an annotation position cannot silently admit the types it composes.
+#[test]
+fn callable_components_inside_callable_forms_report_nested_components() {
+    let root = TempDirectory::new();
+    root.write("fn main(callback: Fn(Fn(Int) -> Int) -> Int) -> Int { 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let rejected = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected.executable_program().is_none(),
+        "an unadmitted callable type must not publish an executable program"
+    );
+    let mut occurrences = rejected
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted")
+        .map(|diagnostic| {
+            diagnostic
+                .fields
+                .get("occurrence")
+                .map(AsRef::as_ref)
+                .unwrap_or("?")
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    occurrences.sort_unstable();
+    assert_eq!(occurrences, ["annotation", "nested-component"]);
 }
 
 /// A callable expression is recognised by the grammar and refused with its published
