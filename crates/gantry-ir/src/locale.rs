@@ -499,7 +499,11 @@ impl Duration {
         };
         let digits = value.strip_suffix('s').ok_or_else(invalid)?;
         let seconds = digits.parse::<i64>().map_err(|_| invalid())?;
-        Self::new(seconds)
+        let duration = Self::new(seconds)?;
+        if duration.to_canonical_string() != value {
+            return Err(invalid());
+        }
+        Ok(duration)
     }
 }
 
@@ -527,19 +531,20 @@ impl Offset {
         self.seconds
     }
 
-    /// Returns the exact canonical `+HH:MM` text of this offset.
+    /// Returns the exact canonical `+HH:MM:SS` text of this offset.
     #[must_use]
     pub fn to_canonical_string(self) -> String {
         let sign = if self.seconds < 0 { '-' } else { '+' };
         let magnitude = self.seconds.unsigned_abs();
         format!(
-            "{sign}{:02}:{:02}",
+            "{sign}{:02}:{:02}:{:02}",
             magnitude / 3_600,
-            (magnitude % 3_600) / 60
+            (magnitude % 3_600) / 60,
+            magnitude % 60
         )
     }
 
-    /// Parses one exact canonical `+HH:MM` offset, refusing every other spelling.
+    /// Parses one exact canonical `+HH:MM:SS` offset, refusing every other spelling.
     pub fn parse(value: &str) -> Result<Self, LocaleError> {
         let invalid = || {
             LocaleError::new(
@@ -547,7 +552,7 @@ impl Offset {
                 format!("`{value}` is not a canonical offset"),
             )
         };
-        if value.len() != 6 || value.as_bytes()[3] != b':' {
+        if value.len() != 9 || value.as_bytes()[3] != b':' || value.as_bytes()[6] != b':' {
             return Err(invalid());
         }
         let sign = match value.as_bytes()[0] {
@@ -557,10 +562,15 @@ impl Offset {
         };
         let hours = value[1..3].parse::<i32>().map_err(|_| invalid())?;
         let minutes = value[4..6].parse::<i32>().map_err(|_| invalid())?;
-        if minutes > 59 {
+        let seconds = value[7..9].parse::<i32>().map_err(|_| invalid())?;
+        if minutes > 59 || seconds > 59 {
             return Err(invalid());
         }
-        Self::new(sign * (hours * 3_600 + minutes * 60))
+        let offset = Self::new(sign * (hours * 3_600 + minutes * 60 + seconds))?;
+        if offset.to_canonical_string() != value {
+            return Err(invalid());
+        }
+        Ok(offset)
     }
 }
 
@@ -750,7 +760,6 @@ impl CivilValue {
             minute,
             second,
         )
-        .map_err(|_| invalid())
     }
 }
 

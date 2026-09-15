@@ -1,6 +1,6 @@
 {
  "format": "gantry.execution-observation-evidence/v1",
- "specification_sha256": "16527f04132f8af7ae94781c73c1429cdc14d960c11df7cc19acd22ffe7be665",
+ "specification_sha256": "ae047862cb8b2dc3b18975e28767d197297132c4eb8fd17f61184190c34fcc39",
  "issue": "GNT-OBS-002",
  "entries": [
   {

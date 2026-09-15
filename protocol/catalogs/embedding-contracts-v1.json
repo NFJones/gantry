@@ -72,7 +72,7 @@
  "catalog": "gantry.embedding-contracts",
  "major": 1,
  "minor": 0,
- "specification_revision": "16527f04132f8af7ae94781c73c1429cdc14d960c11df7cc19acd22ffe7be665",
+ "specification_revision": "ae047862cb8b2dc3b18975e28767d197297132c4eb8fd17f61184190c34fcc39",
  "operations": [
   {
    "wire": "abort-task",

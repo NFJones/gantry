@@ -220,19 +220,38 @@ fn machine_formats_round_trip_and_refuse_noncanonical_spellings() {
         assert_eq!(parsed.seconds(), seconds);
         assert_eq!(parsed.to_canonical_string(), text);
     }
-    for text in ["123", "1.5s", "s", "12s3"] {
+    for text in ["123", "1.5s", "s", "12s3", "+7s", "007s", "-0s", "+0s"] {
         assert_eq!(
             refuse(Duration::parse(text), "a noncanonical duration").code(),
             LocaleDiagnosticCode::InvalidMachineFormat
         );
     }
-    for (text, seconds) in [("+01:00", 3_600), ("-05:30", -19_800), ("+00:00", 0)] {
+    for (text, seconds) in [
+        ("+01:00:00", 3_600),
+        ("-05:30:00", -19_800),
+        ("+00:00:00", 0),
+        ("+00:00:30", 30),
+        ("+00:01:30", 90),
+        ("+00:59:59", 3_599),
+        ("-00:00:30", -30),
+        ("-00:01:30", -90),
+        ("-00:59:59", -3_599),
+    ] {
         let parsed = Offset::parse(text)
             .unwrap_or_else(|error| panic!("the canonical offset {text} parses: {error}"));
         assert_eq!(parsed.seconds(), seconds);
         assert_eq!(parsed.to_canonical_string(), text);
     }
-    for text in ["1:00", "+1:00", "+01:60", "0100"] {
+    for text in [
+        "1:00",
+        "+1:00",
+        "+01:60",
+        "0100",
+        "+01:00",
+        "-00:00:00",
+        "+01:00:60",
+        "01:00:00",
+    ] {
         assert_eq!(
             refuse(Offset::parse(text), "a noncanonical offset").code(),
             LocaleDiagnosticCode::InvalidMachineFormat
@@ -250,7 +269,6 @@ fn machine_formats_round_trip_and_refuse_noncanonical_spellings() {
     for text in [
         "1970-01-02 00:00:00",
         "1970-01-02T00:00",
-        "1970-02-30T00:00:00",
         "1970-01-02T00:00:00Z",
     ] {
         assert_eq!(
@@ -258,6 +276,17 @@ fn machine_formats_round_trip_and_refuse_noncanonical_spellings() {
             LocaleDiagnosticCode::InvalidMachineFormat
         );
     }
+    // A canonical-shaped text whose fields are out of bounds reports the field-bound
+    // diagnostic, while a text the canonical format does not admit reports the
+    // machine-format diagnostic.
+    assert_eq!(
+        refuse(
+            CivilValue::parse("1970-02-30T00:00:00"),
+            "a canonical-shaped civil text with an out-of-bound field"
+        )
+        .code(),
+        LocaleDiagnosticCode::InvalidCivilValue
+    );
 }
 
 #[test]

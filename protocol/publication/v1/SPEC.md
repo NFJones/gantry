@@ -15293,7 +15293,7 @@ claim runtime integration merely because it implements this pure model.
 
 <a id="GNT-33.3-civil-time-timestamp-and-offset-values"></a>
 
-**[GNT-33.3-civil-time-timestamp-and-offset-values] Civil-time, timestamp, and offset values.** A civil-time value names one declared calendar identity and one local date and time with exact field bounds, a timestamp is one instant, and an offset is one exact signed count of seconds within the declared bound; a civil year outside the declared `0000`-`9999` range, like every other field, is refused rather than normalized. A civil-time field outside its bound, an offset outside the declared bound, and a calendar identity outside the declared set are refused under the invalid-civil-value diagnostic rather than normalized into a neighboring value.
+**[GNT-33.3-civil-time-timestamp-and-offset-values] Civil-time, timestamp, and offset values.** A civil-time value names one declared calendar identity and one local date and time with exact field bounds, a timestamp is one instant, and an offset is one exact signed count of seconds within the declared bound; a civil year outside the declared `0000`-`9999` range, like every other field, is refused rather than normalized. A text the canonical format does not admit is refused under the invalid-machine-format diagnostic, while a canonical-shaped civil text whose fields are outside their bounds is refused under the invalid-civil-value diagnostic. A civil-time field outside its bound, an offset outside the declared bound, and a calendar identity outside the declared set are refused under the invalid-civil-value diagnostic rather than normalized into a neighboring value.
 
 <a id="GNT-33.4-typed-gap-and-repetition"></a>
 

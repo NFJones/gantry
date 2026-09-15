@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "16527f04132f8af7ae94781c73c1429cdc14d960c11df7cc19acd22ffe7be665",
-  "byte_length": 975779,
+  "specification_sha256": "ae047862cb8b2dc3b18975e28767d197297132c4eb8fd17f61184190c34fcc39",
+  "byte_length": 976005,
   "line_count": 15332,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9497,
       "end_line": 15332,
-      "sha256": "735f37e56b3fdc234bf3638be09a48b0911d41d71671d36f14a3a2eff9a1b71d",
+      "sha256": "a1231f41f4f35fb0635885016165039e172ed89797a35357d1eb0f1c4916cf44",
       "rationale": null
     }
   ],
@@ -39486,11 +39486,11 @@
       "id": "GNT-33.3-civil-time-timestamp-and-offset-values",
       "span_start_line": 15294,
       "span_end_line": 15297,
-      "span_sha256": "b9cf7744b2f97df877c8546e5d987486a0c08f34f1252be0ff516a343b30c816",
+      "span_sha256": "3f37fac918259477ea849d267f7006121b8c9f0df6c5dad47313072d57f0b4b1",
       "anchor_line": 15294,
       "body_start_line": 15295,
       "body_end_line": 15297,
-      "body_sha256": "fc4346930ade878fe7846fd4ee95e7a9ab125f18d55849b2ddff5d46665c5a78",
+      "body_sha256": "944b240a6a462516cf8a21e077eecc3e88e3c38dd202122951e4594dbb8b4c28",
       "profiles": [
         "analyzer"
       ],
