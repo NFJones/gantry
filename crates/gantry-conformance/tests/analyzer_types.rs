@@ -5609,6 +5609,9 @@ fn public_unresolved_type_annotations_are_refused_without_internal_failure() {
         "fn helper(value: crate::missing::Kind) -> Int { 0 } fn main(value: Missing) -> Int { 0 }",
         "impl Missing { fn run(self) -> Int { 0 } } fn main() -> Int { 0 }",
         "struct Box<T> { value: T } impl Box<Missing> {} fn main() -> Int { 0 }",
+        "trait Tr {} impl Tr for Missing {} fn main() -> Int { 0 }",
+        "trait Tr {} struct Box<T> { value: T } impl Tr for Box<Missing> {} fn main() -> Int { 0 }",
+        "trait Tr {} struct S {} impl Tr2 for S {} fn main() -> Int { 0 }",
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)

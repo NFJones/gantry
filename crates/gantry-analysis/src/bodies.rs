@@ -1041,42 +1041,48 @@ fn collect_generic_method_signatures(
                 })
                 .collect::<Vec<_>>();
             let trait_reference =
-                direct_child_form(tree, implementation, SyntaxForm::TraitReference)
-                    .map(|reference| {
+                match direct_child_form(tree, implementation, SyntaxForm::TraitReference) {
+                    Some(reference) => {
                         let reference_node =
                             tree.node(reference).ok_or(AnalysisError::Invariant)?;
                         let path = direct_child_form(tree, reference_node, SyntaxForm::Path)
                             .ok_or(AnalysisError::Invariant)?;
-                        let target = references
+                        let resolved = references
                             .get(tree.node(path).ok_or(AnalysisError::Invariant)?.span())
                             .copied()
-                            .ok_or(AnalysisError::Invariant)?;
-                        let trait_path = trait_symbols
-                            .get(&target)
-                            .cloned()
-                            .ok_or(AnalysisError::Invariant)?;
-                        let arguments =
+                            .and_then(|target| trait_symbols.get(&target).cloned());
+                        let Some(trait_path) = resolved else {
+                            continue;
+                        };
+                        let mut arguments = Vec::new();
+                        let mut complete = true;
+                        if let Some(list) =
                             direct_child_form(tree, reference_node, SyntaxForm::TypeArgumentList)
-                                .map(|list| {
-                                    tree.node(list)
-                                        .ok_or(AnalysisError::Invariant)?
-                                        .children()
-                                        .iter()
-                                        .filter_map(|child| tree.node(*child))
-                                        .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
-                                        .map(|node| {
-                                            generic_types
-                                                .get(node.span())
-                                                .cloned()
-                                                .ok_or(AnalysisError::Invariant)
-                                        })
-                                        .collect::<Result<Vec<_>, _>>()
-                                })
-                                .transpose()?
-                                .unwrap_or_default();
-                        Ok(TraitReference::new(trait_path, arguments))
-                    })
-                    .transpose()?;
+                        {
+                            for node in tree
+                                .node(list)
+                                .ok_or(AnalysisError::Invariant)?
+                                .children()
+                                .iter()
+                                .filter_map(|child| tree.node(*child))
+                                .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
+                            {
+                                match generic_types.get(node.span()).cloned() {
+                                    Some(argument) => arguments.push(argument),
+                                    None => {
+                                        complete = false;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if !complete {
+                            continue;
+                        }
+                        Some(TraitReference::new(trait_path, arguments))
+                    }
+                    None => None,
+                };
             let implementation_identity = trait_reference.as_ref().map_or_else(
                 || CanonicalImplementationIdentity::inherent(&receiver),
                 |reference| {

@@ -954,7 +954,9 @@ pub(crate) fn collect_trait_contracts_and_implementation_heads(
                     let Some(receiver) = receiver else {
                         continue;
                     };
-                    let trait_reference = direct_child(tree, owner, SyntaxForm::TraitReference)
+                    let trait_reference_node =
+                        direct_child(tree, owner, SyntaxForm::TraitReference);
+                    let trait_reference = trait_reference_node
                         .map(|reference| {
                             collect_trait_reference(
                                 tree,
@@ -964,7 +966,11 @@ pub(crate) fn collect_trait_contracts_and_implementation_heads(
                                 &symbols_by_id,
                             )
                         })
-                        .transpose()?;
+                        .transpose()?
+                        .flatten();
+                    if trait_reference_node.is_some() && trait_reference.is_none() {
+                        continue;
+                    }
                     let predicates = collect_where_predicates(
                         tree,
                         owner,
@@ -1225,22 +1231,19 @@ pub(crate) fn check_trait_implementation_methods(
             let path =
                 direct_child(tree, reference, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;
             let path_node = tree.node(path).ok_or(AnalysisError::Invariant)?;
-            let target = references
-                .get(path_node.span())
-                .copied()
-                .ok_or(AnalysisError::Invariant)?;
+            let Some(target) = references.get(path_node.span()).copied() else {
+                continue;
+            };
             let trait_symbol = symbols
                 .get(&target)
                 .copied()
                 .ok_or(AnalysisError::Invariant)?;
-            let contract = contracts
-                .get(&trait_symbol.path)
-                .copied()
-                .ok_or(AnalysisError::Invariant)?;
-            let head = implementations
-                .get(implementation.span())
-                .copied()
-                .ok_or(AnalysisError::Invariant)?;
+            let Some(contract) = contracts.get(&trait_symbol.path).copied() else {
+                continue;
+            };
+            let Some(head) = implementations.get(implementation.span()).copied() else {
+                continue;
+            };
             let mut methods = implementation
                 .children()
                 .iter()
@@ -1707,37 +1710,33 @@ fn collect_trait_reference(
     facts: &BTreeMap<SourceSpan, &TypeExpression>,
     references: &BTreeMap<SourceSpan, SymbolId>,
     symbols: &BTreeMap<SymbolId, &Symbol>,
-) -> Result<TraitReference, AnalysisError> {
+) -> Result<Option<TraitReference>, AnalysisError> {
     let path = direct_child(tree, reference, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;
     let path_node = tree.node(path).ok_or(AnalysisError::Invariant)?;
-    let target = references
-        .get(path_node.span())
-        .copied()
-        .ok_or(AnalysisError::Invariant)?;
+    let Some(target) = references.get(path_node.span()).copied() else {
+        return Ok(None);
+    };
     let symbol = symbols
         .get(&target)
         .copied()
         .ok_or(AnalysisError::Invariant)?;
-    let arguments = direct_child(tree, reference, SyntaxForm::TypeArgumentList)
-        .map(|list| {
-            tree.node(list)
-                .ok_or(AnalysisError::Invariant)?
-                .children()
-                .iter()
-                .filter_map(|child| tree.node(*child))
-                .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
-                .map(|node| {
-                    facts
-                        .get(node.span())
-                        .copied()
-                        .cloned()
-                        .ok_or(AnalysisError::Invariant)
-                })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
-    Ok(TraitReference::new(symbol.path.clone(), arguments))
+    let mut arguments = Vec::new();
+    if let Some(list) = direct_child(tree, reference, SyntaxForm::TypeArgumentList) {
+        for node in tree
+            .node(list)
+            .ok_or(AnalysisError::Invariant)?
+            .children()
+            .iter()
+            .filter_map(|child| tree.node(*child))
+            .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
+        {
+            let Some(argument) = facts.get(node.span()).copied().cloned() else {
+                return Ok(None);
+            };
+            arguments.push(argument);
+        }
+    }
+    Ok(Some(TraitReference::new(symbol.path.clone(), arguments)))
 }
 
 pub(crate) fn collect_where_predicates(
@@ -1787,10 +1786,11 @@ pub(crate) fn collect_where_predicates(
             )
             .map_err(|_| AnalysisError::Invariant)?
         };
-        predicates.push(Predicate::new(
-            collect_trait_reference(tree, trait_reference, facts, references, symbols)?,
-            receiver,
-        ));
+        let reference = collect_trait_reference(tree, trait_reference, facts, references, symbols)?;
+        let Some(reference) = reference else {
+            continue;
+        };
+        predicates.push(Predicate::new(reference, receiver));
     }
     predicates.sort_by(|left, right| {
         left.canonical_string()
