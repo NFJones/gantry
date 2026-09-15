@@ -117,8 +117,9 @@ pub use authority::{
 // published `GNT-37.1` identity, so these rules bind no analyzed artifact yet.
 pub use callable::{
     CallAdmission, CallSettlement, CallableDiagnosticCode, CallableError, CallableKind,
-    CallableLimits, CallableProjection, CallableType, CallableValue, CaptureDescriptor,
-    CaptureMode, CapturePlan, ReuseState, union_row,
+    CallableLimits, CallableProjection, CallableType, CallableValue, CaptureCandidate,
+    CaptureClass, CaptureDescriptor, CaptureInference, CaptureMode, CapturePlan, ReuseState,
+    union_row,
 };
 pub use callable_identity::{
     CallableIdentityError, CanonicalCallableIdentity, CanonicalTemplateIdentity,

@@ -10,6 +10,11 @@
 //! injective length-prefixed canonical identity, and the durable capture
 //! projection.
 //!
+//! Capture-mode assignment is a deterministic function of declared capture
+//! classes, and the assigned reuse kind is the weakest of `Fn`, `FnMut`, and
+//! `FnOnce` that admits every assigned mode, so a class never defaults a mode
+//! and no class is read from a call site or a boundary encoding.
+//!
 //! It defines no source syntax, no runtime representation or native frame
 //! layout, no dynamic dispatch, no trait solving, and no ambient capture, and it
 //! admits no callable type into any analyzed, executable, or durable artifact:
@@ -443,6 +448,207 @@ impl CapturePlan {
             encoded.push_str(&capture.canonical_encoding());
         }
         encoded
+    }
+}
+
+/// One declared class of a binding offered to capture-mode assignment.
+///
+/// The class is a declaration by the offering analysis, never a guess from a
+/// call site: a freely copyable binding produces an independent logical value, a
+/// binding whose state is private to the callable or that is affine is moved
+/// into it, and a temporary loan borrows one outer binding for the callable's
+/// live extent.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CaptureClass {
+    /// A binding whose value is freely copyable.
+    FreelyCopyable,
+    /// A binding whose state is private to the callable.
+    PrivateState,
+    /// An affine binding consumed by the capture.
+    Affine,
+    /// A temporary loan of one outer binding.
+    TemporaryLoan,
+}
+
+impl CaptureClass {
+    /// Every capture class in normative order.
+    pub const ALL: [Self; 4] = [
+        Self::FreelyCopyable,
+        Self::PrivateState,
+        Self::Affine,
+        Self::TemporaryLoan,
+    ];
+
+    /// Returns the canonical spelling.
+    #[must_use]
+    pub const fn canonical_name(self) -> &'static str {
+        match self {
+            Self::FreelyCopyable => "copyable",
+            Self::PrivateState => "private",
+            Self::Affine => "affine",
+            Self::TemporaryLoan => "loan",
+        }
+    }
+
+    /// Returns the capture class of one canonical spelling.
+    pub fn from_canonical_name(name: &str) -> Result<Self, CallableError> {
+        Self::ALL
+            .into_iter()
+            .find(|class| class.canonical_name() == name)
+            .ok_or_else(|| capture(format!("`{name}` is not an admitted capture class")))
+    }
+
+    /// Returns the mode this class assigns.
+    #[must_use]
+    pub const fn assigned_mode(self) -> CaptureMode {
+        match self {
+            Self::FreelyCopyable => CaptureMode::Copy,
+            Self::PrivateState | Self::Affine => CaptureMode::Move,
+            Self::TemporaryLoan => CaptureMode::Loan,
+        }
+    }
+
+    /// Returns the reuse kind this class requires at minimum.
+    #[must_use]
+    pub const fn required_kind(self) -> CallableKind {
+        match self {
+            Self::FreelyCopyable => CallableKind::Function,
+            Self::PrivateState | Self::TemporaryLoan => CallableKind::FunctionMut,
+            Self::Affine => CallableKind::FunctionOnce,
+        }
+    }
+
+    /// Returns whether the class may appear in a callable that escapes the
+    /// statement declaring it: only a temporary loan may not.
+    #[must_use]
+    pub const fn admits_escape(self) -> bool {
+        !matches!(self, Self::TemporaryLoan)
+    }
+}
+
+impl fmt::Display for CaptureClass {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.canonical_name())
+    }
+}
+
+/// One binding offered to capture-mode assignment with its declared class.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CaptureCandidate {
+    name: String,
+    class: CaptureClass,
+}
+
+impl CaptureCandidate {
+    /// Declares one candidate capture, refusing an unnamed or over-budget
+    /// binding.
+    pub fn new(
+        name: &str,
+        class: CaptureClass,
+        limits: CallableLimits,
+    ) -> Result<Self, CallableError> {
+        if name.is_empty() {
+            return Err(capture("a capture names exactly one binding"));
+        }
+        if name.len() > limits.max_name_bytes {
+            return Err(shape(format!(
+                "capture name of {} bytes exceeds {}",
+                name.len(),
+                limits.max_name_bytes
+            )));
+        }
+        Ok(Self {
+            name: name.to_owned(),
+            class,
+        })
+    }
+
+    /// Returns the offered binding name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the declared class.
+    #[must_use]
+    pub const fn class(&self) -> CaptureClass {
+        self.class
+    }
+}
+
+/// The plan and reuse kind assigned to one callable's offered captures.
+///
+/// Assignment is a deterministic function of the offered classes: every class
+/// assigns exactly one mode, assigned descriptors are ordered by binding name,
+/// and the kind is the weakest of `Fn`, `FnMut`, and `FnOnce` that admits every
+/// assigned mode. Assignment never defaults a mode, never infers a class from a
+/// call site, a boundary encoding, or a recovery outcome, and is independent of
+/// the order in which candidates are offered.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaptureInference {
+    plan: CapturePlan,
+    kind: CallableKind,
+}
+
+impl CaptureInference {
+    /// Assigns one plan and kind to the offered captures, refusing an
+    /// inadmissible offer.
+    ///
+    /// A temporary loan is refused when the callable escapes the statement that
+    /// declares it, because a loan cannot escape into a returned, stored,
+    /// spawned, or suspended callable.
+    pub fn infer(
+        candidates: &[CaptureCandidate],
+        escapes: bool,
+        limits: CallableLimits,
+    ) -> Result<Self, CallableError> {
+        let mut descriptors = Vec::with_capacity(candidates.len());
+        let mut kind = CallableKind::Function;
+        for candidate in candidates {
+            if escapes && !candidate.class.admits_escape() {
+                return Err(capture(format!(
+                    "a loan capture of `{}` cannot escape the callable's statement",
+                    candidate.name
+                )));
+            }
+            descriptors.push(CaptureDescriptor::new(
+                &candidate.name,
+                candidate.class.assigned_mode(),
+                limits,
+            )?);
+            kind = kind.max(candidate.class.required_kind());
+        }
+        Ok(Self {
+            plan: CapturePlan::new(descriptors, limits)?,
+            kind,
+        })
+    }
+
+    /// Returns the assigned plan in canonical binding order.
+    #[must_use]
+    pub const fn plan(&self) -> &CapturePlan {
+        &self.plan
+    }
+
+    /// Returns the assigned reuse kind.
+    #[must_use]
+    pub const fn kind(&self) -> CallableKind {
+        self.kind
+    }
+
+    /// Requires one value to carry exactly the assigned plan and kind.
+    pub fn require_consistent(&self, value: &CallableValue) -> Result<(), CallableError> {
+        if value.kind != self.kind {
+            return Err(reuse(format!(
+                "a {} value departs from the assigned {} kind",
+                value.kind.canonical_name(),
+                self.kind.canonical_name()
+            )));
+        }
+        if value.captures != self.plan {
+            return Err(capture("a value's captures depart from the assigned plan"));
+        }
+        Ok(())
     }
 }
 

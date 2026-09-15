@@ -3,8 +3,8 @@
 use gantry::ir::generated::Effect;
 use gantry::ir::{
     CallSettlement, CallableDiagnosticCode, CallableKind, CallableLimits, CallableProjection,
-    CallableType, CallableValue, CaptureDescriptor, CaptureMode, CapturePlan, EffectSet,
-    ReuseState, union_row,
+    CallableType, CallableValue, CaptureCandidate, CaptureClass, CaptureDescriptor,
+    CaptureInference, CaptureMode, CapturePlan, EffectSet, ReuseState, union_row,
 };
 
 /// Returns the refusal produced by one rejected callable decision.
@@ -899,4 +899,197 @@ fn callable_type_encodings_are_injective_and_projections_agree() {
             .callable_type(),
         durable.callable_type()
     );
+}
+
+#[test]
+fn capture_classes_assign_modes_and_require_kinds() {
+    let limits = limits();
+    assert!(CallableKind::Function < CallableKind::FunctionMut);
+    assert!(CallableKind::FunctionMut < CallableKind::FunctionOnce);
+    for class in CaptureClass::ALL {
+        let candidate = CaptureCandidate::new("binding", class, limits)
+            .unwrap_or_else(|error| panic!("candidate: {error}"));
+        assert_eq!(candidate.name(), "binding");
+        assert_eq!(candidate.class(), class);
+        let assignment = CaptureInference::infer(&[candidate], false, limits)
+            .unwrap_or_else(|error| panic!("assignment: {error}"));
+        assert_eq!(assignment.plan().captures().len(), 1);
+        assert_eq!(
+            assignment.plan().captures()[0].mode(),
+            class.assigned_mode()
+        );
+        assert_eq!(assignment.kind(), class.required_kind());
+        assert_eq!(
+            CaptureClass::from_canonical_name(class.canonical_name())
+                .unwrap_or_else(|error| panic!("class: {error}")),
+            class
+        );
+    }
+
+    let unknown = CaptureClass::from_canonical_name("borrow").refused("unknown capture class");
+    assert_eq!(unknown.code(), CallableDiagnosticCode::CaptureRefused);
+    let unnamed =
+        CaptureCandidate::new("", CaptureClass::Affine, limits).refused("unnamed binding");
+    assert_eq!(unnamed.code(), CallableDiagnosticCode::CaptureRefused);
+    let long = CaptureCandidate::new(
+        &"b".repeat(limits.max_name_bytes + 1),
+        CaptureClass::Affine,
+        limits,
+    )
+    .refused("over-budget binding name");
+    assert_eq!(long.code(), CallableDiagnosticCode::ShapeRefused);
+}
+
+#[test]
+fn assigned_kinds_are_the_weakest_sufficient_kind() {
+    let limits = limits();
+    let offered = |entries: &[(&str, CaptureClass)]| -> Vec<CaptureCandidate> {
+        entries
+            .iter()
+            .map(|(name, class)| {
+                CaptureCandidate::new(name, *class, limits)
+                    .unwrap_or_else(|error| panic!("candidate: {error}"))
+            })
+            .collect()
+    };
+    let assign = |entries: &[(&str, CaptureClass)], escapes: bool| {
+        CaptureInference::infer(&offered(entries), escapes, limits)
+            .unwrap_or_else(|error| panic!("assignment: {error}"))
+    };
+
+    assert_eq!(assign(&[], false).kind(), CallableKind::Function);
+    assert_eq!(
+        assign(&[("a", CaptureClass::FreelyCopyable)], false).kind(),
+        CallableKind::Function
+    );
+    assert_eq!(
+        assign(&[("a", CaptureClass::PrivateState)], false).kind(),
+        CallableKind::FunctionMut
+    );
+    assert_eq!(
+        assign(&[("a", CaptureClass::TemporaryLoan)], false).kind(),
+        CallableKind::FunctionMut
+    );
+    assert_eq!(
+        assign(&[("a", CaptureClass::Affine)], false).kind(),
+        CallableKind::FunctionOnce
+    );
+    assert_eq!(
+        assign(
+            &[
+                ("a", CaptureClass::FreelyCopyable),
+                ("b", CaptureClass::PrivateState),
+            ],
+            false
+        )
+        .kind(),
+        CallableKind::FunctionMut
+    );
+    assert_eq!(
+        assign(
+            &[
+                ("a", CaptureClass::FreelyCopyable),
+                ("b", CaptureClass::Affine),
+            ],
+            false
+        )
+        .kind(),
+        CallableKind::FunctionOnce
+    );
+
+    let forward = assign(
+        &[
+            ("zeta", CaptureClass::Affine),
+            ("alpha", CaptureClass::FreelyCopyable),
+        ],
+        false,
+    );
+    let reversed = assign(
+        &[
+            ("alpha", CaptureClass::FreelyCopyable),
+            ("zeta", CaptureClass::Affine),
+        ],
+        false,
+    );
+    assert_eq!(forward, reversed);
+    assert_eq!(
+        forward.plan().canonical_encoding(),
+        reversed.plan().canonical_encoding()
+    );
+    let names: Vec<&str> = forward
+        .plan()
+        .captures()
+        .iter()
+        .map(CaptureDescriptor::name)
+        .collect();
+    assert_eq!(names, vec!["alpha", "zeta"]);
+
+    let value = CallableValue::new(
+        forward.kind(),
+        vec!["Int".to_owned()],
+        "Int",
+        forward.plan().clone(),
+        row(&[Effect::Prompt]),
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("value: {error}"));
+    assert!(forward.require_consistent(&value).is_ok());
+
+    let weaker = assign(&[("alpha", CaptureClass::FreelyCopyable)], false);
+    let kind_departure = weaker.require_consistent(&value).refused("kind departure");
+    assert_eq!(kind_departure.code(), CallableDiagnosticCode::ReuseRefused);
+    let other_plan = assign(&[("beta", CaptureClass::Affine)], false);
+    let capture_departure = other_plan
+        .require_consistent(&value)
+        .refused("capture departure");
+    assert_eq!(
+        capture_departure.code(),
+        CallableDiagnosticCode::CaptureRefused
+    );
+}
+
+#[test]
+fn escaping_loans_and_duplicate_or_over_budget_offers_are_refused() {
+    let limits = limits();
+    let loan = CaptureCandidate::new("outer", CaptureClass::TemporaryLoan, limits)
+        .unwrap_or_else(|error| panic!("candidate: {error}"));
+    let escaping = CaptureInference::infer(&[loan.clone()], true, limits).refused("escaping loan");
+    assert_eq!(escaping.code(), CallableDiagnosticCode::CaptureRefused);
+    assert!(escaping.detail().contains("outer"));
+    let local = CaptureInference::infer(&[loan], false, limits)
+        .unwrap_or_else(|error| panic!("assignment: {error}"));
+    assert_eq!(local.plan().captures()[0].mode(), CaptureMode::Loan);
+    assert!(!local.plan().is_durable());
+
+    let repeated = vec![
+        CaptureCandidate::new("same", CaptureClass::FreelyCopyable, limits)
+            .unwrap_or_else(|error| panic!("candidate: {error}")),
+        CaptureCandidate::new("same", CaptureClass::PrivateState, limits)
+            .unwrap_or_else(|error| panic!("candidate: {error}")),
+    ];
+    let duplicate = CaptureInference::infer(&repeated, false, limits).refused("duplicate binding");
+    assert_eq!(duplicate.code(), CallableDiagnosticCode::CaptureRefused);
+
+    let over_budget: Vec<CaptureCandidate> = (0..=limits.max_captures)
+        .map(|index| {
+            CaptureCandidate::new(
+                &format!("binding{index}"),
+                CaptureClass::FreelyCopyable,
+                limits,
+            )
+            .unwrap_or_else(|error| panic!("candidate: {error}"))
+        })
+        .collect();
+    let budget = CaptureInference::infer(&over_budget, false, limits).refused("over-budget plan");
+    assert_eq!(budget.code(), CallableDiagnosticCode::ShapeRefused);
+
+    let mixed = vec![
+        CaptureCandidate::new("a", CaptureClass::Affine, limits)
+            .unwrap_or_else(|error| panic!("candidate: {error}")),
+        CaptureCandidate::new("b", CaptureClass::TemporaryLoan, limits)
+            .unwrap_or_else(|error| panic!("candidate: {error}")),
+    ];
+    let refused =
+        CaptureInference::infer(&mixed, true, limits).refused("loan in an escaping callable");
+    assert_eq!(refused.code(), CallableDiagnosticCode::CaptureRefused);
 }
