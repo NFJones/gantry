@@ -48,6 +48,7 @@ mod type_expression;
 mod type_properties;
 mod types;
 mod wait;
+mod workspace;
 
 // The agent fulfillment, assistant turn, tool, and session model of SPEC.md Section
 // 25 is published here. Its `Turn` is named apart from the landed executable
@@ -343,4 +344,10 @@ pub use wait::{
     WaitNonClaimAssertion, WaitNonClaimName, WaitOwnerId, WaitRecoveryClass, WaitRecoveryDecision,
     WaitRegistration, WaitResourceId, WaitSet, WakeCause, WakeOutcome, WakeRecord,
     WithdrawalRecord, check_wait_non_claims, classify_quiescence, observe_quiescence,
+};
+pub use workspace::{
+    ContentDigest, DependencyRequirement, DependencySource, LockPolicy, MemberManifest,
+    PackageRelease, ResolvedInstance, ResolvedWorkspace, SourceLocator, SourceRevision,
+    WorkspaceDiagnosticCode, WorkspaceError, WorkspaceLockfile, WorkspaceManifest, solve,
+    solve_with_policy, sync_lockfile,
 };
