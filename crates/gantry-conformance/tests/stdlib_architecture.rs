@@ -962,7 +962,7 @@ fn item_tiers_are_unique_and_fold_into_the_interface_digest() {
 
 #[test]
 fn deprecations_narrow_a_tier_and_keep_the_item_declared() {
-    let package = StdPackage::new(
+    let text_package = StdPackage::new(
         PackageFamily::Text,
         NameClass::Package,
         StabilityTier::Stable,
@@ -984,7 +984,7 @@ fn deprecations_narrow_a_tier_and_keep_the_item_declared() {
     assert_eq!(deprecation.target_tier(), StabilityTier::Experimental);
     assert_eq!(deprecation.replacement(), Some("std.text::render"));
     deprecation
-        .admit(&package)
+        .admit(&text_package)
         .unwrap_or_else(|error| panic!("the declared deprecation is admitted: {error}"));
 
     // a widening or unchanged target tier is refused
@@ -1015,7 +1015,7 @@ fn deprecations_narrow_a_tier_and_keep_the_item_declared() {
     )
     .unwrap_or_else(|error| panic!("the fixture deprecation is valid: {error}"));
     assert_eq!(
-        refuse(removed.admit(&package), "a silently removed item").code(),
+        refuse(removed.admit(&text_package), "a silently removed item").code(),
         StdlibDiagnosticCode::InvalidRelocation
     );
     let absent_replacement = StdDeprecation::new(
@@ -1027,11 +1027,123 @@ fn deprecations_narrow_a_tier_and_keep_the_item_declared() {
     .unwrap_or_else(|error| panic!("the fixture deprecation is valid: {error}"));
     assert_eq!(
         refuse(
-            absent_replacement.admit(&package),
+            absent_replacement.admit(&text_package),
             "an undeclared replacement"
         )
         .code(),
         StdlibDiagnosticCode::InvalidRelocation
+    );
+
+    // a deprecation leaving the foundational tier is refused
+    assert_eq!(
+        refuse(
+            StdDeprecation::new(
+                "std.text::format",
+                StabilityTier::Foundational,
+                StabilityTier::Stable,
+                None
+            ),
+            "a deprecation leaving the foundational tier"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidRelocation
+    );
+
+    // a deprecation contradicting the item's declared tier is refused
+    let mut graph = graph_with(&[package(
+        PackageFamily::Text,
+        StabilityTier::Stable,
+        &[],
+        &[],
+    )]);
+    graph
+        .declare_item(
+            StdItem::new(
+                "std.text::render",
+                NameClass::Module,
+                StabilityTier::Stable,
+                &[SemanticMode::Portable],
+                &[TargetKind::Library],
+            )
+            .unwrap_or_else(|error| panic!("the fixture item is valid: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("the fixture item is declared: {error}"));
+    let text = graph
+        .package("std.text")
+        .unwrap_or_else(|| panic!("the fixture graph declares std.text"))
+        .clone();
+    let untied = StdDeprecation::new(
+        "std.text::render",
+        StabilityTier::TargetSpecific,
+        StabilityTier::Experimental,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("the fixture deprecation is valid: {error}"));
+    assert_eq!(
+        refuse(
+            untied.admit(&text),
+            "a deprecation contradicting the declared item tier"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidRelocation
+    );
+}
+
+#[test]
+fn prelude_edition_is_folded_into_the_aggregate_identity() {
+    let contract = StdContractVersion::new(1, 2)
+        .unwrap_or_else(|error| panic!("the fixture contract version is valid: {error}"));
+    let mut manifests = Vec::new();
+    for edition in ["2024", "2027"] {
+        let mut graph = StdGraph::new(
+            Prelude::new(edition, &["std.core::option", "std.core::result"])
+                .unwrap_or_else(|error| panic!("the fixture prelude is valid: {error}")),
+        );
+        graph
+            .declare(package(
+                PackageFamily::Core,
+                StabilityTier::Foundational,
+                &[],
+                &[],
+            ))
+            .unwrap_or_else(|error| panic!("the fixture package is declared: {error}"));
+        manifests.push(
+            graph
+                .manifest(contract)
+                .unwrap_or_else(|error| panic!("the fixture manifest is valid: {error}")),
+        );
+    }
+    let first = &manifests[0];
+    let second = &manifests[1];
+    assert_eq!(first.prelude_edition(), "2024");
+    assert_eq!(second.prelude_edition(), "2027");
+    assert_eq!(first.entries(), second.entries());
+    assert_ne!(
+        first.identity(),
+        second.identity(),
+        "an edition-only change is visible in the aggregate identity"
+    );
+
+    // a manifest built under one edition is refused against a hierarchy declaring another
+    let mut other = StdGraph::new(
+        Prelude::new("2027", &["std.core::option", "std.core::result"])
+            .unwrap_or_else(|error| panic!("the fixture prelude is valid: {error}")),
+    );
+    other
+        .declare(package(
+            PackageFamily::Core,
+            StabilityTier::Foundational,
+            &[],
+            &[],
+        ))
+        .unwrap_or_else(|error| panic!("the fixture package is declared: {error}"));
+    assert_eq!(
+        refuse(
+            first.verify_against(&other),
+            "an edition-only publication drift"
+        )
+        .code(),
+        StdlibDiagnosticCode::PublicationDrift
     );
 }
 
@@ -1060,6 +1172,22 @@ fn references_outside_the_std_hierarchy_are_host_adapters() {
         refuse(undeclared.validate(), "an undeclared std package").code(),
         StdlibDiagnosticCode::UnknownEdge
     );
+    for malformed in ["std", "STD.core", "std..core"] {
+        let graph = graph_with(&[package(
+            PackageFamily::Fs,
+            StabilityTier::Stable,
+            &[malformed],
+            &[],
+        )]);
+        assert_eq!(
+            refuse(graph.validate(), "a malformed std reference").code(),
+            StdlibDiagnosticCode::InvalidPackageName,
+            "{malformed}"
+        );
+    }
+    check_layout_identity(&["ratio/2", "std.fs", "facet-fs-local"]).unwrap_or_else(|error| {
+        panic!("a logical token containing a separator is not a layout fact: {error}")
+    });
 }
 
 #[test]
@@ -1079,6 +1207,46 @@ fn names_are_rooted_under_their_owning_package() {
         .declare_name(owned)
         .unwrap_or_else(|error| panic!("the declared name is admitted: {error}"));
     assert_eq!(graph.names().len(), 1);
+
+    // one path cannot carry two classifications in either direction
+    let duplicate_item = StdItem::new(
+        "std.net::socket",
+        NameClass::Facade,
+        StabilityTier::Stable,
+        &[SemanticMode::Portable],
+        &[TargetKind::Library],
+    )
+    .unwrap_or_else(|error| panic!("the fixture item is valid: {error}"));
+    assert_eq!(
+        refuse(
+            graph.declare_item(duplicate_item),
+            "a declared name re-declared as an item"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
+    graph
+        .declare_name(
+            StdName::new("std.io::console", NameClass::Module, "std.io")
+                .unwrap_or_else(|error| panic!("the fixture name is valid: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("the declared name is admitted: {error}"));
+    let conflicting = StdItem::new(
+        "std.io::console",
+        NameClass::Facade,
+        StabilityTier::Stable,
+        &[SemanticMode::Portable],
+        &[TargetKind::Library],
+    )
+    .unwrap_or_else(|error| panic!("the fixture item is valid: {error}"));
+    assert_eq!(
+        refuse(
+            graph.declare_item(conflicting),
+            "a declared name re-declared as an item"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
 }
 
 #[test]

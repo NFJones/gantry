@@ -1135,6 +1135,12 @@ impl StdDeprecation {
         replacement: Option<&str>,
     ) -> Result<Self, StdlibError> {
         validate_std_name(item)?;
+        if tier == StabilityTier::Foundational {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidRelocation,
+                format!("the deprecation of `{item}` would leave the foundational tier"),
+            ));
+        }
         if target.rank() >= tier.rank() {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::InvalidRelocation,
@@ -1189,6 +1195,19 @@ impl StdDeprecation {
                 format!(
                     "the deprecation of `{}` removes the item without a declared migration",
                     self.item
+                ),
+            ));
+        }
+        if let Some(item) = package.item(&self.item)
+            && item.tier() != self.tier
+        {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidRelocation,
+                format!(
+                    "the deprecation of `{}` states the tier `{}` while the item declares `{}`",
+                    self.item,
+                    self.tier.wire_name(),
+                    item.tier().wire_name()
                 ),
             ));
         }
@@ -1364,12 +1383,18 @@ pub fn require_applicable(
     Ok(())
 }
 
-/// Refuses any identity fact derived from physical repository layout.
+/// Refuses any identity fact that names a physical repository path or file.
 pub fn check_layout_identity(facts: &[&str]) -> Result<(), StdlibError> {
     for fact in facts {
+        let path_like = fact.contains('/') || fact.contains('\\');
+        let layout_token = fact.contains("src")
+            || fact.contains("target")
+            || fact.contains("crates")
+            || fact.contains("tests")
+            || fact.contains("benches")
+            || fact.contains("examples");
         if fact.is_empty()
-            || fact.contains('/')
-            || fact.contains('\\')
+            || (path_like && layout_token)
             || fact.ends_with(".rs")
             || fact.contains("Cargo.toml")
         {
@@ -1491,6 +1516,7 @@ impl StdManifestEntry {
 pub struct StdManifest {
     contract: StdContractVersion,
     entries: Vec<StdManifestEntry>,
+    prelude_edition: String,
     identity: StdGraphIdentity,
 }
 
@@ -1511,6 +1537,12 @@ impl StdManifest {
     #[must_use]
     pub const fn identity(&self) -> &StdGraphIdentity {
         &self.identity
+    }
+
+    /// Returns the prelude edition the manifest was built under.
+    #[must_use]
+    pub fn prelude_edition(&self) -> &str {
+        &self.prelude_edition
     }
 
     /// Refuses a manifest that omits a declared package or records another identity.
@@ -1634,6 +1666,16 @@ impl StdGraph {
                 format!("`{}` names no declared owning package", name.owner()),
             ));
         }
+        if self
+            .packages
+            .values()
+            .any(|package| package.item(name.path()).is_some())
+        {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidNameClassification,
+                format!("`{}` already carries one classification", name.path()),
+            ));
+        }
         self.names.push(name);
         Ok(())
     }
@@ -1641,6 +1683,16 @@ impl StdGraph {
     /// Declares one public item inside its owning package; an undeclared owner and a
     /// second tier for one item are refused.
     pub fn declare_item(&mut self, item: StdItem) -> Result<(), StdlibError> {
+        if self
+            .names
+            .iter()
+            .any(|existing| existing.path() == item.name())
+        {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidNameClassification,
+                format!("`{}` already carries one classification", item.name()),
+            ));
+        }
         let owner = item.owner().to_owned();
         let Some(package) = self.packages.get_mut(&owner) else {
             return Err(StdlibError::new(
@@ -1677,7 +1729,9 @@ impl StdGraph {
     pub fn validate(&self) -> Result<(), StdlibError> {
         for package in self.packages.values() {
             for dependency in package.dependencies() {
-                if !dependency.starts_with("std.") {
+                if dependency.to_ascii_lowercase().starts_with("std") {
+                    validate_std_name(dependency)?;
+                } else {
                     return Err(StdlibError::new(
                         StdlibDiagnosticCode::PackageToAdapterEdge,
                         format!(
@@ -1794,6 +1848,7 @@ impl StdGraph {
             .collect::<Vec<StdManifestEntry>>();
         let mut fields: Vec<Vec<u8>> =
             vec![format!("{}.{}", contract.major(), contract.minor()).into_bytes()];
+        fields.push(self.prelude.edition().as_bytes().to_vec());
         for entry in &entries {
             fields.push(entry.name().as_bytes().to_vec());
             fields.push(entry.class().wire_name().as_bytes().to_vec());
@@ -1818,6 +1873,7 @@ impl StdGraph {
         Ok(StdManifest {
             contract,
             entries,
+            prelude_edition: self.prelude.edition().to_owned(),
             identity: StdGraphIdentity(Arc::from(encode_hex(&digest_fields(
                 "gantry.std.graph.v1",
                 &borrowed,
