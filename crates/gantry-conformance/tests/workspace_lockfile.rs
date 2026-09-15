@@ -32,11 +32,13 @@ fn locator(value: &str) -> SourceLocator {
 }
 
 fn revision(marker: char) -> SourceRevision {
-    SourceRevision::new(&marker.to_string().repeat(40)).unwrap_or_else(|_| panic!("declared revision"))
+    SourceRevision::new(&marker.to_string().repeat(40))
+        .unwrap_or_else(|_| panic!("declared revision"))
 }
 
 fn library() -> TargetFactSet {
-    let facts = TargetFacts::new(TargetKind::Library, None).unwrap_or_else(|_| panic!("library target facts"));
+    let facts = TargetFacts::new(TargetKind::Library, None)
+        .unwrap_or_else(|_| panic!("library target facts"));
     TargetFactSet::new(&[facts])
 }
 
@@ -49,7 +51,16 @@ fn requirement(
     source: DependencySource,
     selection: SelectedFeatureSet,
 ) -> DependencyRequirement {
-    DependencyRequirement::new(name(alias), source, selection)
+    requirement_for(alias, alias, source, selection)
+}
+
+fn requirement_for(
+    package: &str,
+    alias: &str,
+    source: DependencySource,
+    selection: SelectedFeatureSet,
+) -> DependencyRequirement {
+    DependencyRequirement::new(name(package), name(alias), source, selection)
 }
 
 fn path_source(root: &str) -> DependencySource {
@@ -119,7 +130,8 @@ fn vendored_workspace(requirement_digest: char) -> WorkspaceManifest {
         SelectedFeatureSet::empty(),
     );
     let core = member("demo-core", "ws/core", 'a', &[requirement]);
-    WorkspaceManifest::new(name("demo"), locator("ws"), &[core]).unwrap_or_else(|_| panic!("declared workspace"))
+    WorkspaceManifest::new(name("demo"), locator("ws"), &[core])
+        .unwrap_or_else(|_| panic!("declared workspace"))
 }
 
 #[test]
@@ -156,7 +168,8 @@ fn permutations_resolve_to_identical_identities() {
         GeneratorInputs::empty(),
         &[],
     );
-    let first = solve(&forward, &[util.clone(), other.clone()]).unwrap_or_else(|_| panic!("resolved workspace"));
+    let first = solve(&forward, &[util.clone(), other.clone()])
+        .unwrap_or_else(|_| panic!("resolved workspace"));
     let second = solve(&reversed, &[other, util]).unwrap_or_else(|_| panic!("resolved workspace"));
     let partial = [release(
         "demo-util",
@@ -166,7 +179,8 @@ fn permutations_resolve_to_identical_identities() {
         GeneratorInputs::empty(),
         &[],
     )];
-    let narrowed = solve(&forward, &partial).unwrap_or_else(|_| panic!("unused releases are not required"));
+    let narrowed =
+        solve(&forward, &partial).unwrap_or_else(|_| panic!("unused releases are not required"));
     assert_eq!(
         WorkspaceLockfile::from_resolved(&narrowed).canonical_text(),
         WorkspaceLockfile::from_resolved(&first).canonical_text(),
@@ -344,8 +358,8 @@ fn offline_policy_refuses_authenticated_acquisition() {
             SelectedFeatureSet::empty(),
         )],
     );
-    let workspace =
-        WorkspaceManifest::new(name("demo"), locator("ws"), &[core]).unwrap_or_else(|_| panic!("declared workspace"));
+    let workspace = WorkspaceManifest::new(name("demo"), locator("ws"), &[core])
+        .unwrap_or_else(|_| panic!("declared workspace"));
     let releases = [release(
         "demo-util",
         "1.0.0",
@@ -393,8 +407,8 @@ fn unresolved_and_ambiguous_releases_are_refused() {
             SelectedFeatureSet::empty(),
         )],
     );
-    let workspace =
-        WorkspaceManifest::new(name("demo"), locator("ws"), &[core]).unwrap_or_else(|_| panic!("declared workspace"));
+    let workspace = WorkspaceManifest::new(name("demo"), locator("ws"), &[core])
+        .unwrap_or_else(|_| panic!("declared workspace"));
     let missing = refuse(solve(&workspace, &[]), "unresolved release");
     assert_eq!(missing.code_str(), "workspace-solve-conflict");
     let ambiguous = refuse(
@@ -442,7 +456,8 @@ fn lockfile_round_trips_canonically() {
     let resolved = solve(&workspace, &releases).unwrap_or_else(|_| panic!("resolved workspace"));
     let lockfile = WorkspaceLockfile::from_resolved(&resolved);
     let text = lockfile.canonical_text();
-    let parsed = WorkspaceLockfile::parse(&text).unwrap_or_else(|_| panic!("canonical lockfile text"));
+    let parsed =
+        WorkspaceLockfile::parse(&text).unwrap_or_else(|_| panic!("canonical lockfile text"));
     assert_eq!(parsed, lockfile);
     assert_eq!(parsed.canonical_text(), text);
     assert_eq!(parsed.text_digest(), lockfile.text_digest());
@@ -525,8 +540,8 @@ fn rewrites_require_an_explicit_update_policy() {
     );
 
     let other = member("demo-other", "ws/other", 'b', &[]);
-    let wider =
-        WorkspaceManifest::new(name("demo"), locator("ws"), &[other]).unwrap_or_else(|_| panic!("declared workspace"));
+    let wider = WorkspaceManifest::new(name("demo"), locator("ws"), &[other])
+        .unwrap_or_else(|_| panic!("declared workspace"));
     let wider_resolved = solve(&wider, &releases).unwrap_or_else(|_| panic!("resolved workspace"));
     let refused = refuse(
         sync_lockfile(&lockfile, &wider_resolved, &LockPolicy::online_frozen()),
@@ -588,8 +603,8 @@ fn undeclared_transitives_are_not_reachable() {
             SelectedFeatureSet::empty(),
         )],
     );
-    let workspace =
-        WorkspaceManifest::new(name("demo"), locator("ws"), &[core]).unwrap_or_else(|_| panic!("declared workspace"));
+    let workspace = WorkspaceManifest::new(name("demo"), locator("ws"), &[core])
+        .unwrap_or_else(|_| panic!("declared workspace"));
     let releases = [
         release(
             "demo-util",
@@ -646,8 +661,8 @@ fn an_instance_without_a_shipping_target_is_refused() {
             SelectedFeatureSet::empty(),
         )],
     );
-    let workspace =
-        WorkspaceManifest::new(name("demo"), locator("ws"), &[core]).unwrap_or_else(|_| panic!("declared workspace"));
+    let workspace = WorkspaceManifest::new(name("demo"), locator("ws"), &[core])
+        .unwrap_or_else(|_| panic!("declared workspace"));
     let releases = [PackageRelease::new(
         name("demo-util"),
         version("1.0.0"),
@@ -664,7 +679,7 @@ fn an_instance_without_a_shipping_target_is_refused() {
 #[test]
 fn the_diagnostic_registry_is_frozen() {
     let codes = WorkspaceDiagnosticCode::ALL;
-    assert_eq!(codes.len(), 13);
+    assert_eq!(codes.len(), 14);
     let mut spellings: Vec<&str> = codes.iter().map(|code| code.as_str()).collect();
     spellings.sort_unstable();
     let unique: std::collections::BTreeSet<&str> = spellings.iter().copied().collect();
@@ -681,4 +696,239 @@ fn the_diagnostic_registry_is_frozen() {
     .collect();
     assert!(represented.contains("workspace-solve-conflict"));
     assert!(represented.contains("workspace-source-refused"));
+}
+
+#[test]
+fn offline_policy_refuses_transitive_and_matching_acquisition() {
+    let net = release(
+        "demo-net",
+        "1.0.0",
+        registry_source("1.0.0"),
+        'b',
+        GeneratorInputs::empty(),
+        &[],
+    );
+    let util = release(
+        "demo-util",
+        "1.0.0",
+        path_source("vendor/util"),
+        'c',
+        GeneratorInputs::empty(),
+        &["demo-net"],
+    );
+    let core = member(
+        "demo-core",
+        "ws/core",
+        'a',
+        &[requirement(
+            "demo-util",
+            path_source("vendor/util"),
+            SelectedFeatureSet::empty(),
+        )],
+    );
+    let workspace = WorkspaceManifest::new(name("demo"), locator("ws"), &[core])
+        .unwrap_or_else(|_| panic!("declared workspace"));
+    let releases = [net, util];
+
+    let error = refuse(
+        solve_with_policy(&workspace, &releases, &LockPolicy::frozen_offline()),
+        "transitive acquisition under offline policy",
+    );
+    match error {
+        WorkspaceError::OfflineSourceUnavailable { package } => {
+            assert_eq!(package.as_str(), "demo-net");
+        }
+        other => panic!("expected an offline refusal, found {other}"),
+    }
+
+    let resolved = solve(&workspace, &releases).unwrap_or_else(|_| panic!("online resolution"));
+    let lockfile = WorkspaceLockfile::from_resolved(&resolved);
+    assert!(lockfile.verify(&resolved).is_ok());
+    let error = refuse(
+        sync_lockfile(&lockfile, &resolved, &LockPolicy::frozen_offline()),
+        "matching lockfile under offline policy",
+    );
+    assert_eq!(error.code_str(), "workspace-offline-source-unavailable");
+}
+
+#[test]
+fn renamed_aliases_bind_packages_and_declaration_order_is_canonical() {
+    let alpha = release(
+        "demo-alpha",
+        "1.0.0",
+        path_source("vendor/alpha"),
+        'a',
+        GeneratorInputs::empty(),
+        &[],
+    );
+    let beta = release(
+        "demo-beta",
+        "1.0.0",
+        path_source("vendor/beta"),
+        'b',
+        GeneratorInputs::empty(),
+        &[],
+    );
+    let forward = [
+        requirement_for(
+            "demo-alpha",
+            "alpha",
+            path_source("vendor/alpha"),
+            SelectedFeatureSet::empty(),
+        ),
+        requirement_for(
+            "demo-beta",
+            "beta",
+            path_source("vendor/beta"),
+            SelectedFeatureSet::empty(),
+        ),
+    ];
+    let reverse = [
+        requirement_for(
+            "demo-beta",
+            "beta",
+            path_source("vendor/beta"),
+            SelectedFeatureSet::empty(),
+        ),
+        requirement_for(
+            "demo-alpha",
+            "alpha",
+            path_source("vendor/alpha"),
+            SelectedFeatureSet::empty(),
+        ),
+    ];
+    let first = WorkspaceManifest::new(
+        name("demo"),
+        locator("ws"),
+        &[member("demo-core", "ws/core", 'c', &forward)],
+    )
+    .unwrap_or_else(|_| panic!("declared workspace"));
+    let second = WorkspaceManifest::new(
+        name("demo"),
+        locator("ws"),
+        &[member("demo-core", "ws/core", 'c', &reverse)],
+    )
+    .unwrap_or_else(|_| panic!("declared workspace"));
+    let releases = [alpha, beta];
+    let resolved = solve(&first, &releases).unwrap_or_else(|_| panic!("resolution"));
+    let permuted = solve(&second, &releases).unwrap_or_else(|_| panic!("permuted resolution"));
+
+    assert!(
+        resolved
+            .instances()
+            .iter()
+            .any(|instance| instance.name().as_str() == "demo-alpha"),
+        "a renamed alias still resolves the declared package"
+    );
+    let text = WorkspaceLockfile::from_resolved(&resolved).canonical_text();
+    let permuted_text = WorkspaceLockfile::from_resolved(&permuted).canonical_text();
+    assert_eq!(text, permuted_text);
+    for instance in resolved.instances() {
+        let names: Vec<&str> = instance
+            .dependencies()
+            .iter()
+            .map(|dependency| dependency.as_str())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted, "dependencies are stored in canonical order");
+        let unique: std::collections::BTreeSet<&str> = names.iter().copied().collect();
+        assert_eq!(unique.len(), names.len(), "dependencies are not duplicated");
+    }
+}
+
+#[test]
+fn substitution_availability_and_canonical_spelling_are_refused() {
+    let one = release(
+        "demo-util",
+        "1.0.0",
+        registry_source("1.0.0"),
+        'a',
+        GeneratorInputs::empty(),
+        &[],
+    );
+    let two = release(
+        "demo-util",
+        "2.0.0",
+        registry_source("2.0.0"),
+        'a',
+        GeneratorInputs::empty(),
+        &[],
+    );
+    let releases = [one, two];
+    let older = WorkspaceManifest::new(
+        name("demo"),
+        locator("ws"),
+        &[member(
+            "demo-core",
+            "ws/core",
+            'b',
+            &[requirement(
+                "demo-util",
+                registry_source("1.0.0"),
+                SelectedFeatureSet::empty(),
+            )],
+        )],
+    )
+    .unwrap_or_else(|_| panic!("declared workspace"));
+    let newer = WorkspaceManifest::new(
+        name("demo"),
+        locator("ws"),
+        &[member(
+            "demo-core",
+            "ws/core",
+            'b',
+            &[requirement(
+                "demo-util",
+                registry_source("2.0.0"),
+                SelectedFeatureSet::empty(),
+            )],
+        )],
+    )
+    .unwrap_or_else(|_| panic!("declared workspace"));
+    let resolved = solve(&older, &releases).unwrap_or_else(|_| panic!("resolution"));
+    let substituted = solve(&newer, &releases).unwrap_or_else(|_| panic!("resolution"));
+    assert_eq!(resolved.len(), substituted.len());
+    let lockfile = WorkspaceLockfile::from_resolved(&resolved);
+    assert!(lockfile.verify(&resolved).is_ok());
+    assert_eq!(
+        refuse(lockfile.verify(&substituted), "same-count substitution").code_str(),
+        "workspace-lockfile-stale"
+    );
+    assert_eq!(
+        refuse(lockfile.verify_releases(&[]), "releases are absent").code_str(),
+        "workspace-release-unavailable"
+    );
+    assert_eq!(
+        refuse(
+            WorkspaceLockfile::parse("gantry-workspace-lockfile +1\n"),
+            "signed header version"
+        )
+        .code_str(),
+        "workspace-source-refused"
+    );
+    assert_eq!(
+        refuse(
+            WorkspaceLockfile::parse("gantry-workspace-lockfile 01\n"),
+            "padded header version"
+        )
+        .code_str(),
+        "workspace-source-refused"
+    );
+    assert_eq!(
+        refuse(
+            DependencySource::parse("path,ws/util,"),
+            "trailing separator"
+        )
+        .code_str(),
+        "workspace-source-refused"
+    );
+    assert_eq!(
+        refuse(
+            DependencySource::parse("registry,registry.example,01"),
+            "padded version component"
+        )
+        .code_str(),
+        "workspace-source-refused"
+    );
 }

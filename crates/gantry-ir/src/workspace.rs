@@ -27,6 +27,11 @@
 //!
 //! Rust `Debug` and `Display` renderings are presentation only. The portable
 //! lockfile format is [`WorkspaceLockfile::canonical_text`].
+//!
+//! The refusal codes this module declares are not yet registered as normative
+//! `SPEC.md` contract text, so no consumer may present them as published
+//! specification vocabulary until the `PACKAGE-001` registration phase lands
+//! them.
 
 #![allow(clippy::result_large_err)]
 
@@ -50,8 +55,9 @@ const LOCKFILE_DOMAIN: &str = "gantry.workspace-lockfile/v1";
 /// One frozen published diagnostic identity of this model.
 ///
 /// The codes are frozen: a consumer matches on [`Self::as_str`], and no spelling
-/// is shared by two refusal conditions. The variant order is the sorted code
-/// order, so [`Self::ALL`] is already in registry order.
+/// is shared by two refusal conditions. The variant order is this model's
+/// declaration order, which [`Self::ALL`] follows; renaming a variant or
+/// changing a spelling would change published refusal identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum WorkspaceDiagnosticCode {
     /// `workspace-alias-collision`
@@ -74,6 +80,8 @@ pub enum WorkspaceDiagnosticCode {
     MemberNotContained,
     /// `workspace-offline-source-unavailable`
     OfflineSourceUnavailable,
+    /// `workspace-release-unavailable`
+    ReleaseUnavailable,
     /// `workspace-solve-conflict`
     SolveConflict,
     /// `workspace-source-refused`
@@ -83,8 +91,8 @@ pub enum WorkspaceDiagnosticCode {
 }
 
 impl WorkspaceDiagnosticCode {
-    /// Every published code, in sorted code order.
-    pub const ALL: [Self; 13] = [
+    /// Every declared code, in declaration order.
+    pub const ALL: [Self; 14] = [
         Self::AliasCollision,
         Self::DuplicateMember,
         Self::GeneratorInputMismatch,
@@ -95,6 +103,7 @@ impl WorkspaceDiagnosticCode {
         Self::LockfileVersionUnsupported,
         Self::MemberNotContained,
         Self::OfflineSourceUnavailable,
+        Self::ReleaseUnavailable,
         Self::SolveConflict,
         Self::SourceRefused,
         Self::VendoredSourceMismatch,
@@ -114,6 +123,7 @@ impl WorkspaceDiagnosticCode {
             Self::LockfileVersionUnsupported => "workspace-lockfile-version-unsupported",
             Self::MemberNotContained => "workspace-member-not-contained",
             Self::OfflineSourceUnavailable => "workspace-offline-source-unavailable",
+            Self::ReleaseUnavailable => "workspace-release-unavailable",
             Self::SolveConflict => "workspace-solve-conflict",
             Self::SourceRefused => "workspace-source-refused",
             Self::VendoredSourceMismatch => "workspace-vendored-source-mismatch",
@@ -151,6 +161,9 @@ impl WorkspaceDiagnosticCode {
             }
             Self::OfflineSourceUnavailable => {
                 "An offline policy received a requirement whose source needs authenticated acquisition."
+            }
+            Self::ReleaseUnavailable => {
+                "A lockfile entry from an external source has no matching release in the checked release set, so its generator inputs cannot be verified."
             }
             Self::SolveConflict => {
                 "A dependency requirement matches zero releases or more than one release."
@@ -228,6 +241,11 @@ pub enum WorkspaceError {
         /// The package whose source needs acquisition.
         package: PackageName,
     },
+    /// A lockfile entry has no matching release in the checked release set.
+    ReleaseUnavailable {
+        /// The locked package with no matching release.
+        package: PackageName,
+    },
     /// A requirement matched zero or more than one release.
     SolveConflict {
         /// The alias or dependency name under resolution.
@@ -270,6 +288,7 @@ impl WorkspaceError {
             Self::OfflineSourceUnavailable { .. } => {
                 WorkspaceDiagnosticCode::OfflineSourceUnavailable
             }
+            Self::ReleaseUnavailable { .. } => WorkspaceDiagnosticCode::ReleaseUnavailable,
             Self::SolveConflict { .. } => WorkspaceDiagnosticCode::SolveConflict,
             Self::SourceRefused { .. } => WorkspaceDiagnosticCode::SourceRefused,
             Self::VendoredSourceMismatch { .. } => WorkspaceDiagnosticCode::VendoredSourceMismatch,
@@ -322,6 +341,34 @@ fn validate_digest(value: &str) -> Result<(), WorkspaceError> {
         });
     }
     Ok(())
+}
+
+/// Returns whether one text is exactly a canonical decimal integer.
+fn canonical_decimal(text: &str) -> bool {
+    !text.is_empty()
+        && text.bytes().all(|byte| byte.is_ascii_digit())
+        && (text == "0" || !text.starts_with('0'))
+}
+
+/// Returns whether one version text is exactly canonical.
+///
+/// No component is empty, no component carries a leading zero before another
+/// digit, and no component is padded with `+`, so `01`, `+1`, and `1.` are
+/// refused instead of being accepted as spellings of a version.
+fn canonical_version(text: &str) -> bool {
+    !text.is_empty()
+        && text.split('.').all(|component| {
+            let mut bytes = component.bytes();
+            let leading = bytes.next();
+            let second = bytes.next();
+            !component.is_empty()
+                && !component.starts_with('+')
+                && !component.ends_with('+')
+                && !(leading == Some(b'0') && second.is_some_and(|byte| byte.is_ascii_digit()))
+                && component
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'+' | b'_'))
+        })
 }
 
 /// One validated source locator.
@@ -465,7 +512,23 @@ impl DependencySource {
     }
 
     /// Strictly decodes one canonical source token.
+    ///
+    /// A token is accepted only when it is exactly the canonical spelling this
+    /// model emits, so `path,ws/util,`, `vcs,a,b `, and `registry,a.example,01`
+    /// are refused instead of being normalized into another spelling.
     pub fn parse(text: &str) -> Result<Self, WorkspaceError> {
+        let decoded = Self::decode(text)?;
+        if decoded.canonical_text() == text {
+            Ok(decoded)
+        } else {
+            Err(WorkspaceError::SourceRefused {
+                detail: Arc::from(text),
+            })
+        }
+    }
+
+    /// Decodes one source token without checking its canonical spelling.
+    fn decode(text: &str) -> Result<Self, WorkspaceError> {
         let mut fields = text.split(',');
         let kind = fields.next().unwrap_or_default();
         let first = fields.next().unwrap_or_default();
@@ -483,14 +546,21 @@ impl DependencySource {
                 locator: SourceLocator::new(first)?,
                 revision: SourceRevision::new(second)?,
             }),
-            "registry" => Ok(Self::Registry {
-                registry: SourceLocator::new(first)?,
-                version: PackageVersion::new(second).map_err(|_| {
-                    WorkspaceError::SourceRefused {
+            "registry" => {
+                if !canonical_version(second) {
+                    return Err(WorkspaceError::SourceRefused {
                         detail: Arc::from(text),
-                    }
-                })?,
-            }),
+                    });
+                }
+                Ok(Self::Registry {
+                    registry: SourceLocator::new(first)?,
+                    version: PackageVersion::new(second).map_err(|_| {
+                        WorkspaceError::SourceRefused {
+                            detail: Arc::from(text),
+                        }
+                    })?,
+                })
+            }
             "vendored" => Ok(Self::Vendored {
                 root: SourceLocator::new(first)?,
                 digest: ContentDigest::new(second)?,
@@ -505,6 +575,7 @@ impl DependencySource {
 /// One declared dependency requirement of one member or release.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DependencyRequirement {
+    package: PackageName,
     alias: PackageName,
     source: DependencySource,
     features: SelectedFeatureSet,
@@ -512,17 +583,29 @@ pub struct DependencyRequirement {
 
 impl DependencyRequirement {
     /// Constructs one declared requirement.
+    ///
+    /// The package name is the identity this requirement resolves, and the alias
+    /// is the local spelling the declaring package imports it under, so a
+    /// renamed alias still resolves to the declared package.
     #[must_use]
     pub const fn new(
+        package: PackageName,
         alias: PackageName,
         source: DependencySource,
         features: SelectedFeatureSet,
     ) -> Self {
         Self {
+            package,
             alias,
             source,
             features,
         }
+    }
+
+    /// Returns the declared package identity this requirement resolves.
+    #[must_use]
+    pub const fn package(&self) -> &PackageName {
+        &self.package
     }
 
     /// Returns the declared alias.
@@ -992,6 +1075,18 @@ fn dependency_names(dependencies: &[PackageName]) -> Vec<String> {
     names
 }
 
+/// Returns one dependency list in canonical order without duplicates.
+///
+/// Instances carry dependencies sorted by name, so two runs that declare the
+/// same edges in different orders produce equal instances as well as equal
+/// identities.
+fn canonical_dependency_order(dependencies: &[PackageName]) -> Vec<PackageName> {
+    let mut ordered = dependencies.to_vec();
+    ordered.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    ordered.dedup_by(|left, right| left.as_str() == right.as_str());
+    ordered
+}
+
 /// Returns whether one target set carries at least one shipping target.
 fn has_shipping_target(targets: &TargetFactSet) -> bool {
     targets
@@ -1071,7 +1166,7 @@ fn source_matches(
             }
             if digest != other_digest {
                 return Err(WorkspaceError::VendoredSourceMismatch {
-                    package: requirement.alias().clone(),
+                    package: requirement.package().clone(),
                     expected: Arc::from(digest.as_str()),
                     found: Arc::from(other_digest.as_str()),
                 });
@@ -1090,23 +1185,23 @@ fn select_release<'a>(
 ) -> Result<&'a PackageRelease, WorkspaceError> {
     if policy.offline && requirement.source().requires_acquisition() {
         return Err(WorkspaceError::OfflineSourceUnavailable {
-            package: requirement.alias().clone(),
+            package: requirement.package().clone(),
         });
     }
     let mut matched: Vec<&PackageRelease> = Vec::new();
     for release in releases {
-        if release.name() == requirement.alias() && source_matches(requirement, release)? {
+        if release.name() == requirement.package() && source_matches(requirement, release)? {
             matched.push(release);
         }
     }
     match matched.as_slice() {
         [only] => Ok(only),
         [] => Err(WorkspaceError::SolveConflict {
-            alias: requirement.alias().clone(),
+            alias: requirement.package().clone(),
             detail: Arc::from("no release matches the declared source and version"),
         }),
         _ => Err(WorkspaceError::SolveConflict {
-            alias: requirement.alias().clone(),
+            alias: requirement.package().clone(),
             detail: Arc::from("more than one release matches; no version is selected implicitly"),
         }),
     }
@@ -1139,12 +1234,7 @@ fn release_instance(
         version: release.version().clone(),
         features: features.clone(),
         targets: release.targets().clone(),
-        dependencies: release
-            .dependencies()
-            .iter()
-            .filter(|name| dependencies.contains(&name.as_str().to_owned()))
-            .cloned()
-            .collect(),
+        dependencies: canonical_dependency_order(release.dependencies()),
         interface_digest: release.interface_digest().clone(),
         generator_inputs: release.generator_inputs().clone(),
         source: release.source().clone(),
@@ -1183,7 +1273,7 @@ fn member_instance(
         version: member.version().clone(),
         features,
         targets: member.targets().clone(),
-        dependencies: dependencies.to_vec(),
+        dependencies: canonical_dependency_order(dependencies),
         interface_digest: member.interface_digest().clone(),
         generator_inputs,
         source,
@@ -1287,6 +1377,16 @@ pub fn solve_with_policy(
         cursor += 1;
     }
 
+    if policy.offline {
+        for instance in &instances {
+            if instance.source().requires_acquisition() {
+                return Err(WorkspaceError::OfflineSourceUnavailable {
+                    package: instance.name().clone(),
+                });
+            }
+        }
+    }
+
     instances.sort_by(|left, right| left.identity.as_str().cmp(right.identity.as_str()));
     Ok(ResolvedWorkspace { instances })
 }
@@ -1372,6 +1472,11 @@ impl WorkspaceLockfile {
             .ok_or_else(|| WorkspaceError::SourceRefused {
                 detail: Arc::from(header),
             })?;
+        if !canonical_decimal(version_text) {
+            return Err(WorkspaceError::SourceRefused {
+                detail: Arc::from(version_text),
+            });
+        }
         let version: u32 = version_text
             .parse()
             .map_err(|_| WorkspaceError::SourceRefused {
@@ -1397,11 +1502,16 @@ impl WorkspaceLockfile {
                     detail: Arc::from(line),
                 }
             })?;
-            let version = PackageVersion::new(fields.next().unwrap_or_default()).map_err(|_| {
-                WorkspaceError::SourceRefused {
+            let version_text = fields.next().unwrap_or_default();
+            if !canonical_version(version_text) {
+                return Err(WorkspaceError::SourceRefused {
                     detail: Arc::from(line),
-                }
-            })?;
+                });
+            }
+            let version =
+                PackageVersion::new(version_text).map_err(|_| WorkspaceError::SourceRefused {
+                    detail: Arc::from(line),
+                })?;
             let features = parse_features(fields.next().unwrap_or_default())?;
             let targets = parse_targets(fields.next().unwrap_or_default())?;
             let dependencies = parse_dependencies(fields.next().unwrap_or_default())?;
@@ -1447,26 +1557,33 @@ impl WorkspaceLockfile {
 
     /// Verifies this lockfile against one resolution.
     ///
-    /// A different entry set is a stale lockfile; an entry that disagrees with
-    /// the resolved instance identity is a tampered or substituted binding.
+    /// Any difference between the bound and resolved instance sets is staleness,
+    /// including a substitution that keeps the entry count. Tampering is refused
+    /// by [`Self::parse`], which rejects an entry whose recorded identity no
+    /// longer follows from its own fields.
     pub fn verify(&self, resolved: &ResolvedWorkspace) -> Result<(), WorkspaceError> {
-        if self.entries.len() != resolved.len() {
-            return Err(WorkspaceError::LockfileStale {
-                locked: self.entries.len(),
-                resolved: resolved.len(),
-            });
+        let identical = self.entries.len() == resolved.len()
+            && self
+                .entries
+                .iter()
+                .zip(resolved.instances())
+                .all(|(locked, current)| locked.identity == current.identity);
+        if identical {
+            return Ok(());
         }
-        for (locked, current) in self.entries.iter().zip(resolved.instances()) {
-            if locked.identity != current.identity {
-                return Err(WorkspaceError::LockfileTampered {
-                    identity: Arc::from(locked.identity_hex()),
-                });
-            }
-        }
-        Ok(())
+        Err(WorkspaceError::LockfileStale {
+            locked: self.entries.len(),
+            resolved: resolved.len(),
+        })
     }
 
     /// Verifies every bound generator input against the resolved releases.
+    ///
+    /// A workspace member is resolved from its own manifest rather than from a
+    /// release, so a `path` source is the one absence this check cannot tell
+    /// apart from a member and therefore skips. Every other entry without a
+    /// matching release is refused as unavailable rather than skipped, so the
+    /// check cannot pass vacuously over an incomplete release set.
     pub fn verify_releases(&self, releases: &[PackageRelease]) -> Result<(), WorkspaceError> {
         for entry in &self.entries {
             let matched = releases.iter().find(|release| {
@@ -1475,7 +1592,12 @@ impl WorkspaceLockfile {
                     && release.source() == entry.source()
             });
             let Some(release) = matched else {
-                continue;
+                if matches!(entry.source(), DependencySource::Path { .. }) {
+                    continue;
+                }
+                return Err(WorkspaceError::ReleaseUnavailable {
+                    package: entry.name().clone(),
+                });
             };
             if release.generator_inputs() != entry.generator_inputs() {
                 return Err(WorkspaceError::GeneratorInputMismatch {
@@ -1585,23 +1707,15 @@ fn parse_generators(text: &str) -> Result<GeneratorInputs, WorkspaceError> {
 
 /// Verifies or explicitly updates one lockfile under one policy.
 ///
-/// A resolution that already matches the lockfile is returned unchanged. A
-/// differing resolution is refused when policy forbids an update, and an offline
-/// policy additionally refuses any instance whose source needs acquisition.
+/// An offline policy refuses first, so a matching lockfile can never short
+/// circuit the check when a resolved instance needs authenticated acquisition.
+/// A resolution that otherwise matches the lockfile is returned unchanged, and a
+/// differing resolution is refused when policy forbids an update.
 pub fn sync_lockfile(
     lockfile: &WorkspaceLockfile,
     resolved: &ResolvedWorkspace,
     policy: &LockPolicy,
 ) -> Result<WorkspaceLockfile, WorkspaceError> {
-    if lockfile.verify(resolved).is_ok() {
-        return Ok(lockfile.clone());
-    }
-    if !policy.allow_update {
-        return Err(WorkspaceError::LockfileRewriteRefused {
-            locked: lockfile.entries().len(),
-            resolved: resolved.len(),
-        });
-    }
     if policy.offline {
         for instance in resolved.instances() {
             if instance.source().requires_acquisition() {
@@ -1610,6 +1724,15 @@ pub fn sync_lockfile(
                 });
             }
         }
+    }
+    if lockfile.verify(resolved).is_ok() {
+        return Ok(lockfile.clone());
+    }
+    if !policy.allow_update {
+        return Err(WorkspaceError::LockfileRewriteRefused {
+            locked: lockfile.entries().len(),
+            resolved: resolved.len(),
+        });
     }
     Ok(WorkspaceLockfile::from_resolved(resolved))
 }
