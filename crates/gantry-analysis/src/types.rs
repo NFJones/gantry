@@ -227,6 +227,12 @@ fn analyze_package_types_with_policy(
         };
     }
     check_impl_targets(phase.parsed_sources(), &structure, &mut type_diagnostics)?;
+    check_where_predicate_targets(
+        phase.parsed_sources(),
+        &structure,
+        &type_binders,
+        &mut type_diagnostics,
+    )?;
     check_entry_and_field_defaults(
         phase.parsed_sources(),
         &structure,
@@ -1633,6 +1639,161 @@ fn direct_identifier_span(
             SyntaxForm::Token(TokenKind::Identifier(_)) => Some(child.span().clone()),
             _ => None,
         }))
+}
+
+/// Refuses every `where` predicate that names a type no declaration provides.
+///
+/// The resolution pass reports a missing package item only for paths it can prove are
+/// package-owned, so a free-function bound spelling that resolves to nothing is refused
+/// here: a predicate bound or subject is always a type position, and dropping it would
+/// silently erase the constraint the author declared.
+fn check_where_predicate_targets(
+    sources: &[ParsedSource],
+    structure: &PackageStructure,
+    binders: &[TypeBinder],
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let references = structure
+        .references()
+        .iter()
+        .map(|reference| (reference.span.clone(), reference.target))
+        .collect::<BTreeMap<_, _>>();
+    let parameters = binders
+        .iter()
+        .flat_map(|binder| {
+            binder
+                .parameters
+                .iter()
+                .map(|parameter| parameter.name.clone())
+        })
+        .collect::<BTreeSet<_>>();
+    let declared = structure
+        .symbols()
+        .iter()
+        .filter_map(|symbol| {
+            symbol
+                .path
+                .as_str()
+                .rsplit("::")
+                .next()
+                .map(|name| name.to_owned())
+        })
+        .collect::<BTreeSet<_>>();
+    for source in sources {
+        let tree = source.tree();
+        for (index, node) in tree.nodes().iter().enumerate() {
+            if !matches!(node.form(), SyntaxForm::WherePredicate) {
+                continue;
+            }
+            let predicate = NodeId::from_index(index);
+            let bound = direct_child_form(tree, predicate, SyntaxForm::TraitReference)
+                .and_then(|reference| direct_child_form(tree, reference, SyntaxForm::Path));
+            if let Some(bound) = bound {
+                let path_node = tree.node(bound).ok_or(AnalysisError::Invariant)?;
+                let spelling = predicate_path_spelling(tree, bound)?;
+                if !references.contains_key(path_node.span())
+                    && !SEALED_PREDICATE_SPELLINGS.contains(&spelling.as_str())
+                {
+                    diagnostics.push(name_resolution_diagnostic(
+                        "unresolved-reference",
+                        "a where predicate names a type that no declaration provides",
+                        path_node.span().clone(),
+                        [("authored_path", spelling.as_str())],
+                    )?);
+                }
+            }
+            if let Some((spelling, span)) = predicate_subject(tree, predicate)?
+                && !parameters.contains(spelling.as_str())
+                && !declared.contains(spelling.as_str())
+                && !SEALED_PREDICATE_SPELLINGS.contains(&spelling.as_str())
+            {
+                diagnostics.push(name_resolution_diagnostic(
+                    "unresolved-reference",
+                    "a where predicate names a type that no declaration provides",
+                    span,
+                    [("authored_path", spelling.as_str())],
+                )?);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The sealed capability spellings a `where` predicate names structurally.
+const SEALED_PREDICATE_SPELLINGS: [&str; 3] = ["Equatable", "Interpolatable", "ExternalValue"];
+
+/// Returns the authored spelling of one `where` predicate path.
+fn predicate_path_spelling(tree: &SyntaxTree, path: NodeId) -> Result<String, AnalysisError> {
+    let node = tree.node(path).ok_or(AnalysisError::Invariant)?;
+    Ok(node
+        .children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .filter_map(|child| match child.form() {
+            SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.to_string()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("::"))
+}
+
+/// Returns the authored subject spelling and span of one `where` predicate.
+fn predicate_subject(
+    tree: &SyntaxTree,
+    predicate: NodeId,
+) -> Result<Option<(String, SourceSpan)>, AnalysisError> {
+    let node = tree.node(predicate).ok_or(AnalysisError::Invariant)?;
+    let mut identifiers = Vec::new();
+    let mut span = None;
+    for child in node.children().iter().filter_map(|child| tree.node(*child)) {
+        if matches!(child.form(), SyntaxForm::TraitReference) {
+            break;
+        }
+        if let SyntaxForm::Token(TokenKind::Identifier(value)) = child.form() {
+            if span.is_none() {
+                span = Some(child.span().clone());
+            }
+            identifiers.push(value.to_string());
+        }
+    }
+    Ok(span.map(|span| (identifiers.join("::"), span)))
+}
+
+/// Builds one name-resolution refusal for a path that no declaration provides.
+fn name_resolution_diagnostic<K, V, const N: usize>(
+    code: &str,
+    message: &str,
+    primary: SourceSpan,
+    fields: [(K, V); N],
+) -> Result<StructuredDiagnostic, AnalysisError>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    StructuredDiagnostic::new(
+        DiagnosticMetadata {
+            phase: DiagnosticPhase::Analysis,
+            severity: DiagnosticSeverity::Error,
+            category: DiagnosticCategory::NameResolution,
+            code: DiagnosticCode::new(code).map_err(|_| AnalysisError::Invariant)?,
+        },
+        message,
+        Some(primary),
+        Vec::new(),
+        fields
+            .into_iter()
+            .map(|(key, value)| (Arc::from(key.as_ref()), Arc::from(value.as_ref())))
+            .collect(),
+    )
+    .map_err(|_| AnalysisError::Invariant)
+}
+
+fn direct_child_form(tree: &SyntaxTree, id: NodeId, form: SyntaxForm) -> Option<NodeId> {
+    tree.node(id)?.children().iter().copied().find(|child| {
+        tree.node(*child).is_some_and(|node| {
+            std::mem::discriminant(node.form()) == std::mem::discriminant(&form)
+        })
+    })
 }
 
 /// Constructs one source-backed type-category diagnostic.
