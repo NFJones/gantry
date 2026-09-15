@@ -1,0 +1,176 @@
+{
+ "format": "gantry.general-purpose-foundation-gate-evidence/v1",
+ "gate": "GNT-GP-GATE-100",
+ "status": "verified",
+ "specification": {
+  "path": "SPEC.md",
+  "sha256": "4bd2c2d9fc8eebdc7cea975ea0c46c57e0cd6e59657440572567badc25640bf0"
+ },
+ "prerequisites": [
+  {
+   "issue": "015994ca-a48c-418f-94ef-ff6754cf60c7",
+   "commit": "7be2aa4"
+  },
+  {
+   "issue": "0e28f3d7-12d6-4f5b-bbaf-1fb058cf1153",
+   "commit": "3b6f2c3"
+  },
+  {
+   "issue": "156160ed-c436-471f-b465-c64e497270f1",
+   "commit": "40b532b"
+  },
+  {
+   "issue": "21fa527c-7af4-42d8-aeec-73778f8db706",
+   "commit": "c8f185a"
+  },
+  {
+   "issue": "2696ec5d-1862-4351-a6a8-9634dc5d39c6",
+   "commit": "0c69aaf"
+  },
+  {
+   "issue": "2fa9f962-c114-4426-9563-0f9d3afbb092",
+   "commit": "a01a132"
+  },
+  {
+   "issue": "317a9fac-1547-4201-8068-ba99ead94cc7",
+   "commit": "660fbae"
+  },
+  {
+   "issue": "479f93b3-e5fe-428b-ac14-2a327fd9a291",
+   "commit": "7e21f54"
+  },
+  {
+   "issue": "49bd7879-3cbb-4f44-9a53-f5a95ae32383",
+   "commit": "978db7e"
+  },
+  {
+   "issue": "55242960-678c-4e1d-85eb-d853c6d0ffcf",
+   "commit": "1813996"
+  },
+  {
+   "issue": "5d2b7af2-6f39-435f-9574-aa4b1bb470dc",
+   "commit": "688d5b4"
+  },
+  {
+   "issue": "60864b0a-bab4-4969-bf5d-5e8d47004d0c",
+   "commit": "192cd01"
+  },
+  {
+   "issue": "7695985d-73aa-45df-8a43-3db90f89030c",
+   "commit": "660fbae"
+  },
+  {
+   "issue": "8ca9ca59-e5f4-4a67-b02c-fd72e3cfa907",
+   "commit": "43faab0"
+  },
+  {
+   "issue": "9bb85d44-61fe-49a1-bc3c-cc40154e60b0",
+   "commit": "cd98d42"
+  },
+  {
+   "issue": "aaebf76e-884d-465a-9070-179f4fed597a",
+   "commit": "5ab0372"
+  },
+  {
+   "issue": "b0533834-73f4-431f-aeb4-1120b118525f",
+   "commit": "ff4b636"
+  },
+  {
+   "issue": "b120e06d-c596-4c39-801c-9ec2fc7ee451",
+   "commit": "fc36d05"
+  },
+  {
+   "issue": "b8c4c779-6458-4118-8933-4014356d7cf8",
+   "commit": "477151c"
+  },
+  {
+   "issue": "bdad65ae-0213-4474-b182-b0b40792b817",
+   "commit": "949620e"
+  },
+  {
+   "issue": "bebfddf1-3303-4611-b7a6-a4216dc0aa42",
+   "commit": "5f51240"
+  },
+  {
+   "issue": "dc3bd12e-9173-4378-a4cd-e120b05c1ad4",
+   "commit": "4d090d1"
+  },
+  {
+   "issue": "ddc2962d-c7b6-49b5-9a8f-a3a4756395b2",
+   "commit": "ec300ca"
+  },
+  {
+   "issue": "f3f9766b-b9a5-4517-946d-077863d1bda5",
+   "commit": "0b8c622"
+  },
+  {
+   "issue": "fb4e67ad-f653-43ed-a2ea-f874a1ea1837",
+   "commit": "0b8c622"
+  }
+ ],
+ "artifacts": [
+  {
+   "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
+   "sha256": "d514ee3b6afd1722d9af20d4b546cb776bc418c323442c038b70d118624e3a81"
+  },
+  {
+   "path": "protocol/conformance/async-execution-adoption-v1.json",
+   "sha256": "a3b943769bf0044be0c36c47c6c934314aa6256a7ca671e70ed681f24b658a9f"
+  },
+  {
+   "path": "protocol/conformance/general-purpose-preregistration-gate-v1.json",
+   "sha256": "0de4fb47eb978fddc513647f562e4217bf86860d5ed935ea49b1cf9fd6192e8c"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "01a4d97ed06054df7f0d5aec9abeed5a74cecf06508e02190296a154792a6919"
+  }
+ ],
+ "evidence": [
+  {
+   "id": "cross-gate-application-corpus",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/catalogs/general-purpose-preregistration-v1.json"
+  },
+  {
+   "id": "preregistered-usability-protocol",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/conformance/general-purpose-preregistration-gate-v1.json"
+  },
+  {
+   "id": "profile-admission-state",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/conformance/async-execution-adoption-v1.json"
+  },
+  {
+   "id": "requirement-ledger-tiling",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/requirements/reviewed-v1.json"
+  }
+ ],
+ "claim": {
+  "phase": "phase-0-foundation",
+  "profiles": [],
+  "advertises_general_purpose": false,
+  "advertises_production_strategy": false,
+  "advertises_stable_edition": false,
+  "advertises_stable_standard_library": false
+ },
+ "validation_commands": [
+  "cargo run --locked -p xtask -- check generated",
+  "cargo run --locked -p xtask -- check governance",
+  "cargo run --locked -p xtask -- check workspace",
+  "cargo fmt --all -- --check",
+  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+  "cargo test --locked --workspace --all-targets --all-features --no-fail-fast"
+ ],
+ "environment_gaps": [
+  "Human authoring trials remain deferred to the usability issue and are not evidence for this gate.",
+  "Production-provider interoperability is owned by a separate embedding-harness effort; this gate relies on deterministic preregistration records only.",
+  "Quantitative performance qualification is deferred; this gate makes no latency, throughput, memory, cancellation-response, or sustained-service claim."
+ ]
+}
