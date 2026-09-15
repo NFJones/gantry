@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "4bd2c2d9fc8eebdc7cea975ea0c46c57e0cd6e59657440572567badc25640bf0",
-  "byte_length": 985838,
-  "line_count": 15387,
+  "specification_sha256": "66abf7fda8a7be661cfef85945d6cf59c25bf0e0b8bc5d61bb6780695722c946",
+  "byte_length": 995306,
+  "line_count": 15441,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8293,
-      "sha256": "322d69409cd8fe308c9ab5dfd9167f664b4a3a8ac78bc9e201333fa0c1622e30",
+      "sha256": "a56d31570c38561fac381d7e228f0906dfd38849fc391c7c09f451cc426986d1",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9497,
-      "end_line": 15387,
-      "sha256": "f58e35cdfc15fbe47b821577940aed0f8eb964b1453371fe1c234e0cd7ab2c4e",
+      "end_line": 15441,
+      "sha256": "470b6ce27b160294110d8d6d6939622f3208c8aa29f1312de4281ea4a8cf1ccb",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "97d1f445e49a10c5e6ef9d5fae6ee28ac4cc0074197c64b3a14dc3c6dc9f8ec9",
+      "span_sha256": "f271da6e892a5743334cb6c357a278d2e2a9e8ef102fb3b0140adef24ed0bf51",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "8880aab73cee81388fd23303363136f78d9b54a5ae7cf7d0ad4534635159d768",
+      "body_sha256": "da12ca955bab0b93a716fdcf653b5568fc6db93e2cf7c1ad508fb76db6817325",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -40425,6 +40425,542 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/stdlib_architecture.rs#non_claims_are_not_presented_as_guarantees"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.0-scalar-and-binary-foundation",
+      "span_start_line": 15388,
+      "span_end_line": 15394,
+      "span_sha256": "65f9147f2f6d1afd15ecd880a02bf6e3804eb65dff6e1feda6aa7cb9cde584f1",
+      "anchor_line": 15391,
+      "body_start_line": 15392,
+      "body_end_line": 15394,
+      "body_sha256": "8260f620a873735f3aac1d0b945b75ff24e50cbc64838de14d3464bf4b5c8f2f",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15392,
+          "end_line": 15394,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#section_35_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.1-declared-widths-and-identity",
+      "span_start_line": 15395,
+      "span_end_line": 15398,
+      "span_sha256": "436432294bb435f73af4677f8e2ac2b2d40650da968df13e2597f405b788b8a4",
+      "anchor_line": 15395,
+      "body_start_line": 15396,
+      "body_end_line": 15398,
+      "body_sha256": "b54ffc84a24263d16566c28e0a2d2455fb51300fbd0be10043ce369bbb2f00d5",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15396,
+          "end_line": 15398,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#widths_carry_their_declared_bits_and_octets",
+                "crates/gantry-conformance/tests/scalar_foundation.rs#kinds_are_distinct_and_never_admits_no_value"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.2-literal-formation-and-canonical-text",
+      "span_start_line": 15399,
+      "span_end_line": 15402,
+      "span_sha256": "6b3e28f65c69d74b04a59b96a7b9c93180ffb52aa67dd170f92ca6d5cfe313ef",
+      "anchor_line": 15399,
+      "body_start_line": 15400,
+      "body_end_line": 15402,
+      "body_sha256": "04a3825a264c19a4dfdb78dfc417d0d943c60ada193a21b3e11e0340548711e5",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15400,
+          "end_line": 15402,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#canonical_literals_round_trip_and_deviations_are_refused",
+                "crates/gantry-conformance/tests/scalar_foundation.rs#declared_ranges_are_exact_per_width"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.3-checked-arithmetic-and-overflow-modes",
+      "span_start_line": 15403,
+      "span_end_line": 15406,
+      "span_sha256": "6006ffb3a523f00aa995ab21c244aa80f8707690a4428e22f62bb97e00e9f978",
+      "anchor_line": 15403,
+      "body_start_line": 15404,
+      "body_end_line": 15406,
+      "body_sha256": "cd3255bd34983e3b694be406bc0bad587b8be4439a18daaf453110671ec6f2b4",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15404,
+          "end_line": 15406,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#overflow_modes_refuse_wrap_and_saturate"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.4-division-remainder-and-signed-semantics",
+      "span_start_line": 15407,
+      "span_end_line": 15410,
+      "span_sha256": "cdb7f28ed231c349c3343cea121a14db70499ee9e1e6256b34da2ffdfb675a76",
+      "anchor_line": 15407,
+      "body_start_line": 15408,
+      "body_end_line": 15410,
+      "body_sha256": "ed1df0d00b20d581f7096ae496a9a293a048e6d5376fe61eb5b56026c6a3fa2a",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15408,
+          "end_line": 15410,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#division_and_remainder_refuse_zero_and_follow_the_dividend"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.5-shifts-and-numeric-bounds",
+      "span_start_line": 15411,
+      "span_end_line": 15414,
+      "span_sha256": "0e25ce36ec052efb563d58030e3a6f6479dce7fffac0e2373e7d8efb314f03f1",
+      "anchor_line": 15411,
+      "body_start_line": 15412,
+      "body_end_line": 15414,
+      "body_sha256": "2dc676e1c39a7db7d8533a4c91a86b4ecefb493cc4a58a042d51797584144f86",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15412,
+          "end_line": 15414,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#shifts_refuse_amounts_at_or_beyond_the_width"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.6-char-values-and-unicode-scalars",
+      "span_start_line": 15415,
+      "span_end_line": 15418,
+      "span_sha256": "f2c84505296b12cd1b8d6008ad69347c67e8775eee79a7508a0d7fe3d81d0000",
+      "anchor_line": 15415,
+      "body_start_line": 15416,
+      "body_end_line": 15418,
+      "body_sha256": "4c3021975823f928076a7816319b1ffebbc7ec1d2c27a2c0d21bdc0cd9607e06",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15416,
+          "end_line": 15418,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#characters_admit_only_unicode_scalar_values",
+                "crates/gantry-conformance/tests/scalar_foundation.rs#bytes_and_chars_share_one_declared_identity_space"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.7-bytes-and-canonical-encoding",
+      "span_start_line": 15419,
+      "span_end_line": 15422,
+      "span_sha256": "c4fc4076151d7f3c501e156d5390cfd38b65334733a80096fda91b0cd356fd1f",
+      "anchor_line": 15419,
+      "body_start_line": 15420,
+      "body_end_line": 15422,
+      "body_sha256": "317fc87052583789651bac6db5124bc99dde9f0f32a837d3b3e4ef2ce2949e12",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15420,
+          "end_line": 15422,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#sealed_octets_round_trip_and_refuse_noncanonical_text"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.8-bytebuffer-mutation-and-freezing",
+      "span_start_line": 15423,
+      "span_end_line": 15426,
+      "span_sha256": "41debadf9d4e4460308eff55541fbdb6aef5792cd6fc6c56a2c8dc0cd383c12d",
+      "anchor_line": 15423,
+      "body_start_line": 15424,
+      "body_end_line": 15426,
+      "body_sha256": "53b642f913596ec20f7c78d290b9bcd97e702fa2286d198d951d61eee363a125",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15424,
+          "end_line": 15426,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#buffers_mutate_only_while_owned_and_freeze_on_consume"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.9-equality-order-and-stable-hash",
+      "span_start_line": 15427,
+      "span_end_line": 15430,
+      "span_sha256": "09cf16a56e4cd14a1c5a896112049a244408f0aff8fdbbd7a8f8b9ca5faa91dc",
+      "anchor_line": 15427,
+      "body_start_line": 15428,
+      "body_end_line": 15430,
+      "body_sha256": "ea652a35a6cc4c4a3345ee47aed5ee65b1955b17f7c3fb49b107b426665cfc61",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15428,
+          "end_line": 15430,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#comparison_is_ordered_within_a_kind_and_refused_across_kinds"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.10-allocation-quotas-and-cancellation",
+      "span_start_line": 15431,
+      "span_end_line": 15434,
+      "span_sha256": "a2903f6850b1e5c4c8bed5f42be6cca99443b4804d6a1e93e2956db7900b3770",
+      "anchor_line": 15431,
+      "body_start_line": 15432,
+      "body_end_line": 15434,
+      "body_sha256": "e71d0a6ebf2d52c9295afc899aa0199d1108474b12786e88fa406405f1457e67",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15432,
+          "end_line": 15434,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#quotas_charge_before_growth_and_release_on_truncate"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.11-storage-strategy-equivalence-and-round-trips",
+      "span_start_line": 15435,
+      "span_end_line": 15438,
+      "span_sha256": "58512df5acfa38d4bc02c3565fa1a79e0dc804478bcd2b16d03bb22c3c28b21a",
+      "anchor_line": 15435,
+      "body_start_line": 15436,
+      "body_end_line": 15438,
+      "body_sha256": "0ba015f6127886d45715fd3569e614971f60bef911b473bacda1422b7c29776e",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15436,
+          "end_line": 15438,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#storage_strategies_agree_on_octets_charges_and_refusals"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-35.12-scalar-and-binary-non-claims",
+      "span_start_line": 15439,
+      "span_end_line": 15441,
+      "span_sha256": "b1e3974e4e42a19d0bf51ff03156785708c1c14792796f9046ba4644bf5f1d98",
+      "anchor_line": 15439,
+      "body_start_line": 15440,
+      "body_end_line": 15441,
+      "body_sha256": "290e2040d0d5041e682ab4f1e311475b9cae59db54c0adba7967e56ca6359bd5",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15440,
+          "end_line": 15441,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scalar_foundation.rs#section_35_anchors_and_nonclaims_are_published"
               ],
               "rationale": null
             }

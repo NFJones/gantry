@@ -38,6 +38,7 @@ mod primitive;
 mod protected;
 pub mod registry;
 mod resource;
+mod scalar;
 mod schema;
 mod secret;
 mod signature;
@@ -327,6 +328,13 @@ pub use type_properties::{
     SourceProtectionClass, TransferEligibility, ValueResourceClass,
 };
 pub use types::{TypeDescriptor, TypeDescriptorError};
+// The wait, wakeup, arbitration, and quiescence model of SPEC.md Section 24 is
+pub use scalar::{
+    ByteBufferValue, ByteValue, BytesValue, CharValue, IntegerValue, OverflowMode, SCALAR_CLAUSES,
+    ScalarDiagnosticCode, ScalarError, ScalarKind, ScalarNonClaimAssertion, ScalarNonClaimName,
+    ScalarQuota, ScalarWidth, StorageStrategy, check_scalar_non_claims,
+};
+
 // The wait, wakeup, arbitration, and quiescence model of SPEC.md Section 24 is
 // published here. Its `WaitGeneration` is named apart from the landed
 // `OwnerGeneration` and `ResourceGenerationId` it cites, its `DurableWaitCut` is named
