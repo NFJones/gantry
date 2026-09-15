@@ -1053,7 +1053,8 @@ fn escaping_loans_and_duplicate_or_over_budget_offers_are_refused() {
     let limits = limits();
     let loan = CaptureCandidate::new("outer", CaptureClass::TemporaryLoan, limits)
         .unwrap_or_else(|error| panic!("candidate: {error}"));
-    let escaping = CaptureInference::infer(&[loan.clone()], true, limits).refused("escaping loan");
+    let escaping =
+        CaptureInference::infer(std::slice::from_ref(&loan), true, limits).refused("escaping loan");
     assert_eq!(escaping.code(), CallableDiagnosticCode::CaptureRefused);
     assert!(escaping.detail().contains("outer"));
     let local = CaptureInference::infer(&[loan], false, limits)

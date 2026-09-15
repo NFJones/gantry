@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "240c14040be2390a9e044373312f1f5fc333ce4acaec01f2df061e4f01a8d129",
-  "byte_length": 1016906,
+  "specification_sha256": "aa6d039141dedb05ea8657d4b2e1e581e552c552974a7fdd66d8bbef49f6b9a0",
+  "byte_length": 1017904,
   "line_count": 15549,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9497,
       "end_line": 15549,
-      "sha256": "b3856bb2738d8737fdb0dae7be3bcf184c8604957bf5f4a8157a2f140c7820cd",
+      "sha256": "8574f6397bbb053cdb7998666bd577f6f54860dfe7eb76a8a92a84ef9d59d3a1",
       "rationale": null
     }
   ],
@@ -41631,11 +41631,11 @@
       "id": "GNT-37.3-explicit-captures-and-capture-plans",
       "span_start_line": 15511,
       "span_end_line": 15514,
-      "span_sha256": "c9ccf347eb01849b62a1aae0942b7730cbdda30d7aeb856551ad52b05d0f5f4b",
+      "span_sha256": "794ea4a83060dd381548d87fe0ba3fdb2bd8ce2c81484cd4a95f39b7b4b4b00f",
       "anchor_line": 15511,
       "body_start_line": 15512,
       "body_end_line": 15514,
-      "body_sha256": "6371f390743bc5040c4e95848dc9fb9dfe5d73a5363c5c0975f3b5f7b3c3cc4d",
+      "body_sha256": "0ac9fa96e3a2335151eb6cc86dc2c2c1c1d666fdfec75e3e7fe4f8b988ed048f",
       "profiles": [
         "analyzer"
       ],
@@ -41673,11 +41673,11 @@
       "id": "GNT-37.4-reuse-kinds-and-affine-consumption",
       "span_start_line": 15515,
       "span_end_line": 15518,
-      "span_sha256": "5b16f13589488d1b6529fd5f95a41497e138fbfee5b321c70e79d927b258eb2b",
+      "span_sha256": "f0fbe4d242892e7a9212a468c09ceef5b0aa5d39d50ce721921235de73d55a96",
       "anchor_line": 15515,
       "body_start_line": 15516,
       "body_end_line": 15518,
-      "body_sha256": "8e7d75309c0070192609f08ab85f71dc472ccd2b0f9454e26dacd9b8ec45e4a4",
+      "body_sha256": "ba9bd3fb1e924d02f6d87ee4d7de25da6028891260f625d87f68e01519fb2877",
       "profiles": [
         "analyzer"
       ],
@@ -42003,11 +42003,11 @@
       "id": "GNT-37.12-callable-non-claims",
       "span_start_line": 15547,
       "span_end_line": 15549,
-      "span_sha256": "356446d39ef5c1a71f20fcedfca118521854e65ba4c3128c88c261e3ee697422",
+      "span_sha256": "2d58594a3c14ea07d80f1e843f06d4b07c31cd08a5ba16dead79ac4da97c47e9",
       "anchor_line": 15547,
       "body_start_line": 15548,
       "body_end_line": 15549,
-      "body_sha256": "a611f1bda30d33046e813874e273587fe824ee01d6068e0bd4f8f052552d2e3c",
+      "body_sha256": "0c1c3da5e1cbfb4b6a2d3486225e869e03963acea40d7cfe75b6ec6179077dcb",
       "profiles": [
         "analyzer"
       ],

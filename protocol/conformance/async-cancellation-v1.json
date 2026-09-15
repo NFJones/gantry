@@ -1,6 +1,6 @@
 {
  "format": "gantry.async-cancellation-evidence/v1",
- "specification_sha256": "240c14040be2390a9e044373312f1f5fc333ce4acaec01f2df061e4f01a8d129",
+ "specification_sha256": "aa6d039141dedb05ea8657d4b2e1e581e552c552974a7fdd66d8bbef49f6b9a0",
  "issue": "GNT-ASYNC-CANCEL-001",
  "artifacts": [
   {
