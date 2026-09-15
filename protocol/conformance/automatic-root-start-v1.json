@@ -1,6 +1,6 @@
 {
  "format": "gantry.automatic-root-start-evidence/v1",
- "specification_sha256": "43f5fdffe40f160a8f8090d2a15a0db4d9c2f2c14a6c52cc570fb0782d6ccba3",
+ "specification_sha256": "2a921e87c4b274722a81f074aafd08918f46fa16fcdd4cfe47d483188299c6b5",
  "issue": "GNT-ASYNC-START-001",
  "requirements": [
   {

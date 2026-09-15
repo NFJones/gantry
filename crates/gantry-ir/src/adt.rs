@@ -1094,11 +1094,11 @@ impl AdtPackageModel {
                 return Err(AdtError::new(
                     AdtDiagnosticCode::AliasArity,
                     format!(
-                        "alias {} declares {} parameters but its resolved target {} declares {}",
+                        "alias {} declares parameters [{}] but its resolved target {} declares [{}]",
                         alias.name,
-                        alias.parameters.len(),
+                        alias.parameters.join(", "),
                         alias.target,
-                        expected.len()
+                        expected.join(", ")
                     ),
                 ));
             }

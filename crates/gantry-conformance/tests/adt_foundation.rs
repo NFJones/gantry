@@ -725,6 +725,22 @@ fn alias_parameter_lists_must_match_their_resolved_target() {
         AdtDiagnosticCode::AliasArity
     );
 
+    let mut renamed = AdtPackageBuilder::new("gantry.example");
+    renamed.declare_leaf("Int");
+    declare(&mut renamed, boxed_type());
+    renamed
+        .declare_alias(named_alias("Swap", vec!["U".to_owned()], "Boxed"))
+        .unwrap_or_else(|error| panic!("alias: {error}"));
+    let refusal = renamed
+        .finish()
+        .refused("a same-length alias parameter departure");
+    assert_eq!(refusal.code(), AdtDiagnosticCode::AliasArity);
+    assert!(
+        refusal.detail().contains("parameters [U]"),
+        "{}",
+        refusal.detail()
+    );
+
     let mut nested = AdtPackageBuilder::new("gantry.example");
     nested.declare_leaf("Int");
     declare(&mut nested, boxed_type());

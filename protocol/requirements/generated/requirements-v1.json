@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "43f5fdffe40f160a8f8090d2a15a0db4d9c2f2c14a6c52cc570fb0782d6ccba3",
-  "byte_length": 1007028,
+  "specification_sha256": "2a921e87c4b274722a81f074aafd08918f46fa16fcdd4cfe47d483188299c6b5",
+  "byte_length": 1007107,
   "line_count": 15495,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9497,
       "end_line": 15495,
-      "sha256": "934d11a5deb2ef374f7727ddc36a3f1f3f2c40f920546e9e447ae9262897f80e",
+      "sha256": "81dfd221689fb632de5763e088203db1fe307150f50d7d90b1dd12ce5a0ef876",
       "rationale": null
     }
   ],
@@ -41219,11 +41219,11 @@
       "id": "GNT-36.6-destructuring-and-pattern-identity",
       "span_start_line": 15469,
       "span_end_line": 15472,
-      "span_sha256": "97a034e8c18bb84e40ddf9913753f6f526b614792e35f4101fa37eb95de2e446",
+      "span_sha256": "2100b9d694a3798d00a7653295770d80984f40fd50f5503e671f7a72e078d28a",
       "anchor_line": 15469,
       "body_start_line": 15470,
       "body_end_line": 15472,
-      "body_sha256": "e1c8bd84a21d495c5be1452ef33c10ec551931fe9c6fea3cbff82ad827ab39b4",
+      "body_sha256": "b554796dd6fe27f7d33fc26a3df6c7beef825933df2bb1b54e3f8f275c069fc0",
       "profiles": [
         "analyzer"
       ],
