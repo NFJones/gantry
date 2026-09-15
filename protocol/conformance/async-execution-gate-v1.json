@@ -6,75 +6,75 @@
   },
   {
    "path": "protocol/conformance/async-cancellation-v1.json",
-   "sha256": "2bad7e9a47a49f06620097f0067d0606994e57c9d4fc1c9490e193d316fcb26b"
+   "sha256": "b6b0901163711ba20ecd7036b5771de4fed5004b3b9066a3adeaee7b355d0e7a"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "889a31e2906ad545120d2fa8272f399ce05a0646db17f6c218338219ce418c99"
+   "sha256": "801f66c204965395b62d33df6e819bae1c1eed22d387646ea4ae3cc093454798"
   },
   {
    "path": "protocol/conformance/async-execution-observation-v1.json",
-   "sha256": "f67d3192d102fc086980a3a6a096dfb52b255d63d90ec8bfc6eaf5c96112f03b"
+   "sha256": "fa7e6e2f6b7d72632be4867a8a76edad16e1d61be6d3a6d2dd97d49a737853e3"
   },
   {
    "path": "protocol/conformance/automatic-durable-root-v1.json",
-   "sha256": "59ef27129de222710cd9e98e9312e7a723213fb077a3f688307b47fcb27112cb"
+   "sha256": "eb23e625ee2919fd820393d2ea23e8a992ed40d3a5c7de825f2c174b0291857f"
   },
   {
    "path": "protocol/conformance/automatic-root-start-v1.json",
-   "sha256": "0c42121a9758b43bf8d073517e6b2b8188c4c34c6585d38783d659f5b9573e7d"
+   "sha256": "5a57607b1820b61a249db85bf3e2bd9bee82a926037954a820b4e36bd594cc37"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",
-   "sha256": "d25db72491d77e13f3442281c456879c3429335f912c064fb25edffedf64b2eb"
+   "sha256": "df91da1fbfa055827ef0fe2b10caed743cc97e0d99eec617dc6b45c916de80cd"
   },
   {
    "path": "protocol/conformance/durable-start-v1.json",
-   "sha256": "9dbc1bfcb597aa195f9f5e0f3a387d9219241bcf800680dd014c356a910c8256"
+   "sha256": "dacf7197bc0b73fd819b65e1902280a2ad6a8cdb656ab757592b44fa5113e427"
   },
   {
    "path": "protocol/conformance/execution-api-v1.json",
-   "sha256": "9f920bc647f4612d0fcf23b5092343df16918d6dfe066fb07318d7d1e446cfdf"
+   "sha256": "b9edc08c0d1478bb3bb54ff9cb072330a144da16041a4e0dcfd324ba0254c490"
   },
   {
    "path": "protocol/conformance/execution-coordinator-v1.json",
-   "sha256": "cd4eb7fec8c9b56ef08fb224f91cda265cbc9a2c5ef304e3e605f2674bd687fe"
+   "sha256": "fb53ad36883ecd4c661286e983632be8d55d6a703227d5bf7c231623069d3bc4"
   },
   {
    "path": "protocol/conformance/executor-services-v1.json",
-   "sha256": "ac308f551348e0a90b274ab617a3764774c8c27f8f30511d8d2401f8313b59f6"
+   "sha256": "a5956cc679d8f3b52add435e594d5098e962788fd32c9bb4c215ca1279fcaa14"
   },
   {
    "path": "protocol/conformance/interpreter-lifecycle-v1.json",
-   "sha256": "285071e9e1e49fdf41532c9ed7af93ca63baf0b21929d865745c20b5ee7c3803"
+   "sha256": "52568a6b101f60818741c0d14b104ba9dfb97a034ef0e528371e82e1637ec81d"
   },
   {
    "path": "protocol/conformance/interpreter-ownership-v1.json",
-   "sha256": "bb928526af57dabb02af1ea009e45545f8297b06f3b4d6cd1a4de33ef04937ff"
+   "sha256": "50e4ecb4bb7900f19934ff52146cb02b988c35cb032f33189bf683081c40598b"
   },
   {
    "path": "protocol/conformance/revent-ownership-v1.json",
-   "sha256": "fbf69e11ee60b6e7402ea2cf2061f21b985807ec6bd1853f97115fdc4c364722"
+   "sha256": "8b01afe3538f40b92a9aabacdb7c904e38995f1cca7f94c2ed64b35a5c777b0c"
   },
   {
    "path": "protocol/conformance/runtime-sessions-v1.json",
-   "sha256": "d38d61084cd4d2e6bd9000a1a5e58bd3db7c11083c2fd7206eb799e15eee4fb3"
+   "sha256": "4c5343b839f211a388466706c5ebb65a756ff6c8b7bd940077cd610c7b23a086"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
-   "sha256": "f5b5e21c6553185763bc36f4b10fa002a95abf6eab8ed64f5edea90f70de7318"
+   "sha256": "c7defa9a05161324589150c5cdbc42525c0d62b794ad2451ec82ad1c6afa6861"
   },
   {
    "path": "protocol/conformance/task-driver-v1.json",
-   "sha256": "12cf4d0d5368c69a8c7ea20034198f1a59bf99669667a6d15767d44bf2cd53f8"
+   "sha256": "b484256d9cb9dcbef31bee50bfb14593c7fde65add3add1cbc9ad830ba3f89d9"
   },
   {
    "path": "protocol/conformance/task-supervision-v1.json",
-   "sha256": "87e53b4faf75f897c4efe259d79e86968ddb3ec38b9f86cf1a70a90f6fa464bc"
+   "sha256": "d6582a2be7eda23e5ff474c053e092fe7432b7744e3a8105bbf051e8c97e2bce"
   },
   {
    "path": "protocol/conformance/tokio-executor-v1.json",
-   "sha256": "4e48cf7e3a6d871b4f04e077d74961bfbdb745d692cb671f1d02d5c3d894f8ed"
+   "sha256": "ff7374adab32d68cfccd802adffb7a11e95f4d68c8748fc74ce5b3b10d34988d"
   }
  ],
  "assignment_authentication": {
@@ -214,7 +214,7 @@
    "evidence": "crates/gantry-conformance/tests/task_supervision.rs#semantic_settlement_retains_capacity_until_physical_reaping"
   }
  ],
- "specification_sha256": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342",
+ "specification_sha256": "43f5fdffe40f160a8f8090d2a15a0db4d9c2f2c14a6c52cc570fb0782d6ccba3",
  "status": "verified",
  "validation_commands": [
   "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_cancellation",

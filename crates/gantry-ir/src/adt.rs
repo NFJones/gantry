@@ -44,10 +44,14 @@ pub enum AdtDiagnosticCode {
     UnresolvedReference,
     /// `GNT-36.4`: the alias-only relation contains a cycle.
     AliasCycle,
+    /// `GNT-36.4`: an alias departs from its resolved target's parameter list.
+    AliasArity,
     /// `GNT-36.5`: a reference reaches a less open declaration.
     InvisibleReference,
     /// `GNT-36.6`: a pattern names a constructor the matched type does not declare.
     UnknownConstructor,
+    /// `GNT-36.6`: a sub-pattern form does not match its field position.
+    PatternShape,
     /// `GNT-36.7`: a match leaves a declared constructor path uncovered.
     IncompleteMatch,
     /// `GNT-36.8`: a constant site is not a finite constructor tree.
@@ -66,14 +70,16 @@ pub enum AdtDiagnosticCode {
 
 impl AdtDiagnosticCode {
     /// Every code, in declaration order.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 16] = [
         Self::DuplicateConstructor,
         Self::ConstructorArity,
         Self::UnproductiveRecursion,
         Self::UnresolvedReference,
         Self::AliasCycle,
+        Self::AliasArity,
         Self::InvisibleReference,
         Self::UnknownConstructor,
+        Self::PatternShape,
         Self::IncompleteMatch,
         Self::ConstantForm,
         Self::ConstantLimit,
@@ -92,8 +98,10 @@ impl AdtDiagnosticCode {
             Self::UnproductiveRecursion => "adt-unproductive-recursion",
             Self::UnresolvedReference => "adt-unresolved-reference",
             Self::AliasCycle => "adt-alias-cycle",
+            Self::AliasArity => "adt-alias-arity",
             Self::InvisibleReference => "adt-invisible-reference",
             Self::UnknownConstructor => "adt-unknown-constructor",
+            Self::PatternShape => "adt-pattern-shape",
             Self::IncompleteMatch => "adt-incomplete-match",
             Self::ConstantForm => "adt-constant-form",
             Self::ConstantLimit => "adt-constant-limit",
@@ -113,9 +121,10 @@ impl AdtDiagnosticCode {
             }
             Self::UnproductiveRecursion => "GNT-36.2-guarded-productive-recursion",
             Self::UnresolvedReference => "GNT-36.3-mutual-recursion-and-order-independence",
-            Self::AliasCycle => "GNT-36.4-aliases-and-alias-cycles",
+            Self::AliasCycle | Self::AliasArity => "GNT-36.4-aliases-and-alias-cycles",
             Self::InvisibleReference => "GNT-36.5-visibility-and-reference-admission",
             Self::UnknownConstructor => "GNT-36.6-destructuring-and-pattern-identity",
+            Self::PatternShape => "GNT-36.6-destructuring-and-pattern-identity",
             Self::IncompleteMatch => "GNT-36.7-match-coverage-and-exhaustiveness",
             Self::ConstantForm | Self::ConstantLimit => "GNT-36.8-bounded-constant-values",
             Self::MutableGlobal => "GNT-36.9-package-load-non-execution",
@@ -326,7 +335,19 @@ pub struct AdtPattern {
     /// The named constructor.
     pub constructor: String,
     /// One sub-pattern per declared field.
-    pub arguments: Vec<AdtPattern>,
+    pub arguments: Vec<AdtSubPattern>,
+}
+
+/// One sub-pattern of a constructor pattern (`GNT-36.6`).
+///
+/// A field whose type resolves to a declared type carries a constructor pattern, and a field whose
+/// type resolves to a scalar leaf carries a scalar form that names no constructor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AdtSubPattern {
+    /// A constructor pattern for a field of declared type.
+    Constructor(AdtPattern),
+    /// A scalar form (binding, wildcard, or literal) for a field of scalar leaf type.
+    Scalar,
 }
 
 /// The outcome of a match-coverage check (`GNT-36.7`).
@@ -846,11 +867,15 @@ impl AdtPackageModel {
     fn check_sub_pattern(
         &self,
         type_name: &str,
-        pattern: &AdtPattern,
+        pattern: &AdtSubPattern,
         checked_paths: &mut usize,
     ) -> Result<(), AdtError> {
         match self.resolve_type(type_name) {
             Some(resolved) => {
+                let AdtSubPattern::Constructor(pattern) = pattern else {
+                    // A binding, wildcard, or literal covers its whole subtree (`GNT-36.7`).
+                    return Ok(());
+                };
                 let declaration = self
                     .types
                     .iter()
@@ -891,7 +916,18 @@ impl AdtPackageModel {
                 }
                 Ok(())
             }
-            None => Ok(()),
+            None => match self.resolve_name(type_name) {
+                Some(resolved) if self.leaves.contains(resolved) => match pattern {
+                    AdtSubPattern::Scalar => Ok(()),
+                    AdtSubPattern::Constructor(_) => Err(AdtError::new(
+                        AdtDiagnosticCode::PatternShape,
+                        format!(
+                            "{type_name} resolves to scalar leaf {resolved}; scalar leaves admit no constructor sub-pattern"
+                        ),
+                    )),
+                },
+                _ => Ok(()),
+            },
         }
     }
 
@@ -1053,6 +1089,19 @@ impl AdtPackageModel {
                 }
                 current = next;
             }
+            let expected = self.alias_target_parameters(&alias.target);
+            if alias.parameters != expected {
+                return Err(AdtError::new(
+                    AdtDiagnosticCode::AliasArity,
+                    format!(
+                        "alias {} declares {} parameters but its resolved target {} declares {}",
+                        alias.name,
+                        alias.parameters.len(),
+                        alias.target,
+                        expected.len()
+                    ),
+                ));
+            }
         }
         for declaration in &self.types {
             for constructor in &declaration.constructors {
@@ -1070,6 +1119,17 @@ impl AdtPackageModel {
             }
         }
         Ok(())
+    }
+
+    /// The exact parameter list an alias target requires (`GNT-36.4`).
+    fn alias_target_parameters(&self, target: &str) -> Vec<String> {
+        if let Some(declaration) = self.types.iter().find(|entry| entry.name == target) {
+            return declaration.parameters.clone();
+        }
+        if let Some(alias) = self.aliases.iter().find(|entry| entry.name == target) {
+            return alias.parameters.clone();
+        }
+        Vec::new()
     }
 
     fn check_visibility(&self) -> Result<(), AdtError> {

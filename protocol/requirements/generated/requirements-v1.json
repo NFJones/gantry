@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342",
-  "byte_length": 1006213,
+  "specification_sha256": "43f5fdffe40f160a8f8090d2a15a0db4d9c2f2c14a6c52cc570fb0782d6ccba3",
+  "byte_length": 1007028,
   "line_count": 15495,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9497,
       "end_line": 15495,
-      "sha256": "0a4f01a39ece0d8c5ed981d8414d89bf04d02c8faff5a083f39dbb3742bc6a7a",
+      "sha256": "934d11a5deb2ef374f7727ddc36a3f1f3f2c40f920546e9e447ae9262897f80e",
       "rationale": null
     }
   ],
@@ -40973,11 +40973,11 @@
       "id": "GNT-36.0-recursive-algebraic-data-types",
       "span_start_line": 15442,
       "span_end_line": 15448,
-      "span_sha256": "6f0035d8b6a65708d909bff10747a3d1e6816cd7ab1c737b8d63c66d301e953b",
+      "span_sha256": "aa8a65dc2ed56a8602876f15ea9dd736c19b3268dd9305d1d7eabfee1d0a044c",
       "anchor_line": 15445,
       "body_start_line": 15446,
       "body_end_line": 15448,
-      "body_sha256": "37741a4ed4f433462b5df3fb60c9fab738e5e0536f34a586c9d4eed3aa74d78c",
+      "body_sha256": "f3eeab9341729c21695e4256cc81bbc4561e9136981bed36813df16e3608316b",
       "profiles": [
         "analyzer"
       ],
@@ -41014,11 +41014,11 @@
       "id": "GNT-36.1-declaration-and-constructor-identity",
       "span_start_line": 15449,
       "span_end_line": 15452,
-      "span_sha256": "71b65e4d16e9f1cef23875505049adbb74e2c41d898dba54da2c41ae922727af",
+      "span_sha256": "21d6d2ef68d7b572cfa13eb2e3e80af3bd2e4c0cae10501c0433c31bd4eb13e6",
       "anchor_line": 15449,
       "body_start_line": 15450,
       "body_end_line": 15452,
-      "body_sha256": "a9ea14c2040c3b4812b97f4e4075af014e9fc514e29ef71d7acb6bc1fb46b0d8",
+      "body_sha256": "2ca34f04290693f72d9c5a519257853c9cad5372526d08e53d9473a1d76393cb",
       "profiles": [
         "analyzer"
       ],
@@ -41137,11 +41137,11 @@
       "id": "GNT-36.4-aliases-and-alias-cycles",
       "span_start_line": 15461,
       "span_end_line": 15464,
-      "span_sha256": "52051238e581091308207a1703414b373f290a954d1b7524600efb4598aebd7b",
+      "span_sha256": "59a3db46d29af20e7cc48783dfd6c0140d5bd7a00ef0026413c39c827c756e42",
       "anchor_line": 15461,
       "body_start_line": 15462,
       "body_end_line": 15464,
-      "body_sha256": "6cfe8bd29ce37b19bc68a17f1e740efc8003630a99bf0f87a50c8b96d4aecd8e",
+      "body_sha256": "5d7873122985020241327f79692cadc9ced92f24889be9e02140998cb694c866",
       "profiles": [
         "analyzer"
       ],
@@ -41219,11 +41219,11 @@
       "id": "GNT-36.6-destructuring-and-pattern-identity",
       "span_start_line": 15469,
       "span_end_line": 15472,
-      "span_sha256": "75506307f347f15fd117d92d5d7fc91691c5413e44c2177b49acaf18047f05cd",
+      "span_sha256": "97a034e8c18bb84e40ddf9913753f6f526b614792e35f4101fa37eb95de2e446",
       "anchor_line": 15469,
       "body_start_line": 15470,
       "body_end_line": 15472,
-      "body_sha256": "09b6d186a576e93a8befa3a34df25782d1f34c1e6aeb6c702fe56b557683bd02",
+      "body_sha256": "e1c8bd84a21d495c5be1452ef33c10ec551931fe9c6fea3cbff82ad827ab39b4",
       "profiles": [
         "analyzer"
       ],

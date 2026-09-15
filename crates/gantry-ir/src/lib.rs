@@ -62,7 +62,7 @@ pub use adt::{
     AdtConstantSite, AdtConstantTree, AdtConstantValue, AdtConstructor, AdtConstructorIdentity,
     AdtDiagnosticCode, AdtDurableProjection, AdtError, AdtField, AdtMatchReport,
     AdtNonClaimAssertion, AdtNonClaimName, AdtPackageBuilder, AdtPackageLoad, AdtPackageModel,
-    AdtPattern, AdtTypeDeclaration, AdtVisibility, check_adt_non_claims,
+    AdtPattern, AdtSubPattern, AdtTypeDeclaration, AdtVisibility, check_adt_non_claims,
 };
 pub use agent::{
     AGENT_CLAUSES, AGENT_NON_CLAIM_ORDER, AGENT_NON_CLAIMS, AcceptedTurn, AgentBindingRevision,

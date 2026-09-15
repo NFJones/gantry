@@ -4,7 +4,8 @@ use gantry::ir::{
     ADT_CLAUSES, AdtAliasDeclaration, AdtBoundaryLabels, AdtConstantBudget, AdtConstantSite,
     AdtConstantTree, AdtConstantValue, AdtConstructor, AdtDiagnosticCode, AdtDurableProjection,
     AdtError, AdtField, AdtMatchReport, AdtNonClaimAssertion, AdtNonClaimName, AdtPackageBuilder,
-    AdtPackageModel, AdtPattern, AdtTypeDeclaration, AdtVisibility, check_adt_non_claims,
+    AdtPackageModel, AdtPattern, AdtSubPattern, AdtTypeDeclaration, AdtVisibility,
+    check_adt_non_claims,
 };
 
 /// Returns the refusal produced by one rejected decision.
@@ -78,10 +79,37 @@ fn package_with_list() -> AdtPackageModel {
         .unwrap_or_else(|error| panic!("model: {error}"))
 }
 
-fn pattern(constructor: &str, arguments: Vec<AdtPattern>) -> AdtPattern {
+fn pattern(constructor: &str, arguments: Vec<AdtSubPattern>) -> AdtPattern {
     AdtPattern {
         constructor: constructor.to_owned(),
         arguments,
+    }
+}
+
+fn sub_pattern(pattern: AdtPattern) -> AdtSubPattern {
+    AdtSubPattern::Constructor(pattern)
+}
+
+fn boxed_type() -> AdtTypeDeclaration {
+    AdtTypeDeclaration {
+        name: "Boxed".to_owned(),
+        visibility: AdtVisibility::Public,
+        parameters: vec!["T".to_owned()],
+        constructors: vec![AdtConstructor {
+            name: "Box".to_owned(),
+            tag: 0,
+            parameters: vec!["T".to_owned()],
+            fields: vec![field("value", "Int")],
+        }],
+    }
+}
+
+fn named_alias(name: &str, parameters: Vec<String>, target: &str) -> AdtAliasDeclaration {
+    AdtAliasDeclaration {
+        name: name.to_owned(),
+        visibility: AdtVisibility::Public,
+        parameters,
+        target: target.to_owned(),
     }
 }
 
@@ -116,7 +144,7 @@ fn section_36_anchors_and_nonclaims_are_published() {
             "{clause} carries no clause text"
         );
     }
-    assert_eq!(AdtDiagnosticCode::ALL.len(), 14);
+    assert_eq!(AdtDiagnosticCode::ALL.len(), 16);
     for code in AdtDiagnosticCode::ALL {
         assert!(
             spec.contains(&format!("`{}`", code.code())),
@@ -602,7 +630,10 @@ fn patterns_cover_the_declared_constructor_space() {
         pattern("Nil", Vec::new()),
         pattern(
             "Cons",
-            vec![pattern("Nil", Vec::new()), pattern("Nil", Vec::new())],
+            vec![
+                AdtSubPattern::Scalar,
+                sub_pattern(pattern("Nil", Vec::new())),
+            ],
         ),
     ];
     let report: AdtMatchReport = model
@@ -634,7 +665,7 @@ fn patterns_cover_the_declared_constructor_space() {
                 "List",
                 &[
                     pattern("Nil", Vec::new()),
-                    pattern("Cons", vec![pattern("Nil", Vec::new()); 2]),
+                    pattern("Cons", vec![AdtSubPattern::Scalar; 2]),
                     pattern("Absent", Vec::new()),
                 ],
             )
@@ -661,6 +692,115 @@ fn patterns_cover_the_declared_constructor_space() {
             .code(),
         AdtDiagnosticCode::IncompleteMatch
     );
+}
+
+#[test]
+fn alias_parameter_lists_must_match_their_resolved_target() {
+    let mut matching = AdtPackageBuilder::new("gantry.example");
+    matching.declare_leaf("Int");
+    declare(&mut matching, boxed_type());
+    matching
+        .declare_alias(named_alias("Box", vec!["T".to_owned()], "Boxed"))
+        .unwrap_or_else(|error| panic!("alias: {error}"));
+    let model = matching
+        .finish()
+        .unwrap_or_else(|error| panic!("model: {error}"));
+    assert_eq!(model.resolve_type("Box"), Some("Boxed"));
+
+    let mut mismatch = AdtPackageBuilder::new("gantry.example");
+    mismatch.declare_leaf("Int");
+    declare(&mut mismatch, boxed_type());
+    mismatch
+        .declare_alias(named_alias(
+            "Wide",
+            vec!["T".to_owned(), "U".to_owned()],
+            "Boxed",
+        ))
+        .unwrap_or_else(|error| panic!("alias: {error}"));
+    assert_eq!(
+        mismatch
+            .finish()
+            .refused("an alias parameter list that departs from its target")
+            .code(),
+        AdtDiagnosticCode::AliasArity
+    );
+
+    let mut nested = AdtPackageBuilder::new("gantry.example");
+    nested.declare_leaf("Int");
+    declare(&mut nested, boxed_type());
+    nested
+        .declare_alias(named_alias("Direct", vec!["U".to_owned()], "Boxed"))
+        .unwrap_or_else(|error| panic!("alias: {error}"));
+    nested
+        .declare_alias(named_alias("Chained", vec!["T".to_owned()], "Direct"))
+        .unwrap_or_else(|error| panic!("alias: {error}"));
+    assert_eq!(
+        nested
+            .finish()
+            .refused("an alias chained to a mismatched alias")
+            .code(),
+        AdtDiagnosticCode::AliasArity
+    );
+}
+
+#[test]
+fn sub_pattern_forms_must_match_their_field_positions() {
+    let model = package_with_list();
+    assert_eq!(
+        model
+            .match_coverage(
+                "List",
+                &[
+                    pattern("Nil", Vec::new()),
+                    pattern(
+                        "Cons",
+                        vec![
+                            sub_pattern(pattern("Nil", Vec::new())),
+                            AdtSubPattern::Scalar,
+                        ],
+                    ),
+                ],
+            )
+            .refused("a constructor sub-pattern in a scalar leaf position")
+            .code(),
+        AdtDiagnosticCode::PatternShape
+    );
+    assert_eq!(
+        model
+            .match_coverage(
+                "List",
+                &[
+                    pattern("Nil", Vec::new()),
+                    pattern(
+                        "Cons",
+                        vec![
+                            AdtSubPattern::Scalar,
+                            sub_pattern(pattern("Absent", Vec::new())),
+                        ],
+                    ),
+                ],
+            )
+            .refused("an unknown constructor nested in a declared position")
+            .code(),
+        AdtDiagnosticCode::UnknownConstructor
+    );
+    let report: AdtMatchReport = model
+        .match_coverage(
+            "List",
+            &[
+                pattern("Nil", Vec::new()),
+                pattern(
+                    "Cons",
+                    vec![
+                        AdtSubPattern::Scalar,
+                        sub_pattern(pattern("Nil", Vec::new())),
+                    ],
+                ),
+            ],
+        )
+        .unwrap_or_else(|error| panic!("coverage: {error}"));
+    assert_eq!(report.covered, vec!["Nil", "Cons"]);
+    assert_eq!(report.checked_paths, 3);
 }
 
 #[test]

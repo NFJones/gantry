@@ -20,19 +20,19 @@
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "5885ee78565feca21b14c535e90be6a312ed1cf4bbeea0d1304e2bff885134a2"
+   "sha256": "13db82435110db7ed94ffd141f22fefe7e8704b4e4d3c6694447673465eac07a"
   },
   {
    "path": "protocol/conformance/async-execution-adoption-v1.json",
-   "sha256": "a56c3412437947552b08f75ad8a928899e92888e0dec156672a2fe4d4a685297"
+   "sha256": "1e87b28d4c32e51d77af68748f1fd40f543c3cf7e2f9fe67303319a9d6ba04ec"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "889a31e2906ad545120d2fa8272f399ce05a0646db17f6c218338219ce418c99"
+   "sha256": "801f66c204965395b62d33df6e819bae1c1eed22d387646ea4ae3cc093454798"
   },
   {
    "path": "protocol/conformance/async-execution-gate-v1.json",
-   "sha256": "3849dd9b5fe813244261542772c68e02204e096aa0028c1e4e8b1808560ce211"
+   "sha256": "8f6e4d93fd9f4c4503cda5785e235b3c075621bb87f818fb919f36c7bf3c0544"
   },
   {
    "path": "protocol/goldens/concurrent-refinement-model-v1.json",
@@ -213,7 +213,7 @@
    "subject": "Qualify executor-backed recovery"
   }
  ],
- "specification_sha256": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342",
+ "specification_sha256": "43f5fdffe40f160a8f8090d2a15a0db4d9c2f2c14a6c52cc570fb0782d6ccba3",
  "status": "verified",
  "worker_policy": {
   "cli_runtime": "tokio-multi-thread",
