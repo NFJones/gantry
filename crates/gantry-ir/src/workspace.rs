@@ -52,12 +52,13 @@ const ENTRY_DOMAIN: &str = "gantry.workspace-lockfile-entry/v1";
 /// Domain separator for the canonical lockfile text digest.
 const LOCKFILE_DOMAIN: &str = "gantry.workspace-lockfile/v1";
 
-/// One frozen published diagnostic identity of this model.
+/// One declared diagnostic identity of this model.
 ///
-/// The codes are frozen: a consumer matches on [`Self::as_str`], and no spelling
-/// is shared by two refusal conditions. The variant order is this model's
-/// declaration order, which [`Self::ALL`] follows; renaming a variant or
-/// changing a spelling would change published refusal identity.
+/// The codes are declared here and are not yet registered as normative `SPEC.md`
+/// vocabulary: a consumer matches on [`Self::as_str`], and no spelling is shared
+/// by two refusal conditions. The variant order is this model's declaration
+/// order, which [`Self::ALL`] follows, so renaming a variant or changing a
+/// spelling would change refusal identity once the registration phase freezes it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum WorkspaceDiagnosticCode {
     /// `workspace-alias-collision`
@@ -88,11 +89,13 @@ pub enum WorkspaceDiagnosticCode {
     SourceRefused,
     /// `workspace-vendored-source-mismatch`
     VendoredSourceMismatch,
+    /// `workspace-version-not-canonical`
+    VersionNotCanonical,
 }
 
 impl WorkspaceDiagnosticCode {
     /// Every declared code, in declaration order.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::AliasCollision,
         Self::DuplicateMember,
         Self::GeneratorInputMismatch,
@@ -107,6 +110,7 @@ impl WorkspaceDiagnosticCode {
         Self::SolveConflict,
         Self::SourceRefused,
         Self::VendoredSourceMismatch,
+        Self::VersionNotCanonical,
     ];
 
     /// Returns the exact frozen code spelling.
@@ -127,6 +131,7 @@ impl WorkspaceDiagnosticCode {
             Self::SolveConflict => "workspace-solve-conflict",
             Self::SourceRefused => "workspace-source-refused",
             Self::VendoredSourceMismatch => "workspace-vendored-source-mismatch",
+            Self::VersionNotCanonical => "workspace-version-not-canonical",
         }
     }
 
@@ -135,7 +140,7 @@ impl WorkspaceDiagnosticCode {
     pub const fn meaning(self) -> &'static str {
         match self {
             Self::AliasCollision => {
-                "A dependency alias collides with another declared name in its workspace."
+                "A dependency alias or resolved package identity collides with another declared name in its workspace."
             }
             Self::DuplicateMember => "Two workspace members declare the same package name.",
             Self::GeneratorInputMismatch => {
@@ -173,6 +178,9 @@ impl WorkspaceDiagnosticCode {
             }
             Self::VendoredSourceMismatch => {
                 "A vendored requirement's declared digest differs from the vendored release's."
+            }
+            Self::VersionNotCanonical => {
+                "A member or release declares a version spelling that is not its canonical form."
             }
         }
     }
@@ -267,6 +275,11 @@ pub enum WorkspaceError {
         /// The vendored release digest.
         found: Arc<str>,
     },
+    /// A member or release declares a non-canonical version spelling.
+    VersionNotCanonical {
+        /// The refused version text.
+        version: Arc<str>,
+    },
 }
 
 impl WorkspaceError {
@@ -292,6 +305,7 @@ impl WorkspaceError {
             Self::SolveConflict { .. } => WorkspaceDiagnosticCode::SolveConflict,
             Self::SourceRefused { .. } => WorkspaceDiagnosticCode::SourceRefused,
             Self::VendoredSourceMismatch { .. } => WorkspaceDiagnosticCode::VendoredSourceMismatch,
+            Self::VersionNotCanonical { .. } => WorkspaceDiagnosticCode::VersionNotCanonical,
         }
     }
 
@@ -317,7 +331,7 @@ fn validate_locator(value: &str) -> Result<(), WorkspaceError> {
         || value.ends_with('/')
         || value
             .split('/')
-            .any(|segment| segment == "." || segment == "..")
+            .any(|segment| segment == "." || segment == ".." || segment.is_empty())
         || value
             .bytes()
             .any(|byte| byte.is_ascii_whitespace() || byte == b',' || byte.is_ascii_control());
@@ -641,8 +655,10 @@ pub struct MemberManifest {
 impl MemberManifest {
     /// Constructs one member manifest.
     ///
-    /// An alias declared twice, or an alias naming the member itself, is refused
-    /// as a collision rather than resolved by declaration order.
+    /// An alias declared twice, an alias naming the member itself, or a
+    /// requirement resolving the member's own package is refused as a collision
+    /// rather than resolved by declaration order, and a non-canonical version
+    /// spelling is refused so emitted lockfile text stays decodable.
     pub fn new(
         name: PackageName,
         version: PackageVersion,
@@ -651,10 +667,18 @@ impl MemberManifest {
         interface_digest: ContentDigest,
         dependencies: &[DependencyRequirement],
     ) -> Result<Self, WorkspaceError> {
+        if !canonical_version(version.as_str()) {
+            return Err(WorkspaceError::VersionNotCanonical {
+                version: Arc::from(version.as_str()),
+            });
+        }
         let mut aliases: BTreeSet<&str> = BTreeSet::new();
         for requirement in dependencies {
             let alias = requirement.alias.as_str();
-            if alias == name.as_str() || !aliases.insert(alias) {
+            if alias == name.as_str()
+                || requirement.package.as_str() == name.as_str()
+                || !aliases.insert(alias)
+            {
                 return Err(WorkspaceError::AliasCollision {
                     member: name.clone(),
                     alias: requirement.alias.clone(),
@@ -720,7 +744,9 @@ impl WorkspaceManifest {
     /// Constructs one workspace manifest.
     ///
     /// Member names are unique, every member root is contained in the workspace
-    /// root, and no dependency alias collides with any declared member name.
+    /// root, and no dependency alias or resolved package identity collides with
+    /// any declared member name, so an external requirement can never select a
+    /// release in place of a member of this workspace.
     pub fn new(
         name: PackageName,
         root: SourceLocator,
@@ -748,7 +774,9 @@ impl WorkspaceManifest {
         }
         for member in members {
             for requirement in &member.dependencies {
-                if names.contains(requirement.alias.as_str()) {
+                if names.contains(requirement.alias.as_str())
+                    || names.contains(requirement.package.as_str())
+                {
                     return Err(WorkspaceError::AliasCollision {
                         member: member.name.clone(),
                         alias: requirement.alias.clone(),
@@ -796,6 +824,10 @@ pub struct PackageRelease {
 
 impl PackageRelease {
     /// Constructs one available release.
+    ///
+    /// A version outside canonical spelling is refused when the release is bound
+    /// into an instance, so lockfile text this model emits is always decodable
+    /// by [`WorkspaceLockfile::parse`].
     #[must_use]
     pub const fn new(
         name: PackageName,
@@ -1212,6 +1244,11 @@ fn release_instance(
     release: &PackageRelease,
     features: &SelectedFeatureSet,
 ) -> Result<ResolvedInstance, WorkspaceError> {
+    if !canonical_version(release.version().as_str()) {
+        return Err(WorkspaceError::VersionNotCanonical {
+            version: Arc::from(release.version().as_str()),
+        });
+    }
     if !has_shipping_target(release.targets()) {
         return Err(WorkspaceError::InstanceNotShipping {
             package: release.name().clone(),

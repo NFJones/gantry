@@ -679,7 +679,7 @@ fn an_instance_without_a_shipping_target_is_refused() {
 #[test]
 fn the_diagnostic_registry_is_frozen() {
     let codes = WorkspaceDiagnosticCode::ALL;
-    assert_eq!(codes.len(), 14);
+    assert_eq!(codes.len(), 15);
     let mut spellings: Vec<&str> = codes.iter().map(|code| code.as_str()).collect();
     spellings.sort_unstable();
     let unique: std::collections::BTreeSet<&str> = spellings.iter().copied().collect();
@@ -930,5 +930,113 @@ fn substitution_availability_and_canonical_spelling_are_refused() {
         )
         .code_str(),
         "workspace-source-refused"
+    );
+}
+
+#[test]
+fn package_collisions_and_non_canonical_versions_are_refused() {
+    let self_requirement = requirement_for(
+        "demo-core",
+        "self",
+        path_source("vendor/core"),
+        SelectedFeatureSet::empty(),
+    );
+    assert_eq!(
+        refuse(
+            MemberManifest::new(
+                name("demo-core"),
+                version("1.0.0"),
+                locator("ws/core"),
+                library(),
+                digest('a'),
+                &[self_requirement],
+            ),
+            "a member requiring its own package identity"
+        )
+        .code_str(),
+        "workspace-alias-collision"
+    );
+    assert_eq!(
+        refuse(
+            MemberManifest::new(
+                name("demo-core"),
+                version("01"),
+                locator("ws/core"),
+                library(),
+                digest('a'),
+                &[],
+            ),
+            "a padded member version"
+        )
+        .code_str(),
+        "workspace-version-not-canonical"
+    );
+
+    let shared = requirement_for(
+        "demo-util",
+        "shared",
+        path_source("vendor/util"),
+        SelectedFeatureSet::empty(),
+    );
+    let core = member("demo-core", "ws/core", 'a', &[shared]);
+    let util = member("demo-util", "ws/util", 'b', &[]);
+    assert_eq!(
+        refuse(
+            WorkspaceManifest::new(name("demo"), locator("ws"), &[core, util]),
+            "a requirement resolving a package identity that names a member"
+        )
+        .code_str(),
+        "workspace-alias-collision"
+    );
+
+    let padded_release = release(
+        "demo-util",
+        "01",
+        path_source("vendor/util"),
+        'c',
+        GeneratorInputs::empty(),
+        &[],
+    );
+    let requiring = WorkspaceManifest::new(
+        name("demo"),
+        locator("ws"),
+        &[member(
+            "demo-core",
+            "ws/core",
+            'a',
+            &[requirement(
+                "demo-util",
+                path_source("vendor/util"),
+                SelectedFeatureSet::empty(),
+            )],
+        )],
+    )
+    .unwrap_or_else(|_| panic!("declared workspace"));
+    assert_eq!(
+        refuse(
+            solve(&requiring, &[padded_release]),
+            "a release version outside canonical spelling"
+        )
+        .code_str(),
+        "workspace-version-not-canonical"
+    );
+    assert_eq!(
+        refuse(SourceLocator::new("ws//util"), "an empty path segment").code_str(),
+        "workspace-source-refused"
+    );
+
+    let canonical = release(
+        "demo-util",
+        "1.0.0",
+        path_source("vendor/util"),
+        'c',
+        GeneratorInputs::empty(),
+        &[],
+    );
+    let resolved = solve(&requiring, &[canonical]).unwrap_or_else(|_| panic!("resolution"));
+    let text = WorkspaceLockfile::from_resolved(&resolved).canonical_text();
+    assert!(
+        WorkspaceLockfile::parse(&text).is_ok(),
+        "emitted lockfile text is always decodable"
     );
 }
