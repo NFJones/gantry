@@ -1024,6 +1024,9 @@ fn collect_generic_method_signatures(
                 references,
                 symbols,
             )?;
+            let Some(receiver) = receiver else {
+                continue;
+            };
             let implementation_binder = binders.get(implementation.span()).copied();
             let implementation_required = implementation_binder
                 .into_iter()

@@ -951,6 +951,9 @@ pub(crate) fn collect_trait_contracts_and_implementation_heads(
                         &references,
                         &symbols_by_id,
                     )?;
+                    let Some(receiver) = receiver else {
+                        continue;
+                    };
                     let trait_reference = direct_child(tree, owner, SyntaxForm::TraitReference)
                         .map(|reference| {
                             collect_trait_reference(
@@ -1665,34 +1668,37 @@ fn effect_contract_members(
 }
 
 /// Resolves both path-form and typed implementation receivers to one expression.
+///
+/// A receiver whose type does not resolve contributes no implementation head: the
+/// unresolved type is refused by the published name-resolution diagnostic, so no head
+/// is published for a receiver that has no resolved expression.
 pub(crate) fn implementation_receiver_expression(
     tree: &SyntaxTree,
     implementation: NodeId,
     facts: &BTreeMap<SourceSpan, &TypeExpression>,
     references: &BTreeMap<SourceSpan, SymbolId>,
     symbols: &BTreeMap<SymbolId, &Symbol>,
-) -> Result<TypeExpression, AnalysisError> {
+) -> Result<Option<TypeExpression>, AnalysisError> {
     if let Some(receiver) = direct_child(tree, implementation, SyntaxForm::ValueType) {
         let span = tree.node(receiver).ok_or(AnalysisError::Invariant)?.span();
-        return facts
-            .get(span)
-            .copied()
-            .cloned()
-            .ok_or(AnalysisError::Invariant);
+        let Some(expression) = facts.get(span).copied().cloned() else {
+            return Ok(None);
+        };
+        return Ok(Some(expression));
     }
     let path =
         direct_child(tree, implementation, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;
     let path_node = tree.node(path).ok_or(AnalysisError::Invariant)?;
-    let target = references
-        .get(path_node.span())
-        .copied()
-        .ok_or(AnalysisError::Invariant)?;
+    let Some(target) = references.get(path_node.span()).copied() else {
+        return Ok(None);
+    };
     let symbol = symbols
         .get(&target)
         .copied()
         .ok_or(AnalysisError::Invariant)?;
-    TypeExpression::declared(symbol.path.clone(), Vec::new(), u64::MAX)
-        .map_err(|_| AnalysisError::Invariant)
+    let expression = TypeExpression::declared(symbol.path.clone(), Vec::new(), u64::MAX)
+        .map_err(|_| AnalysisError::Invariant)?;
+    Ok(Some(expression))
 }
 
 fn collect_trait_reference(
