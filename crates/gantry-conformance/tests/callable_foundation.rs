@@ -618,3 +618,51 @@ fn rebuilt_projections_refuse_round_trip_loss() {
     let refusal = extended.rebuild(limits).refused("extended effect row");
     assert_eq!(refusal.code(), CallableDiagnosticCode::RoundTripLoss);
 }
+
+/// The frozen Section 37 clause identifiers.
+const CALLABLE_CLAUSES: [&str; 13] = [
+    "GNT-37.0-callable-values-and-frame-admission",
+    "GNT-37.1-reuse-kinds-and-canonical-shape",
+    "GNT-37.2-bounded-logical-frame-admission",
+    "GNT-37.3-explicit-captures-and-capture-plans",
+    "GNT-37.4-reuse-kinds-and-affine-consumption",
+    "GNT-37.5-settlement-and-poisoning",
+    "GNT-37.6-exact-effect-rows",
+    "GNT-37.7-durable-capture-projection",
+    "GNT-37.8-durable-round-trips-and-identity",
+    "GNT-37.9-canonical-encoding-and-order-independence",
+    "GNT-37.10-direct-call-and-receiver-compatibility",
+    "GNT-37.11-refusal-discipline-and-atomicity",
+    "GNT-37.12-callable-non-claims",
+];
+
+#[test]
+fn section_37_anchors_and_nonclaims_are_published() {
+    let spec = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../SPEC.md"))
+        .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
+    assert_eq!(CALLABLE_CLAUSES.len(), 13);
+    for clause in CALLABLE_CLAUSES {
+        assert!(
+            spec.contains(&format!("<a id=\"{clause}\"></a>")),
+            "{clause} is not published"
+        );
+        assert!(
+            spec.contains(&format!("**[{clause}] ")),
+            "{clause} carries no clause text"
+        );
+    }
+    assert_eq!(CallableDiagnosticCode::ALL.len(), 8);
+    for code in CallableDiagnosticCode::ALL {
+        assert!(
+            spec.contains(&format!("`{}`", code.code())),
+            "{} is not published",
+            code.code()
+        );
+    }
+    assert!(
+        spec.contains(
+            "closure types are unadmitted except as defined by the Section 37 callable contract"
+        ),
+        "GNT-3-T-GENERIC-CALL does not record the Section 37 admission"
+    );
+}

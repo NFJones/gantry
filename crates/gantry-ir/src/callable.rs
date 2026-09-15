@@ -1,10 +1,10 @@
 //! Pure callable-value, capture, reuse, and frame-admission contract.
 //!
-//! Gantry v1 admits no callable type: `GNT-3-T-GENERIC-CALL` states that
-//! closure types remain unadmitted, so no v1 profile computes a callable row
-//! and the callable-row composition rules of `GNT-3-T-EFFECTS` are vacuous in
-//! this revision. This module is the analyzer-side substrate for the admission
-//! owned by `GNT-GP-CLOSURE-001`: it defines the reuse-kind vocabulary, capture
+//! `SPEC.md` Section 37 defines this contract: `GNT-3-T-GENERIC-CALL` now
+//! records the Section 37 admission instead of the earlier blanket exclusion of
+//! closure types, so `GNT-37.0` through `GNT-37.12` own the callable
+//! diagnostics, reuse kinds, effect rows, and durable capture projection that
+//! this module implements. It defines the reuse-kind vocabulary, capture
 //! descriptors, plans and modes, bounded shape, name, capture, and logical-frame
 //! budgets, admission and settlement transitions, closed effect rows, an
 //! injective length-prefixed canonical identity, and the durable capture
@@ -13,7 +13,8 @@
 //! It defines no source syntax, no runtime representation or native frame
 //! layout, no dynamic dispatch, no trait solving, and no ambient capture, and it
 //! admits no callable type into any analyzed, executable, or durable artifact:
-//! adding this module changes no v1 behavior and no published evidence.
+//! no analyzer body, no lowering path, and no published executable artifact is
+//! changed by this module.
 
 use std::collections::BTreeMap;
 use std::fmt;

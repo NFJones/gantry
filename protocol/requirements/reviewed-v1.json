@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "2a921e87c4b274722a81f074aafd08918f46fa16fcdd4cfe47d483188299c6b5",
+ "specification_sha256": "c02713915e1aaed5899392bb78152a040ac29b2922906ad5d06b4d1207937588",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9497,
-   "end_line": 15495,
+   "end_line": 15549,
    "rationale": null
   }
  ],
@@ -40424,6 +40424,513 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/adt_foundation.rs#section_36_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.0-callable-values-and-frame-admission",
+   "span_start_line": 15496,
+   "span_end_line": 15502,
+   "anchor_line": 15499,
+   "body_start_line": 15500,
+   "body_end_line": 15502,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15500,
+     "end_line": 15502,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.1-reuse-kinds-and-canonical-shape",
+   "span_start_line": 15503,
+   "span_end_line": 15506,
+   "anchor_line": 15503,
+   "body_start_line": 15504,
+   "body_end_line": 15506,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15504,
+     "end_line": 15506,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.2-bounded-logical-frame-admission",
+   "span_start_line": 15507,
+   "span_end_line": 15510,
+   "anchor_line": 15507,
+   "body_start_line": 15508,
+   "body_end_line": 15510,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15508,
+     "end_line": 15510,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.3-explicit-captures-and-capture-plans",
+   "span_start_line": 15511,
+   "span_end_line": 15514,
+   "anchor_line": 15511,
+   "body_start_line": 15512,
+   "body_end_line": 15514,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15512,
+     "end_line": 15514,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.4-reuse-kinds-and-affine-consumption",
+   "span_start_line": 15515,
+   "span_end_line": 15518,
+   "anchor_line": 15515,
+   "body_start_line": 15516,
+   "body_end_line": 15518,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15516,
+     "end_line": 15518,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.5-settlement-and-poisoning",
+   "span_start_line": 15519,
+   "span_end_line": 15522,
+   "anchor_line": 15519,
+   "body_start_line": 15520,
+   "body_end_line": 15522,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15520,
+     "end_line": 15522,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.6-exact-effect-rows",
+   "span_start_line": 15523,
+   "span_end_line": 15526,
+   "anchor_line": 15523,
+   "body_start_line": 15524,
+   "body_end_line": 15526,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15524,
+     "end_line": 15526,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.7-durable-capture-projection",
+   "span_start_line": 15527,
+   "span_end_line": 15530,
+   "anchor_line": 15527,
+   "body_start_line": 15528,
+   "body_end_line": 15530,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15528,
+     "end_line": 15530,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.8-durable-round-trips-and-identity",
+   "span_start_line": 15531,
+   "span_end_line": 15534,
+   "anchor_line": 15531,
+   "body_start_line": 15532,
+   "body_end_line": 15534,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15532,
+     "end_line": 15534,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.9-canonical-encoding-and-order-independence",
+   "span_start_line": 15535,
+   "span_end_line": 15538,
+   "anchor_line": 15535,
+   "body_start_line": 15536,
+   "body_end_line": 15538,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15536,
+     "end_line": 15538,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.10-direct-call-and-receiver-compatibility",
+   "span_start_line": 15539,
+   "span_end_line": 15542,
+   "anchor_line": 15539,
+   "body_start_line": 15540,
+   "body_end_line": 15542,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15540,
+     "end_line": 15542,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.11-refusal-discipline-and-atomicity",
+   "span_start_line": 15543,
+   "span_end_line": 15546,
+   "anchor_line": 15543,
+   "body_start_line": 15544,
+   "body_end_line": 15546,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15544,
+     "end_line": 15546,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-37.12-callable-non-claims",
+   "span_start_line": 15547,
+   "span_end_line": 15549,
+   "anchor_line": 15547,
+   "body_start_line": 15548,
+   "body_end_line": 15549,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15548,
+     "end_line": 15549,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
        ],
        "rationale": null
       }
