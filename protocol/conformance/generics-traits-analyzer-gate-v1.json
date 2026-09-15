@@ -14,7 +14,7 @@
   },
   {
    "path": "crates/gantry-analysis/src/generics.rs",
-   "sha256": "35c06c5b980113c8cbfa72091b6182efd416f18836d5c826503a8e155dc057f1"
+   "sha256": "ae4c75ac12f6c7ec69374c74acea8fcedd5216be7fc339d2ed2cd93b4414c65c"
   },
   {
    "path": "crates/gantry-analysis/src/lowering.rs",
