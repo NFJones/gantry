@@ -17,6 +17,7 @@ mod application;
 mod approval;
 mod artifact;
 mod authority;
+mod callable;
 mod callable_identity;
 mod canonical;
 mod constant;
@@ -110,6 +111,13 @@ pub use authority::{
     ExternalOutcome, FenceCategory, FenceLatches, FencePoint, FenceState, GenerationRelation,
     InstanceComparison, LeaseRelation, LineageRecord, LineageRelation, RightsRelation, RightsSet,
     SharedAuthorityInstance,
+};
+// The callable-value contract is declaration-only in this revision: no callable
+// type is admitted, so these rules bind no analyzed artifact yet.
+pub use callable::{
+    CallAdmission, CallSettlement, CallableDiagnosticCode, CallableError, CallableKind,
+    CallableLimits, CallableProjection, CallableValue, CaptureDescriptor, CaptureMode, CapturePlan,
+    ReuseState, union_row,
 };
 pub use callable_identity::{
     CallableIdentityError, CanonicalCallableIdentity, CanonicalTemplateIdentity,
