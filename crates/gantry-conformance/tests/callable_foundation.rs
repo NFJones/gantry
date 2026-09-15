@@ -3,7 +3,8 @@
 use gantry::ir::generated::Effect;
 use gantry::ir::{
     CallSettlement, CallableDiagnosticCode, CallableKind, CallableLimits, CallableProjection,
-    CallableValue, CaptureDescriptor, CaptureMode, CapturePlan, EffectSet, ReuseState, union_row,
+    CallableType, CallableValue, CaptureDescriptor, CaptureMode, CapturePlan, EffectSet,
+    ReuseState, union_row,
 };
 
 /// Returns the refusal produced by one rejected callable decision.
@@ -705,4 +706,195 @@ fn frozen_diagnostics_name_their_owning_clause_in_the_specification() {
             "{spelling} is not a frozen model diagnostic"
         );
     }
+}
+
+#[test]
+fn callable_types_realize_the_published_identity_tuple() {
+    let limits = limits();
+    let declared = composed(
+        CallableKind::Function,
+        &["Int", "Bool"],
+        "Text",
+        &[("count", CaptureMode::Copy)],
+        &[Effect::Prompt],
+    );
+    let same_shape = composed(CallableKind::Function, &["Int", "Bool"], "Text", &[], &[]);
+    assert_eq!(declared.callable_type(), same_shape.callable_type());
+    assert_eq!(
+        declared.callable_type().canonical_encoding(),
+        same_shape.callable_type().canonical_encoding()
+    );
+    assert_eq!(
+        declared.callable_type(),
+        CallableType::new(
+            CallableKind::Function,
+            vec!["Int".to_owned(), "Bool".to_owned()],
+            "Text",
+            limits,
+        )
+        .unwrap_or_else(|error| panic!("type: {error}"))
+    );
+    let expected_parameters = vec!["Int".to_owned(), "Bool".to_owned()];
+    assert_eq!(
+        declared.callable_type().parameters(),
+        expected_parameters.as_slice()
+    );
+    assert_eq!(declared.callable_type().result(), "Text");
+    assert_eq!(declared.callable_type().kind(), CallableKind::Function);
+
+    let departures = [
+        (
+            "reuse kind",
+            composed(
+                CallableKind::FunctionMut,
+                &["Int", "Bool"],
+                "Text",
+                &[],
+                &[],
+            ),
+        ),
+        (
+            "parameter order",
+            composed(CallableKind::Function, &["Bool", "Int"], "Text", &[], &[]),
+        ),
+        (
+            "result type",
+            composed(CallableKind::Function, &["Int", "Bool"], "Int", &[], &[]),
+        ),
+    ];
+    for (label, value) in departures {
+        assert_ne!(
+            declared.callable_type().canonical_encoding(),
+            value.callable_type().canonical_encoding(),
+            "{label} must change the callable identity"
+        );
+    }
+}
+
+#[test]
+fn callable_types_refuse_shape_departures_and_over_budget_forms() {
+    let limits = limits();
+    let declared = CallableType::new(
+        CallableKind::Function,
+        vec!["Int".to_owned()],
+        "Int",
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("type: {error}"));
+    let identical = CallableType::new(
+        CallableKind::Function,
+        vec!["Int".to_owned()],
+        "Int",
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("type: {error}"));
+    assert!(declared.require_identical(&identical).is_ok());
+    assert_eq!(declared, identical);
+    assert!(
+        declared
+            .require_value_shape(&callable(CallableKind::Function))
+            .is_ok()
+    );
+
+    let departures = [
+        ("reuse kind", callable(CallableKind::FunctionOnce)),
+        (
+            "result type",
+            composed(CallableKind::Function, &["Int"], "Bool", &[], &[]),
+        ),
+        (
+            "parameter order",
+            composed(CallableKind::Function, &["Bool", "Int"], "Int", &[], &[]),
+        ),
+    ];
+    for (label, value) in departures {
+        let refusal = declared.require_value_shape(&value).refused(label);
+        assert_eq!(refusal.code(), CallableDiagnosticCode::ShapeRefused);
+        let refusal = declared
+            .require_identical(&value.callable_type())
+            .refused(label);
+        assert_eq!(refusal.code(), CallableDiagnosticCode::ShapeRefused);
+    }
+
+    let over_budget = CallableType::new(
+        CallableKind::Function,
+        vec!["Int".to_owned(); 5],
+        "Int",
+        limits,
+    )
+    .refused("over-budget parameter list");
+    assert_eq!(over_budget.code(), CallableDiagnosticCode::ShapeRefused);
+    let long_name = CallableType::new(
+        CallableKind::Function,
+        vec!["I".repeat(limits.max_name_bytes + 1)],
+        "Int",
+        limits,
+    )
+    .refused("over-budget parameter name");
+    assert_eq!(long_name.code(), CallableDiagnosticCode::ShapeRefused);
+    let unnamed = CallableType::new(CallableKind::Function, vec![String::new()], "Int", limits)
+        .refused("unnamed parameter");
+    assert_eq!(unnamed.code(), CallableDiagnosticCode::ShapeRefused);
+    let no_result = CallableType::new(CallableKind::Function, Vec::new(), "", limits)
+        .refused("empty result type");
+    assert_eq!(no_result.code(), CallableDiagnosticCode::ShapeRefused);
+}
+
+#[test]
+fn callable_type_encodings_are_injective_and_projections_agree() {
+    let limits = limits();
+    let forms = [
+        vec!["Int".to_owned()],
+        vec!["Int".to_owned(), "Int".to_owned()],
+        vec!["In".to_owned(), "t".to_owned()],
+        vec!["IntInt".to_owned()],
+        vec!["IntIn".to_owned(), "t".to_owned()],
+    ];
+    let mut encodings = Vec::new();
+    for parameters in forms {
+        let callable_type = CallableType::new(CallableKind::Function, parameters, "Int", limits)
+            .unwrap_or_else(|error| panic!("type: {error}"));
+        encodings.push(callable_type.canonical_encoding());
+    }
+    for (index, encoding) in encodings.iter().enumerate() {
+        for (other_index, other) in encodings.iter().enumerate() {
+            assert_eq!(
+                index == other_index,
+                encoding == other,
+                "parameter spellings {index} and {other_index} must stay distinct"
+            );
+        }
+    }
+
+    let value = composed(CallableKind::Function, &["Int"], "Int", &[], &[]);
+    let value_encoding = value.canonical_encoding();
+    let type_encoding = value.callable_type().canonical_encoding();
+    assert_ne!(type_encoding, value_encoding);
+    assert!(!value_encoding.starts_with(&type_encoding));
+    assert!(!type_encoding.starts_with(&value_encoding));
+
+    let durable = composed(
+        CallableKind::Function,
+        &["Int", "Bool"],
+        "Text",
+        &[("count", CaptureMode::Copy), ("items", CaptureMode::Move)],
+        &[Effect::Prompt],
+    );
+    let projection = durable
+        .durable_projection()
+        .unwrap_or_else(|error| panic!("projection: {error}"));
+    assert_eq!(projection.callable_type(), durable.callable_type());
+    assert!(
+        projection
+            .callable_type()
+            .require_value_shape(&durable)
+            .is_ok()
+    );
+    assert_eq!(
+        projection
+            .rebuild(limits)
+            .unwrap_or_else(|error| panic!("rebuild: {error}"))
+            .callable_type(),
+        durable.callable_type()
+    );
 }

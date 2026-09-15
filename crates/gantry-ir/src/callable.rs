@@ -15,6 +15,12 @@
 //! admits no callable type into any analyzed, executable, or durable artifact:
 //! no analyzer body, no lowering path, and no published executable artifact is
 //! changed by this module.
+//!
+//! `CallableType` is the pure form of the published `GNT-37.1` identity: the
+//! tuple of reuse kind, ordered parameter type names, and result type name. It
+//! carries no captures, row, or reuse state, so two values that share one shape
+//! share one type, and it defines no syntax, so no source, body, or artifact
+//! consumes it yet.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -24,6 +30,9 @@ use crate::generated::Effect;
 
 /// Canonical tag carried by every callable encoding.
 const CALLABLE_TAG: &str = "gantry-callable-v1";
+
+/// Canonical tag carried by every callable-type encoding.
+const CALLABLE_TYPE_TAG: &str = "gantry-callable-type-v1";
 
 /// One admitted callable reuse kind.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -778,6 +787,16 @@ impl CallableValue {
         })
     }
 
+    /// Returns this value's callable type, which is its `GNT-37.1` identity.
+    #[must_use]
+    pub fn callable_type(&self) -> CallableType {
+        CallableType {
+            kind: self.kind,
+            parameters: self.parameters.clone(),
+            result: self.result.clone(),
+        }
+    }
+
     /// Requires one projection to carry this value's canonical encoding.
     pub fn require_round_trip(&self, projection: &CallableProjection) -> Result<(), CallableError> {
         if self.canonical_encoding() != projection.identity() {
@@ -861,6 +880,16 @@ impl CallableProjection {
         }
     }
 
+    /// Returns the callable type this projection carries.
+    #[must_use]
+    pub fn callable_type(&self) -> CallableType {
+        CallableType {
+            kind: self.kind,
+            parameters: self.parameters.clone(),
+            result: self.result.clone(),
+        }
+    }
+
     /// Rebuilds one live value, refusing a projection that no longer encodes
     /// the identity it carries.
     pub fn rebuild(&self, limits: CallableLimits) -> Result<CallableValue, CallableError> {
@@ -884,5 +913,148 @@ impl CallableProjection {
             ));
         }
         Ok(value)
+    }
+}
+
+/// One callable type: the analyzed identity of one callable value.
+///
+/// `GNT-37.1` defines callable identity as the tuple of reuse kind, ordered
+/// parameter type names, and result type name. This type form is that tuple and
+/// nothing else, so two values that differ only in captures, declared row, or
+/// reuse state share one callable type, and two values that differ in reuse
+/// kind, parameter order, or result type never do. It declares no source syntax
+/// and no analyzed artifact consumes it yet.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CallableType {
+    kind: CallableKind,
+    parameters: Vec<String>,
+    result: String,
+}
+
+impl CallableType {
+    /// Declares one callable type, refusing shape departures and over-budget
+    /// parameter lists or names exactly as a value declaration does.
+    pub fn new(
+        kind: CallableKind,
+        parameters: Vec<String>,
+        result: &str,
+        limits: CallableLimits,
+    ) -> Result<Self, CallableError> {
+        if parameters.len() > limits.max_parameters {
+            return Err(shape(format!(
+                "{} parameters exceed {}",
+                parameters.len(),
+                limits.max_parameters
+            )));
+        }
+        for parameter in &parameters {
+            if parameter.is_empty() {
+                return Err(shape("a parameter names exactly one type"));
+            }
+            if parameter.len() > limits.max_name_bytes {
+                return Err(shape(format!(
+                    "parameter of {} bytes exceeds {}",
+                    parameter.len(),
+                    limits.max_name_bytes
+                )));
+            }
+        }
+        if result.is_empty() {
+            return Err(shape("a callable declares exactly one result type"));
+        }
+        if result.len() > limits.max_name_bytes {
+            return Err(shape(format!(
+                "result of {} bytes exceeds {}",
+                result.len(),
+                limits.max_name_bytes
+            )));
+        }
+        Ok(Self {
+            kind,
+            parameters,
+            result: result.to_owned(),
+        })
+    }
+
+    /// Returns the reuse kind.
+    #[must_use]
+    pub const fn kind(&self) -> CallableKind {
+        self.kind
+    }
+
+    /// Returns the declared parameter types in declaration order.
+    #[must_use]
+    pub fn parameters(&self) -> &[String] {
+        &self.parameters
+    }
+
+    /// Returns the declared result type.
+    #[must_use]
+    pub fn result(&self) -> &str {
+        &self.result
+    }
+
+    /// Returns the length-prefixed canonical encoding of this type.
+    ///
+    /// The encoding carries its own canonical tag, so no callable-type encoding
+    /// is equal to, or a prefix of, a callable-value encoding, and every
+    /// component is length-prefixed, so two types with different spellings never
+    /// share one encoding.
+    #[must_use]
+    pub fn canonical_encoding(&self) -> String {
+        let mut encoded = String::new();
+        push_component(&mut encoded, CALLABLE_TYPE_TAG);
+        push_component(&mut encoded, self.kind.canonical_name());
+        push_component(&mut encoded, &self.parameters.len().to_string());
+        for parameter in &self.parameters {
+            push_component(&mut encoded, parameter);
+        }
+        push_component(&mut encoded, &self.result);
+        encoded
+    }
+
+    /// Requires one callable type to name exactly this reuse kind, parameter
+    /// order, and result type.
+    pub fn require_identical(&self, other: &Self) -> Result<(), CallableError> {
+        if self.kind != other.kind {
+            return Err(shape(format!(
+                "`{}` is not the declared reuse kind `{}`",
+                other.kind.canonical_name(),
+                self.kind.canonical_name()
+            )));
+        }
+        if self.parameters != other.parameters {
+            return Err(shape("the parameter types depart from the declaration"));
+        }
+        if self.result != other.result {
+            return Err(shape(format!(
+                "result type `{}` is not the declared `{}`",
+                other.result, self.result
+            )));
+        }
+        Ok(())
+    }
+
+    /// Requires one callable value to carry exactly this declared shape.
+    pub fn require_value_shape(&self, value: &CallableValue) -> Result<(), CallableError> {
+        if self.kind != value.kind {
+            return Err(shape(format!(
+                "a {} value departs from the declared {} kind",
+                value.kind.canonical_name(),
+                self.kind.canonical_name()
+            )));
+        }
+        if self.parameters != value.parameters {
+            return Err(shape(
+                "a value's parameter types depart from the declaration",
+            ));
+        }
+        if self.result != value.result {
+            return Err(shape(format!(
+                "result type `{}` departs from the declared `{}`",
+                value.result, self.result
+            )));
+        }
+        Ok(())
     }
 }
