@@ -117,9 +117,9 @@ pub use constant::{
     ConstantEffect, ConstantError, ConstantExpression, ConstantInterface, ConstantInterfaceEntry,
     ConstantInterfaceIdentity, ConstantNonClaim, ConstantNonClaimAssertion, ConstantOperation,
     ConstantPackage, ConstantRefusalReason, ConstantSelection, ConstantState, ConstantValueClass,
-    ConstantWork, EvaluationLimits, MAX_CONSTANT_PATH_BYTES, MAX_CONSTANT_VALUE_BYTES,
-    PackageLoadFact, PackageStateClass, admit_package_state, check_constant_non_claims,
-    checked_float, checked_int,
+    ConstantWork, EvaluationLimits, MAX_CONSTANT_VALUE_BYTES, MAX_DECLARED_NAME_BYTES,
+    PackageLoadFact, PackageStateClass, admit_package_state, admit_sealed_predicate_name,
+    check_constant_non_claims, checked_float, checked_int,
 };
 pub use effects::{EFFECT_ORDER, EffectSet};
 pub use executable::{

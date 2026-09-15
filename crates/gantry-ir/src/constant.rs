@@ -12,9 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
-use crate::TargetKind;
 use crate::authority::digest_fields;
 use crate::manifest::encode_hex;
+use crate::{CanonicalPath, TargetKind, TargetPredicate, TargetPredicateName};
 
 /// The Section 32 clauses implemented by this pure model, in declaration order.
 pub const CONSTANT_CLAUSES: [&str; 13] = [
@@ -36,8 +36,8 @@ pub const CONSTANT_CLAUSES: [&str; 13] = [
 /// The inclusive `Int` bound of `GNT-5.1` (`2^53 - 1`).
 pub const CONSTANT_INT_LIMIT: i64 = 9_007_199_254_740_991;
 
-/// The maximum admitted canonical path spelling length in bytes.
-pub const MAX_CONSTANT_PATH_BYTES: usize = 256;
+/// The maximum admitted length in bytes of a declared non-path name.
+pub const MAX_DECLARED_NAME_BYTES: usize = 256;
 
 /// The maximum admitted canonical value encoding length in bytes.
 pub const MAX_CONSTANT_VALUE_BYTES: usize = 16_384;
@@ -47,7 +47,7 @@ pub const MAX_CONSTANT_VALUE_BYTES: usize = 16_384;
 pub enum ConstantValueClass {
     /// `Bool`.
     Bool,
-    /// A declared enum type whose every member is admitted.
+    /// A declared enum type.
     Enum,
     /// Finite `Float`.
     Float,
@@ -61,7 +61,7 @@ pub enum ConstantValueClass {
     Result,
     /// `String`.
     String,
-    /// A declared struct type whose every member is admitted.
+    /// A declared struct type.
     Struct,
     /// `Tuple<T1, ..., Tn>` over admitted members.
     Tuple,
@@ -84,6 +84,12 @@ impl ConstantValueClass {
         Self::Tuple,
         Self::Unit,
     ];
+
+    /// Returns whether this class carries declared members.
+    #[must_use]
+    pub const fn carries_members(self) -> bool {
+        matches!(self, Self::Enum | Self::Struct)
+    }
 
     /// Returns the exact portable spelling.
     #[must_use]
@@ -326,7 +332,7 @@ impl ConstantEffect {
     }
 }
 
-/// The declared admissibility of one constant class.
+/// The declared admissibility of one constant class or member.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConstantAdmissibility {
     /// The class is one of the closed admissible classes.
@@ -347,18 +353,19 @@ impl ConstantAdmissibility {
 }
 
 /// One declared constant selection of `GNT-32.9-sealed-target-and-feature-selection`.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+///
+/// The sealed variant carries one landed [`TargetPredicate`] of the closed
+/// `GNT-17.3-sealed-predicates` vocabulary, so a selection cannot be spelled by an
+/// uninterpreted label.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ConstantSelection {
     /// A selection derived from ambient build-host or environment state.
     AmbientBuildHostState,
-    /// One sealed feature predicate with its declared activity.
-    SealedFeaturePredicate {
-        /// Whether the sealed feature predicate selects the declaration.
-        active: bool,
-    },
-    /// One sealed target predicate with its declared activity.
-    SealedTargetPredicate {
-        /// Whether the sealed target predicate selects the declaration.
+    /// One sealed predicate with its declared activity.
+    SealedPredicate {
+        /// The landed sealed predicate that selects the declaration.
+        predicate: TargetPredicate,
+        /// Whether the sealed predicate selects the declaration.
         active: bool,
     },
     /// No predicate selects the declaration.
@@ -368,34 +375,49 @@ pub enum ConstantSelection {
 impl ConstantSelection {
     /// Returns the exact portable spelling.
     #[must_use]
-    pub const fn wire_name(self) -> &'static str {
+    pub fn wire_name(&self) -> &'static str {
         match self {
             Self::AmbientBuildHostState => "ambient-build-host-state",
-            Self::SealedFeaturePredicate { .. } => "sealed-feature-predicate",
-            Self::SealedTargetPredicate { .. } => "sealed-target-predicate",
+            Self::SealedPredicate { .. } => "sealed-predicate",
             Self::Unconditional => "unconditional",
         }
     }
 
     /// Returns whether the selection is one of the sealed predicates.
     #[must_use]
-    pub const fn is_sealed(self) -> bool {
-        matches!(
-            self,
-            Self::SealedFeaturePredicate { .. } | Self::SealedTargetPredicate { .. }
-        )
+    pub const fn is_sealed(&self) -> bool {
+        matches!(self, Self::SealedPredicate { .. })
     }
 
     /// Returns whether the declaration is selected for evaluation.
     #[must_use]
-    pub const fn is_active(self) -> bool {
+    pub const fn is_active(&self) -> bool {
         match self {
             Self::AmbientBuildHostState => false,
-            Self::SealedFeaturePredicate { active } | Self::SealedTargetPredicate { active } => {
-                active
-            }
+            Self::SealedPredicate { active, .. } => *active,
             Self::Unconditional => true,
         }
+    }
+
+    /// Returns whether the declaration is excluded from evaluation.
+    #[must_use]
+    pub const fn is_excluded(&self) -> bool {
+        !self.is_active()
+    }
+
+    /// Returns the sealed predicate, when the selection names one.
+    #[must_use]
+    pub const fn predicate(&self) -> Option<&TargetPredicate> {
+        match self {
+            Self::SealedPredicate { predicate, .. } => Some(predicate),
+            Self::AmbientBuildHostState | Self::Unconditional => None,
+        }
+    }
+
+    /// Returns the sealed predicate name, when the selection names a predicate.
+    #[must_use]
+    pub fn predicate_name(&self) -> Option<TargetPredicateName> {
+        self.predicate().map(TargetPredicate::name)
     }
 }
 
@@ -635,18 +657,38 @@ impl fmt::Display for ConstantDiagnosticCode {
 }
 
 /// A typed refusal from the pure constant model.
+///
+/// A refusal names its frozen diagnostic and, whenever it reports one declared
+/// constant, that constant's canonical path. Source spans and location rendering
+/// are owned by the landed diagnostic contracts and are deliberately absent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstantError {
     code: ConstantDiagnosticCode,
+    path: Option<CanonicalPath>,
     detail: String,
 }
 
 impl ConstantError {
-    /// Builds one refusal with its frozen diagnostic and a bounded detail message.
+    /// Builds one refusal that reports no single declared constant.
     #[must_use]
     pub fn new(code: ConstantDiagnosticCode, detail: impl Into<String>) -> Self {
         Self {
             code,
+            path: None,
+            detail: detail.into(),
+        }
+    }
+
+    /// Builds one refusal that reports exactly one declared constant.
+    #[must_use]
+    pub fn at(
+        path: &CanonicalPath,
+        code: ConstantDiagnosticCode,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            path: Some(path.clone()),
             detail: detail.into(),
         }
     }
@@ -655,6 +697,18 @@ impl ConstantError {
     #[must_use]
     pub const fn code(&self) -> ConstantDiagnosticCode {
         self.code
+    }
+
+    /// Returns the owning clause of the frozen diagnostic code.
+    #[must_use]
+    pub const fn requirement(&self) -> &'static str {
+        self.code.requirement()
+    }
+
+    /// Returns the declared constant this refusal reports, when it reports one.
+    #[must_use]
+    pub const fn path(&self) -> Option<&CanonicalPath> {
+        self.path.as_ref()
     }
 
     /// Returns the bounded detail message.
@@ -671,6 +725,29 @@ impl fmt::Display for ConstantError {
 }
 
 impl std::error::Error for ConstantError {}
+
+/// Canonicalizes one declared constant path, refusing a non-canonical spelling.
+fn canonical(path: &str) -> Result<CanonicalPath, ConstantError> {
+    CanonicalPath::new(path).map_err(|error| {
+        ConstantError::new(
+            ConstantDiagnosticCode::InvalidDeclaration,
+            format!("`{path}` is not a canonical constant path: {error}"),
+        )
+    })
+}
+
+/// Admits one sealed predicate name of `GNT-17.3-sealed-predicates`.
+///
+/// A name outside the closed sealed table is refused, so a selection cannot be
+/// spelled by an uninterpreted label.
+pub fn admit_sealed_predicate_name(value: &str) -> Result<TargetPredicateName, ConstantError> {
+    TargetPredicateName::from_wire_name(value).ok_or_else(|| {
+        ConstantError::new(
+            ConstantDiagnosticCode::UnsealedSelectionRefused,
+            format!("`{value}` is not a sealed predicate name of GNT-17.3"),
+        )
+    })
+}
 
 /// The four declared nonzero evaluation limits of `GNT-32.4-deterministic-bounded-evaluation`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -806,50 +883,44 @@ impl ConstantWork {
 /// One declared admissible initializer of `GNT-32.3-admissible-constant-operations`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstantExpression {
-    path: String,
+    path: CanonicalPath,
     operations: Vec<ConstantOperation>,
 }
 
 impl ConstantExpression {
     /// Declares one initializer over the closed admissible operation set.
     ///
-    /// A refused effect, an empty operation set, and a malformed path are refused.
+    /// A refused effect, an empty operation set, and a non-canonical path are refused.
     pub fn new(
         path: &str,
         operations: &[ConstantOperation],
         effects: &[ConstantEffect],
     ) -> Result<Self, ConstantError> {
-        if path.trim().is_empty() || path.len() > MAX_CONSTANT_PATH_BYTES {
-            return Err(ConstantError::new(
-                ConstantDiagnosticCode::InvalidDeclaration,
-                "a constant path must be nonempty and bounded",
-            ));
-        }
+        let path = canonical(path)?;
         let refused: BTreeSet<ConstantEffect> = effects.iter().copied().collect();
         if let Some(effect) = refused.iter().next() {
-            return Err(ConstantError::new(
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InadmissibleOperation,
-                format!(
-                    "`{path}` reaches the refused effect `{}`",
-                    effect.wire_name()
-                ),
+                format!("reaches the refused effect `{}`", effect.wire_name()),
             ));
         }
         if operations.is_empty() {
-            return Err(ConstantError::new(
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InadmissibleOperation,
-                format!("`{path}` declares no admissible operation"),
+                "declares no admissible operation",
             ));
         }
         Ok(Self {
-            path: path.to_owned(),
+            path,
             operations: operations.to_vec(),
         })
     }
 
     /// Returns the declared path.
     #[must_use]
-    pub fn path(&self) -> &str {
+    pub const fn path(&self) -> &CanonicalPath {
         &self.path
     }
 
@@ -863,76 +934,96 @@ impl ConstantExpression {
 /// One declared constant of `GNT-32.1-constant-declaration-and-immutability`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstantDeclaration {
-    path: String,
+    path: CanonicalPath,
     class: ConstantValueClass,
-    dependencies: BTreeSet<String>,
+    members: Vec<ConstantAdmissibility>,
+    dependencies: BTreeSet<CanonicalPath>,
     exported: bool,
     selection: ConstantSelection,
     state: ConstantState,
 }
 
 impl ConstantDeclaration {
-    /// Declares one constant over its class, initializer, dependencies, and selection.
+    /// Declares one constant over its class, declared members, initializer,
+    /// dependencies, and selection.
     ///
-    /// A refused class, an ambient selection, a malformed path, a dependency on the
-    /// declaration itself, and an initializer whose path differs are refused.
+    /// A refused class, a memberless or inadmissibly-membered struct or enum, members
+    /// on a class that carries none, an ambient selection, a non-canonical path, a
+    /// dependency on the declaration itself, and an initializer whose path differs are
+    /// refused.
     pub fn new(
         path: &str,
         admissibility: ConstantAdmissibility,
+        members: &[ConstantAdmissibility],
         expression: &ConstantExpression,
         dependencies: &[&str],
         exported: bool,
         selection: ConstantSelection,
     ) -> Result<Self, ConstantError> {
-        if path.trim().is_empty() || path.len() > MAX_CONSTANT_PATH_BYTES {
-            return Err(ConstantError::new(
+        let path = canonical(path)?;
+        if expression.path() != &path {
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InvalidDeclaration,
-                "a constant path must be nonempty and bounded",
-            ));
-        }
-        if expression.path() != path {
-            return Err(ConstantError::new(
-                ConstantDiagnosticCode::InvalidDeclaration,
-                format!("`{path}` does not match its initializer path"),
+                "does not match its initializer path",
             ));
         }
         let class = match admissibility {
             ConstantAdmissibility::Admissible(class) => class,
             ConstantAdmissibility::Refused(reason) => {
-                return Err(ConstantError::new(
+                return Err(ConstantError::at(
+                    &path,
                     ConstantDiagnosticCode::InadmissibleType,
-                    format!(
-                        "`{path}` declares the refused class `{}`",
-                        reason.wire_name()
-                    ),
+                    format!("declares the refused class `{}`", reason.wire_name()),
                 ));
             }
         };
-        if !selection.is_sealed() && selection != ConstantSelection::Unconditional {
-            return Err(ConstantError::new(
+        for member in members {
+            if let ConstantAdmissibility::Refused(reason) = member {
+                return Err(ConstantError::at(
+                    &path,
+                    ConstantDiagnosticCode::InadmissibleType,
+                    format!("declares the refused member class `{}`", reason.wire_name()),
+                ));
+            }
+        }
+        if class.carries_members() && members.is_empty() {
+            return Err(ConstantError::at(
+                &path,
+                ConstantDiagnosticCode::InadmissibleType,
+                "declares a memberless struct or enum class",
+            ));
+        }
+        if !class.carries_members() && !members.is_empty() {
+            return Err(ConstantError::at(
+                &path,
+                ConstantDiagnosticCode::InvalidDeclaration,
+                "declares members on a class that carries none",
+            ));
+        }
+        if !selection.is_sealed() && !matches!(selection, ConstantSelection::Unconditional) {
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::UnsealedSelectionRefused,
-                format!("`{path}` is selected by ambient build-host state"),
+                "is selected by ambient build-host state",
             ));
         }
         let mut declared = BTreeSet::new();
         for dependency in dependencies {
-            if *dependency == path {
-                return Err(ConstantError::new(
+            let dependency = canonical(dependency)?;
+            if dependency == path {
+                return Err(ConstantError::at(
+                    &path,
                     ConstantDiagnosticCode::Cycle,
-                    format!("`{path}` declares a dependency on itself"),
+                    "declares a dependency on itself",
                 ));
             }
-            if dependency.trim().is_empty() || dependency.len() > MAX_CONSTANT_PATH_BYTES {
-                return Err(ConstantError::new(
-                    ConstantDiagnosticCode::InvalidDeclaration,
-                    format!("`{path}` declares a malformed dependency"),
-                ));
-            }
-            declared.insert((*dependency).to_owned());
+            declared.insert(dependency);
         }
         Ok(Self {
-            path: path.to_owned(),
+            path,
             class,
+            members: members.to_vec(),
             dependencies: declared,
             exported,
             selection,
@@ -942,7 +1033,7 @@ impl ConstantDeclaration {
 
     /// Returns the canonical path.
     #[must_use]
-    pub fn path(&self) -> &str {
+    pub const fn path(&self) -> &CanonicalPath {
         &self.path
     }
 
@@ -952,9 +1043,15 @@ impl ConstantDeclaration {
         self.class
     }
 
+    /// Returns the declared member admissibilities.
+    #[must_use]
+    pub fn members(&self) -> &[ConstantAdmissibility] {
+        &self.members
+    }
+
     /// Returns the declared dependencies.
     #[must_use]
-    pub fn dependencies(&self) -> &BTreeSet<String> {
+    pub fn dependencies(&self) -> &BTreeSet<CanonicalPath> {
         &self.dependencies
     }
 
@@ -966,8 +1063,8 @@ impl ConstantDeclaration {
 
     /// Returns the declared selection.
     #[must_use]
-    pub const fn selection(&self) -> ConstantSelection {
-        self.selection
+    pub const fn selection(&self) -> &ConstantSelection {
+        &self.selection
     }
 
     /// Returns the declared state.
@@ -990,7 +1087,7 @@ impl ConstantDeclaration {
 /// One canonical constant interface entry of `GNT-32.8-constant-interface-and-artifact-identity`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstantInterfaceEntry {
-    path: String,
+    path: CanonicalPath,
     class: ConstantValueClass,
     canonical_value: String,
 }
@@ -998,7 +1095,7 @@ pub struct ConstantInterfaceEntry {
 impl ConstantInterfaceEntry {
     /// Returns the canonical path.
     #[must_use]
-    pub fn path(&self) -> &str {
+    pub const fn path(&self) -> &CanonicalPath {
         &self.path
     }
 
@@ -1018,14 +1115,20 @@ impl ConstantInterfaceEntry {
 /// One canonical constant interface in canonical path order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstantInterface {
-    entries: BTreeMap<String, ConstantInterfaceEntry>,
+    entries: BTreeMap<CanonicalPath, ConstantInterfaceEntry>,
 }
 
 impl ConstantInterface {
     /// Returns the entries in canonical path order.
     #[must_use]
-    pub fn entries(&self) -> &BTreeMap<String, ConstantInterfaceEntry> {
+    pub fn entries(&self) -> &BTreeMap<CanonicalPath, ConstantInterfaceEntry> {
         &self.entries
+    }
+
+    /// Returns whether the interface records no entry.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     /// Returns the interface identity over the recorded facts only.
@@ -1033,7 +1136,7 @@ impl ConstantInterface {
     pub fn identity(&self) -> ConstantInterfaceIdentity {
         let mut fields: Vec<Vec<u8>> = Vec::with_capacity(self.entries.len() * 3);
         for entry in self.entries.values() {
-            fields.push(entry.path.as_bytes().to_vec());
+            fields.push(entry.path.as_str().as_bytes().to_vec());
             fields.push(entry.class.wire_name().as_bytes().to_vec());
             fields.push(entry.canonical_value.as_bytes().to_vec());
         }
@@ -1128,10 +1231,10 @@ impl ConstantArtifactBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstantPackage {
     limits: EvaluationLimits,
-    declarations: BTreeMap<String, ConstantDeclaration>,
-    externals: BTreeSet<String>,
-    values: BTreeMap<String, String>,
-    refusals: BTreeMap<String, ConstantDiagnosticCode>,
+    declarations: BTreeMap<CanonicalPath, ConstantDeclaration>,
+    externals: BTreeSet<CanonicalPath>,
+    values: BTreeMap<CanonicalPath, String>,
+    refusals: BTreeMap<CanonicalPath, ConstantDiagnosticCode>,
 }
 
 impl ConstantPackage {
@@ -1155,29 +1258,26 @@ impl ConstantPackage {
 
     /// Admits one imported constant path that this package does not evaluate.
     pub fn admit_external(&mut self, path: &str) -> Result<(), ConstantError> {
-        if path.trim().is_empty() || path.len() > MAX_CONSTANT_PATH_BYTES {
-            return Err(ConstantError::new(
+        let path = canonical(path)?;
+        if self.declarations.contains_key(&path) {
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InvalidDeclaration,
-                "an external constant path must be nonempty and bounded",
+                "is declared in this package",
             ));
         }
-        if self.declarations.contains_key(path) {
-            return Err(ConstantError::new(
-                ConstantDiagnosticCode::InvalidDeclaration,
-                format!("`{path}` is declared in this package"),
-            ));
-        }
-        self.externals.insert(path.to_owned());
+        self.externals.insert(path);
         Ok(())
     }
 
     /// Declares one constant; a duplicate canonical path is refused.
     pub fn declare(&mut self, declaration: ConstantDeclaration) -> Result<(), ConstantError> {
-        let path = declaration.path().to_owned();
+        let path = declaration.path().clone();
         if self.declarations.contains_key(&path) {
-            return Err(ConstantError::new(
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InvalidDeclaration,
-                format!("`{path}` is declared twice in one package"),
+                "is declared twice in one package",
             ));
         }
         self.declarations.insert(path, declaration);
@@ -1187,147 +1287,246 @@ impl ConstantPackage {
     /// Returns one declared constant.
     #[must_use]
     pub fn declaration(&self, path: &str) -> Option<&ConstantDeclaration> {
-        self.declarations.get(path)
+        CanonicalPath::new(path)
+            .ok()
+            .and_then(|path| self.declarations.get(&path))
     }
 
     /// Returns one declared state.
     #[must_use]
     pub fn state(&self, path: &str) -> Option<ConstantState> {
-        self.declarations.get(path).map(ConstantDeclaration::state)
+        self.declaration(path).map(ConstantDeclaration::state)
     }
 
     /// Returns the recorded refusal of one declaration.
     #[must_use]
     pub fn refusal(&self, path: &str) -> Option<ConstantDiagnosticCode> {
-        self.refusals.get(path).copied()
+        CanonicalPath::new(path)
+            .ok()
+            .and_then(|path| self.refusals.get(&path).copied())
     }
 
-    /// Returns one deterministic topological evaluation order.
+    /// Returns the recorded canonical value of one evaluated constant.
+    #[must_use]
+    pub fn value(&self, path: &str) -> Option<&str> {
+        CanonicalPath::new(path)
+            .ok()
+            .and_then(|path| self.values.get(&path))
+            .map(String::as_str)
+    }
+
+    /// Returns the declarations selected for evaluation, in canonical order.
+    #[must_use]
+    pub fn selected_paths(&self) -> Vec<CanonicalPath> {
+        self.declarations
+            .iter()
+            .filter(|(_, declaration)| declaration.selection().is_active())
+            .map(|(path, _)| path.clone())
+            .collect()
+    }
+
+    /// Returns whether at least one declaration lies on a dependency cycle among the
+    /// given declarations, and the lexicographically first such declaration.
+    fn first_cycle_member(&self, pending: &BTreeSet<CanonicalPath>) -> Option<CanonicalPath> {
+        let reaches_start = |start: &CanonicalPath| -> bool {
+            let mut seen: BTreeSet<CanonicalPath> = BTreeSet::new();
+            let mut stack: Vec<CanonicalPath> = vec![start.clone()];
+            while let Some(node) = stack.pop() {
+                let Some(declaration) = self.declarations.get(&node) else {
+                    continue;
+                };
+                for dependency in declaration.dependencies() {
+                    if !pending.contains(dependency) {
+                        continue;
+                    }
+                    if dependency == start {
+                        return true;
+                    }
+                    if seen.insert(dependency.clone()) {
+                        stack.push(dependency.clone());
+                    }
+                }
+            }
+            false
+        };
+        pending.iter().find(|path| reaches_start(path)).cloned()
+    }
+
+    /// Returns one deterministic topological evaluation order over the declarations
+    /// selected for evaluation.
     ///
-    /// Unresolved dependencies are refused, and a dependency cycle is refused with
-    /// exactly one declared member of the cycle named.
-    pub fn evaluation_order(&self) -> Result<Vec<String>, ConstantError> {
-        for declaration in self.declarations.values() {
+    /// Unresolved dependencies are refused, a dependency excluded by selection is
+    /// refused, and a dependency cycle is refused with exactly one declared member
+    /// that lies on the cycle named.
+    pub fn evaluation_order(&self) -> Result<Vec<CanonicalPath>, ConstantError> {
+        let mut pending: BTreeSet<CanonicalPath> = BTreeSet::new();
+        for (path, declaration) in &self.declarations {
+            if declaration.selection().is_active() {
+                pending.insert(path.clone());
+            }
+        }
+        for path in pending.clone() {
+            let declaration = self
+                .declarations
+                .get(&path)
+                .ok_or_else(|| unreachable!("pending declarations exist"))?;
             for dependency in declaration.dependencies() {
-                if !self.declarations.contains_key(dependency)
-                    && !self.externals.contains(dependency)
-                {
-                    return Err(ConstantError::new(
+                if self.externals.contains(dependency) {
+                    continue;
+                }
+                let Some(target) = self.declarations.get(dependency) else {
+                    return Err(ConstantError::at(
+                        &path,
                         ConstantDiagnosticCode::UnresolvedDependency,
-                        format!(
-                            "`{}` declares the unresolved dependency `{dependency}`",
-                            declaration.path()
-                        ),
+                        format!("declares the unresolved dependency `{dependency}`"),
+                    ));
+                };
+                if target.selection().is_excluded() {
+                    return Err(ConstantError::at(
+                        &path,
+                        ConstantDiagnosticCode::InactiveEvaluationRefused,
+                        format!("depends on the excluded constant `{dependency}`"),
                     ));
                 }
             }
         }
-        let mut emitted: BTreeSet<String> = BTreeSet::new();
-        let mut order: Vec<String> = Vec::with_capacity(self.declarations.len());
-        while order.len() < self.declarations.len() {
-            let mut ready: Option<String> = None;
-            for (path, declaration) in &self.declarations {
-                if emitted.contains(path) {
-                    continue;
-                }
-                let satisfied = declaration.dependencies().iter().all(|dependency| {
-                    !self.declarations.contains_key(dependency) || emitted.contains(dependency)
-                });
-                if satisfied {
-                    ready = Some(path.clone());
-                    break;
-                }
-            }
+        let mut emitted: BTreeSet<CanonicalPath> = BTreeSet::new();
+        let mut order: Vec<CanonicalPath> = Vec::with_capacity(pending.len());
+        loop {
+            let ready = pending
+                .iter()
+                .filter(|path| !emitted.contains(*path))
+                .find(|path| {
+                    self.declarations.get(*path).is_some_and(|declaration| {
+                        declaration.dependencies().iter().all(|dependency| {
+                            !pending.contains(dependency) || emitted.contains(dependency)
+                        })
+                    })
+                })
+                .cloned();
             match ready {
                 Some(path) => {
                     emitted.insert(path.clone());
                     order.push(path);
                 }
-                None => {
-                    let member = self
-                        .declarations
-                        .keys()
-                        .find(|path| !emitted.contains(*path))
-                        .cloned()
-                        .unwrap_or_default();
-                    return Err(ConstantError::new(
-                        ConstantDiagnosticCode::Cycle,
-                        format!("constant dependency cycle includes `{member}`"),
-                    ));
-                }
+                None => break,
             }
+        }
+        if order.len() != pending.len() {
+            let remaining: BTreeSet<CanonicalPath> = pending
+                .into_iter()
+                .filter(|path| !emitted.contains(path))
+                .collect();
+            let member = self.first_cycle_member(&remaining);
+            let (path, detail) = match member {
+                Some(path) => (path, "lies on a dependency cycle"),
+                None => (
+                    remaining
+                        .iter()
+                        .next()
+                        .cloned()
+                        .unwrap_or_else(|| unreachable!("remaining declarations exist")),
+                    "depends on a declaration that is not ordered before it",
+                ),
+            };
+            return Err(ConstantError::at(
+                &path,
+                ConstantDiagnosticCode::Cycle,
+                detail,
+            ));
         }
         Ok(order)
     }
 
     /// Records one evaluation under the declared limits.
     ///
-    /// A second evaluation of an immutable constant, an inactive selection, a
-    /// refused dependency, a malformed canonical value, and any exceeded limit are
-    /// refused, and a refused limit records the declaration's refusal.
+    /// A second evaluation of an immutable constant, an excluded declaration, an
+    /// excluded or refused or not-yet-evaluated dependency, a malformed canonical
+    /// value, and any exceeded limit are refused. Every refused dependency chain is
+    /// itself recorded, so a refusal is transitive.
     pub fn record_evaluation(
         &mut self,
         path: &str,
         work: ConstantWork,
         canonical_value: &str,
     ) -> Result<(), ConstantError> {
+        let path = CanonicalPath::new(path).map_err(|_| {
+            ConstantError::new(
+                ConstantDiagnosticCode::UnresolvedDependency,
+                "names no declared constant",
+            )
+        })?;
         let (selection, dependencies, state) = {
-            let declaration = self.declarations.get(path).ok_or_else(|| {
+            let declaration = self.declarations.get(&path).ok_or_else(|| {
                 ConstantError::new(
                     ConstantDiagnosticCode::UnresolvedDependency,
                     format!("`{path}` names no declared constant"),
                 )
             })?;
             (
-                declaration.selection(),
+                declaration.selection().clone(),
                 declaration.dependencies().clone(),
                 declaration.state(),
             )
         };
         if state != ConstantState::Declared {
-            return Err(ConstantError::new(
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InvalidDeclaration,
-                format!("`{path}` is immutable once evaluated or refused"),
+                "is immutable once evaluated or refused",
             ));
         }
-        if !selection.is_active() {
-            self.refusals.insert(
-                path.to_owned(),
+        if selection.is_excluded() {
+            self.refuse(&path, ConstantDiagnosticCode::InactiveEvaluationRefused);
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InactiveEvaluationRefused,
-            );
-            return Err(ConstantError::new(
-                ConstantDiagnosticCode::InactiveEvaluationRefused,
-                format!("`{path}` is not selected and MUST NOT evaluate"),
+                "is excluded by selection and MUST NOT evaluate",
             ));
         }
-        if let Some(refused) = dependencies.iter().find(|dependency| {
-            self.declarations
-                .get(*dependency)
-                .is_some_and(|declaration| declaration.state() == ConstantState::Refused)
-        }) {
-            return Err(ConstantError::new(
-                ConstantDiagnosticCode::PartialPublicationRefused,
-                format!("`{path}` depends on the refused constant `{refused}`"),
-            ));
+        for dependency in &dependencies {
+            if self.externals.contains(dependency) {
+                continue;
+            }
+            let Some(target) = self.declarations.get(dependency) else {
+                return Err(ConstantError::at(
+                    &path,
+                    ConstantDiagnosticCode::UnresolvedDependency,
+                    format!("declares the unresolved dependency `{dependency}`"),
+                ));
+            };
+            if target.selection().is_excluded() {
+                self.refuse(&path, ConstantDiagnosticCode::InactiveEvaluationRefused);
+                return Err(ConstantError::at(
+                    &path,
+                    ConstantDiagnosticCode::InactiveEvaluationRefused,
+                    format!("depends on the excluded constant `{dependency}`"),
+                ));
+            }
+            if target.state() != ConstantState::Evaluated {
+                self.refuse(&path, ConstantDiagnosticCode::PartialPublicationRefused);
+                return Err(ConstantError::at(
+                    &path,
+                    ConstantDiagnosticCode::PartialPublicationRefused,
+                    format!("depends on the unevaluated constant `{dependency}`"),
+                ));
+            }
         }
         if canonical_value.is_empty() || canonical_value.len() > MAX_CONSTANT_VALUE_BYTES {
-            return Err(ConstantError::new(
+            return Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InvalidDeclaration,
-                format!("`{path}` has an empty or oversized canonical value"),
+                "has an empty or oversized canonical value",
             ));
         }
         if let Err(error) = work.admit(self.limits) {
-            self.refusals.insert(path.to_owned(), error.code());
-            if let Some(declaration) = self.declarations.get_mut(path) {
-                declaration.mark_refused();
-            }
-            return Err(error);
+            self.refuse(&path, error.code());
+            return Err(ConstantError::at(&path, error.code(), error.detail()));
         }
-        if let Some(declaration) = self.declarations.get_mut(path) {
+        if let Some(declaration) = self.declarations.get_mut(&path) {
             declaration.mark_evaluated();
         }
-        self.values
-            .insert(path.to_owned(), canonical_value.to_owned());
+        self.values.insert(path, canonical_value.to_owned());
         Ok(())
     }
 
@@ -1337,44 +1536,64 @@ impl ConstantPackage {
         path: &str,
         code: ConstantDiagnosticCode,
     ) -> Result<(), ConstantError> {
-        let state = self.state(path).ok_or_else(|| {
+        let path = CanonicalPath::new(path).map_err(|_| {
             ConstantError::new(
                 ConstantDiagnosticCode::UnresolvedDependency,
-                format!("`{path}` names no declared constant"),
+                "names no declared constant",
             )
         })?;
-        if state != ConstantState::Declared {
-            return Err(ConstantError::new(
+        let state = self.declarations.get(&path).map(ConstantDeclaration::state);
+        match state {
+            None => Err(ConstantError::new(
+                ConstantDiagnosticCode::UnresolvedDependency,
+                format!("`{path}` names no declared constant"),
+            )),
+            Some(ConstantState::Declared) => {
+                self.refuse(&path, code);
+                Ok(())
+            }
+            Some(_) => Err(ConstantError::at(
+                &path,
                 ConstantDiagnosticCode::InvalidDeclaration,
-                format!("`{path}` is immutable once evaluated or refused"),
-            ));
+                "is immutable once evaluated or refused",
+            )),
         }
-        self.refusals.insert(path.to_owned(), code);
+    }
+
+    /// Records one refusal of one declaration.
+    fn refuse(&mut self, path: &CanonicalPath, code: ConstantDiagnosticCode) {
+        self.refusals.insert(path.clone(), code);
         if let Some(declaration) = self.declarations.get_mut(path) {
             declaration.mark_refused();
         }
-        Ok(())
     }
 
     /// Returns the canonical interface of every evaluated exported constant.
     ///
-    /// A package with any declaration that is not evaluated publishes nothing.
+    /// An excluded declaration contributes nothing and is never required to be
+    /// evaluated, so a package whose declarations are all excluded publishes an empty
+    /// interface. Any selected declaration that is not evaluated refuses publication.
     pub fn interface(&self) -> Result<ConstantInterface, ConstantError> {
-        let mut entries: BTreeMap<String, ConstantInterfaceEntry> = BTreeMap::new();
+        let mut entries: BTreeMap<CanonicalPath, ConstantInterfaceEntry> = BTreeMap::new();
         for (path, declaration) in &self.declarations {
+            if declaration.selection().is_excluded() {
+                continue;
+            }
             if declaration.state() != ConstantState::Evaluated {
-                return Err(ConstantError::new(
+                return Err(ConstantError::at(
+                    path,
                     ConstantDiagnosticCode::PartialPublicationRefused,
-                    format!("`{path}` is not evaluated, so the package publishes nothing"),
+                    "is not evaluated, so the package publishes nothing",
                 ));
             }
             if !declaration.is_exported() {
                 continue;
             }
             let canonical_value = self.values.get(path).cloned().ok_or_else(|| {
-                ConstantError::new(
+                ConstantError::at(
+                    path,
                     ConstantDiagnosticCode::PartialPublicationRefused,
-                    format!("`{path}` has no recorded canonical value"),
+                    "has no recorded canonical value",
                 )
             })?;
             entries.insert(
@@ -1409,9 +1628,8 @@ impl ConstantPackage {
             .declarations
             .iter()
             .filter(|(_, declaration)| declaration.state() == ConstantState::Evaluated)
-            .map(|(path, _)| path.clone())
+            .map(|(path, _)| path.as_str().to_owned())
             .collect::<Vec<String>>();
-        let class_wire = |class: ConstantValueClass| class.wire_name().as_bytes().to_vec();
         let mut fields: Vec<Vec<u8>> =
             Vec::with_capacity(3 + sorted_targets.len() + evaluated.len());
         fields.push(identity.as_str().as_bytes().to_vec());
@@ -1420,8 +1638,10 @@ impl ConstantPackage {
         }
         for path in &evaluated {
             fields.push(path.as_bytes().to_vec());
-            if let Some(declaration) = self.declarations.get(path) {
-                fields.push(class_wire(declaration.class()));
+            if let Ok(path) = CanonicalPath::new(path)
+                && let Some(declaration) = self.declarations.get(&path)
+            {
+                fields.push(declaration.class().wire_name().as_bytes().to_vec());
             }
         }
         let borrowed = fields.iter().map(Vec::as_slice).collect::<Vec<&[u8]>>();
@@ -1454,7 +1674,7 @@ impl PackageLoadFact {
         executes_source: bool,
     ) -> Result<Self, ConstantError> {
         admit_package_state(state_class)?;
-        if package.trim().is_empty() || package.len() > MAX_CONSTANT_PATH_BYTES {
+        if package.trim().is_empty() || package.len() > MAX_DECLARED_NAME_BYTES {
             return Err(ConstantError::new(
                 ConstantDiagnosticCode::InvalidDeclaration,
                 "a package name must be nonempty and bounded",
@@ -1519,7 +1739,7 @@ impl ApplicationStateDeclaration {
         owner: ApplicationStateOwner,
         mutable: bool,
     ) -> Result<Self, ConstantError> {
-        if name.trim().is_empty() || name.len() > MAX_CONSTANT_PATH_BYTES {
+        if name.trim().is_empty() || name.len() > MAX_DECLARED_NAME_BYTES {
             return Err(ConstantError::new(
                 ConstantDiagnosticCode::InvalidDeclaration,
                 "an application state name must be nonempty and bounded",
@@ -1645,13 +1865,15 @@ pub enum ConstantNonClaim {
     ParserAcceptance,
     /// Runtime static storage.
     RuntimeStaticStorage,
+    /// Source-span or location rendering of refusals.
+    SourceRendering,
     /// The absence of host exhaustion that cannot be safely reported.
     UnreportableHostExhaustion,
 }
 
 impl ConstantNonClaim {
     /// Every non-claim in exact wire-name order.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::CacheEquivalence,
         Self::CompileTimeHostExecution,
         Self::ConstantFolding,
@@ -1663,6 +1885,7 @@ impl ConstantNonClaim {
         Self::LinkerRealization,
         Self::ParserAcceptance,
         Self::RuntimeStaticStorage,
+        Self::SourceRendering,
         Self::UnreportableHostExhaustion,
     ];
 
@@ -1681,6 +1904,7 @@ impl ConstantNonClaim {
             Self::LinkerRealization => "linker-realization",
             Self::ParserAcceptance => "parser-acceptance",
             Self::RuntimeStaticStorage => "runtime-static-storage",
+            Self::SourceRendering => "source-rendering",
             Self::UnreportableHostExhaustion => "unreportable-host-exhaustion",
         }
     }
@@ -1695,7 +1919,7 @@ impl ConstantNonClaim {
 }
 
 /// The declared constant non-claims of `GNT-32.12-constant-and-package-state-non-claims`.
-pub const CONSTANT_NON_CLAIMS: [&str; 12] = [
+pub const CONSTANT_NON_CLAIMS: [&str; 13] = [
     "No incremental or clean-cache equivalence: the section declares deterministic evaluation under declared limits and claims no cache relation.",
     "No compile-time host execution: constant evaluation executes no host call, model operation, or adapter.",
     "No constant folding promise: the section admits one closed operation set and claims no optimizer behavior.",
@@ -1707,11 +1931,12 @@ pub const CONSTANT_NON_CLAIMS: [&str; 12] = [
     "No linker realization: linking, loading, and interface digests are owned by other sections.",
     "No parser acceptance: source acceptance of a declaration remains downstream work.",
     "No runtime static storage: no process-wide or task-local static exists for a constant.",
+    "No source-span or location rendering: refusals name their clause and declared constant, and rendering is owned by the landed diagnostic contracts.",
     "No freedom from unreportable host exhaustion: resident-memory and CPU exhaustion remain implementation-specific.",
 ];
 
 /// The declared order of the constant non-claims (`GNT-32.12`).
-pub const CONSTANT_NON_CLAIM_ORDER: [ConstantNonClaim; 12] = ConstantNonClaim::ALL;
+pub const CONSTANT_NON_CLAIM_ORDER: [ConstantNonClaim; 13] = ConstantNonClaim::ALL;
 
 /// One presented non-claim assertion (`GNT-32.12`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

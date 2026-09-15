@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "a84bf824928be7b570d3564718f04146f6f80755101b242167a36d6cb605eff3",
-  "byte_length": 963839,
+  "specification_sha256": "8bacbc59592bcb0adce1a3f38f57d8c1cfe95773e712d4994d5a44a32acbc81c",
+  "byte_length": 965196,
   "line_count": 15277,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9497,
       "end_line": 15277,
-      "sha256": "05eb7593735fdb770111d7048d0b2bc1837704b8c561bc8a44080ac1e681cbb8",
+      "sha256": "52c1f509a61553d92b9b90d48b0e0f1f7cb70b45f525328c3d8eaf2f8075e05b",
       "rationale": null
     }
   ],
@@ -38906,11 +38906,11 @@
       "id": "GNT-32.2-admissible-constant-classes",
       "span_start_line": 15235,
       "span_end_line": 15238,
-      "span_sha256": "167bbc7a5a790e0bc6feab7935ed593b6ce9793deea4882f1aa56af53222d873",
+      "span_sha256": "d8386b89cb1cf43d76427f2ddf3dfd2fd61fd5c1a097ce65e9b0a9926a121669",
       "anchor_line": 15235,
       "body_start_line": 15236,
       "body_end_line": 15238,
-      "body_sha256": "cb4ccdfea8e2de747230b9b6e3363d755a86eb2ae1cf88725932631781dfcc7f",
+      "body_sha256": "ca11f5d85b1d811d82f43ec982b0d40dc1660117911d2a2a905e4091b4978892",
       "profiles": [
         "analyzer"
       ],
@@ -38935,7 +38935,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/constants.rs#admissible_and_refused_classes_are_closed"
+                "crates/gantry-conformance/tests/constants.rs#admissible_and_refused_classes_are_closed",
+                "crates/gantry-conformance/tests/constants.rs#struct_and_enum_members_are_adjudicated"
               ],
               "rationale": null
             }
@@ -39029,11 +39030,11 @@
       "id": "GNT-32.5-dependency-ordering-and-cycle-refusal",
       "span_start_line": 15247,
       "span_end_line": 15250,
-      "span_sha256": "1e099a09a33dd594ce3eb293f79b7fc128654665287ec2d4c4cdcc6aef937e22",
+      "span_sha256": "e69cb5615a28fd025f54ba3f51bd872e07ff0e6ad51ca40d2d207c18a5ea803d",
       "anchor_line": 15247,
       "body_start_line": 15248,
       "body_end_line": 15250,
-      "body_sha256": "9ff1cd6adbe5fee74a1af952cd0bf25e0b69b8a830bc769378d7601d05671b68",
+      "body_sha256": "b7f1270f3ed66348f2a602f6aec603949a59537ac6588f92692cb0f48dd39680",
       "profiles": [
         "analyzer"
       ],
@@ -39058,7 +39059,9 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/constants.rs#evaluation_order_is_deterministic_and_cycles_are_refused"
+                "crates/gantry-conformance/tests/constants.rs#evaluation_order_is_deterministic_and_cycles_are_refused",
+                "crates/gantry-conformance/tests/constants.rs#cycle_refusal_names_a_member_on_the_cycle",
+                "crates/gantry-conformance/tests/constants.rs#evaluation_requires_dependencies_to_be_evaluated_first"
               ],
               "rationale": null
             }
@@ -39070,11 +39073,11 @@
       "id": "GNT-32.6-constant-diagnostics",
       "span_start_line": 15251,
       "span_end_line": 15254,
-      "span_sha256": "2a544d2a2e676f7a69168db8f4da1b89139a5ecf5d75097e691f857e5820995d",
+      "span_sha256": "a7fb85dccf2059bc1673e48e74d7ccffdba91674ced1b24179d54b77896aa7ee",
       "anchor_line": 15251,
       "body_start_line": 15252,
       "body_end_line": 15254,
-      "body_sha256": "f7f3e89762aea9f9fcb1d01ecd699892de2afde6874e60d0c5aeb67d81e7afad",
+      "body_sha256": "cc64a4062af483c8bfbc0cb463aae3c97cc5eb4aa539ea972bbd20c559f24d22",
       "profiles": [
         "analyzer"
       ],
@@ -39099,7 +39102,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/constants.rs#diagnostics_are_frozen_and_refuse_overflow_and_inexact_conversion"
+                "crates/gantry-conformance/tests/constants.rs#diagnostics_are_frozen_and_refuse_overflow_and_inexact_conversion",
+                "crates/gantry-conformance/tests/constants.rs#refusals_report_their_clause_and_declared_constant"
               ],
               "rationale": null
             }
@@ -39111,11 +39115,11 @@
       "id": "GNT-32.7-atomic-failure-and-no-partial-publication",
       "span_start_line": 15255,
       "span_end_line": 15258,
-      "span_sha256": "4ffa03c51764322c8f9c68a6c306b6498905b29ae337f2355e28122e9322136f",
+      "span_sha256": "4e8624e39efa2e83357662ba6d24f7537115ca43729323a5e828bfc2e07c5c7b",
       "anchor_line": 15255,
       "body_start_line": 15256,
       "body_end_line": 15258,
-      "body_sha256": "a7d4bc0564f27ce6a25e6c9e4de000235160d950319dbc2314f7ec5b5d9120a8",
+      "body_sha256": "a49f41fce7d1d63bc5f92264c24774951211f616bb696b1b74ff9775397da52a",
       "profiles": [
         "analyzer"
       ],
@@ -39140,7 +39144,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/constants.rs#refused_constants_publish_nothing"
+                "crates/gantry-conformance/tests/constants.rs#refused_constants_publish_nothing",
+                "crates/gantry-conformance/tests/constants.rs#refusals_are_transitive_through_dependency_chains"
               ],
               "rationale": null
             }
@@ -39193,11 +39198,11 @@
       "id": "GNT-32.9-sealed-target-and-feature-selection",
       "span_start_line": 15263,
       "span_end_line": 15266,
-      "span_sha256": "314f3ee95b7304edf7d743f5b3f0c4986caea250e1291cd0a6b47be5dc21ae64",
+      "span_sha256": "2c973628dfd6d585da01870b0adfaf1349736e52912b4a75cdc5c1a67e4331f1",
       "anchor_line": 15263,
       "body_start_line": 15264,
       "body_end_line": 15266,
-      "body_sha256": "8ad7207cace6ec2be44fdfbb80596770f9c0c7aba6b24275e14ab978b9ce8fb3",
+      "body_sha256": "11b1a2f1eaa534e1814e1aa6620f2f0d2950967deb8cadc275490400d9ab27bc",
       "profiles": [
         "analyzer"
       ],
@@ -39222,7 +39227,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/constants.rs#sealed_selection_gates_evaluation"
+                "crates/gantry-conformance/tests/constants.rs#sealed_selection_binds_the_target_predicate_vocabulary",
+                "crates/gantry-conformance/tests/constants.rs#excluded_declarations_do_not_evaluate_or_block_publication"
               ],
               "rationale": null
             }
@@ -39316,11 +39322,11 @@
       "id": "GNT-32.12-constant-and-package-state-non-claims",
       "span_start_line": 15275,
       "span_end_line": 15277,
-      "span_sha256": "407c89eaab596a142d8ebde75cfa66cb47fc0981b3fee213f01aa2e8f7068b72",
+      "span_sha256": "104eeadcc1c9bd044af2a88d854de45b0766c075039e6d7fa47e6c15916ab724",
       "anchor_line": 15275,
       "body_start_line": 15276,
       "body_end_line": 15277,
-      "body_sha256": "298cf7bb91b16867dea90a1bbe9eb3100d7c5b87c29a3e5ebccc315a6a9447bd",
+      "body_sha256": "b53ecc0a79e360b466e131d55585b607e9fb6c1672976ce542ba1d92904cabeb",
       "profiles": [
         "analyzer"
       ],
