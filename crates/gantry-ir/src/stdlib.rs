@@ -257,6 +257,17 @@ impl StabilityTier {
     pub const fn is_stable(self) -> bool {
         matches!(self, Self::Stable | Self::Foundational)
     }
+
+    /// Returns the declared stability rank; a higher rank is wider stability.
+    #[must_use]
+    pub const fn rank(self) -> u8 {
+        match self {
+            Self::Experimental => 0,
+            Self::TargetSpecific => 1,
+            Self::Stable => 2,
+            Self::Foundational => 3,
+        }
+    }
 }
 
 /// One frozen architecture diagnostic of `GNT-34.0`-`GNT-34.12`.
@@ -488,6 +499,85 @@ impl StdGraphIdentity {
     }
 }
 
+/// One declared public standard-library item of `GNT-34.5`-`GNT-34.8`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StdItem {
+    name: String,
+    class: NameClass,
+    tier: StabilityTier,
+    modes: BTreeSet<SemanticMode>,
+    targets: BTreeSet<TargetKind>,
+}
+
+impl StdItem {
+    /// Declares one public item; a package classification and an empty applicability
+    /// are refused here.
+    pub fn new(
+        name: &str,
+        class: NameClass,
+        tier: StabilityTier,
+        modes: &[SemanticMode],
+        targets: &[TargetKind],
+    ) -> Result<Self, StdlibError> {
+        validate_std_name(name)?;
+        if class == NameClass::Package {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidNameClassification,
+                format!("`{name}` declares the package classification inside a package"),
+            ));
+        }
+        if modes.is_empty() || targets.is_empty() {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::UnsupportedApplicability,
+                format!("`{name}` declares no applicability"),
+            ));
+        }
+        Ok(Self {
+            name: name.to_owned(),
+            class,
+            tier,
+            modes: modes.iter().copied().collect(),
+            targets: targets.iter().copied().collect(),
+        })
+    }
+
+    /// Returns the declared item name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the defining logical package of this item.
+    #[must_use]
+    pub fn owner(&self) -> &str {
+        self.name.split("::").next().unwrap_or(&self.name)
+    }
+
+    /// Returns the declared classification.
+    #[must_use]
+    pub const fn class(&self) -> NameClass {
+        self.class
+    }
+
+    /// Returns the one declared tier.
+    #[must_use]
+    pub const fn tier(&self) -> StabilityTier {
+        self.tier
+    }
+
+    /// Returns the declared semantic modes.
+    #[must_use]
+    pub fn modes(&self) -> &BTreeSet<SemanticMode> {
+        &self.modes
+    }
+
+    /// Returns the declared targets.
+    #[must_use]
+    pub fn targets(&self) -> &BTreeSet<TargetKind> {
+        &self.targets
+    }
+}
+
 /// One declared logical standard-library package of `GNT-34.1`-`GNT-34.8`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StdPackage {
@@ -499,6 +589,7 @@ pub struct StdPackage {
     targets: BTreeSet<TargetKind>,
     dependencies: BTreeSet<String>,
     exports: BTreeSet<String>,
+    items: BTreeMap<String, StdItem>,
 }
 
 impl StdPackage {
@@ -568,6 +659,7 @@ impl StdPackage {
             targets: targets.iter().copied().collect(),
             dependencies: declared,
             exports: exported,
+            items: BTreeMap::new(),
         })
     }
 
@@ -622,7 +714,7 @@ impl StdPackage {
     /// Returns whether this package exports one item.
     #[must_use]
     pub fn exports_item(&self, item: &str) -> bool {
-        self.exports.contains(item)
+        self.exports.contains(item) || self.items.contains_key(item)
     }
 
     /// Returns the interface identity over every declared interface fact.
@@ -646,11 +738,62 @@ impl StdPackage {
         for item in &self.exports {
             fields.push(item.as_bytes().to_vec());
         }
+        for item in self.items.values() {
+            fields.push(item.name().as_bytes().to_vec());
+            fields.push(item.class().wire_name().as_bytes().to_vec());
+            fields.push(item.tier().wire_name().as_bytes().to_vec());
+            for mode in item.modes() {
+                fields.push(mode.wire_name().as_bytes().to_vec());
+            }
+            for target in item.targets() {
+                fields.push(target.wire_name().as_bytes().to_vec());
+            }
+        }
         let borrowed = fields.iter().map(Vec::as_slice).collect::<Vec<&[u8]>>();
         StdInterfaceIdentity(Arc::from(encode_hex(&digest_fields(
             "gantry.std.interface.v1",
             &borrowed,
         ))))
+    }
+
+    /// Declares one public item of this package; a foreign item, a class contradiction,
+    /// and a second tier for one item are refused.
+    pub fn declare_item(&mut self, item: StdItem) -> Result<(), StdlibError> {
+        if item.owner() != self.name {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::FacadeIdentityLoss,
+                format!("`{}` is not owned by `{}`", item.name(), self.name),
+            ));
+        }
+        if let Some(existing) = self.items.get(item.name()) {
+            let code = if existing.tier() == item.tier() {
+                StdlibDiagnosticCode::DuplicatePackage
+            } else {
+                StdlibDiagnosticCode::InvalidStabilityTransition
+            };
+            return Err(StdlibError::new(
+                code,
+                format!(
+                    "`{}` already declares the tier `{}`",
+                    item.name(),
+                    existing.tier().wire_name()
+                ),
+            ));
+        }
+        self.items.insert(item.name().to_owned(), item);
+        Ok(())
+    }
+
+    /// Returns the declared public items in canonical name order.
+    #[must_use]
+    pub fn items(&self) -> &BTreeMap<String, StdItem> {
+        &self.items
+    }
+
+    /// Returns one declared public item.
+    #[must_use]
+    pub fn item(&self, name: &str) -> Option<&StdItem> {
+        self.items.get(name)
     }
 }
 
@@ -680,6 +823,15 @@ impl StdName {
             ));
         }
         validate_std_name(owner)?;
+        if path != owner
+            && !path.starts_with(&format!("{owner}."))
+            && !path.starts_with(&format!("{owner}::"))
+        {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidNameClassification,
+                format!("`{path}` is not rooted under its owning package `{owner}`"),
+            ));
+        }
         Ok(Self {
             path: path.to_owned(),
             class,
@@ -709,12 +861,25 @@ impl StdName {
 /// One closed edition prelude of `GNT-34.4-edition-prelude-and-explicit-imports`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Prelude {
+    edition: String,
     members: BTreeSet<String>,
 }
 
 impl Prelude {
-    /// Declares one enumerated prelude; a wildcard member is refused.
-    pub fn new(members: &[&str]) -> Result<Self, StdlibError> {
+    /// Declares one edition-versioned enumerated prelude; a wildcard member and an
+    /// undeclared edition are refused.
+    pub fn new(edition: &str, members: &[&str]) -> Result<Self, StdlibError> {
+        if edition.trim().is_empty()
+            || edition.len() > MAX_STD_NAME_BYTES
+            || !edition.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'.' || byte == b'-'
+            })
+        {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::UnenumeratedPreludeMember,
+                format!("`{edition}` is not a declared prelude edition"),
+            ));
+        }
         let mut declared = BTreeSet::new();
         for member in members {
             if member.contains('*') {
@@ -726,7 +891,31 @@ impl Prelude {
             validate_std_name(member)?;
             declared.insert((*member).to_owned());
         }
-        Ok(Self { members: declared })
+        Ok(Self {
+            edition: edition.to_owned(),
+            members: declared,
+        })
+    }
+
+    /// Returns the declared edition.
+    #[must_use]
+    pub fn edition(&self) -> &str {
+        &self.edition
+    }
+
+    /// Returns one declared edition prelude; presenting a different member set under an
+    /// already declared edition is refused rather than admitted as a silent extension.
+    pub fn for_edition(&self, edition: &str, members: &[&str]) -> Result<Self, StdlibError> {
+        let declared = Self::new(edition, members)?;
+        if declared.edition == self.edition && declared.members != self.members {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::UnenumeratedPreludeMember,
+                format!(
+                    "edition `{edition}` admits another member set only through an explicit edition change"
+                ),
+            ));
+        }
+        Ok(declared)
     }
 
     /// Returns the enumerated members.
@@ -927,6 +1116,152 @@ impl Relocation {
     }
 }
 
+/// One declared deprecation of `GNT-34.10-relocation-and-deprecation`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StdDeprecation {
+    item: String,
+    tier: StabilityTier,
+    target: StabilityTier,
+    replacement: Option<String>,
+}
+
+impl StdDeprecation {
+    /// Declares one deprecation of an item from its declared tier to a narrower tier;
+    /// a widening or unchanged target tier is refused.
+    pub fn new(
+        item: &str,
+        tier: StabilityTier,
+        target: StabilityTier,
+        replacement: Option<&str>,
+    ) -> Result<Self, StdlibError> {
+        validate_std_name(item)?;
+        if target.rank() >= tier.rank() {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidRelocation,
+                format!(
+                    "the deprecation of `{item}` does not narrow `{}`",
+                    tier.wire_name()
+                ),
+            ));
+        }
+        if let Some(replacement) = replacement {
+            validate_std_name(replacement)?;
+        }
+        Ok(Self {
+            item: item.to_owned(),
+            tier,
+            target,
+            replacement: replacement.map(str::to_owned),
+        })
+    }
+
+    /// Returns the deprecated item.
+    #[must_use]
+    pub fn item(&self) -> &str {
+        &self.item
+    }
+
+    /// Returns the tier the item is deprecated from.
+    #[must_use]
+    pub const fn tier(&self) -> StabilityTier {
+        self.tier
+    }
+
+    /// Returns the tier the item moves to.
+    #[must_use]
+    pub const fn target_tier(&self) -> StabilityTier {
+        self.target
+    }
+
+    /// Returns the declared replacement, when one is named.
+    #[must_use]
+    pub fn replacement(&self) -> Option<&str> {
+        self.replacement.as_deref()
+    }
+
+    /// Admits the deprecation against its declaring package; a silently removed item
+    /// and an undeclared replacement are refused.
+    pub fn admit(&self, package: &StdPackage) -> Result<(), StdlibError> {
+        let declared = |name: &str| package.exports_item(name) || package.item(name).is_some();
+        if !declared(&self.item) {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidRelocation,
+                format!(
+                    "the deprecation of `{}` removes the item without a declared migration",
+                    self.item
+                ),
+            ));
+        }
+        if let Some(replacement) = &self.replacement
+            && !declared(replacement)
+        {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidRelocation,
+                format!(
+                    "the deprecation of `{}` names the undeclared replacement `{replacement}`",
+                    self.item
+                ),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// One already selected package instance of `GNT-34.7-applicability-and-feature-granularity`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedInstance {
+    name: String,
+    interface: StdInterfaceIdentity,
+    requirements: BTreeSet<String>,
+}
+
+impl SelectedInstance {
+    /// Declares one selected instance from its declared facts.
+    pub fn new(
+        name: &str,
+        interface: StdInterfaceIdentity,
+        requirements: &[&str],
+    ) -> Result<Self, StdlibError> {
+        validate_std_name(name)?;
+        Ok(Self {
+            name: name.to_owned(),
+            interface,
+            requirements: requirements
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
+        })
+    }
+
+    /// Derives one selected instance from its declared package.
+    #[must_use]
+    pub fn from_package(package: &StdPackage) -> Self {
+        Self {
+            name: package.name().to_owned(),
+            interface: package.identity(),
+            requirements: package.dependencies().clone(),
+        }
+    }
+
+    /// Returns the selected package name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the selected interface identity.
+    #[must_use]
+    pub fn interface(&self) -> &StdInterfaceIdentity {
+        &self.interface
+    }
+
+    /// Returns the selected package requirements.
+    #[must_use]
+    pub fn requirements(&self) -> &BTreeSet<String> {
+        &self.requirements
+    }
+}
+
 /// One declared feature selection of `GNT-34.7-applicability-and-feature-granularity`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeatureSelection {
@@ -966,25 +1301,46 @@ impl FeatureSelection {
         &self.packages
     }
 
-    /// Extends one selection; a selection that would mutate an already selected
-    /// package instance is refused.
-    pub fn extend(
+    /// Applies this selection against the declared graph and the already selected
+    /// instances; an undeclared package, and a selection that would change an existing
+    /// instance's identity or requirements, are refused.
+    pub fn apply(
         &self,
-        selected: &BTreeSet<String>,
-        replaces_existing_instance: bool,
-    ) -> Result<BTreeSet<String>, StdlibError> {
-        if replaces_existing_instance {
-            return Err(StdlibError::new(
-                StdlibDiagnosticCode::FeatureMutatesInstance,
-                format!(
-                    "feature `{}` would mutate an existing package instance",
-                    self.feature
-                ),
-            ));
+        graph: &StdGraph,
+        selected: &BTreeMap<String, SelectedInstance>,
+    ) -> Result<BTreeMap<String, SelectedInstance>, StdlibError> {
+        let mut declared = Vec::new();
+        for name in &self.packages {
+            let Some(package) = graph.package(name) else {
+                return Err(StdlibError::new(
+                    StdlibDiagnosticCode::UnknownEdge,
+                    format!(
+                        "the feature `{}` enables the undeclared package `{name}`",
+                        self.feature
+                    ),
+                ));
+            };
+            if let Some(instance) = selected.get(name)
+                && (instance.interface() != &package.identity()
+                    || instance.requirements() != package.dependencies())
+            {
+                return Err(StdlibError::new(
+                    StdlibDiagnosticCode::FeatureMutatesInstance,
+                    format!(
+                        "the feature `{}` would change the selected instance `{name}`",
+                        self.feature
+                    ),
+                ));
+            }
+            declared.push(package);
         }
-        let mut extended = selected.clone();
-        extended.extend(self.packages.iter().cloned());
-        Ok(extended)
+        let mut applied = selected.clone();
+        for package in declared {
+            applied
+                .entry(package.name().to_owned())
+                .or_insert_with(|| SelectedInstance::from_package(package));
+        }
+        Ok(applied)
     }
 }
 
@@ -1011,8 +1367,9 @@ pub fn require_applicable(
 /// Refuses any identity fact derived from physical repository layout.
 pub fn check_layout_identity(facts: &[&str]) -> Result<(), StdlibError> {
     for fact in facts {
-        if fact.contains("crates/")
-            || fact.contains("src/")
+        if fact.is_empty()
+            || fact.contains('/')
+            || fact.contains('\\')
             || fact.ends_with(".rs")
             || fact.contains("Cargo.toml")
         {
@@ -1056,13 +1413,13 @@ impl StdContractVersion {
         self.minor
     }
 
-    /// Refuses a presented contract version that the published version does not admit.
+    /// Refuses a presented contract version that differs from the published one.
     pub fn admit_consumer(&self, presented: Self) -> Result<(), StdlibError> {
-        if presented.major != self.major || presented.minor > self.minor {
+        if presented != *self {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::ContractVersionMismatch,
                 format!(
-                    "presented contract {}.{} is not admitted by {}.{}",
+                    "presented contract {}.{} differs from the published {}.{}",
                     presented.major, presented.minor, self.major, self.minor
                 ),
             ));
@@ -1077,7 +1434,30 @@ pub struct StdManifestEntry {
     name: String,
     class: NameClass,
     tier: StabilityTier,
+    modes: BTreeSet<SemanticMode>,
+    targets: BTreeSet<TargetKind>,
+    dependencies: BTreeSet<String>,
     identity: StdInterfaceIdentity,
+}
+
+impl StdManifestEntry {
+    /// Returns the recorded applicability modes.
+    #[must_use]
+    pub fn modes(&self) -> &BTreeSet<SemanticMode> {
+        &self.modes
+    }
+
+    /// Returns the recorded applicability targets.
+    #[must_use]
+    pub fn targets(&self) -> &BTreeSet<TargetKind> {
+        &self.targets
+    }
+
+    /// Returns the recorded dependencies.
+    #[must_use]
+    pub fn dependencies(&self) -> &BTreeSet<String> {
+        &self.dependencies
+    }
 }
 
 impl StdManifestEntry {
@@ -1141,6 +1521,52 @@ impl StdManifest {
                 StdlibDiagnosticCode::PublicationDrift,
                 "the aggregate manifest is stale against the declared hierarchy",
             ));
+        }
+        Ok(())
+    }
+
+    /// Admits one consumer over the published contract; a presented contract version,
+    /// graph identity, or package interface digest that differs from the published one
+    /// is refused rather than repaired.
+    pub fn admit_consumer(
+        &self,
+        version: StdContractVersion,
+        graph_identity: &str,
+        interfaces: &BTreeMap<String, String>,
+    ) -> Result<(), StdlibError> {
+        let refuse = |detail: String| {
+            Err(StdlibError::new(
+                StdlibDiagnosticCode::ContractVersionMismatch,
+                detail,
+            ))
+        };
+        self.contract.admit_consumer(version)?;
+        if graph_identity != self.identity.as_str() {
+            return refuse(
+                "the presented graph identity differs from the published one".to_owned(),
+            );
+        }
+        for entry in &self.entries {
+            match interfaces.get(entry.name()) {
+                Some(interface) if interface == entry.identity().as_str() => {}
+                Some(_) => {
+                    return refuse(format!(
+                        "the presented interface digest for `{}` differs from the published one",
+                        entry.name()
+                    ));
+                }
+                None => {
+                    return refuse(format!(
+                        "the consumer presents no interface digest for `{}`",
+                        entry.name()
+                    ));
+                }
+            }
+        }
+        if interfaces.len() != self.entries.len() {
+            return refuse(
+                "the consumer presents interface digests for undeclared packages".to_owned(),
+            );
         }
         Ok(())
     }
@@ -1212,6 +1638,22 @@ impl StdGraph {
         Ok(())
     }
 
+    /// Declares one public item inside its owning package; an undeclared owner and a
+    /// second tier for one item are refused.
+    pub fn declare_item(&mut self, item: StdItem) -> Result<(), StdlibError> {
+        let owner = item.owner().to_owned();
+        let Some(package) = self.packages.get_mut(&owner) else {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::UnknownEdge,
+                format!(
+                    "`{}` is declared inside the undeclared package `{owner}`",
+                    item.name()
+                ),
+            ));
+        };
+        package.declare_item(item)
+    }
+
     /// Returns one declared package.
     #[must_use]
     pub fn package(&self, name: &str) -> Option<&StdPackage> {
@@ -1235,7 +1677,7 @@ impl StdGraph {
     pub fn validate(&self) -> Result<(), StdlibError> {
         for package in self.packages.values() {
             for dependency in package.dependencies() {
-                if dependency.starts_with("adapter.") {
+                if !dependency.starts_with("std.") {
                     return Err(StdlibError::new(
                         StdlibDiagnosticCode::PackageToAdapterEdge,
                         format!(
@@ -1344,6 +1786,9 @@ impl StdGraph {
                 name: package.name().to_owned(),
                 class: package.class(),
                 tier: package.tier(),
+                modes: package.modes().clone(),
+                targets: package.targets().clone(),
+                dependencies: package.dependencies().clone(),
                 identity: package.identity(),
             })
             .collect::<Vec<StdManifestEntry>>();
@@ -1357,6 +1802,17 @@ impl StdGraph {
         }
         for member in self.prelude.members() {
             fields.push(member.as_bytes().to_vec());
+        }
+        for entry in &entries {
+            for mode in &entry.modes {
+                fields.push(mode.wire_name().as_bytes().to_vec());
+            }
+            for target in &entry.targets {
+                fields.push(target.wire_name().as_bytes().to_vec());
+            }
+            for dependency in &entry.dependencies {
+                fields.push(dependency.as_bytes().to_vec());
+            }
         }
         let borrowed = fields.iter().map(Vec::as_slice).collect::<Vec<&[u8]>>();
         Ok(StdManifest {

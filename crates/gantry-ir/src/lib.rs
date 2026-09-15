@@ -279,10 +279,10 @@ pub use signature::{
 pub use stdlib::{
     FacadeReexport, FeatureSelection, MAX_STD_NAME_BYTES, MAX_STD_PACKAGES, NameClass,
     PackageFamily, Prelude, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
-    StabilityTier, StabilityTransition, StdContractVersion, StdGraph, StdGraphIdentity,
-    StdInterfaceIdentity, StdManifest, StdManifestEntry, StdName, StdPackage, StdlibDiagnosticCode,
-    StdlibError, StdlibNonClaim, StdlibNonClaimAssertion, check_layout_identity,
-    check_stdlib_non_claims, require_applicable,
+    SelectedInstance, StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation,
+    StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest, StdManifestEntry,
+    StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
+    StdlibNonClaimAssertion, check_layout_identity, check_stdlib_non_claims, require_applicable,
 };
 pub use target::{
     AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,

@@ -15348,7 +15348,7 @@ claim runtime integration merely because it implements this pure model.
 
 <a id="GNT-34.3-acyclic-internal-dependency-dag"></a>
 
-**[GNT-34.3-acyclic-internal-dependency-dag] Acyclic internal dependency DAG.** A dependency edge names one other declared standard package, so an edge naming no declared package is refused under the unknown-edge diagnostic and a dependency relation containing a cycle is refused under the dependency-cycle diagnostic, which names exactly one declared package that lies on the cycle. A pure family MUST NOT depend on a capability-backed family, refused under the pure-to-capability diagnostic, and no standard package MUST depend on a host adapter, refused under the package-to-adapter diagnostic. Every declared edge is classified, and the DAG admits one deterministic topological order that does not depend on declaration order.
+**[GNT-34.3-acyclic-internal-dependency-dag] Acyclic internal dependency DAG.** A dependency edge names one other declared standard package, so an edge naming an undeclared std package is refused under the unknown-edge diagnostic, a reference outside the std hierarchy is a host-adapter edge refused under the package-to-adapter diagnostic, and a dependency relation containing a cycle is refused under the dependency-cycle diagnostic, which names exactly one declared package that lies on the cycle. A pure family MUST NOT depend on a capability-backed family, refused under the pure-to-capability diagnostic, and no standard package MUST depend on a host adapter, refused under the package-to-adapter diagnostic. Every declared edge is classified, and the DAG admits one deterministic topological order that does not depend on declaration order.
 
 <a id="GNT-34.4-edition-prelude-and-explicit-imports"></a>
 

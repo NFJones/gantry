@@ -1,6 +1,6 @@
 {
  "format": "gantry.automatic-durable-root-evidence/v1",
- "specification_sha256": "bb8ab810c97643571444c6e5ac1aeaa41498dfc3cd85a1d8db83732fe044d8b5",
+ "specification_sha256": "4bd2c2d9fc8eebdc7cea975ea0c46c57e0cd6e59657440572567badc25640bf0",
  "issue": "GNT-ASYNC-DROOT-001",
  "requirements": [
   {

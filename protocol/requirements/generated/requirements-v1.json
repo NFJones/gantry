@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "bb8ab810c97643571444c6e5ac1aeaa41498dfc3cd85a1d8db83732fe044d8b5",
-  "byte_length": 985721,
+  "specification_sha256": "4bd2c2d9fc8eebdc7cea975ea0c46c57e0cd6e59657440572567badc25640bf0",
+  "byte_length": 985838,
   "line_count": 15387,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9497,
       "end_line": 15387,
-      "sha256": "293030b54ff42c81f7575bba2cdcabadf34b20bb5f721c477819879aaf886fa5",
+      "sha256": "f58e35cdfc15fbe47b821577940aed0f8eb964b1453371fe1c234e0cd7ab2c4e",
       "rationale": null
     }
   ],
@@ -40024,11 +40024,11 @@
       "id": "GNT-34.3-acyclic-internal-dependency-dag",
       "span_start_line": 15349,
       "span_end_line": 15352,
-      "span_sha256": "96a8b8d9ebceec5f9b35adcbd57da35b6fa3be230ca5e6a0668b8c291e62a2ed",
+      "span_sha256": "1c378f8690261076c168b075918365c7f52934c63de97b82e91c1705e28695f0",
       "anchor_line": 15349,
       "body_start_line": 15350,
       "body_end_line": 15352,
-      "body_sha256": "9b769e40cb7d23e073fe9d137315a40a748f5e8540f55ffd2be73a9bc2fb25e2",
+      "body_sha256": "a1f05386cb18981710631f490d0e267d6e9a1799f7647be92ca42a7985fa1173",
       "profiles": [
         "analyzer"
       ],

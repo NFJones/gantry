@@ -5,16 +5,17 @@
 //! load a package, nor generate, link, or publish anything, and no physical repository
 //! layout fact enters any identity they check.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     FacadeReexport, FeatureSelection, NameClass, PackageFamily, Prelude, Relocation,
-    STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SemanticMode, StabilityTier,
-    StabilityTransition, StdContractVersion, StdGraph, StdName, StdPackage, StdlibDiagnosticCode,
-    StdlibError, StdlibNonClaim, StdlibNonClaimAssertion, TargetKind, check_layout_identity,
-    check_stdlib_non_claims, require_applicable,
+    STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance, SemanticMode,
+    StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation, StdGraph, StdItem,
+    StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
+    StdlibNonClaimAssertion, TargetKind, check_layout_identity, check_stdlib_non_claims,
+    require_applicable,
 };
 
 const CORE: &str = "std.core";
@@ -39,7 +40,7 @@ fn refuse<T>(outcome: Result<T, StdlibError>, context: &str) -> StdlibError {
 }
 
 fn prelude() -> Prelude {
-    Prelude::new(&["std.core::option", "std.core::result"])
+    Prelude::new("2026", &["std.core::option", "std.core::result"])
         .unwrap_or_else(|error| panic!("the fixture prelude is valid: {error}"))
 }
 
@@ -378,13 +379,13 @@ fn prelude_is_enumerated_and_wildcards_are_refused() {
     );
     for member in ["std.core::*", "std.*", "std.collections::*"] {
         assert_eq!(
-            refuse(Prelude::new(&[member]), "a wildcard prelude member").code(),
+            refuse(Prelude::new("2026", &[member]), "a wildcard prelude member").code(),
             StdlibDiagnosticCode::WildcardPreludeRefused
         );
     }
     assert_eq!(
         refuse(
-            Prelude::new(&["crates::core"]),
+            Prelude::new("2026", &["crates::core"]),
             "a malformed prelude member"
         )
         .code(),
@@ -508,20 +509,49 @@ fn applicability_is_declared_and_features_do_not_mutate_instances() {
         .unwrap_or_else(|error| panic!("the fixture feature is valid: {error}"));
     assert_eq!(feature.feature(), "net");
     assert_eq!(feature.packages().len(), 1);
-    let mut selected = BTreeSet::new();
-    selected.insert(CORE.to_owned());
-    let extended = feature
-        .extend(&selected, false)
-        .unwrap_or_else(|error| panic!("extending a selection is admitted: {error}"));
-    assert!(extended.contains(CORE));
-    assert!(extended.contains("std.net"));
+    let graph = graph_with(&[
+        package(PackageFamily::Core, StabilityTier::Foundational, &[], &[]),
+        package(PackageFamily::Io, StabilityTier::Stable, &[], &[]),
+        package(PackageFamily::Net, StabilityTier::Stable, &[], &[]),
+    ]);
+    let net = graph
+        .package("std.net")
+        .unwrap_or_else(|| panic!("the fixture graph declares std.net"))
+        .clone();
+    let mut selected = BTreeMap::new();
+    selected.insert("std.net".to_owned(), SelectedInstance::from_package(&net));
+    let applied = feature
+        .apply(&graph, &selected)
+        .unwrap_or_else(|error| panic!("applying a feature to a selection is admitted: {error}"));
+    assert_eq!(applied.len(), 1);
+    assert_eq!(
+        applied.get("std.net").map(SelectedInstance::interface),
+        Some(&net.identity())
+    );
     assert_eq!(
         refuse(
-            feature.extend(&selected, true),
-            "a feature that mutates an existing instance"
+            feature.apply(
+                &graph,
+                &BTreeMap::from([(
+                    "std.net".to_owned(),
+                    SelectedInstance::new("std.net", io.identity(), &["std.core"])
+                        .unwrap_or_else(|error| panic!("the fixture instance is valid: {error}")),
+                )])
+            ),
+            "a feature that changes a selected instance"
         )
         .code(),
         StdlibDiagnosticCode::FeatureMutatesInstance
+    );
+    assert_eq!(
+        refuse(
+            FeatureSelection::new("absent", &["std.absent"])
+                .unwrap_or_else(|error| panic!("the fixture feature is valid: {error}"))
+                .apply(&graph, &BTreeMap::new()),
+            "a feature over an undeclared package"
+        )
+        .code(),
+        StdlibDiagnosticCode::UnknownEdge
     );
     assert_eq!(
         refuse(FeatureSelection::new("   ", &[]), "an empty feature name").code(),
@@ -620,12 +650,10 @@ fn contract_versions_gate_consumers() {
         .unwrap_or_else(|error| panic!("the fixture contract version is valid: {error}"));
     assert_eq!(published.major(), 1);
     assert_eq!(published.minor(), 2);
-    for (major, minor) in [(1, 2), (1, 1), (1, 0)] {
-        let presented = StdContractVersion::new(major, minor)
-            .unwrap_or_else(|error| panic!("the presented version is valid: {error}"));
-        assert!(published.admit_consumer(presented).is_ok());
-    }
-    for (major, minor) in [(1, 3), (2, 0)] {
+    let presented = StdContractVersion::new(1, 2)
+        .unwrap_or_else(|error| panic!("the presented version is valid: {error}"));
+    assert!(published.admit_consumer(presented).is_ok());
+    for (major, minor) in [(1, 1), (1, 0), (1, 3), (2, 0)] {
         let presented = StdContractVersion::new(major, minor)
             .unwrap_or_else(|error| panic!("the presented version is valid: {error}"));
         assert_eq!(
@@ -748,7 +776,7 @@ fn graph_identity_binds_every_package_and_the_prelude() {
         .unwrap_or_else(|error| panic!("the fixture manifest is valid: {error}"));
     assert_eq!(first.identity(), second.identity());
     let mut narrow_prelude = StdGraph::new(
-        Prelude::new(&[OPTION_ITEM])
+        Prelude::new("2026", &[OPTION_ITEM])
             .unwrap_or_else(|error| panic!("the fixture prelude is valid: {error}")),
     );
     narrow_prelude
@@ -790,5 +818,369 @@ fn non_claims_are_not_presented_as_guarantees() {
             .iter()
             .any(|claim| claim.contains("layout")),
         "layout-as-identity is a declared non-claim"
+    );
+}
+
+#[test]
+fn item_tiers_are_unique_and_fold_into_the_interface_digest() {
+    let mut graph = graph_with(&[package(PackageFamily::Io, StabilityTier::Stable, &[], &[])]);
+    let read = StdItem::new(
+        "std.io::read",
+        NameClass::Module,
+        StabilityTier::Stable,
+        &[SemanticMode::Application],
+        &[TargetKind::Library],
+    )
+    .unwrap_or_else(|error| panic!("the fixture item is valid: {error}"));
+    graph
+        .declare_item(read)
+        .unwrap_or_else(|error| panic!("the fixture item is declared: {error}"));
+    // an item declared inside an undeclared package is refused
+    assert_eq!(
+        refuse(
+            graph.declare_item(
+                StdItem::new(
+                    "std.net::socket",
+                    NameClass::Module,
+                    StabilityTier::Stable,
+                    &[SemanticMode::Application],
+                    &[TargetKind::Library],
+                )
+                .unwrap_or_else(|error| panic!("the fixture item is valid: {error}"))
+            ),
+            "an item inside an undeclared package"
+        )
+        .code(),
+        StdlibDiagnosticCode::UnknownEdge
+    );
+    // a second tier for one item is refused
+    let mut conflicting = graph.clone();
+    assert_eq!(
+        refuse(
+            conflicting.declare_item(
+                StdItem::new(
+                    "std.io::read",
+                    NameClass::Module,
+                    StabilityTier::Experimental,
+                    &[SemanticMode::Application],
+                    &[TargetKind::Library],
+                )
+                .unwrap_or_else(|error| panic!("the fixture item is valid: {error}"))
+            ),
+            "a second tier for one item"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidStabilityTransition
+    );
+
+    // the package classification and an empty applicability are refused for an item
+    assert_eq!(
+        refuse(
+            StdItem::new(
+                "std.io::read",
+                NameClass::Package,
+                StabilityTier::Stable,
+                &[SemanticMode::Application],
+                &[TargetKind::Library]
+            ),
+            "a package classification inside a package"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
+    assert_eq!(
+        refuse(
+            StdItem::new(
+                "std.io::read",
+                NameClass::Module,
+                StabilityTier::Stable,
+                &[],
+                &[]
+            ),
+            "an item without applicability"
+        )
+        .code(),
+        StdlibDiagnosticCode::UnsupportedApplicability
+    );
+
+    // the declared item is readable and a foreign item is refused
+    let package = graph
+        .package("std.io")
+        .unwrap_or_else(|| panic!("the fixture graph declares std.io"))
+        .clone();
+    let item = package
+        .item("std.io::read")
+        .unwrap_or_else(|| panic!("the declared item is recorded"));
+    assert_eq!(item.owner(), "std.io");
+    assert_eq!(item.class(), NameClass::Module);
+    assert_eq!(item.tier(), StabilityTier::Stable);
+    assert!(package.exports_item("std.io::read"));
+    assert_eq!(
+        refuse(
+            package.clone().declare_item(
+                StdItem::new(
+                    "std.text::format",
+                    NameClass::Module,
+                    StabilityTier::Stable,
+                    &[SemanticMode::Application],
+                    &[TargetKind::Library],
+                )
+                .unwrap_or_else(|error| panic!("the fixture item is valid: {error}"))
+            ),
+            "an item owned by another package"
+        )
+        .code(),
+        StdlibDiagnosticCode::FacadeIdentityLoss
+    );
+
+    // the interface digest covers every declared item fact
+    let retiered = graph.clone();
+    let mut retiered_package = retiered
+        .package("std.io")
+        .unwrap_or_else(|| panic!("the fixture graph declares std.io"))
+        .clone();
+    retiered_package
+        .declare_item(
+            StdItem::new(
+                "std.io::echo",
+                NameClass::Facade,
+                StabilityTier::TargetSpecific,
+                &[SemanticMode::Application],
+                &[TargetKind::Library],
+            )
+            .unwrap_or_else(|error| panic!("the fixture item is valid: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("the fixture item is declared: {error}"));
+    assert_ne!(
+        graph
+            .package("std.io")
+            .unwrap_or_else(|| panic!("declared"))
+            .identity(),
+        retiered_package.identity()
+    );
+}
+
+#[test]
+fn deprecations_narrow_a_tier_and_keep_the_item_declared() {
+    let package = StdPackage::new(
+        PackageFamily::Text,
+        NameClass::Package,
+        StabilityTier::Stable,
+        &[SemanticMode::Portable],
+        &[TargetKind::Library],
+        &[],
+        &["std.text::format", "std.text::render"],
+    )
+    .unwrap_or_else(|error| panic!("the fixture package is valid: {error}"));
+    let deprecation = StdDeprecation::new(
+        "std.text::format",
+        StabilityTier::Stable,
+        StabilityTier::Experimental,
+        Some("std.text::render"),
+    )
+    .unwrap_or_else(|error| panic!("the fixture deprecation is valid: {error}"));
+    assert_eq!(deprecation.item(), "std.text::format");
+    assert_eq!(deprecation.tier(), StabilityTier::Stable);
+    assert_eq!(deprecation.target_tier(), StabilityTier::Experimental);
+    assert_eq!(deprecation.replacement(), Some("std.text::render"));
+    deprecation
+        .admit(&package)
+        .unwrap_or_else(|error| panic!("the declared deprecation is admitted: {error}"));
+
+    // a widening or unchanged target tier is refused
+    for (tier, target) in [
+        (StabilityTier::Stable, StabilityTier::Stable),
+        (StabilityTier::Stable, StabilityTier::Foundational),
+        (StabilityTier::Experimental, StabilityTier::Stable),
+    ] {
+        assert_eq!(
+            refuse(
+                StdDeprecation::new("std.text::format", tier, target, None),
+                "a deprecation that does not narrow stability"
+            )
+            .code(),
+            StdlibDiagnosticCode::InvalidRelocation,
+            "{} to {}",
+            tier.wire_name(),
+            target.wire_name()
+        );
+    }
+
+    // an item the declaring package does not carry, and an undeclared replacement, are refused
+    let removed = StdDeprecation::new(
+        "std.text::absent",
+        StabilityTier::Stable,
+        StabilityTier::Experimental,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("the fixture deprecation is valid: {error}"));
+    assert_eq!(
+        refuse(removed.admit(&package), "a silently removed item").code(),
+        StdlibDiagnosticCode::InvalidRelocation
+    );
+    let absent_replacement = StdDeprecation::new(
+        "std.text::format",
+        StabilityTier::Stable,
+        StabilityTier::Experimental,
+        Some("std.text::absent"),
+    )
+    .unwrap_or_else(|error| panic!("the fixture deprecation is valid: {error}"));
+    assert_eq!(
+        refuse(
+            absent_replacement.admit(&package),
+            "an undeclared replacement"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidRelocation
+    );
+}
+
+#[test]
+fn references_outside_the_std_hierarchy_are_host_adapters() {
+    for adapter in ["adapter.http", "adapters.tokio", "host.tokio", "adapter"] {
+        let graph = graph_with(&[package(
+            PackageFamily::Fs,
+            StabilityTier::Stable,
+            &[adapter],
+            &[],
+        )]);
+        assert_eq!(
+            refuse(graph.validate(), "a standard package over a host adapter").code(),
+            StdlibDiagnosticCode::PackageToAdapterEdge,
+            "{adapter}"
+        );
+    }
+    let undeclared = graph_with(&[package(
+        PackageFamily::Fs,
+        StabilityTier::Stable,
+        &["std.absent"],
+        &[],
+    )]);
+    assert_eq!(
+        refuse(undeclared.validate(), "an undeclared std package").code(),
+        StdlibDiagnosticCode::UnknownEdge
+    );
+}
+
+#[test]
+fn names_are_rooted_under_their_owning_package() {
+    let mut graph = graph_with(&[
+        package(PackageFamily::Io, StabilityTier::Stable, &[], &[]),
+        package(PackageFamily::Net, StabilityTier::Stable, &[], &[]),
+    ]);
+    let socket = StdName::new("std.net::socket", NameClass::Module, "std.io");
+    assert_eq!(
+        refuse(socket, "a name contradicting its owning package").code(),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
+    let owned = StdName::new("std.net::socket", NameClass::Module, "std.net")
+        .unwrap_or_else(|error| panic!("the fixture name is valid: {error}"));
+    graph
+        .declare_name(owned)
+        .unwrap_or_else(|error| panic!("the declared name is admitted: {error}"));
+    assert_eq!(graph.names().len(), 1);
+}
+
+#[test]
+fn consumers_must_present_the_published_identity_and_digests() {
+    let graph = graph_with(&[
+        package(PackageFamily::Core, StabilityTier::Foundational, &[], &[]),
+        package(PackageFamily::Text, StabilityTier::Stable, &[], &[]),
+    ]);
+    let contract = StdContractVersion::new(1, 2)
+        .unwrap_or_else(|error| panic!("the fixture contract version is valid: {error}"));
+    let manifest = graph
+        .manifest(contract)
+        .unwrap_or_else(|error| panic!("the fixture manifest is valid: {error}"));
+    let interfaces: BTreeMap<String, String> = manifest
+        .entries()
+        .iter()
+        .map(|entry| {
+            (
+                entry.name().to_owned(),
+                entry.identity().as_str().to_owned(),
+            )
+        })
+        .collect();
+    manifest
+        .admit_consumer(contract, manifest.identity().as_str(), &interfaces)
+        .unwrap_or_else(|error| panic!("the published consumer is admitted: {error}"));
+    assert!(
+        manifest
+            .entries()
+            .iter()
+            .all(|entry| { !entry.modes().is_empty() && !entry.targets().is_empty() })
+    );
+
+    let other = StdContractVersion::new(1, 3)
+        .unwrap_or_else(|error| panic!("the fixture contract version is valid: {error}"));
+    assert_eq!(
+        refuse(
+            manifest.admit_consumer(other, manifest.identity().as_str(), &interfaces),
+            "a differing contract version"
+        )
+        .code(),
+        StdlibDiagnosticCode::ContractVersionMismatch
+    );
+    assert_eq!(
+        refuse(
+            manifest.admit_consumer(contract, "std-graph-v1:other", &interfaces),
+            "a differing graph identity"
+        )
+        .code(),
+        StdlibDiagnosticCode::ContractVersionMismatch
+    );
+    let mut altered = interfaces.clone();
+    let first = manifest
+        .entries()
+        .first()
+        .unwrap_or_else(|| panic!("the fixture manifest has entries"))
+        .name()
+        .to_owned();
+    altered.insert(first.clone(), "std-package-v1:other".to_owned());
+    assert_eq!(
+        refuse(
+            manifest.admit_consumer(contract, manifest.identity().as_str(), &altered),
+            "a differing interface digest"
+        )
+        .code(),
+        StdlibDiagnosticCode::ContractVersionMismatch
+    );
+    let mut incomplete = interfaces.clone();
+    incomplete.remove(&first);
+    assert_eq!(
+        refuse(
+            manifest.admit_consumer(contract, manifest.identity().as_str(), &incomplete),
+            "a consumer without every interface digest"
+        )
+        .code(),
+        StdlibDiagnosticCode::ContractVersionMismatch
+    );
+}
+
+#[test]
+fn preludes_are_edition_versioned_and_never_silently_extended() {
+    let declared = prelude();
+    assert_eq!(declared.edition(), "2026");
+    let same = declared
+        .for_edition("2026", &["std.core::option", "std.core::result"])
+        .unwrap_or_else(|error| panic!("a redeclared edition is admitted: {error}"));
+    assert_eq!(same.members(), declared.members());
+    assert_eq!(
+        refuse(
+            declared.for_edition("2026", &["std.core::option"]),
+            "a silent extension of a declared edition"
+        )
+        .code(),
+        StdlibDiagnosticCode::UnenumeratedPreludeMember
+    );
+    let next = declared
+        .for_edition("2029", &["std.core::option"])
+        .unwrap_or_else(|error| panic!("a new edition is admitted: {error}"));
+    assert_eq!(next.edition(), "2029");
+    assert_eq!(next.members().len(), 1);
+    assert_eq!(
+        refuse(Prelude::new("", &[]), "an undeclared edition").code(),
+        StdlibDiagnosticCode::UnenumeratedPreludeMember
     );
 }
