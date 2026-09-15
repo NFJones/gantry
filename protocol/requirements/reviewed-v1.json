@@ -40501,7 +40501,8 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#reuse_kinds_are_distinct_and_carry_reuse_rules",
+        "crates/gantry-conformance/tests/callable_foundation.rs#declared_shape_budgets_refuse_over_budget_values"
        ],
        "rationale": null
       }
@@ -40540,7 +40541,8 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#admission_depth_beyond_the_budget_is_refused_before_any_charge",
+        "crates/gantry-conformance/tests/callable_foundation.rs#immutable_kind_admits_overlapping_calls_within_the_frame_budget"
        ],
        "rationale": null
       }
@@ -40579,7 +40581,8 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#capture_plans_order_bindings_and_refuse_duplicates",
+        "crates/gantry-conformance/tests/callable_foundation.rs#capture_modes_carry_their_durability_rules"
        ],
        "rationale": null
       }
@@ -40618,7 +40621,8 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#single_use_admission_consumes_and_refuses_reuse",
+        "crates/gantry-conformance/tests/callable_foundation.rs#mutating_kind_refuses_overlapping_admissions_until_settlement"
        ],
        "rationale": null
       }
@@ -40657,7 +40661,8 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#settlement_must_match_an_outstanding_admission",
+        "crates/gantry-conformance/tests/callable_foundation.rs#failure_settlement_poisons_exclusive_kinds_only"
        ],
        "rationale": null
       }
@@ -40696,7 +40701,7 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#declared_rows_never_erase_component_effects"
        ],
        "rationale": null
       }
@@ -40735,7 +40740,7 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#durable_projection_refuses_ineligible_values"
        ],
        "rationale": null
       }
@@ -40774,7 +40779,7 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#rebuilt_projections_refuse_round_trip_loss"
        ],
        "rationale": null
       }
@@ -40813,7 +40818,7 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#canonical_encodings_are_injective_and_order_independent"
        ],
        "rationale": null
       }
@@ -40891,7 +40896,7 @@
        "profile": "analyzer",
        "state": "covered",
        "evidence": [
-        "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+        "crates/gantry-conformance/tests/callable_foundation.rs#frozen_diagnostics_name_their_owning_clause_in_the_specification"
        ],
        "rationale": null
       }

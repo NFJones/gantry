@@ -214,7 +214,7 @@
   },
   {
    "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "3941fed950169ad899e208be86d982af127f5239ee7c84bb749992a76d1c1b54"
+   "sha256": "f124314b976f0d6ba6b30fcf2e48aa240cebc6e65cbe26681d00f30f7b700304"
   },
   {
    "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -246,7 +246,7 @@
   },
   {
    "path": "protocol/conformance/combined-gate-v1.json",
-   "sha256": "6949d70eb20af4bf292abef55ba800f7ac6bc5f5738d1915f7216f4c7ad06851"
+   "sha256": "9dd3f3e01bc82bfaeae460bd02c4bb1c7dabcc0eeb2c26e7d3af4a0f7b34b4c0"
   },
   {
    "path": "protocol/conformance/concurrent-executor-v1.json",
@@ -254,7 +254,7 @@
   },
   {
    "path": "protocol/conformance/concurrent-gate-v1.json",
-   "sha256": "5a9bb1324529d056f7c52fba5b4a54578b1094a6b2973822a491be4f5c5a0306"
+   "sha256": "ca03440890a69110f2f5185341ca791b1c3bec723f18c06c14fc50c6bcc93fb2"
   },
   {
    "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
@@ -278,7 +278,7 @@
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "aeece29a4b3397e9bfa529a80115f40cd665c57f46886993058969f3a25bbacb"
+   "sha256": "b79b6ae1f3c610b36c751287658102dd5c39f576d198ef760a5f0e87e4f41592"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",
@@ -310,7 +310,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "b1439555fd99b64212cd98e7fdb6fe1887f16715f5ab842169d9ce97d7855747"
+   "sha256": "45d0d59871d795e92034769647d22359d03862d6242324956986a4aed36f058d"
   },
   {
    "path": "protocol/conformance/sequential-machine-v1.json",
@@ -430,11 +430,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "502723870a07f3ac55724b83359bb521ce342cff916f3c49b0c205563c4b43e7"
+   "sha256": "b0ce892b81e508f137547a096fbe38dfec7b153cb9e84a614954826fd90de2ec"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "6f75bf4290cf8f7f51fd958816ac2a952823fa98cb4c440bd2f1095d5c388575"
+   "sha256": "afaa8bdf3819e1aff344a107ebc3533bc64964ce90e96233497e4659cbafd4fb"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
@@ -793,7 +793,7 @@
   "path": "protocol/requirements/generated/requirements-v1.json",
   "requirement_count": 544,
   "section14_excerpt_count": 51,
-  "sha256": "502723870a07f3ac55724b83359bb521ce342cff916f3c49b0c205563c4b43e7"
+  "sha256": "b0ce892b81e508f137547a096fbe38dfec7b153cb9e84a614954826fd90de2ec"
  },
  "specification": {
   "path": "SPEC.md",

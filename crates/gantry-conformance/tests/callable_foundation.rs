@@ -666,3 +666,43 @@ fn section_37_anchors_and_nonclaims_are_published() {
         "GNT-3-T-GENERIC-CALL does not record the Section 37 admission"
     );
 }
+
+/// The frozen callable diagnostics with the clause that owns each refusal condition.
+const CALLABLE_DIAGNOSTIC_OWNERS: [(&str, &str); 8] = [
+    ("callable-shape-refused", "GNT-37.1"),
+    ("callable-frame-limit", "GNT-37.2"),
+    ("callable-capture-refused", "GNT-37.3"),
+    ("callable-reuse-refused", "GNT-37.4"),
+    ("callable-settlement-refused", "GNT-37.5"),
+    ("callable-effect-erasure", "GNT-37.6"),
+    ("callable-durable-capture", "GNT-37.7"),
+    ("callable-round-trip-loss", "GNT-37.8"),
+];
+
+#[test]
+fn frozen_diagnostics_name_their_owning_clause_in_the_specification() {
+    let spec = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../SPEC.md"))
+        .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
+    assert_eq!(
+        CALLABLE_DIAGNOSTIC_OWNERS.len(),
+        CallableDiagnosticCode::ALL.len()
+    );
+    for (spelling, owner) in CALLABLE_DIAGNOSTIC_OWNERS {
+        assert!(
+            spec.contains(&format!("`{spelling}` (`{owner}`)")),
+            "{spelling} is not published with its owning clause {owner}"
+        );
+        assert!(
+            CALLABLE_CLAUSES
+                .iter()
+                .any(|clause| clause.starts_with(owner)),
+            "{owner} is not a published Section 37 clause"
+        );
+        assert!(
+            CallableDiagnosticCode::ALL
+                .iter()
+                .any(|code| code.code() == spelling),
+            "{spelling} is not a frozen model diagnostic"
+        );
+    }
+}
