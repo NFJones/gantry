@@ -475,7 +475,6 @@ fn validate_std_name(value: &str) -> Result<(), StdlibError> {
     Ok(())
 }
 
-/// One typed package interface identity of `GNT-34.8-defining-identity-and-interface-digest`.
 /// Returns the canonical spelling of one logical `std` path: `::` and `.` separators
 /// name the same logical path, so every registry, dedup check, and identity fold uses
 /// this form.
@@ -483,6 +482,7 @@ fn canonical_std_path(value: &str) -> String {
     value.replace("::", ".")
 }
 
+/// One typed package interface identity of `GNT-34.8-defining-identity-and-interface-digest`.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StdInterfaceIdentity(Arc<str>);
 
