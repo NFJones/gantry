@@ -1,6 +1,6 @@
 {
  "format": "gantry.generics-traits-refinement-evidence/v1",
- "specification_sha256": "ae047862cb8b2dc3b18975e28767d197297132c4eb8fd17f61184190c34fcc39",
+ "specification_sha256": "bb8ab810c97643571444c6e5ac1aeaa41498dfc3cd85a1d8db83732fe044d8b5",
  "issue": "GNT-GEN-PROOF-002",
  "profiles": [
   "concurrent-evaluator",

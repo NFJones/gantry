@@ -41,6 +41,7 @@ mod resource;
 mod schema;
 mod secret;
 mod signature;
+mod stdlib;
 mod target;
 pub mod toolchain;
 mod type_expression;
@@ -270,6 +271,18 @@ pub use secret::{
 };
 pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
+};
+// The Section 34 standard-library architecture model is declaration-only: it records
+// the logical package hierarchy, its dependency DAG, the edition prelude, facade
+// identity, stability tiers, applicability, and the aggregate manifest without any
+// physical repository layout entering an identity.
+pub use stdlib::{
+    FacadeReexport, FeatureSelection, MAX_STD_NAME_BYTES, MAX_STD_PACKAGES, NameClass,
+    PackageFamily, Prelude, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
+    StabilityTier, StabilityTransition, StdContractVersion, StdGraph, StdGraphIdentity,
+    StdInterfaceIdentity, StdManifest, StdManifestEntry, StdName, StdPackage, StdlibDiagnosticCode,
+    StdlibError, StdlibNonClaim, StdlibNonClaimAssertion, check_layout_identity,
+    check_stdlib_non_claims, require_applicable,
 };
 pub use target::{
     AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,

@@ -21,35 +21,35 @@
  "contract_artifacts": [
   {
    "path": "crates/gantry-core/src/generated/portable.rs",
-   "sha256": "f712e2cdf6e25a32faad14b40fc4efee324254a072f2541a32ece1ac7db9710b"
+   "sha256": "655cdf5b199f8613aba7a0e9d24898b51dfb2d898ef37f7b0bc5ad6e6b09557c"
   },
   {
    "path": "crates/gantry-core/src/generated/profiles.rs",
-   "sha256": "e8abfb0c580a0967eec010f91c3941499e89e82f6c2a8c24cf3a435af61bce4c"
+   "sha256": "6d0b38cb570e5eb86e7adaf13681afd88a96bb05d7123f152b414a1acfb0d84e"
   },
   {
    "path": "crates/gantry-host/src/generated/embedding.rs",
-   "sha256": "a4d2e4faeb1f2757a6bba563e191056bd5cca51fd42dde4f7af9831198f97d54"
+   "sha256": "b696dfe2322bb48e15708128651400ffdf4f8c0fe4e6a3d78f3a4b7622584b5e"
   },
   {
    "path": "protocol/catalogs/embedding-contracts-v1.json",
-   "sha256": "009087468bddb62a20da24c717e87723c3264e4b425f9e8a47fca9ba46e26c36"
+   "sha256": "30851af07dc3c661699493462a36804fb6f3833146c9d03ef25871a135087ae9"
   },
   {
    "path": "protocol/catalogs/portable-contracts-v1.json",
-   "sha256": "a17e5cdb2c2e8fcc9f53efff4f00752eb20e5065131223e0510f2061151a1b96"
+   "sha256": "0188b5f931bd9dd9a4461aa3469bbca93fdd635be99a835b81f9cc7a35090c40"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "52246970d2b295b6939880015d93e4b89609d443fee67ef337440bc87e4849d3"
+   "sha256": "b98db15b83f6ff5ab088b4c8e89ecc9f7e8716714d4e7b702d6f2f854781c502"
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "55a7e33e8c324d40975da7b578eaa81fadb1851c3ae8709614cf23fba8660029"
+   "sha256": "8e811e9f4cbea007ea097efcd19899e2952c054ccbaaeb65500fde608dc6c6e3"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "a5fd5b31a46a644162f31a3f21321f6dd52041d36933e03ab3d4b8bb9ee89879"
+   "sha256": "86843f142dd02cfca3b7b0364dbc9dedb50ab88db685307f7450d337eee2ab79"
   },
   {
    "path": "protocol/schemas/embedding-contracts-v1.schema.json",
@@ -902,6 +902,6 @@
    "requirement": "GNT-15.9"
   }
  ],
- "specification_sha256": "ae047862cb8b2dc3b18975e28767d197297132c4eb8fd17f61184190c34fcc39",
+ "specification_sha256": "bb8ab810c97643571444c6e5ac1aeaa41498dfc3cd85a1d8db83732fe044d8b5",
  "status": "verified"
 }
