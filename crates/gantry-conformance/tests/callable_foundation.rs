@@ -1,14 +1,15 @@
 //! Callable-value, capture, reuse, and frame-admission evidence.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gantry::ir::generated::Effect;
+use gantry::ir::generated::TypeKind;
 use gantry::ir::{
     BindingFacts, BindingState, CallSettlement, CallableDiagnosticCode, CallableKind,
     CallableLimits, CallableProjection, CallableType, CallableValue, CaptureAccess,
     CaptureCandidate, CaptureClass, CaptureDescriptor, CaptureInference, CaptureMode, CapturePlan,
-    EffectSet, OwnershipClass, ReuseState, require_captured_row, resolve_capture_set,
-    resolve_captured_row, union_row,
+    EffectSet, OwnershipClass, ReuseState, TypeDescriptor, TypeDescriptorError,
+    require_captured_row, resolve_capture_set, resolve_captured_row, union_row,
 };
 
 /// Returns the refusal produced by one rejected callable decision.
@@ -1299,4 +1300,89 @@ fn capture_classes_follow_declaration_facts() {
         .unwrap_or_else(|error| panic!("resolve: {error}"));
     let escaping = CaptureInference::infer(&loan, true, limits).refused("escaping loan");
     assert_eq!(escaping.code(), CallableDiagnosticCode::CaptureRefused);
+}
+
+/// A callable type is one closed type descriptor whose spelling carries its whole
+/// identity, and the closed vocabulary names its kind.
+#[test]
+fn callable_types_join_the_closed_type_vocabulary_with_one_spelling() {
+    assert_eq!(TypeKind::Callable.wire_name(), "Callable");
+    let declared = CallableType::new(
+        CallableKind::FunctionMut,
+        vec!["Int".to_owned(), "String".to_owned()],
+        "Bool",
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("type: {error}"));
+    let descriptor = TypeDescriptor::callable(
+        CallableKind::FunctionMut,
+        vec![TypeDescriptor::INT, TypeDescriptor::STRING],
+        TypeDescriptor::BOOL,
+    );
+    assert_eq!(descriptor.kind(), TypeKind::Callable);
+    assert_eq!(
+        descriptor.canonical_string(),
+        "Callable<FnMut,Int,String,Bool>"
+    );
+    assert_eq!(descriptor.callable_type(), Some(declared.clone()));
+    assert!(descriptor.declared_path().is_none());
+    assert!(descriptor.primitive_properties().is_none());
+    assert!(!descriptor.contains_sealed_boundary());
+    assert_eq!(
+        descriptor.immediate_members(),
+        [
+            TypeDescriptor::INT,
+            TypeDescriptor::STRING,
+            TypeDescriptor::BOOL
+        ]
+    );
+    // The spelling round-trips to the identity it carries.
+    let decoded = TypeDescriptor::from_canonical_string(&descriptor.canonical_string())
+        .unwrap_or_else(|error| panic!("decode: {error}"));
+    assert_eq!(decoded, descriptor);
+    assert_eq!(decoded.callable_type(), Some(declared));
+    // Distinct reuse kinds, parameter orders, arities, and results never share
+    // one spelling.
+    let mut spelled = BTreeSet::new();
+    for (kind, parameters, result) in [
+        (CallableKind::Function, vec!["Int"], "Bool"),
+        (CallableKind::FunctionMut, vec!["Int"], "Bool"),
+        (CallableKind::FunctionOnce, vec!["Int"], "Bool"),
+        (CallableKind::Function, vec!["Bool"], "Int"),
+        (CallableKind::Function, Vec::new(), "Int"),
+        (CallableKind::Function, vec!["Int", "String"], "Bool"),
+    ] {
+        let members = parameters
+            .iter()
+            .map(|name| {
+                TypeDescriptor::from_canonical_string(name)
+                    .unwrap_or_else(|error| panic!("member {name}: {error}"))
+            })
+            .collect::<Vec<_>>();
+        let result = TypeDescriptor::from_canonical_string(result)
+            .unwrap_or_else(|error| panic!("result {result}: {error}"));
+        let candidate = TypeDescriptor::callable(kind, members, result);
+        assert!(
+            spelled.insert(candidate.canonical_string()),
+            "two identities shared one spelling"
+        );
+    }
+    // A sealed member position is visible on the descriptor, and a malformed
+    // spelling is refused rather than repaired.
+    let sealed =
+        TypeDescriptor::callable(CallableKind::Function, Vec::new(), TypeDescriptor::DECISION);
+    assert!(sealed.contains_sealed_boundary());
+    assert_eq!(sealed.canonical_string(), "Callable<Fn,Decision>");
+    for malformed in [
+        "Callable<Fn>",
+        "Callable<Fnn,Int>",
+        "Callable<Fn,Int",
+        "callable<Fn,Int>",
+    ] {
+        assert_eq!(
+            TypeDescriptor::from_canonical_string(malformed),
+            Err(TypeDescriptorError::InvalidCanonicalString),
+            "spelling: {malformed}"
+        );
+    }
 }

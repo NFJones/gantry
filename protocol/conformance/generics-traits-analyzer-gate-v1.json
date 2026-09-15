@@ -14,7 +14,7 @@
   },
   {
    "path": "crates/gantry-analysis/src/generics.rs",
-   "sha256": "e2094fee246d85371d9fb1f505b0a57078b172635e685b43c0c89382a34ed546"
+   "sha256": "11b2bf1d1e4b34f4985570a33dcfa720b8c231eab13f817ffe6334244b643c7f"
   },
   {
    "path": "crates/gantry-analysis/src/lowering.rs",
@@ -22,7 +22,7 @@
   },
   {
    "path": "crates/gantry-analysis/src/schemas.rs",
-   "sha256": "40a4b790ff13b28c5574ef4d150885d0f865e7d7194532c96b4abf6e80b5006a"
+   "sha256": "ff2cfa075d150af2944f912936f61ebb7eaea9a5d23f02881f3eec2702e21d8a"
   },
   {
    "path": "crates/gantry-analysis/src/types.rs",
@@ -78,7 +78,7 @@
   },
   {
    "path": "crates/gantry-ir/src/type_properties.rs",
-   "sha256": "df81e1309abc00f64fa18b6b503adce483343e239533321749848f4f1a9c92c8"
+   "sha256": "baaba0388920fab85eaf6c7000a2abbbf6c0ba74903add1f66e813548bbb4e1e"
   },
   {
    "path": "crates/gantry/src/lib.rs",
@@ -98,7 +98,7 @@
   },
   {
    "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "3536f4f8f89f9284a764ba76a1b928ddf0d9df634ef0c99e60aa3cba79aeac5f"
+   "sha256": "0264021285c70721f7fc2796b817f48420d56b3ddce61055eeff71f91c80cbb1"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",

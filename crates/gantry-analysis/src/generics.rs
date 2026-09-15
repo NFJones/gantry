@@ -2477,6 +2477,12 @@ fn stored_member_node(
         TypeKind::Option | TypeKind::Result | TypeKind::List | TypeKind::Tuple => {
             Ok(StoredMemberNode::Members(descriptor.immediate_members()))
         }
+        TypeKind::Callable => {
+            // A callable type stores nothing of its parameter or result types:
+            // those positions name closed types that a callable value never
+            // contains, because what a callable value holds is its capture plan.
+            Ok(StoredMemberNode::Opaque)
+        }
         TypeKind::Declared => {
             let path = descriptor.declared_path().ok_or(AnalysisError::Invariant)?;
             let Some(declaration) = declarations.get(path.as_str()) else {

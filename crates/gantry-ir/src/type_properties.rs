@@ -294,7 +294,8 @@ impl PrimitiveTypeProperties {
             | TypeKind::Option
             | TypeKind::Result
             | TypeKind::List
-            | TypeKind::Tuple => None,
+            | TypeKind::Tuple
+            | TypeKind::Callable => None,
         }
     }
 

@@ -1303,7 +1303,7 @@ impl CallableProjection {
 /// reuse state share one callable type, and two values that differ in reuse
 /// kind, parameter order, or result type never do. It declares no source syntax
 /// and no analyzed artifact consumes it yet.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableType {
     kind: CallableKind,
     parameters: Vec<String>,
@@ -1347,6 +1347,34 @@ impl CallableType {
                 result.len(),
                 limits.max_name_bytes
             )));
+        }
+        Ok(Self {
+            kind,
+            parameters,
+            result: result.to_owned(),
+        })
+    }
+
+    /// Rebuilds one callable type from decoded canonical parts.
+    ///
+    /// Canonical decoding re-establishes the identity an encoding carries, so it
+    /// checks the shape a decoding can check - one reuse kind, one ordered
+    /// parameter list of nonempty names, and one nonempty result name - and
+    /// applies no admission budget, because budgets are declared by the analysis
+    /// that admits a source declaration rather than by the encoding. Use
+    /// [`Self::new`] where a declared budget must be enforced.
+    pub fn from_canonical_parts(
+        kind: CallableKind,
+        parameters: Vec<String>,
+        result: &str,
+    ) -> Result<Self, CallableError> {
+        for parameter in &parameters {
+            if parameter.is_empty() {
+                return Err(shape("a parameter names exactly one type"));
+            }
+        }
+        if result.is_empty() {
+            return Err(shape("a callable declares exactly one result type"));
         }
         Ok(Self {
             kind,

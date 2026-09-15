@@ -203,6 +203,7 @@ fn validate(root: &Path, catalog: &IrCatalog) -> Result<(), String> {
             "Tuple",
             "Decision",
             "OperationError",
+            "Callable",
         ],
     )?;
 

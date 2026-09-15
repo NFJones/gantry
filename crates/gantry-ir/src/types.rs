@@ -3,6 +3,7 @@
 use std::fmt;
 
 use crate::CanonicalPath;
+use crate::callable::{CallableKind, CallableType};
 use crate::generated::TypeKind;
 
 /// One well-formed Gantry v1 type descriptor.
@@ -16,6 +17,7 @@ pub struct TypeDescriptor {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum TypeToken {
     Primitive(TypeKind),
+    OpenCallable(CallableKind),
     Declared(CanonicalPath),
     OpenDeclared(CanonicalPath),
     Open(TypeKind),
@@ -158,6 +160,57 @@ impl TypeDescriptor {
         })
     }
 
+    /// Constructs one callable type over its declared parameter and result types.
+    ///
+    /// The descriptor carries the ordered parameter types and the result type as
+    /// its members, so a callable type is one constructed type whose canonical
+    /// spelling is `Callable<Fn,Int,Bool>` for `Fn(Int) -> Bool` and whose
+    /// identity is the tuple `GNT-37.1` defines. It carries no capture plan, no
+    /// declared effect row, and no reuse state, because a callable type is that
+    /// identity and nothing else, and it is never a canonical scalar key, an
+    /// external value, or a durable projection.
+    pub fn callable(kind: CallableKind, parameters: Vec<Self>, result: Self) -> Self {
+        let contains_sealed_boundary = parameters
+            .iter()
+            .any(|parameter| parameter.contains_sealed_boundary)
+            || result.contains_sealed_boundary;
+        let no_parameters = parameters.is_empty();
+        let mut tokens = vec![TypeToken::OpenCallable(kind)];
+        for (index, parameter) in parameters.into_iter().enumerate() {
+            if index > 0 {
+                tokens.push(TypeToken::Comma);
+            }
+            tokens.extend(parameter.into_tokens());
+        }
+        if !no_parameters {
+            tokens.push(TypeToken::Comma);
+        }
+        tokens.extend(result.into_tokens());
+        tokens.push(TypeToken::Close);
+        Self {
+            kind: TypeKind::Callable,
+            tokens,
+            contains_sealed_boundary,
+        }
+    }
+
+    /// Returns the callable type this descriptor names, or `None` for another type.
+    ///
+    /// The reuse kind, ordered parameter types, and result type are recovered from
+    /// the descriptor's own members, so the identity a descriptor carries is
+    /// recomputed from the descriptor instead of being trusted as a stored claim.
+    pub fn callable_type(&self) -> Option<CallableType> {
+        let TypeToken::OpenCallable(kind) = self.tokens.first()? else {
+            return None;
+        };
+        let mut members = self.immediate_members().into_iter();
+        let result = members.next_back()?;
+        let parameters = members
+            .map(|parameter| parameter.canonical_string())
+            .collect::<Vec<_>>();
+        CallableType::from_canonical_parts(*kind, parameters, &result.canonical_string()).ok()
+    }
+
     /// Returns whether this type recursively contains a sealed judgment or operation error.
     #[must_use]
     pub const fn contains_sealed_boundary(&self) -> bool {
@@ -183,12 +236,17 @@ impl TypeDescriptor {
     ///
     /// Primitive and declared types have no members. The flat token walk is
     /// independent of descriptor nesting depth and does not recurse.
+    ///
+    /// A callable type's members are its ordered parameter types followed by its
+    /// result type. Those positions name closed types, so a callable type never
+    /// carries a substitutable generic member; read its identity with
+    /// [`Self::callable_type`].
     #[must_use]
     pub fn immediate_members(&self) -> Vec<Self> {
         if self.tokens.len() < 3
             || !matches!(
                 self.tokens.first(),
-                Some(TypeToken::Open(_) | TypeToken::OpenDeclared(_))
+                Some(TypeToken::Open(_) | TypeToken::OpenDeclared(_) | TypeToken::OpenCallable(_))
             )
         {
             return Vec::new();
@@ -198,7 +256,7 @@ impl TypeDescriptor {
         let mut depth = 0_usize;
         for index in 1..self.tokens.len().saturating_sub(1) {
             match &self.tokens[index] {
-                TypeToken::Open(_) | TypeToken::OpenDeclared(_) => {
+                TypeToken::Open(_) | TypeToken::OpenDeclared(_) | TypeToken::OpenCallable(_) => {
                     depth = depth.saturating_add(1);
                 }
                 TypeToken::Close => depth = depth.saturating_sub(1),
@@ -232,6 +290,12 @@ impl TypeDescriptor {
         for token in &self.tokens {
             match token {
                 TypeToken::Primitive(kind) => output.push_str(kind.wire_name()),
+                TypeToken::OpenCallable(kind) => {
+                    output.push_str(TypeKind::Callable.wire_name());
+                    output.push('<');
+                    output.push_str(kind.canonical_name());
+                    output.push(',');
+                }
                 TypeToken::Declared(path) => output.push_str(path.as_str()),
                 TypeToken::OpenDeclared(path) => {
                     output.push_str(path.as_str());
@@ -286,6 +350,7 @@ impl TypeDescriptor {
     fn from_token_slice(tokens: &[TypeToken]) -> Option<Self> {
         let kind = match tokens.first()? {
             TypeToken::Primitive(kind) | TypeToken::Open(kind) => *kind,
+            TypeToken::OpenCallable(_) => TypeKind::Callable,
             TypeToken::Declared(_) | TypeToken::OpenDeclared(_) => TypeKind::Declared,
             TypeToken::Comma | TypeToken::Close => return None,
         };
@@ -353,6 +418,7 @@ enum ContainerKind {
     Result,
     List,
     Tuple,
+    Callable(CallableKind),
     Declared(CanonicalPath),
 }
 
@@ -422,6 +488,14 @@ impl<'a> DescriptorParser<'a> {
                     }
                     _ => return Err(TypeDescriptorError::InvalidCanonicalString),
                 },
+                ContainerKind::Callable(_) => match delimiter {
+                    Some(b',') => self.cursor += 1,
+                    Some(b'>') if !frame.members.is_empty() => {
+                        self.cursor += 1;
+                        self.close_frame()?;
+                    }
+                    _ => return Err(TypeDescriptorError::InvalidCanonicalString),
+                },
                 ContainerKind::Declared(_) => match delimiter {
                     Some(b',') => self.cursor += 1,
                     Some(b'>') if !frame.members.is_empty() => {
@@ -467,6 +541,29 @@ impl<'a> DescriptorParser<'a> {
                 });
                 return Ok(());
             }
+        }
+        // A callable introducer declares its reuse kind before any member, so the
+        // kind marker is consumed here and the ordered parameter and result types
+        // follow as ordinary members.
+        if self.source[self.cursor..].starts_with("Callable<") {
+            self.cursor += "Callable<".len();
+            let end = self.source[self.cursor..]
+                .find([',', '>'])
+                .map_or(self.source.len(), |offset| self.cursor + offset);
+            let kind = self
+                .source
+                .get(self.cursor..end)
+                .and_then(|name| CallableKind::from_canonical_name(name).ok())
+                .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+            if self.source.as_bytes().get(end) != Some(&b',') {
+                return Err(TypeDescriptorError::InvalidCanonicalString);
+            }
+            self.cursor = end + 1;
+            self.frames.push(ContainerFrame {
+                kind: ContainerKind::Callable(kind),
+                members: Vec::new(),
+            });
+            return Ok(());
         }
         let end = self.source[self.cursor..]
             .find([',', '>', '<'])
@@ -521,6 +618,13 @@ impl<'a> DescriptorParser<'a> {
                     .ok_or(TypeDescriptorError::InvalidCanonicalString)?,
             ),
             ContainerKind::Tuple => TypeDescriptor::tuple(frame.members)?,
+            ContainerKind::Callable(kind) => {
+                let mut members = frame.members;
+                let result = members
+                    .pop()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+                TypeDescriptor::callable(kind, members, result)
+            }
             ContainerKind::Declared(path) => {
                 TypeDescriptor::declared_with_arguments(path, frame.members)
             }
@@ -567,6 +671,8 @@ impl<'a> DescriptorParser<'a> {
 mod tests {
     use super::{TypeDescriptor, TypeDescriptorError};
     use crate::CanonicalPath;
+    use crate::callable::{CallableKind, CallableLimits, CallableType};
+    use crate::generated::TypeKind;
 
     #[test]
     fn canonical_descriptors_cover_the_closed_type_algebra() {
@@ -684,5 +790,106 @@ mod tests {
             })
         );
         assert!(TypeDescriptor::from_canonical_string_with_depth_limit("List<Int>", 2).is_ok());
+    }
+
+    #[test]
+    fn callable_types_spell_and_recover_one_identity() {
+        let thunk =
+            TypeDescriptor::callable(CallableKind::Function, Vec::new(), TypeDescriptor::INT);
+        assert_eq!(thunk.canonical_string(), "Callable<Fn,Int>");
+        assert_eq!(thunk.kind(), TypeKind::Callable);
+        assert_eq!(thunk.declared_path(), None);
+        assert!(!thunk.contains_sealed_boundary());
+        assert_eq!(thunk.immediate_members(), [TypeDescriptor::INT]);
+
+        let handler = TypeDescriptor::callable(
+            CallableKind::FunctionOnce,
+            vec![TypeDescriptor::INT, TypeDescriptor::STRING],
+            TypeDescriptor::BOOL,
+        );
+        assert_eq!(
+            handler.canonical_string(),
+            "Callable<FnOnce,Int,String,Bool>"
+        );
+        assert_eq!(
+            handler.immediate_members(),
+            [
+                TypeDescriptor::INT,
+                TypeDescriptor::STRING,
+                TypeDescriptor::BOOL
+            ]
+        );
+        assert_eq!(
+            handler.callable_type(),
+            Some(
+                CallableType::new(
+                    CallableKind::FunctionOnce,
+                    vec!["Int".to_owned(), "String".to_owned()],
+                    "Bool",
+                    CallableLimits::default(),
+                )
+                .unwrap_or_else(|_| unreachable!("the declared shape is within default budgets"))
+            )
+        );
+        assert_ne!(handler.canonical_string(), thunk.canonical_string());
+        assert_eq!(TypeDescriptor::INT.callable_type(), None);
+        assert_eq!(TypeDescriptor::STRING.callable_type(), None);
+    }
+
+    #[test]
+    fn callable_descriptors_round_trip_and_reject_malformed_spellings() {
+        for spelling in [
+            "Callable<Fn,Int>",
+            "Callable<FnMut,Int,String,Bool>",
+            "Callable<FnOnce,List<crate::domain::Report>,Option<String>>",
+            "Callable<Fn,Callable<Fn,Int>,Bool>",
+        ] {
+            assert_eq!(
+                TypeDescriptor::from_canonical_string_with_depth_limit(spelling, 16)
+                    .map(|descriptor| descriptor.canonical_string()),
+                Ok(spelling.to_owned())
+            );
+        }
+        for spelling in [
+            "Callable",
+            "callable<Fn,Int>",
+            "Callable<>",
+            "Callable<Fn>",
+            "Callable<Fnn,Int>",
+            "Callable<Fn,>",
+            "Callable<Fn,,Int>",
+            "Callable<Fn,Int",
+            "Callable<Fn,Int>>",
+            "Callable<Fn,Int ,Bool>",
+        ] {
+            assert_eq!(
+                TypeDescriptor::from_canonical_string_with_depth_limit(spelling, 16),
+                Err(TypeDescriptorError::InvalidCanonicalString)
+            );
+        }
+        assert_eq!(
+            TypeDescriptor::from_canonical_string_with_depth_limit("Callable<Fn,List<Int>>", 1),
+            Err(TypeDescriptorError::ConstructedTypeDepth {
+                limit: 1,
+                observed: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn callable_members_report_sealed_boundaries() {
+        let sealed = TypeDescriptor::callable(
+            CallableKind::Function,
+            vec![TypeDescriptor::DECISION],
+            TypeDescriptor::INT,
+        );
+        assert!(sealed.contains_sealed_boundary());
+        assert_eq!(sealed.canonical_string(), "Callable<Fn,Decision,Int>");
+        let wrapped = TypeDescriptor::list(sealed);
+        assert!(wrapped.contains_sealed_boundary());
+        assert!(
+            !TypeDescriptor::callable(CallableKind::Function, Vec::new(), TypeDescriptor::BOOL)
+                .contains_sealed_boundary()
+        );
     }
 }

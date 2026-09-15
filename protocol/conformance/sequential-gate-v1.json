@@ -230,7 +230,7 @@
   },
   {
    "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "ae050ac71fdb8f7fcc5346c5e9eb80d802c3233cfe780ef58b818506be36f093"
+   "sha256": "780527e6efc8be5c7ef93660f79cf318a0b4fe39a971a6031665fb8fdc1244f2"
   },
   {
    "path": "protocol/conformance/execution-observation-v1.json",

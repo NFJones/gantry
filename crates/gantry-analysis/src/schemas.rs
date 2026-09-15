@@ -764,6 +764,15 @@ fn schema_fragment(
                     members.join(",")
                 )
             }
+            TypeKind::Callable => {
+                // A callable type has no boundary schema (`GNT-37.12`), and this
+                // fragment is built only for types a boundary admits. No admitted
+                // source position reaches here, so a callable type arriving at a
+                // boundary fragment is an analysis invariant; the source refusal
+                // that keeps it unreachable is owned by the callable admission
+                // revision.
+                return Err(SchemaAnalysisError::Invariant);
+            }
         };
         built.insert(ty, value);
     }
