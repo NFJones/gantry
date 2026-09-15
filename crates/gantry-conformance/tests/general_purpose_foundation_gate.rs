@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -44,6 +45,8 @@ struct Manifest {
     gate: String,
     status: String,
     specification: FileDigest,
+    prerequisite_source: FileDigest,
+    verifies: Vec<String>,
     prerequisites: Vec<Prerequisite>,
     artifacts: Vec<FileDigest>,
     evidence: Vec<Evidence>,
@@ -64,6 +67,7 @@ struct FileDigest {
 struct Prerequisite {
     issue: String,
     commit: String,
+    subject: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -114,6 +118,14 @@ fn foundation_gate_rejects_malformed_missing_cyclic_stale_and_overclaiming_recor
     self_referential.prerequisites[0].issue = self_referential.gate.clone();
     assert!(validate_manifest(&root, &self_referential).is_err());
 
+    let mut fabricated = manifest.clone();
+    fabricated.prerequisites[0].commit = "0badc0d".to_owned();
+    assert!(validate_manifest(&root, &fabricated).is_err());
+
+    let mut relabelled = manifest.clone();
+    relabelled.prerequisites[0].subject = "Unrelated work".to_owned();
+    assert!(validate_manifest(&root, &relabelled).is_err());
+
     let mut stale = manifest.clone();
     stale.artifacts[0].sha256 = "0".repeat(64);
     assert!(validate_manifest(&root, &stale).is_err());
@@ -144,7 +156,12 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     {
         return Err("foundation gate does not bind the active specification".to_owned());
     }
+    validate_digest(root, &manifest.prerequisite_source)?;
 
+    ordered_unique(manifest.verifies.iter().map(String::as_str), "verifies")?;
+    if manifest.verifies.len() < EXPECTED_VERIFIES_FLOOR {
+        return Err("foundation gate does not declare what it verifies".to_owned());
+    }
     ordered_unique(
         manifest
             .prerequisites
@@ -165,9 +182,14 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         return Err("foundation gate prerequisite closure differs".to_owned());
     }
     if manifest.prerequisites.iter().any(|prerequisite| {
-        prerequisite.issue == manifest.gate || !is_commit(prerequisite.commit.as_str())
+        prerequisite.issue == manifest.gate
+            || !is_commit(prerequisite.commit.as_str())
+            || prerequisite.subject.trim().is_empty()
     }) {
         return Err("foundation gate prerequisite provenance is malformed".to_owned());
+    }
+    for prerequisite in &manifest.prerequisites {
+        validate_commit(root, prerequisite)?;
     }
 
     ordered_unique(
@@ -217,6 +239,37 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
 
 const EXPECTED_EVIDENCE_FLOOR: usize = 4;
 
+const EXPECTED_VERIFIES_FLOOR: usize = 5;
+
+fn validate_commit(root: &Path, prerequisite: &Prerequisite) -> Result<(), String> {
+    let ancestor = Command::new("git")
+        .current_dir(root)
+        .args(["merge-base", "--is-ancestor", &prerequisite.commit, "HEAD"])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|error| format!("could not inspect prerequisite commit: {error}"))?;
+    if !ancestor.success() {
+        return Err(format!(
+            "prerequisite commit is not an ancestor: {}",
+            prerequisite.issue
+        ));
+    }
+    let subject = Command::new("git")
+        .current_dir(root)
+        .args(["show", "-s", "--format=%s", &prerequisite.commit])
+        .output()
+        .map_err(|error| format!("could not read prerequisite subject: {error}"))?;
+    let actual = String::from_utf8(subject.stdout)
+        .map_err(|error| format!("prerequisite subject is not UTF-8: {error}"))?;
+    if actual.trim_end() != prerequisite.subject {
+        return Err(format!(
+            "prerequisite subject differs: {}",
+            prerequisite.issue
+        ));
+    }
+    Ok(())
+}
+
 fn is_commit(value: &str) -> bool {
     (7..=40).contains(&value.len())
         && value
@@ -229,7 +282,10 @@ fn validate_digest(root: &Path, artifact: &FileDigest) -> Result<(), String> {
         .map_err(|error| format!("could not read {}: {error}", artifact.path))?;
     let actual = format!("{:x}", Sha256::digest(bytes));
     if actual != artifact.sha256 {
-        return Err(format!("artifact digest differs: {}", artifact.path));
+        return Err(format!(
+            "artifact digest differs (refresh this gate record and regenerate the publication set): {}",
+            artifact.path
+        ));
     }
     Ok(())
 }
