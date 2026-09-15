@@ -344,6 +344,12 @@ impl IntegerValue {
 
     /// Constructs a value that is known to lie inside the declared range.
     pub fn new(kind: ScalarKind, value: i128) -> Result<Self, ScalarError> {
+        if !kind.is_value() {
+            return Err(ScalarError::new(
+                ScalarDiagnosticCode::NeverConstructed,
+                "Never admits no value",
+            ));
+        }
         if !kind.is_integer() {
             return Err(ScalarError::new(
                 ScalarDiagnosticCode::InvalidWidth,
@@ -357,6 +363,50 @@ impl IntegerValue {
             ));
         }
         Ok(Self { kind, value })
+    }
+
+    /// Two's-complement little-endian octets of the declared width.
+    #[must_use]
+    pub fn to_octets(self) -> Vec<u8> {
+        let width = self.kind.width().map_or(0, |width| width.octets());
+        (self.value as u128).to_le_bytes()[..width].to_vec()
+    }
+
+    /// Reads a value from two's-complement little-endian octets of the declared width.
+    pub fn from_octets(kind: ScalarKind, octets: &[u8]) -> Result<Self, ScalarError> {
+        if !kind.is_value() {
+            return Err(ScalarError::new(
+                ScalarDiagnosticCode::NeverConstructed,
+                "Never admits no value",
+            ));
+        }
+        let width = kind.width().ok_or_else(|| {
+            ScalarError::new(
+                ScalarDiagnosticCode::InvalidWidth,
+                format!("{} is not a fixed-width integer", kind.canonical_name()),
+            )
+        })?;
+        let expected = width.octets();
+        if octets.len() != expected {
+            return Err(ScalarError::new(
+                ScalarDiagnosticCode::InvalidWidth,
+                format!(
+                    "{} requires exactly {expected} octets, not {}",
+                    kind.canonical_name(),
+                    octets.len()
+                ),
+            ));
+        }
+        let mut raw = [0_u8; 16];
+        raw[..expected].copy_from_slice(octets);
+        let unsigned = u128::from_le_bytes(raw);
+        let bits = width.bits();
+        let value = if matches!(kind, ScalarKind::Signed(_)) && (unsigned >> (bits - 1)) & 1 == 1 {
+            (unsigned as i128) - (1_i128 << bits)
+        } else {
+            unsigned as i128
+        };
+        Self::new(kind, value)
     }
 
     fn parse_canonical_text(kind: ScalarKind, text: &str) -> Result<i128, ScalarError> {
@@ -646,6 +696,27 @@ impl CharValue {
         let mut buffer = [0_u8; 4];
         self.0.encode_utf8(&mut buffer).as_bytes().to_vec()
     }
+
+    /// Decodes exactly one UTF-8 scalar value.
+    ///
+    /// A partial, over-long, or surrogate encoding and any sequence holding zero or two
+    /// scalar values are refused under the invalid-char diagnostic.
+    pub fn from_utf8_octets(octets: &[u8]) -> Result<Self, ScalarError> {
+        let text = std::str::from_utf8(octets).map_err(|_| {
+            ScalarError::new(
+                ScalarDiagnosticCode::InvalidChar,
+                "octets are not well-formed UTF-8",
+            )
+        })?;
+        let mut scalars = text.chars();
+        let (Some(scalar), None) = (scalars.next(), scalars.next()) else {
+            return Err(ScalarError::new(
+                ScalarDiagnosticCode::InvalidChar,
+                "a Char holds exactly one Unicode scalar value",
+            ));
+        };
+        Self::new(u32::from(scalar))
+    }
 }
 
 /// An immutable octet sequence.
@@ -661,10 +732,9 @@ impl BytesValue {
         Self { octets }
     }
 
-    /// Parses canonical lowercase hexadecimal text of even length.
+    /// Parses canonical lowercase hexadecimal text of even length, including the empty sequence.
     pub fn parse_canonical_text(text: &str) -> Result<Self, ScalarError> {
-        let canonical = !text.is_empty()
-            && text.len().is_multiple_of(2)
+        let canonical = text.len().is_multiple_of(2)
             && text
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
@@ -772,16 +842,19 @@ impl ScalarQuota {
     }
 
     /// Quota already charged for a known number of live octets.
-    #[must_use]
-    pub const fn charged(max_octets: usize, used_octets: usize) -> Self {
-        Self {
-            max_octets,
-            used_octets: if used_octets < max_octets {
-                used_octets
-            } else {
-                max_octets
-            },
+    ///
+    /// A charge beyond the declared ceiling is refused rather than silently clamped.
+    pub fn charged(max_octets: usize, used_octets: usize) -> Result<Self, ScalarError> {
+        if used_octets > max_octets {
+            return Err(ScalarError::new(
+                ScalarDiagnosticCode::QuotaExceeded,
+                format!("{used_octets} charged octets exceed the declared quota of {max_octets}"),
+            ));
         }
+        Ok(Self {
+            max_octets,
+            used_octets,
+        })
     }
 
     /// Declared ceiling.
@@ -990,6 +1063,8 @@ impl ByteBufferValue {
     }
 
     /// Splits the buffer at a position inside the initialized prefix.
+    ///
+    /// The total charge is conserved: any charge not assigned to the tail stays with the head.
     pub fn split_off(&mut self, at: usize) -> Result<Self, ScalarError> {
         self.exclusive()?;
         if at > self.octets.len() {
@@ -1001,10 +1076,11 @@ impl ByteBufferValue {
                 ),
             ));
         }
-        let tail = self.octets.split_off(at);
         let ceiling = self.quota.max_octets();
-        self.quota = ScalarQuota::charged(ceiling, self.octets.len());
-        let tail_quota = ScalarQuota::charged(ceiling, tail.len());
+        let excess = self.quota.used_octets().saturating_sub(self.octets.len());
+        let tail = self.octets.split_off(at);
+        self.quota = ScalarQuota::charged(ceiling, self.octets.len() + excess)?;
+        let tail_quota = ScalarQuota::charged(ceiling, tail.len())?;
         Ok(Self {
             strategy: self.strategy,
             octets: tail,
@@ -1032,9 +1108,10 @@ impl ByteBufferValue {
         }
     }
 
-    /// Alias sharing storage with this buffer; mutation of either is refused.
+    /// Alias sharing storage with this buffer; mutation of either handle is refused.
     #[must_use]
-    pub fn alias(&self) -> Self {
+    pub fn alias(&mut self) -> Self {
+        self.aliased = true;
         Self {
             strategy: self.strategy,
             octets: self.octets.clone(),

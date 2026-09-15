@@ -50,6 +50,18 @@ fn kinds_are_distinct_and_never_admits_no_value() {
     assert_eq!(ScalarKind::Never.canonical_encoding(), None);
     let refusal = IntegerValue::parse(ScalarKind::Never, "0").refused("Never admits no value");
     assert_eq!(refusal.code(), ScalarDiagnosticCode::NeverConstructed);
+    assert_eq!(
+        IntegerValue::new(ScalarKind::Never, 0)
+            .refused("Never constructed")
+            .code(),
+        ScalarDiagnosticCode::NeverConstructed
+    );
+    assert_eq!(
+        IntegerValue::from_octets(ScalarKind::Never, &[])
+            .refused("Never decoded")
+            .code(),
+        ScalarDiagnosticCode::NeverConstructed
+    );
 }
 
 #[test]
@@ -223,6 +235,27 @@ fn characters_admit_only_unicode_scalar_values() {
         CharValue::new(0x110000).refused("beyond").code(),
         ScalarDiagnosticCode::InvalidChar
     );
+    assert_eq!(
+        CharValue::from_utf8_octets(&[0xf0, 0x9f, 0x98, 0x80])
+            .unwrap_or_else(|error| panic!("astral decode: {error}"))
+            .code_point(),
+        0x1F600
+    );
+    for octets in [
+        &[0xc3][..],
+        &[0xc0, 0x80][..],
+        &[0xed, 0xa0, 0x80][..],
+        &[0x41, 0x42][..],
+        &[][..],
+    ] {
+        assert_eq!(
+            CharValue::from_utf8_octets(octets)
+                .refused("invalid utf8")
+                .code(),
+            ScalarDiagnosticCode::InvalidChar,
+            "{octets:?}"
+        );
+    }
 }
 
 #[test]
@@ -244,7 +277,11 @@ fn sealed_octets_round_trip_and_refuse_noncanonical_text() {
         bytes.decode_utf8().refused("invalid utf8").code(),
         ScalarDiagnosticCode::NoncanonicalEncoding
     );
-    for text in ["", "0", "0F", "0g", " 00"] {
+    let empty = BytesValue::parse_canonical_text("")
+        .unwrap_or_else(|error| panic!("empty canonical: {error}"));
+    assert_eq!(empty.len(), 0);
+    assert_eq!(empty.to_canonical_text(), "");
+    for text in ["0", "0F", "0g", " 00"] {
         assert_eq!(
             BytesValue::parse_canonical_text(text)
                 .refused("non-canonical")
@@ -289,6 +326,14 @@ fn buffers_mutate_only_while_owned_and_freeze_on_consume() {
     );
     assert_eq!(
         buffer.clone().alias().freeze().refused("shared").code(),
+        ScalarDiagnosticCode::BufferSharedMutation
+    );
+    assert_eq!(
+        buffer.append(9).refused("shared original").code(),
+        ScalarDiagnosticCode::BufferSharedMutation
+    );
+    assert_eq!(
+        buffer.clone().freeze().refused("shared original").code(),
         ScalarDiagnosticCode::BufferSharedMutation
     );
     let copy = buffer.independent_copy();
@@ -336,6 +381,71 @@ fn quotas_charge_before_growth_and_release_on_truncate() {
             .refused("quota")
             .code(),
         ScalarDiagnosticCode::QuotaExceeded
+    );
+    assert_eq!(
+        ScalarQuota::charged(8, 9)
+            .refused("charged beyond ceiling")
+            .code(),
+        ScalarDiagnosticCode::QuotaExceeded
+    );
+    let mut excess = ByteBufferValue::with_octets(
+        StorageStrategy::Reuse,
+        ScalarQuota::charged(8, 5).unwrap_or_else(|error| panic!("charged quota: {error}")),
+        vec![1, 2, 3],
+    )
+    .unwrap_or_else(|error| panic!("excess seed: {error}"));
+    let before = excess.quota().used_octets();
+    let tail = excess
+        .split_off(1)
+        .unwrap_or_else(|error| panic!("excess split: {error}"));
+    assert_eq!(
+        excess.quota().used_octets() + tail.quota().used_octets(),
+        before
+    );
+}
+
+#[test]
+fn external_encodings_round_trip_and_refuse_wrong_widths() {
+    let kinds = [
+        ScalarKind::Signed(ScalarWidth::W8),
+        ScalarKind::Signed(ScalarWidth::W16),
+        ScalarKind::Signed(ScalarWidth::W32),
+        ScalarKind::Signed(ScalarWidth::W64),
+        ScalarKind::Unsigned(ScalarWidth::W8),
+        ScalarKind::Unsigned(ScalarWidth::W16),
+        ScalarKind::Unsigned(ScalarWidth::W32),
+        ScalarKind::Unsigned(ScalarWidth::W64),
+    ];
+    for kind in kinds {
+        let (low, high) = IntegerValue::bounds(kind).unwrap_or_else(|| panic!("bounds"));
+        let width = kind
+            .width()
+            .unwrap_or_else(|| panic!("declared integer width"));
+        for value in [low, high, 0, 1] {
+            let encoded = IntegerValue::new(kind, value)
+                .unwrap_or_else(|error| panic!("construct: {error}"))
+                .to_octets();
+            assert_eq!(encoded.len(), width.octets());
+            assert_eq!(
+                IntegerValue::from_octets(kind, &encoded)
+                    .unwrap_or_else(|error| panic!("round trip: {error}"))
+                    .value(),
+                value
+            );
+        }
+        let short = vec![0_u8; width.octets() - 1];
+        assert_eq!(
+            IntegerValue::from_octets(kind, &short)
+                .refused("short encoding")
+                .code(),
+            ScalarDiagnosticCode::InvalidWidth
+        );
+    }
+    assert_eq!(
+        IntegerValue::from_octets(ScalarKind::Char, &[0x41])
+            .refused("not an integer")
+            .code(),
+        ScalarDiagnosticCode::InvalidWidth
     );
 }
 

@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "66abf7fda8a7be661cfef85945d6cf59c25bf0e0b8bc5d61bb6780695722c946",
-  "byte_length": 995306,
+  "specification_sha256": "6eeb4adac75947775d37c749b0faa061279d1688b5865826ec4101e17a0e73d1",
+  "byte_length": 995882,
   "line_count": 15441,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9497,
       "end_line": 15441,
-      "sha256": "470b6ce27b160294110d8d6d6939622f3208c8aa29f1312de4281ea4a8cf1ccb",
+      "sha256": "285382e8fa553c6fd79ea8d7ec080d0feba2800e90e8f57236e323acf45f877e",
       "rationale": null
     }
   ],
@@ -40684,11 +40684,11 @@
       "id": "GNT-35.6-char-values-and-unicode-scalars",
       "span_start_line": 15415,
       "span_end_line": 15418,
-      "span_sha256": "f2c84505296b12cd1b8d6008ad69347c67e8775eee79a7508a0d7fe3d81d0000",
+      "span_sha256": "c301d9521f7c255f5e9ec5e6367fc76b4e9db34ed343893abbb74d20e8b4dfb5",
       "anchor_line": 15415,
       "body_start_line": 15416,
       "body_end_line": 15418,
-      "body_sha256": "4c3021975823f928076a7816319b1ffebbc7ec1d2c27a2c0d21bdc0cd9607e06",
+      "body_sha256": "e36f551f3f8d74f0d84c4c6a90f48798a4dc81fdf26a7c8ca894693aa57a0fdd",
       "profiles": [
         "analyzer"
       ],
@@ -40726,11 +40726,11 @@
       "id": "GNT-35.7-bytes-and-canonical-encoding",
       "span_start_line": 15419,
       "span_end_line": 15422,
-      "span_sha256": "c4fc4076151d7f3c501e156d5390cfd38b65334733a80096fda91b0cd356fd1f",
+      "span_sha256": "2d3fbdf100f481897957787f6fe478f6e05d62be90649afcd4b8d14eaf6264d3",
       "anchor_line": 15419,
       "body_start_line": 15420,
       "body_end_line": 15422,
-      "body_sha256": "317fc87052583789651bac6db5124bc99dde9f0f32a837d3b3e4ef2ce2949e12",
+      "body_sha256": "a6a3ea29a6ec6dae6adc5f970f21b8d7ae22ab2b5c287c6cf318f9cd9dd21920",
       "profiles": [
         "analyzer"
       ],
@@ -40849,11 +40849,11 @@
       "id": "GNT-35.10-allocation-quotas-and-cancellation",
       "span_start_line": 15431,
       "span_end_line": 15434,
-      "span_sha256": "a2903f6850b1e5c4c8bed5f42be6cca99443b4804d6a1e93e2956db7900b3770",
+      "span_sha256": "b9d317500015bdc11231be55337699166e9c7bfbb9163fffc909f57ea951c6a4",
       "anchor_line": 15431,
       "body_start_line": 15432,
       "body_end_line": 15434,
-      "body_sha256": "e71d0a6ebf2d52c9295afc899aa0199d1108474b12786e88fa406405f1457e67",
+      "body_sha256": "bc7bd410a41a2ff0c4ef453d497a6f07e93f13821b4af2b3aac137c2ade8ad2e",
       "profiles": [
         "analyzer"
       ],
@@ -40919,7 +40919,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/scalar_foundation.rs#storage_strategies_agree_on_octets_charges_and_refusals"
+                "crates/gantry-conformance/tests/scalar_foundation.rs#storage_strategies_agree_on_octets_charges_and_refusals",
+                "crates/gantry-conformance/tests/scalar_foundation.rs#external_encodings_round_trip_and_refuse_wrong_widths"
               ],
               "rationale": null
             }

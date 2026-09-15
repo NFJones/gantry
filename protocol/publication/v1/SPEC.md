@@ -15414,11 +15414,11 @@ claim runtime integration merely because it implements this pure model.
 
 <a id="GNT-35.6-char-values-and-unicode-scalars"></a>
 
-**[GNT-35.6-char-values-and-unicode-scalars] Char values and Unicode scalars.** `Char` holds exactly one Unicode scalar value: a code point in the inclusive range U+0000 through U+10FFFF that is not a surrogate. A code point outside that set, an unpaired surrogate, and a partial or over-long UTF-8 sequence are refused under the invalid-char diagnostic. `Char` performs no case mapping, normalization, collation, or width measurement, and its canonical text never depends on a process locale or host encoding.
+**[GNT-35.6-char-values-and-unicode-scalars] Char values and Unicode scalars.** `Char` holds exactly one Unicode scalar value: a code point in the inclusive range U+0000 through U+10FFFF that is not a surrogate. A code point outside that set, an unpaired surrogate, and a partial or over-long UTF-8 sequence are refused under the invalid-char diagnostic. `Char` performs no case mapping, normalization, collation, or width measurement, and its canonical text never depends on a process locale or host encoding. Decoding octets into a `Char` admits exactly one Unicode scalar value and refuses a partial, over-long, or surrogate encoding under the invalid-char diagnostic.
 
 <a id="GNT-35.7-bytes-and-canonical-encoding"></a>
 
-**[GNT-35.7-bytes-and-canonical-encoding] Bytes and canonical encoding.** `Bytes` is an immutable, sealed octet sequence of exactly its recorded length with no spare capacity in its identity. Canonical text is lowercase hexadecimal of even length, and text that is not the canonical spelling of the octets it denotes is refused under the noncanonical-encoding diagnostic; decoding to text requires well-formed UTF-8 and never transcodes implicitly. Sealing preserves byte identity, so two values are equal exactly when their octets are equal.
+**[GNT-35.7-bytes-and-canonical-encoding] Bytes and canonical encoding.** `Bytes` is an immutable, sealed octet sequence of exactly its recorded length with no spare capacity in its identity. Canonical text is lowercase hexadecimal of even length, and text that is not the canonical spelling of the octets it denotes is refused under the noncanonical-encoding diagnostic; decoding to text requires well-formed UTF-8 and never transcodes implicitly. Sealing preserves byte identity, so two values are equal exactly when their octets are equal. The empty sequence is canonical and its canonical text is the empty string, and a read at or beyond the recorded length is refused under the buffer-bounds condition owned by `GNT-35.8`.
 
 <a id="GNT-35.8-bytebuffer-mutation-and-freezing"></a>
 
@@ -15430,7 +15430,7 @@ claim runtime integration merely because it implements this pure model.
 
 <a id="GNT-35.10-allocation-quotas-and-cancellation"></a>
 
-**[GNT-35.10-allocation-quotas-and-cancellation] Allocation quotas and cancellation.** Every buffer and sealed sequence is charged against a declared quota before its octets become live, truncation and split release the released charge, and a request that would exceed the ceiling is refused under the quota-exceeded diagnostic with no partial growth visible. Cancellation between any two operations leaves each buffer at an initialized-prefix boundary with its charges consistent, so a cancelled operation is indistinguishable from one that never began.
+**[GNT-35.10-allocation-quotas-and-cancellation] Allocation quotas and cancellation.** Every buffer and sealed sequence is charged against a declared quota before its octets become live, truncation and split release the released charge, and a request that would exceed the ceiling is refused under the quota-exceeded diagnostic with no partial growth visible. Cancellation between any two operations leaves each buffer at an initialized-prefix boundary with its charges consistent, so a cancelled operation is indistinguishable from one that never began. A quota presented with a charge beyond its ceiling is refused under the quota-exceeded diagnostic rather than silently clamped, and a split conserves the total charge by retaining any charge not assigned to the tail on the head.
 
 <a id="GNT-35.11-storage-strategy-equivalence-and-round-trips"></a>
 
