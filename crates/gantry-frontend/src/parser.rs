@@ -265,6 +265,10 @@ enum Task {
         count: usize,
         depth: u64,
     },
+    CallableParameterList {
+        count: usize,
+        depth: u64,
+    },
     Block(BlockKind),
     BlockContents(BlockKind),
     AfterBlockExpression(BlockKind),
@@ -438,6 +442,9 @@ impl<'a> Machine<'a> {
                 self.parse_type_argument_list_tail(count, depth)?;
             }
             Task::TupleTypeTail { count, depth } => self.parse_tuple_type_tail(count, depth)?,
+            Task::CallableParameterList { count, depth } => {
+                self.parse_callable_parameter_list_tail(count, depth)?;
+            }
             Task::Block(kind) => self.parse_block(kind)?,
             Task::BlockContents(kind) => self.parse_block_contents(kind)?,
             Task::AfterBlockExpression(kind) => self.after_block_expression(kind)?,
@@ -1070,6 +1077,8 @@ impl<'a> Machine<'a> {
                 count: 0,
                 depth: child_depth,
             });
+        } else if self.at_callable_type() {
+            self.parse_callable_type(child_depth)?;
         } else if self.at_builtin_type() || self.at_word("Self") && self.self_type_is_in_scope() {
             self.consume_current()?;
         } else {
@@ -1116,6 +1125,60 @@ impl<'a> Machine<'a> {
             });
             self.tasks.push(Task::ValueType { depth });
         }
+        Ok(())
+    }
+
+    /// Recognises a callable type introducer followed by its parameter list.
+    fn at_callable_type(&self) -> bool {
+        ["Fn", "FnMut", "FnOnce"]
+            .iter()
+            .any(|word| self.at_identifier_named(word))
+            && self.peek_punctuation(1, Punctuation::LeftParenthesis)
+    }
+
+    /// Parses one callable type form `Fn(<type>, ...) -> <type>`.
+    ///
+    /// The annotation form is admitted by the grammar so analysis refuses it with a
+    /// published diagnostic instead of a syntax fault; the reuse kind, ordered
+    /// parameter types, and result type are retained as syntax children.
+    fn parse_callable_type(&mut self, depth: u64) -> Result<(), SyntaxFault> {
+        self.begin(SyntaxForm::CallableType);
+        self.consume_current()?;
+        self.expect_punctuation(Punctuation::LeftParenthesis)?;
+        self.tasks.push(Task::Finish);
+        self.tasks
+            .push(Task::CallableParameterList { count: 0, depth });
+        Ok(())
+    }
+
+    /// Continues a callable parameter list, or closes it and requires its result type.
+    fn parse_callable_parameter_list_tail(
+        &mut self,
+        count: usize,
+        depth: u64,
+    ) -> Result<(), SyntaxFault> {
+        if self.at_punctuation(Punctuation::RightParenthesis) {
+            self.consume_current()?;
+            self.tasks.push(Task::ValueType { depth });
+            self.tasks
+                .push(Task::ExpectPunctuation(Punctuation::ThinArrow));
+            return Ok(());
+        }
+        if count > 0 {
+            self.expect_punctuation(Punctuation::Comma)?;
+            if self.at_punctuation(Punctuation::RightParenthesis) {
+                self.consume_current()?;
+                self.tasks.push(Task::ValueType { depth });
+                self.tasks
+                    .push(Task::ExpectPunctuation(Punctuation::ThinArrow));
+                return Ok(());
+            }
+        }
+        self.tasks.push(Task::CallableParameterList {
+            count: count.saturating_add(1),
+            depth,
+        });
+        self.tasks.push(Task::ValueType { depth });
         Ok(())
     }
 
@@ -2667,6 +2730,56 @@ mod tests {
     fn parse(source: &str, token_limit: u64, diagnostic_limit: u64) -> super::ParseOutcome {
         parse_result(source, token_limit, diagnostic_limit)
             .unwrap_or_else(|error| panic!("syntax phase failed: {error}"))
+    }
+
+    fn token_spelling(tree: &crate::SyntaxTree, id: crate::NodeId) -> Option<String> {
+        match tree.node(id)?.form() {
+            SyntaxForm::Token(crate::TokenKind::Identifier(word)) => Some(word.to_string()),
+            SyntaxForm::Token(crate::TokenKind::Punctuation(punctuation)) => {
+                Some(punctuation.spelling().to_owned())
+            }
+            _ => None,
+        }
+    }
+
+    /// A callable annotation form is admitted by the grammar: the reuse kind, ordered
+    /// parameter types, and result type are retained so analysis can refuse it precisely.
+    #[test]
+    fn parses_callable_type_annotations_with_reuse_kind_parameters_and_result() {
+        let outcome = parse(
+            "fn main(callback: Fn(Int, String) -> Bool, thunk: FnMut() -> Int) -> Int { 0 }",
+            512,
+            16,
+        );
+        assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+        let tree = outcome.tree().unwrap_or_else(|| unreachable!("valid tree"));
+        let callables = tree
+            .nodes()
+            .iter()
+            .filter(|node| matches!(node.form(), SyntaxForm::CallableType))
+            .collect::<Vec<_>>();
+        assert_eq!(callables.len(), 2, "{callables:?}");
+        let spelled = callables[0]
+            .children()
+            .iter()
+            .filter_map(|child| token_spelling(tree, *child))
+            .collect::<Vec<_>>();
+        assert_eq!(spelled, ["Fn", "(", ",", ")", "->"]);
+        let members = callables[0]
+            .children()
+            .iter()
+            .filter(|child| {
+                tree.node(**child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+            })
+            .count();
+        assert_eq!(members, 3);
+        let thunk_spelled = callables[1]
+            .children()
+            .iter()
+            .filter_map(|child| token_spelling(tree, *child))
+            .collect::<Vec<_>>();
+        assert_eq!(thunk_spelled, ["FnMut", "(", ")", "->"]);
     }
 
     #[test]

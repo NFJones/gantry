@@ -5597,6 +5597,80 @@ fn public_skippable_loop_reinitialization_owes_the_fresh_value() {
     }
 }
 
+/// A callable annotation is recognised by the grammar and refused with its published
+/// diagnostic in every position that types a value, instead of failing internally.
+#[test]
+fn public_callable_type_annotations_are_refused_without_internal_failure() {
+    let root = TempDirectory::new();
+    for (source, reuse_kind) in [
+        ("fn main(callback: Fn(Int) -> Int) -> Int { 0 }", "Fn"),
+        ("fn main(callback: FnMut() -> Int) -> Int { 0 }", "FnMut"),
+        (
+            "fn main(callback: FnOnce(Int, String) -> Bool) -> Int { 0 }",
+            "FnOnce",
+        ),
+        (
+            "struct Holder { callback: Fn(Int) -> Int } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        ("fn main(callback: List<Fn(Int) -> Int>) -> Int { 0 }", "Fn"),
+        (
+            "fn hold<T>(callback: Fn(T) -> T) -> Int { 0 } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        ("fn main() -> Fn(Int) -> Int { 0 }", "Fn"),
+        (
+            "fn main() -> Int { let callback: Fn(Int) -> Int = 0; 0 }",
+            "Fn",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let rejected = analyze_package_types(&syntax)
+            .unwrap_or_else(|error| panic!("source: {source}; type analysis failed: {error:?}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected.executable_program().is_none(),
+            "source: {source}; an unadmitted callable type must not publish an executable program"
+        );
+        let refusal = rejected
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted")
+            .unwrap_or_else(|| {
+                panic!(
+                    "source: {source}; diagnostics: {:?}",
+                    rejected.diagnostics()
+                )
+            });
+        assert_eq!(refusal.category, DiagnosticCategory::Type);
+        assert_eq!(
+            refusal.fields.get("reuse_kind").map(AsRef::as_ref),
+            Some(reuse_kind),
+            "source: {source}; fields: {:?}",
+            refusal.fields
+        );
+    }
+    // A declared type whose name precedes no parameter list keeps its meaning.
+    root.write("struct Fn { value: Int } fn main(callback: Fn) -> Int { 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let accepted = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+}
+
 /// An annotation naming a type that no declaration provides is refused precisely, including when
 /// the enclosing declaration is reachable and would otherwise be lowered into an executable program.
 #[test]

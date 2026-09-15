@@ -893,6 +893,20 @@ fn resolve_type_node(
         .map(|child| resolved.get(&child).map(|fact| fact.descriptor.clone()))
         .collect::<Option<Vec<_>>>();
 
+    if let Some(callable) = direct_child_form(tree, id, SyntaxForm::CallableType) {
+        let reuse_kind = callable_reuse_kind(tree, callable)?;
+        diagnostics.push(type_diagnostic(
+            "callable-type-unadmitted",
+            "a source callable type is recognised but not admitted by this revision",
+            tree.node(callable)
+                .ok_or(AnalysisError::Invariant)?
+                .span()
+                .clone(),
+            [("reuse_kind", reuse_kind.as_str())],
+        )?);
+        return Ok(None);
+    }
+
     let descriptor = match word.as_deref() {
         Some("Unit") => Some(TypeDescriptor::UNIT),
         Some("Bool") => Some(TypeDescriptor::BOOL),
@@ -1611,6 +1625,21 @@ fn descendant_type_roots(
         work.extend(node.children().iter().rev().copied());
     }
     Ok(roots)
+}
+
+/// Returns the authored reuse-kind spelling of one callable type form.
+fn callable_reuse_kind(tree: &SyntaxTree, id: NodeId) -> Result<String, AnalysisError> {
+    let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+    Ok(node
+        .children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .find_map(|child| match child.form() {
+            SyntaxForm::Token(TokenKind::Identifier(word)) => Some(word.to_string()),
+            SyntaxForm::Token(TokenKind::ReservedWord(word)) => Some(word.spelling().to_owned()),
+            _ => None,
+        })
+        .unwrap_or_else(|| "Fn".to_owned()))
 }
 
 /// Returns a direct reserved-word token from one syntax node.

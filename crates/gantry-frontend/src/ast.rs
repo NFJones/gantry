@@ -153,6 +153,8 @@ pub enum SyntaxForm {
     Path,
     /// Value type syntax.
     ValueType,
+    /// Callable type syntax: reuse kind, parameter types, and result type.
+    CallableType,
     /// Ordinary, value-producing, or statement-only block.
     Block,
     /// `let` statement.

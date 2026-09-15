@@ -177,7 +177,8 @@ impl Default for CallableLimits {
 /// outstanding admission is `SettlementRefused`; a declared row erasing a
 /// component effect is `EffectErasure`; an ineligible durable projection is
 /// `DurableCapture`; and a rebuilt projection unequal to its carried identity is
-/// `RoundTripLoss`.
+/// `RoundTripLoss`. A source callable annotation that this revision recognises
+/// but does not admit is `TypeUnadmitted`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CallableDiagnosticCode {
     /// A declared shape, name, or budget departure.
@@ -196,11 +197,13 @@ pub enum CallableDiagnosticCode {
     DurableCapture,
     /// A rebuilt projection unequal to its carried identity.
     RoundTripLoss,
+    /// A source callable annotation this revision recognises but does not admit.
+    TypeUnadmitted,
 }
 
 impl CallableDiagnosticCode {
     /// Every refusal condition in normative order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::ShapeRefused,
         Self::CaptureRefused,
         Self::ReuseRefused,
@@ -209,6 +212,7 @@ impl CallableDiagnosticCode {
         Self::EffectErasure,
         Self::DurableCapture,
         Self::RoundTripLoss,
+        Self::TypeUnadmitted,
     ];
 
     /// Returns the frozen diagnostic spelling.
@@ -223,6 +227,7 @@ impl CallableDiagnosticCode {
             Self::EffectErasure => "callable-effect-erasure",
             Self::DurableCapture => "callable-durable-capture",
             Self::RoundTripLoss => "callable-round-trip-loss",
+            Self::TypeUnadmitted => "callable-type-unadmitted",
         }
     }
 }

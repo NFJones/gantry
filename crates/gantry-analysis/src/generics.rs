@@ -2622,6 +2622,11 @@ fn resolve_generic_type_node(
             .map_err(|_| AnalysisError::Invariant)?,
         Some(_) => return Err(AnalysisError::Invariant),
         None => {
+            if direct_child(context.tree, id, SyntaxForm::CallableType).is_some() {
+                // A recognised callable annotation carries no generic type expression in
+                // this revision; type resolution refuses it with a published diagnostic.
+                return Ok(None);
+            }
             let path_id =
                 direct_child(context.tree, id, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;
             let path = context.tree.node(path_id).ok_or(AnalysisError::Invariant)?;
