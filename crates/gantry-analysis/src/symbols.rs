@@ -1079,7 +1079,12 @@ fn check_statement_references(
     let mut work = vec![statement];
     while let Some(node_id) = work.pop() {
         let node = tree.node(node_id).ok_or(AnalysisError::Invariant)?;
-        if node_id != statement && matches!(node.form(), SyntaxForm::Block | SyntaxForm::MatchArm) {
+        if node_id != statement
+            && matches!(
+                node.form(),
+                SyntaxForm::Block | SyntaxForm::MatchArm | SyntaxForm::ClosureExpression
+            )
+        {
             continue;
         }
         if matches!(
@@ -1235,6 +1240,9 @@ fn schedule_nested_scopes(
     let mut scan = vec![root];
     while let Some(node_id) = scan.pop() {
         let node = tree.node(node_id).ok_or(AnalysisError::Invariant)?;
+        if matches!(node.form(), SyntaxForm::ClosureExpression) {
+            continue;
+        }
         if matches!(node.form(), SyntaxForm::MatchArm) {
             let mut scoped = environment.clone();
             let declarations = node

@@ -5651,6 +5651,28 @@ fn infer_expression_inner(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let node = tree.node(expression).ok_or(AnalysisError::Invariant)?;
+    if let Some(closure) = matches!(node.form(), SyntaxForm::ClosureExpression)
+        .then_some(expression)
+        .or_else(|| direct_child_form(tree, node, SyntaxForm::ClosureExpression))
+    {
+        let closure_node = tree.node(closure).ok_or(AnalysisError::Invariant)?;
+        let parameters = closure_node
+            .children()
+            .iter()
+            .filter(|child| {
+                tree.node(**child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Parameter))
+            })
+            .count();
+        diagnostics.push(body_diagnostic(
+            "callable-expression-unadmitted",
+            DiagnosticCategory::Type,
+            "a source callable expression is recognised but not admitted by this revision",
+            closure_node.span().clone(),
+            [("parameters", parameters.to_string())],
+        )?);
+        return Ok(None);
+    }
     if let [left, right] = node.children()
         && node_is_punctuation(tree, *left, Punctuation::LeftParenthesis)
         && node_is_punctuation(tree, *right, Punctuation::RightParenthesis)

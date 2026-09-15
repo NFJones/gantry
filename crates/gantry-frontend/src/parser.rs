@@ -1182,6 +1182,31 @@ impl<'a> Machine<'a> {
         Ok(())
     }
 
+    /// Recognises the callable expression introducer `fn(` in value position.
+    fn at_closure_expression(&self) -> bool {
+        self.at_word("fn") && self.peek_punctuation(1, Punctuation::LeftParenthesis)
+    }
+
+    /// Parses one callable expression `fn(<name>: <type>, ...) -> <type> { <block> }`.
+    ///
+    /// The expression form is admitted by the grammar so analysis refuses it with a
+    /// published diagnostic instead of a syntax fault; its typed parameters, result
+    /// type, and body are retained as syntax children.
+    fn parse_closure_expression(&mut self) -> Result<(), SyntaxFault> {
+        self.begin(SyntaxForm::ClosureExpression);
+        self.expect_word("fn")?;
+        self.expect_punctuation(Punctuation::LeftParenthesis)?;
+        self.parse_parameter_list(false)?;
+        self.expect_punctuation(Punctuation::RightParenthesis)?;
+        self.tasks.push(Task::Finish);
+        self.expect_punctuation(Punctuation::ThinArrow)?;
+        let base = self.tasks.len();
+        self.tasks.push(Task::ValueType { depth: 1 });
+        self.run_tasks_above(base)?;
+        self.tasks.push(Task::Block(BlockKind::Ordinary));
+        Ok(())
+    }
+
     fn parse_path(&mut self) -> Result<(), SyntaxFault> {
         self.begin(SyntaxForm::Path);
         if self.at_identifier() {
@@ -1910,6 +1935,8 @@ impl<'a> Machine<'a> {
                 count: 0,
                 minimum: 0,
             });
+        } else if mode == ExpressionMode::Ordinary && self.at_closure_expression() {
+            self.parse_closure_expression()?;
         } else if mode == ExpressionMode::Ordinary && self.at_word("prompt") {
             self.parse_prompt_expression(false)?;
         } else if mode == ExpressionMode::Ordinary && self.at_word("decide") {
@@ -2780,6 +2807,35 @@ mod tests {
             .filter_map(|child| token_spelling(tree, *child))
             .collect::<Vec<_>>();
         assert_eq!(thunk_spelled, ["FnMut", "(", ")", "->"]);
+    }
+
+    /// A callable expression is admitted by the grammar: its typed parameters, result
+    /// type, and body are retained so analysis can refuse it precisely.
+    #[test]
+    fn parses_callable_expressions_with_parameters_result_and_body() {
+        let outcome = parse(
+            "fn main() -> Int { discard fn(x: Int, y: String) -> Bool { y }; 0 }",
+            512,
+            16,
+        );
+        assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+        let tree = outcome.tree().unwrap_or_else(|| unreachable!("valid tree"));
+        let closures = tree
+            .nodes()
+            .iter()
+            .filter(|node| matches!(node.form(), SyntaxForm::ClosureExpression))
+            .collect::<Vec<_>>();
+        assert_eq!(closures.len(), 1, "{closures:?}");
+        let children = |form: SyntaxForm| {
+            closures[0]
+                .children()
+                .iter()
+                .filter(|child| tree.node(**child).is_some_and(|node| *node.form() == form))
+                .count()
+        };
+        assert_eq!(children(SyntaxForm::Parameter), 2);
+        assert_eq!(children(SyntaxForm::ValueType), 1);
+        assert_eq!(children(SyntaxForm::Block), 1);
     }
 
     #[test]

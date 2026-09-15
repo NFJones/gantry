@@ -155,6 +155,8 @@ pub enum SyntaxForm {
     ValueType,
     /// Callable type syntax: reuse kind, parameter types, and result type.
     CallableType,
+    /// Callable expression syntax: parameters, result type, and body.
+    ClosureExpression,
     /// Ordinary, value-producing, or statement-only block.
     Block,
     /// `let` statement.

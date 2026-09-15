@@ -240,7 +240,7 @@ fn diagnostic_spellings_are_frozen_and_distinct() {
         .iter()
         .map(|code| code.code())
         .collect();
-    assert_eq!(codes.len(), 9);
+    assert_eq!(codes.len(), 10);
     assert_eq!(codes[0], "callable-shape-refused");
     assert_eq!(codes[1], "callable-capture-refused");
     assert_eq!(codes[2], "callable-reuse-refused");
@@ -250,6 +250,7 @@ fn diagnostic_spellings_are_frozen_and_distinct() {
     assert_eq!(codes[6], "callable-durable-capture");
     assert_eq!(codes[7], "callable-round-trip-loss");
     assert_eq!(codes[8], "callable-type-unadmitted");
+    assert_eq!(codes[9], "callable-expression-unadmitted");
     for (index, code) in codes.iter().enumerate() {
         assert!(!codes[index + 1..].contains(code), "{code} is shared");
     }
@@ -653,7 +654,7 @@ fn section_37_anchors_and_nonclaims_are_published() {
             "{clause} carries no clause text"
         );
     }
-    assert_eq!(CallableDiagnosticCode::ALL.len(), 9);
+    assert_eq!(CallableDiagnosticCode::ALL.len(), 10);
     for code in CallableDiagnosticCode::ALL {
         assert!(
             spec.contains(&format!("`{}`", code.code())),
@@ -670,7 +671,7 @@ fn section_37_anchors_and_nonclaims_are_published() {
 }
 
 /// The frozen callable diagnostics with the clause that owns each refusal condition.
-const CALLABLE_DIAGNOSTIC_OWNERS: [(&str, &str); 9] = [
+const CALLABLE_DIAGNOSTIC_OWNERS: [(&str, &str); 10] = [
     ("callable-shape-refused", "GNT-37.1"),
     ("callable-frame-limit", "GNT-37.2"),
     ("callable-capture-refused", "GNT-37.3"),
@@ -680,6 +681,7 @@ const CALLABLE_DIAGNOSTIC_OWNERS: [(&str, &str); 9] = [
     ("callable-durable-capture", "GNT-37.7"),
     ("callable-round-trip-loss", "GNT-37.8"),
     ("callable-type-unadmitted", "GNT-37.0"),
+    ("callable-expression-unadmitted", "GNT-37.0"),
 ];
 
 #[test]

@@ -5703,6 +5703,112 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
     );
 }
 
+/// A callable expression is recognised by the grammar and refused with its published
+/// diagnostic in every position that types a value, instead of failing internally.
+#[test]
+fn public_callable_expressions_are_refused_without_internal_failure() {
+    let root = TempDirectory::new();
+    for (source, parameter_counts) in [
+        (
+            "fn main() -> Int { discard fn(x: Int) -> Int { x }; 0 }",
+            vec!["1"],
+        ),
+        (
+            "fn main() -> Int { let callback: Int = fn() -> Int { 0 }; 0 }",
+            vec!["0"],
+        ),
+        (
+            "fn main(callback: Int) -> Int { discard fn(x: Int, y: String) -> Bool { true }; 0 }",
+            vec!["2"],
+        ),
+        (
+            "struct Holder { callback: Int } fn main() -> Holder { Holder { callback: fn() -> Int { 0 } } }",
+            vec!["0"],
+        ),
+        (
+            "fn apply(callback: Int) -> Int { 0 } fn main() -> Int { apply(fn(x: Int) -> Int { x }) }",
+            vec!["1"],
+        ),
+        (
+            "fn main() -> Int { discard (fn(x: Int) -> Int { x }); 0 }",
+            vec!["1"],
+        ),
+        (
+            "fn main() -> Int { discard fn(x: Int) -> Int { fn(y: Int, z: Int) -> Int { y } }; 0 }",
+            vec!["1"],
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let rejected = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected.executable_program().is_none(),
+            "source: {source}; an unadmitted callable expression must not publish an executable program"
+        );
+        let mut refusals = rejected
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_str() == "callable-expression-unadmitted")
+            .collect::<Vec<_>>();
+        assert!(
+            !refusals.is_empty(),
+            "source: {source}; diagnostics: {:?}",
+            rejected.diagnostics()
+        );
+        for refusal in &refusals {
+            assert_eq!(refusal.category, DiagnosticCategory::Type);
+        }
+        let mut counts = refusals
+            .iter()
+            .map(|refusal| {
+                refusal
+                    .fields
+                    .get("parameters")
+                    .map(AsRef::as_ref)
+                    .unwrap_or("?")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        counts.sort_unstable();
+        assert_eq!(
+            counts,
+            parameter_counts,
+            "source: {source}; diagnostics: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            !rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "unresolved-reference"),
+            "source: {source}; a refused callable expression must not report its own names: {:?}",
+            rejected.diagnostics()
+        );
+        refusals.clear();
+    }
+    // An ordinary workflow survives: only the callable expression form is refused.
+    root.write("fn named(x: Int) -> Int { x } fn main() -> Int { named(1) }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let accepted = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+}
+
 /// An annotation naming a type that no declaration provides is refused precisely, including when
 /// the enclosing declaration is reachable and would otherwise be lowered into an executable program.
 #[test]
