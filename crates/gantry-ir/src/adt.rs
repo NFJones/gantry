@@ -218,6 +218,8 @@ pub struct AdtConstructor {
     pub name: String,
     /// The declared portable tag, unique inside the owning type.
     pub tag: u32,
+    /// The constructor's parameter list, which must equal the owning type's (`GNT-36.1`).
+    pub parameters: Vec<String>,
     /// The declared fields, in declaration order.
     pub fields: Vec<AdtField>,
 }
@@ -465,6 +467,18 @@ impl AdtPackageBuilder {
                     format!(
                         "type {} declares constructor {}#{} twice",
                         declaration.name, constructor.name, constructor.tag
+                    ),
+                ));
+            }
+            if constructor.parameters != declaration.parameters {
+                return Err(AdtError::new(
+                    AdtDiagnosticCode::ConstructorArity,
+                    format!(
+                        "{}::{} declares parameters [{}] but its type declares [{}]",
+                        declaration.name,
+                        constructor.name,
+                        constructor.parameters.join(","),
+                        declaration.parameters.join(",")
                     ),
                 ));
             }
@@ -1059,6 +1073,33 @@ impl AdtPackageModel {
                         alias.name,
                         visibility.as_str(),
                         alias.target
+                    ),
+                ));
+            }
+        }
+        for site in &self.constants {
+            let referenced = self
+                .types
+                .iter()
+                .find(|entry| entry.name == site.type_name)
+                .map(|entry| entry.visibility)
+                .or_else(|| {
+                    self.aliases
+                        .iter()
+                        .find(|entry| entry.name == site.type_name)
+                        .map(|entry| entry.visibility)
+                });
+            if let Some(visibility) = referenced
+                && !visibility.admits_reference_from(site.visibility)
+            {
+                return Err(AdtError::new(
+                    AdtDiagnosticCode::InvisibleReference,
+                    format!(
+                        "{} constant {} references {} {}",
+                        site.visibility.as_str(),
+                        site.name,
+                        visibility.as_str(),
+                        site.type_name
                     ),
                 ));
             }

@@ -26,7 +26,7 @@
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "0a0e00561b875059e8f1d96fab946b553d938d9738283ca794bb7ab1d0ccea88"
+   "sha256": "889a31e2906ad545120d2fa8272f399ce05a0646db17f6c218338219ce418c99"
   },
   {
    "path": "protocol/conformance/async-execution-observation-v1.json",
@@ -34,7 +34,7 @@
   },
   {
    "path": "protocol/conformance/async-source-lowering-v1.json",
-   "sha256": "250c28a1ba6b02d15218725e9efb4dc7c6a9355f92bd6f776c148e731e2b32d9"
+   "sha256": "52496ceabbf0901be91ec401a5b281c774128f5e7f8c6910a225db8bbf5e7e55"
   },
   {
    "path": "protocol/conformance/durable-coordination-v1.json",

@@ -18,7 +18,7 @@
   },
   {
    "path": "protocol/conformance/source-substrate-gate-v1.json",
-   "sha256": "3379d862bb7decca8fa60101a7b42e237e58c9a8630f3d544373fb58f626f73d"
+   "sha256": "493e129fdeb9a4eda83ffb1bec7aeaff2ffe853fd54dfcaa08c88f558e44b53e"
   },
   {
    "path": "protocol/goldens/activity-observation-vectors-v1.json",

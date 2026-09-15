@@ -32,6 +32,7 @@ fn constructor(name: &str, tag: u32, fields: Vec<AdtField>) -> AdtConstructor {
     AdtConstructor {
         name: name.to_owned(),
         tag,
+        parameters: Vec::new(),
         fields,
     }
 }
@@ -350,6 +351,100 @@ fn aliases_resolve_transitively_and_cycles_are_refused() {
         builder.finish().refused("an alias-only cycle").code(),
         AdtDiagnosticCode::AliasCycle
     );
+}
+
+#[test]
+fn constructors_must_carry_their_type_parameter_list() {
+    let mut builder = AdtPackageBuilder::new("gantry.example");
+    builder.declare_leaf("Int");
+    builder
+        .declare_type(AdtTypeDeclaration {
+            name: "Boxed".to_owned(),
+            visibility: AdtVisibility::Public,
+            parameters: vec!["T".to_owned()],
+            constructors: vec![AdtConstructor {
+                name: "Box".to_owned(),
+                tag: 0,
+                parameters: vec!["T".to_owned()],
+                fields: vec![field("value", "Int")],
+            }],
+        })
+        .unwrap_or_else(|error| panic!("declaration: {error}"));
+    let model = builder
+        .finish()
+        .unwrap_or_else(|error| panic!("model: {error}"));
+    assert_eq!(model.resolve_type("Boxed"), Some("Boxed"));
+
+    let mut mismatch = AdtPackageBuilder::new("gantry.example");
+    mismatch.declare_leaf("Int");
+    assert_eq!(
+        mismatch
+            .declare_type(AdtTypeDeclaration {
+                name: "Boxed".to_owned(),
+                visibility: AdtVisibility::Public,
+                parameters: vec!["T".to_owned()],
+                constructors: vec![AdtConstructor {
+                    name: "Box".to_owned(),
+                    tag: 0,
+                    parameters: Vec::new(),
+                    fields: vec![field("value", "Int")],
+                }],
+            })
+            .refused("a constructor departing from its type's parameter list")
+            .code(),
+        AdtDiagnosticCode::ConstructorArity
+    );
+}
+
+#[test]
+fn constant_sites_admit_only_open_enough_types() {
+    let mut builder = AdtPackageBuilder::new("gantry.example");
+    builder.declare_leaf("Int");
+    declare(
+        &mut builder,
+        declaration(
+            "Hidden",
+            AdtVisibility::Private,
+            vec![constructor("Hidden", 0, Vec::new())],
+        ),
+    );
+    builder
+        .declare_constant(AdtConstantSite {
+            name: "EXPOSED".to_owned(),
+            visibility: AdtVisibility::Public,
+            type_name: "Hidden".to_owned(),
+            value: AdtConstantValue::Tree(tree_node("Hidden", "Hidden", Vec::new())),
+        })
+        .unwrap_or_else(|error| panic!("constant: {error}"));
+    assert_eq!(
+        builder
+            .finish()
+            .refused("a public constant site naming a private type")
+            .code(),
+        AdtDiagnosticCode::InvisibleReference
+    );
+
+    let mut admitted = AdtPackageBuilder::new("gantry.example");
+    admitted.declare_leaf("Int");
+    declare(
+        &mut admitted,
+        declaration(
+            "Hidden",
+            AdtVisibility::Private,
+            vec![constructor("Hidden", 0, Vec::new())],
+        ),
+    );
+    admitted
+        .declare_constant(AdtConstantSite {
+            name: "INTERNAL".to_owned(),
+            visibility: AdtVisibility::Private,
+            type_name: "Hidden".to_owned(),
+            value: AdtConstantValue::Tree(tree_node("Hidden", "Hidden", Vec::new())),
+        })
+        .unwrap_or_else(|error| panic!("constant: {error}"));
+    admitted
+        .finish()
+        .unwrap_or_else(|error| panic!("a private constant site may name a private type: {error}"));
 }
 
 #[test]

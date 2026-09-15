@@ -46,7 +46,7 @@
   },
   {
    "path": "protocol/conformance/frontend-gate-v1.json",
-   "sha256": "03cafbe59342e479b19843a9c908f12ecac51ed0ba393ff2d3c1f6f4dd309fa2"
+   "sha256": "31db769abdac5d133d2cbfc3f0283a970c8c6da8c37b388fdd112db308cacc50"
   },
   {
    "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -174,8 +174,8 @@
  ],
  "profile": "analyzer",
  "review_summary": {
-  "applicable_clause_count": 649,
-  "covered_count": 461,
+  "applicable_clause_count": 662,
+  "covered_count": 474,
   "not_applicable_count": 188
  },
  "section14_excerpt_count": 51,
