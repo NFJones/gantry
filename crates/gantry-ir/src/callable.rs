@@ -349,6 +349,48 @@ pub fn union_row(components: &[EffectSet]) -> EffectSet {
         .fold(EffectSet::default(), |row, component| row.union(*component))
 }
 
+/// Resolves one callable value's declared captures to its component row.
+///
+/// A capture contributes the row of the enclosing binding it names, and a
+/// binding that no capture names contributes nothing, so a captured callable
+/// contributes its declared row, an ordinary captured value contributes the
+/// empty row, and no uncaptured binding widens a row. A capture that names no
+/// offered binding is refused under the capture-refused diagnostic instead of
+/// contributing an empty row, so no captured effect is silently erased. The
+/// component row is the union of the contributing rows and is therefore
+/// independent of the order in which enclosing bindings are offered.
+pub fn resolve_captured_row(
+    value: &CallableValue,
+    bindings: &BTreeMap<&str, EffectSet>,
+) -> Result<EffectSet, CallableError> {
+    let mut row = EffectSet::default();
+    for descriptor in value.captures().captures() {
+        let name = descriptor.name();
+        let Some(binding) = bindings.get(name) else {
+            return Err(capture(format!(
+                "capture `{name}` names no offered enclosing binding"
+            )));
+        };
+        row = row.union(*binding);
+    }
+    Ok(row)
+}
+
+/// Requires one callable value's declared row to contain its component row.
+///
+/// The refusal is the single effect-erasure rule of the effect-row contract: a
+/// declared row that omits, narrows, or erases a composed component effect is
+/// refused rather than admitted as an approximation. The resolved component row
+/// is returned so a caller can publish the composition it checked.
+pub fn require_captured_row(
+    value: &CallableValue,
+    bindings: &BTreeMap<&str, EffectSet>,
+) -> Result<EffectSet, CallableError> {
+    let row = resolve_captured_row(value, bindings)?;
+    value.require_closed_row(&[row])?;
+    Ok(row)
+}
+
 /// One declared capture of a callable's environment.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CaptureDescriptor {

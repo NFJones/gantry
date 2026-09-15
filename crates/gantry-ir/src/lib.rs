@@ -119,7 +119,8 @@ pub use callable::{
     BindingFacts, BindingState, CallAdmission, CallSettlement, CallableDiagnosticCode,
     CallableError, CallableKind, CallableLimits, CallableProjection, CallableType, CallableValue,
     CaptureAccess, CaptureCandidate, CaptureClass, CaptureDescriptor, CaptureInference,
-    CaptureMode, CapturePlan, ReuseState, resolve_capture_set, union_row,
+    CaptureMode, CapturePlan, ReuseState, require_captured_row, resolve_capture_set,
+    resolve_captured_row, union_row,
 };
 pub use callable_identity::{
     CallableIdentityError, CanonicalCallableIdentity, CanonicalTemplateIdentity,

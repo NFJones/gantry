@@ -1,11 +1,14 @@
 //! Callable-value, capture, reuse, and frame-admission evidence.
 
+use std::collections::BTreeMap;
+
 use gantry::ir::generated::Effect;
 use gantry::ir::{
     BindingFacts, BindingState, CallSettlement, CallableDiagnosticCode, CallableKind,
     CallableLimits, CallableProjection, CallableType, CallableValue, CaptureAccess,
     CaptureCandidate, CaptureClass, CaptureDescriptor, CaptureInference, CaptureMode, CapturePlan,
-    EffectSet, OwnershipClass, ReuseState, resolve_capture_set, union_row,
+    EffectSet, OwnershipClass, ReuseState, require_captured_row, resolve_capture_set,
+    resolve_captured_row, union_row,
 };
 
 /// Returns the refusal produced by one rejected callable decision.
@@ -438,6 +441,72 @@ fn declared_rows_never_erase_component_effects() {
     assert_eq!(union_row(&[prompt, spawn]), union_row(&[spawn, prompt]));
     assert_eq!(union_row(&[]), EffectSet::default());
     assert_eq!(value.row(), union_row(&[prompt, spawn]));
+}
+
+#[test]
+fn capture_rows_compose_from_offered_enclosing_bindings() {
+    let value = composed(
+        CallableKind::Function,
+        &["Int"],
+        "Int",
+        &[("beta", CaptureMode::Copy), ("alpha", CaptureMode::Copy)],
+        &[Effect::Prompt, Effect::Spawn],
+    );
+    let prompt = row(&[Effect::Prompt]);
+    let spawn = row(&[Effect::Spawn]);
+    let mut offered = BTreeMap::new();
+    offered.insert("alpha", prompt);
+    offered.insert("beta", spawn);
+    let resolved = resolve_captured_row(&value, &offered)
+        .unwrap_or_else(|error| panic!("captured row: {error}"));
+    assert_eq!(resolved, union_row(&[prompt, spawn]));
+
+    // A binding that no capture names cannot widen a row.
+    let mut widened = offered.clone();
+    widened.insert("gamma", row(&[Effect::Session]));
+    assert_eq!(
+        resolve_captured_row(&value, &widened).unwrap_or_else(|error| panic!("row: {error}")),
+        resolved
+    );
+
+    // An ordinary captured value contributes no effect.
+    let mut plain = BTreeMap::new();
+    plain.insert("alpha", EffectSet::default());
+    plain.insert("beta", spawn);
+    assert_eq!(
+        resolve_captured_row(&value, &plain).unwrap_or_else(|error| panic!("row: {error}")),
+        spawn
+    );
+
+    // A capture that names no offered binding is refused instead of erasing its effect.
+    let mut missing = BTreeMap::new();
+    missing.insert("alpha", prompt);
+    let refusal =
+        resolve_captured_row(&value, &missing).refused("capture without an offered binding");
+    assert_eq!(refusal.code(), CallableDiagnosticCode::CaptureRefused);
+    assert!(refusal.detail().contains("beta"), "{refusal}");
+
+    // A value with no captures composes the empty row.
+    assert_eq!(
+        resolve_captured_row(&callable(CallableKind::Function), &BTreeMap::new())
+            .unwrap_or_else(|error| panic!("row: {error}")),
+        EffectSet::default()
+    );
+
+    // The declared row must contain the composed component row.
+    assert_eq!(
+        require_captured_row(&value, &offered).unwrap_or_else(|error| panic!("row: {error}")),
+        resolved
+    );
+    let narrow = composed(
+        CallableKind::Function,
+        &["Int"],
+        "Int",
+        &[("beta", CaptureMode::Copy), ("alpha", CaptureMode::Copy)],
+        &[Effect::Prompt],
+    );
+    let refusal = require_captured_row(&narrow, &offered).refused("row erasing a captured effect");
+    assert_eq!(refusal.code(), CallableDiagnosticCode::EffectErasure);
 }
 
 #[test]
