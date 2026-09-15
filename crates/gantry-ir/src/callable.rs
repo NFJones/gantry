@@ -15,6 +15,12 @@
 //! `FnOnce` that admits every assigned mode, so a class never defaults a mode
 //! and no class is read from a call site or a boundary encoding.
 //!
+//! A class is never chosen by a caller: it is derived by one ordered rule from
+//! the declaration facts of the offered binding, which are the ownership class
+//! of its declared type, whether its state is private to the capture, and
+//! whether the offer is a borrow scoped to the declaring statement, so a caller
+//! cannot claim a class its facts do not support.
+//!
 //! It defines no source syntax, no runtime representation or native frame
 //! layout, no dynamic dispatch, no trait solving, and no ambient capture, and it
 //! admits no callable type into any analyzed, executable, or durable artifact:
@@ -32,6 +38,7 @@ use std::fmt;
 
 use crate::effects::{EFFECT_ORDER, EffectSet};
 use crate::generated::Effect;
+use crate::type_properties::OwnershipClass;
 
 /// Canonical tag carried by every callable encoding.
 const CALLABLE_TAG: &str = "gantry-callable-v1";
@@ -456,13 +463,83 @@ impl CapturePlan {
     }
 }
 
-/// One declared class of a binding offered to capture-mode assignment.
+/// How one offered binding's state is observable outside the capture.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum BindingState {
+    /// The binding's value is an independent logical value: the enclosing
+    /// declaration keeps no state that the capture would own privately.
+    Independent,
+    /// The binding's state is private to the capture: the enclosing declaration
+    /// observes it only through the callable, so the capture owns it.
+    Private,
+}
+
+/// How one capture reaches the binding it captures.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CaptureAccess {
+    /// The capture takes the binding's value into the callable.
+    ByValue,
+    /// The capture borrows the binding only for the statement that declares the
+    /// callable, so the capture may not escape that statement.
+    StatementBorrow,
+}
+
+/// The declaration facts one offered binding carries into capture assignment.
 ///
-/// The class is a declaration by the offering analysis, never a guess from a
-/// call site: a freely copyable binding produces an independent logical value, a
-/// binding whose state is private to the callable or that is affine is moved
-/// into it, and a temporary loan borrows one outer binding for the callable's
-/// live extent.
+/// Facts are established by the declaring analysis: the ownership class of the
+/// binding's declared type, whether the binding's state is private to the
+/// capture, and whether the offer is a statement-scoped borrow. The capture
+/// class follows from them by one ordered rule, so a caller cannot name a class
+/// that its facts do not support and no class is read from a call site, a
+/// boundary encoding, or a recovery outcome.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BindingFacts {
+    ownership: OwnershipClass,
+    state: BindingState,
+    access: CaptureAccess,
+}
+
+impl BindingFacts {
+    /// Records the declaration facts of one offered binding.
+    #[must_use]
+    pub const fn new(
+        ownership: OwnershipClass,
+        state: BindingState,
+        access: CaptureAccess,
+    ) -> Self {
+        Self {
+            ownership,
+            state,
+            access,
+        }
+    }
+
+    /// Returns the ownership class of the binding's declared type.
+    #[must_use]
+    pub const fn ownership(self) -> OwnershipClass {
+        self.ownership
+    }
+
+    /// Returns how the binding's state is observable outside the capture.
+    #[must_use]
+    pub const fn state(self) -> BindingState {
+        self.state
+    }
+
+    /// Returns how the capture reaches the binding.
+    #[must_use]
+    pub const fn access(self) -> CaptureAccess {
+        self.access
+    }
+}
+
+/// One capture class derived from a binding's declaration facts.
+///
+/// The class is derived by one ordered rule, never chosen by a caller and never
+/// a guess from a call site: a statement-scoped borrow is a temporary loan, a
+/// binding whose ownership class prohibits copying is affine, a binding whose
+/// state is private to the capture is private state, and every remaining
+/// binding is freely copyable.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CaptureClass {
     /// A binding whose value is freely copyable.
@@ -503,6 +580,31 @@ impl CaptureClass {
             .ok_or_else(|| capture(format!("`{name}` is not an admitted capture class")))
     }
 
+    /// Derives the capture class of one binding from its declaration facts by
+    /// one ordered rule.
+    ///
+    /// A statement-scoped borrow is a temporary loan; otherwise a binding whose
+    /// ownership class prohibits copying is affine; otherwise a binding whose
+    /// state is private to the capture is private state; otherwise the binding
+    /// is freely copyable. The rule is total over recorded facts, so one fact
+    /// set yields exactly one class and no call site, boundary encoding, or
+    /// recovery outcome participates.
+    #[must_use]
+    pub const fn from_facts(facts: BindingFacts) -> Self {
+        match facts.access {
+            CaptureAccess::StatementBorrow => Self::TemporaryLoan,
+            CaptureAccess::ByValue => {
+                if facts.ownership.requires_consumption() {
+                    Self::Affine
+                } else if matches!(facts.state, BindingState::Private) {
+                    Self::PrivateState
+                } else {
+                    Self::FreelyCopyable
+                }
+            }
+        }
+    }
+
     /// Returns the mode this class assigns.
     #[must_use]
     pub const fn assigned_mode(self) -> CaptureMode {
@@ -537,7 +639,8 @@ impl fmt::Display for CaptureClass {
     }
 }
 
-/// One binding offered to capture-mode assignment with its declared class.
+/// One binding offered to capture-mode assignment with the class its
+/// declaration facts derive.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CaptureCandidate {
     name: String,
@@ -545,11 +648,11 @@ pub struct CaptureCandidate {
 }
 
 impl CaptureCandidate {
-    /// Declares one candidate capture, refusing an unnamed or over-budget
-    /// binding.
-    pub fn new(
+    /// Derives one candidate capture from an offered binding's declaration
+    /// facts, refusing an unnamed or over-budget binding.
+    pub fn from_facts(
         name: &str,
-        class: CaptureClass,
+        facts: BindingFacts,
         limits: CallableLimits,
     ) -> Result<Self, CallableError> {
         if name.is_empty() {
@@ -564,7 +667,7 @@ impl CaptureCandidate {
         }
         Ok(Self {
             name: name.to_owned(),
-            class,
+            class: CaptureClass::from_facts(facts),
         })
     }
 
@@ -574,11 +677,29 @@ impl CaptureCandidate {
         &self.name
     }
 
-    /// Returns the declared class.
+    /// Returns the class this candidate's declaration facts derive.
     #[must_use]
     pub const fn class(&self) -> CaptureClass {
         self.class
     }
+}
+
+/// Resolves one capture set from the enclosing bindings a callable reaches.
+///
+/// Offered bindings record declaration facts and may arrive in any order: each
+/// candidate is derived from its facts, and the set is returned in canonical
+/// binding-name order, so the offered order never reaches a plan. A duplicated
+/// binding and an over-budget set are refused when the set is assigned.
+pub fn resolve_capture_set(
+    offers: &[(&str, BindingFacts)],
+    limits: CallableLimits,
+) -> Result<Vec<CaptureCandidate>, CallableError> {
+    let mut candidates = Vec::with_capacity(offers.len());
+    for (name, facts) in offers {
+        candidates.push(CaptureCandidate::from_facts(name, *facts, limits)?);
+    }
+    candidates.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(candidates)
 }
 
 /// The plan and reuse kind assigned to one callable's offered captures.

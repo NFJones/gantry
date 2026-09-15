@@ -2,9 +2,10 @@
 
 use gantry::ir::generated::Effect;
 use gantry::ir::{
-    CallSettlement, CallableDiagnosticCode, CallableKind, CallableLimits, CallableProjection,
-    CallableType, CallableValue, CaptureCandidate, CaptureClass, CaptureDescriptor,
-    CaptureInference, CaptureMode, CapturePlan, EffectSet, ReuseState, union_row,
+    BindingFacts, BindingState, CallSettlement, CallableDiagnosticCode, CallableKind,
+    CallableLimits, CallableProjection, CallableType, CallableValue, CaptureAccess,
+    CaptureCandidate, CaptureClass, CaptureDescriptor, CaptureInference, CaptureMode, CapturePlan,
+    EffectSet, OwnershipClass, ReuseState, resolve_capture_set, union_row,
 };
 
 /// Returns the refusal produced by one rejected callable decision.
@@ -51,6 +52,32 @@ fn captures(entries: &[(&str, CaptureMode)]) -> CapturePlan {
         })
         .collect();
     CapturePlan::new(declared, limits).unwrap_or_else(|error| panic!("plan: {error}"))
+}
+
+/// Returns the canonical declaration facts that derive one capture class.
+fn facts(class: CaptureClass) -> BindingFacts {
+    match class {
+        CaptureClass::FreelyCopyable => BindingFacts::new(
+            OwnershipClass::Copyable,
+            BindingState::Independent,
+            CaptureAccess::ByValue,
+        ),
+        CaptureClass::PrivateState => BindingFacts::new(
+            OwnershipClass::Copyable,
+            BindingState::Private,
+            CaptureAccess::ByValue,
+        ),
+        CaptureClass::Affine => BindingFacts::new(
+            OwnershipClass::MustConsume,
+            BindingState::Independent,
+            CaptureAccess::ByValue,
+        ),
+        CaptureClass::TemporaryLoan => BindingFacts::new(
+            OwnershipClass::Copyable,
+            BindingState::Independent,
+            CaptureAccess::StatementBorrow,
+        ),
+    }
 }
 
 /// Builds one callable value with a single `Int` parameter and result.
@@ -909,7 +936,8 @@ fn capture_classes_assign_modes_and_require_kinds() {
     assert!(CallableKind::Function < CallableKind::FunctionMut);
     assert!(CallableKind::FunctionMut < CallableKind::FunctionOnce);
     for class in CaptureClass::ALL {
-        let candidate = CaptureCandidate::new("binding", class, limits)
+        assert_eq!(CaptureClass::from_facts(facts(class)), class);
+        let candidate = CaptureCandidate::from_facts("binding", facts(class), limits)
             .unwrap_or_else(|error| panic!("candidate: {error}"));
         assert_eq!(candidate.name(), "binding");
         assert_eq!(candidate.class(), class);
@@ -930,12 +958,12 @@ fn capture_classes_assign_modes_and_require_kinds() {
 
     let unknown = CaptureClass::from_canonical_name("borrow").refused("unknown capture class");
     assert_eq!(unknown.code(), CallableDiagnosticCode::CaptureRefused);
-    let unnamed =
-        CaptureCandidate::new("", CaptureClass::Affine, limits).refused("unnamed binding");
+    let unnamed = CaptureCandidate::from_facts("", facts(CaptureClass::Affine), limits)
+        .refused("unnamed binding");
     assert_eq!(unnamed.code(), CallableDiagnosticCode::CaptureRefused);
-    let long = CaptureCandidate::new(
+    let long = CaptureCandidate::from_facts(
         &"b".repeat(limits.max_name_bytes + 1),
-        CaptureClass::Affine,
+        facts(CaptureClass::Affine),
         limits,
     )
     .refused("over-budget binding name");
@@ -949,7 +977,7 @@ fn assigned_kinds_are_the_weakest_sufficient_kind() {
         entries
             .iter()
             .map(|(name, class)| {
-                CaptureCandidate::new(name, *class, limits)
+                CaptureCandidate::from_facts(name, facts(*class), limits)
                     .unwrap_or_else(|error| panic!("candidate: {error}"))
             })
             .collect()
@@ -1053,7 +1081,7 @@ fn assigned_kinds_are_the_weakest_sufficient_kind() {
 #[test]
 fn escaping_loans_and_duplicate_or_over_budget_offers_are_refused() {
     let limits = limits();
-    let loan = CaptureCandidate::new("outer", CaptureClass::TemporaryLoan, limits)
+    let loan = CaptureCandidate::from_facts("outer", facts(CaptureClass::TemporaryLoan), limits)
         .unwrap_or_else(|error| panic!("candidate: {error}"));
     let escaping =
         CaptureInference::infer(std::slice::from_ref(&loan), true, limits).refused("escaping loan");
@@ -1065,9 +1093,9 @@ fn escaping_loans_and_duplicate_or_over_budget_offers_are_refused() {
     assert!(!local.plan().is_durable());
 
     let repeated = vec![
-        CaptureCandidate::new("same", CaptureClass::FreelyCopyable, limits)
+        CaptureCandidate::from_facts("same", facts(CaptureClass::FreelyCopyable), limits)
             .unwrap_or_else(|error| panic!("candidate: {error}")),
-        CaptureCandidate::new("same", CaptureClass::PrivateState, limits)
+        CaptureCandidate::from_facts("same", facts(CaptureClass::PrivateState), limits)
             .unwrap_or_else(|error| panic!("candidate: {error}")),
     ];
     let duplicate = CaptureInference::infer(&repeated, false, limits).refused("duplicate binding");
@@ -1075,9 +1103,9 @@ fn escaping_loans_and_duplicate_or_over_budget_offers_are_refused() {
 
     let over_budget: Vec<CaptureCandidate> = (0..=limits.max_captures)
         .map(|index| {
-            CaptureCandidate::new(
+            CaptureCandidate::from_facts(
                 &format!("binding{index}"),
-                CaptureClass::FreelyCopyable,
+                facts(CaptureClass::FreelyCopyable),
                 limits,
             )
             .unwrap_or_else(|error| panic!("candidate: {error}"))
@@ -1087,12 +1115,119 @@ fn escaping_loans_and_duplicate_or_over_budget_offers_are_refused() {
     assert_eq!(budget.code(), CallableDiagnosticCode::ShapeRefused);
 
     let mixed = vec![
-        CaptureCandidate::new("a", CaptureClass::Affine, limits)
+        CaptureCandidate::from_facts("a", facts(CaptureClass::Affine), limits)
             .unwrap_or_else(|error| panic!("candidate: {error}")),
-        CaptureCandidate::new("b", CaptureClass::TemporaryLoan, limits)
+        CaptureCandidate::from_facts("b", facts(CaptureClass::TemporaryLoan), limits)
             .unwrap_or_else(|error| panic!("candidate: {error}")),
     ];
     let refused =
         CaptureInference::infer(&mixed, true, limits).refused("loan in an escaping callable");
     assert_eq!(refused.code(), CallableDiagnosticCode::CaptureRefused);
+}
+
+#[test]
+fn capture_classes_follow_declaration_facts() {
+    let limits = limits();
+    let derived = |ownership, state, access| {
+        CaptureClass::from_facts(BindingFacts::new(ownership, state, access))
+    };
+
+    // A statement-scoped borrow is a loan whatever the other facts are.
+    for ownership in [
+        OwnershipClass::Copyable,
+        OwnershipClass::AffineDroppable,
+        OwnershipClass::MustConsume,
+    ] {
+        for state in [BindingState::Independent, BindingState::Private] {
+            assert_eq!(
+                derived(ownership, state, CaptureAccess::StatementBorrow),
+                CaptureClass::TemporaryLoan
+            );
+        }
+    }
+
+    // A binding whose ownership class prohibits copying is affine whether or
+    // not its state is private, and a privately held copyable binding is private
+    // state rather than an independent copy.
+    for ownership in [OwnershipClass::AffineDroppable, OwnershipClass::MustConsume] {
+        for state in [BindingState::Independent, BindingState::Private] {
+            assert_eq!(
+                derived(ownership, state, CaptureAccess::ByValue),
+                CaptureClass::Affine
+            );
+        }
+    }
+    assert_eq!(
+        derived(
+            OwnershipClass::Copyable,
+            BindingState::Private,
+            CaptureAccess::ByValue
+        ),
+        CaptureClass::PrivateState
+    );
+    assert_eq!(
+        derived(
+            OwnershipClass::Copyable,
+            BindingState::Independent,
+            CaptureAccess::ByValue
+        ),
+        CaptureClass::FreelyCopyable
+    );
+
+    // One fact set yields exactly one class, and every class carries facts that
+    // derive it, so no caller can claim an unsupported class.
+    for class in CaptureClass::ALL {
+        let recorded = facts(class);
+        assert_eq!(CaptureClass::from_facts(recorded), class);
+        let candidate = CaptureCandidate::from_facts("binding", recorded, limits)
+            .unwrap_or_else(|error| panic!("candidate: {error}"));
+        assert_eq!(candidate.class(), class);
+    }
+
+    // The capture set resolved from enclosing bindings is ordered by binding
+    // name whatever order the bindings are offered in, and a duplicated binding
+    // is still refused when the set is assigned.
+    let forward = resolve_capture_set(
+        &[
+            ("zeta", facts(CaptureClass::Affine)),
+            ("alpha", facts(CaptureClass::FreelyCopyable)),
+        ],
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("resolve: {error}"));
+    let reversed = resolve_capture_set(
+        &[
+            ("alpha", facts(CaptureClass::FreelyCopyable)),
+            ("zeta", facts(CaptureClass::Affine)),
+        ],
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("resolve: {error}"));
+    assert_eq!(forward, reversed);
+    let assignment = CaptureInference::infer(&forward, false, limits)
+        .unwrap_or_else(|error| panic!("assignment: {error}"));
+    assert_eq!(assignment.kind(), CallableKind::FunctionOnce);
+    let names: Vec<&str> = assignment
+        .plan()
+        .captures()
+        .iter()
+        .map(CaptureDescriptor::name)
+        .collect();
+    assert_eq!(names, vec!["alpha", "zeta"]);
+
+    let repeated = resolve_capture_set(
+        &[
+            ("same", facts(CaptureClass::FreelyCopyable)),
+            ("same", facts(CaptureClass::PrivateState)),
+        ],
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("resolve: {error}"));
+    let duplicate = CaptureInference::infer(&repeated, false, limits).refused("duplicate binding");
+    assert_eq!(duplicate.code(), CallableDiagnosticCode::CaptureRefused);
+
+    let loan = resolve_capture_set(&[("outer", facts(CaptureClass::TemporaryLoan))], limits)
+        .unwrap_or_else(|error| panic!("resolve: {error}"));
+    let escaping = CaptureInference::infer(&loan, true, limits).refused("escaping loan");
+    assert_eq!(escaping.code(), CallableDiagnosticCode::CaptureRefused);
 }

@@ -116,10 +116,10 @@ pub use authority::{
 // type is admitted into an artifact, and `CallableType` only realizes the
 // published `GNT-37.1` identity, so these rules bind no analyzed artifact yet.
 pub use callable::{
-    CallAdmission, CallSettlement, CallableDiagnosticCode, CallableError, CallableKind,
-    CallableLimits, CallableProjection, CallableType, CallableValue, CaptureCandidate,
-    CaptureClass, CaptureDescriptor, CaptureInference, CaptureMode, CapturePlan, ReuseState,
-    union_row,
+    BindingFacts, BindingState, CallAdmission, CallSettlement, CallableDiagnosticCode,
+    CallableError, CallableKind, CallableLimits, CallableProjection, CallableType, CallableValue,
+    CaptureAccess, CaptureCandidate, CaptureClass, CaptureDescriptor, CaptureInference,
+    CaptureMode, CapturePlan, ReuseState, resolve_capture_set, union_row,
 };
 pub use callable_identity::{
     CallableIdentityError, CanonicalCallableIdentity, CanonicalTemplateIdentity,
