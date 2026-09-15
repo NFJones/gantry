@@ -918,3 +918,126 @@ fn diagnostic_codes_are_frozen_and_single_owner() {
     assert_eq!(error.code().code(), "adt-alias-cycle");
     assert_eq!(error.detail(), "cycle");
 }
+
+#[test]
+fn constant_trees_resolve_alias_spellings_to_one_identity() {
+    let build = |spelling: &str| {
+        let mut builder = AdtPackageBuilder::new("gantry.example");
+        builder.declare_leaf("Int");
+        declare(&mut builder, list_type(AdtVisibility::Public));
+        builder
+            .declare_alias(AdtAliasDeclaration {
+                name: "Ints".to_owned(),
+                visibility: AdtVisibility::Public,
+                parameters: Vec::new(),
+                target: "List".to_owned(),
+            })
+            .unwrap_or_else(|error| panic!("alias: {error}"));
+        builder
+            .declare_constant(AdtConstantSite {
+                name: "ONES".to_owned(),
+                visibility: AdtVisibility::Public,
+                type_name: "Ints".to_owned(),
+                value: AdtConstantValue::Tree(tree_node(
+                    spelling,
+                    "Cons",
+                    vec![tree_scalar(1), tree_node(spelling, "Nil", Vec::new())],
+                )),
+            })
+            .unwrap_or_else(|error| panic!("constant: {error}"));
+        builder
+            .finish()
+            .unwrap_or_else(|error| panic!("model: {error}"))
+    };
+    let aliased = build("Ints");
+    let target = build("List");
+    assert_eq!(
+        aliased.canonical_schema(),
+        target.canonical_schema(),
+        "an alias spelling never reaches the canonical schema"
+    );
+    assert_eq!(aliased.identity(), target.identity());
+    let rebuilt = AdtPackageModel::from_projection(&aliased.durable_projection())
+        .unwrap_or_else(|error| panic!("round trip: {error}"));
+    assert_eq!(rebuilt.identity(), target.identity());
+}
+
+#[test]
+fn projection_rebuild_failures_are_refused_as_round_trip_loss() {
+    let mut builder = AdtPackageBuilder::new("gantry.example");
+    builder.declare_leaf("Int");
+    declare(&mut builder, list_type(AdtVisibility::Public));
+    builder
+        .declare_alias(AdtAliasDeclaration {
+            name: "Ints".to_owned(),
+            visibility: AdtVisibility::Public,
+            parameters: Vec::new(),
+            target: "List".to_owned(),
+        })
+        .unwrap_or_else(|error| panic!("alias: {error}"));
+    let model = builder
+        .finish()
+        .unwrap_or_else(|error| panic!("model: {error}"));
+    let projection = model.durable_projection();
+
+    let mut omitted = projection.clone();
+    omitted.types.retain(|entry| entry.name != "List");
+    assert_eq!(
+        AdtPackageModel::from_projection(&omitted)
+            .refused("a projection omitting a referenced type")
+            .code(),
+        AdtDiagnosticCode::RoundTripLoss
+    );
+
+    let mut duplicated = projection.clone();
+    let list = duplicated.types[0].clone();
+    duplicated.types.push(list);
+    assert_eq!(
+        AdtPackageModel::from_projection(&duplicated)
+            .refused("a projection duplicating a carried type")
+            .code(),
+        AdtDiagnosticCode::RoundTripLoss
+    );
+}
+
+#[test]
+fn durable_projections_canonicalize_constructor_order() {
+    let build = |order: [(&str, u32); 2]| {
+        let mut builder = AdtPackageBuilder::new("gantry.example");
+        declare(
+            &mut builder,
+            declaration(
+                "Choice",
+                AdtVisibility::Public,
+                order
+                    .iter()
+                    .map(|(name, tag)| constructor(name, *tag, Vec::new()))
+                    .collect(),
+            ),
+        );
+        builder
+            .finish()
+            .unwrap_or_else(|error| panic!("model: {error}"))
+    };
+    let declared_late = build([("Later", 7), ("Earlier", 2)]);
+    let declared_early = build([("Earlier", 2), ("Later", 7)]);
+    assert_eq!(declared_late.identity(), declared_early.identity());
+    let projection = declared_late.durable_projection();
+    assert_eq!(projection, declared_early.durable_projection());
+    assert_eq!(
+        projection.types[0]
+            .constructors
+            .iter()
+            .map(|constructor| constructor.name.as_str())
+            .collect::<Vec<&str>>(),
+        vec!["Earlier", "Later"]
+    );
+    let mut reordered = projection.clone();
+    reordered.types[0].constructors.reverse();
+    assert_eq!(
+        AdtPackageModel::from_projection(&reordered)
+            .refused("a projection reordering constructors inside a carried type")
+            .code(),
+        AdtDiagnosticCode::RoundTripLoss
+    );
+}

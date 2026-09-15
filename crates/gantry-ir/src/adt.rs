@@ -398,11 +398,11 @@ pub struct AdtDurableProjection {
     pub package: String,
     /// The declared leaf type names.
     pub leaves: Vec<String>,
-    /// The declared types, in declaration order.
+    /// The declared types, in canonical name order with constructors in tag order.
     pub types: Vec<AdtTypeDeclaration>,
-    /// The declared aliases, in declaration order.
+    /// The declared aliases, in canonical name order.
     pub aliases: Vec<AdtAliasDeclaration>,
-    /// The declared constant sites, in declaration order.
+    /// The declared constant sites, in canonical name order.
     pub constants: Vec<AdtConstantSite>,
     /// The identity the projection must rebuild.
     pub identity: String,
@@ -688,25 +688,6 @@ impl AdtPackageModel {
         }
         let mut constants: Vec<&AdtConstantSite> = self.constants.iter().collect();
         constants.sort_by(|left, right| left.name.cmp(&right.name));
-        fn encode_tree(tree: &AdtConstantTree) -> String {
-            match tree {
-                AdtConstantTree::Scalar(value) => format!("scalar({value})"),
-                AdtConstantTree::Constructor {
-                    type_name,
-                    constructor,
-                    arguments,
-                } => format!(
-                    "node({}::{}{})",
-                    encode_component(type_name),
-                    encode_component(constructor),
-                    arguments
-                        .iter()
-                        .map(|argument| format!("[{}]", encode_tree(argument)))
-                        .collect::<Vec<String>>()
-                        .join("")
-                ),
-            }
-        }
         for site in constants {
             lines.push(format!(
                 "constant {} {} : {} = {}",
@@ -717,12 +698,37 @@ impl AdtPackageModel {
                         .unwrap_or(&site.type_name)
                 ),
                 match &site.value {
-                    AdtConstantValue::Tree(tree) => encode_tree(tree),
+                    AdtConstantValue::Tree(tree) => self.encode_tree(tree),
                     AdtConstantValue::Deferred { .. } => "deferred".to_owned(),
                 }
             ));
         }
         lines.join("\n")
+    }
+
+    /// Encodes one constant tree with alias-resolved node type names (`GNT-36.4`).
+    ///
+    /// An alias never creates a second identity for its target, so a node spelled with
+    /// an alias encodes exactly like the same node spelled with the resolved
+    /// declaration: no alias spelling reaches the canonical schema or the identity.
+    fn encode_tree(&self, tree: &AdtConstantTree) -> String {
+        match tree {
+            AdtConstantTree::Scalar(value) => format!("scalar({value})"),
+            AdtConstantTree::Constructor {
+                type_name,
+                constructor,
+                arguments,
+            } => format!(
+                "node({}::{}{})",
+                encode_component(self.resolve_name(type_name).unwrap_or(type_name)),
+                encode_component(constructor),
+                arguments
+                    .iter()
+                    .map(|argument| format!("[{}]", self.encode_tree(argument)))
+                    .collect::<Vec<String>>()
+                    .join("")
+            ),
+        }
     }
 
     /// The stable identity of the declaration set.
@@ -945,6 +951,11 @@ impl AdtPackageModel {
     pub fn durable_projection(&self) -> AdtDurableProjection {
         let mut types = self.types.clone();
         types.sort_by(|left, right| left.name.cmp(&right.name));
+        for declaration in &mut types {
+            declaration
+                .constructors
+                .sort_by_key(|constructor| constructor.tag);
+        }
         let mut aliases = self.aliases.clone();
         aliases.sort_by(|left, right| left.name.cmp(&right.name));
         let mut constants = self.constants.clone();
@@ -961,20 +972,36 @@ impl AdtPackageModel {
 
     /// Rebuilds a declaration set from a durable projection.
     pub fn from_projection(projection: &AdtDurableProjection) -> Result<Self, AdtError> {
-        let mut builder = AdtPackageBuilder::new(projection.package.clone());
-        for leaf in &projection.leaves {
-            builder.declare_leaf(leaf);
-        }
-        for declaration in &projection.types {
-            builder.declare_type(declaration.clone())?;
-        }
-        for alias in &projection.aliases {
-            builder.declare_alias(alias.clone())?;
-        }
-        for site in &projection.constants {
-            builder.declare_constant(site.clone())?;
-        }
-        let model = builder.finish()?;
+        // A projection is derived from a validated model, so a carried declaration the
+        // rebuild refuses is an omitted, reordered, or altered one: the refusal names
+        // the round trip rather than the clause that would own the same declaration in
+        // an ordinary declaration set (`GNT-36.11`).
+        let rebuild = || -> Result<Self, AdtError> {
+            let mut builder = AdtPackageBuilder::new(projection.package.clone());
+            for leaf in &projection.leaves {
+                builder.declare_leaf(leaf);
+            }
+            for declaration in &projection.types {
+                builder.declare_type(declaration.clone())?;
+            }
+            for alias in &projection.aliases {
+                builder.declare_alias(alias.clone())?;
+            }
+            for site in &projection.constants {
+                builder.declare_constant(site.clone())?;
+            }
+            builder.finish()
+        };
+        let model = rebuild().map_err(|error| {
+            AdtError::new(
+                AdtDiagnosticCode::RoundTripLoss,
+                format!(
+                    "the projection carries a declaration that does not rebuild ({}): {}",
+                    error.code().code(),
+                    error.detail()
+                ),
+            )
+        })?;
         let canonical = model.durable_projection();
         if canonical.leaves != projection.leaves
             || canonical.types != projection.types
