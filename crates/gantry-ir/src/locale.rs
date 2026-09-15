@@ -50,6 +50,15 @@ pub const MAX_RULE_DATA_TRANSITIONS: usize = 4_096;
 /// The maximum admitted presentation text length in bytes.
 pub const MAX_PRESENTATION_TEXT_BYTES: usize = 4_096;
 
+/// The minimum admitted proleptic Gregorian year, matching the landed instant range.
+pub const MIN_CIVIL_YEAR: i64 = 0;
+
+/// The maximum admitted proleptic Gregorian year, matching the landed instant range.
+pub const MAX_CIVIL_YEAR: i64 = 9_999;
+
+/// The maximum admitted absolute duration in seconds.
+pub const MAX_DURATION_SECONDS: i64 = 9_007_199_254_740_991;
+
 /// One closed machine format of `GNT-33.1-locale-neutral-machine-formats`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MachineFormat {
@@ -121,6 +130,16 @@ impl CollationIdentity {
             .into_iter()
             .find(|identity| identity.wire_name() == value)
     }
+
+    /// Admits one declared collation name, refusing a name outside the declared set.
+    pub fn admit(value: &str) -> Result<Self, LocaleError> {
+        Self::from_wire_name(value).ok_or_else(|| {
+            LocaleError::new(
+                LocaleDiagnosticCode::InvalidLocaleIdentity,
+                format!("`{value}` is not a declared collation identity"),
+            )
+        })
+    }
 }
 
 /// One closed calendar identity of `GNT-33.3-civil-time-timestamp-and-offset-values`.
@@ -148,6 +167,16 @@ impl CalendarIdentity {
         Self::ALL
             .into_iter()
             .find(|identity| identity.wire_name() == value)
+    }
+
+    /// Admits one declared calendar name, refusing a name outside the declared set.
+    pub fn admit(value: &str) -> Result<Self, LocaleError> {
+        Self::from_wire_name(value).ok_or_else(|| {
+            LocaleError::new(
+                LocaleDiagnosticCode::InvalidCivilValue,
+                format!("`{value}` is not a declared calendar identity"),
+            )
+        })
     }
 }
 
@@ -248,8 +277,12 @@ pub enum LocaleDiagnosticCode {
     NonexistentCivilTime,
     /// `locale-non-claim-as-guarantee`
     NonClaimAsGuarantee,
+    /// `locale-presentation-not-authority`
+    PresentationNotAuthority,
     /// `locale-rule-data-identity-mismatch`
     RuleDataIdentityMismatch,
+    /// `locale-rule-data-unavailable`
+    RuleDataUnavailable,
     /// `locale-silent-rule-data-upgrade`
     SilentRuleDataUpgrade,
     /// `locale-stale-rule-data`
@@ -260,7 +293,7 @@ pub enum LocaleDiagnosticCode {
 
 impl LocaleDiagnosticCode {
     /// Every diagnostic in canonical spelling order.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 15] = [
         Self::AmbientPreference,
         Self::AmbiguousCivilTime,
         Self::HostConsultationRefused,
@@ -270,7 +303,9 @@ impl LocaleDiagnosticCode {
         Self::MissingDisambiguation,
         Self::NonClaimAsGuarantee,
         Self::NonexistentCivilTime,
+        Self::PresentationNotAuthority,
         Self::RuleDataIdentityMismatch,
+        Self::RuleDataUnavailable,
         Self::SilentRuleDataUpgrade,
         Self::StaleRuleData,
         Self::UnsupportedLocaleData,
@@ -289,7 +324,9 @@ impl LocaleDiagnosticCode {
             Self::MissingDisambiguation => "locale-missing-disambiguation",
             Self::NonexistentCivilTime => "locale-nonexistent-civil-time",
             Self::NonClaimAsGuarantee => "locale-non-claim-as-guarantee",
+            Self::PresentationNotAuthority => "locale-presentation-not-authority",
             Self::RuleDataIdentityMismatch => "locale-rule-data-identity-mismatch",
+            Self::RuleDataUnavailable => "locale-rule-data-unavailable",
             Self::SilentRuleDataUpgrade => "locale-silent-rule-data-upgrade",
             Self::StaleRuleData => "locale-stale-rule-data",
             Self::UnsupportedLocaleData => "locale-unsupported-locale-data",
@@ -315,8 +352,10 @@ impl LocaleDiagnosticCode {
             Self::RuleDataIdentityMismatch => LOCALE_CLAUSES[5],
             Self::AmbientPreference => LOCALE_CLAUSES[6],
             Self::UnsupportedLocaleData => LOCALE_CLAUSES[7],
+            Self::PresentationNotAuthority => LOCALE_CLAUSES[8],
             Self::HostConsultationRefused => LOCALE_CLAUSES[9],
             Self::SilentRuleDataUpgrade | Self::StaleRuleData => LOCALE_CLAUSES[10],
+            Self::RuleDataUnavailable => LOCALE_CLAUSES[11],
             Self::NonClaimAsGuarantee => LOCALE_CLAUSES[12],
         }
     }
@@ -427,8 +466,14 @@ pub struct Duration {
 }
 
 impl Duration {
-    /// Declares one exact signed duration in seconds.
+    /// Declares one exact signed duration in seconds within the declared bound.
     pub fn new(seconds: i64) -> Result<Self, LocaleError> {
+        if seconds.unsigned_abs() > MAX_DURATION_SECONDS.unsigned_abs() {
+            return Err(LocaleError::new(
+                LocaleDiagnosticCode::InvalidMachineFormat,
+                format!("duration {seconds} exceeds the declared bound"),
+            ));
+        }
         Ok(Self { seconds })
     }
 
@@ -436,6 +481,25 @@ impl Duration {
     #[must_use]
     pub const fn seconds(self) -> i64 {
         self.seconds
+    }
+
+    /// Returns the exact canonical text of this duration.
+    #[must_use]
+    pub fn to_canonical_string(self) -> String {
+        format!("{}s", self.seconds)
+    }
+
+    /// Parses one exact canonical duration text, refusing every other spelling.
+    pub fn parse(value: &str) -> Result<Self, LocaleError> {
+        let invalid = || {
+            LocaleError::new(
+                LocaleDiagnosticCode::InvalidMachineFormat,
+                format!("`{value}` is not a canonical duration"),
+            )
+        };
+        let digits = value.strip_suffix('s').ok_or_else(invalid)?;
+        let seconds = digits.parse::<i64>().map_err(|_| invalid())?;
+        Self::new(seconds)
     }
 }
 
@@ -461,6 +525,42 @@ impl Offset {
     #[must_use]
     pub const fn seconds(self) -> i32 {
         self.seconds
+    }
+
+    /// Returns the exact canonical `+HH:MM` text of this offset.
+    #[must_use]
+    pub fn to_canonical_string(self) -> String {
+        let sign = if self.seconds < 0 { '-' } else { '+' };
+        let magnitude = self.seconds.unsigned_abs();
+        format!(
+            "{sign}{:02}:{:02}",
+            magnitude / 3_600,
+            (magnitude % 3_600) / 60
+        )
+    }
+
+    /// Parses one exact canonical `+HH:MM` offset, refusing every other spelling.
+    pub fn parse(value: &str) -> Result<Self, LocaleError> {
+        let invalid = || {
+            LocaleError::new(
+                LocaleDiagnosticCode::InvalidMachineFormat,
+                format!("`{value}` is not a canonical offset"),
+            )
+        };
+        if value.len() != 6 || value.as_bytes()[3] != b':' {
+            return Err(invalid());
+        }
+        let sign = match value.as_bytes()[0] {
+            b'+' => 1_i32,
+            b'-' => -1_i32,
+            _ => return Err(invalid()),
+        };
+        let hours = value[1..3].parse::<i32>().map_err(|_| invalid())?;
+        let minutes = value[4..6].parse::<i32>().map_err(|_| invalid())?;
+        if minutes > 59 {
+            return Err(invalid());
+        }
+        Self::new(sign * (hours * 3_600 + minutes * 60))
     }
 }
 
@@ -546,6 +646,12 @@ impl CivilValue {
         minute: u8,
         second: u8,
     ) -> Result<Self, LocaleError> {
+        if !(MIN_CIVIL_YEAR..=MAX_CIVIL_YEAR).contains(&year) {
+            return Err(LocaleError::new(
+                LocaleDiagnosticCode::InvalidCivilValue,
+                format!("civil year {year} is outside the declared range"),
+            ));
+        }
         if hour > 23 || minute > 59 || second > 59 {
             return Err(LocaleError::new(
                 LocaleDiagnosticCode::InvalidCivilValue,
@@ -596,6 +702,55 @@ impl CivilValue {
             + i64::from(self.hour) * 3_600
             + i64::from(self.minute) * 60
             + i64::from(self.second)
+    }
+
+    /// Returns the exact canonical civil text, which carries no offset or zone.
+    #[must_use]
+    pub fn to_canonical_string(self) -> String {
+        let (year, month, day, hour, minute, second) = self.fields();
+        format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}")
+    }
+
+    /// Parses one exact canonical civil text, refusing every other spelling.
+    pub fn parse(value: &str) -> Result<Self, LocaleError> {
+        let invalid = || {
+            LocaleError::new(
+                LocaleDiagnosticCode::InvalidMachineFormat,
+                format!("`{value}` is not a canonical civil date and time"),
+            )
+        };
+        let bytes = value.as_bytes();
+        if bytes.len() != 19
+            || bytes[4] != b'-'
+            || bytes[7] != b'-'
+            || bytes[10] != b'T'
+            || bytes[13] != b':'
+            || bytes[16] != b':'
+        {
+            return Err(invalid());
+        }
+        let field = |start: usize, end: usize| {
+            value
+                .get(start..end)
+                .and_then(|text| text.parse::<i64>().ok())
+                .ok_or_else(invalid)
+        };
+        let year = field(0, 4)?;
+        let month = u8::try_from(field(5, 7)?).map_err(|_| invalid())?;
+        let day = u8::try_from(field(8, 10)?).map_err(|_| invalid())?;
+        let hour = u8::try_from(field(11, 13)?).map_err(|_| invalid())?;
+        let minute = u8::try_from(field(14, 16)?).map_err(|_| invalid())?;
+        let second = u8::try_from(field(17, 19)?).map_err(|_| invalid())?;
+        Self::new(
+            CalendarIdentity::ProlepticGregorian,
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        )
+        .map_err(|_| invalid())
     }
 }
 
@@ -825,12 +980,10 @@ pub enum CivilResolution {
         /// The exact gap length in seconds.
         gap_seconds: i64,
     },
-    /// The civil time is repeated and names two instants.
+    /// The civil time is repeated and names two or more instants.
     Repetition {
-        /// The earlier instant of the repetition.
-        first: Instant,
-        /// The later instant of the repetition.
-        second: Instant,
+        /// Every instant the civil time names, in ascending order.
+        candidates: Vec<Instant>,
     },
     /// The civil time names exactly one instant.
     Unique {
@@ -849,14 +1002,25 @@ impl CivilResolution {
             Self::Unique { .. } => "unique",
         }
     }
+
+    /// Returns every instant a repeated civil time names, in ascending order.
+    #[must_use]
+    pub fn candidates(&self) -> &[Instant] {
+        match self {
+            Self::Repetition { candidates } => candidates,
+            Self::Gap { .. } | Self::Unique { .. } => &[],
+        }
+    }
 }
 
 /// One explicit disambiguation of `GNT-33.4-typed-gap-and-repetition`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Disambiguation {
-    /// Choose the earlier instant, or the pre-transition offset across a gap.
+    /// Choose the earlier declared UTC offset: the earlier instant across a
+    /// repetition and the later instant across a gap.
     PreferEarlier,
-    /// Choose the later instant, or the post-transition offset across a gap.
+    /// Choose the later declared UTC offset: the later instant across a
+    /// repetition and the earlier instant across a gap.
     PreferLater,
     /// Refuse any civil time that is not unique.
     Reject,
@@ -934,10 +1098,7 @@ pub fn classify_civil(civil: CivilValue, rules: &RuleData) -> Result<CivilResolu
         1 => Ok(CivilResolution::Unique {
             instant: candidates[0].clone(),
         }),
-        _ => Ok(CivilResolution::Repetition {
-            first: candidates[0].clone(),
-            second: candidates[1].clone(),
-        }),
+        _ => Ok(CivilResolution::Repetition { candidates }),
     }
 }
 
@@ -990,7 +1151,7 @@ pub fn resolve_civil(
                 Instant::from_seconds(local - i64::from(offset))
             }
         },
-        CivilResolution::Repetition { first, second } => match disambiguation {
+        CivilResolution::Repetition { candidates } => match disambiguation {
             None => Err(LocaleError::new(
                 LocaleDiagnosticCode::MissingDisambiguation,
                 "a repeated civil time requires an explicit disambiguation",
@@ -998,13 +1159,12 @@ pub fn resolve_civil(
             Some(Disambiguation::Reject) => Err(LocaleError::new(
                 LocaleDiagnosticCode::AmbiguousCivilTime,
                 format!(
-                    "the civil time is repeated between {} and {}",
-                    first.to_canonical_string(),
-                    second.to_canonical_string()
+                    "the civil time is repeated across {} instants",
+                    candidates.len()
                 ),
             )),
-            Some(Disambiguation::PreferEarlier) => Ok(first),
-            Some(Disambiguation::PreferLater) => Ok(second),
+            Some(Disambiguation::PreferEarlier) => Ok(candidates[0].clone()),
+            Some(Disambiguation::PreferLater) => Ok(candidates[candidates.len() - 1].clone()),
         },
     }
 }
@@ -1100,8 +1260,96 @@ pub fn require_rule_data_available(
 ) -> Result<(), LocaleError> {
     if !available.contains(identity) {
         return Err(LocaleError::new(
-            LocaleDiagnosticCode::StaleRuleData,
+            LocaleDiagnosticCode::RuleDataUnavailable,
             format!("rule data `{}` is unavailable", identity.as_str()),
+        ));
+    }
+    Ok(())
+}
+
+/// One typed artifact identity folding pinned rule-data identities.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuleDataArtifactIdentity(Arc<str>);
+
+impl RuleDataArtifactIdentity {
+    /// Returns the exact lowercase hexadecimal digest.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One artifact binding of `GNT-33.5-pinned-rule-data-identity`.
+///
+/// The declared target and every pinned identity fold into one artifact identity,
+/// so changing a target or a pinned data set changes the artifact identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuleDataArtifactBinding {
+    target: TargetKind,
+    identities: BTreeSet<RuleDataIdentity>,
+    identity: RuleDataArtifactIdentity,
+}
+
+impl RuleDataArtifactBinding {
+    /// Folds the declared target and every pinned identity into one artifact identity.
+    #[must_use]
+    pub fn new(target: TargetKind, identities: &[RuleDataIdentity]) -> Self {
+        let identities: BTreeSet<RuleDataIdentity> = identities.iter().cloned().collect();
+        let mut fields: Vec<Vec<u8>> = vec![target.wire_name().as_bytes().to_vec()];
+        for identity in &identities {
+            fields.push(identity.as_str().as_bytes().to_vec());
+        }
+        let borrowed = fields.iter().map(Vec::as_slice).collect::<Vec<&[u8]>>();
+        Self {
+            target,
+            identities,
+            identity: RuleDataArtifactIdentity(Arc::from(encode_hex(&digest_fields(
+                "gantry.locale.rule-data-artifact.v1",
+                &borrowed,
+            )))),
+        }
+    }
+
+    /// Returns the declared target.
+    #[must_use]
+    pub const fn target(&self) -> TargetKind {
+        self.target
+    }
+
+    /// Returns the folded identities.
+    #[must_use]
+    pub fn identities(&self) -> &BTreeSet<RuleDataIdentity> {
+        &self.identities
+    }
+
+    /// Returns the artifact identity.
+    #[must_use]
+    pub const fn identity(&self) -> &RuleDataArtifactIdentity {
+        &self.identity
+    }
+}
+
+/// One typed temporal recovery identity of `GNT-33.11-durable-replay-retention`.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TemporalRecoveryIdentity(Arc<str>);
+
+impl TemporalRecoveryIdentity {
+    /// Returns the exact lowercase hexadecimal digest.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Refuses one value computed under a superseded rule-data identity.
+pub fn require_superseded_refused(
+    computed_under: &RuleDataIdentity,
+    superseded: &BTreeSet<RuleDataIdentity>,
+) -> Result<(), LocaleError> {
+    if superseded.contains(computed_under) {
+        return Err(LocaleError::new(
+            LocaleDiagnosticCode::StaleRuleData,
+            format!("rule data `{}` is superseded", computed_under.as_str()),
         ));
     }
     Ok(())
@@ -1255,7 +1503,7 @@ impl PresentationText {
     pub fn new(locale: &LocaleValue, text: &str) -> Result<Self, LocaleError> {
         if text.len() > MAX_PRESENTATION_TEXT_BYTES {
             return Err(LocaleError::new(
-                LocaleDiagnosticCode::InvalidMachineFormat,
+                LocaleDiagnosticCode::PresentationNotAuthority,
                 "presentation text exceeds the declared bound",
             ));
         }
@@ -1280,7 +1528,7 @@ impl PresentationText {
     /// Refuses any attempt to treat presentation text as value authority.
     pub fn as_value_authority(&self) -> Result<(), LocaleError> {
         Err(LocaleError::new(
-            LocaleDiagnosticCode::InvalidMachineFormat,
+            LocaleDiagnosticCode::PresentationNotAuthority,
             "presentation text is never value authority",
         ))
     }
@@ -1320,20 +1568,24 @@ pub struct DurableTemporalRecord {
     rule_data: RuleDataIdentity,
     observation: Instant,
     locale: Option<LocaleValue>,
+    disambiguation: Disambiguation,
 }
 
 impl DurableTemporalRecord {
-    /// Records one committed observation with the rule data and locale it used.
+    /// Records one committed observation with the rule data, locale, and
+    /// disambiguation declaration it used.
     #[must_use]
     pub fn new(
         rule_data: RuleDataIdentity,
         observation: Instant,
         locale: Option<LocaleValue>,
+        disambiguation: Disambiguation,
     ) -> Self {
         Self {
             rule_data,
             observation,
             locale,
+            disambiguation,
         }
     }
 
@@ -1353,6 +1605,32 @@ impl DurableTemporalRecord {
     #[must_use]
     pub const fn locale(&self) -> Option<&LocaleValue> {
         self.locale.as_ref()
+    }
+
+    /// Returns the retained disambiguation declaration.
+    #[must_use]
+    pub const fn disambiguation(&self) -> Disambiguation {
+        self.disambiguation
+    }
+
+    /// Returns the recovery identity over every retained fact.
+    #[must_use]
+    pub fn recovery_identity(&self) -> TemporalRecoveryIdentity {
+        let mut fields: Vec<Vec<u8>> = vec![
+            self.rule_data.as_str().as_bytes().to_vec(),
+            self.observation.seconds().to_be_bytes().to_vec(),
+            self.disambiguation.wire_name().as_bytes().to_vec(),
+        ];
+        if let Some(locale) = &self.locale {
+            fields.push(locale.identifier().as_bytes().to_vec());
+            fields.push(locale.data_version().as_bytes().to_vec());
+            fields.push(locale.collation().wire_name().as_bytes().to_vec());
+        }
+        let borrowed = fields.iter().map(Vec::as_slice).collect::<Vec<&[u8]>>();
+        TemporalRecoveryIdentity(Arc::from(encode_hex(&digest_fields(
+            "gantry.locale.temporal-recovery.v1",
+            &borrowed,
+        ))))
     }
 
     /// Replays the committed observation without consulting the host.

@@ -193,11 +193,13 @@ pub use locale::{
     CalendarIdentity, CivilResolution, CivilValue, CollationIdentity, Deadline, Disambiguation,
     DurableTemporalRecord, Duration, Instant, LOCALE_CLAUSES, LOCALE_NON_CLAIM_ORDER,
     LOCALE_NON_CLAIMS, LocaleDiagnosticCode, LocaleError, LocaleNonClaim, LocaleNonClaimAssertion,
-    LocaleValue, MAX_LOCALE_IDENTIFIER_BYTES, MAX_OFFSET_SECONDS, MAX_PRESENTATION_TEXT_BYTES,
-    MAX_RULE_DATA_IDENTIFIER_BYTES, MAX_RULE_DATA_TRANSITIONS, MachineFormat, Offset,
-    PreferenceOrigin, PreferenceSnapshot, PresentationText, RuleData, RuleDataBinding,
-    RuleDataIdentity, RuleDataKind, RuleDataUpgrade, TargetDataAvailability, ZoneTransition,
-    check_locale_non_claims, classify_civil, require_rule_data_available, resolve_civil,
+    LocaleValue, MAX_CIVIL_YEAR, MAX_DURATION_SECONDS, MAX_LOCALE_IDENTIFIER_BYTES,
+    MAX_OFFSET_SECONDS, MAX_PRESENTATION_TEXT_BYTES, MAX_RULE_DATA_IDENTIFIER_BYTES,
+    MAX_RULE_DATA_TRANSITIONS, MIN_CIVIL_YEAR, MachineFormat, Offset, PreferenceOrigin,
+    PreferenceSnapshot, PresentationText, RuleData, RuleDataArtifactBinding,
+    RuleDataArtifactIdentity, RuleDataBinding, RuleDataIdentity, RuleDataKind, RuleDataUpgrade,
+    TargetDataAvailability, TemporalRecoveryIdentity, ZoneTransition, check_locale_non_claims,
+    classify_civil, require_rule_data_available, require_superseded_refused, resolve_civil,
 };
 // Section 31 declares bounded source metadata records only; parsing, rendering,
 // lint execution, generators, and editor services remain downstream owners.
