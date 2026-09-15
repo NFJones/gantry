@@ -812,7 +812,7 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
-| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, and constants/package initialization | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims` |
+| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, and locale/civil-time semantics | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -15275,3 +15275,58 @@ claim runtime integration merely because it implements this pure model.
 <a id="GNT-32.12-constant-and-package-state-non-claims"></a>
 
 **[GNT-32.12-constant-and-package-state-non-claims] Constant and package-state non-claims.** This section does not promise grammar productions, keyword reservation, parser acceptance, formatter behavior, incremental or clean-cache equivalence, linker realization of constants, runtime static storage, durable projection of constants, compile-time host execution, constant folding, evaluation performance, source-span or location rendering of refusals, or the absence of host exhaustion that cannot be safely reported. Model facts and tests MUST NOT be presented as such guarantees.
+
+
+## 33. Locale, Calendar, Civil-Time, and Rule-Data Semantics
+
+<a id="GNT-33.0-locale-calendar-civil-time-and-rule-data"></a>
+
+**[GNT-33.0-locale-calendar-civil-time-and-rule-data] Locale, calendar, civil-time, and rule-data contract.** This section defines an analyzer-only declaration model for locale-neutral machine formats, explicit locale, collation, calendar, zone, offset, and civil-time values, typed daylight-saving gaps and repetitions, host-preference snapshots, target availability, and rule-data identity. Its pure model is `crates/gantry-ir/src/locale.rs` and its analyzer evidence is `crates/gantry-conformance/tests/locale_time.rs`. The frozen locale diagnostics are `locale-invalid-machine-format` (`GNT-33.1`), `locale-invalid-locale-identity` (`GNT-33.2`), `locale-invalid-civil-value` (`GNT-33.3`), `locale-ambiguous-civil-time`, `locale-nonexistent-civil-time`, and `locale-missing-disambiguation` (`GNT-33.4`), `locale-rule-data-identity-mismatch` (`GNT-33.5`), `locale-ambient-preference` (`GNT-33.6`), `locale-unsupported-locale-data` (`GNT-33.7`), `locale-host-consultation-refused` (`GNT-33.9`), `locale-stale-rule-data` and `locale-silent-rule-data-upgrade` (`GNT-33.10`), and `locale-non-claim-as-guarantee` (`GNT-33.12`); each diagnostic names one owning clause and no spelling is shared by two refusal conditions.  Portable parsing, formatting, comparison, and civil-time conversion MUST NOT inherit a process locale, a host time zone, or whichever Unicode or time-zone database happens to be installed. This section introduces no host clock, no ambient global, no platform formatter, no database updater, no runtime storage, and no durable projection.
+
+<a id="GNT-33.1-locale-neutral-machine-formats"></a>
+
+**[GNT-33.1-locale-neutral-machine-formats] Locale-neutral machine formats.** An instant is one checked UTC timestamp in the landed canonical form, a duration and an offset are exact signed second counts with declared bounds, and every machine-format value round-trips exactly through its canonical text under any locale. A machine format MUST NOT depend on locale, calendar, zone, or host state: a spelling the canonical machine format does not admit is refused under the invalid-machine-format diagnostic rather than repaired through a host parser.
+
+<a id="GNT-33.2-explicit-locale-and-collation-values"></a>
+
+**[GNT-33.2-explicit-locale-and-collation-values] Explicit locale and collation values.** Locale-sensitive behavior takes one explicit immutable locale value that names a nonempty bounded locale identifier, a data version, and one declared collation identity, and that value is the only input that may select language-dependent behavior. A malformed or duplicate identifier, an empty data version, and a collation identity outside the declared set are refused under the invalid-locale-identity diagnostic. A locale value is portable data: it grants no authority, resolves no display name, and consults no host preference.
+
+<a id="GNT-33.3-civil-time-timestamp-and-offset-values"></a>
+
+**[GNT-33.3-civil-time-timestamp-and-offset-values] Civil-time, timestamp, and offset values.** A civil-time value names one declared calendar identity and one local date and time with exact field bounds, a timestamp is one instant, and an offset is one exact signed count of seconds within the declared bound. A civil-time field outside its bound, an offset outside the declared bound, and a calendar identity outside the declared set are refused under the invalid-civil-value diagnostic rather than normalized into a neighboring value.
+
+<a id="GNT-33.4-typed-gap-and-repetition"></a>
+
+**[GNT-33.4-typed-gap-and-repetition] Typed gap and repetition.** Converting a civil time to an instant against one pinned zone rule data is exactly one of unique, nonexistent across a gap, or repeated across a repetition, and the classification is reported as a typed outcome rather than collapsed into a single instant. Resolving a nonexistent or repeated civil time requires one explicit disambiguation declaration; resolving without one is refused under the missing-disambiguation diagnostic, a gap is refused under the nonexistent-civil-time diagnostic and a repetition under the ambiguous-civil-time diagnostic when the declaration refuses them, and the chosen instant is a deterministic function of the civil value, the pinned rule data, and the declaration.
+
+<a id="GNT-33.5-pinned-rule-data-identity"></a>
+
+**[GNT-33.5-pinned-rule-data-identity] Pinned rule-data identity.** Zone, calendar, and locale rule data are declared values with a version and a canonical digest over the declared transitions and data facts, and that identity participates in artifact and recovery identity. A presented rule-data identity that differs from the pinned identity is refused under the rule-data-identity-mismatch diagnostic rather than accepted, merged, or repaired, and changing any declared transition or data fact changes the identity.
+
+<a id="GNT-33.6-preference-snapshots"></a>
+
+**[GNT-33.6-preference-snapshots] Preference snapshots.** A host-preferred locale or zone may enter a program only through one immutable bounded snapshot that records the exact locale value, the zone rule-data identity, and the selection origin, and every read of the ambient process locale or time zone is refused under the ambient-preference diagnostic. A snapshot is taken once at an explicit boundary and is never re-read implicitly, so a change of preference produces a new snapshot value rather than a mutation of the old one.
+
+<a id="GNT-33.7-target-availability"></a>
+
+**[GNT-33.7-target-availability] Target availability.** Locale, calendar, and zone data availability is declared per target, and an operation that needs data its declared target does not carry is refused under the unsupported-locale-data diagnostic before execution rather than falling back to host data, to another locale, or to another data version. A target entry names exactly the data identities it carries, and an undeclared data identity is unavailable rather than implicitly present.
+
+<a id="GNT-33.8-presentation-separation"></a>
+
+**[GNT-33.8-presentation-separation] Presentation separation.** Locale-aware formatting, collation, and message selection are presentation behavior: they may consume an explicit locale value and produce display text, and they MUST NOT be authority for identity, comparison, ordering, equality, hashing, serialization, recovery, or policy. A comparison that decides program behavior uses the locale-neutral machine value, and display text produced under one locale is never parsed back as the authority for a value.
+
+<a id="GNT-33.9-monotonic-and-wall-separation"></a>
+
+**[GNT-33.9-monotonic-and-wall-separation] Monotonic and wall separation.** A deadline, timeout, or elapsed-time measurement is expressed over a monotonic instant and MUST NOT be derived from a wall clock or a civil time, and observing wall time is an explicit operation whose result is one instant value rather than ambient state. A declared deadline over a wall-clock or civil value is refused under the host-consultation-refused diagnostic.
+
+<a id="GNT-33.10-rule-data-upgrade-and-staleness"></a>
+
+**[GNT-33.10-rule-data-upgrade-and-staleness] Rule-data upgrade and staleness.** Rule data never changes under a pinned identity: an installed or host database update MUST NOT silently alter the semantics of a declared identity, and a value computed under a superseded identity is refused under the stale-rule-data diagnostic rather than recomputed. A deliberate upgrade declares the source identity, the target identity, and the migration, and an upgrade that would replace a pinned identity without that exact declaration is refused under the silent-rule-data-upgrade diagnostic.
+
+<a id="GNT-33.11-durable-replay-retention"></a>
+
+**[GNT-33.11-durable-replay-retention] Durable replay retention.** A durable record that depends on locale, calendar, or zone data retains the pinned rule-data identity and the observation choice it used, so replay is a function of committed values rather than of the host's current preferences or databases. Replay MUST NOT consult the host clock, the host locale, or a newly installed database, and a record whose retained identity is unavailable is refused rather than replayed under a different identity.
+
+<a id="GNT-33.12-locale-and-time-non-claims"></a>
+
+**[GNT-33.12-locale-and-time-non-claims] Locale and time non-claims.** This section does not promise complete locale, calendar, or zone coverage; does not promise that any host database is correct, current, or stable; does not define a host clock, timer, or scheduler; does not make platform formatting, parsing, or collation authoritative; does not grant authority through a locale or zone value; and does not define durable runtime storage, checkpointing, or recovery mechanisms. Model facts and tests MUST NOT be presented as such guarantees.

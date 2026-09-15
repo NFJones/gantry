@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "b2e9cf1331fa4f1195b98fa6e18689e03dd8fd4a6c2131ae3dd40fa985637385",
+ "specification_sha256": "8d824fdeec444fc7f99fd18727f60719810039e755460cba594506c9e379520d",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9497,
-   "end_line": 15277,
+   "end_line": 15332,
    "rationale": null
   }
  ],
@@ -37085,6 +37085,32 @@
   },
   {
    "id":"GNT-32.12-constant-and-package-state-non-claims", "span_start_line":15275, "span_end_line":15277, "anchor_line":15275, "body_start_line":15276, "body_end_line":15277, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15276,"end_line":15277,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/constants.rs#non_claims_are_not_presented_as_guarantees"],"rationale":null}]}]
-  }
+  },
+  {
+   "id":"GNT-33.0-locale-calendar-civil-time-and-rule-data", "span_start_line":15278, "span_end_line":15285, "anchor_line":15282, "body_start_line":15283, "body_end_line":15285, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15283,"end_line":15285,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#section_33_anchors_and_closed_vocabularies_are_published"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.1-locale-neutral-machine-formats", "span_start_line":15286, "span_end_line":15289, "anchor_line":15286, "body_start_line":15287, "body_end_line":15289, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15287,"end_line":15289,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#machine_formats_round_trip_and_refuse_noncanonical_spellings"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.2-explicit-locale-and-collation-values", "span_start_line":15290, "span_end_line":15293, "anchor_line":15290, "body_start_line":15291, "body_end_line":15293, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15291,"end_line":15293,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#locale_values_require_explicit_bounded_identities"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.3-civil-time-timestamp-and-offset-values", "span_start_line":15294, "span_end_line":15297, "anchor_line":15294, "body_start_line":15295, "body_end_line":15297, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15295,"end_line":15297,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#civil_values_are_bounds_checked_not_normalized","crates/gantry-conformance/tests/locale_time.rs#offsets_are_bounded_to_the_declared_range"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.4-typed-gap-and-repetition", "span_start_line":15298, "span_end_line":15301, "anchor_line":15298, "body_start_line":15299, "body_end_line":15301, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15299,"end_line":15301,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#civil_classification_reports_unique_gap_and_repetition","crates/gantry-conformance/tests/locale_time.rs#resolution_requires_an_explicit_disambiguation","crates/gantry-conformance/tests/locale_time.rs#rejection_refuses_gap_and_repetition"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.5-pinned-rule-data-identity", "span_start_line":15302, "span_end_line":15305, "anchor_line":15302, "body_start_line":15303, "body_end_line":15305, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15303,"end_line":15305,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#rule_data_identity_covers_every_declared_fact","crates/gantry-conformance/tests/locale_time.rs#rule_data_binding_refuses_a_different_presented_identity"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.6-preference-snapshots", "span_start_line":15306, "span_end_line":15309, "anchor_line":15306, "body_start_line":15307, "body_end_line":15309, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15307,"end_line":15309,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#preference_snapshots_refuse_ambient_reads"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.7-target-availability", "span_start_line":15310, "span_end_line":15313, "anchor_line":15310, "body_start_line":15311, "body_end_line":15313, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15311,"end_line":15313,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#target_availability_rejects_undeclared_data"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.8-presentation-separation", "span_start_line":15314, "span_end_line":15317, "anchor_line":15314, "body_start_line":15315, "body_end_line":15317, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15315,"end_line":15317,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#presentation_text_is_never_value_authority"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.9-monotonic-and-wall-separation", "span_start_line":15318, "span_end_line":15321, "anchor_line":15318, "body_start_line":15319, "body_end_line":15321, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15319,"end_line":15321,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#deadlines_are_monotonic_and_refuse_wall_values"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.10-rule-data-upgrade-and-staleness", "span_start_line":15322, "span_end_line":15325, "anchor_line":15322, "body_start_line":15323, "body_end_line":15325, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15323,"end_line":15325,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#rule_data_upgrades_must_be_declared_and_explained","crates/gantry-conformance/tests/locale_time.rs#stale_rule_data_is_refused_and_durable_replay_retains_its_identity"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.11-durable-replay-retention", "span_start_line":15326, "span_end_line":15329, "anchor_line":15326, "body_start_line":15327, "body_end_line":15329, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15327,"end_line":15329,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#stale_rule_data_is_refused_and_durable_replay_retains_its_identity"],"rationale":null}]}]},
+  {
+   "id":"GNT-33.12-locale-and-time-non-claims", "span_start_line":15330, "span_end_line":15332, "anchor_line":15330, "body_start_line":15331, "body_end_line":15332, "profiles":["analyzer"], "roles":["harness","implementation"], "clauses":[{"key":"clause-001","start_line":15331,"end_line":15332,"profiles":["analyzer"],"roles":["harness","implementation"],"profile_reviews":[{"profile":"analyzer","state":"covered","evidence":["crates/gantry-conformance/tests/locale_time.rs#non_claims_are_not_presented_as_guarantees"],"rationale":null}]}]}
  ]
 }

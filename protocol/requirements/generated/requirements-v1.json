@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "b2e9cf1331fa4f1195b98fa6e18689e03dd8fd4a6c2131ae3dd40fa985637385",
-  "byte_length": 965606,
-  "line_count": 15277,
+  "specification_sha256": "8d824fdeec444fc7f99fd18727f60719810039e755460cba594506c9e379520d",
+  "byte_length": 974665,
+  "line_count": 15332,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8293,
-      "sha256": "050723cb9e9e75a122b220a4421974a7b016f4686baf6d9ecb9d6edaefdee4b5",
+      "sha256": "c6dcb1441de1b83979bd745248fbbf0e583ae62fcbc97a422773f825faf80988",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9497,
-      "end_line": 15277,
-      "sha256": "4124a3eab476f33d3bd0c11fb17181903a39e9eed99f432e09a6408fb9327633",
+      "end_line": 15332,
+      "sha256": "ba0192779cdc4edaae95a36f7e8cc75907e7732fb797b4f9ce3c7eaf121ca784",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "930c0310639a6492a14e02226777d3b777a6f2e54be4ccc428fbb042b4927ef7",
+      "span_sha256": "c643073330740c18ac332cb41b1af2852655c91605c3d55d88512fe02ee86d6f",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "74a4e89a3df55a067163a47067aca8506e499727e88a7a5863258e0cd6d7398b",
+      "body_sha256": "43d35d3d5da8fe6775ff4c45629564a413b235bea233af8b0eef94a73d797394",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -39352,6 +39352,544 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/constants.rs#non_claims_are_not_presented_as_guarantees"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.0-locale-calendar-civil-time-and-rule-data",
+      "span_start_line": 15278,
+      "span_end_line": 15285,
+      "span_sha256": "19ff4231f06ef52f9d62ded04a31d4fa88d1f4c8bfb6ee99410a04c277d443e3",
+      "anchor_line": 15282,
+      "body_start_line": 15283,
+      "body_end_line": 15285,
+      "body_sha256": "e2d9379b1da133cdaae0219ec6601f981dfa215589d52b2126971db129e6e086",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15283,
+          "end_line": 15285,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#section_33_anchors_and_closed_vocabularies_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.1-locale-neutral-machine-formats",
+      "span_start_line": 15286,
+      "span_end_line": 15289,
+      "span_sha256": "6b600196f5d217d5bb4e3e1388a4e51c06bd89ea72621df6e5b9d6a3281a5366",
+      "anchor_line": 15286,
+      "body_start_line": 15287,
+      "body_end_line": 15289,
+      "body_sha256": "891991127b847d64575f450c464d8ad99ece2b1eb3914ec906b9ed42d67658d6",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15287,
+          "end_line": 15289,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#machine_formats_round_trip_and_refuse_noncanonical_spellings"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.2-explicit-locale-and-collation-values",
+      "span_start_line": 15290,
+      "span_end_line": 15293,
+      "span_sha256": "1ee816721005940097cd1dddb1f1c136ab552e10a026f3461fe5bcb0e4ea5558",
+      "anchor_line": 15290,
+      "body_start_line": 15291,
+      "body_end_line": 15293,
+      "body_sha256": "325ffc5fd5af64d908a726afaab755b2c914a0eb08eca3e6f4c71154b70ca1b5",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15291,
+          "end_line": 15293,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#locale_values_require_explicit_bounded_identities"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.3-civil-time-timestamp-and-offset-values",
+      "span_start_line": 15294,
+      "span_end_line": 15297,
+      "span_sha256": "354c9bb83ab2560251a071f4bc76274a1279e6a4a7c37a68abe8e4d255885d63",
+      "anchor_line": 15294,
+      "body_start_line": 15295,
+      "body_end_line": 15297,
+      "body_sha256": "bfdf16301e04284835f6b022f2cb86df0d095c6744f5dba7eebedf73f329f194",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15295,
+          "end_line": 15297,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#civil_values_are_bounds_checked_not_normalized",
+                "crates/gantry-conformance/tests/locale_time.rs#offsets_are_bounded_to_the_declared_range"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.4-typed-gap-and-repetition",
+      "span_start_line": 15298,
+      "span_end_line": 15301,
+      "span_sha256": "92916540146475fdc1b4b34c24d8977f2ffb3fe31863fc115ee0e8149fda8962",
+      "anchor_line": 15298,
+      "body_start_line": 15299,
+      "body_end_line": 15301,
+      "body_sha256": "660c071dd8bf0bd13909a6d609c9ceed2e30710a42b907b014db4f20c5407da5",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15299,
+          "end_line": 15301,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#civil_classification_reports_unique_gap_and_repetition",
+                "crates/gantry-conformance/tests/locale_time.rs#resolution_requires_an_explicit_disambiguation",
+                "crates/gantry-conformance/tests/locale_time.rs#rejection_refuses_gap_and_repetition"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.5-pinned-rule-data-identity",
+      "span_start_line": 15302,
+      "span_end_line": 15305,
+      "span_sha256": "4eb519d8af7d46ccf543a72bbdbd30575a666dca179ad760e97115c8dcc0bc5b",
+      "anchor_line": 15302,
+      "body_start_line": 15303,
+      "body_end_line": 15305,
+      "body_sha256": "7d2e9ed339ae9a77336f4687cb30b412640b270f326a2544012887826638cd9c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15303,
+          "end_line": 15305,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#rule_data_identity_covers_every_declared_fact",
+                "crates/gantry-conformance/tests/locale_time.rs#rule_data_binding_refuses_a_different_presented_identity"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.6-preference-snapshots",
+      "span_start_line": 15306,
+      "span_end_line": 15309,
+      "span_sha256": "ec20821cb626f7dcb6cb3051522a90e7274ad8a8638f9bec8fb9483b61692126",
+      "anchor_line": 15306,
+      "body_start_line": 15307,
+      "body_end_line": 15309,
+      "body_sha256": "4a3b4bd117bd191bb36f679cadb213d2938ba1d955016cb9188a697b30ce350f",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15307,
+          "end_line": 15309,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#preference_snapshots_refuse_ambient_reads"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.7-target-availability",
+      "span_start_line": 15310,
+      "span_end_line": 15313,
+      "span_sha256": "dd08923493b8da5306373071f90d87fa6c6f982d24418bb634c78a53e2c98f5c",
+      "anchor_line": 15310,
+      "body_start_line": 15311,
+      "body_end_line": 15313,
+      "body_sha256": "e03a59c096343d86f4dc339f110fe24dde601ae22630f918ff46c1b59b24333e",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15311,
+          "end_line": 15313,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#target_availability_rejects_undeclared_data"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.8-presentation-separation",
+      "span_start_line": 15314,
+      "span_end_line": 15317,
+      "span_sha256": "fa62c9756acd9c6690e3bbdfc431ad2b09b88779c457ed919477472025818265",
+      "anchor_line": 15314,
+      "body_start_line": 15315,
+      "body_end_line": 15317,
+      "body_sha256": "49b19ef5a6d63ff227fb19a3315fd7c48f14a50bd032f30689f6d8e281f8b525",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15315,
+          "end_line": 15317,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#presentation_text_is_never_value_authority"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.9-monotonic-and-wall-separation",
+      "span_start_line": 15318,
+      "span_end_line": 15321,
+      "span_sha256": "c41383532479cfdedd68ccfdd8a6e68baf4cf5b906239d6d1a955bf2d22413db",
+      "anchor_line": 15318,
+      "body_start_line": 15319,
+      "body_end_line": 15321,
+      "body_sha256": "e059422efc4d94c934a41338a429bc308cca49e5e8382c6a2c9c36709bc5e5f6",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15319,
+          "end_line": 15321,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#deadlines_are_monotonic_and_refuse_wall_values"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.10-rule-data-upgrade-and-staleness",
+      "span_start_line": 15322,
+      "span_end_line": 15325,
+      "span_sha256": "71624918550ac034d0143e9665799cd2a52b66af7996e324bd203bbb161fae58",
+      "anchor_line": 15322,
+      "body_start_line": 15323,
+      "body_end_line": 15325,
+      "body_sha256": "1634e3a7cbb278706c455e20002db95a68395c1ce6061f503b4e08192af225d7",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15323,
+          "end_line": 15325,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#rule_data_upgrades_must_be_declared_and_explained",
+                "crates/gantry-conformance/tests/locale_time.rs#stale_rule_data_is_refused_and_durable_replay_retains_its_identity"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.11-durable-replay-retention",
+      "span_start_line": 15326,
+      "span_end_line": 15329,
+      "span_sha256": "b96e154234f622f613f55099cdeeaec9a07f820c3990788305a3203015eb4ab8",
+      "anchor_line": 15326,
+      "body_start_line": 15327,
+      "body_end_line": 15329,
+      "body_sha256": "1a93bf7e99f40e83cd0eee6097b2d5e241a9518e3a06424b5fc0247e70b53622",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15327,
+          "end_line": 15329,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#stale_rule_data_is_refused_and_durable_replay_retains_its_identity"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-33.12-locale-and-time-non-claims",
+      "span_start_line": 15330,
+      "span_end_line": 15332,
+      "span_sha256": "46cc33e594618f3703c9edd7d35285f1ee84c73972c371b7af1a6db3919ec4a2",
+      "anchor_line": 15330,
+      "body_start_line": 15331,
+      "body_end_line": 15332,
+      "body_sha256": "db089d4647dd391d1b2e273da4446bf796ec6dae164d8806f0616f99487665ac",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15331,
+          "end_line": 15332,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/locale_time.rs#non_claims_are_not_presented_as_guarantees"
               ],
               "rationale": null
             }
