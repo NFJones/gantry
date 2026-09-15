@@ -26,6 +26,11 @@ pub const ADT_CLAUSES: [&str; 13] = [
     "GNT-36.12-adt-non-claims",
 ];
 
+/// Length-prefixed canonical encoding of one schema component (`GNT-36.10`).
+fn encode_component(component: &str) -> String {
+    format!("{}:{component}", component.len())
+}
+
 /// The frozen Section 36 diagnostics, each naming exactly one owning clause.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AdtDiagnosticCode {
@@ -562,6 +567,18 @@ impl AdtPackageModel {
             .and_then(|entry| self.resolve_type(&entry.target))
     }
 
+    /// Resolves a name through aliases to a declared type or scalar leaf (`GNT-36.4`).
+    #[must_use]
+    pub fn resolve_name<'a>(&'a self, name: &'a str) -> Option<&'a str> {
+        if self.types.iter().any(|entry| entry.name == name) || self.leaves.contains(name) {
+            return Some(name);
+        }
+        self.aliases
+            .iter()
+            .find(|entry| entry.name == name)
+            .and_then(|entry| self.resolve_name(&entry.target))
+    }
+
     /// The identity of one constructor.
     #[must_use]
     pub fn constructor_identity(
@@ -575,19 +592,21 @@ impl AdtPackageModel {
             .constructors
             .iter()
             .find(|entry| entry.name == constructor_name)?;
-        let fields: Vec<&str> = constructor
+        let fields: Vec<String> = constructor
             .fields
             .iter()
             .map(|field| {
-                self.resolve_type(&field.type_name)
-                    .unwrap_or(&field.type_name)
+                encode_component(
+                    self.resolve_name(&field.type_name)
+                        .unwrap_or(&field.type_name),
+                )
             })
             .collect();
         Some(AdtConstructorIdentity(format!(
-            "{}::{}.{}#{}({})",
-            self.package,
-            resolved,
-            constructor.name,
+            "{}::{}::{}.{}#({})",
+            encode_component(&self.package),
+            encode_component(resolved),
+            encode_component(&constructor.name),
             constructor.tag,
             fields.join(",")
         )))
@@ -596,30 +615,42 @@ impl AdtPackageModel {
     /// The canonical schema, closed over declarations and independent of boundary labels.
     #[must_use]
     pub fn canonical_schema(&self) -> String {
-        let mut lines = vec![format!("package {}", self.package)];
+        let mut lines = vec![format!("package {}", encode_component(&self.package))];
         for leaf in &self.leaves {
-            lines.push(format!("leaf {leaf}"));
+            lines.push(format!("leaf {}", encode_component(leaf)));
         }
         let mut types: Vec<&AdtTypeDeclaration> = self.types.iter().collect();
         types.sort_by(|left, right| left.name.cmp(&right.name));
         for declaration in types {
             lines.push(format!(
                 "type {} {} params[{}]",
-                declaration.name,
+                encode_component(&declaration.name),
                 declaration.visibility.as_str(),
-                declaration.parameters.join(",")
+                declaration
+                    .parameters
+                    .iter()
+                    .map(|parameter| encode_component(parameter))
+                    .collect::<Vec<String>>()
+                    .join(",")
             ));
             let mut constructors: Vec<&AdtConstructor> = declaration.constructors.iter().collect();
             constructors.sort_by_key(|constructor| constructor.tag);
             for constructor in constructors {
                 lines.push(format!(
                     "construct {}#{} fields[{}]",
-                    constructor.name,
+                    encode_component(&constructor.name),
                     constructor.tag,
                     constructor
                         .fields
                         .iter()
-                        .map(|field| format!("{}:{}", field.name, field.type_name))
+                        .map(|field| format!(
+                            "{}:{}",
+                            encode_component(&field.name),
+                            encode_component(
+                                self.resolve_name(&field.type_name)
+                                    .unwrap_or(&field.type_name)
+                            )
+                        ))
                         .collect::<Vec<String>>()
                         .join(";")
                 ));
@@ -630,10 +661,15 @@ impl AdtPackageModel {
         for alias in aliases {
             lines.push(format!(
                 "alias {} {} params[{}] -> {}",
-                alias.name,
+                encode_component(&alias.name),
                 alias.visibility.as_str(),
-                alias.parameters.join(","),
-                alias.target
+                alias
+                    .parameters
+                    .iter()
+                    .map(|parameter| encode_component(parameter))
+                    .collect::<Vec<String>>()
+                    .join(","),
+                encode_component(self.resolve_name(&alias.target).unwrap_or(&alias.target))
             ));
         }
         let mut constants: Vec<&AdtConstantSite> = self.constants.iter().collect();
@@ -641,9 +677,12 @@ impl AdtPackageModel {
         for site in constants {
             lines.push(format!(
                 "constant {} {} : {}",
-                site.name,
+                encode_component(&site.name),
                 site.visibility.as_str(),
-                site.type_name
+                encode_component(
+                    self.resolve_name(&site.type_name)
+                        .unwrap_or(&site.type_name)
+                )
             ));
         }
         lines.join("\n")
@@ -711,7 +750,9 @@ impl AdtPackageModel {
             })?;
         let mut covered = Vec::new();
         let mut checked_paths = 0;
-        for constructor in &declaration.constructors {
+        let mut ordered: Vec<&AdtConstructor> = declaration.constructors.iter().collect();
+        ordered.sort_by_key(|constructor| constructor.tag);
+        for constructor in ordered {
             let pattern = patterns
                 .iter()
                 .find(|entry| entry.constructor == constructor.name)
@@ -891,6 +932,19 @@ impl AdtPackageModel {
             builder.declare_constant(site.clone())?;
         }
         let model = builder.finish()?;
+        let projected_leaves: std::collections::BTreeSet<String> =
+            projection.leaves.iter().cloned().collect();
+        if projected_leaves.len() != projection.leaves.len()
+            || model.leaves != projected_leaves
+            || model.types != projection.types
+            || model.aliases != projection.aliases
+            || model.constants != projection.constants
+        {
+            return Err(AdtError::new(
+                AdtDiagnosticCode::RoundTripLoss,
+                "the projection reorders, duplicates, or alters a carried declaration",
+            ));
+        }
         if model.identity() != projection.identity {
             return Err(AdtError::new(
                 AdtDiagnosticCode::RoundTripLoss,
@@ -1022,7 +1076,7 @@ impl AdtPackageModel {
                 }
                 let inhabited = declaration.constructors.iter().any(|constructor| {
                     constructor.fields.iter().all(|field| {
-                        self.resolve_type(&field.type_name)
+                        self.resolve_name(&field.type_name)
                             .map(|resolved| buildable.contains(resolved))
                             .unwrap_or_else(|| buildable.contains(&field.type_name))
                     })

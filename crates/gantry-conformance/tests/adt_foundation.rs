@@ -528,6 +528,32 @@ fn patterns_cover_the_declared_constructor_space() {
 }
 
 #[test]
+fn coverage_reports_constructors_in_tag_order() {
+    let mut builder = AdtPackageBuilder::new("gantry.example");
+    builder.declare_leaf("Int");
+    builder
+        .declare_type(declaration(
+            "Choice",
+            AdtVisibility::Public,
+            vec![
+                constructor("Later", 7, Vec::new()),
+                constructor("Earlier", 2, Vec::new()),
+            ],
+        ))
+        .unwrap_or_else(|error| panic!("declaration: {error}"));
+    let model = builder
+        .finish()
+        .unwrap_or_else(|error| panic!("model: {error}"));
+    let report: AdtMatchReport = model
+        .match_coverage(
+            "Choice",
+            &[pattern("Later", Vec::new()), pattern("Earlier", Vec::new())],
+        )
+        .unwrap_or_else(|error| panic!("coverage: {error}"));
+    assert_eq!(report.covered, vec!["Earlier", "Later"]);
+}
+
+#[test]
 fn constant_sites_are_finite_trees_with_charges() {
     let mut builder = AdtPackageBuilder::new("gantry.example");
     builder.declare_leaf("Int");
