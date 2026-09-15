@@ -8,7 +8,7 @@ use gantry::analysis::{
     AnalysisError, AnalysisStatus, analyze_package_types, analyze_package_types_with_limits,
 };
 use gantry::frontend::validate_package_syntax;
-use gantry::portable::FrontendResourceCode;
+use gantry::portable::{DiagnosticCategory, FrontendResourceCode};
 use gantry::source::{FrontendLimits, SourceLimits};
 use serde::Deserialize;
 
@@ -5594,5 +5594,50 @@ fn public_skippable_loop_reinitialization_owes_the_fresh_value() {
         "fn run(flag: Bool) { while flag { let u: Token = Token { value: 1 }; u.consume(); } } fn main() {}",
     ] {
         assert_affine_accepted(&format!("{DECLARATIONS}{source}"));
+    }
+}
+
+/// An annotation naming a type that no declaration provides is refused precisely, including when
+/// the enclosing declaration is reachable and would otherwise be lowered into an executable program.
+#[test]
+fn public_unresolved_type_annotations_are_refused_without_internal_failure() {
+    let root = TempDirectory::new();
+    for source in [
+        "fn main(value: Missing) -> Int { 0 }",
+        "struct Holder { field: Missing } fn main() -> Int { 0 }",
+        "fn main(value: List<Missing>) -> Int { 0 }",
+        "fn helper(value: crate::missing::Kind) -> Int { 0 } fn main(value: Missing) -> Int { 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+        let rejected = analyze_package_types(&syntax)
+            .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected.executable_program().is_none(),
+            "source: {source}; an unresolved type must not publish an executable program"
+        );
+        let refusal = rejected
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "unresolved-reference")
+            .unwrap_or_else(|| {
+                panic!(
+                    "source: {source}; diagnostics: {:?}",
+                    rejected.diagnostics()
+                )
+            });
+        assert_eq!(refusal.category, DiagnosticCategory::NameResolution);
+        assert!(
+            refusal.fields.contains_key("authored_path"),
+            "source: {source}; fields: {:?}",
+            refusal.fields
+        );
     }
 }

@@ -2657,6 +2657,12 @@ fn resolve_generic_type_node(
                         Vec::new(),
                         [("parameter", name.as_ref())],
                     )?);
+                } else {
+                    diagnostics.push(unresolved_path_diagnostic(
+                        "a type annotation names a type that no declaration provides",
+                        path.span().clone(),
+                        [("authored_path", name.as_ref())],
+                    )?);
                 }
                 return Ok(None);
             }
@@ -2975,6 +2981,35 @@ where
         message,
         Some(primary),
         related,
+        fields
+            .into_iter()
+            .map(|(key, value)| (Arc::from(key.as_ref()), Arc::from(value.as_ref())))
+            .collect(),
+    )
+    .map_err(|_| AnalysisError::Invariant)
+}
+
+/// Builds the name-resolution refusal for a type path that no declaration provides.
+fn unresolved_path_diagnostic<K, V, const N: usize>(
+    message: &str,
+    primary: SourceSpan,
+    fields: [(K, V); N],
+) -> Result<StructuredDiagnostic, AnalysisError>
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    StructuredDiagnostic::new(
+        DiagnosticMetadata {
+            phase: DiagnosticPhase::Analysis,
+            severity: DiagnosticSeverity::Error,
+            category: DiagnosticCategory::NameResolution,
+            code: DiagnosticCode::new("unresolved-reference")
+                .map_err(|_| AnalysisError::Invariant)?,
+        },
+        message,
+        Some(primary),
+        Vec::new(),
         fields
             .into_iter()
             .map(|(key, value)| (Arc::from(key.as_ref()), Arc::from(value.as_ref())))

@@ -1616,12 +1616,15 @@ fn collect_source_callable_metadata(
             .cloned()
             .ok_or(AnalysisError::Invariant)?;
         let (source_index, tree, callable) = find_source_callable(sources, &declaration)?;
-        let parameters = source_callable_parameters(
+        let resolved = source_callable_parameters(
             tree,
             callable,
             facts.get(source_index).ok_or(AnalysisError::Invariant)?,
             None,
         )?;
+        let Some(parameters) = resolved else {
+            continue;
+        };
         callables.push(SourceCallableMetadata {
             identity: CanonicalCallableIdentity::free(&symbol.path, &[]),
             receiver: None,
@@ -1635,12 +1638,15 @@ fn collect_source_callable_metadata(
     }
     for ((receiver, method), metadata) in &context.inherent_method_sources {
         let (source_index, tree, callable) = find_source_callable(sources, &metadata.declaration)?;
-        let parameters = source_callable_parameters(
+        let resolved = source_callable_parameters(
             tree,
             callable,
             facts.get(source_index).ok_or(AnalysisError::Invariant)?,
             Some(receiver),
         )?;
+        let Some(parameters) = resolved else {
+            continue;
+        };
         let result = callable_result(
             tree,
             callable,
@@ -1713,12 +1719,15 @@ fn collect_source_callable_metadata(
                 .map_err(|_| AnalysisError::Invariant)?
         };
         let (source_index, tree, callable) = find_source_callable(sources, declaration)?;
-        let parameters = source_callable_parameters(
+        let resolved = source_callable_parameters(
             tree,
             callable,
             facts.get(source_index).ok_or(AnalysisError::Invariant)?,
             Some(&receiver),
         )?;
+        let Some(parameters) = resolved else {
+            continue;
+        };
         let result = callable_result(
             tree,
             callable,
@@ -1769,7 +1778,7 @@ fn source_callable_parameters(
     callable: NodeId,
     facts: &BTreeMap<NodeId, TypeFact>,
     receiver: Option<&TypeDescriptor>,
-) -> Result<Vec<WorkflowParameter>, AnalysisError> {
+) -> Result<Option<Vec<WorkflowParameter>>, AnalysisError> {
     let node = tree.node(callable).ok_or(AnalysisError::Invariant)?;
     let mut parameters = Vec::new();
     if let Some(receiver) = receiver {
@@ -1801,16 +1810,15 @@ fn source_callable_parameters(
         }
         let type_node = direct_child_form(tree, parameter.1, SyntaxForm::ValueType)
             .ok_or(AnalysisError::Invariant)?;
-        let ty = facts
-            .get(&type_node)
-            .map(|fact| fact.descriptor.clone())
-            .ok_or(AnalysisError::Invariant)?;
+        let Some(ty) = facts.get(&type_node).map(|fact| fact.descriptor.clone()) else {
+            return Ok(None);
+        };
         parameters.push(WorkflowParameter {
             mutable: node_has_reserved_word(tree, parameter.1, "mut"),
             ty,
         });
     }
-    Ok(parameters)
+    Ok(Some(parameters))
 }
 
 fn validate_shared_receiver_declarations(
