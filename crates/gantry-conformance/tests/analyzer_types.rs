@@ -5615,6 +5615,7 @@ fn public_unresolved_type_annotations_are_refused_without_internal_failure() {
         "trait Tr {} pure fn hold<T>(value: T) -> T where T: Missing { value } fn main() -> Int { hold(1) }",
         "trait Tr {} pure fn hold<T>(value: T) -> T where Missing: Tr { value } fn main() -> Int { hold(1) }",
         "trait Tr {} pure fn hold<T>(value: T) -> T where T: Tr, T: Missing { value } fn main() -> Int { hold(1) }",
+        "trait Tr {} pure fn other<T>(value: T) -> T where T: Tr { value } pure fn hold<U>(value: U) -> U where T: Tr { value } fn main() -> Int { discard hold(1); 0 }",
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -5646,6 +5647,22 @@ fn public_unresolved_type_annotations_are_refused_without_internal_failure() {
             refusal.fields.contains_key("authored_path"),
             "source: {source}; fields: {:?}",
             refusal.fields
+        );
+    }
+    for source in [
+        "trait Marker {} trait Wrapped<T> where T: Marker { } fn main() -> Int { 0 }",
+        "trait Marker {} pure fn hold<T>(value: T) -> T where T: Marker { value } fn main() -> Int { 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+        let accepted = analyze_package_types(&syntax)
+            .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            accepted.diagnostics()
         );
     }
 }

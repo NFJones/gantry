@@ -1658,15 +1658,6 @@ fn check_where_predicate_targets(
         .iter()
         .map(|reference| (reference.span.clone(), reference.target))
         .collect::<BTreeMap<_, _>>();
-    let parameters = binders
-        .iter()
-        .flat_map(|binder| {
-            binder
-                .parameters
-                .iter()
-                .map(|parameter| parameter.name.clone())
-        })
-        .collect::<BTreeSet<_>>();
     let declared = structure
         .symbols()
         .iter()
@@ -1703,7 +1694,7 @@ fn check_where_predicate_targets(
                 }
             }
             if let Some((spelling, span)) = predicate_subject(tree, predicate)?
-                && !parameters.contains(spelling.as_str())
+                && !in_scope_parameter(binders, &span, spelling.as_str())
                 && !declared.contains(spelling.as_str())
                 && !SEALED_PREDICATE_SPELLINGS.contains(&spelling.as_str())
             {
@@ -1735,6 +1726,18 @@ fn predicate_path_spelling(tree: &SyntaxTree, path: NodeId) -> Result<String, An
         })
         .collect::<Vec<_>>()
         .join("::"))
+}
+
+/// Returns whether one predicate subject names a parameter of its own declaring declaration or
+/// of an enclosing trait or implementation, following the binder nesting of the specification.
+fn in_scope_parameter(binders: &[TypeBinder], span: &SourceSpan, name: &str) -> bool {
+    binders.iter().any(|binder| {
+        source_span_contains(&binder.declaration, span)
+            && binder
+                .parameters
+                .iter()
+                .any(|parameter| parameter.name.as_ref() == name)
+    })
 }
 
 /// Returns the authored subject spelling and span of one `where` predicate.
