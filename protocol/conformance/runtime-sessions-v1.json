@@ -1,6 +1,6 @@
 {
  "format": "gantry.runtime-session-evidence/v1",
- "specification_sha256": "e90033c3d5719289ada6c0f00631780a6a31a9087a67ae1353050eae869b16a4",
+ "specification_sha256": "ca1b56d41faa4e6249e102a148f011a264083cb6111d190798c0a4381c7452c3",
  "issue": "GNT-ASYNC-SESS-001",
  "capabilities": [
   {
