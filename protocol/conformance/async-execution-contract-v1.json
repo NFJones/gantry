@@ -21,35 +21,35 @@
  "contract_artifacts": [
   {
    "path": "crates/gantry-core/src/generated/portable.rs",
-   "sha256": "1282c2a451872f6bc0175f48589d4c361d133a17e3650e14f09cee4367d266a7"
+   "sha256": "509bf835a9b8cd7c3fc0c4a79dec2ac1ddc16608efa75a6921fc6041650565a1"
   },
   {
    "path": "crates/gantry-core/src/generated/profiles.rs",
-   "sha256": "371cf098eae0ae6862476dce8de4864d19ab5ad2bd729eb21c26b05d1b835831"
+   "sha256": "ab8f92418e2f21c634bc5f6cad2c8e6dda05c3cc94894258ee0466f4f635071d"
   },
   {
    "path": "crates/gantry-host/src/generated/embedding.rs",
-   "sha256": "c7554beea98579b1609469c0a1cf9460b5b1d40a6ba3c1037c2a27973243b18f"
+   "sha256": "780a3785237c0aa2827075519eab198ff5a17be63bc5047fbee224a1dbacd863"
   },
   {
    "path": "protocol/catalogs/embedding-contracts-v1.json",
-   "sha256": "5bd4f800d733f1d843476e30e55bb3bae2159ca6fdf44ed20d87c7ee59ef58b8"
+   "sha256": "df2a2e9902943712f79241058da03a20c599a3954214c8fcd2a2b071e15459d2"
   },
   {
    "path": "protocol/catalogs/portable-contracts-v1.json",
-   "sha256": "34a9ea15dae06e401415dbaa1678ad1827a0001f4f7262dd0755ad8cd2667086"
+   "sha256": "d15f4424ce2280154bd88e17b017bf7b3835ec9587bab419b19503e3533e179f"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "9a6ad2e70d5e7be6d3cd34e04edb961137a76715d58e0925771a3596035ce4b8"
+   "sha256": "5885ee78565feca21b14c535e90be6a312ed1cf4bbeea0d1304e2bff885134a2"
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "3edadf50ab921f14e0efe8ef6a0b36727a325840641b81398844e1fb19dff6e8"
+   "sha256": "5fcb5456a0b2143af7ca8131428db4f1275412917a530e6ddcf019f7ce91bf48"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "15e01a063d8b00a45eb529ffff88d08f8b1a55126b6fe6325166a8519e922b47"
+   "sha256": "3d8dbaf78715fb005c90efa50bb4f7d156f26c15470aa9da5df8bce74a5f47bf"
   },
   {
    "path": "protocol/schemas/embedding-contracts-v1.schema.json",

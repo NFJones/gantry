@@ -18,43 +18,43 @@
   },
   {
    "path": "protocol/conformance/async-cancellation-v1.json",
-   "sha256": "7e1b6614ea8019c1254906871e279a3072dd7eae5275153bc883c4fc54013c7e"
+   "sha256": "2bad7e9a47a49f06620097f0067d0606994e57c9d4fc1c9490e193d316fcb26b"
   },
   {
    "path": "protocol/conformance/async-coordinator-model-v1.json",
-   "sha256": "b06d013f1ed5c935c0882e4e5f304b9623fa8c61d782d8d6677b832af830ef7f"
+   "sha256": "28f19fe6607a2b66962b4830dfaa7c41801be786b331e06e0c6ca7b90c88368f"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "cd58950e29209c7a4255190241c19e764393ba57e02ea734862966e8c6225b3f"
+   "sha256": "0a0e00561b875059e8f1d96fab946b553d938d9738283ca794bb7ab1d0ccea88"
   },
   {
    "path": "protocol/conformance/async-execution-observation-v1.json",
-   "sha256": "95952958f57e900085204ce7f6789b1c4f6db69591b1831a671f22716d14eaca"
+   "sha256": "f67d3192d102fc086980a3a6a096dfb52b255d63d90ec8bfc6eaf5c96112f03b"
   },
   {
    "path": "protocol/conformance/async-source-lowering-v1.json",
-   "sha256": "3a3110f74b58bcecc2c5516a21dff84326d7b3490dbb3d3a69977ec668c0f1e1"
+   "sha256": "250c28a1ba6b02d15218725e9efb4dc7c6a9355f92bd6f776c148e731e2b32d9"
   },
   {
    "path": "protocol/conformance/durable-coordination-v1.json",
-   "sha256": "f97d4ab66e1ed7ef09420bafc5cd2e1e6d3d10638445640626691b9b985afb94"
+   "sha256": "00f1d27022ab8defb5c58ff3b1614717e189f470476c3eba96adb64c026f816f"
   },
   {
    "path": "protocol/conformance/executable-task-ir-v1.json",
-   "sha256": "53f8ab134680475c39ebb6fec35d76184c751cb30079461a53828fdf52c0205e"
+   "sha256": "9dd616b432447498ab17093d2a926adb2e3952b2a2da0c8fb0a89ada3492e54c"
   },
   {
    "path": "protocol/conformance/source-join-v1.json",
-   "sha256": "435cba6018d6565980cc47309743d42966eeab8db35c68ae5422ae9b7ddd42ac"
+   "sha256": "20e36c00695de98a86cbd65350f8de9071b78a951d6beeba9d986261e66f2be7"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
-   "sha256": "df5c4ae0307ada6c60a6c77dc5ca71f8ba4972335b489ed6980ff4ed13c54360"
+   "sha256": "f5b5e21c6553185763bc36f4b10fa002a95abf6eab8ed64f5edea90f70de7318"
   },
   {
    "path": "protocol/conformance/tokio-executor-v1.json",
-   "sha256": "ff0716ed4d4352c0d66c687953274bf6724a04de018117d052f00a5a37d31f1b"
+   "sha256": "4e48cf7e3a6d871b4f04e077d74961bfbdb745d692cb671f1d02d5c3d894f8ed"
   }
  ],
  "assignment_authentication": {

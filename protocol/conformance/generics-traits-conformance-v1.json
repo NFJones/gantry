@@ -82,11 +82,11 @@
   },
   {
    "path": "protocol/conformance/generics-traits-adoption-v1.json",
-   "sha256": "aeacceda6ef252fa176038147e1c9c2d1ecd7ef75734c8378f113d46d64c54ff"
+   "sha256": "2d51772ac9b4d8804aa1d4b9c49888ad9bc82ec91d003ae94814b7adea0fd306"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "15e01a063d8b00a45eb529ffff88d08f8b1a55126b6fe6325166a8519e922b47"
+   "sha256": "3d8dbaf78715fb005c90efa50bb4f7d156f26c15470aa9da5df8bce74a5f47bf"
   }
  ],
  "environment_gaps": [
