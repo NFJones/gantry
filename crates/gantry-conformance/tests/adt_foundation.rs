@@ -448,6 +448,47 @@ fn constant_sites_admit_only_open_enough_types() {
 }
 
 #[test]
+fn projections_refuse_altered_constant_values() {
+    let mut builder = AdtPackageBuilder::new("gantry.example");
+    builder.declare_leaf("Int");
+    builder
+        .declare_type(list_type(AdtVisibility::Public))
+        .unwrap_or_else(|error| panic!("declaration: {error}"));
+    builder
+        .declare_constant(AdtConstantSite {
+            name: "ONES".to_owned(),
+            visibility: AdtVisibility::Public,
+            type_name: "List".to_owned(),
+            value: AdtConstantValue::Tree(tree_node(
+                "List",
+                "Cons",
+                vec![tree_scalar(1), tree_node("List", "Nil", Vec::new())],
+            )),
+        })
+        .unwrap_or_else(|error| panic!("constant: {error}"));
+    let model = builder
+        .finish()
+        .unwrap_or_else(|error| panic!("model: {error}"));
+    let projection = model.durable_projection();
+    let rebuilt = AdtPackageModel::from_projection(&projection)
+        .unwrap_or_else(|error| panic!("round trip: {error}"));
+    assert_eq!(rebuilt.identity(), model.identity());
+
+    let mut altered = projection.clone();
+    altered.constants[0].value = AdtConstantValue::Tree(tree_node(
+        "List",
+        "Cons",
+        vec![tree_scalar(2), tree_node("List", "Nil", Vec::new())],
+    ));
+    assert_eq!(
+        AdtPackageModel::from_projection(&altered)
+            .refused("a projection altering a constant value")
+            .code(),
+        AdtDiagnosticCode::RoundTripLoss
+    );
+}
+
+#[test]
 fn visibility_admits_only_open_enough_references() {
     assert!(AdtVisibility::Public.admits_reference_from(AdtVisibility::Package));
     assert!(AdtVisibility::Package.admits_reference_from(AdtVisibility::Package));
@@ -819,9 +860,12 @@ fn durable_projections_rebuild_identity() {
 
     let mut reordered = projection.clone();
     reordered.types.reverse();
-    let rebuilt = AdtPackageModel::from_projection(&reordered)
-        .unwrap_or_else(|error| panic!("reordered round trip: {error}"));
-    assert_eq!(rebuilt.identity(), model.identity());
+    assert_eq!(
+        AdtPackageModel::from_projection(&reordered)
+            .refused("a projection that reorders carried declarations")
+            .code(),
+        AdtDiagnosticCode::RoundTripLoss
+    );
 
     let mut omitted = projection.clone();
     omitted.types.retain(|entry| entry.name != "Marker");

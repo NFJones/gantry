@@ -688,15 +688,38 @@ impl AdtPackageModel {
         }
         let mut constants: Vec<&AdtConstantSite> = self.constants.iter().collect();
         constants.sort_by(|left, right| left.name.cmp(&right.name));
+        fn encode_tree(tree: &AdtConstantTree) -> String {
+            match tree {
+                AdtConstantTree::Scalar(value) => format!("scalar({value})"),
+                AdtConstantTree::Constructor {
+                    type_name,
+                    constructor,
+                    arguments,
+                } => format!(
+                    "node({}::{}{})",
+                    encode_component(type_name),
+                    encode_component(constructor),
+                    arguments
+                        .iter()
+                        .map(|argument| format!("[{}]", encode_tree(argument)))
+                        .collect::<Vec<String>>()
+                        .join("")
+                ),
+            }
+        }
         for site in constants {
             lines.push(format!(
-                "constant {} {} : {}",
+                "constant {} {} : {} = {}",
                 encode_component(&site.name),
                 site.visibility.as_str(),
                 encode_component(
                     self.resolve_name(&site.type_name)
                         .unwrap_or(&site.type_name)
-                )
+                ),
+                match &site.value {
+                    AdtConstantValue::Tree(tree) => encode_tree(tree),
+                    AdtConstantValue::Deferred { .. } => "deferred".to_owned(),
+                }
             ));
         }
         lines.join("\n")
@@ -920,12 +943,18 @@ impl AdtPackageModel {
     /// The durable projection of this declaration set (`GNT-36.11`).
     #[must_use]
     pub fn durable_projection(&self) -> AdtDurableProjection {
+        let mut types = self.types.clone();
+        types.sort_by(|left, right| left.name.cmp(&right.name));
+        let mut aliases = self.aliases.clone();
+        aliases.sort_by(|left, right| left.name.cmp(&right.name));
+        let mut constants = self.constants.clone();
+        constants.sort_by(|left, right| left.name.cmp(&right.name));
         AdtDurableProjection {
             package: self.package.clone(),
             leaves: self.leaves.iter().cloned().collect(),
-            types: self.types.clone(),
-            aliases: self.aliases.clone(),
-            constants: self.constants.clone(),
+            types,
+            aliases,
+            constants,
             identity: self.identity(),
         }
     }
@@ -946,17 +975,15 @@ impl AdtPackageModel {
             builder.declare_constant(site.clone())?;
         }
         let model = builder.finish()?;
-        let projected_leaves: std::collections::BTreeSet<String> =
-            projection.leaves.iter().cloned().collect();
-        if projected_leaves.len() != projection.leaves.len()
-            || model.leaves != projected_leaves
-            || model.types != projection.types
-            || model.aliases != projection.aliases
-            || model.constants != projection.constants
+        let canonical = model.durable_projection();
+        if canonical.leaves != projection.leaves
+            || canonical.types != projection.types
+            || canonical.aliases != projection.aliases
+            || canonical.constants != projection.constants
         {
             return Err(AdtError::new(
                 AdtDiagnosticCode::RoundTripLoss,
-                "the projection reorders, duplicates, or alters a carried declaration",
+                "the projection omits, reorders, duplicates, or alters a carried declaration",
             ));
         }
         if model.identity() != projection.identity {
