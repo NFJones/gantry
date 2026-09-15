@@ -325,6 +325,8 @@ struct BodyContext {
     effect_drafts: RefCell<BTreeMap<EffectNode, EffectDraft>>,
     callable_sources: BTreeMap<SymbolId, SourceSpan>,
     method_sources: BTreeMap<(CanonicalImplementationIdentity, Arc<str>), SourceSpan>,
+    /// Implementation methods whose receiver annotation the type phase refused.
+    refused_impl_methods: BTreeSet<NodeId>,
     inherent_method_sources: BTreeMap<(TypeDescriptor, Arc<str>), InherentMethodMetadata>,
     action_effects: BTreeMap<SymbolId, Effect>,
     parametric_validation: Cell<bool>,
@@ -838,8 +840,27 @@ fn build_body_context(
             }
         }
     }
+    let mut refused_impl_methods = BTreeSet::new();
     for (source_index, source) in sources.iter().enumerate() {
         let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
+        for implementation in source
+            .tree()
+            .nodes()
+            .iter()
+            .filter(|node| matches!(node.form(), SyntaxForm::ImplDeclaration))
+        {
+            if !implementation_receiver_is_refused(source.tree(), implementation, resolved) {
+                continue;
+            }
+            refused_impl_methods.extend(implementation.children().iter().copied().filter(
+                |child| {
+                    source
+                        .tree()
+                        .node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
+                },
+            ));
+        }
         for node in source
             .tree()
             .nodes()
@@ -933,6 +954,7 @@ fn build_body_context(
         (left.kind(), left.identity()).cmp(&(right.kind(), right.identity()))
     });
     Ok(BodyContext {
+        refused_impl_methods,
         callables,
         capability_declarations: capability_declarations.clone(),
         capability_proofs: RefCell::new(BTreeMap::new()),
@@ -1280,6 +1302,35 @@ fn collect_generic_method_signatures(
     Ok(methods)
 }
 
+/// Returns whether one syntax subtree retains a recognised, unadmitted callable type form.
+fn subtree_retains_callable_form(tree: &SyntaxTree, id: NodeId) -> bool {
+    let Some(node) = tree.node(id) else {
+        return false;
+    };
+    matches!(node.form(), SyntaxForm::CallableType)
+        || node
+            .children()
+            .iter()
+            .copied()
+            .any(|child| subtree_retains_callable_form(tree, child))
+}
+
+/// Returns whether one implementation receiver annotation was refused by the type phase.
+///
+/// A typed receiver whose annotation produced no type fact, or which retains a recognised
+/// callable form anywhere inside it, is refused by the published callable or name-resolution
+/// diagnostic, so its methods carry no body-analysis context.
+fn implementation_receiver_is_refused(
+    tree: &SyntaxTree,
+    implementation: &gantry_frontend::SyntaxNode,
+    resolved: &BTreeMap<NodeId, TypeFact>,
+) -> bool {
+    let Some(receiver) = direct_child_form(tree, implementation, SyntaxForm::ValueType) else {
+        return false;
+    };
+    subtree_retains_callable_form(tree, receiver) || !resolved.contains_key(&receiver)
+}
+
 /// Checks every free-function and method body against its declared signature.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn check_package_bodies(
@@ -1317,6 +1368,13 @@ pub(crate) fn check_package_bodies(
                     node.form(),
                     SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
                 ) {
+                    continue;
+                }
+                if matches!(node.form(), SyntaxForm::MethodDeclaration)
+                    && context
+                        .refused_impl_methods
+                        .contains(&NodeId::from_index(index))
+                {
                     continue;
                 }
                 if matches!(node.form(), SyntaxForm::MethodDeclaration)

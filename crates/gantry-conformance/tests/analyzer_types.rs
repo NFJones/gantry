@@ -5623,6 +5623,38 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
             "fn main() -> Int { let callback: Fn(Int) -> Int = 0; 0 }",
             "Fn",
         ),
+        (
+            "trait Render { pure fn render(self, cb: Fn(Int) -> Int) -> Int; } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        (
+            "trait Render { fn render(self, cb: Fn(Int) -> Int) -> Int effects { prompt }; } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        (
+            "trait Render { fn render(self) -> Fn(Int) -> Int effects { prompt }; } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        (
+            "trait Render { pure fn render(self, cb: Int) -> Int; } struct Item {} impl Render for Item { pure fn render(self, cb: Fn(Int) -> Int) -> Int { 0 } } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        (
+            "trait Callable { pure fn call(self) -> Int; } impl Callable for Fn(Int) -> Int { pure fn call(self) -> Int { 0 } } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        (
+            "struct Box2<T> { value: T } impl Box2<Fn(Int) -> Int> { fn get(self) -> Int { 0 } } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        (
+            "trait Callable { pure fn call(self) -> Int; } impl Callable for Option<Fn(Int) -> Int> { pure fn call(self) -> Int { 0 } } fn main() -> Int { 0 }",
+            "Fn",
+        ),
+        (
+            "struct Box2<T> { value: T } impl Box2<Option<Fn(Int) -> Int>> { fn get(self) -> Int { 0 } } fn main() -> Int { 0 }",
+            "Fn",
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)

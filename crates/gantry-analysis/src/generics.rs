@@ -917,7 +917,10 @@ pub(crate) fn collect_trait_contracts_and_implementation_heads(
                                 &symbols_by_id,
                             )
                         })
-                        .collect::<Result<Vec<_>, _>>()?;
+                        .collect::<Result<Vec<Option<_>>, _>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>();
                     methods.sort_by(|left, right| left.name().cmp(right.name()));
                     let predicates = collect_where_predicates(
                         tree,
@@ -1255,7 +1258,10 @@ pub(crate) fn check_trait_implementation_methods(
                 .map(|method| {
                     collect_trait_method(tree, method, &binders, &facts, &references, &symbols)
                 })
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect::<Result<Vec<Option<_>>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
             methods.sort_by(|left, right| left.name().cmp(right.name()));
 
             let mut complete = methods.len() == contract.methods().len();
@@ -1513,7 +1519,7 @@ fn collect_trait_method(
     facts: &BTreeMap<SourceSpan, &TypeExpression>,
     references: &BTreeMap<SourceSpan, SymbolId>,
     symbols: &BTreeMap<SymbolId, &Symbol>,
-) -> Result<TraitMethodContract, AnalysisError> {
+) -> Result<Option<TraitMethodContract>, AnalysisError> {
     let method_node = tree.node(method).ok_or(AnalysisError::Invariant)?;
     let name = direct_identifiers(tree, method)?
         .into_iter()
@@ -1542,46 +1548,48 @@ fn collect_trait_method(
         .any(|node| {
             matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "mut")
         });
-    let parameters = method_node
-        .children()
-        .iter()
-        .copied()
-        .filter_map(|child| {
-            let parameter = tree.node(child)?;
-            matches!(parameter.form(), SyntaxForm::Parameter).then_some(parameter)
-        })
-        .filter(|parameter| {
-            !parameter.children().iter().filter_map(|child| tree.node(*child)).any(|node| {
+    let mut parameters = Vec::new();
+    for parameter in method_node.children().iter().copied().filter_map(|child| {
+        let parameter = tree.node(child)?;
+        matches!(parameter.form(), SyntaxForm::Parameter).then_some(parameter)
+    }) {
+        if parameter
+            .children()
+            .iter()
+            .filter_map(|child| tree.node(*child))
+            .any(|node| {
                 matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self")
             })
-        })
-        .filter_map(|parameter| direct_child_node(tree, parameter, SyntaxForm::ValueType))
-        .map(|type_node| {
+        {
+            continue;
+        }
+        let Some(type_node) = direct_child_node(tree, parameter, SyntaxForm::ValueType) else {
+            continue;
+        };
+        let span = tree.node(type_node).ok_or(AnalysisError::Invariant)?.span();
+        let Some(expression) = facts.get(span).copied().cloned() else {
+            // The signature annotation carries no resolved type expression because the
+            // type phase refused it: an unresolved name, or a recognised callable form
+            // that this revision does not admit. Such a declaration contributes no
+            // contract and no implementation head; the refusal is already published.
+            return Ok(None);
+        };
+        parameters.push(expression);
+    }
+    let result = match method_node.children().iter().copied().rfind(|child| {
+        tree.node(*child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+    }) {
+        Some(type_node) => {
             let span = tree.node(type_node).ok_or(AnalysisError::Invariant)?.span();
-            facts.get(span).copied().cloned().ok_or(AnalysisError::Invariant)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let result = method_node
-        .children()
-        .iter()
-        .copied()
-        .rfind(|child| {
-            tree.node(*child)
-                .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
-        })
-        .map(|type_node| {
-            let span = tree.node(type_node).ok_or(AnalysisError::Invariant)?.span();
-            facts
-                .get(span)
-                .copied()
-                .cloned()
-                .ok_or(AnalysisError::Invariant)
-        })
-        .transpose()?
-        .unwrap_or(
-            TypeExpression::closed(&TypeDescriptor::UNIT, u64::MAX)
-                .map_err(|_| AnalysisError::Invariant)?,
-        );
+            let Some(expression) = facts.get(span).copied().cloned() else {
+                return Ok(None);
+            };
+            expression
+        }
+        None => TypeExpression::closed(&TypeDescriptor::UNIT, u64::MAX)
+            .map_err(|_| AnalysisError::Invariant)?,
+    };
     let effects = direct_child(tree, method, SyntaxForm::EffectContract)
         .map(|contract| collect_effect_contract(tree, contract))
         .transpose()?
@@ -1594,16 +1602,18 @@ fn collect_trait_method(
         references,
         symbols,
     )?;
-    TraitMethodContract::new(
-        &name,
-        parameter_count,
-        ReceiverMode::from_v1_mutability(mutable_receiver),
-        parameters,
-        result,
-        predicates,
-        effects,
-    )
-    .map_err(|_| AnalysisError::Invariant)
+    Ok(Some(
+        TraitMethodContract::new(
+            &name,
+            parameter_count,
+            ReceiverMode::from_v1_mutability(mutable_receiver),
+            parameters,
+            result,
+            predicates,
+            effects,
+        )
+        .map_err(|_| AnalysisError::Invariant)?,
+    ))
 }
 
 fn collect_effect_contract(
