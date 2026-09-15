@@ -11,6 +11,7 @@
 
 pub use gantry_core::mode::SemanticMode;
 
+mod adt;
 mod agent;
 mod application;
 mod approval;
@@ -56,6 +57,13 @@ mod workspace;
 // `TaskCompletion` and its `StreamKind` is named apart from the landed operation
 // progress vocabulary, so no name of this crate root is claimed by two vocabularies
 // at once.
+pub use adt::{
+    ADT_CLAUSES, AdtAliasDeclaration, AdtBoundaryLabels, AdtCharge, AdtConstantBudget,
+    AdtConstantSite, AdtConstantTree, AdtConstantValue, AdtConstructor, AdtConstructorIdentity,
+    AdtDiagnosticCode, AdtDurableProjection, AdtError, AdtField, AdtMatchReport,
+    AdtNonClaimAssertion, AdtNonClaimName, AdtPackageBuilder, AdtPackageLoad, AdtPackageModel,
+    AdtPattern, AdtTypeDeclaration, AdtVisibility, check_adt_non_claims,
+};
 pub use agent::{
     AGENT_CLAUSES, AGENT_NON_CLAIM_ORDER, AGENT_NON_CLAIMS, AcceptedTurn, AgentBindingRevision,
     AgentCrashCutClassification, AgentDeclaredInput, AgentDiagnosticCode, AgentError,

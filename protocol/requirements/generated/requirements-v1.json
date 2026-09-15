@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "6eeb4adac75947775d37c749b0faa061279d1688b5865826ec4101e17a0e73d1",
-  "byte_length": 995882,
-  "line_count": 15441,
+  "specification_sha256": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342",
+  "byte_length": 1006213,
+  "line_count": 15495,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8293,
-      "sha256": "a56d31570c38561fac381d7e228f0906dfd38849fc391c7c09f451cc426986d1",
+      "sha256": "21643606bf774c35e2a1aa37749125dce39c4e021e62659d10626f6da7fccecf",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9497,
-      "end_line": 15441,
-      "sha256": "285382e8fa553c6fd79ea8d7ec080d0feba2800e90e8f57236e323acf45f877e",
+      "end_line": 15495,
+      "sha256": "0a4f01a39ece0d8c5ed981d8414d89bf04d02c8faff5a083f39dbb3742bc6a7a",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "f271da6e892a5743334cb6c357a278d2e2a9e8ef102fb3b0140adef24ed0bf51",
+      "span_sha256": "cddb18745aa63b6a04edd9dec8d4df302e50b889782b77f1f7254e210d71160f",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "da12ca955bab0b93a716fdcf653b5568fc6db93e2cf7c1ad508fb76db6817325",
+      "body_sha256": "4a241b574ce1469aa8bc2a348543592d4590cdcfd79a070e0f08f4bdf5d31c4e",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -40962,6 +40962,539 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/scalar_foundation.rs#section_35_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.0-recursive-algebraic-data-types",
+      "span_start_line": 15442,
+      "span_end_line": 15448,
+      "span_sha256": "6f0035d8b6a65708d909bff10747a3d1e6816cd7ab1c737b8d63c66d301e953b",
+      "anchor_line": 15445,
+      "body_start_line": 15446,
+      "body_end_line": 15448,
+      "body_sha256": "37741a4ed4f433462b5df3fb60c9fab738e5e0536f34a586c9d4eed3aa74d78c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15446,
+          "end_line": 15448,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#section_36_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.1-declaration-and-constructor-identity",
+      "span_start_line": 15449,
+      "span_end_line": 15452,
+      "span_sha256": "71b65e4d16e9f1cef23875505049adbb74e2c41d898dba54da2c41ae922727af",
+      "anchor_line": 15449,
+      "body_start_line": 15450,
+      "body_end_line": 15452,
+      "body_sha256": "a9ea14c2040c3b4812b97f4e4075af014e9fc514e29ef71d7acb6bc1fb46b0d8",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15450,
+          "end_line": 15452,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#duplicate_declarations_and_arity_irregularities_are_refused"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.2-guarded-productive-recursion",
+      "span_start_line": 15453,
+      "span_end_line": 15456,
+      "span_sha256": "3e70562038785ce9639141ea5d1964011bae12c0362209ef8a6a9f8ca4e06ace",
+      "anchor_line": 15453,
+      "body_start_line": 15454,
+      "body_end_line": 15456,
+      "body_sha256": "010738c3eb91944f7ec57a32f23d64df11306687aaf65c5957a07bfc0993e86c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15454,
+          "end_line": 15456,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#productive_and_unproductive_recursion_are_distinguished"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.3-mutual-recursion-and-order-independence",
+      "span_start_line": 15457,
+      "span_end_line": 15460,
+      "span_sha256": "feba4ad38bb2d2297a8bb6c575c33ade88b334b1e1869aa8d259051b000e1b20",
+      "anchor_line": 15457,
+      "body_start_line": 15458,
+      "body_end_line": 15460,
+      "body_sha256": "e1825a19b5b274910bf47f43df61a4641d66194edaa6555e85f08de3d8db3eb8",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15458,
+          "end_line": 15460,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#mutual_recursion_is_order_independent"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.4-aliases-and-alias-cycles",
+      "span_start_line": 15461,
+      "span_end_line": 15464,
+      "span_sha256": "52051238e581091308207a1703414b373f290a954d1b7524600efb4598aebd7b",
+      "anchor_line": 15461,
+      "body_start_line": 15462,
+      "body_end_line": 15464,
+      "body_sha256": "6cfe8bd29ce37b19bc68a17f1e740efc8003630a99bf0f87a50c8b96d4aecd8e",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15462,
+          "end_line": 15464,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#aliases_resolve_transitively_and_cycles_are_refused"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.5-visibility-and-reference-admission",
+      "span_start_line": 15465,
+      "span_end_line": 15468,
+      "span_sha256": "5dceb136b66628fd9568cfdbf9e368e67b66d63d658bccd39951d6fcd9ac9596",
+      "anchor_line": 15465,
+      "body_start_line": 15466,
+      "body_end_line": 15468,
+      "body_sha256": "2c9dce3f92b0c1fddee5687c2d993be7c326c24c8a6dc1677f335eb289496c0a",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15466,
+          "end_line": 15468,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#visibility_admits_only_open_enough_references"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.6-destructuring-and-pattern-identity",
+      "span_start_line": 15469,
+      "span_end_line": 15472,
+      "span_sha256": "75506307f347f15fd117d92d5d7fc91691c5413e44c2177b49acaf18047f05cd",
+      "anchor_line": 15469,
+      "body_start_line": 15470,
+      "body_end_line": 15472,
+      "body_sha256": "09b6d186a576e93a8befa3a34df25782d1f34c1e6aeb6c702fe56b557683bd02",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15470,
+          "end_line": 15472,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#patterns_cover_the_declared_constructor_space"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.7-match-coverage-and-exhaustiveness",
+      "span_start_line": 15473,
+      "span_end_line": 15476,
+      "span_sha256": "16999e5fe050a5f56bc4bd2ec856f67f17ad16da4a15526ad6365ce769ee0475",
+      "anchor_line": 15473,
+      "body_start_line": 15474,
+      "body_end_line": 15476,
+      "body_sha256": "df1835c93a38a304688214a8c4e200a44f6a506984e22133543beb2ccd85a002",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15474,
+          "end_line": 15476,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#patterns_cover_the_declared_constructor_space"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.8-bounded-constant-values",
+      "span_start_line": 15477,
+      "span_end_line": 15480,
+      "span_sha256": "630b80bc809f77ccbdc7ff3e7b40287311bb40f7df85939aa898874722700b14",
+      "anchor_line": 15477,
+      "body_start_line": 15478,
+      "body_end_line": 15480,
+      "body_sha256": "f3650a1a111b82ea9f4b0ce2dac5f946ebb27d89c7c302657efa6fb7e3ce46af",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15478,
+          "end_line": 15480,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#constant_sites_are_finite_trees_with_charges"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.9-package-load-non-execution",
+      "span_start_line": 15481,
+      "span_end_line": 15484,
+      "span_sha256": "a45b46607ddd01e080edb1eb3091f20f57ca7533ef82719a352ed13d4c80dab3",
+      "anchor_line": 15481,
+      "body_start_line": 15482,
+      "body_end_line": 15484,
+      "body_sha256": "289b6858dc029fb99029f699f5a37e467d949bfc8a0692798749bba8b94dcafe",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15482,
+          "end_line": 15484,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#declarations_do_not_execute_at_package_load"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.10-schema-closure-and-boundary-independence",
+      "span_start_line": 15485,
+      "span_end_line": 15488,
+      "span_sha256": "b34fc3dffe31ec351d0139c92552a29a0a8f8dc854ab6a0033c0c65d18216eb0",
+      "anchor_line": 15485,
+      "body_start_line": 15486,
+      "body_end_line": 15488,
+      "body_sha256": "dc4079400d1666909926162efefbf3a29eaca03a09b78ce8a919c9bfcaa23917",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15486,
+          "end_line": 15488,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#schemas_and_identities_are_boundary_independent"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.11-durable-round-trips-and-interface-identity",
+      "span_start_line": 15489,
+      "span_end_line": 15492,
+      "span_sha256": "4f4213b5a2cf92445374f4fbb999cedacaee1dc6a372851ec66b25a4772a6912",
+      "anchor_line": 15489,
+      "body_start_line": 15490,
+      "body_end_line": 15492,
+      "body_sha256": "fa9bae87a10b3d34f1ff07b3e7d74c6a0d43f958301e7d30d90ee2bbff7ee096",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15490,
+          "end_line": 15492,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#durable_projections_rebuild_identity"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-36.12-adt-non-claims",
+      "span_start_line": 15493,
+      "span_end_line": 15495,
+      "span_sha256": "7e2d6a093aa53048658f9be36a89d539b70a134a275f9defd7d484a2b0ba1dfb",
+      "anchor_line": 15493,
+      "body_start_line": 15494,
+      "body_end_line": 15495,
+      "body_sha256": "27f333891970b50bc4071ae4a5151bf4d51a3f4abcd9139d01fbf0b41d2f2127",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15494,
+          "end_line": 15495,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/adt_foundation.rs#section_36_anchors_and_nonclaims_are_published"
               ],
               "rationale": null
             }

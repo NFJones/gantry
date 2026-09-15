@@ -34,7 +34,7 @@
    "id": "diagnostic-presentation",
    "kind": "golden",
    "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
-  "revision": "6eeb4adac75947775d37c749b0faa061279d1688b5865826ec4101e17a0e73d1",
+  "revision": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -42,7 +42,7 @@
    "id": "requirement-ledger",
    "kind": "requirement",
    "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
-  "revision": "6eeb4adac75947775d37c749b0faa061279d1688b5865826ec4101e17a0e73d1",
+  "revision": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -50,7 +50,7 @@
    "id": "source-provider",
    "kind": "public-api",
    "path": "crates/gantry-conformance/tests/source_provider.rs",
-  "revision": "6eeb4adac75947775d37c749b0faa061279d1688b5865826ec4101e17a0e73d1",
+  "revision": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -58,7 +58,7 @@
    "id": "source-substrate",
    "kind": "fixture",
    "path": "crates/gantry-conformance/tests/source_substrate.rs",
-  "revision": "6eeb4adac75947775d37c749b0faa061279d1688b5865826ec4101e17a0e73d1",
+  "revision": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342",
    "state": "verified",
    "visibility": "public-facade"
   }
@@ -84,7 +84,7 @@
  ],
  "specification": {
   "path": "SPEC.md",
-  "sha256": "6eeb4adac75947775d37c749b0faa061279d1688b5865826ec4101e17a0e73d1"
+  "sha256": "386c30de2a1a22d063b299a439813cc8625fac5f6e5441776fa3cb2744634342"
  },
  "status": "verified",
  "validation_commands": [
