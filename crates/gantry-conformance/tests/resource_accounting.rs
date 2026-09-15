@@ -13,6 +13,19 @@ use gantry::ir::{
     StopCoordinator, StopError, StopRequest, StructuralPosition, TaskStopState,
 };
 
+#[test]
+fn application_fuel_is_not_a_resource_quota_family() {
+    let grant = gantry::ir::FuelGrant::new(2, 1, OwnerGeneration::new(4))
+        .unwrap_or_else(|_| panic!("finite fuel grant"));
+    assert_eq!(grant.remaining(), 2);
+    assert!(
+        !QuotaFamily::ALL
+            .into_iter()
+            .map(QuotaFamily::wire_name)
+            .any(|family| family == "fuel")
+    );
+}
+
 const ROOTS: &[LivenessRoot] = &[
     LivenessRoot::Resource,
     LivenessRoot::Owner,

@@ -9,12 +9,16 @@
 //! algorithms, runtime state, host services, and concrete adapters remain
 //! outside this contract crate.
 
+pub use gantry_core::mode::SemanticMode;
+
 mod agent;
+mod application;
 mod approval;
 mod artifact;
 mod authority;
 mod callable_identity;
 mod canonical;
+mod constant;
 mod effects;
 mod executable;
 mod facts;
@@ -25,6 +29,7 @@ mod host_domain;
 pub mod identifier;
 mod lifecycle;
 mod manifest;
+mod metadata;
 mod operation;
 mod package;
 mod path;
@@ -62,6 +67,16 @@ pub use agent::{
     ToolSetRevisionId, ToolSlotId, ToolSlotKind, Turn, TurnKind, TurnOutcome, TurnValidationCause,
     check_agent_non_claims, classify_original_turn, preflight, repair_turn, validate_raw_response,
 };
+// The Section 30 application entry and launch lifecycle model is declaration-only:
+// it reuses Section 20 generations and Section 22 stop coordination without
+// introducing a launcher, evaluator, adapter, or host trait.
+pub use application::{
+    APPLICATION_CLAUSES, ApplicationClass, ApplicationCoordinator, ApplicationDiagnosticCode,
+    ApplicationEntries, ApplicationEntry, ApplicationError, ApplicationPhase, CapabilityGrant,
+    ExitDisposition, ExitReport, FinalizationStep, FuelDisposition, FuelGrant, FuelState,
+    LaunchArrangement, LaunchSnapshot, LaunchSnapshotLimits, LogicalCwd, PortableSignalClass,
+    StdioArrangement, StdioChannel, StdioSet, SupervisorSettlement, admit_durable_companion,
+};
 pub use approval::{
     ApprovalAuditAccess, ApprovalAuditEvidence, ApprovalAuditView, ApprovalDecision,
     ApprovalDecisionId, ApprovalDiagnosticCode, ApprovalError, ApprovalOutcome,
@@ -90,6 +105,21 @@ pub use callable_identity::{
 pub use canonical::{
     CanonicalIr, CanonicalNode, CanonicalOperationSite, CanonicalSourceMap,
     CanonicalTaskControlSite, CanonicalWorkflow, IrArtifactError, SourceMapEntry,
+};
+// The Section 32 constant, package-state, and initialization model is
+// declaration-only: it records declared classes, admissible operations, bounded
+// work, dependency order, publication facts, and package state without parsing,
+// evaluating, linking, or executing source.
+pub use constant::{
+    ApplicationStateDeclaration, ApplicationStateOwner, CONSTANT_CLAUSES, CONSTANT_INT_LIMIT,
+    CONSTANT_NON_CLAIM_ORDER, CONSTANT_NON_CLAIMS, ConstantAdmissibility, ConstantArtifactBinding,
+    ConstantArtifactIdentity, ConstantConversion, ConstantDeclaration, ConstantDiagnosticCode,
+    ConstantEffect, ConstantError, ConstantExpression, ConstantInterface, ConstantInterfaceEntry,
+    ConstantInterfaceIdentity, ConstantNonClaim, ConstantNonClaimAssertion, ConstantOperation,
+    ConstantPackage, ConstantRefusalReason, ConstantSelection, ConstantState, ConstantValueClass,
+    ConstantWork, EvaluationLimits, MAX_CONSTANT_PATH_BYTES, MAX_CONSTANT_VALUE_BYTES,
+    PackageLoadFact, PackageStateClass, admit_package_state, check_constant_non_claims,
+    checked_float, checked_int,
 };
 pub use effects::{EFFECT_ORDER, EffectSet};
 pub use executable::{
@@ -153,6 +183,14 @@ pub use lifecycle::{
     TaskOutcome, TaskResult, TaskStopState,
 };
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
+// Section 31 declares bounded source metadata records only; parsing, rendering,
+// lint execution, generators, and editor services remain downstream owners.
+pub use metadata::{
+    DependencyWarningPolicy, Deprecation, DocumentationComment, DocumentationFormat,
+    DocumentationLink, ExampleDeclaration, ExampleMode, GeneratedOrigin, LintDeclaration, LintId,
+    LintScope, LintSeverity, MetadataDeclarations, MetadataDiagnosticCode, MetadataError,
+    MetadataSubject, SOURCE_METADATA_CLAUSES, SemanticAttribute, ToolMetadata, admit_lint_control,
+};
 pub use operation::{
     AdapterInstance, CrashCutClassification, DedupRecord, DedupRecordState, DedupRetentionBounds,
     DispatchAdmission, DurableOperationCut, DurableValueRecord, EffectCertainty, FailureClass,

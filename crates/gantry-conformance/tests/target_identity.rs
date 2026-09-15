@@ -221,6 +221,14 @@ fn expected_inputs() -> ExpectedInputs {
     .unwrap_or_else(|_| unreachable!("fixture inputs name an admitted mode"))
 }
 
+#[test]
+fn binary_target_kind_admits_the_application_semantic_mode_used_by_application_entries() {
+    assert!(
+        ModeAdmission::admitted_modes(TargetKind::Binary)
+            .contains(&gantry::mode::SemanticMode::Application)
+    );
+}
+
 /// Returns one fixture artifact binding.
 fn fixture_binding() -> TargetArtifactBinding {
     expected_inputs()

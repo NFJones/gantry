@@ -812,7 +812,7 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
-| Portable host-domain and standard host-family contracts | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims` |
+| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, and constants/package initialization | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -15107,3 +15107,171 @@ claim runtime integration merely because it implements this pure model.
 <a id="GNT-29.15-host-contract-non-claims"></a>
 
 **[GNT-29.15-host-contract-non-claims] Host-contract non-claims.** This section does not promise a runtime adapter, host trait, host operation, host allocation, service discovery, terminal behavior, filesystem access, environment access, network transport, TLS validation, HTTP implementation, process launch, sandbox isolation, clock, randomness, secret access, codec implementation, checkpoint, evaluator behavior, durable recovery, or external or durable grant. Its model facts and tests MUST NOT be presented as any such guarantee.
+
+
+## 30. Application Entry and Launch Lifecycle
+
+<a id="GNT-30.0-application-entry-and-launch-lifecycle"></a>
+
+**[GNT-30.0-application-entry-and-launch-lifecycle] Application entry and launch lifecycle.** This section defines an analyzer-only declaration model for an application entry, launch snapshot, lifecycle ordering, and exit report. Its pure model is `crates/gantry-ir/src/application.rs` and its analyzer evidence is `crates/gantry-conformance/tests/application_lifecycle.rs`. It introduces no launcher, runtime, evaluator, host trait, CLI, adapter, protocol family, or embedding implementation.
+
+<a id="GNT-30.1-target-selected-entry-abi"></a>
+
+**[GNT-30.1-target-selected-entry-abi] Target-selected entry ABI.** An application entry names one application semantic mode, one nonempty ABI spelling, one target selection, and one snapshot. A target selects at most one entry; a target-equivalent duplicate is refused. Portable and durable semantic modes are not application entries.
+
+<a id="GNT-30.2-bounded-launch-snapshot-and-capability-closure"></a>
+
+**[GNT-30.2-bounded-launch-snapshot-and-capability-closure] Bounded launch snapshot and capability closure.** Before startup, arguments, environment, logical CWD data, and declared capabilities form one immutable, bounded snapshot. A child capability closure is admitted only when it is a subset of its parent closure; no projection adds a capability.
+
+<a id="GNT-30.3-arguments-environment-and-logical-cwd"></a>
+
+**[GNT-30.3-arguments-environment-and-logical-cwd] Arguments, environment, and logical CWD.** Arguments and environment entries are bounded; environment names are nonempty and unique. Logical CWD is data only, never directory authority. Protected entries remain present in the frozen snapshot, and child projection is attenuation only.
+
+<a id="GNT-30.4-standard-io-and-exit-disposition"></a>
+
+**[GNT-30.4-standard-io-and-exit-disposition] Standard I/O and exit disposition.** Standard I/O channels are exactly stdin, stdout, and stderr, each with exactly inherit, null, or pipe. Semantic exit disposition is exactly completed, failed, or stopped; it is not a native process status.
+
+<a id="GNT-30.5-startup-order-and-admission-closure"></a>
+
+**[GNT-30.5-startup-order-and-admission-closure] Startup order and admission closure.** Startup follows validated target entry and frozen snapshot. A translated stop uses the landed Section 22 coordinator and closes admission before finalization; admission never reopens.
+
+<a id="GNT-30.6-fuel-grants-suspension-and-renewal"></a>
+
+**[GNT-30.6-fuel-grants-suspension-and-renewal] Fuel grants, suspension, and renewal.** Fuel is a finite renewable grant over the Section 3 transition budget, not a Section 28 quota family. Exhaustion may suspend execution. Renewal is fenced by the current Section 20 owner generation and MUST preserve the fixed nonzero yield quantum and every other fixed identity.
+
+<a id="GNT-30.7-signal-translation-and-stop-joining"></a>
+
+**[GNT-30.7-signal-translation-and-stop-joining] Signal translation and stop joining.** Portable `interrupt` and `terminate` translate only to the landed Section 22 operator-signal stop path. Races join that one request and do not create a native signal identity or a second stop coordinator.
+
+<a id="GNT-30.8-bounded-finalization-and-outcome-preservation"></a>
+
+**[GNT-30.8-bounded-finalization-and-outcome-preservation] Bounded finalization and outcome preservation.** Finalization is ordered close-admission, final-flush, hard-cancellation when applicable, supervisor-settlement, then exit-publication. A failed final flush is recorded but never replaces the fixed language outcome. Hard cancellation preserves the Section 22 sealed emergency-cleanup witness.
+
+<a id="GNT-30.9-supervisor-settlement-and-exit-publication"></a>
+
+**[GNT-30.9-supervisor-settlement-and-exit-publication] Supervisor settlement and exit publication.** An exit report is publishable only after supervisor settlement. It contains the semantic disposition, flush result, settlement fact, and, where applicable, the affine sealed cleanup witness.
+
+<a id="GNT-30.10-standalone-and-embedded-equivalence"></a>
+
+**[GNT-30.10-standalone-and-embedded-equivalence] Standalone and embedded equivalence.** Standalone and embedded arrangement are closed declaration spellings. Both normalize to the same target entry, snapshot, Section 22 stop path, finalization order, and semantic exit report; neither spelling implies a host implementation.
+
+<a id="GNT-30.11-durable-companion-admission"></a>
+
+**[GNT-30.11-durable-companion-admission] Durable-companion admission.** A durable companion is admitted only for a binary target and only when its closure is nonempty and every member is classified durable. Every application-only or live-closure member is rejected before admission.
+
+<a id="GNT-30.12-application-non-claims"></a>
+
+**[GNT-30.12-application-non-claims] Application non-claims.** This section does not promise process launch, native arguments or environment mutation, directory authority, standard-I/O handles, signal delivery, scheduler behavior, evaluator behavior, host traits, adapters, CLI behavior, durable runtime admission, recovery, checkpointing, or embedding implementation. Model facts and tests MUST NOT be presented as such guarantees.
+
+## 31. Source Metadata, Documentation, Attributes, and Lint Policy
+
+<a id="GNT-31.0-source-metadata-documentation-attributes-and-lint-policy"></a>
+
+**[GNT-31.0-source-metadata-documentation-attributes-and-lint-policy] Source metadata, documentation, attributes, and lint policy.** This section defines the analyzer-only declaration contract for source metadata. Its pure model is `crates/gantry-ir/src/metadata.rs` and its analyzer evidence lane is `crates/gantry-conformance/tests/source_metadata.rs`. It introduces no parser syntax, documentation renderer, compiler plugin, LSP service, executable example runner, code generator, runtime behavior, host authority, or protocol family.
+
+**Applicability.** These clauses apply only to explicit metadata declarations and their bounded validation. They neither execute documentation examples nor apply a lint to source; downstream frontend, formatter, documentation, linker, tooling, and LSP work must consume this contract without changing its identity or admission rules.
+
+**Boundary.** Section 16 owns package, alias, re-export, and public-interface identity; Section 18 owns spelling and canonical symbolic identity; Section 26 owns bounded toolchain work and generated-input admission. Metadata may cite those identities but MUST NOT recreate, replace, or weaken them.
+
+<a id="GNT-31.1-metadata-subject-and-doc-comment-attachment"></a>
+
+**[GNT-31.1-metadata-subject-and-doc-comment-attachment] Metadata subject and doc-comment attachment.** Every metadata record names one nonempty bounded subject identity. A documentation comment attaches only to that subject at its leading declaration boundary; trailing, detached, duplicate, or reattached comments are refused. Attachment order is declaration order and is formatter-stable: formatting MUST NOT change subject identity, attachment, text bytes, link target, example mode, attribute, lint identity, or generated origin.
+
+<a id="GNT-31.2-documentation-format-links-and-bounds"></a>
+
+**[GNT-31.2-documentation-format-links-and-bounds] Documentation format, links, and bounds.** Documentation format is exactly markdown or plain-text. Text, links, examples, and metadata records have declared finite bounds. A documentation link names one package-qualified target of the form `package::item`; an empty, unqualified, or malformed link is refused rather than resolved through an import, display label, filesystem path, or renderer convention.
+
+<a id="GNT-31.3-checked-example-declarations"></a>
+
+**[GNT-31.3-checked-example-declarations] Checked example declarations.** An example declaration is exactly `compile`, `compile-fail`, or `display-only`. Compile and compile-fail examples carry bounded explicit source and a declared semantic mode; display-only examples carry bounded text and are never represented as checked. This declaration neither parses, compiles, executes, acquires authority, nor treats a passing host process as semantic evidence.
+
+<a id="GNT-31.4-deprecation-through-aliases-and-reexports"></a>
+
+**[GNT-31.4-deprecation-through-aliases-and-reexports] Deprecation through aliases and re-exports.** A deprecation record names one deprecated subject and one distinct replacement subject. It preserves the defining identity of both subjects and declares no redirect, lookup fallback, source rewrite, or compatibility proof. A duplicate deprecated subject, an identity-preserving self replacement, or an unbounded message is refused. Alias and re-export propagation remain owned by Section 16.
+
+<a id="GNT-31.5-closed-semantic-attributes"></a>
+
+**[GNT-31.5-closed-semantic-attributes] Closed semantic attributes.** Compiler-owned semantic attributes are exactly `entry`, `test`, and `export`. Each is a declaration fact only and has no payload, user-defined expansion, derive, callback, plugin, hidden effect, authority, or compile-time execution. An unknown semantic attribute or a payload for a payload-free attribute is refused rather than preserved for a future compiler.
+
+<a id="GNT-31.6-namespaced-tool-metadata"></a>
+
+**[GNT-31.6-namespaced-tool-metadata] Namespaced tool metadata.** Tool-only metadata has one nonempty ASCII namespace, one nonempty bounded key, and one bounded value. A tool metadata namespace is distinct from compiler-owned semantic attributes and cannot change source validity, type, effect, authority, package identity, link resolution, operation identity, or runtime behavior. Duplicate namespace-and-key pairs for one subject are refused.
+
+<a id="GNT-31.7-stable-lint-identities-and-severity"></a>
+
+**[GNT-31.7-stable-lint-identities-and-severity] Stable lint identities and severity.** A lint has one stable nonempty bounded identity, one owning subject, and exactly allow, warn, deny, or forbid severity. Identity is a machine key, never a rendered message. A security or semantic lint is unsuppressible; its severity may not be weakened by an ordinary lint control. Unknown lint identities and duplicate declarations are refused.
+
+<a id="GNT-31.8-scoped-lint-controls-and-suppression"></a>
+
+**[GNT-31.8-scoped-lint-controls-and-suppression] Scoped lint controls and suppression.** A lint control scope is exactly item, package, or dependency. A control changes only a declared lint severity at its declared scope, is bounded and explicit, and cannot suppress an unsuppressible lint or lower `forbid`. A control does not apply by source order, import order, dependency graph traversal, display spelling, or ambient tool configuration.
+
+<a id="GNT-31.9-dependency-warning-policy"></a>
+
+**[GNT-31.9-dependency-warning-policy] Dependency warning policy.** Dependency diagnostics are exactly inherit, warn, deny, or ignore. The policy is one explicit declaration per dependency subject; duplicate policy declarations are refused. `ignore` affects only ordinary dependency warnings and never hides semantic, security, integrity, authority, compatibility, or publication failures.
+
+<a id="GNT-31.10-generated-code-origins"></a>
+
+**[GNT-31.10-generated-code-origins] Generated-code origins.** A generated-origin record identifies one generated subject, one distinct source subject, and one nonempty bounded generator identity. It preserves both identities and is declaration metadata only. It grants no generator execution, source authority, semantic exemption, lint suppression, or provenance substitution. A self-origin or duplicate generated subject is refused.
+
+<a id="GNT-31.11-metadata-diagnostics-and-determinism"></a>
+
+**[GNT-31.11-metadata-diagnostics-and-determinism] Metadata diagnostics and determinism.** The frozen metadata diagnostics are `metadata-invalid-subject`, `metadata-invalid-doc-attachment`, `metadata-invalid-link`, `metadata-example-limit-exceeded`, `metadata-invalid-deprecation`, `metadata-unknown-semantic-attribute`, `metadata-invalid-tool-metadata`, `metadata-duplicate-lint`, `metadata-unsuppressible-lint`, `metadata-invalid-dependency-warning-policy`, and `metadata-invalid-generated-origin`. Each names one owning clause and no diagnostic spelling is shared by two refusal conditions. Equivalent declared metadata inputs produce the same validation result independently of input order.
+
+<a id="GNT-31.12-source-metadata-non-claims"></a>
+
+**[GNT-31.12-source-metadata-non-claims] Source metadata non-claims.** This section does not promise parser syntax, Markdown rendering, documentation publication, link resolution against a package graph, example parsing or execution, deprecation migration, semantic attribute implementation, lint execution, LSP behavior, formatter implementation, generator execution, compile-time plugins, user-defined derives, runtime behavior, host authority, adapter behavior, or release policy. Model facts and tests MUST NOT be presented as such guarantees.
+
+
+## 32. Constants, Package State, and Initialization
+
+<a id="GNT-32.0-constants-package-state-and-initialization"></a>
+
+**[GNT-32.0-constants-package-state-and-initialization] Constants, package state, and initialization.** This section defines an analyzer-only declaration model for compile-time constants, deterministic dependency ordering, bounded evaluation, canonical publication, and package state. Its pure model is `crates/gantry-ir/src/constant.rs` and its analyzer evidence is `crates/gantry-conformance/tests/constants.rs`. A constant is evaluated during analysis under the declared limits of `GNT-32.4-deterministic-bounded-evaluation`, and resolving, loading, or linking a package executes no source and acquires no authority. This section introduces no grammar production, parser, formatter, incremental cache, linker realization, runtime static storage, host call, model operation, live resource, or durable projection.
+
+<a id="GNT-32.1-constant-declaration-and-immutability"></a>
+
+**[GNT-32.1-constant-declaration-and-immutability] Constant declaration and immutability.** A constant declaration names exactly one canonical package-qualified path, one declared class from `GNT-32.2-admissible-constant-classes`, one initializer over the operation set of `GNT-32.3-admissible-constant-operations`, and zero or more constant dependencies. The canonical path is the declaration's identity: an empty, oversized, or non-canonical path spelling, a duplicate canonical path within one package, and a second evaluation or mutation of an already evaluated constant are refused under the invalid-declaration diagnostic. A constant is immutable: no clause of this section admits assignment, mutation, borrowing, redeclaration, or lazy re-evaluation of an evaluated constant, and one constant's canonical value is a function of its initializer and its declared dependencies only.
+
+<a id="GNT-32.2-admissible-constant-classes"></a>
+
+**[GNT-32.2-admissible-constant-classes] Admissible constant classes.** A constant class is admissible exactly when it is `Unit`, `Bool`, `Int`, `Float`, `String`, `Option<T>`, `Result<T, E>`, `List<T>`, `Tuple<T1, ..., Tn>`, a declared struct type, or a declared enum type whose every member is itself admissible. A class that admits no ordinary value, `Decision`, `OperationError`, callable and closure values, collection and iterator families other than `List<T>`, task, channel, and coordination values, live resources, handles, loans, capabilities, grants, protected references, and authority tokens are refused. The refusal vocabulary is closed and names exactly ten reasons: sealed model judgment, sealed operational error, callable value, collection value, task value, live resource, capability value, model or host operation, clock or entropy source, and ambient deployment input.
+
+<a id="GNT-32.3-admissible-constant-operations"></a>
+
+**[GNT-32.3-admissible-constant-operations] Admissible constant operations.** An initializer uses only the closed admissible operation set: literal construction, tuple construction, struct construction, enum construction, `Option` construction, `Result` construction, `List` construction, field projection, element projection, pattern matching over admissible values, comparison, boolean logic, integer arithmetic, float arithmetic, string operation, and explicit conversion. Capability acquisition, model operations, live-resource operations, task operations, clock observation, secure-random draws, deployment-input reads, and authority acquisition are refused effects: a declaration whose initializer reaches any refused effect MUST NOT evaluate, and its evaluation is refused under the inadmissible-operation diagnostic rather than executed, mocked, or partially evaluated.
+
+<a id="GNT-32.4-deterministic-bounded-evaluation"></a>
+
+**[GNT-32.4-deterministic-bounded-evaluation] Deterministic bounded evaluation.** Every constant is evaluated under four declared nonzero limits: evaluation fuel measured in steps, nesting depth, aggregate member count, and encoded output size. Evaluation is deterministic and host-independent: equal declared inputs under equal declared limits produce one identical canonical value independently of declaration order, discovery order, filesystem enumeration order, and build-host state. A declared work record that exceeds a declared limit is refused under the limit-exceeded diagnostic, and fuel exhaustion is refused as nontermination; a refused limit is never truncated, partially evaluated, retried with a larger limit, or replaced by a build-host value.
+
+<a id="GNT-32.5-dependency-ordering-and-cycle-refusal"></a>
+
+**[GNT-32.5-dependency-ordering-and-cycle-refusal] Dependency ordering and cycle refusal.** A constant dependency names another constant of the same package or of an imported package, and the dependency relation MUST be acyclic. Evaluation order is one deterministic topological order over declared dependencies and MUST NOT vary with declaration order, discovery order, traversal order, or source enumeration order. A dependency that names no declared constant is refused under the unresolved-dependency diagnostic, and a dependency cycle is refused under the cycle diagnostic, which names exactly one declared member of the cycle; both refusals publish nothing.
+
+<a id="GNT-32.6-constant-diagnostics"></a>
+
+**[GNT-32.6-constant-diagnostics] Constant diagnostics.** The frozen constant diagnostics are `constant-invalid-declaration`, `constant-inadmissible-type`, `constant-inadmissible-operation`, `constant-limit-exceeded`, `constant-nontermination`, `constant-overflow`, `constant-invalid-conversion`, `constant-unresolved-dependency`, `constant-cycle`, `constant-partial-publication-refused`, `constant-interface-identity-mismatch`, `constant-unsealed-selection-refused`, `constant-inactive-evaluation-refused`, `constant-loader-execution-refused`, `constant-mutable-package-state-refused`, `constant-owner-absent`, and `constant-non-claim-as-guarantee`. Each diagnostic names one owning clause, no diagnostic spelling is shared by two refusal conditions, and every refusal carries a stable source location. An integer result outside the inclusive `Int` range and a non-finite float result are refused as overflow rather than wrapped, widened, or substituted, and an inexact admitted conversion is refused as an invalid conversion rather than rounded.
+
+<a id="GNT-32.7-atomic-failure-and-no-partial-publication"></a>
+
+**[GNT-32.7-atomic-failure-and-no-partial-publication] Atomic failure and no partial publication.** Each constant either yields exactly one canonical typed value or is refused. A refused constant yields no value, no interface entry, and no artifact contribution, and a package publishes only when every declaration it contains is evaluated, so a package containing one refused constant publishes nothing and reports `constant-partial-publication-refused` rather than a partial package, a partial public interface, or a repaired value. Evaluating a constant whose declared dependency is refused is refused as a partial-publication refusal rather than evaluated against a missing value.
+
+<a id="GNT-32.8-constant-interface-and-artifact-identity"></a>
+
+**[GNT-32.8-constant-interface-and-artifact-identity] Constant interface and artifact identity.** A semantics-relevant exported constant contributes its canonical path, admissible class, and canonical encoded value bytes to the public interface manifest, and its interface identity is a digest over exactly those recorded facts in canonical path order. An artifact identity folds that interface identity with the artifact's declared target kinds and its evaluated constant set, so changing any exported constant value, class, or path, the declared target set, or the evaluated set changes the artifact identity. A presented interface identity that differs from the recomputed identity is refused under the interface-identity-mismatch diagnostic rather than accepted, merged, or repaired.
+
+<a id="GNT-32.9-sealed-target-and-feature-selection"></a>
+
+**[GNT-32.9-sealed-target-and-feature-selection] Sealed target and feature selection.** A constant declaration is either unconditional or selected by exactly one sealed target or feature predicate of `GNT-17.3-sealed-predicates`. A selection derived from ambient build-host or environment state is refused under the unsealed-selection diagnostic, and an inactive declaration does not evaluate: evaluating an inactive constant is refused under the inactive-evaluation diagnostic, and an inactive constant contributes nothing to the interface manifest or the artifact identity.
+
+<a id="GNT-32.10-package-load-non-execution"></a>
+
+**[GNT-32.10-package-load-non-execution] Package load non-execution.** Resolving, loading, or linking a package executes no source: no loader hook, no dependency-order startup hook, no constructor function run by the loader, no source initializer, and no mutable package global. A declared package-state class other than an immutable constant is refused, a mutable global or source initializer is refused under the mutable-package-state diagnostic, and a loader or dependency-order hook, or a package-load fact that reports source execution, is refused under the loader-execution diagnostic, so package state is created only by explicit execution of the running program.
+
+<a id="GNT-32.11-application-owned-mutable-state"></a>
+
+**[GNT-32.11-application-owned-mutable-state] Application-owned mutable state.** Long-lived mutable state is application state and MUST have exactly one explicit owner: a value owned by the application entry, a supervised service task, or an explicit host capability. A mutable-state declaration with no owner is refused under the owner-absent diagnostic. Laziness, memoization, and caches are ordinary owned values or explicit runtime services; they are never constants, package state, or load-time computation.
+
+<a id="GNT-32.12-constant-and-package-state-non-claims"></a>
+
+**[GNT-32.12-constant-and-package-state-non-claims] Constant and package-state non-claims.** This section does not promise grammar productions, keyword reservation, parser acceptance, formatter behavior, incremental or clean-cache equivalence, linker realization of constants, runtime static storage, durable projection of constants, compile-time host execution, constant folding, evaluation performance, or the absence of host exhaustion that cannot be safely reported. Model facts and tests MUST NOT be presented as such guarantees.

@@ -23,12 +23,58 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use gantry::ir::{
-    AdmittedWork, DurableStopCut, EscalatedWork, GracePolicy, LIFECYCLE_STOP_CLAUSES,
-    LateResultFence, OwnerGeneration, STOP_NON_CLAIM_ORDER, STOP_NON_CLAIMS, SafePoint, StopCause,
+    AdmittedWork, ApplicationEntry, CapabilityGrant, DurableStopCut, EscalatedWork, GracePolicy,
+    LIFECYCLE_STOP_CLAUSES, LateResultFence, LaunchSnapshot, LaunchSnapshotLimits, LogicalCwd,
+    OwnerGeneration, STOP_NON_CLAIM_ORDER, STOP_NON_CLAIMS, SafePoint, SemanticMode, StopCause,
     StopCauseClass, StopCoordinator, StopCrashCutClassification, StopDiagnosticCode, StopError,
     StopNonClaimName, StopRequest, StopRequestJoin, StopState, StopTransition, TaskOutcome,
     TaskResult, TaskStopState,
 };
+
+fn entry(target: &str) -> ApplicationEntry {
+    let limits = LaunchSnapshotLimits::new(1, 1, 1, 32);
+    let capabilities =
+        [CapabilityGrant::new("stop").unwrap_or_else(|error| panic!("capability: {error:?}"))]
+            .into_iter()
+            .collect();
+    let snapshot = LaunchSnapshot::new(
+        vec!["app".into()],
+        vec![("LANG".into(), "C".into())],
+        LogicalCwd::new("/logical").unwrap_or_else(|error| panic!("cwd: {error:?}")),
+        capabilities,
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("snapshot: {error:?}"));
+    ApplicationEntry::new(
+        target,
+        SemanticMode::Application,
+        "gantry-v1",
+        snapshot,
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("entry: {error:?}"))
+}
+
+#[test]
+fn application_signal_translation_reuses_the_landed_stop_coordinator() {
+    let mut application =
+        gantry::ir::ApplicationCoordinator::new(gantry::ir::LaunchArrangement::Standalone);
+    assert!(application.start(&entry("application")).is_ok());
+    assert!(
+        application
+            .translate_signal(
+                gantry::ir::PortableSignalClass::Interrupt,
+                policy(10, 10),
+                1,
+            )
+            .is_ok()
+    );
+    assert_eq!(
+        application.stop().request().map(StopRequest::cause),
+        Some(StopCause::OperatorSignal)
+    );
+    assert!(!application.stop().is_admission_open());
+}
 
 /// Declares one positive grace and drain budget.
 ///

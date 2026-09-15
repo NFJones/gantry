@@ -17,6 +17,15 @@ use gantry::ir::{
     ProcessSupervision, ReceiverOwnership, StaticSiteId, StructuralPosition,
 };
 
+#[test]
+fn application_stdio_is_a_declaration_not_a_host_process_mapping() {
+    assert_eq!(
+        gantry::ir::StdioArrangement::ALL.map(gantry::ir::StdioArrangement::wire_name),
+        ["inherit", "null", "pipe"]
+    );
+    assert_ne!(gantry::ir::StdioArrangement::Pipe.wire_name(), "piped");
+}
+
 fn mappings(family: HostDomainFamily) -> Vec<NativeMappingDeclaration> {
     family
         .categories()
