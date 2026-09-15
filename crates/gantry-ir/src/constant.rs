@@ -39,6 +39,9 @@ pub const CONSTANT_INT_LIMIT: i64 = 9_007_199_254_740_991;
 /// The maximum admitted length in bytes of a declared non-path name.
 pub const MAX_DECLARED_NAME_BYTES: usize = 256;
 
+/// The maximum admitted length in bytes of a canonical constant path.
+pub const MAX_CONSTANT_PATH_BYTES: usize = 256;
+
 /// The maximum admitted canonical value encoding length in bytes.
 pub const MAX_CONSTANT_VALUE_BYTES: usize = 16_384;
 
@@ -728,6 +731,15 @@ impl std::error::Error for ConstantError {}
 
 /// Canonicalizes one declared constant path, refusing a non-canonical spelling.
 fn canonical(path: &str) -> Result<CanonicalPath, ConstantError> {
+    if path.len() > MAX_CONSTANT_PATH_BYTES {
+        return Err(ConstantError::new(
+            ConstantDiagnosticCode::InvalidDeclaration,
+            format!(
+                "a constant path of {} bytes exceeds the declared bound",
+                path.len()
+            ),
+        ));
+    }
     CanonicalPath::new(path).map_err(|error| {
         ConstantError::new(
             ConstantDiagnosticCode::InvalidDeclaration,
@@ -931,12 +943,78 @@ impl ConstantExpression {
     }
 }
 
+/// One declared constant member of `GNT-32.2-admissible-constant-classes`.
+///
+/// A member carries its own declared members, so a member that is itself a struct or
+/// enum is admitted only when its nested members are declared admissible at every
+/// level, and no member is ever treated as an opaque class.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConstantMember {
+    admissibility: ConstantAdmissibility,
+    members: Vec<ConstantMember>,
+}
+
+impl ConstantMember {
+    /// Declares one member over its class and its own declared members.
+    ///
+    /// A refused class, a memberless struct or enum, and members on a class that
+    /// carries none are refused.
+    pub fn new(
+        admissibility: ConstantAdmissibility,
+        members: &[ConstantMember],
+    ) -> Result<Self, ConstantError> {
+        let class = match admissibility {
+            ConstantAdmissibility::Admissible(class) => class,
+            ConstantAdmissibility::Refused(reason) => {
+                return Err(ConstantError::new(
+                    ConstantDiagnosticCode::InadmissibleType,
+                    format!("declares the refused member class `{}`", reason.wire_name()),
+                ));
+            }
+        };
+        if class.carries_members() && members.is_empty() {
+            return Err(ConstantError::new(
+                ConstantDiagnosticCode::InadmissibleType,
+                "declares a memberless struct or enum member",
+            ));
+        }
+        if !class.carries_members() && !members.is_empty() {
+            return Err(ConstantError::new(
+                ConstantDiagnosticCode::InvalidDeclaration,
+                "declares members on a member class that carries none",
+            ));
+        }
+        Ok(Self {
+            admissibility,
+            members: members.to_vec(),
+        })
+    }
+
+    /// Returns the declared member admissibility.
+    #[must_use]
+    pub const fn admissibility(&self) -> ConstantAdmissibility {
+        self.admissibility
+    }
+
+    /// Returns the admitted member class, when one is declared.
+    #[must_use]
+    pub const fn class(&self) -> Option<ConstantValueClass> {
+        self.admissibility.class()
+    }
+
+    /// Returns the member's own declared members.
+    #[must_use]
+    pub fn members(&self) -> &[ConstantMember] {
+        &self.members
+    }
+}
+
 /// One declared constant of `GNT-32.1-constant-declaration-and-immutability`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstantDeclaration {
     path: CanonicalPath,
     class: ConstantValueClass,
-    members: Vec<ConstantAdmissibility>,
+    members: Vec<ConstantMember>,
     dependencies: BTreeSet<CanonicalPath>,
     exported: bool,
     selection: ConstantSelection,
@@ -954,7 +1032,7 @@ impl ConstantDeclaration {
     pub fn new(
         path: &str,
         admissibility: ConstantAdmissibility,
-        members: &[ConstantAdmissibility],
+        members: &[ConstantMember],
         expression: &ConstantExpression,
         dependencies: &[&str],
         exported: bool,
@@ -978,15 +1056,6 @@ impl ConstantDeclaration {
                 ));
             }
         };
-        for member in members {
-            if let ConstantAdmissibility::Refused(reason) = member {
-                return Err(ConstantError::at(
-                    &path,
-                    ConstantDiagnosticCode::InadmissibleType,
-                    format!("declares the refused member class `{}`", reason.wire_name()),
-                ));
-            }
-        }
         if class.carries_members() && members.is_empty() {
             return Err(ConstantError::at(
                 &path,
@@ -1045,7 +1114,7 @@ impl ConstantDeclaration {
 
     /// Returns the declared member admissibilities.
     #[must_use]
-    pub fn members(&self) -> &[ConstantAdmissibility] {
+    pub fn members(&self) -> &[ConstantMember] {
         &self.members
     }
 

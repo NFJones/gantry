@@ -12,11 +12,12 @@ use gantry::ir::{
     ApplicationStateDeclaration, ApplicationStateOwner, CONSTANT_CLAUSES, CONSTANT_INT_LIMIT,
     CONSTANT_NON_CLAIM_ORDER, CONSTANT_NON_CLAIMS, CanonicalPath, ConstantAdmissibility,
     ConstantConversion, ConstantDeclaration, ConstantDiagnosticCode, ConstantEffect, ConstantError,
-    ConstantExpression, ConstantNonClaim, ConstantNonClaimAssertion, ConstantOperation,
-    ConstantPackage, ConstantRefusalReason, ConstantSelection, ConstantState, ConstantValueClass,
-    ConstantWork, EvaluationLimits, FeatureName, MAX_DECLARED_NAME_BYTES, PackageLoadFact,
-    PackageStateClass, TargetKind, TargetPredicate, TargetPredicateName, admit_package_state,
-    admit_sealed_predicate_name, check_constant_non_claims, checked_float, checked_int,
+    ConstantExpression, ConstantMember, ConstantNonClaim, ConstantNonClaimAssertion,
+    ConstantOperation, ConstantPackage, ConstantRefusalReason, ConstantSelection, ConstantState,
+    ConstantValueClass, ConstantWork, EvaluationLimits, FeatureName, MAX_CONSTANT_PATH_BYTES,
+    MAX_DECLARED_NAME_BYTES, PackageLoadFact, PackageStateClass, TargetKind, TargetPredicate,
+    TargetPredicateName, admit_package_state, admit_sealed_predicate_name,
+    check_constant_non_claims, checked_float, checked_int,
 };
 
 const A: &str = "crate::pkg::a";
@@ -73,7 +74,7 @@ fn declaration(
 fn declare_with(
     path: &str,
     class: ConstantValueClass,
-    members: &[ConstantAdmissibility],
+    members: &[ConstantMember],
     dependencies: &[&str],
     exported: bool,
     selection: ConstantSelection,
@@ -88,6 +89,21 @@ fn declare_with(
         selection,
     )
     .unwrap_or_else(|error| panic!("the fixture declaration {path} is admissible: {error}"))
+}
+
+fn member(class: ConstantValueClass) -> ConstantMember {
+    ConstantMember::new(ConstantAdmissibility::Admissible(class), &[])
+        .unwrap_or_else(|error| panic!("the fixture member {class:?} is admissible: {error}"))
+}
+
+fn compound_member(class: ConstantValueClass, members: &[ConstantMember]) -> ConstantMember {
+    ConstantMember::new(ConstantAdmissibility::Admissible(class), members).unwrap_or_else(|error| {
+        panic!("the fixture compound member {class:?} is admissible: {error}")
+    })
+}
+
+fn oversized_path() -> String {
+    format!("crate::{}", "a".repeat(MAX_CONSTANT_PATH_BYTES))
 }
 
 fn evaluate(package: &mut ConstantPackage, path: &str, canonical_value: &str) {
@@ -236,6 +252,41 @@ fn declarations_bind_canonical_identity_and_reject_mutation() {
             "`{spelling}` must be refused as non-canonical"
         );
     }
+    let oversized = oversized_path();
+    assert!(oversized.len() > MAX_CONSTANT_PATH_BYTES);
+    assert_eq!(
+        refuse(
+            ConstantExpression::new(oversized.as_str(), &[ConstantOperation::Literal], &[]),
+            "an oversized constant path"
+        )
+        .code(),
+        ConstantDiagnosticCode::InvalidDeclaration
+    );
+    assert_eq!(
+        refuse(
+            ConstantDeclaration::new(
+                A,
+                ConstantAdmissibility::Admissible(ConstantValueClass::Int),
+                &[],
+                &expression(A),
+                &[oversized.as_str()],
+                false,
+                ConstantSelection::Unconditional,
+            ),
+            "an oversized dependency path"
+        )
+        .code(),
+        ConstantDiagnosticCode::InvalidDeclaration
+    );
+    let mut external = ConstantPackage::new(limits());
+    assert_eq!(
+        refuse(
+            external.admit_external(oversized.as_str()),
+            "an oversized external path"
+        )
+        .code(),
+        ConstantDiagnosticCode::InvalidDeclaration
+    );
     assert_eq!(
         refuse(
             ConstantDeclaration::new(
@@ -331,7 +382,7 @@ fn admissible_and_refused_classes_are_closed() {
     );
     for class in ConstantValueClass::ALL {
         let members = if class.carries_members() {
-            vec![ConstantAdmissibility::Admissible(ConstantValueClass::Unit)]
+            vec![member(ConstantValueClass::Unit)]
         } else {
             Vec::new()
         };
@@ -351,8 +402,8 @@ fn admissible_and_refused_classes_are_closed() {
 #[test]
 fn struct_and_enum_members_are_adjudicated() {
     let members = [
-        ConstantAdmissibility::Admissible(ConstantValueClass::Int),
-        ConstantAdmissibility::Admissible(ConstantValueClass::String),
+        member(ConstantValueClass::Int),
+        member(ConstantValueClass::String),
     ];
     let declared = declare_with(
         A,
@@ -366,7 +417,7 @@ fn struct_and_enum_members_are_adjudicated() {
     let enumeration = declare_with(
         B,
         ConstantValueClass::Enum,
-        &[ConstantAdmissibility::Admissible(ConstantValueClass::Unit)],
+        &[member(ConstantValueClass::Unit)],
         &[],
         true,
         ConstantSelection::Unconditional,
@@ -390,21 +441,61 @@ fn struct_and_enum_members_are_adjudicated() {
     );
     assert_eq!(
         refuse(
-            ConstantDeclaration::new(
-                A,
-                ConstantAdmissibility::Admissible(ConstantValueClass::Struct),
-                &[ConstantAdmissibility::Refused(
-                    ConstantRefusalReason::LiveResource
-                )],
-                &expression(A),
+            ConstantMember::new(
+                ConstantAdmissibility::Refused(ConstantRefusalReason::LiveResource),
                 &[],
-                true,
-                ConstantSelection::Unconditional,
             ),
-            "a struct member with a refused class"
+            "a member with a refused class"
         )
         .code(),
         ConstantDiagnosticCode::InadmissibleType
+    );
+    assert_eq!(
+        refuse(
+            ConstantMember::new(
+                ConstantAdmissibility::Admissible(ConstantValueClass::Struct),
+                &[],
+            ),
+            "a memberless struct member"
+        )
+        .code(),
+        ConstantDiagnosticCode::InadmissibleType
+    );
+    assert_eq!(
+        refuse(
+            ConstantMember::new(
+                ConstantAdmissibility::Admissible(ConstantValueClass::Int),
+                &[member(ConstantValueClass::Int)],
+            ),
+            "nested members on a member class that carries none"
+        )
+        .code(),
+        ConstantDiagnosticCode::InvalidDeclaration
+    );
+    let nested = compound_member(
+        ConstantValueClass::Struct,
+        &[compound_member(
+            ConstantValueClass::Enum,
+            &[member(ConstantValueClass::Unit)],
+        )],
+    );
+    let nested_declaration = declare_with(
+        C,
+        ConstantValueClass::Struct,
+        &[nested],
+        &[],
+        true,
+        ConstantSelection::Unconditional,
+    );
+    assert_eq!(nested_declaration.members().len(), 1);
+    assert_eq!(
+        nested_declaration.members()[0].class(),
+        Some(ConstantValueClass::Struct)
+    );
+    assert_eq!(
+        nested_declaration.members()[0].members().len(),
+        1,
+        "a member carries its own declared members"
     );
     assert_eq!(
         refuse(
@@ -923,7 +1014,7 @@ fn interface_and_artifact_identity_bind_recorded_facts() {
         .declare(declare_with(
             C,
             ConstantValueClass::Struct,
-            &[ConstantAdmissibility::Admissible(ConstantValueClass::Int)],
+            &[member(ConstantValueClass::Int)],
             &[],
             false,
             ConstantSelection::Unconditional,

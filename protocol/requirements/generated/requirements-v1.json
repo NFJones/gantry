@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "8bacbc59592bcb0adce1a3f38f57d8c1cfe95773e712d4994d5a44a32acbc81c",
-  "byte_length": 965196,
+  "specification_sha256": "b2e9cf1331fa4f1195b98fa6e18689e03dd8fd4a6c2131ae3dd40fa985637385",
+  "byte_length": 965606,
   "line_count": 15277,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9497,
       "end_line": 15277,
-      "sha256": "52c1f509a61553d92b9b90d48b0e0f1f7cb70b45f525328c3d8eaf2f8075e05b",
+      "sha256": "4124a3eab476f33d3bd0c11fb17181903a39e9eed99f432e09a6408fb9327633",
       "rationale": null
     }
   ],
@@ -38865,11 +38865,11 @@
       "id": "GNT-32.1-constant-declaration-and-immutability",
       "span_start_line": 15231,
       "span_end_line": 15234,
-      "span_sha256": "a5658e3b294860b20eb007be1cc92672ba6f140d373a5a29d8cb0684a849108c",
+      "span_sha256": "9590e6346721f3a5a45723f75bb46e2bb4f8b44dae0a0a68c762c6630bd1d80c",
       "anchor_line": 15231,
       "body_start_line": 15232,
       "body_end_line": 15234,
-      "body_sha256": "01c187c2f651ce24328fb637dd6ea50bfb830ebbb70790bb651ccb3b6564e092",
+      "body_sha256": "f3e1c0c1c233873b62f1846303452a543102bdae5105c905ac0062552baf7da0",
       "profiles": [
         "analyzer"
       ],
@@ -38906,11 +38906,11 @@
       "id": "GNT-32.2-admissible-constant-classes",
       "span_start_line": 15235,
       "span_end_line": 15238,
-      "span_sha256": "d8386b89cb1cf43d76427f2ddf3dfd2fd61fd5c1a097ce65e9b0a9926a121669",
+      "span_sha256": "d2417b3bff49937960fc34a4fd518d9caf9c305ffa297675a761117657e88cd5",
       "anchor_line": 15235,
       "body_start_line": 15236,
       "body_end_line": 15238,
-      "body_sha256": "ca11f5d85b1d811d82f43ec982b0d40dc1660117911d2a2a905e4091b4978892",
+      "body_sha256": "59d78bdfbb562e351884071af11f6908b9e18594ab4a13e835a5192c540c7913",
       "profiles": [
         "analyzer"
       ],
@@ -39030,11 +39030,11 @@
       "id": "GNT-32.5-dependency-ordering-and-cycle-refusal",
       "span_start_line": 15247,
       "span_end_line": 15250,
-      "span_sha256": "e69cb5615a28fd025f54ba3f51bd872e07ff0e6ad51ca40d2d207c18a5ea803d",
+      "span_sha256": "f4b4986a1e32329dbf1a1c824ab0a365779f015665baee64ec72317b451f3ecb",
       "anchor_line": 15247,
       "body_start_line": 15248,
       "body_end_line": 15250,
-      "body_sha256": "b7f1270f3ed66348f2a602f6aec603949a59537ac6588f92692cb0f48dd39680",
+      "body_sha256": "e149d6310bd8df4c341b0cd3ef9373de7e8cbce9316ee96dadbcc8eaf99ab68c",
       "profiles": [
         "analyzer"
       ],
@@ -39115,11 +39115,11 @@
       "id": "GNT-32.7-atomic-failure-and-no-partial-publication",
       "span_start_line": 15255,
       "span_end_line": 15258,
-      "span_sha256": "4e8624e39efa2e83357662ba6d24f7537115ca43729323a5e828bfc2e07c5c7b",
+      "span_sha256": "4113d9e260aa5c17d706aadcf3a48d2f5946422f205881256f2a1f761e5f20c0",
       "anchor_line": 15255,
       "body_start_line": 15256,
       "body_end_line": 15258,
-      "body_sha256": "a49f41fce7d1d63bc5f92264c24774951211f616bb696b1b74ff9775397da52a",
+      "body_sha256": "d9d30810838e26ee0e0f896c3438c8c0be009db6e70f9cd27c28a19b2ebc2dac",
       "profiles": [
         "analyzer"
       ],
