@@ -476,6 +476,13 @@ fn validate_std_name(value: &str) -> Result<(), StdlibError> {
 }
 
 /// One typed package interface identity of `GNT-34.8-defining-identity-and-interface-digest`.
+/// Returns the canonical spelling of one logical `std` path: `::` and `.` separators
+/// name the same logical path, so every registry, dedup check, and identity fold uses
+/// this form.
+fn canonical_std_path(value: &str) -> String {
+    value.replace("::", ".")
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StdInterfaceIdentity(Arc<str>);
 
@@ -503,6 +510,7 @@ impl StdGraphIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StdItem {
     name: String,
+    owner: String,
     class: NameClass,
     tier: StabilityTier,
     modes: BTreeSet<SemanticMode>,
@@ -532,8 +540,15 @@ impl StdItem {
                 format!("`{name}` declares no applicability"),
             ));
         }
+        let canonical = canonical_std_path(name);
+        let owner = canonical
+            .split('.')
+            .take(2)
+            .collect::<Vec<&str>>()
+            .join(".");
         Ok(Self {
-            name: name.to_owned(),
+            name: canonical,
+            owner,
             class,
             tier,
             modes: modes.iter().copied().collect(),
@@ -541,7 +556,7 @@ impl StdItem {
         })
     }
 
-    /// Returns the declared item name.
+    /// Returns the canonical item name.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -550,7 +565,7 @@ impl StdItem {
     /// Returns the defining logical package of this item.
     #[must_use]
     pub fn owner(&self) -> &str {
-        self.name.split("::").next().unwrap_or(&self.name)
+        &self.owner
     }
 
     /// Returns the declared classification.
@@ -594,7 +609,9 @@ pub struct StdPackage {
 
 impl StdPackage {
     /// Declares one logical package; a non-package classification, an empty
-    /// applicability set, and malformed dependencies are refused.
+    /// applicability set, and malformed dependencies are refused. The `exports`
+    /// parameter declares the exported reach of the package in canonical form; a public
+    /// item's stability tier is declared by its `StdItem`.
     pub fn new(
         family: PackageFamily,
         class: NameClass,
@@ -642,13 +659,14 @@ impl StdPackage {
         let mut exported = BTreeSet::new();
         for item in exports {
             validate_std_name(item)?;
-            if !item.starts_with(&format!("{}::", family.package_name())) {
+            let canonical = canonical_std_path(item);
+            if !canonical.starts_with(&format!("{}.", family.package_name())) {
                 return Err(StdlibError::new(
                     StdlibDiagnosticCode::FacadeIdentityLoss,
                     format!("`{item}` is not owned by `{}`", family.package_name()),
                 ));
             }
-            exported.insert((*item).to_owned());
+            exported.insert(canonical);
         }
         Ok(Self {
             name: family.package_name(),
@@ -714,7 +732,8 @@ impl StdPackage {
     /// Returns whether this package exports one item.
     #[must_use]
     pub fn exports_item(&self, item: &str) -> bool {
-        self.exports.contains(item) || self.items.contains_key(item)
+        let canonical = canonical_std_path(item);
+        self.exports.contains(&canonical) || self.items.contains_key(&canonical)
     }
 
     /// Returns the interface identity over every declared interface fact.
@@ -793,7 +812,7 @@ impl StdPackage {
     /// Returns one declared public item.
     #[must_use]
     pub fn item(&self, name: &str) -> Option<&StdItem> {
-        self.items.get(name)
+        self.items.get(&canonical_std_path(name))
     }
 }
 
@@ -889,7 +908,7 @@ impl Prelude {
                 ));
             }
             validate_std_name(member)?;
-            declared.insert((*member).to_owned());
+            declared.insert(canonical_std_path(member));
         }
         Ok(Self {
             edition: edition.to_owned(),
@@ -926,7 +945,7 @@ impl Prelude {
 
     /// Admits one automatic name; a name outside the enumeration is refused.
     pub fn admit(&self, path: &str) -> Result<(), StdlibError> {
-        if !self.members.contains(path) {
+        if !self.members.contains(&canonical_std_path(path)) {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::UnenumeratedPreludeMember,
                 format!("`{path}` is not an enumerated prelude member"),
@@ -1185,15 +1204,14 @@ impl StdDeprecation {
         self.replacement.as_deref()
     }
 
-    /// Admits the deprecation against its declaring package; a silently removed item
-    /// and an undeclared replacement are refused.
+    /// Admits the deprecation against its declaring package; an item without a declared
+    /// tier, a contradicting from-tier, and an undeclared replacement are refused.
     pub fn admit(&self, package: &StdPackage) -> Result<(), StdlibError> {
-        let declared = |name: &str| package.exports_item(name) || package.item(name).is_some();
-        if !declared(&self.item) {
+        if package.item(&self.item).is_none() {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::InvalidRelocation,
                 format!(
-                    "the deprecation of `{}` removes the item without a declared migration",
+                    "the deprecation of `{}` names an item without a declared tier",
                     self.item
                 ),
             ));
@@ -1212,7 +1230,7 @@ impl StdDeprecation {
             ));
         }
         if let Some(replacement) = &self.replacement
-            && !declared(replacement)
+            && package.item(replacement).is_none()
         {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::InvalidRelocation,
@@ -1383,21 +1401,20 @@ pub fn require_applicable(
     Ok(())
 }
 
-/// Refuses any identity fact that names a physical repository path or file.
+/// Refuses any identity fact that names a physical repository path or file. A fact is
+/// path-shaped when it carries a path separator and a lowercase layout segment
+/// (`src`, `target`, `crates`, `tests`, `benches`, `examples`), or when it names a file.
 pub fn check_layout_identity(facts: &[&str]) -> Result<(), StdlibError> {
     for fact in facts {
         let path_like = fact.contains('/') || fact.contains('\\');
-        let layout_token = fact.contains("src")
-            || fact.contains("target")
-            || fact.contains("crates")
-            || fact.contains("tests")
-            || fact.contains("benches")
-            || fact.contains("examples");
-        if fact.is_empty()
-            || (path_like && layout_token)
-            || fact.ends_with(".rs")
-            || fact.contains("Cargo.toml")
-        {
+        let layout_segment = fact.split(['/', '\\']).any(|segment| {
+            matches!(
+                segment.to_ascii_lowercase().as_str(),
+                "src" | "target" | "crates" | "tests" | "benches" | "examples"
+            )
+        });
+        let file_like = fact.ends_with(".rs") || fact.ends_with(".toml");
+        if fact.is_empty() || (path_like && layout_segment) || file_like {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::LayoutDerivedIdentity,
                 format!("`{fact}` is a physical layout fact, not a declared identity fact"),
@@ -1653,7 +1670,7 @@ impl StdGraph {
         if self
             .names
             .iter()
-            .any(|existing| existing.path() == name.path())
+            .any(|existing| canonical_std_path(existing.path()) == canonical_std_path(name.path()))
         {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::DuplicatePackage,
@@ -1686,7 +1703,7 @@ impl StdGraph {
         if self
             .names
             .iter()
-            .any(|existing| existing.path() == item.name())
+            .any(|existing| canonical_std_path(existing.path()) == item.name())
         {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::InvalidNameClassification,
@@ -1729,7 +1746,8 @@ impl StdGraph {
     pub fn validate(&self) -> Result<(), StdlibError> {
         for package in self.packages.values() {
             for dependency in package.dependencies() {
-                if dependency.to_ascii_lowercase().starts_with("std") {
+                let lowered = dependency.to_ascii_lowercase();
+                if dependency == "std" || lowered.starts_with("std.") {
                     validate_std_name(dependency)?;
                 } else {
                     return Err(StdlibError::new(

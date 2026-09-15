@@ -962,16 +962,57 @@ fn item_tiers_are_unique_and_fold_into_the_interface_digest() {
 
 #[test]
 fn deprecations_narrow_a_tier_and_keep_the_item_declared() {
-    let text_package = StdPackage::new(
+    let mut graph = graph_with(&[package(
         PackageFamily::Text,
+        StabilityTier::Stable,
+        &[],
+        &[],
+    )]);
+    for item in ["std.text::format", "std.text::render"] {
+        graph
+            .declare_item(
+                StdItem::new(
+                    item,
+                    NameClass::Module,
+                    StabilityTier::Stable,
+                    &[SemanticMode::Portable],
+                    &[TargetKind::Library],
+                )
+                .unwrap_or_else(|error| panic!("the fixture item is valid: {error}")),
+            )
+            .unwrap_or_else(|error| panic!("the fixture item is declared: {error}"));
+    }
+    let text_package = graph
+        .package("std.text")
+        .unwrap_or_else(|| panic!("the fixture graph declares std.text"))
+        .clone();
+
+    // an exported item without a declared tier cannot be deprecated
+    let export_only = StdPackage::new(
+        PackageFamily::Codec,
         NameClass::Package,
         StabilityTier::Stable,
         &[SemanticMode::Portable],
         &[TargetKind::Library],
         &[],
-        &["std.text::format", "std.text::render"],
+        &["std.codec::exported"],
     )
     .unwrap_or_else(|error| panic!("the fixture package is valid: {error}"));
+    let tierless = StdDeprecation::new(
+        "std.codec::exported",
+        StabilityTier::Stable,
+        StabilityTier::Experimental,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("the fixture deprecation is valid: {error}"));
+    assert_eq!(
+        refuse(
+            tierless.admit(&export_only),
+            "a deprecation over an item without a declared tier"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidRelocation
+    );
     let deprecation = StdDeprecation::new(
         "std.text::format",
         StabilityTier::Stable,
@@ -1188,6 +1229,29 @@ fn references_outside_the_std_hierarchy_are_host_adapters() {
     check_layout_identity(&["ratio/2", "std.fs", "facet-fs-local"]).unwrap_or_else(|error| {
         panic!("a logical token containing a separator is not a layout fact: {error}")
     });
+    let outsides = graph_with(&[package(
+        PackageFamily::Fs,
+        StabilityTier::Stable,
+        &["stdata.x"],
+        &[],
+    )]);
+    assert_eq!(
+        refuse(outsides.validate(), "a non-std reference resembling std").code(),
+        StdlibDiagnosticCode::PackageToAdapterEdge
+    );
+    for physical in [
+        "gantry-ir/src",
+        "target/debug",
+        "Src/lib",
+        "lib.rs",
+        "Cargo.toml",
+    ] {
+        assert_eq!(
+            refuse(check_layout_identity(&[physical]), "a physical layout fact").code(),
+            StdlibDiagnosticCode::LayoutDerivedIdentity,
+            "{physical}"
+        );
+    }
 }
 
 #[test]
@@ -1243,6 +1307,41 @@ fn names_are_rooted_under_their_owning_package() {
         refuse(
             graph.declare_item(conflicting),
             "a declared name re-declared as an item"
+        )
+        .code(),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
+    // one logical path has one canonical form
+    graph
+        .declare_name(
+            StdName::new("std.io.alpha", NameClass::Module, "std.io")
+                .unwrap_or_else(|error| panic!("the fixture name is valid: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("the declared name is admitted: {error}"));
+    assert_eq!(
+        refuse(
+            graph.declare_name(
+                StdName::new("std.io::alpha", NameClass::Module, "std.io")
+                    .unwrap_or_else(|error| panic!("the fixture name is valid: {error}"))
+            ),
+            "one path declared under two spellings"
+        )
+        .code(),
+        StdlibDiagnosticCode::DuplicatePackage
+    );
+    assert_eq!(
+        refuse(
+            graph.declare_item(
+                StdItem::new(
+                    "std.io::alpha",
+                    NameClass::Facade,
+                    StabilityTier::Stable,
+                    &[SemanticMode::Portable],
+                    &[TargetKind::Library],
+                )
+                .unwrap_or_else(|error| panic!("the fixture item is valid: {error}"))
+            ),
+            "one path carrying two classifications under two spellings"
         )
         .code(),
         StdlibDiagnosticCode::InvalidNameClassification
