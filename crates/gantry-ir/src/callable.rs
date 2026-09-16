@@ -23,15 +23,16 @@
 //!
 //! It defines no source syntax, no runtime representation or native frame
 //! layout, no dynamic dispatch, no trait solving, and no ambient capture, and it
-//! admits no callable type into any analyzed, executable, or durable artifact:
-//! no analyzer body, no lowering path, and no published executable artifact is
-//! changed by this module.
+//! carries no callable value into any analyzed, executable, or durable artifact:
+//! the analyzer resolves the signature annotation that `GNT-37.0` admits into
+//! [`CallableType`], while no analyzer body, no lowering path, and no published
+//! executable artifact carries a callable value.
 //!
 //! `CallableType` is the pure form of the published `GNT-37.1` identity: the
 //! tuple of reuse kind, ordered parameter type names, and result type name. It
 //! carries no captures, row, or reuse state, so two values that share one shape
-//! share one type, and it defines no syntax, so no source, body, or artifact
-//! consumes it yet.
+//! share one type, and it defines no syntax, so no source expression, body, or
+//! artifact consumes a callable value yet.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -190,8 +191,9 @@ impl Default for CallableLimits {
 /// component effect is `EffectErasure`; an ineligible durable projection is
 /// `DurableCapture`; and a rebuilt projection unequal to its carried identity is
 /// `RoundTripLoss`. A source callable annotation that this revision recognises
-/// but does not admit is `TypeUnadmitted`, and a source callable expression that
-/// this revision recognises but does not admit is `ExpressionUnadmitted`.
+/// but does not admit in its position is `TypeUnadmitted`, and a source callable
+/// expression that this revision recognises but does not admit is
+/// `ExpressionUnadmitted`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CallableDiagnosticCode {
     /// A declared shape, name, or budget departure.
@@ -210,7 +212,8 @@ pub enum CallableDiagnosticCode {
     DurableCapture,
     /// A rebuilt projection unequal to its carried identity.
     RoundTripLoss,
-    /// A source callable annotation this revision recognises but does not admit.
+    /// A source callable annotation this revision recognises but does not admit
+    /// in its position.
     TypeUnadmitted,
     /// A source callable expression this revision recognises but does not admit.
     ExpressionUnadmitted,

@@ -20,7 +20,7 @@ use gantry_frontend::{
 };
 use gantry_ir::generated::TypeKind;
 use gantry_ir::{
-    ArtifactLimits, CanonicalCallableIdentity, CanonicalSignature, ClosedCallable,
+    ArtifactLimits, CallableKind, CanonicalCallableIdentity, CanonicalSignature, ClosedCallable,
     ClosedOperationSite, ClosedTaskSite, ConcreteEffect, ConcreteIdentity, ConcreteSourceMapEntry,
     ExecutableProjection, GenericAnalysisFacts, GenericTemplate, ImplementationHead, ResolvedCall,
     SourceOriginSet, StaticSiteId, StructuralPosition, TraitContract, TypeDescriptor,
@@ -851,7 +851,7 @@ fn resolve_source_types(
         .map(|symbol| (symbol.id, symbol))
         .collect::<BTreeMap<_, _>>();
     let mut resolved = BTreeMap::<NodeId, TypeFact>::new();
-    let nested = nested_type_member_nodes(source.tree())?;
+    let occurrences = callable_occurrences(source, structure)?;
 
     for (index, node) in source.tree().nodes().iter().enumerate() {
         if !matches!(node.form(), SyntaxForm::ValueType) {
@@ -864,7 +864,7 @@ fn resolve_source_types(
             &resolved,
             &references,
             &symbols,
-            &nested,
+            &occurrences,
             diagnostics,
         )? {
             resolved.insert(
@@ -879,6 +879,144 @@ fn resolve_source_types(
     Ok(resolved)
 }
 
+/// The occurrence class of one source callable type form.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CallableOccurrence {
+    /// A parameter or result annotation of a callable declaration.
+    Signature,
+    /// A component of another type expression.
+    NestedComponent,
+    /// A parameter or result annotation of a boundary signature.
+    BoundaryPosition,
+    /// A signature annotation whose parameter or result position does not name a closed type.
+    OpenMember,
+    /// An annotation outside a callable signature.
+    NonSignature,
+}
+
+impl CallableOccurrence {
+    /// Returns the published `occurrence` value of one class.
+    const fn class_name(self) -> &'static str {
+        match self {
+            Self::Signature => "signature",
+            Self::NestedComponent => "nested-component",
+            Self::BoundaryPosition => "boundary-position",
+            Self::OpenMember => "open-member",
+            Self::NonSignature => "non-signature",
+        }
+    }
+
+    /// Returns the refusal message of one refused class.
+    const fn refusal_message(self) -> &'static str {
+        match self {
+            Self::Signature | Self::OpenMember => {
+                "a source callable type whose parameter or result position does not name a closed type is recognised but not admitted by this revision"
+            }
+            Self::NestedComponent => {
+                "a source callable type nested in another type expression is recognised but not admitted by this revision"
+            }
+            Self::BoundaryPosition => {
+                "a source callable type in a boundary signature position is recognised but not admitted by this revision"
+            }
+            Self::NonSignature => {
+                "a source callable type outside a callable signature annotation is recognised but not admitted by this revision"
+            }
+        }
+    }
+}
+
+/// Classifies every source callable type form before its annotation is resolved.
+///
+/// `GNT-37.0` admits the callable type form in a signature annotation: the parameter or
+/// result position of a function, method, or trait-method declaration whose parameter and
+/// result positions all name closed types. The entry parameter and result and every action
+/// parameter and result are boundary signature positions, because their types are boundary
+/// schema roots, and every other occurrence is either a component of another type
+/// expression or an annotation outside a signature, so an unadmitted type form never
+/// silently reaches a boundary schema, a stored member, or a value position.
+fn callable_occurrences(
+    source: &ParsedSource,
+    structure: &PackageStructure,
+) -> Result<BTreeMap<NodeId, CallableOccurrence>, AnalysisError> {
+    let tree = source.tree();
+    let nested = nested_type_member_nodes(tree)?;
+    let entry = structure.symbols().iter().find(|symbol| {
+        symbol.kind == SymbolKind::Function && symbol.path.as_str() == "crate::main"
+    });
+    let mut parents = BTreeMap::<NodeId, NodeId>::new();
+    for (index, node) in tree.nodes().iter().enumerate() {
+        for child in node.children() {
+            parents.insert(*child, NodeId::from_index(index));
+        }
+    }
+    let mut occurrences = BTreeMap::new();
+    for (index, node) in tree.nodes().iter().enumerate() {
+        if !matches!(node.form(), SyntaxForm::ValueType) {
+            continue;
+        }
+        let id = NodeId::from_index(index);
+        if direct_child_form(tree, id, SyntaxForm::CallableType).is_none() {
+            continue;
+        }
+        let occurrence = if nested.contains(&id) {
+            CallableOccurrence::NestedComponent
+        } else {
+            let parent = parents
+                .get(&id)
+                .copied()
+                .and_then(|parent| tree.node(parent));
+            // A parameter annotation is owned by the declaration that declares its parameter.
+            let declaration = match parent {
+                Some(node) if matches!(node.form(), SyntaxForm::Parameter) => parents
+                    .get(&id)
+                    .and_then(|parameter| parents.get(parameter))
+                    .copied()
+                    .and_then(|owner| tree.node(owner)),
+                parent => parent,
+            };
+            match declaration {
+                Some(declaration)
+                    if matches!(
+                        declaration.form(),
+                        SyntaxForm::MethodDeclaration | SyntaxForm::TraitMethodDeclaration
+                    ) =>
+                {
+                    CallableOccurrence::Signature
+                }
+                Some(declaration)
+                    if matches!(declaration.form(), SyntaxForm::ActionDeclaration) =>
+                {
+                    CallableOccurrence::BoundaryPosition
+                }
+                Some(declaration)
+                    if matches!(declaration.form(), SyntaxForm::FunctionDeclaration) =>
+                {
+                    if is_entry_declaration(tree, declaration, entry)? {
+                        CallableOccurrence::BoundaryPosition
+                    } else {
+                        CallableOccurrence::Signature
+                    }
+                }
+                _ => CallableOccurrence::NonSignature,
+            }
+        };
+        occurrences.insert(id, occurrence);
+    }
+    Ok(occurrences)
+}
+
+/// Returns whether one function declaration is the root entry point.
+fn is_entry_declaration(
+    tree: &SyntaxTree,
+    declaration: &gantry_frontend::SyntaxNode,
+    entry: Option<&Symbol>,
+) -> Result<bool, AnalysisError> {
+    let Some(entry) = entry else {
+        return Ok(false);
+    };
+    Ok(direct_identifier_span(tree, declaration)? == Some(entry.span.clone()))
+}
+
 /// Collects every type node that is a component of another type expression.
 ///
 /// A component is a member of a built-in or declared application, or a parameter or
@@ -888,9 +1026,8 @@ fn resolve_source_types(
 /// `where T: Holder<Fn(Int) -> Int>` predicate both nest their argument. An explicit
 /// type-argument list is collected directly, so a call-site argument such as
 /// `id::<Fn(Int) -> Int>(0)` nests exactly like the same argument written inside a
-/// constructed type. The collected set keeps the two callable occurrence classes
-/// disjoint: an annotation position is never a component of another type expression,
-/// and a nested component never is an annotation position.
+/// constructed type. The collected set keeps the nested class disjoint from every
+/// annotation class: a nested component is never a signature, boundary, or value position.
 fn nested_type_member_nodes(tree: &SyntaxTree) -> Result<BTreeSet<NodeId>, AnalysisError> {
     let mut nested = BTreeSet::new();
     for (index, node) in tree.nodes().iter().enumerate() {
@@ -903,20 +1040,24 @@ fn nested_type_member_nodes(tree: &SyntaxTree) -> Result<BTreeSet<NodeId>, Analy
         let id = NodeId::from_index(index);
         nested.extend(type_member_nodes(tree, id)?);
         if let Some(callable) = direct_child_form(tree, id, SyntaxForm::CallableType) {
-            nested.extend(
-                tree.node(callable)
-                    .ok_or(AnalysisError::Invariant)?
-                    .children()
-                    .iter()
-                    .copied()
-                    .filter(|child| {
-                        tree.node(*child)
-                            .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
-                    }),
-            );
+            nested.extend(callable_member_nodes(tree, callable)?);
         }
     }
     Ok(nested)
+}
+
+/// Returns the parameter and result type nodes of one callable type form in authored order.
+fn callable_member_nodes(tree: &SyntaxTree, id: NodeId) -> Result<Vec<NodeId>, AnalysisError> {
+    let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+    Ok(node
+        .children()
+        .iter()
+        .copied()
+        .filter(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+        })
+        .collect())
 }
 
 /// Resolves one type node after all nested member nodes have been processed.
@@ -926,7 +1067,7 @@ fn resolve_type_node(
     resolved: &BTreeMap<NodeId, TypeFact>,
     references: &BTreeMap<SourceSpan, SymbolId>,
     symbols: &BTreeMap<SymbolId, &Symbol>,
-    nested: &BTreeSet<NodeId>,
+    occurrences: &BTreeMap<NodeId, CallableOccurrence>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
@@ -938,27 +1079,39 @@ fn resolve_type_node(
 
     if let Some(callable) = direct_child_form(tree, id, SyntaxForm::CallableType) {
         let reuse_kind = callable_reuse_kind(tree, callable)?;
-        let (occurrence, message) = if nested.contains(&id) {
-            (
-                "nested-component",
-                "a source callable type nested in another type expression is recognised but not admitted by this revision",
-            )
+        let occurrence = occurrences
+            .get(&id)
+            .copied()
+            .unwrap_or(CallableOccurrence::NonSignature);
+        if occurrence == CallableOccurrence::Signature {
+            // An admitted signature annotation resolves to the canonical callable type of
+            // its reuse kind, ordered parameter types, and result type (`GNT-37.1`).
+            let members = callable_member_nodes(tree, callable)?
+                .into_iter()
+                .map(|member| resolved.get(&member).map(|fact| fact.descriptor.clone()))
+                .collect::<Option<Vec<_>>>();
+            if let Some(mut members) = members {
+                let result = members.pop().ok_or(AnalysisError::Invariant)?;
+                let kind = CallableKind::from_canonical_name(&reuse_kind)
+                    .map_err(|_| AnalysisError::Invariant)?;
+                return Ok(Some(TypeDescriptor::callable(kind, members, result)));
+            }
+        }
+        let refused = if occurrence == CallableOccurrence::Signature {
+            CallableOccurrence::OpenMember
         } else {
-            (
-                "annotation",
-                "a source callable type in an annotation position is recognised but not admitted by this revision",
-            )
+            occurrence
         };
         diagnostics.push(type_diagnostic(
             "callable-type-unadmitted",
-            message,
+            refused.refusal_message(),
             tree.node(callable)
                 .ok_or(AnalysisError::Invariant)?
                 .span()
                 .clone(),
             [
                 ("reuse_kind", reuse_kind.as_str()),
-                ("occurrence", occurrence),
+                ("occurrence", refused.class_name()),
             ],
         )?);
         return Ok(None);

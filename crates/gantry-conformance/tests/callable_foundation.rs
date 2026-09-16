@@ -766,10 +766,18 @@ fn section_37_anchors_and_nonclaims_are_published() {
         "GNT-3-T-GENERIC-CALL does not record the Section 37 admission"
     );
     assert!(
-        spec.contains("`occurrence` field")
-            && spec.contains("`annotation` when the refused type is not a component")
-            && spec.contains("`nested-component` when it is a component"),
-        "GNT-37.0 does not publish the callable type occurrence classes"
+        spec.contains("admits the source callable type form in a signature annotation")
+            && spec.contains("`occurrence` field")
+            && spec.contains("`signature` for a parameter or result annotation")
+            && spec.contains(
+                "`boundary-position` for a parameter or result annotation of the entry point"
+            )
+            && spec.contains("`open-member` for a signature annotation")
+            && spec.contains(
+                "`non-signature` for an annotation that is not a parameter or result annotation"
+            )
+            && spec.contains("`nested-component` for a type form that is a component"),
+        "GNT-37.0 does not publish the callable type admission and occurrence classes"
     );
 }
 

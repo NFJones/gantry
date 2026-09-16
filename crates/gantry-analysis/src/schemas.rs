@@ -766,11 +766,10 @@ fn schema_fragment(
             }
             TypeKind::Callable => {
                 // A callable type has no boundary schema (`GNT-37.12`), and this
-                // fragment is built only for types a boundary admits. No admitted
-                // source position reaches here, so a callable type arriving at a
-                // boundary fragment is an analysis invariant; the source refusal
-                // that keeps it unreachable is owned by the callable admission
-                // revision.
+                // fragment is built only for types a boundary admits. `GNT-37.0`
+                // refuses every boundary signature position, so no admitted source
+                // position reaches here: a callable type arriving at a boundary
+                // fragment remains an analysis invariant.
                 return Err(SchemaAnalysisError::Invariant);
             }
         };

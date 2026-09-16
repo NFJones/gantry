@@ -5597,31 +5597,114 @@ fn public_skippable_loop_reinitialization_owes_the_fresh_value() {
     }
 }
 
-/// A callable annotation is recognised by the grammar and refused with its published
-/// diagnostic in every position that types a value, instead of failing internally.
+/// A callable annotation in a signature position is admitted and resolves to the canonical
+/// callable type of its reuse kind, ordered parameter types, and result type (`GNT-37.1`).
 #[test]
-fn public_callable_type_annotations_are_refused_without_internal_failure() {
+fn public_callable_type_annotations_are_admitted_in_signatures() {
+    use gantry::ir::{CallableKind, TypeDescriptor};
+
+    let root = TempDirectory::new();
+    for source in [
+        "fn apply(callback: Fn(Int) -> Int) -> Int { 0 } fn main() {}",
+        "fn apply(callback: FnMut() -> Int, marker: Bool) -> Int { 0 } fn main() {}",
+        "fn apply(callback: FnOnce(Int, String) -> Bool) -> Int { 0 } fn main() {}",
+        "struct Item {} impl Item { fn apply(self, callback: Fn(Int) -> Int) -> Int { 0 } } fn main() {}",
+        "trait Render { pure fn render(self, cb: Fn(Int) -> Int) -> Int; } fn main() {}",
+        "trait Render { pure fn render(self) -> Fn(Int) -> Int; } fn main() {}",
+        "trait Render { pure fn render(self, cb: Fn(Int) -> Int) -> Int; } struct Item {} impl Render for Item { pure fn render(self, cb: Fn(Int) -> Int) -> Int { 0 } } fn main() {}",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax)
+            .unwrap_or_else(|error| panic!("source: {source}; type analysis failed: {error:?}"));
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        assert!(
+            admitted.executable_program().is_some(),
+            "source: {source}; an admitted signature annotation must publish a program"
+        );
+    }
+
+    // The admitted annotation resolves to the canonical callable type of its shape, and the
+    // published executable program carries that descriptor as the parameter it names.
+    root.write("fn apply(callback: Fn(Int) -> Int) -> Int { 0 } fn main() { discard apply; }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let admitted = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
+    let expected = TypeDescriptor::callable(
+        CallableKind::Function,
+        vec![TypeDescriptor::INT],
+        TypeDescriptor::INT,
+    );
+    assert_eq!(expected.canonical_string(), "Callable<Fn,Int,Int>");
+    assert!(
+        admitted
+            .types()
+            .iter()
+            .any(|fact| fact.descriptor == expected),
+        "the admitted annotation did not resolve to its canonical callable type: {:?}",
+        admitted.types()
+    );
+    // A callable value cannot be constructed or called by this revision, so no workflow that
+    // would need a callable frame value is lowered into the published program.
+    let Some(program) = admitted.executable_program() else {
+        panic!("a source-valid package publishes a typed program");
+    };
+    assert_eq!(
+        program
+            .workflows()
+            .iter()
+            .map(|workflow| workflow.path.as_str())
+            .collect::<Vec<_>>(),
+        ["crate::main"],
+        "an admitted callable type must not publish a runtime frame value: {:?}",
+        program.workflows()
+    );
+}
+
+/// A callable annotation outside a signature position, and a signature annotation whose
+/// parameter or result position does not name a closed type, are refused with the published
+/// occurrence class of their position instead of failing internally.
+#[test]
+fn public_callable_type_annotations_outside_signatures_are_refused_with_their_class() {
     let root = TempDirectory::new();
     for (source, reuse_kind, occurrence) in [
         (
             "fn main(callback: Fn(Int) -> Int) -> Int { 0 }",
             "Fn",
-            "annotation",
+            "boundary-position",
         ),
         (
             "fn main(callback: FnMut() -> Int) -> Int { 0 }",
             "FnMut",
-            "annotation",
+            "boundary-position",
         ),
         (
             "fn main(callback: FnOnce(Int, String) -> Bool) -> Int { 0 }",
             "FnOnce",
-            "annotation",
+            "boundary-position",
         ),
         (
             "struct Holder { callback: Fn(Int) -> Int } fn main() -> Int { 0 }",
             "Fn",
-            "annotation",
+            "non-signature",
+        ),
+        (
+            "struct Holder { callback: Fn(Int) -> Int } action read_only lookup(h: Holder) -> String; fn main() -> Int { 0 }",
+            "Fn",
+            "non-signature",
         ),
         (
             "fn main(callback: List<Fn(Int) -> Int>) -> Int { 0 }",
@@ -5631,38 +5714,32 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
         (
             "fn hold<T>(callback: Fn(T) -> T) -> Int { 0 } fn main() -> Int { 0 }",
             "Fn",
-            "annotation",
+            "open-member",
         ),
-        ("fn main() -> Fn(Int) -> Int { 0 }", "Fn", "annotation"),
+        (
+            "fn main() -> Fn(Int) -> Int { 0 }",
+            "Fn",
+            "boundary-position",
+        ),
+        (
+            "action read_only lookup(callback: Fn(Int) -> Int) -> String; fn main() -> Int { 0 }",
+            "Fn",
+            "boundary-position",
+        ),
         (
             "fn main() -> Int { let callback: Fn(Int) -> Int = 0; 0 }",
             "Fn",
-            "annotation",
-        ),
-        (
-            "trait Render { pure fn render(self, cb: Fn(Int) -> Int) -> Int; } fn main() -> Int { 0 }",
-            "Fn",
-            "annotation",
-        ),
-        (
-            "trait Render { fn render(self, cb: Fn(Int) -> Int) -> Int effects { prompt }; } fn main() -> Int { 0 }",
-            "Fn",
-            "annotation",
-        ),
-        (
-            "trait Render { fn render(self) -> Fn(Int) -> Int effects { prompt }; } fn main() -> Int { 0 }",
-            "Fn",
-            "annotation",
-        ),
-        (
-            "trait Render { pure fn render(self, cb: Int) -> Int; } struct Item {} impl Render for Item { pure fn render(self, cb: Fn(Int) -> Int) -> Int { 0 } } fn main() -> Int { 0 }",
-            "Fn",
-            "annotation",
+            "non-signature",
         ),
         (
             "trait Callable { pure fn call(self) -> Int; } impl Callable for Fn(Int) -> Int { pure fn call(self) -> Int { 0 } } fn main() -> Int { 0 }",
             "Fn",
-            "annotation",
+            "non-signature",
+        ),
+        (
+            "fn main() -> Int { discard fn(x: Fn(Int) -> Int) -> Int { x }; 0 }",
+            "Fn",
+            "non-signature",
         ),
         (
             "struct Box2<T> { value: T } impl Box2<Fn(Int) -> Int> { fn get(self) -> Int { 0 } } fn main() -> Int { 0 }",
@@ -5734,6 +5811,25 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
             refusal.fields
         );
     }
+    // A callable annotation in an implementation signature is admitted even when its shape
+    // departs from the declared trait contract, so the refusal that follows is the
+    // trait-contract diagnostic instead of the callable admission refusal.
+    root.write(
+        "trait Render { pure fn render(self, cb: Int) -> Int; } struct Item {} impl Render for Item { pure fn render(self, cb: Fn(Int) -> Int) -> Int { 0 } } fn main() -> Int { 0 }",
+    );
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let mismatched = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+    assert_eq!(mismatched.status(), AnalysisStatus::Invalid);
+    assert!(
+        !mismatched
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted"),
+        "{:?}",
+        mismatched.diagnostics()
+    );
     // A declared type whose name precedes no parameter list keeps its meaning.
     root.write("struct Fn { value: Int } fn main(callback: Fn) -> Int { 0 }");
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -5749,7 +5845,7 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
 }
 
 /// A callable type that is itself a component of another callable form reports the nested
-/// class, so admitting an annotation position cannot silently admit the types it composes.
+/// class, so admitting a signature annotation cannot silently admit the types it composes.
 #[test]
 fn public_callable_components_inside_callable_forms_report_nested_components() {
     let root = TempDirectory::new();
@@ -5777,7 +5873,7 @@ fn public_callable_components_inside_callable_forms_report_nested_components() {
         })
         .collect::<Vec<_>>();
     occurrences.sort_unstable();
-    assert_eq!(occurrences, ["annotation", "nested-component"]);
+    assert_eq!(occurrences, ["boundary-position", "nested-component"]);
 }
 
 /// A callable expression is recognised by the grammar and refused with its published

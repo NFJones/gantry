@@ -2640,7 +2640,8 @@ fn resolve_generic_type_node(
         None => {
             if direct_child(context.tree, id, SyntaxForm::CallableType).is_some() {
                 // A recognised callable annotation carries no generic type expression in
-                // this revision; type resolution refuses it with a published diagnostic.
+                // this revision: its parameter and result positions name closed types,
+                // which type resolution decides with its own published diagnostics.
                 return Ok(None);
             }
             let path_id =
