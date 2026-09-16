@@ -6927,22 +6927,31 @@ fn public_callable_expressions_are_refused_without_internal_failure() {
 #[test]
 fn public_declaration_names_are_refused_in_value_positions() {
     let root = TempDirectory::new();
-    for (source, identifier) in [
+    for (source, identifier, span_text) in [
         (
             "struct Item {} fn main() -> Int { discard Item; 0 }",
+            "Item",
             "Item",
         ),
         (
             "struct Item {} fn f(x: Int) -> Int { x } fn main() -> Int { f(Item) }",
             "Item",
+            "Item",
         ),
         (
             "trait Marker {} fn main() -> Int { discard Marker; 0 }",
+            "Marker",
             "Marker",
         ),
         (
             "enum Flag { On, Off } fn main() -> Int { discard Flag; 0 }",
             "Flag",
+            "Flag",
+        ),
+        (
+            "struct Item {} fn main() -> Int { discard crate::Item; 0 }",
+            "Item",
+            "crate::Item",
         ),
     ] {
         root.write(source);
@@ -6979,10 +6988,11 @@ fn public_declaration_names_are_refused_in_value_positions() {
             Some(identifier),
             "source: {source}"
         );
-        // The declaration itself carries the spelling too, so the value use is the last one.
+        // The declaration itself carries the spelling too, so the value use is the last one;
+        // a qualified path reports the whole path while `identifier` is its last spelling.
         let path_start = source
-            .rfind(identifier)
-            .unwrap_or_else(|| panic!("source: {source}: missing identifier"))
+            .rfind(span_text)
+            .unwrap_or_else(|| panic!("source: {source}: missing path"))
             as u64;
         let primary = refusal
             .primary
@@ -6991,7 +7001,7 @@ fn public_declaration_names_are_refused_in_value_positions() {
         assert_eq!(primary.bytes().start(), path_start, "source: {source}");
         assert_eq!(
             primary.bytes().end(),
-            path_start + identifier.len() as u64,
+            path_start + span_text.len() as u64,
             "source: {source}"
         );
     }
