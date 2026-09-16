@@ -9777,6 +9777,31 @@ fn infer_call_sequence(
                 return Ok(Some(result));
             }
         }
+        // A callee that names a binding whose type is not callable has no derivation at
+        // all (`GNT-3-T-CALL`), so it is refused instead of the sequence being typed as
+        // its callee with its arguments left unchecked. A member path keeps its own
+        // member resolution, which reports the member failure instead.
+        else if let Some(name) = direct_identifier(tree, path_id)?
+            && !children
+                .iter()
+                .any(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
+            && direct_identifier_span(tree, path).as_ref() == Some(path.span())
+            && let Some(ty) = environment.get(&name)
+        {
+            let span = if parenthesized {
+                call_sequence_children_span(tree, children)
+            } else {
+                call_sequence_span(tree, children, path)
+            }
+            .unwrap_or_else(|| path.span().clone());
+            diagnostics.push(body_diagnostic(
+                "invalid-call-target",
+                DiagnosticCategory::Type,
+                "an ordinary call resolves to a value that is not callable",
+                span,
+                [("callee_type", ty.canonical_string())],
+            )?);
+        }
         return Ok(None);
     };
     if let Some(trait_path) = context.trait_symbols.get(&target) {

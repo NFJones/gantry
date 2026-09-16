@@ -195,7 +195,7 @@
    "artifact": "protocol/conformance/native-source-concurrency-gate-v1.json",
    "commit": "a6915ef212b9e245da00fd383f79bc81f05c3556",
    "issue": "GNT-ASYNC-GATE-200",
-   "sha256": "8034e85e6a596291d3675dcab17823f4437186ae655a31eddbed361d12d8ebed",
+   "sha256": "640a4adc377c9a110f099d9c946e59a439facbe1aae8de46dd0fd7535f5064ac",
    "subject": "Close the native source concurrency evidence gate."
   },
   {

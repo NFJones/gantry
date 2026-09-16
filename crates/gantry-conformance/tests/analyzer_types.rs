@@ -6374,6 +6374,151 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
     }
 }
 
+/// A call whose callee names a binding whose type is not callable has no derivation in
+/// `GNT-3-T-CALL`, so it is refused at the call instead of the sequence being typed as
+/// its callee with its arguments left unchecked.
+#[test]
+fn public_non_callable_callees_are_refused_instead_of_being_typed_as_their_callee() {
+    let root = TempDirectory::new();
+    for (source, call, callee_type) in [
+        (
+            "fn f(value: Int) -> Int { value(2) } fn main() -> Int { f(3) }",
+            "value(2)",
+            "Int",
+        ),
+        (
+            "fn f(value: Int) -> Int { value(2) } fn main() -> Int { discard f; 0 }",
+            "value(2)",
+            "Int",
+        ),
+        (
+            "fn f(value: Int) -> Int { (value)(2) } fn main() -> Int { f(3) }",
+            "(value)(2)",
+            "Int",
+        ),
+        (
+            "fn main() -> Int { let flag: Bool = true; discard flag(2); 0 }",
+            "flag(2)",
+            "Bool",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused call must not publish an executable program"
+        );
+        let refusals = refused
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_str() == "invalid-call-target")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            refusals.len(),
+            1,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = refusals[0];
+        assert_eq!(refusal.category, DiagnosticCategory::Type);
+        assert_eq!(
+            refusal.fields.get("callee_type").map(AsRef::as_ref),
+            Some(callee_type),
+            "source: {source}"
+        );
+        let call_start = source
+            .find(call)
+            .unwrap_or_else(|| panic!("source: {source}: missing call"))
+            as u64;
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        assert_eq!(primary.bytes().start(), call_start, "source: {source}");
+        assert_eq!(
+            primary.bytes().end(),
+            call_start + call.len() as u64,
+            "source: {source}"
+        );
+    }
+
+    // A member path keeps its own member resolution, so only a bare binding callee is
+    // refused by the call rule.
+    root.write(
+        "struct Item {} fn main() -> Int { let item: Item = Item {}; discard item.unknown(2); 0 }",
+    );
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let member = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(member.status(), AnalysisStatus::Invalid);
+    assert!(
+        member
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "unknown-member"),
+        "{:?}",
+        member.diagnostics()
+    );
+    assert!(
+        member
+            .diagnostics()
+            .iter()
+            .all(|diagnostic| diagnostic.code.as_str() != "invalid-call-target"),
+        "{:?}",
+        member.diagnostics()
+    );
+
+    // A declared callable callee stays an ordinary admitted call, and a callable-typed
+    // binding keeps the published invocation refusal, so this rule neither rejects a
+    // declared call nor preempts `GNT-37.10`.
+    root.write("fn f(value: Int) -> Int { value } fn main() -> Int { f(3) }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let declared = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(
+        declared.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        declared.diagnostics()
+    );
+    root.write(
+        "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { discard callback(value); 0 } fn main() -> Int { discard apply; 0 }",
+    );
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let callable = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(callable.status(), AnalysisStatus::Invalid);
+    assert!(
+        callable
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "callable-invocation-unadmitted"),
+        "{:?}",
+        callable.diagnostics()
+    );
+    assert!(
+        callable
+            .diagnostics()
+            .iter()
+            .all(|diagnostic| diagnostic.code.as_str() != "invalid-call-target"),
+        "{:?}",
+        callable.diagnostics()
+    );
+}
+
 /// A callable expression is recognised by the grammar and refused with its published
 /// diagnostic in every position that types a value, instead of failing internally.
 #[test]
