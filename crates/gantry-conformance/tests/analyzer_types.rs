@@ -7423,6 +7423,114 @@ fn public_nested_aggregate_literals_lower_as_their_enclosing_construct() {
     );
 }
 
+/// A constructor callee whose operand count does not match its payload shape is refused precisely
+/// at its own span instead of failing internally, and matching counts keep their meaning
+/// (`GNT-GP-CALLEE-003`).
+#[test]
+fn public_constructor_callee_operand_counts_are_refused_precisely() {
+    let root = TempDirectory::new();
+    for (source, code, start, end) in [
+        (
+            "fn main() -> Option<Int> { None(2) }",
+            "ambiguous-constructor-type",
+            27_u64,
+            31_u64,
+        ),
+        (
+            "fn main() -> Int { let x: Option<Int> = None(2); discard x; 0 }",
+            "ambiguous-constructor-type",
+            40,
+            44,
+        ),
+        (
+            "fn main() -> Int { let x: Option<Int> = None(1, 2); discard x; 0 }",
+            "ambiguous-constructor-type",
+            40,
+            44,
+        ),
+        (
+            "enum E { V(Int) } fn main() -> Int { discard E::V(1, 2); 0 }",
+            "invalid-enum-constructor",
+            45,
+            55,
+        ),
+        (
+            "enum E { V(Int) } fn main() -> Int { discard E::V(1, 2, 3); 0 }",
+            "invalid-enum-constructor",
+            45,
+            58,
+        ),
+        (
+            "enum E { V(Int) } fn main() -> Int { let x: E = E::V(1, 2); discard x; 0 }",
+            "invalid-enum-constructor",
+            48,
+            58,
+        ),
+        (
+            "enum E { V(Int) } fn main() -> Int { discard E::V(); 0 }",
+            "invalid-enum-constructor",
+            45,
+            51,
+        ),
+        (
+            "enum Flag { On, Off } fn main() -> Int { discard Flag::On(1); 0 }",
+            "invalid-enum-constructor",
+            49,
+            60,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let diagnostic = refused
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == code)
+            .unwrap_or_else(|| {
+                panic!("source: {source}; diagnostics: {:?}", refused.diagnostics())
+            });
+        let primary = diagnostic
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        assert_eq!(primary.bytes().start(), start, "source: {source}");
+        assert_eq!(primary.bytes().end(), end, "source: {source}");
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused constructor callee must not publish a program"
+        );
+    }
+
+    for source in [
+        "enum E { V(Int) } fn main() -> Int { discard E::V(1); 0 }",
+        "fn main() -> Option<Int> { Some(1) }",
+        "fn main() -> Int { let x: Option<Int> = None; discard x; 0 }",
+        "fn main() -> Int { let y: Option<Int> = Some(1); discard y; 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+    }
+}
+
 /// An annotation naming a type that no declaration provides is refused precisely, including when
 /// the enclosing declaration is reachable and would otherwise be lowered into an executable program.
 #[test]

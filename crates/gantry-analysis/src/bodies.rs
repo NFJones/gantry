@@ -5906,6 +5906,35 @@ fn infer_expression_inner(
             diagnostics,
         );
     }
+    if direct_reserved_word(tree, node).as_deref() == Some("None")
+        && direct_expression_count(tree, node) != 0
+    {
+        // `None` carries no payload, so an operand cannot make this constructor application an
+        // Option value; without the refusal the lowering emits a payload aggregate for the
+        // payload-free variant and analysis fails internally.
+        let span = node
+            .children()
+            .iter()
+            .copied()
+            .find(|child| {
+                tree.node(*child).is_some_and(|child| {
+                    matches!(
+                        child.form(),
+                        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "None"
+                    )
+                })
+            })
+            .and_then(|token| tree.node(token))
+            .map_or_else(|| node.span().clone(), |token| token.span().clone());
+        diagnostics.push(body_diagnostic(
+            "ambiguous-constructor-type",
+            DiagnosticCategory::Type,
+            "None has no compatible expected Option type",
+            span,
+            [("constructor", "None")],
+        )?);
+        return Ok(None);
+    }
     if direct_reserved_word(tree, node).as_deref() == Some("Some") {
         return infer_some(
             tree,
@@ -6726,7 +6755,7 @@ fn infer_enum_constructor(
         return Ok(None);
     };
     let expression = direct_child_form(tree, node, SyntaxForm::Expression);
-    if payload.is_some() != expression.is_some() {
+    if direct_expression_count(tree, node) != usize::from(payload.is_some()) {
         diagnostics.push(body_diagnostic(
             "invalid-enum-constructor",
             DiagnosticCategory::Type,
@@ -6804,7 +6833,7 @@ fn infer_generic_enum_constructor(
         return Ok(None);
     };
     let expression = direct_child_form(tree, node, SyntaxForm::Expression);
-    if payload.is_some() != expression.is_some() {
+    if direct_expression_count(tree, node) != usize::from(payload.is_some()) {
         diagnostics.push(body_diagnostic(
             "invalid-enum-constructor",
             DiagnosticCategory::Type,
@@ -11520,6 +11549,17 @@ fn direct_child_form(
             std::mem::discriminant(node.form()) == std::mem::discriminant(&form)
         })
     })
+}
+
+/// Counts the direct operand expressions of one call or constructor form.
+fn direct_expression_count(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> usize {
+    node.children()
+        .iter()
+        .filter(|child| {
+            tree.node(**child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+        })
+        .count()
 }
 
 fn direct_identifier_span(
