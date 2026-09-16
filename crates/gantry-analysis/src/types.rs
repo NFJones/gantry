@@ -885,16 +885,18 @@ fn resolve_source_types(
 /// result of a callable form, because a callable annotation retains its parameter and
 /// result types as children of its own node. A trait-reference argument list is an
 /// application of the same kind, so `impl Holder<Fn(Int) -> Int> for Item` and a
-/// `where T: Holder<Fn(Int) -> Int>` predicate both nest their argument. The collected
-/// set keeps the two callable occurrence classes disjoint: an annotation position is
-/// never a component of another type expression, and a nested component never is an
-/// annotation position.
+/// `where T: Holder<Fn(Int) -> Int>` predicate both nest their argument. An explicit
+/// type-argument list is collected directly, so a call-site argument such as
+/// `id::<Fn(Int) -> Int>(0)` nests exactly like the same argument written inside a
+/// constructed type. The collected set keeps the two callable occurrence classes
+/// disjoint: an annotation position is never a component of another type expression,
+/// and a nested component never is an annotation position.
 fn nested_type_member_nodes(tree: &SyntaxTree) -> Result<BTreeSet<NodeId>, AnalysisError> {
     let mut nested = BTreeSet::new();
     for (index, node) in tree.nodes().iter().enumerate() {
         if !matches!(
             node.form(),
-            SyntaxForm::ValueType | SyntaxForm::TraitReference
+            SyntaxForm::ValueType | SyntaxForm::TraitReference | SyntaxForm::TypeArgumentList
         ) {
             continue;
         }

@@ -5689,6 +5689,11 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
             "Fn",
             "nested-component",
         ),
+        (
+            "fn id<T>(value: T) -> T { value } fn main() -> Int { discard id::<Fn(Int) -> Int>(0); 0 }",
+            "Fn",
+            "nested-component",
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
