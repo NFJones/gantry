@@ -1,6 +1,6 @@
 {
  "format": "gantry.concurrent-task-state-evidence/v1",
- "specification_sha256": "1fa4f5b51ac75e0e3ea4ad64d0dec75083441682905b30ce3973c6ab956086eb",
+ "specification_sha256": "5aafeeaf34d5475a7319dcc72af25a2d8428d0d7eadb10d0f671eb35478b4e1d",
  "issue": "GNT-CON-001",
  "entries": [
   {

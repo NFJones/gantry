@@ -9735,6 +9735,28 @@ fn infer_call_sequence(
     };
     let path = tree.node(path_id).ok_or(AnalysisError::Invariant)?;
     let Some(target) = context.references.get(path.span()).copied() else {
+        // A callee that names a value rather than a declared callable has no admitted
+        // invocation form: a callable-typed value is refused under
+        // `callable-invocation-unadmitted` (`GNT-37.10`) before the call's own arguments
+        // are typed, instead of the sequence being typed as its own callee.
+        if let Some(name) = direct_identifier(tree, path_id)?
+            && let Some(ty) = environment.get(&name)
+            && let Some(callable) = ty.callable_type()
+        {
+            let span =
+                call_sequence_span(tree, children, path).unwrap_or_else(|| path.span().clone());
+            diagnostics.push(body_diagnostic(
+                "callable-invocation-unadmitted",
+                DiagnosticCategory::Type,
+                "a call through a callable value is not admitted",
+                span,
+                [("reuse_kind", callable.kind().canonical_name())],
+            )?);
+            let mut members = ty.immediate_members();
+            if let Some(result) = members.pop() {
+                return Ok(Some(result));
+            }
+        }
         return Ok(None);
     };
     if let Some(trait_path) = context.trait_symbols.get(&target) {
@@ -10352,13 +10374,10 @@ fn refuse_callable_argument_at(
 ) -> Result<(), AnalysisError> {
     let index = if arguments
         .get(index)
-        .is_some_and(|descriptor| descriptor_contains_callable(descriptor))
+        .is_some_and(descriptor_contains_callable)
     {
         index
-    } else if let Some(found) = arguments
-        .iter()
-        .position(|descriptor| descriptor_contains_callable(descriptor))
-    {
+    } else if let Some(found) = arguments.iter().position(descriptor_contains_callable) {
         found
     } else {
         return Ok(());

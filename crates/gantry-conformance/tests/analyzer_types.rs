@@ -6128,6 +6128,87 @@ fn public_callable_components_inside_callable_forms_report_nested_components() {
     assert_eq!(occurrences, ["boundary-position", "nested-component"]);
 }
 
+/// A call through a callable-typed binding is refused with the published invocation
+/// refusal instead of the sequence being typed as its own callee, while declaring,
+/// passing, and holding a callable value stays admitted.
+#[test]
+fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted() {
+    let root = TempDirectory::new();
+    for (source, reuse_kind) in [
+        (
+            "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { callback(value) } fn main() -> Int { discard apply; 0 }",
+            "Fn",
+        ),
+        (
+            "fn apply(callback: FnMut() -> Int) -> Int { callback() } fn main() -> Int { discard apply; 0 }",
+            "FnMut",
+        ),
+        (
+            "fn apply(callback: FnOnce(Int) -> Int, value: Int) -> Int { callback(value) } fn main() -> Int { discard apply; 0 }",
+            "FnOnce",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics().len(),
+            1,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = &refused.diagnostics()[0];
+        assert_eq!(refusal.code.as_str(), "callable-invocation-unadmitted");
+        assert_eq!(refusal.category, DiagnosticCategory::Type);
+        assert_eq!(
+            refusal.fields.get("reuse_kind").map(AsRef::as_ref),
+            Some(reuse_kind),
+            "source: {source}"
+        );
+        let call_start = source
+            .find("callback(")
+            .unwrap_or_else(|| panic!("source: {source}: missing call"))
+            as u64;
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        assert!(
+            primary.bytes().start() >= call_start,
+            "source: {source}: refusal precedes the call site"
+        );
+    }
+
+    // Declaring, passing, and holding a callable value stays admitted: only the call
+    // through a callable-typed binding is refused.
+    for source in [
+        "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { discard apply; 0 }",
+        "fn inc(value: Int) -> Int { value } fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { discard apply(inc, 1); 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+    }
+}
+
 /// A callable expression is recognised by the grammar and refused with its published
 /// diagnostic in every position that types a value, instead of failing internally.
 #[test]

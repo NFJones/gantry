@@ -217,11 +217,13 @@ pub enum CallableDiagnosticCode {
     TypeUnadmitted,
     /// A source callable expression this revision recognises but does not admit.
     ExpressionUnadmitted,
+    /// An invocation of a callable value this revision recognises but does not admit.
+    InvocationUnadmitted,
 }
 
 impl CallableDiagnosticCode {
     /// Every refusal condition in normative order.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::ShapeRefused,
         Self::CaptureRefused,
         Self::ReuseRefused,
@@ -232,6 +234,7 @@ impl CallableDiagnosticCode {
         Self::RoundTripLoss,
         Self::TypeUnadmitted,
         Self::ExpressionUnadmitted,
+        Self::InvocationUnadmitted,
     ];
 
     /// Returns the frozen diagnostic spelling.
@@ -248,6 +251,7 @@ impl CallableDiagnosticCode {
             Self::RoundTripLoss => "callable-round-trip-loss",
             Self::TypeUnadmitted => "callable-type-unadmitted",
             Self::ExpressionUnadmitted => "callable-expression-unadmitted",
+            Self::InvocationUnadmitted => "callable-invocation-unadmitted",
         }
     }
 }
