@@ -11675,7 +11675,7 @@ fn declared_callee_reference(context: &BodyContext, symbol: SymbolId) -> bool {
 /// such a sequence is a call on an expression, which `GNT-3-T-CALL` gives no derivation: the
 /// refusal reports this group instead of lowering a sequence the machine cannot execute or
 /// admitting a body that never reaches the machine.
-fn expression_callee_span(
+pub(crate) fn expression_callee_span(
     tree: &SyntaxTree,
     children: &[NodeId],
 ) -> Result<Option<SourceSpan>, AnalysisError> {
@@ -11712,10 +11712,46 @@ fn expression_callee_span(
     let Some(close) = close else {
         return Ok(None);
     };
-    let Some(next) = tokens.get(close.saturating_add(1)).copied() else {
+    // A call may carry an explicit type-argument list between the callee group and its
+    // argument list, and the grammar admits a call only after one, so the group is an
+    // expression callee in that spelling too.
+    let mut next = close.saturating_add(1);
+    if tokens
+        .get(next)
+        .copied()
+        .is_some_and(|token| node_is_punctuation(tree, token, Punctuation::PathSeparator))
+    {
+        next = next.saturating_add(1);
+        if !tokens
+            .get(next)
+            .copied()
+            .is_some_and(|token| node_is_punctuation(tree, token, Punctuation::Less))
+        {
+            return Ok(None);
+        }
+        let mut depth = 0_u64;
+        let mut arguments = None;
+        for (index, token) in tokens.iter().enumerate().skip(next) {
+            if node_is_punctuation(tree, *token, Punctuation::Less) {
+                depth = depth.saturating_add(1);
+            }
+            if node_is_punctuation(tree, *token, Punctuation::Greater) {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    arguments = Some(index);
+                    break;
+                }
+            }
+        }
+        let Some(arguments) = arguments else {
+            return Ok(None);
+        };
+        next = arguments.saturating_add(1);
+    }
+    let Some(next_token) = tokens.get(next).copied() else {
         return Ok(None);
     };
-    if !node_is_punctuation(tree, next, Punctuation::LeftParenthesis) {
+    if !node_is_punctuation(tree, next_token, Punctuation::LeftParenthesis) {
         return Ok(None);
     }
     let first_node = tree.node(first).ok_or(AnalysisError::Invariant)?;

@@ -6657,15 +6657,57 @@ fn public_declared_callable_names_are_refused_in_value_positions() {
 #[test]
 fn public_parenthesized_expression_callees_are_refused_without_internal_failure() {
     let root = TempDirectory::new();
-    for source in [
-        "fn f() -> Int { 1 } fn main() -> Int { discard (f())(1); 0 }",
-        "fn f(value: Int) -> Int { value } fn main() -> Int { discard (f(1))(1); 0 }",
-        "fn f() -> Int { 1 } fn main() -> Int { discard ((f()))(1); 0 }",
-        "fn f() -> Int { 1 } fn main() -> Int { discard (f())(); 0 }",
-        "fn f() -> Int { 1 } fn main() -> Int { discard (f())(1, 2); 0 }",
-        "fn main() -> Int { discard (1 + 2)(3); 0 }",
-        "fn f() -> Int { 1 } fn main() -> Int { discard (f() + 1)(2); 0 }",
-        "fn f() -> Int { discard (1 + 2)(3); 0 } fn main() -> Int { 0 }",
+    for (source, span_text) in [
+        (
+            "fn f() -> Int { 1 } fn main() -> Int { discard (f())(1); 0 }",
+            "(f())",
+        ),
+        (
+            "fn f(value: Int) -> Int { value } fn main() -> Int { discard (f(1))(1); 0 }",
+            "(f(1))",
+        ),
+        (
+            "fn f() -> Int { 1 } fn main() -> Int { discard ((f()))(1); 0 }",
+            "((f()))",
+        ),
+        (
+            "fn f() -> Int { 1 } fn main() -> Int { discard (f())(); 0 }",
+            "(f())",
+        ),
+        (
+            "fn f() -> Int { 1 } fn main() -> Int { discard (f())(1, 2); 0 }",
+            "(f())",
+        ),
+        ("fn main() -> Int { discard (1 + 2)(3); 0 }", "(1 + 2)"),
+        (
+            "fn f() -> Int { 1 } fn main() -> Int { discard (f() + 1)(2); 0 }",
+            "(f() + 1)",
+        ),
+        (
+            "fn f() -> Int { discard (1 + 2)(3); 0 } fn main() -> Int { 0 }",
+            "(1 + 2)",
+        ),
+        (
+            "fn f() -> Int { 1 } fn main() -> Int { discard (f())::<Int>(1); 0 }",
+            "(f())",
+        ),
+        (
+            "fn f() -> Int { discard (f())::<Int>(1); 0 } fn main() -> Int { 0 }",
+            "(f())",
+        ),
+        ("fn main() -> Int { discard (1)::<Int>(2); 0 }", "(1)"),
+        (
+            "fn main() -> Int { discard (1 + 2)::<Int>(3); 0 }",
+            "(1 + 2)",
+        ),
+        (
+            "fn f() -> Int { 1 } fn main() -> Int { discard ((f()))::<Int>(); 0 }",
+            "((f()))",
+        ),
+        (
+            "fn f() -> Int { 1 } fn main() -> Int { discard ((f())::<Int>(1)); 0 }",
+            "(f())",
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -6679,11 +6721,18 @@ fn public_parenthesized_expression_callees_are_refused_without_internal_failure(
             "source: {source}; diagnostics: {:?}",
             refused.diagnostics()
         );
+        let start = source
+            .find(span_text)
+            .unwrap_or_else(|| panic!("source: {source}: missing `{span_text}`"))
+            as u64;
+        let end = start + span_text.len() as u64;
         assert!(
-            refused
-                .diagnostics()
-                .iter()
-                .any(|diagnostic| diagnostic.code.as_str() == "invalid-call-target"),
+            refused.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code.as_str() == "invalid-call-target"
+                    && diagnostic.primary.as_ref().is_some_and(|span| {
+                        span.bytes().start() == start && span.bytes().end() == end
+                    })
+            }),
             "source: {source}; diagnostics: {:?}",
             refused.diagnostics()
         );

@@ -1534,7 +1534,7 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         code: "invalid-call-target",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
-        meaning: "An ordinary call resolves to a declared action.",
+        meaning: "An ordinary call has no derivation: its callee is a declared action, a value that is not callable, or an expression.",
     },
     DiagnosticCodeDefinition {
         code: "invalid-character",
