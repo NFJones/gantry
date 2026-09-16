@@ -11370,11 +11370,45 @@ fn parenthesized_callee_path(
     };
     // Only a group followed by an argument list is an invocation: a bare, doubled, or
     // binary-consumed group merely holds or passes a callable value, which `GNT-37.10`
-    // admits, so it keeps the earlier fall-through.
-    let Some(next) = tokens.get(close.saturating_add(1)).copied() else {
+    // admits, so it keeps the earlier fall-through. An explicit type-argument tail
+    // between the group and its argument list is still an invocation.
+    let mut next = close.saturating_add(1);
+    if tokens
+        .get(next)
+        .copied()
+        .is_some_and(|token| node_is_punctuation(tree, token, Punctuation::PathSeparator))
+    {
+        next = next.saturating_add(1);
+        if !tokens
+            .get(next)
+            .copied()
+            .is_some_and(|token| node_is_punctuation(tree, token, Punctuation::Less))
+        {
+            return Ok(None);
+        }
+        let mut depth = 0_u64;
+        let mut arguments = None;
+        for (index, token) in tokens.iter().enumerate().skip(next) {
+            if node_is_punctuation(tree, *token, Punctuation::Less) {
+                depth = depth.saturating_add(1);
+            }
+            if node_is_punctuation(tree, *token, Punctuation::Greater) {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    arguments = Some(index);
+                    break;
+                }
+            }
+        }
+        let Some(close_arguments) = arguments else {
+            return Ok(None);
+        };
+        next = close_arguments.saturating_add(1);
+    }
+    let Some(next_token) = tokens.get(next).copied() else {
         return Ok(None);
     };
-    if !node_is_punctuation(tree, next, Punctuation::LeftParenthesis) {
+    if !node_is_punctuation(tree, next_token, Punctuation::LeftParenthesis) {
         return Ok(None);
     }
     let mut identifiers = tokens

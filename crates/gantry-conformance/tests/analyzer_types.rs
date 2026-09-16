@@ -6232,6 +6232,70 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
         assert_eq!(primary.bytes().start(), call_start, "source: {source}");
     }
 
+    // An explicit type-argument tail between the group and its argument list is still an
+    // invocation, so the turbofish spelling is refused with the same rule and span.
+    for (source, call) in [
+        (
+            "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback)::<Int>(1); 0 } fn main() -> Int { discard apply; 0 }",
+            "(callback)::<Int>(1)",
+        ),
+        (
+            "fn apply(callback: Fn(Int) -> Int) -> Int { ((callback))::<Int>(1) } fn main() -> Int { discard apply; 0 }",
+            "((callback))::<Int>(1)",
+        ),
+        (
+            "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback)::<Int>(1) } fn main() -> Int { discard apply; 0 }",
+            "(callback)::<Int>(1)",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == "callable-invocation-unadmitted")
+                .count(),
+            1,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = refused
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "callable-invocation-unadmitted")
+            .unwrap_or_else(|| panic!("source: {source}; {:?}", refused.diagnostics()));
+        assert_eq!(
+            refusal.fields.get("reuse_kind").map(AsRef::as_ref),
+            Some("Fn"),
+            "source: {source}"
+        );
+        let call_start = source
+            .find(call)
+            .unwrap_or_else(|| panic!("source: {source}: missing call"))
+            as u64;
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        assert_eq!(primary.bytes().start(), call_start, "source: {source}");
+        assert_eq!(
+            primary.bytes().end(),
+            call_start + call.len() as u64,
+            "source: {source}"
+        );
+    }
+
     // A grouped call is typed as the callee's declared result instead of as the callee, so
     // holding it in a callable position is a genuine mismatch rather than a silent
     // admission of the call.
@@ -6271,14 +6335,19 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     let grouped = analyze_package_types(&syntax)
         .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
-    assert!(
-        !grouped
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "callable-invocation-unadmitted"),
+    assert_eq!(
+        grouped.status(),
+        AnalysisStatus::Invalid,
         "{:?}",
         grouped.diagnostics()
     );
+    assert_eq!(
+        grouped.diagnostics().len(),
+        1,
+        "{:?}",
+        grouped.diagnostics()
+    );
+    assert_eq!(grouped.diagnostics()[0].code.as_str(), "invalid-primitive");
 
     // Declaring, passing, and holding a callable value stays admitted: only the call
     // through a callable-typed binding is refused.
