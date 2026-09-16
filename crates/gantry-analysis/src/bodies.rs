@@ -6992,7 +6992,11 @@ fn infer_generic_struct(
                 TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
                     GenericAnalysisCode::ConflictingTypeInference
                 }
-                TypeInferenceFailure::Incomplete | TypeInferenceFailure::InvalidOptionMember => {
+                // `CallableArgument` is produced only by the call-instantiation helpers, so
+                // struct-literal inference never reaches it.
+                TypeInferenceFailure::Incomplete
+                | TypeInferenceFailure::InvalidOptionMember
+                | TypeInferenceFailure::CallableArgument => {
                     GenericAnalysisCode::IncompleteTypeInference
                 }
             };
@@ -7964,6 +7968,7 @@ fn infer_member_sequence(
             })
             .collect::<Vec<_>>();
         let mut actual_arguments = Vec::with_capacity(arguments.len());
+        let mut actual_argument_spans = Vec::with_capacity(arguments.len());
         for argument in &arguments {
             let Some(actual) = infer_expression(
                 tree,
@@ -7977,6 +7982,12 @@ fn infer_member_sequence(
             else {
                 return Ok(None);
             };
+            actual_argument_spans.push(
+                tree.node(*argument)
+                    .ok_or(AnalysisError::Invariant)?
+                    .span()
+                    .clone(),
+            );
             actual_arguments.push(actual);
         }
         let explicit_method_arguments = children
@@ -8004,6 +8015,7 @@ fn infer_member_sequence(
                 .cloned()
         });
         let mut generic = None;
+        let mut callable_refusal = false;
         let signature = if let Some(inherent) = inherent {
             Some(inherent)
         } else if let Some(resolution) = resolve_generic_inherent_method(
@@ -8011,14 +8023,20 @@ fn infer_member_sequence(
             &member,
             explicit_method_arguments.as_deref(),
             &actual_arguments,
+            &actual_argument_spans,
             expected,
             context,
             member_node,
             diagnostics,
+            &mut callable_refusal,
         )? {
             let callable = resolution.callable.clone();
             generic = Some(resolution);
             Some(callable)
+        } else if callable_refusal {
+            // The generic instantiation already refused a callable argument (`GNT-37.0`), so
+            // trait resolution must not report the member as missing.
+            None
         } else {
             let resolution = resolve_trait_method(
                 &receiver,
@@ -8027,10 +8045,12 @@ fn infer_member_sequence(
                 None,
                 explicit_method_arguments.as_deref(),
                 Some(&actual_arguments),
+                &actual_argument_spans,
                 expected,
                 context,
                 member_node,
                 diagnostics,
+                &mut callable_refusal,
             )?;
             if let Some((_, retained)) = &resolution {
                 generic = retained.clone();
@@ -8707,7 +8727,15 @@ fn instantiate_generic_method(
     if actual_arguments.len() != signature.parameters.len() {
         return Err(TypeInferenceFailure::Arity);
     }
+    // A callable descriptor has no template type-expression form (`GNT-37.0`), so a
+    // callable argument contributes no constraint; a candidate that unifies without it is
+    // reported as a callable instantiation argument instead of being filtered out.
+    let mut callable_argument = false;
     for (template, argument) in signature.parameters.iter().zip(actual_arguments) {
+        if descriptor_contains_callable(argument) {
+            callable_argument = true;
+            continue;
+        }
         constraints.push((
             substitute_self_type(template, receiver).map_err(|_| TypeInferenceFailure::Conflict)?,
             TypeExpression::closed(argument, u64::MAX)
@@ -8715,14 +8743,34 @@ fn instantiate_generic_method(
         ));
     }
     if let Some(expected) = expected_result {
-        constraints.push((
-            substitute_self_type(&signature.result, receiver)
-                .map_err(|_| TypeInferenceFailure::Conflict)?,
-            TypeExpression::closed(expected, u64::MAX)
-                .map_err(|_| TypeInferenceFailure::Conflict)?,
-        ));
+        // A callable expectation cannot be named by the template grammar either, and no
+        // call produces a callable value in this revision, so it contributes no
+        // constraint and the enclosing position reports its own diagnostic, exactly as
+        // the free-call path decides.
+        if !descriptor_contains_callable(expected) {
+            constraints.push((
+                substitute_self_type(&signature.result, receiver)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+                TypeExpression::closed(expected, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+            ));
+        }
     }
-    let substitution = ExactTypeSubstitution::infer(&signature.required, &constraints)?;
+    let substitution = match ExactTypeSubstitution::infer(&signature.required, &constraints) {
+        Ok(substitution) => substitution,
+        Err(error) => {
+            // A skipped callable argument leaves its parameter unbound, so a candidate that
+            // is complete only up to that position reports `Incomplete`; both that case and
+            // a successful inference select a candidate whose call `GNT-37.0` refuses.
+            if callable_argument && error == TypeInferenceFailure::Incomplete {
+                return Err(TypeInferenceFailure::CallableArgument);
+            }
+            return Err(error);
+        }
+    };
+    if callable_argument {
+        return Err(TypeInferenceFailure::CallableArgument);
+    }
     let concrete_arguments = signature
         .required
         .iter()
@@ -8751,28 +8799,45 @@ fn resolve_generic_inherent_method(
     member: &str,
     explicit_method_arguments: Option<&[TypeDescriptor]>,
     actual_arguments: &[TypeDescriptor],
+    actual_argument_spans: &[SourceSpan],
     expected_result: Option<&TypeDescriptor>,
     context: &BodyContext,
     source: &gantry_frontend::SyntaxNode,
     diagnostics: &mut Vec<StructuredDiagnostic>,
+    callable_refusal: &mut bool,
 ) -> Result<Option<GenericMethodResolution>, AnalysisError> {
-    let mut candidates = context
+    let matching = context
         .generic_methods
         .iter()
         .filter(|signature| signature.kind == TemplateKind::InherentMethod)
         .filter(|signature| signature.method_name.as_deref() == Some(member))
-        .filter_map(|signature| {
-            instantiate_generic_method(
-                signature,
-                receiver,
-                None,
-                explicit_method_arguments,
-                actual_arguments,
-                expected_result,
-            )
-            .ok()
-        })
         .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut callable_argument = false;
+    for signature in matching {
+        match instantiate_generic_method(
+            signature,
+            receiver,
+            None,
+            explicit_method_arguments,
+            actual_arguments,
+            expected_result,
+        ) {
+            Ok(resolution) => candidates.push(resolution),
+            Err(TypeInferenceFailure::CallableArgument) => callable_argument = true,
+            Err(_) => {}
+        }
+    }
+    if candidates.is_empty() && callable_argument {
+        refuse_first_callable_argument(
+            actual_arguments,
+            actual_argument_spans,
+            source.span(),
+            diagnostics,
+        )?;
+        *callable_refusal = true;
+        return Ok(None);
+    }
     match candidates.len() {
         0 => Ok(None),
         1 => Ok(candidates.pop()),
@@ -8800,10 +8865,12 @@ fn resolve_trait_method(
     explicit_trait_arguments: Option<&[TypeDescriptor]>,
     explicit_method_arguments: Option<&[TypeDescriptor]>,
     actual_arguments: Option<&[TypeDescriptor]>,
+    actual_argument_spans: &[SourceSpan],
     expected_result: Option<&TypeDescriptor>,
     context: &BodyContext,
     source: &gantry_frontend::SyntaxNode,
     diagnostics: &mut Vec<StructuredDiagnostic>,
+    callable_refusal: &mut bool,
 ) -> Result<Option<(CallableSignature, Option<GenericMethodResolution>)>, AnalysisError> {
     let visible_traits = context.current_visible_traits.borrow().clone();
     let declaring_traits = context
@@ -8820,6 +8887,7 @@ fn resolve_trait_method(
         .collect::<Vec<_>>();
     let mut candidates = Vec::new();
     let mut inference_failed = false;
+    let mut callable_argument = false;
     for contract in &declaring_traits {
         let method = contract
             .methods()
@@ -8870,6 +8938,13 @@ fn resolve_trait_method(
             expected_result,
         ) {
             Ok(arguments) => arguments,
+            Err(TypeInferenceFailure::CallableArgument) => {
+                // The contract would apply except for a callable argument (`GNT-37.0`), so the
+                // call is refused at that argument instead of reporting a substitution that
+                // did not complete.
+                callable_argument = true;
+                continue;
+            }
             Err(error) => {
                 inference_failed = true;
                 let code = match error {
@@ -8877,10 +8952,10 @@ fn resolve_trait_method(
                     TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
                         GenericAnalysisCode::ConflictingTypeInference
                     }
-                    TypeInferenceFailure::Incomplete => {
-                        GenericAnalysisCode::IncompleteTypeInference
-                    }
-                    TypeInferenceFailure::InvalidOptionMember => {
+                    // `CallableArgument` is intercepted above and stays unreachable here.
+                    TypeInferenceFailure::Incomplete
+                    | TypeInferenceFailure::InvalidOptionMember
+                    | TypeInferenceFailure::CallableArgument => {
                         GenericAnalysisCode::IncompleteTypeInference
                     }
                 };
@@ -9000,6 +9075,16 @@ fn resolve_trait_method(
             ObligationResult::Unsatisfied => {}
         }
     }
+    if candidates.is_empty() && callable_argument {
+        refuse_first_callable_argument(
+            actual_arguments.unwrap_or_default(),
+            actual_argument_spans,
+            source.span(),
+            diagnostics,
+        )?;
+        *callable_refusal = true;
+        return Ok(None);
+    }
     match candidates.len() {
         0 if inference_failed => Ok(None),
         0 if !declaring_traits.is_empty() => {
@@ -9090,6 +9175,9 @@ fn infer_trait_call_arguments(
         .copied()
         .collect::<Vec<_>>();
     let mut constraints = Vec::new();
+    // Tracks a callable argument whose position the template grammar cannot constrain
+    // (`GNT-37.0`), so the call reports the published refusal instead of failing inference.
+    let mut skipped_callable_argument = false;
     if let Some(arguments) = explicit_trait_arguments {
         for (parameter, argument) in trait_required.iter().zip(arguments) {
             constraints.push((
@@ -9114,7 +9202,14 @@ fn infer_trait_call_arguments(
         if arguments.len() != method.parameters().len() {
             return Err(TypeInferenceFailure::Arity);
         }
+        // A callable descriptor has no template type-expression form (`GNT-37.0`), so a
+        // callable argument contributes no constraint; a contract that unifies without it
+        // is reported as a callable instantiation argument instead of failing inference.
         for (template, argument) in method.parameters().iter().zip(arguments) {
+            if descriptor_contains_callable(argument) {
+                skipped_callable_argument = true;
+                continue;
+            }
             constraints.push((
                 substitute_self_type(template, receiver)
                     .map_err(|_| TypeInferenceFailure::Conflict)?,
@@ -9124,14 +9219,33 @@ fn infer_trait_call_arguments(
         }
     }
     if let Some(expected) = expected_result {
-        constraints.push((
-            substitute_self_type(method.result(), receiver)
-                .map_err(|_| TypeInferenceFailure::Conflict)?,
-            TypeExpression::closed(expected, u64::MAX)
-                .map_err(|_| TypeInferenceFailure::Conflict)?,
-        ));
+        // A callable expectation cannot be named by the template grammar either, and no
+        // call produces a callable value in this revision, so it contributes no constraint
+        // and the enclosing position reports its own diagnostic.
+        if !descriptor_contains_callable(expected) {
+            constraints.push((
+                substitute_self_type(method.result(), receiver)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+                TypeExpression::closed(expected, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+            ));
+        }
     }
-    let substitution = ExactTypeSubstitution::infer(&required, &constraints)?;
+    let substitution = match ExactTypeSubstitution::infer(&required, &constraints) {
+        Ok(substitution) => substitution,
+        Err(error) => {
+            // A skipped callable argument leaves its parameter unbound, so a contract that
+            // is complete only up to that position reports `Incomplete`; both that case
+            // and a successful inference select a contract whose call `GNT-37.0` refuses.
+            if skipped_callable_argument && error == TypeInferenceFailure::Incomplete {
+                return Err(TypeInferenceFailure::CallableArgument);
+            }
+            return Err(error);
+        }
+    };
+    if skipped_callable_argument {
+        return Err(TypeInferenceFailure::CallableArgument);
+    }
     let trait_arguments = trait_required
         .iter()
         .map(|parameter| {
@@ -9393,7 +9507,8 @@ fn infer_implementation_substitution(
             | TypeInferenceFailure::Conflict
             | TypeInferenceFailure::Incomplete
             | TypeInferenceFailure::InvalidOptionMember
-            | TypeInferenceFailure::OccursCheck,
+            | TypeInferenceFailure::OccursCheck
+            | TypeInferenceFailure::CallableArgument,
         ) => return Ok(None),
     };
     let resolved_arguments = trait_reference
@@ -9814,6 +9929,7 @@ fn infer_qualified_trait_call(
     };
     let value_arguments = arguments.get(1..).unwrap_or_default();
     let mut actual_arguments = Vec::with_capacity(value_arguments.len());
+    let mut actual_argument_spans = Vec::with_capacity(value_arguments.len());
     for argument in value_arguments {
         let Some(actual) = infer_expression(
             tree,
@@ -9827,8 +9943,15 @@ fn infer_qualified_trait_call(
         else {
             return Ok(None);
         };
+        actual_argument_spans.push(
+            tree.node(*argument)
+                .ok_or(AnalysisError::Invariant)?
+                .span()
+                .clone(),
+        );
         actual_arguments.push(actual);
     }
+    let mut callable_refusal = false;
     let Some((signature, retained)) = resolve_trait_method(
         &receiver,
         method,
@@ -9836,10 +9959,12 @@ fn infer_qualified_trait_call(
         explicit_trait_arguments.as_deref(),
         explicit_method_arguments.as_deref(),
         Some(&actual_arguments),
+        &actual_argument_spans,
         expected_result,
         context,
         method_node,
         diagnostics,
+        &mut callable_refusal,
     )?
     else {
         return Ok(None);
@@ -10022,7 +10147,11 @@ fn infer_generic_call(
                 TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
                     GenericAnalysisCode::ConflictingTypeInference
                 }
-                TypeInferenceFailure::Incomplete | TypeInferenceFailure::InvalidOptionMember => {
+                // `CallableArgument` is refused before inference on this path, so it stays
+                // unreachable here.
+                TypeInferenceFailure::Incomplete
+                | TypeInferenceFailure::InvalidOptionMember
+                | TypeInferenceFailure::CallableArgument => {
                     GenericAnalysisCode::IncompleteTypeInference
                 }
             };
@@ -10167,6 +10296,29 @@ fn refuse_callable_instantiation_argument(
         ],
     )?);
     Ok(())
+}
+
+/// Refuses the first callable-containing instantiation argument at its own span (`GNT-37.0`).
+///
+/// A generic call whose candidate would apply except for a callable argument reports the
+/// published occurrence class at that argument instead of dropping the candidate and
+/// reporting a member or substitution diagnostic for a call the template grammar cannot
+/// instantiate. `fallback` covers a caller that reached the refusal without argument spans.
+fn refuse_first_callable_argument(
+    arguments: &[TypeDescriptor],
+    spans: &[SourceSpan],
+    fallback: &SourceSpan,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let Some((index, callable)) = arguments
+        .iter()
+        .enumerate()
+        .find(|(_, descriptor)| descriptor_contains_callable(descriptor))
+    else {
+        return Ok(());
+    };
+    let span = spans.get(index).unwrap_or(fallback);
+    refuse_callable_instantiation_argument(callable, span, diagnostics)
 }
 
 /// Returns the first callable type named anywhere inside one descriptor.

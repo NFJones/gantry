@@ -5867,11 +5867,16 @@ fn public_callable_typed_values_never_fail_internally_when_they_reach_resolution
             "missing-implementation",
         ),
         (
-            // The generic-method form refuses the same value with the method-resolution
-            // diagnostic because the candidate cannot be substituted; the wrong-class
-            // attribution is tracked as a separate defect rather than an internal failure.
+            // A generic method call refuses the same value with the same published class
+            // the free-call path uses, so both call shapes agree about an admitted value.
             "struct Item {} impl Item { fn inner<T>(self, value: T) -> T { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.inner(callback); 0 } fn main() -> Int { 0 }",
-            "unknown-member",
+            "callable-type-unadmitted",
+        ),
+        (
+            // A generic trait method reaches the same refusal rather than reporting a
+            // substitution that did not complete.
+            "trait Render { pure fn inner<T>(self, value: T) -> T; } struct Item {} impl Render for Item { fn inner<T>(self, value: T) -> T { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.inner(callback); 0 } fn main() -> Int { 0 }",
+            "callable-type-unadmitted",
         ),
     ] {
         root.write(source);
@@ -5894,6 +5899,67 @@ fn public_callable_typed_values_never_fail_internally_when_they_reach_resolution
                 .any(|diagnostic| diagnostic.code.as_str() == code),
             "source: {source}; diagnostics: {:?}",
             refused.diagnostics()
+        );
+    }
+
+    // Every call shape reports the published class at the argument that carries the callable
+    // type, so no shape reports a member or a substitution for a call the template grammar
+    // cannot instantiate (`GNT-37.0`).
+    for source in [
+        "fn inner<T>(value: T) -> T { value } fn apply(callback: Fn(Int) -> Int) -> Int { discard inner(callback); 0 } fn main() -> Int { 0 }",
+        "struct Item {} impl Item { fn inner<T>(self, value: T) -> T { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.inner(callback); 0 } fn main() -> Int { 0 }",
+        "trait Render { pure fn inner<T>(self, value: T) -> T; } struct Item {} impl Render for Item { fn inner<T>(self, value: T) -> T { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.inner(callback); 0 } fn main() -> Int { 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}"
+        );
+        assert_eq!(
+            refused
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted")
+                .count(),
+            1,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = refused
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted")
+            .unwrap_or_else(|| panic!("source: {source}; {:?}", refused.diagnostics()));
+        assert_eq!(
+            refusal.fields.get("occurrence").map(AsRef::as_ref),
+            Some("instantiation-argument"),
+            "source: {source}"
+        );
+        assert_eq!(
+            refusal.fields.get("reuse_kind").map(AsRef::as_ref),
+            Some("Fn"),
+            "source: {source}"
+        );
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        let call_start = source
+            .find("inner(callback)")
+            .unwrap_or_else(|| panic!("source: {source}: missing call"))
+            as u64;
+        let argument_start = call_start + "inner(".len() as u64;
+        assert_eq!(primary.bytes().start(), argument_start, "source: {source}");
+        assert_eq!(
+            primary.bytes().end(),
+            argument_start + "callback".len() as u64,
+            "source: {source}"
         );
     }
 
@@ -5927,6 +5993,58 @@ fn public_callable_typed_values_never_fail_internally_when_they_reach_resolution
         AnalysisStatus::Valid,
         "{:?}",
         admitted.diagnostics()
+    );
+}
+
+/// A callable-typed parameter that a declaration admits accepts an admitted callable value,
+/// while a concrete parameter position keeps its own mismatch diagnostic, so the
+/// instantiation-argument refusal stays reserved for generic instantiation arguments.
+#[test]
+fn public_declared_callable_parameters_accept_values_without_widening_the_refusal() {
+    let root = TempDirectory::new();
+    for source in [
+        // A non-generic free function and inherent method declare callable parameters.
+        "fn run(callback: Fn(Int) -> Int) -> Int { 0 } fn outer(callback: Fn(Int) -> Int) -> Int { run(callback) } fn main() -> Int { 0 }",
+        "struct Item {} impl Item { fn run(self, callback: Fn(Int) -> Int) -> Int { 0 } } fn outer(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; item.run(callback) } fn main() -> Int { 0 }",
+        // A generic method with an ordinary argument stays admitted.
+        "struct Item {} impl Item { fn inner<T>(self, value: T) -> T { value } } fn apply() -> Int { let item: Item = Item {}; discard item.inner(1); 0 } fn main() -> Int { 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+    }
+
+    // A concrete parameter position reports its own mismatch instead of the callable refusal.
+    root.write("struct Item {} impl Item { fn inner(self, value: Int) -> Int { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.inner(callback); 0 } fn main() -> Int { 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let refused = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(refused.status(), AnalysisStatus::Invalid);
+    assert!(
+        refused
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "call-argument-type"),
+        "{:?}",
+        refused.diagnostics()
+    );
+    assert!(
+        !refused
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted"),
+        "{:?}",
+        refused.diagnostics()
     );
 }
 
