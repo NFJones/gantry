@@ -7418,8 +7418,8 @@ fn public_nested_aggregate_literals_lower_as_their_enclosing_construct() {
         .field("count")
         .unwrap_or_else(|| panic!("source: {source}: expected the count field"));
     assert!(
-        matches!(count.view(), LogicalValueView::Int(_)),
-        "source: {source}: expected the Int count, observed {count:?}"
+        matches!(count.view(), LogicalValueView::Int(value) if value.get() == 1),
+        "source: {source}: expected the count 1, observed {count:?}"
     );
 }
 
