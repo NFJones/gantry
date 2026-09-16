@@ -883,13 +883,19 @@ fn resolve_source_types(
 ///
 /// A component is a member of a built-in or declared application, or a parameter or
 /// result of a callable form, because a callable annotation retains its parameter and
-/// result types as children of its own node. The collected set keeps the two callable
-/// occurrence classes disjoint: an annotation position is never a component of another
-/// type expression, and a nested component never is an annotation position.
+/// result types as children of its own node. A trait-reference argument list is an
+/// application of the same kind, so `impl Holder<Fn(Int) -> Int> for Item` and a
+/// `where T: Holder<Fn(Int) -> Int>` predicate both nest their argument. The collected
+/// set keeps the two callable occurrence classes disjoint: an annotation position is
+/// never a component of another type expression, and a nested component never is an
+/// annotation position.
 fn nested_type_member_nodes(tree: &SyntaxTree) -> Result<BTreeSet<NodeId>, AnalysisError> {
     let mut nested = BTreeSet::new();
     for (index, node) in tree.nodes().iter().enumerate() {
-        if !matches!(node.form(), SyntaxForm::ValueType) {
+        if !matches!(
+            node.form(),
+            SyntaxForm::ValueType | SyntaxForm::TraitReference
+        ) {
             continue;
         }
         let id = NodeId::from_index(index);

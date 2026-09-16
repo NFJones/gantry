@@ -5679,6 +5679,16 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
             "Fn",
             "nested-component",
         ),
+        (
+            "trait Holder<T> { pure fn get(self) -> Int; } struct Item {} impl Holder<Fn(Int) -> Int> for Item { pure fn get(self) -> Int { 0 } } fn main() -> Int { 0 }",
+            "Fn",
+            "nested-component",
+        ),
+        (
+            "trait Holder<T> { pure fn get(self) -> Int; } fn hold<T>(value: T) -> Int where T: Holder<Fn(Int) -> Int> { 0 } fn main() -> Int { 0 }",
+            "Fn",
+            "nested-component",
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -5736,7 +5746,7 @@ fn public_callable_type_annotations_are_refused_without_internal_failure() {
 /// A callable type that is itself a component of another callable form reports the nested
 /// class, so admitting an annotation position cannot silently admit the types it composes.
 #[test]
-fn callable_components_inside_callable_forms_report_nested_components() {
+fn public_callable_components_inside_callable_forms_report_nested_components() {
     let root = TempDirectory::new();
     root.write("fn main(callback: Fn(Fn(Int) -> Int) -> Int) -> Int { 0 }");
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
