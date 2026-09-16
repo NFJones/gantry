@@ -7376,6 +7376,51 @@ fn public_nested_aggregate_literals_lower_as_their_enclosing_construct() {
             "source: {source}: expected the returned Int, observed {value:?}"
         );
     }
+
+    // One row returns its aggregate, so the corrected value is pinned at run time as well as the
+    // aggregate order: the enclosing list carries one member whose field is the nested literal.
+    let source = "struct Item { count: Int } fn main() -> List<Item> { [Item { count: 1 }] }";
+    root.write(source);
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+    let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+        panic!("source: {source}; type analysis failed internally: {error:?}")
+    });
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "source: {source}; diagnostics: {:?}",
+        admitted.diagnostics()
+    );
+    let program = admitted
+        .executable_program()
+        .unwrap_or_else(|| panic!("source: {source}: a returned aggregate must publish a program"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+        Vec::new(),
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x31; 32])
+            .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+        MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+    )
+    .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+    let returned = drive(&mut machine);
+    assert!(
+        matches!(returned.view(), LogicalValueView::List(1)),
+        "source: {source}: expected one returned member, observed {returned:?}"
+    );
+    let member = returned
+        .member(0)
+        .unwrap_or_else(|| panic!("source: {source}: expected a first member"));
+    let count = member
+        .field("count")
+        .unwrap_or_else(|| panic!("source: {source}: expected the count field"));
+    assert!(
+        matches!(count.view(), LogicalValueView::Int(_)),
+        "source: {source}: expected the Int count, observed {count:?}"
+    );
 }
 
 /// An annotation naming a type that no declaration provides is refused precisely, including when
