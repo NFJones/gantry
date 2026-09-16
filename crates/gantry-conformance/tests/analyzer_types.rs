@@ -6188,6 +6188,80 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
         );
     }
 
+    // A parenthesized callee is peeled before the binding lookup, so a grouped call is
+    // refused by the same rule instead of being mistyped as its own callee.
+    for source in [
+        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback)(1); 0 } fn main() -> Int { discard apply; 0 }",
+        "fn apply(callback: Fn(Int) -> Int, value: Bool) -> Int { (callback)(value) } fn main() -> Int { discard apply; 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Int { (callback)(1) } fn main() -> Int { discard apply; 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics().len(),
+            1,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = &refused.diagnostics()[0];
+        assert_eq!(refusal.code.as_str(), "callable-invocation-unadmitted");
+        assert_eq!(refusal.category, DiagnosticCategory::Type);
+        assert_eq!(
+            refusal.fields.get("reuse_kind").map(AsRef::as_ref),
+            Some("Fn"),
+            "source: {source}"
+        );
+        let call_start = source
+            .find("(callback)")
+            .unwrap_or_else(|| panic!("source: {source}: missing call"))
+            as u64;
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        assert_eq!(primary.bytes().start(), call_start, "source: {source}");
+    }
+
+    // A grouped call is typed as the callee's declared result instead of as the callee, so
+    // holding it in a callable position is a genuine mismatch rather than a silent
+    // admission of the call.
+    let grouped = "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback)(1) } fn main() -> Int { discard apply; 0 }";
+    root.write(grouped);
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let refused = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(refused.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        refused
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_str() == "callable-invocation-unadmitted")
+            .count(),
+        1,
+        "{:?}",
+        refused.diagnostics()
+    );
+    let mismatch = refused
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "type-mismatch")
+        .unwrap_or_else(|| panic!("{:?}", refused.diagnostics()));
+    assert_eq!(
+        mismatch.fields.get("actual").map(AsRef::as_ref),
+        Some("Int")
+    );
+
     // Declaring, passing, and holding a callable value stays admitted: only the call
     // through a callable-typed binding is refused.
     for source in [

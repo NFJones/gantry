@@ -9721,7 +9721,7 @@ fn infer_call_sequence(
     else {
         return Ok(None);
     };
-    let Some(path_id) = children
+    let direct = children
         .get(..open)
         .unwrap_or_default()
         .iter()
@@ -9729,9 +9729,25 @@ fn infer_call_sequence(
         .find(|child| {
             tree.node(*child)
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
-        })
-    else {
-        return Ok(None);
+        });
+    // A callee written as a group such as `(callback)(value)` gives the sequence one
+    // callee child that contains the group instead of a bare path child, so the lookup
+    // above finds nothing. The leading group is peeled here so a callable-typed value is
+    // refused by the same rule instead of the sequence being typed as its own callee; a
+    // parenthesized callee that resolves to a declared callable keeps the earlier
+    // fall-through, because this revision admits no parenthesized call form for one.
+    let (path_id, parenthesized) = match direct {
+        Some(id) => (id, false),
+        None => {
+            let Some(peeled) = parenthesized_callee_path(tree, children)? else {
+                return Ok(None);
+            };
+            let peeled_node = tree.node(peeled).ok_or(AnalysisError::Invariant)?;
+            if context.references.contains_key(peeled_node.span()) {
+                return Ok(None);
+            }
+            (peeled, true)
+        }
     };
     let path = tree.node(path_id).ok_or(AnalysisError::Invariant)?;
     let Some(target) = context.references.get(path.span()).copied() else {
@@ -9743,8 +9759,12 @@ fn infer_call_sequence(
             && let Some(ty) = environment.get(&name)
             && let Some(callable) = ty.callable_type()
         {
-            let span =
-                call_sequence_span(tree, children, path).unwrap_or_else(|| path.span().clone());
+            let span = if parenthesized {
+                call_sequence_children_span(tree, children)
+            } else {
+                call_sequence_span(tree, children, path)
+            }
+            .unwrap_or_else(|| path.span().clone());
             diagnostics.push(body_diagnostic(
                 "callable-invocation-unadmitted",
                 DiagnosticCategory::Type,
@@ -11302,6 +11322,93 @@ fn direct_identifier_span(
             SyntaxForm::Token(TokenKind::Identifier(_)) => Some(node.span().clone()),
             _ => None,
         })
+}
+
+/// Returns the path node named by one leading parenthesized callee group.
+///
+/// A callee written as a group flattens into the sequence as an opening `(` token, the
+/// callee expression, and a closing `)` token, so the direct path lookup sees no callee.
+/// This peels exactly one leading group: the sequence must open with `(`, the group must
+/// contain exactly one identifier, and that identifier must belong to a path node inside
+/// the sequence.
+fn parenthesized_callee_path(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Result<Option<NodeId>, AnalysisError> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let current = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if matches!(current.form(), SyntaxForm::Token(_)) {
+            tokens.push(id);
+        } else {
+            work.extend(current.children().iter().rev().copied());
+        }
+    }
+    let Some(first) = tokens.first().copied() else {
+        return Ok(None);
+    };
+    if !node_is_punctuation(tree, first, Punctuation::LeftParenthesis) {
+        return Ok(None);
+    }
+    let mut depth = 0_u64;
+    let mut close = None;
+    for (index, token) in tokens.iter().enumerate() {
+        if node_is_punctuation(tree, *token, Punctuation::LeftParenthesis) {
+            depth = depth.saturating_add(1);
+        }
+        if node_is_punctuation(tree, *token, Punctuation::RightParenthesis) {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                close = Some(index);
+                break;
+            }
+        }
+    }
+    let Some(close) = close else {
+        return Ok(None);
+    };
+    let mut identifiers = tokens
+        .get(1..close)
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .filter(|id| {
+            tree.node(*id).is_some_and(|node| {
+                matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(_)))
+            })
+        });
+    let Some(identifier) = identifiers.next() else {
+        return Ok(None);
+    };
+    if identifiers.next().is_some() {
+        return Ok(None);
+    }
+    let mut stack = children.to_vec();
+    while let Some(id) = stack.pop() {
+        let current = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if matches!(current.form(), SyntaxForm::Path) && current.children().contains(&identifier) {
+            return Ok(Some(id));
+        }
+        stack.extend(current.children().iter().copied());
+    }
+    Ok(None)
+}
+
+/// Returns the span covering one call sequence's children when they share a source.
+fn call_sequence_children_span(tree: &SyntaxTree, children: &[NodeId]) -> Option<SourceSpan> {
+    let first = tree.node(*children.first()?)?;
+    let last = tree.node(*children.last()?)?;
+    (first.span().source() == last.span().source())
+        .then(|| {
+            SourceSpan::from_portable_parts(
+                first.span().source().package_path().as_str(),
+                first.span().bytes().start(),
+                last.span().bytes().end(),
+            )
+            .ok()
+        })
+        .flatten()
 }
 
 fn direct_identifier(tree: &SyntaxTree, node: NodeId) -> Result<Option<Arc<str>>, AnalysisError> {
