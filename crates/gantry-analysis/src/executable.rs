@@ -1679,6 +1679,19 @@ impl Compiler<'_> {
         if semantic.len() == 1 {
             return self.compile_expression(semantic[0]);
         }
+        // A call-shaped sequence whose callee is a parenthesized expression is refused by the
+        // type phase, so its lowering compiles the callee side of the sequence instead of
+        // failing internally here and hiding the refusal that was already published.
+        if let Some(first) = semantic.first().copied()
+            && semantic.get(1).is_some_and(|second| {
+                self.tree.node(*second).is_some_and(|child| {
+                    matches!(child.form(), SyntaxForm::PostfixExpression)
+                        && node_contains_punctuation(self.tree, child, Punctuation::LeftParenthesis)
+                })
+            })
+        {
+            return self.compile_expression(first);
+        }
         Err(AnalysisError::Invariant)
     }
 

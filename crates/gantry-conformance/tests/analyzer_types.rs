@@ -6549,16 +6549,6 @@ fn public_declared_callable_names_are_refused_in_value_positions() {
             "crate::inc",
         ),
         (
-            "fn inc(value: Int) -> Int { value } fn main() -> Int { discard (1 + inc)(1); 0 }",
-            "inc",
-            "inc",
-        ),
-        (
-            "fn inc(value: Int) -> Int { value } fn main() -> Int { discard ((1 + inc))(1); 0 }",
-            "inc",
-            "inc",
-        ),
-        (
             "fn inc(value: Int) -> Int { value } fn main() -> Int { discard (inc)(1); 0 }",
             "inc",
             "inc",
@@ -6658,6 +6648,120 @@ fn public_declared_callable_names_are_refused_in_value_positions() {
     assert_eq!(
         invoked.diagnostics()[0].code.as_str(),
         "callable-invocation-unadmitted"
+    );
+}
+
+/// A call whose callee is a parenthesized expression has no derivation in `GNT-3-T-CALL`,
+/// so it is refused at the callee group instead of being admitted and then aborting during
+/// lowering or being silently accepted in a body the entry point never reaches.
+#[test]
+fn public_parenthesized_expression_callees_are_refused_without_internal_failure() {
+    let root = TempDirectory::new();
+    for source in [
+        "fn f() -> Int { 1 } fn main() -> Int { discard (f())(1); 0 }",
+        "fn f(value: Int) -> Int { value } fn main() -> Int { discard (f(1))(1); 0 }",
+        "fn f() -> Int { 1 } fn main() -> Int { discard ((f()))(1); 0 }",
+        "fn f() -> Int { 1 } fn main() -> Int { discard (f())(); 0 }",
+        "fn f() -> Int { 1 } fn main() -> Int { discard (f())(1, 2); 0 }",
+        "fn main() -> Int { discard (1 + 2)(3); 0 }",
+        "fn f() -> Int { 1 } fn main() -> Int { discard (f() + 1)(2); 0 }",
+        "fn f() -> Int { discard (1 + 2)(3); 0 } fn main() -> Int { 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-call-target"),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+    }
+
+    // A parenthesized expression without an argument list stays an ordinary value.
+    root.write("fn main() -> Int { discard (1 + 2); 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let admitted = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
+
+    // An expression group that contains a refused name publishes both the value refusal and
+    // the outer call refusal.
+    for source in [
+        "fn inc(value: Int) -> Int { value } fn main() -> Int { discard (1 + inc)(1); 0 }",
+        "fn inc(value: Int) -> Int { value } fn main() -> Int { discard ((1 + inc))(1); 0 }",
+        "fn inc(value: Int) -> Int { value } fn main() -> Int { discard (crate::inc)(1); 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code.as_str() == "callable-reference-unadmitted"
+                    && diagnostic.fields.get("identifier").map(AsRef::as_ref) == Some("inc")
+            }),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-call-target"),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+    }
+
+    // A callable-typed binding inside a call-shaped group refuses both the inner invocation
+    // and the outer expression callee.
+    root.write("fn apply(x: Fn(Int) -> Int) -> Int { discard (x())(1); 0 } fn main() -> Int { 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let refused = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(refused.status(), AnalysisStatus::Invalid);
+    assert!(
+        refused
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "callable-invocation-unadmitted"),
+        "{:?}",
+        refused.diagnostics()
+    );
+    assert!(
+        refused
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "invalid-call-target"),
+        "{:?}",
+        refused.diagnostics()
     );
 }
 

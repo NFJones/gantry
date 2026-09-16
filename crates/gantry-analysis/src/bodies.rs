@@ -9792,16 +9792,38 @@ fn infer_call_sequence(
     // fall-through, because this revision admits no parenthesized call form for one.
     let (path_id, parenthesized) = match direct {
         Some(id) => (id, false),
-        None => {
-            let Some(peeled) = parenthesized_callee_path(tree, children)? else {
-                return Ok(None);
-            };
-            let peeled_node = tree.node(peeled).ok_or(AnalysisError::Invariant)?;
-            if context.references.contains_key(peeled_node.span()) {
+        None => match parenthesized_callee_path(tree, children)? {
+            Some(peeled) => {
+                let peeled_node = tree.node(peeled).ok_or(AnalysisError::Invariant)?;
+                // A parenthesized callee that resolves to a declared callable, action, or
+                // trait is an ordinary value use that the reference refusal reports, so the
+                // call keeps no derivation here instead of mistyping the sequence.
+                if context
+                    .references
+                    .get(peeled_node.span())
+                    .is_some_and(|symbol| declared_callee_reference(context, *symbol))
+                {
+                    return Ok(None);
+                }
+                (peeled, true)
+            }
+            None => {
+                // A leading group that an argument list follows has the shape of a call, so a
+                // callee that is not a parenthesized identifier or path is an expression
+                // callee, which `GNT-3-T-CALL` gives no derivation: refuse it here instead of
+                // lowering a sequence the machine cannot execute.
+                if let Some(span) = expression_callee_span(tree, children)? {
+                    diagnostics.push(body_diagnostic(
+                        "invalid-call-target",
+                        DiagnosticCategory::Type,
+                        "an ordinary call resolves to an expression callee",
+                        span,
+                        [] as [(&str, &str); 0],
+                    )?);
+                }
                 return Ok(None);
             }
-            (peeled, true)
-        }
+        },
     };
     let path = tree.node(path_id).ok_or(AnalysisError::Invariant)?;
     let Some(target) = context.references.get(path.span()).copied() else {
@@ -11490,27 +11512,25 @@ fn parenthesized_callee_path(
     if !node_is_punctuation(tree, next_token, Punctuation::LeftParenthesis) {
         return Ok(None);
     }
-    let mut identifier = None;
-    for token in tokens.get(1..close).unwrap_or_default().iter().copied() {
-        let node = tree.node(token).ok_or(AnalysisError::Invariant)?;
-        if matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(_))) {
-            if identifier.is_some() {
-                return Ok(None);
-            }
-            identifier = Some(token);
-            continue;
-        }
-        // Only nested parentheses keep one parenthesized identifier a callee: any other
-        // token makes the group an ordinary expression whose operands are values.
-        if !node_is_punctuation(tree, token, Punctuation::LeftParenthesis)
-            && !node_is_punctuation(tree, token, Punctuation::RightParenthesis)
-        {
-            return Ok(None);
-        }
-    }
-    let Some(identifier) = identifier else {
+    // Only a parenthesized identifier is a callee: strip every balanced layer of
+    // parentheses from the group's interior and require exactly one identifier token to
+    // remain, so `(callback)` and `((callback))` peel while `(f())`, `(1 + callback)`, and
+    // `((f()))` stay ordinary expressions whose operands are values or calls.
+    let Some(interior) = stripped_group_interior(tree, &tokens, close) else {
         return Ok(None);
     };
+    let [identifier] = interior else {
+        return Ok(None);
+    };
+    let identifier = *identifier;
+    if !matches!(
+        tree.node(identifier)
+            .ok_or(AnalysisError::Invariant)?
+            .form(),
+        SyntaxForm::Token(TokenKind::Identifier(_))
+    ) {
+        return Ok(None);
+    }
     let mut stack = children.to_vec();
     while let Some(id) = stack.pop() {
         let current = tree.node(id).ok_or(AnalysisError::Invariant)?;
@@ -11520,6 +11540,49 @@ fn parenthesized_callee_path(
         stack.extend(current.children().iter().copied());
     }
     Ok(None)
+}
+
+/// Returns the token slice inside one group after stripping every balanced layer of
+/// parentheses that encloses it entirely.
+///
+/// `(callback)` and `((callback))` reduce to the same interior token, while `(f())` and
+/// `(1 + callback)` keep their expression interior, so callers can tell a parenthesized name
+/// from an ordinary expression group.
+fn stripped_group_interior<'a>(
+    tree: &SyntaxTree,
+    tokens: &'a [NodeId],
+    close: usize,
+) -> Option<&'a [NodeId]> {
+    let mut interior = tokens.get(1..close)?;
+    loop {
+        let first = interior.first().copied()?;
+        if !node_is_punctuation(tree, first, Punctuation::LeftParenthesis) {
+            break;
+        }
+        let mut depth = 0_u64;
+        let mut matching = None;
+        for (index, token) in interior.iter().enumerate() {
+            if node_is_punctuation(tree, *token, Punctuation::LeftParenthesis) {
+                depth = depth.saturating_add(1);
+            }
+            if node_is_punctuation(tree, *token, Punctuation::RightParenthesis) {
+                if depth == 0 {
+                    return None;
+                }
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    matching = Some(index);
+                    break;
+                }
+            }
+        }
+        let matching = matching?;
+        if matching != interior.len() - 1 {
+            break;
+        }
+        interior = interior.get(1..matching)?;
+    }
+    Some(interior)
 }
 
 /// Returns the span covering one call sequence's children when they share a source.
@@ -11593,6 +11656,81 @@ fn declared_callable_identifier(
         stack.extend(node.children().iter().rev().copied());
     }
     Ok(identifiers.last().cloned())
+}
+
+/// Returns whether one resolved symbol denotes a declared callable, action, or trait.
+///
+/// A parenthesized name that resolves to one of these is a value use rather than an admitted
+/// callee, so the call-sequence fall-back leaves it to the refusal that owns that name.
+fn declared_callee_reference(context: &BodyContext, symbol: SymbolId) -> bool {
+    context.callables.contains_key(&symbol)
+        || context.generic_callables.contains_key(&symbol)
+        || context.actions.contains_key(&symbol)
+        || context.trait_symbols.contains_key(&symbol)
+}
+
+/// Returns the span of one leading callee group that an argument list follows.
+///
+/// The caller reaches this helper only when the group is not a parenthesized identifier, so
+/// such a sequence is a call on an expression, which `GNT-3-T-CALL` gives no derivation: the
+/// refusal reports this group instead of lowering a sequence the machine cannot execute or
+/// admitting a body that never reaches the machine.
+fn expression_callee_span(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Result<Option<SourceSpan>, AnalysisError> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let current = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if matches!(current.form(), SyntaxForm::Token(_)) {
+            tokens.push(id);
+        } else {
+            work.extend(current.children().iter().rev().copied());
+        }
+    }
+    let Some(first) = tokens.first().copied() else {
+        return Ok(None);
+    };
+    if !node_is_punctuation(tree, first, Punctuation::LeftParenthesis) {
+        return Ok(None);
+    }
+    let mut depth = 0_u64;
+    let mut close = None;
+    for (index, token) in tokens.iter().enumerate() {
+        if node_is_punctuation(tree, *token, Punctuation::LeftParenthesis) {
+            depth = depth.saturating_add(1);
+        }
+        if node_is_punctuation(tree, *token, Punctuation::RightParenthesis) {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                close = Some(index);
+                break;
+            }
+        }
+    }
+    let Some(close) = close else {
+        return Ok(None);
+    };
+    let Some(next) = tokens.get(close.saturating_add(1)).copied() else {
+        return Ok(None);
+    };
+    if !node_is_punctuation(tree, next, Punctuation::LeftParenthesis) {
+        return Ok(None);
+    }
+    let first_node = tree.node(first).ok_or(AnalysisError::Invariant)?;
+    let close_token = tokens.get(close).copied().ok_or(AnalysisError::Invariant)?;
+    let last_node = tree.node(close_token).ok_or(AnalysisError::Invariant)?;
+    Ok((first_node.span().source() == last_node.span().source())
+        .then(|| {
+            SourceSpan::from_portable_parts(
+                first_node.span().source().package_path().as_str(),
+                first_node.span().bytes().start(),
+                last_node.span().bytes().end(),
+            )
+            .ok()
+        })
+        .flatten())
 }
 
 fn is_token(form: &SyntaxForm) -> bool {
