@@ -477,7 +477,7 @@ fn public_deterministic_values_and_failures_match_the_machine_contract() {
         drive(&mut short_circuit_machine).0,
         MachineOutcome::Succeeded(LogicalValue::unit())
     );
-    assert_eq!(short_circuit_machine.remaining_budgets().1, 1);
+    assert_eq!(short_circuit_machine.remaining_budgets().1, Some(1));
 }
 
 #[test]

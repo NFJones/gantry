@@ -1020,12 +1020,19 @@ pub(crate) fn validate_budget_successor(
     previous: &ExecutionBudgetSnapshot,
     current: &ExecutionBudgetSnapshot,
 ) -> Result<(), DurableEvidenceError> {
-    let transition_delta = previous
-        .remaining_transitions
-        .checked_sub(current.remaining_transitions);
-    let operation_delta = previous
-        .remaining_operations
-        .checked_sub(current.remaining_operations);
+    let transition_delta = match (
+        previous.remaining_transitions,
+        current.remaining_transitions,
+    ) {
+        (Some(previous), Some(current)) => previous.checked_sub(current),
+        (None, None) => Some(0),
+        _ => None,
+    };
+    let operation_delta = match (previous.remaining_operations, current.remaining_operations) {
+        (Some(previous), Some(current)) => previous.checked_sub(current),
+        (None, None) => Some(0),
+        _ => None,
+    };
     let consumed_delta = transition_delta
         .zip(operation_delta)
         .and_then(|(transitions, operations)| transitions.checked_add(operations));
@@ -1034,7 +1041,15 @@ pub(crate) fn validate_budget_successor(
         || current.maximum_transitions != previous.maximum_transitions
         || current.maximum_operations != previous.maximum_operations
         || revision_delta.is_none()
-        || revision_delta != consumed_delta
+        || revision_delta.zip(consumed_delta).is_none()
+        || revision_delta
+            .zip(consumed_delta)
+            .is_some_and(|(revision, consumed)| {
+                revision < consumed
+                    || (current.maximum_transitions.maximum().is_some()
+                        && current.maximum_operations.maximum().is_some()
+                        && revision != consumed)
+            })
     {
         return Err(DurableEvidenceError::InvalidExecutionBudget);
     }
@@ -2295,7 +2310,9 @@ mod tests {
         assert_eq!(validate_budget_successor(&initial, &charged), Ok(()));
 
         let mut replenished = charged;
-        replenished.remaining_transitions += 1;
+        replenished.remaining_transitions = replenished
+            .remaining_transitions
+            .map(|remaining| remaining + 1);
         assert_eq!(
             validate_budget_successor(&charged, &replenished),
             Err(DurableEvidenceError::InvalidExecutionBudget)
@@ -2309,21 +2326,38 @@ mod tests {
         );
 
         let mut changed_transition_maximum = charged;
-        changed_transition_maximum.maximum_transitions += 1;
+        changed_transition_maximum.maximum_transitions =
+            gantry_core::limit::ResourceLimit::limited(
+                changed_transition_maximum
+                    .maximum_transitions
+                    .maximum()
+                    .unwrap_or_else(|| unreachable!("fixture is bounded"))
+                    + 1,
+            )
+            .unwrap_or_else(|| unreachable!("fixture maximum remains positive"));
         assert_eq!(
             validate_budget_successor(&charged, &changed_transition_maximum),
             Err(DurableEvidenceError::InvalidExecutionBudget)
         );
 
         let mut changed_operation_maximum = charged;
-        changed_operation_maximum.maximum_operations += 1;
+        changed_operation_maximum.maximum_operations = gantry_core::limit::ResourceLimit::limited(
+            changed_operation_maximum
+                .maximum_operations
+                .maximum()
+                .unwrap_or_else(|| unreachable!("fixture is bounded"))
+                + 1,
+        )
+        .unwrap_or_else(|| unreachable!("fixture maximum remains positive"));
         assert_eq!(
             validate_budget_successor(&charged, &changed_operation_maximum),
             Err(DurableEvidenceError::InvalidExecutionBudget)
         );
 
         let mut mismatched_delta = charged;
-        mismatched_delta.remaining_transitions -= 1;
+        mismatched_delta.remaining_transitions = mismatched_delta
+            .remaining_transitions
+            .map(|remaining| remaining - 1);
         assert_eq!(
             validate_budget_successor(&charged, &mismatched_delta),
             Err(DurableEvidenceError::InvalidExecutionBudget)

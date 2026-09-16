@@ -30,7 +30,7 @@ use gantry::runtime::{InterpreterConfiguration, MachineOutcome, RequiredConfigur
 #[cfg(feature = "frontend")]
 use gantry::source::FrontendLimits;
 #[cfg(feature = "evaluator")]
-use gantry::value::DEFAULT_VALUE_LIMITS;
+use gantry::value::ValueLimits;
 #[cfg(feature = "analyzer")]
 use gantry::{
     AnalyzePackageCoordinator, AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
@@ -53,7 +53,7 @@ const EXIT_USAGE: u8 = 64;
 /// Upper bound on how long the CLI waits for one coordinator future to settle.
 #[cfg(feature = "frontend")]
 const BLOCKING_WAIT_LIMIT: Duration = Duration::from_secs(300);
-const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantry (check|analyze [--json]) [PACKAGE_ROOT]\n       gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]\n\n`run` owns a multithread Tokio runtime. An omitted worker count uses Tokio's CPU-derived default; `--workers` accepts only a positive integer. Generic declarations and static traits are checked by `analyze`; `--json` emits inferred substitutions, selected calls, effects, concrete schemas, and structured diagnostics. Every package activity uses twelve finite frontend-policy fields; see docs/frontend-resource-policy.md and docs/generics-and-traits.md.";
+const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantry (check|analyze [--json]) [PACKAGE_ROOT]\n       gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]\n\n`run` owns a multithread Tokio runtime and applies no semantic resource ceilings by default. An omitted worker count uses Tokio's CPU-derived default; `--workers` accepts only a positive integer. Generic declarations and static traits are checked by `analyze`; `--json` emits inferred substitutions, selected calls, effects, concrete schemas, and structured diagnostics. Embeddings may opt into finite frontend and runtime policies; see docs/frontend-resource-policy.md and docs/generics-and-traits.md.";
 
 /// Starts the Gantry command-line application.
 fn main() -> ExitCode {
@@ -421,17 +421,12 @@ fn run_command(
     let identity_source = Arc::new(services::SystemIdentitySource);
     let jitter = Arc::new(services::SystemJitterSource);
     let executor = Arc::new(TokioExecutor::new(runtime.handle().clone(), jitter));
-    let required = RequiredConfiguration::new(
-        cli_frontend_limits(),
-        1_048_576,
-        1_048_576,
-        DEFAULT_VALUE_LIMITS,
-        1_000_000,
-        100_000,
-        100_000,
+    let required = RequiredConfiguration::unlimited(
+        FrontendLimits::unlimited(),
+        ValueLimits::unlimited(),
         1_000,
     )
-    .unwrap_or_else(|_| unreachable!("fixed CLI evaluator limits are valid"));
+    .unwrap_or_else(|_| unreachable!("fixed CLI evaluator policy is valid"));
     let async_capacities = gantry::runtime::AsyncCapacityLimits::new(
         65_536, 65_536, 65_536, 65_536, 65_536, 65_536, 65_536, 65_536, 65_536,
     )
@@ -783,7 +778,8 @@ mod tests {
         );
         let help = String::from_utf8_lossy(&stdout);
         assert!(help.contains("Generic declarations and static traits"));
-        assert!(help.contains("twelve finite frontend-policy fields"));
+        assert!(help.contains("no semantic resource ceilings by default"));
+        assert!(help.contains("opt into finite frontend and runtime policies"));
         assert!(help.contains("docs/generics-and-traits.md"));
         assert!(stderr.is_empty());
     }
@@ -984,6 +980,27 @@ mod tests {
         );
         assert!(stdout.is_empty());
         assert!(String::from_utf8_lossy(&stderr).contains("usage: gantry"));
+    }
+
+    #[cfg(feature = "evaluator")]
+    #[test]
+    fn run_command_defaults_to_unlimited_execution_budgets() {
+        let package = TempDirectory::new(
+            b"pure fn main() -> Int { let mut counter: Int = 0; while counter < 10000 { counter += 1; } counter }",
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        assert_eq!(
+            run(
+                &[OsString::from("run"), package.0.clone().into_os_string()],
+                &mut stdout,
+                &mut stderr,
+            ),
+            EXIT_SUCCESS
+        );
+        assert_eq!(stdout, b"10000\n");
+        assert!(stderr.is_empty());
     }
 }
 

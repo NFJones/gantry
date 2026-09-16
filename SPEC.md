@@ -1108,12 +1108,14 @@ integration-owned timeout, Gantry cancellation, or shutdown applies; Gantry v1
 does not impose a default operation timeout. Likewise, a source execution may
 wait indefinitely for integration work that is permitted to remain pending.
 
-Mandatory finite loop, transition, operation, task, and workflow-depth budgets
-ensure that deterministic source work cannot perform an unbounded number of
-admitted interpreter steps without completion or a specified limit error.
-They do not guarantee successful termination, impose a wall-clock execution
-deadline, or make an unresponsive host service conforming. Shutdown's bounded
-language behavior assumes the executor and adapters honor the cancellation,
+Finite loop, transition, operation, task, and workflow-depth policies are
+optional embedding safeguards. They are unlimited by default; when configured,
+they ensure that deterministic source work cannot perform more than the
+selected number of admitted interpreter steps without completion or a
+specified limit error. An unlimited policy does not guarantee successful
+termination, impose a wall-clock execution deadline, or make an unresponsive
+host service conforming. Shutdown's bounded language behavior assumes the
+executor and adapters honor the cancellation,
 abort, deadline, commit, delivery, and release contracts in Sections 10
 through 15. If a process is forcibly terminated or a host service violates
 those contracts, only the authoritative durable-prefix guarantees in Section
@@ -5401,7 +5403,7 @@ journal record, or public result can expose an open schema.
 <a id="GNT-9.0"></a>
 
 This section separates deterministic routing from model judgment and defines
-finite iteration, explicit source limits, and mandatory execution budgets.
+finite iteration, explicit source limits, and optional execution budgets.
 
 <a id="GNT-9.1"></a>
 
@@ -5473,7 +5475,7 @@ finite iteration, explicit source limits, and mandatory execution budgets.
    another body after the limit is exhausted fails with deterministic code
    `loop-limit-exhausted`; it is never normal completion. `break` remains
    normal completion. `for` needs no source limit because its snapshotted list
-   is finite, but it still consumes the mandatory execution budgets.
+   is finite, but it still consumes any configured execution budgets.
 
 <a id="GNT-9.6"></a>
 
@@ -5499,23 +5501,24 @@ finite iteration, explicit source limits, and mandatory execution budgets.
 
 <a id="GNT-9.7"></a>
 
-7. Every execution MUST enforce positive budgets for deterministic
-   transitions, logical operations, and loop body entries. Each deterministic
-   transition decrements the deterministic-transition counter before becoming
-   observable. Each `M-Prepare` transition defined in Section 3.5 decrements
-   the logical-operation counter before becoming observable. Each admitted
-   loop body entry decrements the loop-iteration counter before becoming
-   observable. Exhaustion fails with `deterministic-transition-budget`,
-   `operation-budget`, or `loop-iteration-budget`, respectively, in the
-   `deterministic-evaluation-failure` category. Budgets apply even to source
-   marked `unbounded` and MUST NOT be converted into normal loop completion or
-   caught by `attempt`. A nondurable evaluator captures the effective maxima at
-   execution start and keeps counters for that interpreter lifetime. With the
-   durable-runtime profile, the maxima and counters are bound to the execution-
-   start identity in Section 11.10 and restored exactly on resume. Input
-   evaluation before `M-Prepare` does not consume the logical-operation budget.
-   Validation retries and recovery redispatches remain transitions of the same
-   prepared logical operation and MUST NOT consume that budget again.
+7. Deterministic-transition, logical-operation, and loop-body-entry budgets are
+   unlimited by default. An embedding MAY configure any budget independently
+   as a positive finite maximum; zero is not an unlimited sentinel. When a
+   finite budget is configured, each applicable deterministic transition,
+   `M-Prepare` transition defined in Section 3.5, or admitted loop body entry
+   decrements its counter before becoming observable. Exhaustion fails with
+   `deterministic-transition-budget`, `operation-budget`, or
+   `loop-iteration-budget`, respectively, in the
+   `deterministic-evaluation-failure` category. Configured budgets apply even
+   to source marked `unbounded` and MUST NOT be converted into normal loop
+   completion or caught by `attempt`. A nondurable evaluator captures the
+   effective finite-or-unlimited policies at execution start. With the
+   durable-runtime profile, those policies and every finite remaining counter
+   are bound to the execution-start identity in Section 11.10 and restored
+   exactly on resume. Input evaluation before `M-Prepare` does not consume the
+   logical-operation budget. Validation retries and recovery redispatches
+   remain transitions of the same prepared logical operation and MUST NOT
+   consume a configured operation budget again.
 
 <a id="GNT-9.8"></a>
 
@@ -5605,7 +5608,8 @@ owner. It MUST NOT be described as a structured child after transfer.
    that have already settled. This cumulative definition is independent of
    executor timing. Gantry MUST fail the spawning task with a `task-count-limit`
    deterministic-evaluation runtime error before creating a child whose
-   occurrence would exceed the limit. No task identity, session, hook, task
+   occurrence would exceed a configured finite limit. The task-count policy is
+   unlimited by default. No task identity, session, hook, task
    state, or executor submission is created for that rejected child.
    Before an admitted child becomes runnable, Gantry MUST create task state
    containing the child's stable task identity, parent identity, source spawn
@@ -6468,7 +6472,8 @@ authority-compatibility change.
     version components are JSON numbers. Every other integer-valued field is a
     canonical unsigned decimal string with no sign or leading zero except the
     value `0`; this avoids loss of precision in RFC 8785 implementations whose
-    JSON number domain is IEEE 754 binary64.
+    JSON number domain is IEEE 754 binary64. Each resource-policy field is
+    either such a positive decimal string or the exact string `unlimited`.
     Durations are represented as whole microseconds, identities are JSON
     strings, and no additional properties participate in the v1 identity.
     Unless a narrower bound is stated below, every decimal-string integer in
@@ -6503,19 +6508,19 @@ authority-compatibility change.
         }
       },
       "deterministic_values": {
-        "maximum_entry_input_bytes": "16777216",
-        "maximum_hook_output_bytes": "16777216",
-        "maximum_value_nesting_depth": "256",
-        "maximum_value_nodes": "1048576",
-        "maximum_string_scalars": "1048576",
-        "maximum_list_items": "65536"
+        "maximum_entry_input_bytes": "unlimited",
+        "maximum_hook_output_bytes": "unlimited",
+        "maximum_value_nesting_depth": "unlimited",
+        "maximum_value_nodes": "unlimited",
+        "maximum_string_scalars": "unlimited",
+        "maximum_list_items": "unlimited"
       },
       "interpreter": {
-        "maximum_workflow_call_depth": "1024",
-        "maximum_tasks_per_execution": "65536",
-        "maximum_deterministic_transitions_per_execution": "10000000",
-        "maximum_operations_per_execution": "100000",
-        "maximum_loop_iterations_per_task": "1000000"
+        "maximum_workflow_call_depth": "unlimited",
+        "maximum_tasks_per_execution": "unlimited",
+        "maximum_deterministic_transitions_per_execution": "unlimited",
+        "maximum_operations_per_execution": "unlimited",
+        "maximum_loop_iterations_per_task": "unlimited"
       },
       "required_event_sinks": [
         {
@@ -6577,16 +6582,15 @@ authority-compatibility change.
     `maximum_workflow_call_depth` is the per-task active-frame limit defined in
     Section 3, and `maximum_tasks_per_execution` is the cumulative task limit
     defined in Section 10. The three remaining interpreter values are the
-    mandatory durable budgets defined in Section 9. All eleven limits and
-    budgets MUST be positive. The byte,
+    optional durable budgets defined in Section 9. All eleven policies are
+    unlimited by default. A configured finite value MUST be positive. The byte,
     nesting, node, workflow-depth, and task-count limits MUST be no greater
     than `2^63 - 1`; the String and List limits MUST be no greater than
     Gantry's maximum `Int`, `9007199254740991`, because `String.len()` and
-    `List<T>.len()` return `Int`. The displayed workflow-depth and task-count
-    values are the v1 defaults. Every limit is checked at the applicable
+    `List<T>.len()` return `Int`. Every configured finite limit is checked at the applicable
     entry, operation, construction, parsing, task-creation, frame-entry,
-    resume, or deterministic-evaluation boundary. Budget counters and their
-    effective maxima are part of execution identity and MUST NOT change on
+    resume, or deterministic-evaluation boundary. Resource policies and finite
+    budget counters are part of execution identity and MUST NOT change on
     resume. `model_retry_limit`
     applies to `prompt`
     and `decide`, while `action_retry_limit` applies to `action`. Both count
@@ -8911,7 +8915,7 @@ fn converge(mut draft: String) -> String {
 before its first decision. A `continue` in this body proceeds to the post-test.
 A positive source limit fails with `loop-limit-exhausted` before another body entry.
 Omitting the limit or writing `limit = unbounded` removes only that source-level
-limit; mandatory execution budgets still apply.
+limit; any finite execution budgets configured by the embedding still apply.
 
 ### 14.8 Parallel homogeneous work and `List<T>` joins
 
@@ -10155,8 +10159,9 @@ Admission is nonblocking at a semantic transition that cannot wait safely.
 Root capacity is reserved before start acceptance; child admission either
 succeeds immediately or settles that admitted child with `executor-failure`;
 and resume reserves its complete reconstructed runnable set before acceptance.
-The cumulative language limit `maximum_tasks_per_execution` is separate from
-all of these operational capacities and is never refunded.
+The optional cumulative language policy `maximum_tasks_per_execution` is
+separate from all of these operational capacities. When finite it is never
+refunded.
 
 Ordinary work MUST NOT consume the control-plane reserve. Durable failure
 settlement, task reaping, cancellation, rollback, journal-owner release, and
@@ -15137,7 +15142,7 @@ claim runtime integration merely because it implements this pure model.
 
 <a id="GNT-30.6-fuel-grants-suspension-and-renewal"></a>
 
-**[GNT-30.6-fuel-grants-suspension-and-renewal] Fuel grants, suspension, and renewal.** Fuel is a finite renewable grant over the Section 3 transition budget, not a Section 28 quota family. Exhaustion may suspend execution. Renewal is fenced by the current Section 20 owner generation and MUST preserve the fixed nonzero yield quantum and every other fixed identity.
+**[GNT-30.6-fuel-grants-suspension-and-renewal] Fuel grants, suspension, and renewal.** When configured, fuel is a finite renewable grant over the Section 3 transition budget, not a Section 28 quota family. Exhaustion may suspend execution. Renewal is fenced by the current Section 20 owner generation and MUST preserve the fixed nonzero yield quantum and every other fixed identity. The ordinary default remains unlimited.
 
 <a id="GNT-30.7-signal-translation-and-stop-joining"></a>
 

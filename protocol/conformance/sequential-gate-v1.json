@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "SPEC.md",
-   "sha256": "5aafeeaf34d5475a7319dcc72af25a2d8428d0d7eadb10d0f671eb35478b4e1d"
+   "sha256": "d7bc5330440a44e760fde78276609e0128cb04127764dad3c3196ba34e92513d"
   },
   {
    "path": "crates/gantry-cli/src/main.rs",
@@ -419,7 +419,7 @@
  },
  "specification": {
   "path": "SPEC.md",
-  "sha256": "5aafeeaf34d5475a7319dcc72af25a2d8428d0d7eadb10d0f671eb35478b4e1d"
+  "sha256": "d7bc5330440a44e760fde78276609e0128cb04127764dad3c3196ba34e92513d"
  },
  "status": "verified",
  "unsupported_concurrency_evidence": "crates/gantry-conformance/tests/executable_bridge.rs#analyzed_concurrent_entry_reaches_the_existing_profile_rejection",

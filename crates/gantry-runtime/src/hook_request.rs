@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use gantry_core::canonical_json::CanonicalJson;
 use gantry_core::identity::ProtocolIdentity;
+use gantry_core::limit::ResourceLimit;
 use gantry_core::portable::IdentityKind;
 use gantry_core::strict_json::{JsonLimits, JsonNode, StrictJsonDocument};
 use gantry_core::value::ValueLimits;
@@ -235,7 +236,7 @@ pub struct OperationRequestHeaderV1 {
     /// Expected canonical JSON Schema object.
     pub expected_schema: Arc<[u8]>,
     /// Effective raw hook-output byte limit.
-    pub maximum_hook_output_bytes: u64,
+    pub maximum_hook_output_bytes: ResourceLimit,
     /// Effective logical value limits.
     pub value_limits: ValueLimits,
     /// Canonical containing workflow.
@@ -468,10 +469,10 @@ fn encode_dispatch(
     output.push_str(&format!(
         "\"maximum_hook_output_bytes\":{},\"maximum_list_items\":{},\"maximum_nesting_depth\":{},\"maximum_nodes\":{},\"maximum_string_scalars\":{}",
         header.maximum_hook_output_bytes,
-        header.value_limits.maximum_list_items(),
-        header.value_limits.maximum_nesting_depth(),
-        header.value_limits.maximum_nodes(),
-        header.value_limits.maximum_string_scalars(),
+        header.value_limits.list_item_limit(),
+        header.value_limits.nesting_depth_limit(),
+        header.value_limits.node_limit(),
+        header.value_limits.string_scalar_limit(),
     ));
     if let CapturedOperationRequestV1::Model { body, .. } = captured {
         output.push_str("},\"model\":{");
@@ -644,10 +645,10 @@ fn guidance(header: &OperationRequestHeaderV1, captured: &CapturedOperationReque
         expected_result_kind(&header.expected_type),
         header.expected_type.canonical_string(),
         header.maximum_hook_output_bytes,
-        header.value_limits.maximum_nesting_depth(),
-        header.value_limits.maximum_nodes(),
-        header.value_limits.maximum_string_scalars(),
-        header.value_limits.maximum_list_items(),
+        header.value_limits.nesting_depth_limit(),
+        header.value_limits.node_limit(),
+        header.value_limits.string_scalar_limit(),
+        header.value_limits.list_item_limit(),
     )
 }
 
@@ -864,7 +865,8 @@ mod tests {
             kind,
             expected_type,
             expected_schema: Arc::from(&br#"{"type":"string"}"#[..]),
-            maximum_hook_output_bytes: 1_024,
+            maximum_hook_output_bytes: ResourceLimit::limited(1_024)
+                .unwrap_or_else(|| unreachable!("fixture limit is positive")),
             value_limits: DEFAULT_VALUE_LIMITS,
             workflow: CanonicalPath::new("crate::main")
                 .unwrap_or_else(|error| panic!("workflow path failed: {error}")),

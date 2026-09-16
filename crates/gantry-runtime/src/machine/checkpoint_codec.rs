@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
+use gantry_core::limit::ResourceLimit;
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind, RuntimeErrorCategory};
 use gantry_core::value::{
@@ -77,10 +78,10 @@ pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapsho
     let mut writer = Writer::default();
     writer.raw(EXECUTION_BUDGET_MAGIC);
     writer.identity(snapshot.execution);
-    writer.u64(snapshot.maximum_transitions);
-    writer.u64(snapshot.maximum_operations);
-    writer.u64(snapshot.remaining_transitions);
-    writer.u64(snapshot.remaining_operations);
+    writer.u64(snapshot.maximum_transitions.maximum().unwrap_or(0));
+    writer.u64(snapshot.maximum_operations.maximum().unwrap_or(0));
+    writer.u64(snapshot.remaining_transitions.unwrap_or(0));
+    writer.u64(snapshot.remaining_operations.unwrap_or(0));
     writer.u64(snapshot.revision);
     writer.finish()
 }
@@ -92,12 +93,17 @@ pub(super) fn decode_execution_budget_snapshot(
     if reader.raw(EXECUTION_BUDGET_MAGIC.len())? != EXECUTION_BUDGET_MAGIC {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
+    let execution = reader.identity(Some(IdentityKind::Execution))?;
+    let maximum_transitions = decode_resource_limit(reader.u64()?)?;
+    let maximum_operations = decode_resource_limit(reader.u64()?)?;
+    let remaining_transitions = decode_remaining(maximum_transitions, reader.u64()?);
+    let remaining_operations = decode_remaining(maximum_operations, reader.u64()?);
     let snapshot = ExecutionBudgetSnapshot {
-        execution: reader.identity(Some(IdentityKind::Execution))?,
-        maximum_transitions: reader.u64()?,
-        maximum_operations: reader.u64()?,
-        remaining_transitions: reader.u64()?,
-        remaining_operations: reader.u64()?,
+        execution,
+        maximum_transitions,
+        maximum_operations,
+        remaining_transitions,
+        remaining_operations,
         revision: reader.u64()?,
     };
     if !reader.is_empty() {
@@ -176,7 +182,7 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
     for session in &checkpoint.session_stack {
         writer.optional_identity(*session);
     }
-    writer.u64(checkpoint.remaining_loop_iterations);
+    writer.u64(checkpoint.remaining_loop_iterations.unwrap_or(0));
     writer.u64(checkpoint.consecutive_transitions);
     write_pending_session(&mut writer, checkpoint.pending_session_scope.as_ref());
     write_pending_operation(
@@ -308,7 +314,7 @@ pub(super) fn decode_machine_checkpoint(
     for _ in 0..session_count {
         session_stack.push(reader.optional_identity(Some(IdentityKind::Session))?);
     }
-    let remaining_loop_iterations = reader.u64()?;
+    let remaining_loop_iterations = decode_remaining(limits.maximum_loop_iterations, reader.u64()?);
     let consecutive_transitions = reader.u64()?;
     let pending_session_scope = read_pending_session(&mut reader)?;
     #[cfg(feature = "concurrent")]
@@ -836,26 +842,47 @@ fn read_consumption_obligation_extension(
 }
 
 fn write_limits(writer: &mut Writer, limits: MachineLimits) {
-    writer.u64(limits.maximum_deterministic_transitions);
-    writer.u64(limits.maximum_operations);
-    writer.u64(limits.maximum_loop_iterations);
-    writer.u64(limits.maximum_workflow_call_depth);
+    writer.u64(
+        limits
+            .maximum_deterministic_transitions
+            .maximum()
+            .unwrap_or(0),
+    );
+    writer.u64(limits.maximum_operations.maximum().unwrap_or(0));
+    writer.u64(limits.maximum_loop_iterations.maximum().unwrap_or(0));
+    writer.u64(limits.maximum_workflow_call_depth.maximum().unwrap_or(0));
     writer.u64(limits.deterministic_transition_yield_quantum);
-    writer.u64(limits.value_limits.maximum_nesting_depth());
-    writer.u64(limits.value_limits.maximum_nodes());
-    writer.u64(limits.value_limits.maximum_string_scalars());
-    writer.u64(limits.value_limits.maximum_list_items());
+    writer.u64(
+        limits
+            .value_limits
+            .nesting_depth_limit()
+            .maximum()
+            .unwrap_or(0),
+    );
+    writer.u64(limits.value_limits.node_limit().maximum().unwrap_or(0));
+    writer.u64(
+        limits
+            .value_limits
+            .string_scalar_limit()
+            .maximum()
+            .unwrap_or(0),
+    );
+    writer.u64(limits.value_limits.list_item_limit().maximum().unwrap_or(0));
 }
 
 fn read_limits(reader: &mut Reader<'_>) -> Result<MachineLimits, MachineRecoveryError> {
-    let maximum_deterministic_transitions = reader.u64()?;
-    let maximum_operations = reader.u64()?;
-    let maximum_loop_iterations = reader.u64()?;
-    let maximum_workflow_call_depth = reader.u64()?;
+    let maximum_deterministic_transitions = decode_resource_limit(reader.u64()?)?;
+    let maximum_operations = decode_resource_limit(reader.u64()?)?;
+    let maximum_loop_iterations = decode_resource_limit(reader.u64()?)?;
+    let maximum_workflow_call_depth = decode_resource_limit(reader.u64()?)?;
     let deterministic_transition_yield_quantum = reader.u64()?;
-    let value_limits = ValueLimits::new(reader.u64()?, reader.u64()?, reader.u64()?, reader.u64()?)
-        .ok_or(MachineRecoveryError::InvalidCheckpoint)?;
-    MachineLimits::new(
+    let value_limits = ValueLimits::with_resource_limits(
+        decode_resource_limit(reader.u64()?)?,
+        decode_resource_limit(reader.u64()?)?,
+        decode_resource_limit(reader.u64()?)?,
+        decode_resource_limit(reader.u64()?)?,
+    );
+    MachineLimits::with_resource_limits(
         maximum_deterministic_transitions,
         maximum_operations,
         maximum_loop_iterations,
@@ -864,6 +891,18 @@ fn read_limits(reader: &mut Reader<'_>) -> Result<MachineLimits, MachineRecovery
         value_limits,
     )
     .ok_or(MachineRecoveryError::InvalidCheckpoint)
+}
+
+fn decode_resource_limit(value: u64) -> Result<ResourceLimit, MachineRecoveryError> {
+    if value == 0 {
+        Ok(ResourceLimit::Unlimited)
+    } else {
+        ResourceLimit::limited(value).ok_or(MachineRecoveryError::InvalidCheckpoint)
+    }
+}
+
+fn decode_remaining(limit: ResourceLimit, value: u64) -> Option<u64> {
+    limit.maximum().map(|_| value)
 }
 
 fn write_frame(writer: &mut Writer, frame: &WorkflowFrame) {

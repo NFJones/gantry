@@ -785,7 +785,11 @@ fn validate_entry_input(
     })?;
     let limits = json_limits(
         configuration,
-        configuration.required().maximum_entry_input_bytes,
+        configuration
+            .required()
+            .maximum_entry_input_bytes
+            .maximum()
+            .unwrap_or(u64::MAX),
     );
     let document =
         StrictJsonDocument::decode(input, limits).map_err(|error| entry_json_failure(&error))?;

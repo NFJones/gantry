@@ -599,7 +599,8 @@ fn action_request() -> CapturedOperationRequestV1 {
             kind: OperationSiteKind::Action,
             expected_type: TypeDescriptor::STRING,
             expected_schema: Arc::from(&br#"{"type":"string"}"#[..]),
-            maximum_hook_output_bytes: 1_024,
+            maximum_hook_output_bytes: gantry::limit::ResourceLimit::limited(1_024)
+                .unwrap_or_else(|| unreachable!("fixture limit is positive")),
             value_limits,
             workflow: CanonicalPath::new("crate::main")
                 .unwrap_or_else(|error| panic!("workflow path failed: {error}")),

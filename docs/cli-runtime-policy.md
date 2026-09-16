@@ -6,6 +6,15 @@ The CLI constructs that runtime explicitly, passes its handle through
 waits for terminal observation, and performs interpreter shutdown before the
 runtime is dropped.
 
+The CLI applies no semantic resource ceilings by default. Source/frontend,
+entry-input, hook-output, logical-value, transition, operation, loop-entry,
+workflow-depth, and cumulative task-count policies are all `unlimited`.
+Operational capacities such as executor workers, blocking queues, and active
+task admission remain finite physical safeguards and are not language limits.
+An embedding that executes untrusted or multi-tenant workloads should opt into
+appropriate finite policies through `RequiredConfiguration`, `ValueLimits`,
+`FrontendLimits`, and `InterpreterConfiguration`.
+
 Use the default worker policy with:
 
 ```sh

@@ -231,7 +231,7 @@ fn public_task_creation_is_bounded_stable_and_snapshot_isolated() {
         .task(created.task_id)
         .unwrap_or_else(|| panic!("created task missing"));
     assert_eq!(state.created_task_count(), 2);
-    assert_eq!(state.maximum_task_count(), 2);
+    assert_eq!(state.maximum_task_count().maximum(), Some(2));
     assert_eq!(task.parent_task_id(), root_task);
     assert_eq!(task.handle_name(), "child");
     assert_eq!(task.handle_id(), created.handle_id);

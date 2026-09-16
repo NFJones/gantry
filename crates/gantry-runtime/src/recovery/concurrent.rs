@@ -3293,7 +3293,13 @@ fn replay_spawn_failure_checkpoint(
         .state()
         .created_task_count()
         .checked_add(1)
-        .is_none_or(|next| next > recovered.scheduler().state().maximum_task_count());
+        .is_none_or(|next| {
+            !recovered
+                .scheduler()
+                .state()
+                .maximum_task_count()
+                .admits(next)
+        });
     if task_limit_reached
         && replay_spawn_failure_candidate(
             program,

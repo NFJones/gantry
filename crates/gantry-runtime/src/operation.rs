@@ -2289,7 +2289,8 @@ mod tests {
                 kind: gantry_ir::generated::OperationSiteKind::Action,
                 expected_type: TypeDescriptor::UNIT,
                 expected_schema: Arc::from(&br#"{"type":"null"}"#[..]),
-                maximum_hook_output_bytes: 1_024,
+                maximum_hook_output_bytes: gantry_core::limit::ResourceLimit::limited(1_024)
+                    .unwrap_or_else(|| unreachable!("fixture limit is positive")),
                 value_limits: DEFAULT_VALUE_LIMITS,
                 workflow: occurrence.workflow.clone(),
                 site: occurrence.site.clone(),

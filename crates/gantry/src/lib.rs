@@ -61,8 +61,8 @@ pub use durable_start::{
 #[cfg(feature = "analyzer")]
 pub use gantry_analysis as analysis;
 pub use gantry_core::{
-    canonical_json, canonical_key, event, identity, mode, numeric, portable, profile, protocol,
-    schema, source, strict_json, timestamp, unicode, value,
+    canonical_json, canonical_key, event, identity, limit, mode, numeric, portable, profile,
+    protocol, schema, source, strict_json, timestamp, unicode, value,
 };
 #[cfg(feature = "frontend")]
 pub use gantry_frontend as frontend;

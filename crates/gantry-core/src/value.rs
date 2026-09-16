@@ -12,25 +12,26 @@ use std::sync::{Arc, RwLock};
 
 use crate::canonical_json::CanonicalJson;
 use crate::canonical_key::{CanonicalKey, CanonicalKeyError, CanonicalKeyLimits};
+use crate::limit::ResourceLimit;
 use crate::numeric::{GantryFloat, GantryInt};
 use crate::schema::{SchemaError, SchemaValidator, ValidationError};
 use crate::strict_json::{JsonError, JsonLimits, StrictJsonDocument};
 
 /// The normative default limits for one admitted logical value.
 pub const DEFAULT_VALUE_LIMITS: ValueLimits = ValueLimits {
-    maximum_nesting_depth: 256,
-    maximum_nodes: 1_048_576,
-    maximum_string_scalars: 1_048_576,
-    maximum_list_items: 65_536,
+    maximum_nesting_depth: ResourceLimit::Limited(std::num::NonZeroU64::new(256).unwrap()),
+    maximum_nodes: ResourceLimit::Limited(std::num::NonZeroU64::new(1_048_576).unwrap()),
+    maximum_string_scalars: ResourceLimit::Limited(std::num::NonZeroU64::new(1_048_576).unwrap()),
+    maximum_list_items: ResourceLimit::Limited(std::num::NonZeroU64::new(65_536).unwrap()),
 };
 
-/// Finite positive limits for one logical value.
+/// Finite-or-unlimited policy for one logical value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ValueLimits {
-    maximum_nesting_depth: u64,
-    maximum_nodes: u64,
-    maximum_string_scalars: u64,
-    maximum_list_items: u64,
+    maximum_nesting_depth: ResourceLimit,
+    maximum_nodes: ResourceLimit,
+    maximum_string_scalars: ResourceLimit,
+    maximum_list_items: ResourceLimit,
 }
 
 impl ValueLimits {
@@ -51,35 +52,110 @@ impl ValueLimits {
             None
         } else {
             Some(Self {
-                maximum_nesting_depth,
-                maximum_nodes,
-                maximum_string_scalars,
-                maximum_list_items,
+                maximum_nesting_depth: match ResourceLimit::limited(maximum_nesting_depth) {
+                    Some(limit) => limit,
+                    None => return None,
+                },
+                maximum_nodes: match ResourceLimit::limited(maximum_nodes) {
+                    Some(limit) => limit,
+                    None => return None,
+                },
+                maximum_string_scalars: match ResourceLimit::limited(maximum_string_scalars) {
+                    Some(limit) => limit,
+                    None => return None,
+                },
+                maximum_list_items: match ResourceLimit::limited(maximum_list_items) {
+                    Some(limit) => limit,
+                    None => return None,
+                },
             })
+        }
+    }
+
+    /// Creates a value policy with no semantic size ceilings.
+    #[must_use]
+    pub const fn unlimited() -> Self {
+        Self {
+            maximum_nesting_depth: ResourceLimit::Unlimited,
+            maximum_nodes: ResourceLimit::Unlimited,
+            maximum_string_scalars: ResourceLimit::Unlimited,
+            maximum_list_items: ResourceLimit::Unlimited,
+        }
+    }
+
+    /// Constructs an independently finite-or-unlimited value policy.
+    #[must_use]
+    pub const fn with_resource_limits(
+        maximum_nesting_depth: ResourceLimit,
+        maximum_nodes: ResourceLimit,
+        maximum_string_scalars: ResourceLimit,
+        maximum_list_items: ResourceLimit,
+    ) -> Self {
+        Self {
+            maximum_nesting_depth,
+            maximum_nodes,
+            maximum_string_scalars,
+            maximum_list_items,
         }
     }
 
     /// Returns the maximum JSON-tree depth, where the root has depth one.
     #[must_use]
     pub const fn maximum_nesting_depth(self) -> u64 {
-        self.maximum_nesting_depth
+        match self.maximum_nesting_depth.maximum() {
+            Some(maximum) => maximum,
+            None => u64::MAX,
+        }
     }
 
     /// Returns the maximum logical JSON value-node count.
     #[must_use]
     pub const fn maximum_nodes(self) -> u64 {
-        self.maximum_nodes
+        match self.maximum_nodes.maximum() {
+            Some(maximum) => maximum,
+            None => u64::MAX,
+        }
     }
 
     /// Returns the maximum Unicode-scalar count of any logical String.
     #[must_use]
     pub const fn maximum_string_scalars(self) -> u64 {
-        self.maximum_string_scalars
+        match self.maximum_string_scalars.maximum() {
+            Some(maximum) => maximum,
+            None => u64::MAX,
+        }
     }
 
     /// Returns the maximum item count of any logical List.
     #[must_use]
     pub const fn maximum_list_items(self) -> u64 {
+        match self.maximum_list_items.maximum() {
+            Some(maximum) => maximum,
+            None => u64::MAX,
+        }
+    }
+
+    /// Returns the explicit nesting-depth policy.
+    #[must_use]
+    pub const fn nesting_depth_limit(self) -> ResourceLimit {
+        self.maximum_nesting_depth
+    }
+
+    /// Returns the explicit logical-node policy.
+    #[must_use]
+    pub const fn node_limit(self) -> ResourceLimit {
+        self.maximum_nodes
+    }
+
+    /// Returns the explicit String-scalar policy.
+    #[must_use]
+    pub const fn string_scalar_limit(self) -> ResourceLimit {
+        self.maximum_string_scalars
+    }
+
+    /// Returns the explicit List-item policy.
+    #[must_use]
+    pub const fn list_item_limit(self) -> ResourceLimit {
         self.maximum_list_items
     }
 }
@@ -1134,10 +1210,10 @@ fn validate_metrics(metrics: ValueMetrics, limits: ValueLimits) -> Result<(), Va
             limits.maximum_list_items,
         ),
     ] {
-        if observed > limit {
+        if !limit.admits(observed) {
             return Err(ValueError::ResourceLimit {
                 kind,
-                limit,
+                limit: limit.maximum().unwrap_or(u64::MAX),
                 observed: Some(observed),
             });
         }

@@ -357,7 +357,10 @@ fn validate_completed(
     raw_output: &[u8],
 ) -> Result<ValidatedHookOutputV1, CompletedValidationError> {
     let parse_limits = JsonLimits {
-        maximum_bytes: header.maximum_hook_output_bytes,
+        maximum_bytes: header
+            .maximum_hook_output_bytes
+            .maximum()
+            .unwrap_or(u64::MAX),
         maximum_nesting_depth: header.value_limits.maximum_nesting_depth(),
         maximum_nodes: header.value_limits.maximum_nodes(),
         maximum_string_scalars: u64::MAX,
@@ -412,7 +415,7 @@ fn validate_diagnostic(
     let bytes = u64::try_from(value.len()).ok()?;
     let scalars = u64::try_from(value.chars().count()).ok()?;
     (!value.is_empty()
-        && bytes <= header.maximum_hook_output_bytes
+        && header.maximum_hook_output_bytes.admits(bytes)
         && scalars <= header.value_limits.maximum_string_scalars())
     .then(|| Arc::clone(value))
 }
@@ -595,7 +598,8 @@ mod tests {
         let CapturedOperationRequestV1::Action { header, .. } = &mut byte_limited else {
             unreachable!("fixture is an action")
         };
-        header.maximum_hook_output_bytes = 1;
+        header.maximum_hook_output_bytes = gantry_core::limit::ResourceLimit::limited(1)
+            .unwrap_or_else(|| unreachable!("fixture limit is positive"));
         assert_eq!(
             validation_errors(&byte_limited, Arc::from(&[0xff, 0xfe][..]))[0].category,
             ValidationErrorCategoryV1::ResourceLimit
@@ -653,7 +657,8 @@ mod tests {
         let CapturedOperationRequestV1::Action { header, .. } = &mut bounded else {
             unreachable!("fixture is an action")
         };
-        header.maximum_hook_output_bytes = 1;
+        header.maximum_hook_output_bytes = gantry_core::limit::ResourceLimit::limited(1)
+            .unwrap_or_else(|| unreachable!("fixture limit is positive"));
         let policy =
             OperationRetryPolicyV1::for_request(&bounded, RetryDefaults::default(), Some(0))
                 .unwrap_or_else(|error| panic!("policy failed: {error:?}"));
@@ -832,7 +837,8 @@ mod tests {
             expected_schema: Arc::from(
                 &br#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"string"}"#[..],
             ),
-            maximum_hook_output_bytes: 1_024,
+            maximum_hook_output_bytes: gantry_core::limit::ResourceLimit::limited(1_024)
+                .unwrap_or_else(|| unreachable!("fixture limit is positive")),
             value_limits: DEFAULT_VALUE_LIMITS,
             workflow: CanonicalPath::new("crate::main")
                 .unwrap_or_else(|error| panic!("workflow failed: {error}")),

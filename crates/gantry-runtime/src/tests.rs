@@ -331,7 +331,7 @@ fn machines_share_one_deterministic_transition_budget_without_partial_mutation()
             if failure.code == RuntimeCode::DeterministicTransitionBudget
     ));
     assert_eq!(loser.test_instruction_state(), loser_state);
-    assert_eq!(loser.remaining_budgets(), (0, 1, 1));
+    assert_eq!(loser.remaining_budgets(), (Some(0), Some(1), Some(1)));
 }
 
 #[cfg(feature = "concurrent")]
@@ -407,7 +407,7 @@ fn machines_share_one_operation_budget_without_partial_mutation() {
     assert_eq!(loser.checkpoint(), expected.checkpoint());
     assert_eq!(loser.status(), MachineStatus::Failed);
     assert_eq!(loser.test_instruction_state(), loser_state);
-    assert_eq!(loser.remaining_budgets(), (1, 0, 1));
+    assert_eq!(loser.remaining_budgets(), (Some(1), Some(0), Some(1)));
     assert!(matches!(
         loser.step(),
         MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Failed(_)))
@@ -426,10 +426,12 @@ fn machine_limits_reject_only_aggregate_budget_revision_overflow() {
 fn recovered_boundary_budget_can_consume_its_final_configured_unit() {
     let snapshot = crate::ExecutionBudgetSnapshot {
         execution: execution(),
-        maximum_transitions: u64::MAX - 1,
-        maximum_operations: 1,
-        remaining_transitions: 0,
-        remaining_operations: 1,
+        maximum_transitions: gantry_core::limit::ResourceLimit::limited(u64::MAX - 1)
+            .unwrap_or_else(|| unreachable!("fixture maximum is positive")),
+        maximum_operations: gantry_core::limit::ResourceLimit::limited(1)
+            .unwrap_or_else(|| unreachable!("fixture maximum is positive")),
+        remaining_transitions: Some(0),
+        remaining_operations: Some(1),
         revision: u64::MAX - 1,
     };
     let budget = ExecutionBudget::recover_from_checkpoint(snapshot)
@@ -462,7 +464,7 @@ fn recovered_boundary_budget_can_consume_its_final_configured_unit() {
     assert_eq!(
         budget.snapshot(),
         crate::ExecutionBudgetSnapshot {
-            remaining_operations: 0,
+            remaining_operations: Some(0),
             revision: u64::MAX,
             ..snapshot
         }
@@ -551,7 +553,7 @@ fn simultaneous_final_transition_unit_has_one_successor_and_one_unchanged_loser(
         .unwrap_or_else(|| panic!("missing exhausted contender"));
     assert_eq!(loser.0, loser.1);
     let snapshot = budget.snapshot();
-    assert_eq!(snapshot.remaining_transitions, 0);
+    assert_eq!(snapshot.remaining_transitions, Some(0));
     assert_eq!(snapshot.revision, 1);
 }
 
@@ -638,7 +640,7 @@ fn simultaneous_final_operation_unit_has_one_preparation_and_one_unchanged_loser
     assert_eq!(losers.len(), 1);
     assert_eq!(losers[0].0, losers[0].1);
     let snapshot = budget.snapshot();
-    assert_eq!(snapshot.remaining_operations, 0);
+    assert_eq!(snapshot.remaining_operations, Some(0));
     assert_eq!(snapshot.revision, 1);
 }
 
@@ -748,8 +750,8 @@ fn shared_execution_budget_keeps_loop_and_yield_state_task_local() {
         second.step(),
         MachineStep::Transition(MachineLabel::Deterministic { .. })
     ));
-    assert_eq!(first.remaining_budgets().2, 0);
-    assert_eq!(second.remaining_budgets().2, 0);
+    assert_eq!(first.remaining_budgets().2, Some(0));
+    assert_eq!(second.remaining_budgets().2, Some(0));
 
     assert!(first.resume_after_yield());
     for _ in 0..2 {
@@ -799,9 +801,9 @@ fn durable_checkpoint_recovers_the_same_explicit_frame_machine() {
     let budget_checkpoint = original.budget_checkpoint();
     assert_eq!(checkpoint.execution_id(), execution());
     assert_eq!(checkpoint.status(), MachineStatus::Running);
-    assert_eq!(budget_checkpoint.remaining_transitions, 7);
-    assert_eq!(budget_checkpoint.remaining_operations, 1);
-    assert_eq!(checkpoint.remaining_loop_iterations(), 1);
+    assert_eq!(budget_checkpoint.remaining_transitions, Some(7));
+    assert_eq!(budget_checkpoint.remaining_operations, Some(1));
+    assert_eq!(checkpoint.remaining_loop_iterations(), Some(1));
 
     let bytes = checkpoint.canonical_bytes();
     assert_eq!(bytes.get(..8), Some(b"GNTMCP03".as_slice()));
@@ -1118,7 +1120,7 @@ fn failure_short_circuits_later_operations_and_preserves_the_exact_code() {
             if failure.code
                 == RuntimeCode::Deterministic(DeterministicEvaluationCode::IntegerOverflow)
     ));
-    assert_eq!(machine.remaining_budgets().1, 1);
+    assert_eq!(machine.remaining_budgets().1, Some(1));
     assert!(matches!(
         machine.step(),
         MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Failed(_)))
