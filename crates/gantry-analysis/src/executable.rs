@@ -1744,23 +1744,62 @@ impl Compiler<'_> {
         node: &gantry_frontend::SyntaxNode,
         ty: &TypeDescriptor,
     ) -> Result<Option<TypeDescriptor>, AnalysisError> {
-        let Some(postfix) =
-            descendant_form(self.tree, expression, &[SyntaxForm::PostfixExpression])
-        else {
+        // The index postfix is the direct child that carries this projection's `[`: an earlier
+        // postfix belongs to a receiver part such as a call inside the receiver literal, so taking
+        // the first postfix in the tree would miss the projection entirely.
+        let Some(index_postfix) = node.children().iter().position(|child| {
+            self.tree.node(*child).is_some_and(|child| {
+                matches!(child.form(), SyntaxForm::PostfixExpression)
+                    && node_contains_punctuation(self.tree, child, Punctuation::LeftBracket)
+            })
+        }) else {
             return Ok(None);
         };
-        let postfix_node = self.node(postfix)?;
-        if !node_contains_punctuation(self.tree, postfix_node, Punctuation::LeftBracket) {
-            return Ok(None);
-        }
-        let path =
-            direct_child_form(self.tree, node, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;
-        let name = direct_identifier(self.tree, path).ok_or(AnalysisError::Invariant)?;
-        let index = direct_expressions(self.tree, node)
-            .into_iter()
-            .find_map(|index| integer_literal(self.tree, index))
+        let index = node
+            .children()
+            .iter()
+            .copied()
+            .skip(index_postfix.saturating_add(1))
+            .find_map(|child| integer_literal(self.tree, child))
+            .or_else(|| {
+                direct_expressions(self.tree, node)
+                    .into_iter()
+                    .find_map(|index| integer_literal(self.tree, index))
+            })
             .ok_or(AnalysisError::Invariant)?;
-        self.emit(ty.clone(), InstructionKind::Load(name))?;
+        if let Some(path) = direct_child_form(self.tree, node, SyntaxForm::Path) {
+            let name = direct_identifier(self.tree, path).ok_or(AnalysisError::Invariant)?;
+            self.emit(ty.clone(), InstructionKind::Load(name))?;
+        } else if let Some(list) = node
+            .children()
+            .get(..index_postfix)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .find(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|child| matches!(child.form(), SyntaxForm::ListExpression))
+            })
+            .or_else(|| descendant_form(self.tree, expression, &[SyntaxForm::ListExpression]))
+        {
+            // A receiver that is a literal aggregate lowers as the list value it denotes, so the
+            // projection applies to that value instead of aborting with no receiver at all.
+            let list_type = TypeDescriptor::list(ty.clone());
+            let members = direct_expressions(self.tree, self.node(list)?);
+            for member in &members {
+                self.compile_expression(*member)?;
+            }
+            self.emit(
+                list_type,
+                InstructionKind::Aggregate {
+                    kind: AggregateKind::List,
+                    operands: members.len(),
+                },
+            )?;
+        } else {
+            return Err(AnalysisError::Invariant);
+        }
         self.emit(
             ty.clone(),
             InstructionKind::Project(Projection::Member(index)),

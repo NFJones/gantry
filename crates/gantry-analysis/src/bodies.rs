@@ -5825,6 +5825,23 @@ fn infer_expression_inner(
             diagnostics,
         );
     }
+    // An index projection of a literal receiver such as `[1, 2][0]` still projects one element of
+    // the value the receiver part produces, so the projection applies before the aggregate arms
+    // below can claim the node and type it as the literal itself. A node that also carries an
+    // operator is not one projection on its own, so its operands are typed instead.
+    if direct_binary_operator(tree, node).is_none()
+        && node.children().iter().copied().any(|child| {
+            tree.node(child).is_some_and(|node| {
+                matches!(
+                    node.form(),
+                    SyntaxForm::PostfixExpression
+                        if node_contains_punctuation(tree, child, Punctuation::LeftBracket)
+                )
+            })
+        })
+    {
+        return infer_projection(tree, node, facts, environment, context, diagnostics);
+    }
     if let Some(list) = node.children().iter().copied().find(|child| {
         tree.node(*child)
             .is_some_and(|node| matches!(node.form(), SyntaxForm::ListExpression))
@@ -5910,17 +5927,6 @@ fn infer_expression_inner(
         diagnostics,
     )? {
         return Ok(Some(value));
-    }
-    if node.children().iter().copied().any(|child| {
-        tree.node(child).is_some_and(|node| {
-            matches!(
-                node.form(),
-                SyntaxForm::PostfixExpression
-                    if node_contains_punctuation(tree, child, Punctuation::LeftBracket)
-            )
-        })
-    }) {
-        return infer_projection(tree, node, facts, environment, context, diagnostics);
     }
     if let Some((operator, index)) = direct_binary_operator(tree, node) {
         let left = infer_operand_sequence(
@@ -7585,6 +7591,29 @@ fn projection_receiver_type(
             context,
             diagnostics,
         );
+    }
+    // A receiver part that is one literal aggregate is a value of its own: the place chain and
+    // the member and call fall-backs above cannot type it, so a list-literal receiver such as
+    // `[1, 2][0]` would otherwise be left without a projection type and abort in lowering.
+    if let [only] = receiver_children {
+        let node = tree.node(*only).ok_or(AnalysisError::Invariant)?;
+        match node.form() {
+            SyntaxForm::ListExpression => {
+                return infer_list(tree, *only, facts, environment, None, context, diagnostics);
+            }
+            SyntaxForm::Expression => {
+                return infer_expression(
+                    tree,
+                    *only,
+                    facts,
+                    environment,
+                    None,
+                    context,
+                    diagnostics,
+                );
+            }
+            _ => {}
+        }
     }
     Ok(None)
 }

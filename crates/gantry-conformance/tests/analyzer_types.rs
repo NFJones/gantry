@@ -8,6 +8,7 @@ use gantry::analysis::{
     AnalysisError, AnalysisStatus, analyze_package_types, analyze_package_types_with_limits,
 };
 use gantry::frontend::validate_package_syntax;
+use gantry::ir::{AggregateKind, InstructionKind, Projection};
 use gantry::portable::{DiagnosticCategory, FrontendResourceCode};
 use gantry::source::{FrontendLimits, SourceLimits};
 use serde::Deserialize;
@@ -7324,4 +7325,89 @@ fn public_unresolved_type_annotations_are_refused_without_internal_failure() {
             accepted.diagnostics()
         );
     }
+}
+
+#[test]
+fn public_literal_receiver_index_projections_are_lowered_and_typed() {
+    let root = TempDirectory::new();
+    for (source, index) in [
+        ("fn main() -> Int { [1, 2][0] }", 0usize),
+        ("fn main() -> Int { [1, 2][1] }", 1),
+        ("fn main() -> Int { discard [1, 2][0]; 0 }", 0),
+        ("fn main() -> Int { let value: Int = [1, 2][1]; value }", 1),
+        ("fn main() -> Int { [1 + 1, 2][0] }", 0),
+        (
+            "fn g(v: Int) -> Int { v } fn main() -> Int { [g(1), 2][0] }",
+            0,
+        ),
+        (
+            "fn g(v: Int) -> Int { v } fn main() -> Int { discard [g(1), 2][1]; 0 }",
+            1,
+        ),
+        (
+            "fn g(v: Int) -> Int { v } fn main() -> Int { g([1, 2][0]) }",
+            0,
+        ),
+        ("fn main() -> List<Int> { [[1, 2], [3]][1] }", 1),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted
+            .executable_program()
+            .unwrap_or_else(|| panic!("source: {source}: a projection must publish a program"));
+        let projected = program.workflows().iter().any(|workflow| {
+            workflow.instructions.windows(2).any(|window| {
+                matches!(
+                    (&window[0].kind, &window[1].kind),
+                    (
+                        InstructionKind::Aggregate {
+                            kind: AggregateKind::List,
+                            ..
+                        },
+                        InstructionKind::Project(Projection::Member(projected))
+                    ) if *projected == index
+                )
+            })
+        });
+        assert!(
+            projected,
+            "source: {source}: the literal receiver must lower to its aggregate followed by member {index}"
+        );
+    }
+
+    // A non-integer index keeps its precise refusal and publishes nothing.
+    let source = "fn main() -> Int { [1, 2][true] }";
+    root.write(source);
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+    let refused = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("source: {source}; type analysis failed: {error:?}"));
+    assert_eq!(
+        refused.status(),
+        AnalysisStatus::Invalid,
+        "source: {source}; diagnostics: {:?}",
+        refused.diagnostics()
+    );
+    assert!(
+        refused
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "projection-index-type"),
+        "source: {source}; diagnostics: {:?}",
+        refused.diagnostics()
+    );
+    assert!(
+        refused.executable_program().is_none(),
+        "source: {source}: a refused projection must not publish a program"
+    );
 }
