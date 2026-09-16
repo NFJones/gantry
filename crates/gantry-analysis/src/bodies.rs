@@ -397,6 +397,7 @@ fn build_body_context(
         .map(|symbol| (symbol.id, symbol))
         .collect::<BTreeMap<_, _>>();
     let mut callee_spans = BTreeSet::new();
+    let mut grouped_callee_spans = Vec::new();
     for source in sources {
         for node in source.tree().nodes() {
             let children = node.children();
@@ -422,10 +423,13 @@ fn build_body_context(
                 }
                 continue;
             }
+            // The call-sequence inference bails on a parenthesized callee that resolves to a
+            // declaration, so such a name is an ordinary value use; the filter after the
+            // reference map is built keeps it out of this set.
             if let Some(peeled) = parenthesized_callee_path(source.tree(), children)?
                 && let Some(callee) = source.tree().node(peeled)
             {
-                callee_spans.insert(callee.span().clone());
+                grouped_callee_spans.push(callee.span().clone());
             }
         }
     }
@@ -483,6 +487,11 @@ fn build_body_context(
         .iter()
         .map(|reference| (reference.span.clone(), reference.target))
         .collect::<BTreeMap<_, _>>();
+    for span in grouped_callee_spans {
+        if !references.contains_key(&span) {
+            callee_spans.insert(span);
+        }
+    }
     let generic_by_span = generic_facts
         .iter()
         .map(|fact| (fact.span.clone(), fact))
@@ -6012,7 +6021,7 @@ fn infer_expression_inner(
                     diagnostics.push(body_diagnostic(
                         "callable-reference-unadmitted",
                         DiagnosticCategory::Type,
-                        "a name that denotes a declared callable is not a value",
+                        "a name that denotes a declared callable or action is not a value",
                         child_node.span().clone(),
                         [("identifier", identifier.to_string())],
                     )?);
@@ -11481,22 +11490,27 @@ fn parenthesized_callee_path(
     if !node_is_punctuation(tree, next_token, Punctuation::LeftParenthesis) {
         return Ok(None);
     }
-    let mut identifiers = tokens
-        .get(1..close)
-        .unwrap_or_default()
-        .iter()
-        .copied()
-        .filter(|id| {
-            tree.node(*id).is_some_and(|node| {
-                matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(_)))
-            })
-        });
-    let Some(identifier) = identifiers.next() else {
+    let mut identifier = None;
+    for token in tokens.get(1..close).unwrap_or_default().iter().copied() {
+        let node = tree.node(token).ok_or(AnalysisError::Invariant)?;
+        if matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(_))) {
+            if identifier.is_some() {
+                return Ok(None);
+            }
+            identifier = Some(token);
+            continue;
+        }
+        // Only nested parentheses keep one parenthesized identifier a callee: any other
+        // token makes the group an ordinary expression whose operands are values.
+        if !node_is_punctuation(tree, token, Punctuation::LeftParenthesis)
+            && !node_is_punctuation(tree, token, Punctuation::RightParenthesis)
+        {
+            return Ok(None);
+        }
+    }
+    let Some(identifier) = identifier else {
         return Ok(None);
     };
-    if identifiers.next().is_some() {
-        return Ok(None);
-    }
     let mut stack = children.to_vec();
     while let Some(id) = stack.pop() {
         let current = tree.node(id).ok_or(AnalysisError::Invariant)?;

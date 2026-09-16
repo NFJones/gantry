@@ -6521,27 +6521,62 @@ fn public_non_callable_callees_are_refused_instead_of_being_typed_as_their_calle
 
 /// A name that denotes a declared callable is not a value: this revision admits no source
 /// callable value (`GNT-37.0`), so the name is refused with its published spelling in
-/// every position that requires one, including the qualified spelling, instead of the
-/// analyzer dropping an untyped value into an admitted program.
+/// every position that requires one, including the qualified spelling, a grouped operand,
+/// and a declared action, instead of the analyzer dropping an untyped value into an
+/// admitted program.
 #[test]
 fn public_declared_callable_names_are_refused_in_value_positions() {
     let root = TempDirectory::new();
-    for (source, identifier) in [
+    for (source, identifier, span_text) in [
         (
             "fn inc(value: Int) -> Int { value } fn main() -> Int { discard inc; 0 }",
+            "inc",
             "inc",
         ),
         (
             "fn f(value: Int) -> Int { value } fn inc(value: Int) -> Int { value } fn main() -> Int { f(inc) }",
             "inc",
+            "inc",
         ),
         (
             "fn inc(value: Int) -> Int { value } fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { discard apply(inc, 1); 0 }",
+            "inc",
             "inc",
         ),
         (
             "fn inc(value: Int) -> Int { value } fn main() -> Int { discard crate::inc; 0 }",
             "inc",
+            "crate::inc",
+        ),
+        (
+            "fn inc(value: Int) -> Int { value } fn main() -> Int { discard (1 + inc)(1); 0 }",
+            "inc",
+            "inc",
+        ),
+        (
+            "fn inc(value: Int) -> Int { value } fn main() -> Int { discard ((1 + inc))(1); 0 }",
+            "inc",
+            "inc",
+        ),
+        (
+            "fn inc(value: Int) -> Int { value } fn main() -> Int { discard (inc)(1); 0 }",
+            "inc",
+            "inc",
+        ),
+        (
+            "fn id<T>(value: T) -> T { value } fn main() -> Int { discard (id)::<Int>(1); 0 }",
+            "id",
+            "id",
+        ),
+        (
+            "action read_only lookup(value: Int) -> Int; fn main() -> Int { discard lookup; 0 }",
+            "lookup",
+            "lookup",
+        ),
+        (
+            "action read_only lookup(value: Int) -> Int; fn main() -> Int { discard (lookup)(1); 0 }",
+            "lookup",
+            "lookup",
         ),
     ] {
         root.write(source);
@@ -6570,15 +6605,18 @@ fn public_declared_callable_names_are_refused_in_value_positions() {
             Some(identifier),
             "source: {source}"
         );
-        let main_start = source.find("fn main").unwrap_or(0) as u64;
+        let main_start = source.find("fn main").unwrap_or(0);
+        let offset = source[main_start..]
+            .find(span_text)
+            .unwrap_or_else(|| panic!("source: {source}: missing `{span_text}`"));
+        let start = (main_start + offset) as u64;
+        let end = start + span_text.len() as u64;
         let primary = refusal
             .primary
             .as_ref()
             .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
-        assert!(
-            primary.bytes().start() >= main_start,
-            "source: {source}: refusal precedes the reference"
-        );
+        assert_eq!(primary.bytes().start(), start, "source: {source}");
+        assert_eq!(primary.bytes().end(), end, "source: {source}");
     }
 
     // A declared callable stays reachable through a direct call, a declared type stays
