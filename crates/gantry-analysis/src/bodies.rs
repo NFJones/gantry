@@ -7238,24 +7238,8 @@ fn infer_projection(
     // A literal index segment is keyed only when the index expression is exactly one integer-literal
     // token: `items[2 - 2]` names the same element as `items[0]`, so every other index expression
     // keys the wildcard segment rather than a second literal one.
-    let literal_index = index_expression.and_then(|expression| {
-        let mut literals = Vec::new();
-        let mut work = vec![expression];
-        while let Some(id) = work.pop() {
-            let node = tree.node(id)?;
-            match node.form() {
-                SyntaxForm::Token(TokenKind::IntegerLiteral(value)) => {
-                    literals.push(Arc::clone(value));
-                }
-                SyntaxForm::Token(_) => return None,
-                _ => work.extend(node.children().iter().copied()),
-            }
-        }
-        match literals.as_slice() {
-            [value] => value.parse::<usize>().ok(),
-            _ => None,
-        }
-    });
+    let literal_index =
+        index_expression.and_then(|expression| literal_projection_index(tree, expression));
     if receiver_type.kind() == TypeKind::Tuple {
         let Some(index) = literal_index else {
             // `SPEC.md` requires a tuple projection index to be a nonnegative compile-time integer
@@ -7291,7 +7275,7 @@ fn infer_projection(
             }
             return fold_projection_steps(
                 tree,
-                node,
+                node.span(),
                 children,
                 index_postfix.saturating_add(1),
                 member,
@@ -7359,7 +7343,7 @@ fn infer_projection(
         };
         return fold_projection_steps(
             tree,
-            node,
+            node.span(),
             children,
             index_postfix.saturating_add(1),
             projected,
@@ -7424,6 +7408,50 @@ fn projected_place_path(
     })
 }
 
+/// Returns the member identifier one dot step names, reading through a one-expression wrapper.
+///
+/// The parser wraps the member token of a chain that an enclosing operator continues — the `count`
+/// of `items[0].count + 1` arrives inside a single-expression node — while the same member arrives
+/// as a direct token in a chain that stands alone. Both spellings name one member, so the step's
+/// identifier is read through the wrapper instead of leaving the whole chain untyped.
+fn projected_member_name(tree: &SyntaxTree, id: NodeId) -> Option<Arc<str>> {
+    let node = tree.node(id)?;
+    match node.form() {
+        SyntaxForm::Token(TokenKind::Identifier(value)) => Some(Arc::clone(value)),
+        SyntaxForm::Expression | SyntaxForm::BinaryExpression => {
+            let [inner] = node.children() else {
+                return None;
+            };
+            projected_member_name(tree, *inner)
+        }
+        _ => None,
+    }
+}
+
+/// Returns the static index one projection step keys, if its expression is one literal.
+///
+/// `items[2 - 2]` names the same element as `items[0]`, so only an index expression that is
+/// exactly one integer-literal token yields an index here and every other expression keys the
+/// wildcard segment of the place the projection reads.
+fn literal_projection_index(tree: &SyntaxTree, expression: NodeId) -> Option<usize> {
+    let mut literals = Vec::new();
+    let mut work = vec![expression];
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        match node.form() {
+            SyntaxForm::Token(TokenKind::IntegerLiteral(value)) => {
+                literals.push(Arc::clone(value));
+            }
+            SyntaxForm::Token(_) => return None,
+            _ => work.extend(node.children().iter().copied()),
+        }
+    }
+    match literals.as_slice() {
+        [value] => value.parse::<usize>().ok(),
+        _ => None,
+    }
+}
+
 /// Folds every projection step after the first one into `current`.
 ///
 /// The parser flattens a postfix chain into sibling children, so the steps after the first index
@@ -7437,7 +7465,7 @@ fn projected_place_path(
 /// records no affine read: the first projection already records the element read of its receiver.
 fn fold_projection_steps(
     tree: &SyntaxTree,
-    node: &gantry_frontend::SyntaxNode,
+    span: &SourceSpan,
     children: &[NodeId],
     after: usize,
     mut current: TypeDescriptor,
@@ -7454,16 +7482,15 @@ fn fold_projection_steps(
             continue;
         }
         if node_contains_punctuation(tree, child, Punctuation::Dot) {
-            let Some(member) = children
-                .get(cursor.saturating_add(1))
-                .and_then(|id| tree.node(*id))
-            else {
+            let Some(member_id) = children.get(cursor.saturating_add(1)).copied() else {
                 return Ok(None);
             };
-            let SyntaxForm::Token(TokenKind::Identifier(name)) = member.form() else {
+            let Some(member) = tree.node(member_id) else {
                 return Ok(None);
             };
-            let name = Arc::clone(name);
+            let Some(name) = projected_member_name(tree, member_id) else {
+                return Ok(None);
+            };
             let Some(field) = projected_member_type(&current, name.as_ref(), context)? else {
                 diagnostics.push(body_diagnostic(
                     "unknown-member",
@@ -7496,24 +7523,9 @@ fn fold_projection_steps(
         // A step this walk cannot key statically stays untyped: the element access a dynamic index
         // needs is not published yet, and an untyped projection keeps the enclosing expression from
         // taking the intermediate value's type.
-        let Some(literal_index) = index_expression.and_then(|expression| {
-            let mut literals = Vec::new();
-            let mut work = vec![expression];
-            while let Some(id) = work.pop() {
-                let node = tree.node(id)?;
-                match node.form() {
-                    SyntaxForm::Token(TokenKind::IntegerLiteral(value)) => {
-                        literals.push(Arc::clone(value));
-                    }
-                    SyntaxForm::Token(_) => return None,
-                    _ => work.extend(node.children().iter().copied()),
-                }
-            }
-            match literals.as_slice() {
-                [value] => value.parse::<usize>().ok(),
-                _ => None,
-            }
-        }) else {
+        let Some(literal_index) =
+            index_expression.and_then(|expression| literal_projection_index(tree, expression))
+        else {
             return Ok(None);
         };
         let projected = if current.kind() == TypeKind::Tuple {
@@ -7522,7 +7534,7 @@ fn fold_projection_steps(
                     "tuple-index-out-of-range",
                     DiagnosticCategory::Type,
                     "a tuple projection index is outside its static arity",
-                    node.span().clone(),
+                    span.clone(),
                     [("index", literal_index.to_string())],
                 )?);
                 return Ok(None);
@@ -7979,11 +7991,22 @@ fn infer_operand_sequence(
     )? {
         return Ok(Some(value));
     }
-    if operator.is_some_and(operand_projection_supported)
-        && let Some(value) =
+    if operator.is_some_and(operand_projection_supported) {
+        if let Some(value) =
             infer_operand_projection_sequence(tree, children, environment, context, diagnostics)?
-    {
-        return Ok(Some(value));
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = infer_operand_index_projection_sequence(
+            tree,
+            children,
+            facts,
+            environment,
+            context,
+            diagnostics,
+        )? {
+            return Ok(Some(value));
+        }
     }
     for child in children {
         let node = tree.node(*child).ok_or(AnalysisError::Invariant)?;
@@ -8072,6 +8095,129 @@ fn infer_operand_projection_sequence(
         diagnostics,
     )?;
     Ok(Some(field))
+}
+
+/// Resolves a split index-projection operand whose receiver and index fragments are siblings.
+///
+/// The parser flattens a leading projection into sibling children, so `xs[0]` is not one node: the
+/// receiver part is every child ahead of the first bracket postfix and the index expression follows
+/// that postfix. The analyzer types the operand as the element the receiver projects, so an
+/// enclosing operator checks and consumes that element instead of the receiver value. Only a
+/// place-backed receiver whose index this walk can key statically resolves here, and every other
+/// shape stays untyped for the caller's own arms.
+fn infer_operand_index_projection_sequence(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    if children.len() < 2 {
+        return Ok(None);
+    }
+    let Some(index_postfix) = children.iter().position(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, *child, Punctuation::LeftBracket)
+        })
+    }) else {
+        return Ok(None);
+    };
+    let receiver_children = children.get(..index_postfix).unwrap_or_default();
+    let Some(ProjectionReceiver {
+        receiver_type,
+        place: Some(place),
+    }) = resolve_projection_receiver(
+        tree,
+        receiver_children,
+        facts,
+        environment,
+        context,
+        diagnostics,
+    )?
+    else {
+        return Ok(None);
+    };
+    let index_expression = children
+        .iter()
+        .copied()
+        .skip(index_postfix.saturating_add(1))
+        .find(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+        });
+    if let Some(index_expression) = index_expression
+        && let Some(actual) = infer_expression(
+            tree,
+            index_expression,
+            facts,
+            environment,
+            Some(&TypeDescriptor::INT),
+            context,
+            diagnostics,
+        )?
+        && actual != TypeDescriptor::INT
+    {
+        diagnostics.push(body_diagnostic(
+            "projection-index-type",
+            DiagnosticCategory::Type,
+            "a list projection index is not Int",
+            tree.node(index_expression)
+                .ok_or(AnalysisError::Invariant)?
+                .span()
+                .clone(),
+            [("actual", actual.canonical_string())],
+        )?);
+    }
+    // A step this walk cannot key statically stays untyped: the element access a dynamic index
+    // needs is not published yet, and the enclosing operator must not consume the receiver's type
+    // in the element's place.
+    let Some(literal_index) =
+        index_expression.and_then(|expression| literal_projection_index(tree, expression))
+    else {
+        return Ok(None);
+    };
+    let projected = match receiver_type.kind() {
+        TypeKind::List => receiver_type.immediate_members().into_iter().next(),
+        TypeKind::Tuple => receiver_type
+            .immediate_members()
+            .into_iter()
+            .nth(literal_index),
+        _ => None,
+    };
+    let Some(projected) = projected else {
+        return Ok(None);
+    };
+    let continuing = projected_place_path(&Some(place), Some(literal_index));
+    let span = projection_prefix_span(
+        tree,
+        receiver_children
+            .first()
+            .copied()
+            .ok_or(AnalysisError::Invariant)?,
+        index_expression,
+    )?;
+    if let Some(path) = &continuing {
+        record_affine_place(
+            AffinePlace::projected(Arc::clone(&path.root), path.fields.clone()),
+            Some(&path.binding),
+            &projected,
+            span.clone(),
+            AffineAccess::Read,
+            context,
+            diagnostics,
+        )?;
+    }
+    fold_projection_steps(
+        tree,
+        &span,
+        children,
+        index_postfix.saturating_add(1),
+        projected,
+        context,
+        diagnostics,
+    )
 }
 
 /// Reports whether the lowering publishes a primitive for one enclosing operator.
@@ -8211,7 +8357,20 @@ fn infer_member_sequence(
                     _ => None,
                 }
             });
-        if let Some(root) = root
+        // The receiver part of a mixed chain such as `items[0].count` is an index projection of
+        // the root binding rather than the binding itself, so the element it reads is the
+        // receiver of the member step. A part without an index postfix keeps the root shortcut
+        // below, which leaves every dotted operand that resolves today unchanged.
+        if let Some(projected) = infer_operand_index_projection_sequence(
+            tree,
+            children.get(..dot).unwrap_or_default(),
+            facts,
+            environment,
+            context,
+            diagnostics,
+        )? {
+            projected
+        } else if let Some(root) = root
             && let Some(receiver) = environment.get(&root).cloned()
         {
             receiver

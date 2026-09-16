@@ -2364,6 +2364,9 @@ impl Compiler<'_> {
         if let Some(result) = self.compile_projected_operand_place(children)? {
             return Ok(result);
         }
+        if let Some(result) = self.compile_index_projection_operand(children)? {
+            return Ok(result);
+        }
         if let Some(result) = self.compile_receiver_call_operand(children)? {
             return Ok(result);
         }
@@ -2422,6 +2425,47 @@ impl Compiler<'_> {
                 result.clone(),
                 InstructionKind::Project(Projection::Field(Arc::from(field.as_str()))),
             )?;
+        }
+        if types.next().is_some() {
+            return Err(AnalysisError::Invariant);
+        }
+        Ok(Some(result))
+    }
+
+    /// Lowers a split index-projection operand as one root load plus one projection per step.
+    ///
+    /// The parser splits a leading projection into sibling fragments, so `xs[0]` has no node of its
+    /// own and the analyzer types that shape as the element the projection reads. Lowering resolves
+    /// the same root and steps from the sibling tokens: the first bracket step and every later dot
+    /// or bracket step becomes one `Project` instruction, and a shape this walk cannot key reports
+    /// no operand so the caller keeps the ordinary child walk.
+    fn compile_index_projection_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        let Some((root, path)) = operand_index_place(self.tree, children) else {
+            return Ok(None);
+        };
+        let Some(types) =
+            receiver_place_types(&root, &path, &self.binding_types, self.struct_fields)
+        else {
+            return Ok(None);
+        };
+        let mut types = types.into_iter();
+        let mut result = types.next().ok_or(AnalysisError::Invariant)?;
+        self.emit(result.clone(), InstructionKind::Load(root))?;
+        for segment in &path {
+            let projection = match segment {
+                ValuePathSegment::StructField(field) => {
+                    Projection::Field(Arc::from(field.as_str()))
+                }
+                ValuePathSegment::ListItem(index) | ValuePathSegment::TupleMember(index) => {
+                    Projection::Member(*index)
+                }
+                _ => return Err(AnalysisError::Invariant),
+            };
+            result = types.next().ok_or(AnalysisError::Invariant)?;
+            self.emit(result.clone(), InstructionKind::Project(projection))?;
         }
         if types.next().is_some() {
             return Err(AnalysisError::Invariant);
@@ -3079,10 +3123,16 @@ fn receiver_place_types(
     let mut current = binding_types.get(root)?.clone();
     let mut types = vec![current.clone()];
     for segment in path {
-        let ValuePathSegment::StructField(field) = segment else {
-            return None;
+        current = match segment {
+            ValuePathSegment::StructField(field) => {
+                struct_fields.get(&current)?.get(field.as_str())?.clone()
+            }
+            ValuePathSegment::ListItem(_) => current.immediate_members().into_iter().next()?,
+            ValuePathSegment::TupleMember(index) => {
+                current.immediate_members().into_iter().nth(*index)?
+            }
+            _ => return None,
         };
-        current = struct_fields.get(&current)?.get(field.as_str())?.clone();
         types.push(current.clone());
     }
     Some(types)
@@ -3259,6 +3309,74 @@ fn operand_field_place(
         };
         path.push(ValuePathSegment::StructField(field.to_string()));
         cursor += 2;
+    }
+    (!path.is_empty()).then_some((root, path))
+}
+
+/// Returns the place of a split index-projection operand whose fragments are sibling nodes.
+///
+/// The analyzer merges the same sibling shape into one projected operand, so lowering loads the
+/// root and projects the element each step reads instead of compiling the fragments on their own.
+/// Only a binding root with dot and literal-bracket steps yields a place here; a grouping
+/// parenthesis, a call, or a computed index reports no place for the caller's own arms.
+fn operand_index_place(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Option<(Arc<str>, Vec<ValuePathSegment>)> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    if tokens.iter().any(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        )
+    }) {
+        return None;
+    }
+    let root = match tokens.first()?.form() {
+        SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+            Arc::from("self")
+        }
+        _ => return None,
+    };
+    let mut path = Vec::new();
+    let mut cursor = 1;
+    while cursor < tokens.len() {
+        match tokens.get(cursor)?.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)) => {
+                let SyntaxForm::Token(TokenKind::Identifier(field)) =
+                    tokens.get(cursor + 1)?.form()
+                else {
+                    return None;
+                };
+                path.push(ValuePathSegment::StructField(field.to_string()));
+                cursor += 2;
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftBracket)) => {
+                let SyntaxForm::Token(TokenKind::IntegerLiteral(index)) =
+                    tokens.get(cursor + 1)?.form()
+                else {
+                    return None;
+                };
+                let SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightBracket)) =
+                    tokens.get(cursor + 2)?.form()
+                else {
+                    return None;
+                };
+                path.push(ValuePathSegment::ListItem(index.parse::<usize>().ok()?));
+                cursor += 3;
+            }
+            _ => return None,
+        }
     }
     (!path.is_empty()).then_some((root, path))
 }

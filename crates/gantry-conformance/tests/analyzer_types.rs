@@ -7796,3 +7796,125 @@ fn public_literal_receiver_index_projections_are_lowered_and_typed() {
         "source: {source}: a refused projection must not publish a program"
     );
 }
+
+/// A split index-projection operand is the element it reads rather than its receiver.
+///
+/// The parser flattens `xs[0]` into sibling fragments, so an enclosing operator receives a
+/// receiver part and an index part instead of one projection node. The analyzer types that operand
+/// as the element of the receiver and the lowering loads the receiver once before the projection
+/// steps, which the program shape below pins for both operand positions, for a chain that
+/// continues into a field, and for consecutive projections of one binding. The dynamic-index
+/// control keeps its refusal: the element access a non-literal index needs is not published yet,
+/// so a program that reads one must not be admitted without it.
+#[test]
+fn public_split_index_projection_operands_are_typed_and_lowered() {
+    let root = TempDirectory::new();
+    let load = |name: &str| format!("load {name}");
+    let member = |index: usize| format!("member {index}");
+    let field = |name: &str| format!("field {name}");
+    for (source, expected) in [
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; xs[0] + 1 }",
+            vec![load("xs"), member(0)],
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; 1 + xs[0] }",
+            vec![load("xs"), member(0)],
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; xs[0] + xs[1] }",
+            vec![load("xs"), member(0), load("xs"), member(1)],
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; xs[0] + xs[1] + 1 }",
+            vec![load("xs"), member(0), load("xs"), member(1)],
+        ),
+        (
+            "fn main() -> Int { let xs: List<List<Int>> = [[1, 2], [3]]; xs[0][1] + 1 }",
+            vec![load("xs"), member(0), member(1)],
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { let items: List<Item> = [Item { count: 3 }]; let value: Int = items[0].count + 1; value }",
+            vec![load("items"), member(0), field("count")],
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { let items: List<Item> = [Item { count: 3 }]; items[0].count + items[0].count }",
+            vec![
+                load("items"),
+                member(0),
+                field("count"),
+                load("items"),
+                member(0),
+                field("count"),
+            ],
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; discard xs[0] == 1; 0 }",
+            vec![load("xs"), member(0)],
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: an admitted operand must publish a program")
+        });
+        let shapes = program
+            .workflows()
+            .iter()
+            .map(|workflow| {
+                workflow
+                    .instructions
+                    .iter()
+                    .filter_map(|instruction| match &instruction.kind {
+                        InstructionKind::Load(name) => Some(format!("load {name}")),
+                        InstructionKind::Project(Projection::Member(index)) => {
+                            Some(format!("member {index}"))
+                        }
+                        InstructionKind::Project(Projection::Field(name)) => {
+                            Some(format!("field {name}"))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        // The pinned shape is the projection part a workflow starts with; a workflow that returns a
+        // binding continues with that binding's own load, which this check leaves to its own lane.
+        let lowered = shapes
+            .iter()
+            .any(|shape| shape.len() >= expected.len() && shape[..expected.len()] == expected[..]);
+        assert!(
+            lowered,
+            "source: {source}: the operand must lower as {expected:?}; shapes: {shapes:?}"
+        );
+    }
+
+    // A non-literal index still refuses instead of taking the receiver's type as its operand.
+    let source = "fn main() -> Int { let i: Int = 1; let xs: List<Int> = [1, 2]; xs[i] + 1 }";
+    root.write(source);
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+    let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+        panic!("source: {source}; type analysis failed internally: {error:?}")
+    });
+    assert_eq!(
+        refused.status(),
+        AnalysisStatus::Invalid,
+        "source: {source}; diagnostics: {:?}",
+        refused.diagnostics()
+    );
+    assert!(
+        refused.executable_program().is_none(),
+        "source: {source}: a refused operand must not publish a program"
+    );
+}
