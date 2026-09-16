@@ -1435,7 +1435,17 @@ impl Compiler<'_> {
             )?;
             return Ok(ty);
         }
-        if let Some(callee) = self.direct_target(&node) {
+        // The type phase reads a node with a top-level index postfix and no operator as one
+        // projection on its own, so a call nested in its receiver part must not claim the node:
+        // `head(xs)[0]` projects the call result instead of being the call `head(xs)`.
+        let projection_node = binary_operators(self.tree, node.children()).is_empty()
+            && node.children().iter().any(|child| {
+                self.tree.node(*child).is_some_and(|child| {
+                    matches!(child.form(), SyntaxForm::PostfixExpression)
+                        && node_contains_punctuation(self.tree, child, Punctuation::LeftBracket)
+                })
+            });
+        if let Some(callee) = self.direct_target(&node).filter(|_| !projection_node) {
             let receiver_type = callee.receiver_type();
             let shared_receiver = self.shared_receivers.contains(&callee);
             let owned_move_receiver = self.owned_move_receivers.get(&callee).copied();
@@ -1518,6 +1528,7 @@ impl Compiler<'_> {
             .calls
             .iter()
             .find(|call| &call.source == node.span())
+            .filter(|_| !projection_node)
         {
             let receiver = postfix_method_receiver(self.tree, &node);
             let callee = CanonicalCallableIdentity::free(&call.callee, &[]);
@@ -1786,7 +1797,28 @@ impl Compiler<'_> {
                     .find_map(|index| integer_literal(self.tree, index))
             })
             .ok_or(AnalysisError::Invariant)?;
-        if let Some(path) = direct_child_form(self.tree, node, SyntaxForm::Path) {
+        let receiver_children = node.children().get(..index_postfix).unwrap_or_default();
+        // A receiver part that carries a call or grouping parenthesis is a computed receiver:
+        // `head(xs)[0]` projects the call result, so the callee path must not be read as the
+        // projection's receiver, and the call arms above must not lower the call alone. The
+        // computed part leaves exactly the value this projection reads.
+        let computed_receiver = receiver_children.iter().any(|child| {
+            self.tree.node(*child).is_some_and(|child| {
+                node_is_call_postfix(self.tree, child)
+                    || matches!(
+                        child.form(),
+                        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+                    )
+            })
+        });
+        if computed_receiver {
+            if self
+                .compile_computed_projection_receiver(receiver_children)?
+                .is_none()
+            {
+                return Err(AnalysisError::Invariant);
+            }
+        } else if let Some(path) = direct_child_form(self.tree, node, SyntaxForm::Path) {
             let name = direct_identifier(self.tree, path).ok_or(AnalysisError::Invariant)?;
             self.emit(ty.clone(), InstructionKind::Load(name))?;
         } else if let Some(list) = node
@@ -1826,6 +1858,48 @@ impl Compiler<'_> {
         let projected =
             self.compile_projection_tail(node, index_postfix.saturating_add(1), ty, ty.clone())?;
         Ok(Some(projected))
+    }
+
+    /// Compiles one projection receiver part that is neither a place nor a literal aggregate.
+    ///
+    /// A projection receiver can be a grouping parenthesis around an inner expression
+    /// (`(xs)[0]`, `((xs))[0]`), a free call whose result is projected (`head(xs)[0]`), or a
+    /// receiver call (`b.all()[0]`). Each of those leaves exactly the receiver value on the
+    /// stack, and a part with none of those shapes reports no receiver so the caller keeps its
+    /// own arms for the place and literal receivers.
+    fn compile_computed_projection_receiver(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        if let Some(expression) = grouped_receiver_expression(self.tree, children) {
+            return self.compile_expression(expression).map(Some);
+        }
+        if let Some(result) = self.compile_receiver_call_operand(children)? {
+            return Ok(Some(result));
+        }
+        let Some((callee, result)) = self.direct_sequence_target(children) else {
+            return Ok(None);
+        };
+        let arguments = children
+            .iter()
+            .copied()
+            .filter(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+            })
+            .collect::<Vec<_>>();
+        for argument in &arguments {
+            self.compile_expression(*argument)?;
+        }
+        self.emit(
+            result.clone(),
+            InstructionKind::Call {
+                callee,
+                arguments: arguments.len(),
+            },
+        )?;
+        Ok(Some(result))
     }
 
     /// Emits the projection steps one chain applies after `after` of its direct children.
@@ -3379,6 +3453,39 @@ fn operand_index_place(
         }
     }
     (!path.is_empty()).then_some((root, path))
+}
+
+/// Returns the inner expression of one projection receiver part that is a grouping parenthesis.
+///
+/// The parser keeps every grouping layer as sibling parenthesis tokens around one expression, and
+/// `SPEC.md` keeps `(value)` as grouping, so `(xs)` and `((xs))` name the same receiver. A part
+/// whose remaining children are not one expression — a call, a literal, or a comma-separated
+/// tuple — reports no inner expression here.
+fn grouped_receiver_expression(tree: &SyntaxTree, children: &[NodeId]) -> Option<NodeId> {
+    let mut inner = children;
+    loop {
+        let (Some(open), Some(close)) = (inner.first().copied(), inner.last().copied()) else {
+            return None;
+        };
+        let open = tree.node(open)?;
+        let close = tree.node(close)?;
+        if !matches!(
+            open.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        ) || !matches!(
+            close.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+        ) {
+            return None;
+        }
+        let middle = inner.get(1..inner.len().checked_sub(1)?)?;
+        let [only] = middle else {
+            inner = middle;
+            continue;
+        };
+        let node = tree.node(*only)?;
+        return matches!(node.form(), SyntaxForm::Expression).then_some(*only);
+    }
 }
 
 /// Receiver selection of one split receiver-call operand.

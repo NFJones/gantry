@@ -7797,6 +7797,219 @@ fn public_literal_receiver_index_projections_are_lowered_and_typed() {
     );
 }
 
+/// A computed projection receiver is lowered as the value it produces, never as a callee path.
+///
+/// `SPEC.md` keeps `(value)` as grouping, so `(xs)[0]` and `((xs))[0]` project one element of
+/// `xs`, and a call receiver such as `head(xs)[0]` or `b.all()[0]` projects the call result. Each
+/// row below publishes the receiver value immediately before its member projection and executes to
+/// the element it names, and a receiver that is neither a list nor a tuple refuses with the
+/// published `projection-receiver-type` code instead of failing inside the evaluator
+/// (`GNT-GP-VALUE-004`).
+#[test]
+fn public_computed_projection_receivers_are_lowered_and_typed() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("computed projection did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    /// The receiver value one row must publish immediately before its member projection.
+    #[derive(Clone, Copy)]
+    enum ReceiverStep {
+        Load,
+        Call,
+        ReceiverCall,
+    }
+
+    let root = TempDirectory::new();
+    for (source, step, forbidden_load, index, expected) in [
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; (xs)[0] }",
+            ReceiverStep::Load,
+            None,
+            0usize,
+            1i64,
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; ((xs))[0] }",
+            ReceiverStep::Load,
+            None,
+            0,
+            1,
+        ),
+        (
+            "fn head(xs: List<Int>) -> List<Int> { xs } fn main() -> Int { head([1, 2])[0] }",
+            ReceiverStep::Call,
+            Some("head"),
+            0,
+            1,
+        ),
+        (
+            "fn head(xs: List<Int>) -> List<Int> { xs } fn main() -> Int { let xs: List<Int> = [1, 2]; head(xs)[1] }",
+            ReceiverStep::Call,
+            Some("head"),
+            1,
+            2,
+        ),
+        (
+            "struct Bag { items: List<Int> } impl Bag { fn all(self) -> List<Int> { self.items } } fn main() -> Int { let b: Bag = Bag { items: [1, 2] }; b.all()[0] }",
+            ReceiverStep::ReceiverCall,
+            None,
+            0,
+            1,
+        ),
+        (
+            "struct Bag { items: List<Int> } impl Bag { fn all(self) -> List<Int> { self.items } } fn main() -> Int { let b: Bag = Bag { items: [1, 2] }; b.all()[1] }",
+            ReceiverStep::ReceiverCall,
+            None,
+            1,
+            2,
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { let items: List<Item> = [Item { count: 5 }]; (items)[0].count }",
+            ReceiverStep::Load,
+            None,
+            0,
+            5,
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; (xs[0]) }",
+            ReceiverStep::Load,
+            None,
+            0,
+            1,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: a computed receiver must publish a program")
+        });
+        let kinds = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .map(|instruction| &instruction.kind)
+            .collect::<Vec<_>>();
+        let projected = kinds.windows(2).any(|window| {
+            let receiver_matches = match step {
+                ReceiverStep::Load => matches!(window[0], InstructionKind::Load(_)),
+                ReceiverStep::Call => matches!(window[0], InstructionKind::Call { .. }),
+                ReceiverStep::ReceiverCall => {
+                    matches!(window[0], InstructionKind::ReceiverCall { .. })
+                }
+            };
+            receiver_matches
+                && matches!(
+                    window[1],
+                    InstructionKind::Project(Projection::Member(projected)) if *projected == index
+                )
+        });
+        assert!(
+            projected,
+            "source: {source}: the receiver value must precede member {index}"
+        );
+        if let Some(callee) = forbidden_load {
+            assert!(
+                !kinds.iter().any(
+                    |kind| matches!(kind, InstructionKind::Load(name) if name.as_ref() == callee)
+                ),
+                "source: {source}: the callee {callee} must not be loaded as the receiver"
+            );
+        }
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x41; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+
+    // A receiver that is neither a list nor a tuple has no element to project, so it refuses with
+    // its own published code and publishes no program.
+    for (source, actual) in [
+        ("fn main() -> Int { (1 + 2)[0] }", "Int"),
+        (
+            "fn main() -> Int { let t: String = \"ab\"; t[0] }",
+            "String",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax)
+            .unwrap_or_else(|error| panic!("source: {source}; type analysis failed: {error:?}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = refused
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "projection-receiver-type")
+            .unwrap_or_else(|| {
+                panic!("source: {source}; diagnostics: {:?}", refused.diagnostics())
+            });
+        assert_eq!(refusal.category, DiagnosticCategory::Type);
+        assert_eq!(
+            refusal.fields.get("actual").map(AsRef::as_ref),
+            Some(actual),
+            "source: {source}; fields: {:?}",
+            refusal.fields
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused receiver must not publish a program"
+        );
+    }
+}
+
 /// A split index-projection operand is the element it reads rather than its receiver.
 ///
 /// The parser flattens `xs[0]` into sibling fragments, so an enclosing operator receives a

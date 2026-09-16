@@ -7351,6 +7351,21 @@ fn infer_projection(
             diagnostics,
         );
     }
+    // `SPEC.md` defines postfix `[expression]` over a list, and a tuple projection over a
+    // literal index, and the runtime projects a member of a list or tuple value alone. Any
+    // other receiver has no element to project: admitting `(1 + 2)[0]` or an index over a
+    // `String` would leave the lowering with no receiver value at all, so it is refused here.
+    let span = match receiver_children.first() {
+        Some(first) => projection_prefix_span(tree, *first, index_expression)?,
+        None => node.span().clone(),
+    };
+    diagnostics.push(body_diagnostic(
+        "projection-receiver-type",
+        DiagnosticCategory::Type,
+        "an index projection receiver is not a list or tuple",
+        span,
+        [("actual", receiver_type.canonical_string())],
+    )?);
     Ok(None)
 }
 

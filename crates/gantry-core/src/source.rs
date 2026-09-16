@@ -1789,6 +1789,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A list projection index is not Int.",
     },
     DiagnosticCodeDefinition {
+        code: "projection-receiver-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An index projection receiver is not a list or tuple.",
+    },
+    DiagnosticCodeDefinition {
         code: "receiver-scope",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
