@@ -5632,7 +5632,7 @@ fn public_callable_type_annotations_are_admitted_in_signatures() {
 
     // The admitted annotation resolves to the canonical callable type of its shape, and the
     // published executable program carries that descriptor as the parameter it names.
-    root.write("fn apply(callback: Fn(Int) -> Int) -> Int { 0 } fn main() { discard apply; }");
+    root.write("fn apply(callback: Fn(Int) -> Int) -> Int { 0 } fn main() {}");
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     let admitted = analyze_package_types(&syntax)
@@ -6136,15 +6136,15 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
     let root = TempDirectory::new();
     for (source, reuse_kind) in [
         (
-            "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { callback(value) } fn main() -> Int { discard apply; 0 }",
+            "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { callback(value) } fn main() -> Int { 0 }",
             "Fn",
         ),
         (
-            "fn apply(callback: FnMut() -> Int) -> Int { callback() } fn main() -> Int { discard apply; 0 }",
+            "fn apply(callback: FnMut() -> Int) -> Int { callback() } fn main() -> Int { 0 }",
             "FnMut",
         ),
         (
-            "fn apply(callback: FnOnce(Int) -> Int, value: Int) -> Int { callback(value) } fn main() -> Int { discard apply; 0 }",
+            "fn apply(callback: FnOnce(Int) -> Int, value: Int) -> Int { callback(value) } fn main() -> Int { 0 }",
             "FnOnce",
         ),
     ] {
@@ -6191,9 +6191,9 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
     // A parenthesized callee is peeled before the binding lookup, so a grouped call is
     // refused by the same rule instead of being mistyped as its own callee.
     for source in [
-        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback)(1); 0 } fn main() -> Int { discard apply; 0 }",
-        "fn apply(callback: Fn(Int) -> Int, value: Bool) -> Int { (callback)(value) } fn main() -> Int { discard apply; 0 }",
-        "fn apply(callback: Fn(Int) -> Int) -> Int { (callback)(1) } fn main() -> Int { discard apply; 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback)(1); 0 } fn main() -> Int { 0 }",
+        "fn apply(callback: Fn(Int) -> Int, value: Bool) -> Int { (callback)(value) } fn main() -> Int { 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Int { (callback)(1) } fn main() -> Int { 0 }",
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -6236,15 +6236,15 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
     // invocation, so the turbofish spelling is refused with the same rule and span.
     for (source, call) in [
         (
-            "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback)::<Int>(1); 0 } fn main() -> Int { discard apply; 0 }",
+            "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback)::<Int>(1); 0 } fn main() -> Int { 0 }",
             "(callback)::<Int>(1)",
         ),
         (
-            "fn apply(callback: Fn(Int) -> Int) -> Int { ((callback))::<Int>(1) } fn main() -> Int { discard apply; 0 }",
+            "fn apply(callback: Fn(Int) -> Int) -> Int { ((callback))::<Int>(1) } fn main() -> Int { 0 }",
             "((callback))::<Int>(1)",
         ),
         (
-            "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback)::<Int>(1) } fn main() -> Int { discard apply; 0 }",
+            "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback)::<Int>(1) } fn main() -> Int { 0 }",
             "(callback)::<Int>(1)",
         ),
     ] {
@@ -6299,7 +6299,7 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
     // A grouped call is typed as the callee's declared result instead of as the callee, so
     // holding it in a callable position is a genuine mismatch rather than a silent
     // admission of the call.
-    let grouped = "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback)(1) } fn main() -> Int { discard apply; 0 }";
+    let grouped = "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback)(1) } fn main() -> Int { 0 }";
     root.write(grouped);
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
@@ -6329,7 +6329,7 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
     // A group consumed by a binary expression is not an invocation either, so the refusal
     // stays reserved for a group that an argument list follows.
     root.write(
-        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback) + (1); 0 } fn main() -> Int { discard apply; 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback) + (1); 0 } fn main() -> Int { 0 }",
     );
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
@@ -6352,12 +6352,12 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
     // Declaring, passing, and holding a callable value stays admitted: only the call
     // through a callable-typed binding is refused.
     for source in [
-        "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { discard apply; 0 }",
-        "fn inc(value: Int) -> Int { value } fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { discard apply(inc, 1); 0 }",
-        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback); 0 } fn main() -> Int { discard apply; 0 }",
-        "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback) } fn main() -> Int { discard apply; 0 }",
-        "fn consume(value: Fn(Int) -> Int) -> Int { 0 } fn apply(callback: Fn(Int) -> Int) -> Int { discard consume((callback)); 0 } fn main() -> Int { discard apply; 0 }",
-        "fn apply(callback: Fn(Int) -> Int) -> Int { discard ((callback)); 0 } fn main() -> Int { discard apply; 0 }",
+        "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { 0 }",
+        "fn consume(value: Fn(Int) -> Int) -> Int { 0 } fn forward(callback: Fn(Int) -> Int) -> Int { discard consume(callback); 0 } fn main() -> Int { 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback); 0 } fn main() -> Int { 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback) } fn main() -> Int { 0 }",
+        "fn consume(value: Fn(Int) -> Int) -> Int { 0 } fn apply(callback: Fn(Int) -> Int) -> Int { discard consume((callback)); 0 } fn main() -> Int { 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Int { discard ((callback)); 0 } fn main() -> Int { 0 }",
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -6494,7 +6494,7 @@ fn public_non_callable_callees_are_refused_instead_of_being_typed_as_their_calle
         declared.diagnostics()
     );
     root.write(
-        "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { discard callback(value); 0 } fn main() -> Int { discard apply; 0 }",
+        "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { discard callback(value); 0 } fn main() -> Int { 0 }",
     );
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
@@ -6516,6 +6516,110 @@ fn public_non_callable_callees_are_refused_instead_of_being_typed_as_their_calle
             .all(|diagnostic| diagnostic.code.as_str() != "invalid-call-target"),
         "{:?}",
         callable.diagnostics()
+    );
+}
+
+/// A name that denotes a declared callable is not a value: this revision admits no source
+/// callable value (`GNT-37.0`), so the name is refused with its published spelling in
+/// every position that requires one, including the qualified spelling, instead of the
+/// analyzer dropping an untyped value into an admitted program.
+#[test]
+fn public_declared_callable_names_are_refused_in_value_positions() {
+    let root = TempDirectory::new();
+    for (source, identifier) in [
+        (
+            "fn inc(value: Int) -> Int { value } fn main() -> Int { discard inc; 0 }",
+            "inc",
+        ),
+        (
+            "fn f(value: Int) -> Int { value } fn inc(value: Int) -> Int { value } fn main() -> Int { f(inc) }",
+            "inc",
+        ),
+        (
+            "fn inc(value: Int) -> Int { value } fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { discard apply(inc, 1); 0 }",
+            "inc",
+        ),
+        (
+            "fn inc(value: Int) -> Int { value } fn main() -> Int { discard crate::inc; 0 }",
+            "inc",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics().len(),
+            1,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = &refused.diagnostics()[0];
+        assert_eq!(refusal.code.as_str(), "callable-reference-unadmitted");
+        assert_eq!(refusal.category, DiagnosticCategory::Type);
+        assert_eq!(
+            refusal.fields.get("identifier").map(AsRef::as_ref),
+            Some(identifier),
+            "source: {source}"
+        );
+        let main_start = source.find("fn main").unwrap_or(0) as u64;
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        assert!(
+            primary.bytes().start() >= main_start,
+            "source: {source}: refusal precedes the reference"
+        );
+    }
+
+    // A declared callable stays reachable through a direct call, a declared type stays
+    // reachable through its struct expression, and a callable-typed parameter is still
+    // forwarded as a call argument.
+    for source in [
+        "fn inc(value: Int) -> Int { value } fn main() -> Int { discard inc(1); 0 }",
+        "struct Item { count: Int } fn main() -> Int { let item: Item = Item { count: 1 }; discard item; 0 }",
+        "fn consume(value: Fn(Int) -> Int) -> Int { 0 } fn forward(callback: Fn(Int) -> Int) -> Int { discard consume(callback); 0 } fn main() -> Int { 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+    }
+
+    // A call through a callable-typed binding keeps the invocation refusal, which
+    // `GNT-37.10` owns rather than the reference refusal this lane covers.
+    root.write("fn apply(callback: Fn(Int) -> Int) -> Int { callback(1) } fn main() -> Int { 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let invoked = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(invoked.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        invoked.diagnostics().len(),
+        1,
+        "{:?}",
+        invoked.diagnostics()
+    );
+    assert_eq!(
+        invoked.diagnostics()[0].code.as_str(),
+        "callable-invocation-unadmitted"
     );
 }
 

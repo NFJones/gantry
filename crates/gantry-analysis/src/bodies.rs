@@ -301,6 +301,7 @@ struct BodyContext {
     actions: BTreeMap<SymbolId, CallableSignature>,
     methods: BTreeMap<(TypeDescriptor, Arc<str>), CallableSignature>,
     references: BTreeMap<SourceSpan, SymbolId>,
+    callee_spans: BTreeSet<SourceSpan>,
     structs: BTreeMap<SymbolId, StructShape>,
     generic_structs: BTreeMap<SymbolId, GenericStructShape>,
     enums: BTreeMap<SymbolId, EnumShape>,
@@ -395,6 +396,39 @@ fn build_body_context(
         .iter()
         .map(|symbol| (symbol.id, symbol))
         .collect::<BTreeMap<_, _>>();
+    let mut callee_spans = BTreeSet::new();
+    for source in sources {
+        for node in source.tree().nodes() {
+            let children = node.children();
+            let Some(open) = children.iter().position(|child| {
+                node_contains_punctuation(source.tree(), *child, Punctuation::LeftParenthesis)
+            }) else {
+                continue;
+            };
+            if let Some(callee) = children
+                .get(..open)
+                .unwrap_or_default()
+                .iter()
+                .copied()
+                .find(|child| {
+                    source
+                        .tree()
+                        .node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
+                })
+            {
+                if let Some(callee) = source.tree().node(callee) {
+                    callee_spans.insert(callee.span().clone());
+                }
+                continue;
+            }
+            if let Some(peeled) = parenthesized_callee_path(source.tree(), children)?
+                && let Some(callee) = source.tree().node(peeled)
+            {
+                callee_spans.insert(callee.span().clone());
+            }
+        }
+    }
     let trait_symbols = structure
         .symbols()
         .iter()
@@ -966,6 +1000,7 @@ fn build_body_context(
         actions,
         methods,
         references,
+        callee_spans,
         structs,
         generic_structs,
         enums,
@@ -5960,17 +5995,27 @@ fn infer_expression_inner(
                 }
             }
             SyntaxForm::Path => {
-                if let Some(name) = direct_identifier(tree, child)? {
-                    if let Some(ty) = environment.get(&name).cloned() {
-                        record_affine_read(
-                            name,
-                            &ty,
-                            child_node.span().clone(),
-                            context,
-                            diagnostics,
-                        )?;
-                        return Ok(Some(ty));
-                    }
+                if let Some(name) = direct_identifier(tree, child)?
+                    && let Some(ty) = environment.get(&name).cloned()
+                {
+                    record_affine_read(name, &ty, child_node.span().clone(), context, diagnostics)?;
+                    return Ok(Some(ty));
+                }
+                // A name that denotes a declared callable is not a value derivation in this
+                // revision: `GNT-37.0` admits no source callable value, and a declared callable
+                // is reachable only through a direct call, whose callee position this leaves
+                // unchanged. Refusing the name here keeps an untyped value expression out of
+                // every consumer instead of lowering a program that cannot execute it.
+                if !context.callee_spans.contains(child_node.span())
+                    && let Some(identifier) = declared_callable_identifier(tree, child, context)?
+                {
+                    diagnostics.push(body_diagnostic(
+                        "callable-reference-unadmitted",
+                        DiagnosticCategory::Type,
+                        "a name that denotes a declared callable is not a value",
+                        child_node.span().clone(),
+                        [("identifier", identifier.to_string())],
+                    )?);
                     return Ok(None);
                 }
             }
@@ -11502,6 +11547,38 @@ fn direct_identifiers(tree: &SyntaxTree, node: NodeId) -> Result<Vec<Arc<str>>, 
             _ => None,
         })
         .collect())
+}
+
+/// Returns the identifier of one path that denotes a declared callable.
+///
+/// `GNT-37.0` admits no source callable value, so a path whose identifier names a
+/// declared callable has no value derivation outside a direct call's callee position,
+/// which the caller excludes through the recorded call references.
+fn declared_callable_identifier(
+    tree: &SyntaxTree,
+    path: NodeId,
+    context: &BodyContext,
+) -> Result<Option<Arc<str>>, AnalysisError> {
+    let node = tree.node(path).ok_or(AnalysisError::Invariant)?;
+    let Some(symbol) = context.references.get(node.span()) else {
+        return Ok(None);
+    };
+    if !(context.callables.contains_key(symbol)
+        || context.generic_callables.contains_key(symbol)
+        || context.actions.contains_key(symbol))
+    {
+        return Ok(None);
+    }
+    let mut identifiers = Vec::new();
+    let mut stack = vec![path];
+    while let Some(id) = stack.pop() {
+        let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if let SyntaxForm::Token(TokenKind::Identifier(name)) = node.form() {
+            identifiers.push(name.clone());
+        }
+        stack.extend(node.children().iter().rev().copied());
+    }
+    Ok(identifiers.last().cloned())
 }
 
 fn is_token(form: &SyntaxForm) -> bool {
