@@ -8136,11 +8136,12 @@ fn public_split_index_projection_operands_are_typed_and_lowered() {
 ///
 /// An operator receives the projection of a computed receiver either as sibling fragments or as
 /// one nested expression. The analyzer types that operand as the element of the receiver part
-/// (grouping parenthesis, a receiver call such as `b.all()[0]`, or a free call on the right
-/// operand) and the lowering leaves the receiver value on the stack immediately before its member
-/// projection, which the shape and execution checks below pin per row. The shapes the operand walk
-/// cannot key yet refuse with a published type diagnostic and publish no program instead of
-/// failing inside the evaluator (`GNT-GP-VALUE-007`).
+/// (grouping parenthesis, a receiver call such as `b.all()[0]`, or a free call such as
+/// `head(xs)[0]` in either operand position) and the lowering leaves the receiver value on the
+/// stack immediately before its member projection, which the shape and execution checks below pin
+/// per row. The shapes the operand walk cannot key yet refuse with a published type diagnostic and
+/// publish no program instead of failing inside the evaluator (`GNT-GP-VALUE-007`,
+/// `GNT-GP-VALUE-008`).
 #[test]
 fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
     use std::sync::Arc;
@@ -8208,6 +8209,18 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
             3,
         ),
         (
+            "fn head(xs: List<Int>) -> List<Int> { xs } fn main() -> Int { let xs: List<Int> = [1, 2]; head(xs)[0] + 1 }",
+            2,
+        ),
+        (
+            "fn head(xs: List<Int>) -> List<Int> { xs } fn main() -> Int { let xs: List<Int> = [1, 2]; head(xs)[0] + head(xs)[1] }",
+            3,
+        ),
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { bag()[0].count + 1 }",
+            42,
+        ),
+        (
             "struct Item { count: Int } fn main() -> Int { let items: List<Item> = [Item { count: 3 }]; (items)[0].count + 1 }",
             4,
         ),
@@ -8271,14 +8284,6 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
 
     // A shape the operand walk cannot key yet refuses precisely and publishes no program.
     for (source, code) in [
-        (
-            "fn head(xs: List<Int>) -> List<Int> { xs } fn main() -> Int { let xs: List<Int> = [1, 2]; head(xs)[0] + 1 }",
-            "invalid-primitive",
-        ),
-        (
-            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { bag()[0].count + 1 }",
-            "type-mismatch",
-        ),
         (
             "fn main() -> Int { let i: Int = 1; i[0] + 1 }",
             "projection-receiver-type",

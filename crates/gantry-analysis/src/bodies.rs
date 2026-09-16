@@ -8294,13 +8294,14 @@ fn operand_projection_supported(operator: Punctuation) -> bool {
     )
 }
 
-/// Reports whether one operand slice indexes the result of a receiver call.
+/// Reports whether one operand slice indexes the result of a call.
 ///
-/// The parser splits a leading dotted receiver call plus index postfix into sibling children, so
-/// `b.all()[0]` arrives as the receiver path, the member, the call, and the index postfix. The
-/// member and call arms would otherwise type the whole slice as the value that call produces, so a
-/// slice whose index postfix follows a receiver call takes the projection walk first and is typed
-/// as the element. A free call (`head(xs)[0]`) is not this shape and keeps its own arms.
+/// The parser splits a leading call plus index postfix into sibling children, so `b.all()[0]`
+/// arrives as the receiver path, the member, the call, and the index postfix, and `head(xs)[0]`
+/// arrives as the callee path, the call, the argument, and the index postfix. The member and call
+/// arms would otherwise type the whole slice as the value that call produces, so a slice whose
+/// index postfix follows a call takes the projection walk first and is typed as the element. A
+/// grouping receiver (`(xs)[0]`) carries no call and keeps its own arms.
 fn operand_index_projection_has_receiver_call(tree: &SyntaxTree, children: &[NodeId]) -> bool {
     let Some(index_postfix) = children.iter().position(|child| {
         tree.node(*child).is_some_and(|node| {
@@ -8311,16 +8312,12 @@ fn operand_index_projection_has_receiver_call(tree: &SyntaxTree, children: &[Nod
         return false;
     };
     let receiver = children.get(..index_postfix).unwrap_or_default();
-    let calls = receiver.iter().any(|child| {
+    receiver.iter().any(|child| {
         tree.node(*child).is_some_and(|node| {
             matches!(node.form(), SyntaxForm::PostfixExpression)
                 && node_contains_punctuation(tree, *child, Punctuation::LeftParenthesis)
         })
-    });
-    let dotted = receiver
-        .iter()
-        .any(|child| node_contains_punctuation(tree, *child, Punctuation::Dot));
-    calls && dotted
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

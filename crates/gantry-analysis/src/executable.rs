@@ -2267,11 +2267,13 @@ impl Compiler<'_> {
     }
 
     fn compile_sequence(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
-        // A slice whose own child is a projection of a call result is not that call: `head(xs)[0]`
-        // must compile the projection instead of the call and then the projection again.
+        // A slice that indexes the result of a call is not that call, whether the index postfix is
+        // nested in one child or a sibling fragment of the flattened slice: `head(xs)[0]` must
+        // compile the projection instead of the call and then the projection again.
         let projects = children
             .iter()
-            .any(|child| is_projection_node(self.tree, *child));
+            .any(|child| is_projection_node(self.tree, *child))
+            || slice_indexes_call_result(self.tree, children);
         if !projects && let Some((callee, result)) = self.direct_sequence_target(children) {
             let arguments = children
                 .iter()
@@ -3375,12 +3377,9 @@ fn postfix_projection_steps(
             continue;
         }
         if node_contains_punctuation(tree, step, Punctuation::Dot) {
-            let SyntaxForm::Token(TokenKind::Identifier(field)) =
-                tree.node(*children.get(cursor.checked_add(1)?)?)?.form()
-            else {
-                return None;
-            };
-            steps.push(ProjectionChainStep::Field(field.clone()));
+            let member = *children.get(cursor.checked_add(1)?)?;
+            let field = projection_member_identifier(tree, member)?;
+            steps.push(ProjectionChainStep::Field(field));
             cursor += 2;
             continue;
         }
@@ -3399,10 +3398,70 @@ fn postfix_projection_steps(
     Some(steps)
 }
 
+/// Reports whether one slice indexes the result of a call with a sibling index postfix.
+///
+/// The parser flattens a leading call and a top-level index postfix into siblings, so
+/// `head(xs)[0]` is one slice that is not the call itself. An index postfix that still has a
+/// closing parenthesis after it belongs to a call's argument list instead (`f(xs[0])`), where the
+/// slice really is that call, and a slice without a call postfix stays with the other arms.
+fn slice_indexes_call_result(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    let Some(index_postfix) = children.iter().position(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, node, Punctuation::LeftBracket)
+        })
+    }) else {
+        return false;
+    };
+    let calls = children
+        .get(..index_postfix)
+        .unwrap_or_default()
+        .iter()
+        .any(|child| {
+            tree.node(*child).is_some_and(|node| {
+                matches!(node.form(), SyntaxForm::PostfixExpression)
+                    && node_contains_punctuation(tree, node, Punctuation::LeftParenthesis)
+            })
+        });
+    if !calls {
+        return false;
+    }
+    !children
+        .iter()
+        .skip(index_postfix.saturating_add(1))
+        .any(|child| {
+            tree.node(*child).is_some_and(|node| {
+                matches!(
+                    node.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+                )
+            })
+        })
+}
+
 /// One step of a postfix projection chain over a binding root.
 enum ProjectionChainStep {
     Field(Arc<str>),
     Member(usize),
+}
+
+/// Returns the member name one dotted projection step names.
+///
+/// The parser hands a member name either as its own identifier token or wrapped in one
+/// one-expression node, so both spellings resolve to the same field and a step the walk cannot
+/// key still reports no steps at all.
+fn projection_member_identifier(tree: &SyntaxTree, id: NodeId) -> Option<Arc<str>> {
+    let node = tree.node(id)?;
+    match node.form() {
+        SyntaxForm::Token(TokenKind::Identifier(value)) => Some(Arc::clone(value)),
+        SyntaxForm::Expression | SyntaxForm::BinaryExpression | SyntaxForm::Path => {
+            let [inner] = node.children() else {
+                return None;
+            };
+            projection_member_identifier(tree, *inner)
+        }
+        _ => None,
+    }
 }
 
 /// Returns the root binding and the ordered steps of one postfix chain over that binding.
