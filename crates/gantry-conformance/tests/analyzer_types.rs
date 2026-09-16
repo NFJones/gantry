@@ -6920,6 +6920,136 @@ fn public_callable_expressions_are_refused_without_internal_failure() {
     );
 }
 
+/// A call whose callee is not a path or a single-identifier group has no derivation
+/// (`GNT-3-T-CALL`): a literal, a Boolean, a string, the `self` receiver, and a name that
+/// resolves to a declaration which is not a callable are refused with the published
+/// `invalid-call-target` code across the complete call span, with the callee type reported
+/// where one is known, so no sequence without a call derivation silently drops an argument
+/// list, including a bracket- or brace-delimited operand and an argument list applied to a
+/// call result.
+#[test]
+fn public_non_path_callee_shapes_are_refused() {
+    let root = TempDirectory::new();
+    for (source, call, callee_type) in [
+        ("fn main() -> Int { 1(2) }", "1(2)", Some("Int")),
+        ("fn main() -> Bool { true(2) }", "true(2)", Some("Bool")),
+        (
+            "fn main() -> String { \"abc\"(2) }",
+            "\"abc\"(2)",
+            Some("String"),
+        ),
+        (
+            "struct Item {} impl Item { fn f(self) { discard self(2); } } fn main() -> Int { 0 }",
+            "self(2)",
+            Some("crate::Item"),
+        ),
+        (
+            "struct Item {} fn main() -> Int { discard Item(2); 0 }",
+            "Item(2)",
+            None,
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { discard Item(1, 2); 0 }",
+            "Item(1, 2)",
+            None,
+        ),
+        ("fn main() -> List<Int> { [1, 2](3) }", "[1, 2](3)", None),
+        (
+            "fn main() -> Int { discard [1, 2](3); 0 }",
+            "[1, 2](3)",
+            None,
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { discard Item { count: 1 }(2); 0 }",
+            "Item { count: 1 }(2)",
+            None,
+        ),
+        (
+            "fn f(value: Int) -> Int { value } fn main() -> Int { discard f(1)(2); 0 }",
+            "f(1)(2)",
+            None,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused call must not publish an executable program"
+        );
+        let refusals = refused
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_str() == "invalid-call-target")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            refusals.len(),
+            1,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = refusals[0];
+        assert_eq!(refusal.category, DiagnosticCategory::Type);
+        assert_eq!(
+            refusal.fields.get("callee_type").map(AsRef::as_ref),
+            callee_type,
+            "source: {source}"
+        );
+        let call_start = source
+            .find(call)
+            .unwrap_or_else(|| panic!("source: {source}: missing call"))
+            as u64;
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        assert_eq!(primary.bytes().start(), call_start, "source: {source}");
+        assert_eq!(
+            primary.bytes().end(),
+            call_start + call.len() as u64,
+            "source: {source}"
+        );
+    }
+
+    // An operator between an operand and its parenthesis keeps its own meaning, and the
+    // admitted call, constructor, receiver-read, and enum-constructor forms keep theirs.
+    for source in [
+        "fn main() -> Int { 1 + (2) }",
+        "struct Item { count: Int } fn main() -> Int { let item: Item = Item { count: 1 }; item.count }",
+        "fn f(value: Int) -> Int { value } fn main() -> Int { f(1) }",
+        "enum Flag { On, Off } fn main() -> Int { let flag: Flag = Flag::On; 0 }",
+        "enum E { V(Int) } fn main() -> Int { let value: E = E::V(1); 0 }",
+        "struct Item { count: Int } impl Item { fn bump(self) -> Int { self.count } } fn main() -> Int { let item: Item = Item { count: 1 }; item.bump() }",
+        "struct Item {} impl Item { fn f(self) { discard self; } } fn main() -> Int { 0 }",
+        "fn main() -> Int { let values: List<Int> = [1, 2]; values[0] }",
+        "fn f(values: List<Int>) -> Int { 0 } fn main() -> Int { f([1, 2]) }",
+        "struct Item { count: Int } fn f(item: Item) -> Int { 0 } fn main() -> Int { f(Item { count: 1 }) }",
+        "fn g(value: Int) -> Int { value } fn f(value: Int) -> Int { value } fn main() -> Int { f(g(1)) }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+    }
+}
+
 /// An annotation naming a type that no declaration provides is refused precisely, including when
 /// the enclosing declaration is reachable and would otherwise be lowered into an executable program.
 #[test]

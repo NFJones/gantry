@@ -5717,6 +5717,9 @@ fn infer_expression_inner(
         )?);
         return Ok(None);
     }
+    if refuse_completed_operand_callee(tree, node.children(), environment, diagnostics)? {
+        return Ok(None);
+    }
     if let [left, right] = node.children()
         && node_is_punctuation(tree, *left, Punctuation::LeftParenthesis)
         && node_is_punctuation(tree, *right, Punctuation::RightParenthesis)
@@ -9769,6 +9772,19 @@ fn infer_call_sequence(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    // A sequence that applies an argument list to a call result (`f(1)(2)`, `1(2)(3)`) has
+    // no derivation: a call result is a value rather than a callable (`GNT-3-T-CALL`), and
+    // the trailing argument list must be refused instead of reaching lowering.
+    if let Some(span) = call_result_callee_span(tree, children)? {
+        diagnostics.push(body_diagnostic(
+            "invalid-call-target",
+            DiagnosticCategory::Type,
+            "an ordinary call resolves to a value that is not callable",
+            span,
+            [] as [(&str, &str); 0],
+        )?);
+        return Ok(None);
+    }
     let Some(open) = children
         .iter()
         .position(|child| node_contains_punctuation(tree, *child, Punctuation::LeftParenthesis))
@@ -9878,6 +9894,39 @@ fn infer_call_sequence(
                 [("callee_type", ty.canonical_string())],
             )?);
         }
+        // The `self` receiver is a value whose type is not callable, so a call through it
+        // has no derivation either (`GNT-3-T-CALL`); it is a reserved word rather than an
+        // identifier, so the binding guard above cannot see it. A projected receiver keeps
+        // its own member resolution, which reports the member failure.
+        else if direct_reserved_word(tree, path).as_deref() == Some("self")
+            && !children
+                .iter()
+                .any(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
+        {
+            let span = if parenthesized {
+                call_sequence_children_span(tree, children)
+            } else {
+                call_sequence_span(tree, children, path)
+            }
+            .unwrap_or_else(|| path.span().clone());
+            if let Some(callee_type) = environment.get("self").cloned() {
+                diagnostics.push(body_diagnostic(
+                    "invalid-call-target",
+                    DiagnosticCategory::Type,
+                    "an ordinary call resolves to a value that is not callable",
+                    span,
+                    [("callee_type", callee_type.canonical_string())],
+                )?);
+            } else {
+                diagnostics.push(body_diagnostic(
+                    "invalid-call-target",
+                    DiagnosticCategory::Type,
+                    "an ordinary call resolves to a value that is not callable",
+                    span,
+                    [] as [(&str, &str); 0],
+                )?);
+            }
+        }
         return Ok(None);
     };
     if let Some(trait_path) = context.trait_symbols.get(&target) {
@@ -9915,6 +9964,21 @@ fn infer_call_sequence(
                 DiagnosticCategory::Type,
                 "an ordinary call resolves to a declared action",
                 path.span().clone(),
+                [] as [(&str, &str); 0],
+            )?);
+        } else if !children
+            .iter()
+            .any(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
+        {
+            // A name that resolves to a declaration which is not a callable has no
+            // derivation as a callee (`GNT-3-T-CALL`), so the sequence is refused instead
+            // of being typed as its callee with its argument list left unchecked; a member
+            // path keeps its own member resolution, which reports the member failure.
+            diagnostics.push(body_diagnostic(
+                "invalid-call-target",
+                DiagnosticCategory::Type,
+                "an ordinary call resolves to a declaration that is not callable",
+                call_sequence_span(tree, children, path).unwrap_or_else(|| path.span().clone()),
                 [] as [(&str, &str); 0],
             )?);
         }
@@ -11757,6 +11821,188 @@ pub(crate) fn expression_callee_span(
     let first_node = tree.node(first).ok_or(AnalysisError::Invariant)?;
     let close_token = tokens.get(close).copied().ok_or(AnalysisError::Invariant)?;
     let last_node = tree.node(close_token).ok_or(AnalysisError::Invariant)?;
+    Ok((first_node.span().source() == last_node.span().source())
+        .then(|| {
+            SourceSpan::from_portable_parts(
+                first_node.span().source().package_path().as_str(),
+                first_node.span().bytes().start(),
+                last_node.span().bytes().end(),
+            )
+            .ok()
+        })
+        .flatten())
+}
+
+/// Returns the node and span of one completed operand that an argument list follows.
+///
+/// The caller reaches this helper only when the sequence has no path callee, no leading
+/// callee group, and no call-shaped expression callee, so a literal, a Boolean, or the
+/// `self` receiver directly followed by an argument list is a call on a value, which
+/// `GNT-3-T-CALL` gives no derivation: the refusal reports this operand instead of typing
+/// the sequence as its callee and dropping the argument list. An operator between the
+/// operand and the argument list (`1 + (2)`) keeps its own meaning.
+fn completed_operand_callee(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Result<Option<(NodeId, SourceSpan)>, AnalysisError> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let current = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if matches!(current.form(), SyntaxForm::Token(_)) {
+            tokens.push(id);
+        } else {
+            work.extend(current.children().iter().rev().copied());
+        }
+    }
+    let Some(first) = tokens.first().copied() else {
+        return Ok(None);
+    };
+    // A leading group is the expression-callee case, which its own refusal owns.
+    if node_is_punctuation(tree, first, Punctuation::LeftParenthesis) {
+        return Ok(None);
+    }
+    let Some(open) = tokens
+        .iter()
+        .position(|token| node_is_punctuation(tree, *token, Punctuation::LeftParenthesis))
+    else {
+        return Ok(None);
+    };
+    let Some(previous) = open
+        .checked_sub(1)
+        .and_then(|index| tokens.get(index))
+        .copied()
+    else {
+        return Ok(None);
+    };
+    let operand = tree.node(previous).ok_or(AnalysisError::Invariant)?;
+    let completed = match operand.form() {
+        SyntaxForm::Token(
+            TokenKind::IntegerLiteral(_)
+            | TokenKind::FloatLiteral(_)
+            | TokenKind::StringLiteral(_)
+            | TokenKind::RawStringLiteral(_),
+        ) => true,
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) => {
+            matches!(word.spelling(), "true" | "false" | "self")
+        }
+        // A bracket- or brace-delimited operand such as `[1, 2](3)` or `Item { }(3)` is a
+        // completed operand too, so the same refusal covers it instead of the sequence
+        // being typed as its own callee with the argument list dropped.
+        SyntaxForm::Token(TokenKind::Punctuation(
+            Punctuation::RightBracket | Punctuation::RightBrace,
+        )) => true,
+        _ => false,
+    };
+    Ok(completed.then(|| (previous, operand.span().clone())))
+}
+
+/// Refuses one call whose callee is a completed operand rather than a callable path.
+///
+/// A literal, a Boolean, a string, a bracket- or brace-delimited operand, or the `self`
+/// receiver directly followed by an argument list is a call on a value, which
+/// `GNT-3-T-CALL` gives no derivation: the refusal runs before the list, struct, receiver,
+/// or sequence branch types the sequence as its own callee and drops the argument list,
+/// and the callee type is reported where one is known.
+fn refuse_completed_operand_callee(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<bool, AnalysisError> {
+    let Some((callee_id, callee_span)) = completed_operand_callee(tree, children)? else {
+        return Ok(false);
+    };
+    let callee = tree.node(callee_id).ok_or(AnalysisError::Invariant)?;
+    let span = call_sequence_span(tree, children, callee).unwrap_or(callee_span);
+    let callee_type = match callee.form() {
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+            environment.get("self").cloned()
+        }
+        SyntaxForm::Token(token) => token_type(token, span.clone(), None, diagnostics)?,
+        _ => None,
+    };
+    if let Some(callee_type) = callee_type {
+        diagnostics.push(body_diagnostic(
+            "invalid-call-target",
+            DiagnosticCategory::Type,
+            "an ordinary call resolves to a value that is not callable",
+            span,
+            [("callee_type", callee_type.canonical_string())],
+        )?);
+    } else {
+        diagnostics.push(body_diagnostic(
+            "invalid-call-target",
+            DiagnosticCategory::Type,
+            "an ordinary call resolves to a value that is not callable",
+            span,
+            [] as [(&str, &str); 0],
+        )?);
+    }
+    Ok(true)
+}
+
+/// Returns the span of a sequence that applies an argument list to a call result.
+///
+/// A call result is a value rather than a callable (`GNT-3-T-CALL`), so a sequence whose
+/// argument list is followed by another argument list (`f(1)(2)`, `1(2)(3)`) is refused
+/// instead of being typed as its own callee and failing internally during lowering. A
+/// sequence that starts with a group is the expression-callee case, which its own refusal
+/// owns.
+fn call_result_callee_span(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Result<Option<SourceSpan>, AnalysisError> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let current = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if matches!(current.form(), SyntaxForm::Token(_)) {
+            tokens.push(id);
+        } else {
+            work.extend(current.children().iter().rev().copied());
+        }
+    }
+    let Some(first) = tokens.first().copied() else {
+        return Ok(None);
+    };
+    if node_is_punctuation(tree, first, Punctuation::LeftParenthesis) {
+        return Ok(None);
+    }
+    let Some(open) = tokens
+        .iter()
+        .position(|token| node_is_punctuation(tree, *token, Punctuation::LeftParenthesis))
+    else {
+        return Ok(None);
+    };
+    let mut depth = 0_u64;
+    let mut close = None;
+    for (index, token) in tokens.iter().enumerate().skip(open) {
+        if node_is_punctuation(tree, *token, Punctuation::LeftParenthesis) {
+            depth = depth.saturating_add(1);
+        }
+        if node_is_punctuation(tree, *token, Punctuation::RightParenthesis) {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                close = Some(index);
+                break;
+            }
+        }
+    }
+    let Some(close) = close else {
+        return Ok(None);
+    };
+    let next = close.saturating_add(1);
+    if !tokens
+        .get(next)
+        .copied()
+        .is_some_and(|token| node_is_punctuation(tree, token, Punctuation::LeftParenthesis))
+    {
+        return Ok(None);
+    }
+    let first_node = tree.node(first).ok_or(AnalysisError::Invariant)?;
+    let last_token = tokens.last().copied().ok_or(AnalysisError::Invariant)?;
+    let last_node = tree.node(last_token).ok_or(AnalysisError::Invariant)?;
     Ok((first_node.span().source() == last_node.span().source())
         .then(|| {
             SourceSpan::from_portable_parts(
