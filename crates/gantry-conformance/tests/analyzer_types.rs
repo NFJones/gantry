@@ -6920,6 +6920,142 @@ fn public_callable_expressions_are_refused_without_internal_failure() {
     );
 }
 
+/// `GNT-13.6` states that v1 has no module, type, function, action, or method values, so a
+/// bare path that resolves to a declared type or trait has no value derivation: the refusal
+/// is published at the path with its identifier instead of an untyped expression reaching a
+/// consumer that cannot check it and admitting a program that fails at run time.
+#[test]
+fn public_declaration_names_are_refused_in_value_positions() {
+    let root = TempDirectory::new();
+    for (source, identifier) in [
+        (
+            "struct Item {} fn main() -> Int { discard Item; 0 }",
+            "Item",
+        ),
+        (
+            "struct Item {} fn f(x: Int) -> Int { x } fn main() -> Int { f(Item) }",
+            "Item",
+        ),
+        (
+            "trait Marker {} fn main() -> Int { discard Marker; 0 }",
+            "Marker",
+        ),
+        (
+            "enum Flag { On, Off } fn main() -> Int { discard Flag; 0 }",
+            "Flag",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused declaration name must not publish an executable program"
+        );
+        let refusals = refused
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code.as_str() == "non-value-path")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            refusals.len(),
+            1,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = refusals[0];
+        assert_eq!(refusal.category, DiagnosticCategory::Type);
+        assert_eq!(
+            refusal.fields.get("identifier").map(AsRef::as_ref),
+            Some(identifier),
+            "source: {source}"
+        );
+        // The declaration itself carries the spelling too, so the value use is the last one.
+        let path_start = source
+            .rfind(identifier)
+            .unwrap_or_else(|| panic!("source: {source}: missing identifier"))
+            as u64;
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}: missing primary span"));
+        assert_eq!(primary.bytes().start(), path_start, "source: {source}");
+        assert_eq!(
+            primary.bytes().end(),
+            path_start + identifier.len() as u64,
+            "source: {source}"
+        );
+    }
+
+    // A struct expression, an enum variant value, a binding read, and a free call keep their
+    // meaning.
+    for source in [
+        "struct Item {} fn main() -> Int { let item: Item = Item {}; 0 }",
+        "enum Flag { On, Off } fn main() -> Int { let flag: Flag = Flag::On; 0 }",
+        "enum E { V(Int) } fn main() -> Int { let value: E = E::V(1); 0 }",
+        "fn f(x: Int) -> Int { x } fn main() -> Int { f(1) }",
+        "fn main() -> Int { let value: Int = 1; discard value; 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+    }
+
+    // A declaration name used as a callee and a declared callable used as a value keep their
+    // own published refusals instead of this one.
+    for (source, expected) in [
+        (
+            "struct Item {} fn main() -> Int { discard Item(2); 0 }",
+            "invalid-call-target",
+        ),
+        (
+            "fn inc(v: Int) -> Int { v } fn main() -> Int { discard inc; 0 }",
+            "callable-reference-unadmitted",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == expected),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .all(|diagnostic| diagnostic.code.as_str() != "non-value-path"),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+    }
+}
+
 /// A call whose callee is not a path or a single-identifier group has no derivation
 /// (`GNT-3-T-CALL`): a literal, a Boolean, a string, the `self` receiver, and a name that
 /// resolves to a declaration which is not a callable are refused with the published

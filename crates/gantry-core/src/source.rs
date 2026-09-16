@@ -1711,6 +1711,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A MustConsume place leaves its scope without being consumed.",
     },
     DiagnosticCodeDefinition {
+        code: "non-value-path",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A bare path resolves to a declared item that is not a value.",
+    },
+    DiagnosticCodeDefinition {
         code: "nonexhaustive-match",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::ControlFlow,

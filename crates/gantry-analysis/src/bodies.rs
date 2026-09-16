@@ -6030,6 +6030,23 @@ fn infer_expression_inner(
                     )?);
                     return Ok(None);
                 }
+                // `GNT-13.6` states that v1 has no module, type, function, action, or method
+                // values, so a path that resolves to a declared type or trait has no value
+                // derivation either: the refusal keeps an untyped expression out of consumers
+                // that cannot check it instead of admitting a program that fails at run time.
+                if !context.callee_spans.contains(child_node.span())
+                    && let Some(identifier) =
+                        non_value_declaration_identifier(tree, child, context)?
+                {
+                    diagnostics.push(body_diagnostic(
+                        "non-value-path",
+                        DiagnosticCategory::Type,
+                        "a name that denotes a declaration is not a value",
+                        child_node.span().clone(),
+                        [("identifier", identifier.to_string())],
+                    )?);
+                    return Ok(None);
+                }
             }
             SyntaxForm::Token(token) => {
                 if let Some(value) =
@@ -11710,6 +11727,39 @@ fn declared_callable_identifier(
     {
         return Ok(None);
     }
+    last_path_identifier(tree, path)
+}
+
+/// Returns the identifier of one path that resolves to a declaration which is not a value.
+///
+/// `GNT-13.6` states that v1 has no module, type, function, action, or method values. A
+/// declared callable, generic callable, or action is refused by its own Section 37 rule
+/// first, so this helper reports the remaining declarations: a type, a trait, or another
+/// item that has no value derivation. A unit or payload enum variant is admitted by the
+/// enum-constructor branch before the value arm, so it never reaches this check.
+fn non_value_declaration_identifier(
+    tree: &SyntaxTree,
+    path: NodeId,
+    context: &BodyContext,
+) -> Result<Option<Arc<str>>, AnalysisError> {
+    let node = tree.node(path).ok_or(AnalysisError::Invariant)?;
+    let Some(symbol) = context.references.get(node.span()) else {
+        return Ok(None);
+    };
+    if context.callables.contains_key(symbol)
+        || context.generic_callables.contains_key(symbol)
+        || context.actions.contains_key(symbol)
+    {
+        return Ok(None);
+    }
+    last_path_identifier(tree, path)
+}
+
+/// Returns the last identifier spelling of one path.
+fn last_path_identifier(
+    tree: &SyntaxTree,
+    path: NodeId,
+) -> Result<Option<Arc<str>>, AnalysisError> {
     let mut identifiers = Vec::new();
     let mut stack = vec![path];
     while let Some(id) = stack.pop() {
