@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use gantry_core::identity::ProtocolIdentity;
+use gantry_core::limit::ResourceLimit;
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind};
 use gantry_core::strict_json::{JsonLimits, JsonNode, StrictJsonDocument};
@@ -37,17 +38,17 @@ mod program_codec;
 #[cfg(feature = "durable")]
 pub(crate) use program_codec::{decode_machine_program, encode_machine_program};
 
-/// Finite positive limits captured for one machine run.
+/// Semantic limits captured for one machine run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MachineLimits {
-    /// Maximum deterministic transitions for the execution.
-    pub maximum_deterministic_transitions: u64,
-    /// Maximum logical operation preparations for the execution.
-    pub maximum_operations: u64,
-    /// Maximum loop body entries for the task.
-    pub maximum_loop_iterations: u64,
-    /// Maximum active workflow frames, counting the root as one.
-    pub maximum_workflow_call_depth: u64,
+    /// Deterministic-transition policy for the execution.
+    pub maximum_deterministic_transitions: ResourceLimit,
+    /// Logical-operation policy for the execution.
+    pub maximum_operations: ResourceLimit,
+    /// Loop-entry policy for the task.
+    pub maximum_loop_iterations: ResourceLimit,
+    /// Workflow-frame policy, counting the root as one.
+    pub maximum_workflow_call_depth: ResourceLimit,
     /// Consecutive deterministic transitions before a cooperative yield.
     pub deterministic_transition_yield_quantum: u64,
     /// Limits applied to every newly constructed logical value.
@@ -77,6 +78,75 @@ impl MachineLimits {
             None
         } else {
             Some(Self {
+                maximum_deterministic_transitions: match ResourceLimit::limited(
+                    maximum_deterministic_transitions,
+                ) {
+                    Some(limit) => limit,
+                    None => return None,
+                },
+                maximum_operations: match ResourceLimit::limited(maximum_operations) {
+                    Some(limit) => limit,
+                    None => return None,
+                },
+                maximum_loop_iterations: match ResourceLimit::limited(maximum_loop_iterations) {
+                    Some(limit) => limit,
+                    None => return None,
+                },
+                maximum_workflow_call_depth: match ResourceLimit::limited(
+                    maximum_workflow_call_depth,
+                ) {
+                    Some(limit) => limit,
+                    None => return None,
+                },
+                deterministic_transition_yield_quantum,
+                value_limits,
+            })
+        }
+    }
+
+    /// Creates a machine with no semantic execution ceilings.
+    #[must_use]
+    pub const fn unlimited(
+        deterministic_transition_yield_quantum: u64,
+        value_limits: ValueLimits,
+    ) -> Option<Self> {
+        if deterministic_transition_yield_quantum == 0 {
+            None
+        } else {
+            Some(Self {
+                maximum_deterministic_transitions: ResourceLimit::Unlimited,
+                maximum_operations: ResourceLimit::Unlimited,
+                maximum_loop_iterations: ResourceLimit::Unlimited,
+                maximum_workflow_call_depth: ResourceLimit::Unlimited,
+                deterministic_transition_yield_quantum,
+                value_limits,
+            })
+        }
+    }
+
+    /// Validates an explicit finite-or-unlimited machine-limit set.
+    #[must_use]
+    pub const fn with_resource_limits(
+        maximum_deterministic_transitions: ResourceLimit,
+        maximum_operations: ResourceLimit,
+        maximum_loop_iterations: ResourceLimit,
+        maximum_workflow_call_depth: ResourceLimit,
+        deterministic_transition_yield_quantum: u64,
+        value_limits: ValueLimits,
+    ) -> Option<Self> {
+        if deterministic_transition_yield_quantum == 0
+            || matches!(
+                (
+                    maximum_deterministic_transitions.maximum(),
+                    maximum_operations.maximum(),
+                ),
+                (Some(transitions), Some(operations))
+                    if transitions.checked_add(operations).is_none()
+            )
+        {
+            None
+        } else {
+            Some(Self {
                 maximum_deterministic_transitions,
                 maximum_operations,
                 maximum_loop_iterations,
@@ -97,10 +167,10 @@ pub struct ExecutionBudget {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ExecutionBudgetState {
     execution: ProtocolIdentity,
-    maximum_transitions: u64,
-    maximum_operations: u64,
-    remaining_transitions: u64,
-    remaining_operations: u64,
+    maximum_transitions: ResourceLimit,
+    maximum_operations: ResourceLimit,
+    remaining_transitions: Option<u64>,
+    remaining_operations: Option<u64>,
     revision: u64,
 }
 
@@ -110,13 +180,13 @@ pub struct ExecutionBudgetSnapshot {
     /// Execution identity bound to these counters.
     pub execution: ProtocolIdentity,
     /// Configured maximum deterministic transitions.
-    pub maximum_transitions: u64,
+    pub maximum_transitions: ResourceLimit,
     /// Configured maximum logical operation preparations.
-    pub maximum_operations: u64,
+    pub maximum_operations: ResourceLimit,
     /// Deterministic transitions still available.
-    pub remaining_transitions: u64,
+    pub remaining_transitions: Option<u64>,
     /// Logical operation preparations still available.
-    pub remaining_operations: u64,
+    pub remaining_operations: Option<u64>,
     /// Monotonic successful-charge revision.
     pub revision: u64,
 }
@@ -129,8 +199,8 @@ impl ExecutionBudget {
             execution,
             maximum_transitions: limits.maximum_deterministic_transitions,
             maximum_operations: limits.maximum_operations,
-            remaining_transitions: limits.maximum_deterministic_transitions,
-            remaining_operations: limits.maximum_operations,
+            remaining_transitions: limits.maximum_deterministic_transitions.maximum(),
+            remaining_operations: limits.maximum_operations.maximum(),
             revision: 0,
         })
     }
@@ -209,14 +279,19 @@ impl ExecutionBudget {
             && state.maximum_operations == limits.maximum_operations
     }
 
-    fn remaining(&self) -> (u64, u64) {
+    fn remaining(&self) -> (Option<u64>, Option<u64>) {
         let state = self.lock();
         (state.remaining_transitions, state.remaining_operations)
     }
 
     fn charge_transition(state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
-        let Some(remaining) = state.remaining_transitions.checked_sub(1) else {
-            return Err(RuntimeCode::DeterministicTransitionBudget);
+        let remaining = match state.remaining_transitions {
+            Some(remaining) => Some(
+                remaining
+                    .checked_sub(1)
+                    .ok_or(RuntimeCode::DeterministicTransitionBudget)?,
+            ),
+            None => None,
         };
         let Some(revision) = state.revision.checked_add(1) else {
             return Err(RuntimeCode::InternalInvariant);
@@ -227,8 +302,13 @@ impl ExecutionBudget {
     }
 
     fn charge_operation(state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
-        let Some(remaining) = state.remaining_operations.checked_sub(1) else {
-            return Err(RuntimeCode::OperationBudget);
+        let remaining = match state.remaining_operations {
+            Some(remaining) => Some(
+                remaining
+                    .checked_sub(1)
+                    .ok_or(RuntimeCode::OperationBudget)?,
+            ),
+            None => None,
         };
         let Some(revision) = state.revision.checked_add(1) else {
             return Err(RuntimeCode::InternalInvariant);
@@ -1017,7 +1097,7 @@ pub struct MachineCheckpointV3 {
     agent_stack: Vec<Option<Arc<str>>>,
     session: Option<ProtocolIdentity>,
     session_stack: Vec<Option<ProtocolIdentity>>,
-    remaining_loop_iterations: u64,
+    remaining_loop_iterations: Option<u64>,
     consecutive_transitions: u64,
     pending_session_scope: Option<SessionScopeOccurrence>,
     pending_operation: Option<PendingOperation>,
@@ -1181,7 +1261,7 @@ impl MachineCheckpointV3 {
 
     /// Returns the remaining task-local loop-entry budget.
     #[must_use]
-    pub const fn remaining_loop_iterations(&self) -> u64 {
+    pub const fn remaining_loop_iterations(&self) -> Option<u64> {
         self.remaining_loop_iterations
     }
 
@@ -1567,7 +1647,7 @@ pub struct Machine {
     agent_stack: Vec<Option<Arc<str>>>,
     session: Option<ProtocolIdentity>,
     session_stack: Vec<Option<ProtocolIdentity>>,
-    remaining_loop_iterations: u64,
+    remaining_loop_iterations: Option<u64>,
     consecutive_transitions: u64,
     pending_session_scope: Option<SessionScopeOccurrence>,
     pending_operation: Option<PendingOperation>,
@@ -1856,7 +1936,7 @@ impl Machine {
             agent_stack: Vec::new(),
             session: child_session,
             session_stack: Vec::new(),
-            remaining_loop_iterations: limits.maximum_loop_iterations,
+            remaining_loop_iterations: limits.maximum_loop_iterations.maximum(),
             consecutive_transitions: 0,
             pending_session_scope: None,
             pending_operation: None,
@@ -1963,7 +2043,7 @@ impl Machine {
             agent_stack: Vec::new(),
             session: initial_session,
             session_stack: Vec::new(),
-            remaining_loop_iterations: limits.maximum_loop_iterations,
+            remaining_loop_iterations: limits.maximum_loop_iterations.maximum(),
             consecutive_transitions: 0,
             pending_session_scope: None,
             pending_operation: None,
@@ -2121,7 +2201,7 @@ impl Machine {
 
     /// Returns remaining deterministic, operation, and loop-entry budgets.
     #[must_use]
-    pub fn remaining_budgets(&self) -> (u64, u64, u64) {
+    pub fn remaining_budgets(&self) -> (Option<u64>, Option<u64>, Option<u64>) {
         let (remaining_transitions, remaining_operations) = self.execution_budget.remaining();
         (
             remaining_transitions,
@@ -3429,7 +3509,7 @@ impl Machine {
             if source_limit.is_some_and(|limit| source_entries >= limit) {
                 return Err(RuntimeCode::LoopLimitExhausted);
             }
-            if self.remaining_loop_iterations == 0 {
+            if self.remaining_loop_iterations == Some(0) {
                 return Err(RuntimeCode::LoopIterationBudget);
             }
         }
@@ -3437,7 +3517,9 @@ impl Machine {
         self.counters
             .insert(key.clone(), occurrence.saturating_add(1));
         if matches!(phase, LoopPhase::Body) {
-            self.remaining_loop_iterations -= 1;
+            if let Some(remaining) = self.remaining_loop_iterations.as_mut() {
+                *remaining -= 1;
+            }
             let entries = self
                 .source_loop_entries
                 .get(&source_key)
@@ -3482,9 +3564,14 @@ impl Machine {
         receiver_source: Option<ReceiverSource>,
         budget_state: &mut ExecutionBudgetState,
     ) -> MachineStep {
-        if u64::try_from(self.frames.len()).map_or(true, |depth| {
-            depth >= self.limits.maximum_workflow_call_depth
-        }) {
+        if self
+            .limits
+            .maximum_workflow_call_depth
+            .maximum()
+            .is_some_and(|maximum| {
+                u64::try_from(self.frames.len()).map_or(true, |depth| depth >= maximum)
+            })
+        {
             return self.fail_at(
                 RuntimeCode::Deterministic(DeterministicEvaluationCode::WorkflowCallDepthLimit),
                 workflow,
@@ -4317,23 +4404,31 @@ fn occurrence_counter_key(
 fn validate_execution_budget_snapshot(
     snapshot: &ExecutionBudgetSnapshot,
 ) -> Result<(), MachineRecoveryError> {
-    let consumed_transitions = snapshot
-        .maximum_transitions
-        .checked_sub(snapshot.remaining_transitions);
-    let consumed_operations = snapshot
-        .maximum_operations
-        .checked_sub(snapshot.remaining_operations);
+    let consumed_transitions = match (
+        snapshot.maximum_transitions.maximum(),
+        snapshot.remaining_transitions,
+    ) {
+        (Some(maximum), Some(remaining)) => maximum.checked_sub(remaining),
+        (None, None) => Some(0),
+        _ => None,
+    };
+    let consumed_operations = match (
+        snapshot.maximum_operations.maximum(),
+        snapshot.remaining_operations,
+    ) {
+        (Some(maximum), Some(remaining)) => maximum.checked_sub(remaining),
+        (None, None) => Some(0),
+        _ => None,
+    };
     let consumed = consumed_transitions
         .zip(consumed_operations)
         .and_then(|(transitions, operations)| transitions.checked_add(operations));
     if snapshot.execution.kind() != IdentityKind::Execution
-        || snapshot.maximum_transitions == 0
-        || snapshot.maximum_operations == 0
-        || snapshot
-            .maximum_transitions
-            .checked_add(snapshot.maximum_operations)
-            .is_none()
-        || consumed != Some(snapshot.revision)
+        || consumed.is_none()
+        || consumed.is_some_and(|consumed| consumed > snapshot.revision)
+        || (snapshot.maximum_transitions.maximum().is_some()
+            && snapshot.maximum_operations.maximum().is_some()
+            && consumed != Some(snapshot.revision))
     {
         return Err(MachineRecoveryError::InvalidCheckpoint);
     }
@@ -4372,12 +4467,15 @@ fn validate_machine_checkpoint(
         )
         || checkpoint.execution_foreground != checkpoint.task_path.is_empty()
         || checkpoint.frames.is_empty()
-        || checkpoint.limits.maximum_deterministic_transitions == 0
-        || checkpoint.limits.maximum_operations == 0
-        || checkpoint.limits.maximum_loop_iterations == 0
-        || checkpoint.limits.maximum_workflow_call_depth == 0
         || checkpoint.limits.deterministic_transition_yield_quantum == 0
-        || checkpoint.remaining_loop_iterations > checkpoint.limits.maximum_loop_iterations
+        || match (
+            checkpoint.limits.maximum_loop_iterations.maximum(),
+            checkpoint.remaining_loop_iterations,
+        ) {
+            (Some(maximum), Some(remaining)) => remaining > maximum,
+            (None, None) => false,
+            _ => true,
+        }
         || checkpoint.consecutive_transitions
             > checkpoint.limits.deterministic_transition_yield_quantum
         || checkpoint

@@ -190,5 +190,5 @@
  "scale_evidence": [
   "crates/gantry-conformance/tests/generics_conformance.rs#generic_scale_envelopes_are_charged_and_deduplicated"
  ],
- "specification_sha256": "e786ea74bb47bae17d346433ed845824257fef4ded298cded091febaa440ee46"
+ "specification_sha256": "5ba345a391922999b81de820ccb744e8fe9949546bad0fc9148f497bb7c65328"
 }

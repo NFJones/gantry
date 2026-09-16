@@ -1090,7 +1090,7 @@ fn require_diagnostic(
     let bytes = u64::try_from(value.len()).unwrap_or(u64::MAX);
     let scalars = u64::try_from(value.chars().count()).unwrap_or(u64::MAX);
     if value.is_empty()
-        || bytes > header.maximum_hook_output_bytes
+        || !header.maximum_hook_output_bytes.admits(bytes)
         || scalars > header.value_limits.maximum_string_scalars()
         || !valid_unknown
     {
@@ -2298,7 +2298,8 @@ mod tests {
                 kind: OperationSiteKind::Action,
                 expected_type: TypeDescriptor::UNIT,
                 expected_schema: Arc::from(&br#"{"type":"null"}"#[..]),
-                maximum_hook_output_bytes: 1_024,
+                maximum_hook_output_bytes: gantry_core::limit::ResourceLimit::limited(1_024)
+                    .unwrap_or_else(|| unreachable!("fixture limit is positive")),
                 value_limits: ValueLimits::new(8, 32, 32, 32)
                     .unwrap_or_else(|| panic!("value limits failed")),
                 workflow: CanonicalPath::new("crate::main")

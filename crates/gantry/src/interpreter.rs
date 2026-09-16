@@ -1697,13 +1697,13 @@ impl PreparedRootDriver {
         )
         .map_err(RunExecutionError::Session)?;
         let tasks = if submitting {
-            ConcurrentTaskStateV1::with_submitting_root(
+            ConcurrentTaskStateV1::with_submitting_root_with_limit(
                 execution_id,
                 task_id,
                 inner.configuration.maximum_tasks_per_execution(),
             )
         } else {
-            ConcurrentTaskStateV1::new(
+            ConcurrentTaskStateV1::new_with_limit(
                 execution_id,
                 task_id,
                 inner.configuration.maximum_tasks_per_execution(),
@@ -3319,7 +3319,7 @@ impl Interpreter {
             (root.id, provenance)
         };
         let task_id = root_task_identity(prepared.execution_id);
-        let tasks = ConcurrentTaskStateV1::from_sequential_recovery(
+        let tasks = ConcurrentTaskStateV1::from_sequential_recovery_with_limit(
             prepared.execution_id,
             task_id,
             self.inner.configuration.maximum_tasks_per_execution(),
@@ -6141,7 +6141,11 @@ impl Interpreter {
     ) -> Result<(), DurableRunFailure> {
         let task_limit_reached = |coordinator: &ExecutionCoordinator| {
             let snapshot = coordinator.snapshot();
-            snapshot.state().created_task_count() >= snapshot.state().maximum_task_count()
+            snapshot
+                .state()
+                .created_task_count()
+                .checked_add(1)
+                .is_none_or(|next| !snapshot.state().maximum_task_count().admits(next))
         };
         let parent_is_cancelled = |coordinator: &ExecutionCoordinator| {
             coordinator
@@ -10776,7 +10780,11 @@ impl Interpreter {
         }
         let task_limit_reached = |coordinator: &ExecutionCoordinator| {
             let state = coordinator.snapshot();
-            state.state().created_task_count() >= state.state().maximum_task_count()
+            state
+                .state()
+                .created_task_count()
+                .checked_add(1)
+                .is_none_or(|next| !state.state().maximum_task_count().admits(next))
         };
         if task_limit_reached(coordinator) {
             machine

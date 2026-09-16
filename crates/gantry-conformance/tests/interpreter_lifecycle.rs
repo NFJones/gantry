@@ -166,7 +166,7 @@ fn public_configuration_defaults_bounds_and_classes_are_exact() {
     assert_eq!(retry.event_delivery_attempt_timeout.get(), 30_000_000);
     assert_eq!(configuration.graceful_shutdown_timeout().get(), 30_000_000);
     assert_eq!(configuration.post_cancellation_drain().get(), 5_000_000);
-    assert_eq!(configuration.maximum_tasks_per_execution(), 65_536);
+    assert_eq!(configuration.maximum_tasks_per_execution().maximum(), None);
 
     let frontend = configuration.required().frontend_limits;
     assert_eq!(frontend.maximum_package_files(), 128);
@@ -189,10 +189,13 @@ fn public_configuration_defaults_bounds_and_classes_are_exact() {
     );
 
     let machine = configuration.machine_limits();
-    assert_eq!(machine.maximum_deterministic_transitions, 10_000_000);
-    assert_eq!(machine.maximum_operations, 100_000);
-    assert_eq!(machine.maximum_loop_iterations, 1_000_000);
-    assert_eq!(machine.maximum_workflow_call_depth, 1_024);
+    assert_eq!(
+        machine.maximum_deterministic_transitions.maximum(),
+        Some(10_000_000)
+    );
+    assert_eq!(machine.maximum_operations.maximum(), Some(100_000));
+    assert_eq!(machine.maximum_loop_iterations.maximum(), Some(1_000_000));
+    assert_eq!(machine.maximum_workflow_call_depth.maximum(), None);
     assert_eq!(machine.deterministic_transition_yield_quantum, 1_000);
 
     assert_eq!(
@@ -251,6 +254,123 @@ fn public_configuration_defaults_bounds_and_classes_are_exact() {
             if error.field == ConfigurationField::MaximumListItems
                 && error.kind == ConfigurationErrorKind::TooLarge
     ));
+}
+
+#[test]
+fn public_configuration_admits_an_explicit_fully_unlimited_policy() {
+    let required = RequiredConfiguration::unlimited(
+        FrontendLimits::unlimited(),
+        ValueLimits::unlimited(),
+        1_000,
+    )
+    .unwrap_or_else(|error| panic!("unlimited configuration failed: {error}"));
+    let configuration = InterpreterConfiguration::new(
+        Arc::new(FixedServices),
+        Arc::new(FixedServices),
+        required,
+        gantry::runtime::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacity configuration failed: {error:?}")),
+    );
+
+    let required = configuration.required();
+    assert_eq!(required.maximum_entry_input_bytes.maximum(), None);
+    assert_eq!(required.maximum_hook_output_bytes.maximum(), None);
+    assert_eq!(required.value_limits.nesting_depth_limit().maximum(), None);
+    assert_eq!(required.value_limits.node_limit().maximum(), None);
+    assert_eq!(required.value_limits.string_scalar_limit().maximum(), None);
+    assert_eq!(required.value_limits.list_item_limit().maximum(), None);
+    assert_eq!(required.frontend_limits.maximum_package_files(), u64::MAX);
+    assert_eq!(
+        required
+            .frontend_limits
+            .maximum_trait_resolution_steps_per_activity(),
+        u64::MAX
+    );
+    assert_eq!(configuration.maximum_workflow_call_depth().maximum(), None);
+    assert_eq!(configuration.maximum_tasks_per_execution().maximum(), None);
+
+    let machine = configuration.machine_limits();
+    assert_eq!(machine.maximum_deterministic_transitions.maximum(), None);
+    assert_eq!(machine.maximum_operations.maximum(), None);
+    assert_eq!(machine.maximum_loop_iterations.maximum(), None);
+    assert_eq!(machine.maximum_workflow_call_depth.maximum(), None);
+}
+
+#[test]
+fn public_configuration_admits_independent_mixed_resource_policies() {
+    let finite = |value| {
+        gantry::limit::ResourceLimit::limited(value)
+            .unwrap_or_else(|| unreachable!("fixture limit is positive"))
+    };
+    let unlimited = gantry::limit::ResourceLimit::Unlimited;
+    let frontend = FrontendLimits::with_resource_limits(
+        finite(8),
+        unlimited,
+        finite(64),
+        unlimited,
+        finite(4),
+        unlimited,
+        finite(128),
+        unlimited,
+        finite(128),
+        unlimited,
+        finite(16),
+        unlimited,
+    )
+    .unwrap_or_else(|error| panic!("mixed frontend policy failed: {error:?}"));
+    let values = ValueLimits::with_resource_limits(finite(8), unlimited, finite(32), unlimited);
+    let required = RequiredConfiguration::with_resource_limits(
+        frontend,
+        unlimited,
+        finite(1_024),
+        values,
+        unlimited,
+        finite(10),
+        unlimited,
+        100,
+    )
+    .unwrap_or_else(|error| panic!("mixed interpreter policy failed: {error}"));
+    let configuration = InterpreterConfiguration::new(
+        Arc::new(FixedServices),
+        Arc::new(FixedServices),
+        required,
+        gantry::runtime::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacity configuration failed: {error:?}")),
+    )
+    .with_workflow_call_depth_limit(finite(32))
+    .unwrap_or_else(|error| panic!("workflow policy failed: {error}"))
+    .with_task_count_limit(unlimited)
+    .unwrap_or_else(|error| panic!("task policy failed: {error}"));
+
+    let required = configuration.required();
+    assert_eq!(required.maximum_entry_input_bytes.maximum(), None);
+    assert_eq!(required.maximum_hook_output_bytes.maximum(), Some(1_024));
+    assert_eq!(
+        required.value_limits.nesting_depth_limit().maximum(),
+        Some(8)
+    );
+    assert_eq!(required.value_limits.node_limit().maximum(), None);
+    assert_eq!(
+        required
+            .maximum_deterministic_transitions_per_execution
+            .maximum(),
+        None
+    );
+    assert_eq!(
+        required.maximum_operations_per_execution.maximum(),
+        Some(10)
+    );
+    assert_eq!(required.maximum_loop_iterations_per_task.maximum(), None);
+    assert_eq!(
+        configuration.maximum_workflow_call_depth().maximum(),
+        Some(32)
+    );
+    assert_eq!(configuration.maximum_tasks_per_execution().maximum(), None);
+    assert_eq!(
+        required.frontend_limits.maximum_source_file_bytes(),
+        u64::MAX
+    );
+    assert_eq!(required.frontend_limits.maximum_package_files(), 8);
 }
 
 #[test]

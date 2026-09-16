@@ -1,8 +1,10 @@
 # Frontend resource policy
 
 Every public package activity receives one explicit `FrontendLimits` value.
-The policy has no portable implicit defaults: embedders must supply all twelve
-positive integers, each no greater than `2^63 - 1`.
+Each field may be unlimited or a positive finite integer no greater than
+`2^63 - 1`. `FrontendLimits::unlimited()` selects no semantic frontend
+ceilings; this is the reference CLI default. `FrontendLimits::new(...)`
+constructs the opt-in finite policy for bounded embeddings.
 
 [`examples/frontend-limits.json`](../examples/frontend-limits.json) records a
 machine-checked complete policy using the reference CLI values. It is a sample
@@ -36,7 +38,7 @@ generic-analysis fields. Checked-arithmetic overflow fails with the same field's
 code. Charges are failure-atomic: rejected work does not alter the retained
 counter prefix or publish a partial analysis or executable artifact.
 
-The reference CLI currently selects these explicit values:
+The sample embedding configuration selects these explicit finite values:
 
 | Field group | Value |
 | --- | ---: |
@@ -50,7 +52,7 @@ The reference CLI currently selects these explicit values:
 | generic instantiations | 65,536 |
 | trait-resolution steps | 1,000,000 |
 
-These CLI values are implementation policy, not language defaults and not
+These sample values are implementation policy, not language defaults and not
 part of package or durable execution identity. Changing them may change whether
 an activity is admitted, but it cannot change the canonical bytes or meaning of
 a package admitted under both policies. They are logical work limits, not host

@@ -4,6 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
+use crate::limit::ResourceLimit;
+
 use sha2::{Digest, Sha256};
 
 use crate::portable::{DiagnosticCategory, DiagnosticSeverity, FrontendResourceCode};
@@ -332,14 +334,14 @@ impl fmt::Display for TextSliceError {
 
 impl std::error::Error for TextSliceError {}
 
-/// Positive source-ingress and diagnostic limits for one package activity.
+/// Source-ingress and diagnostic policy for one package activity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SourceLimits {
-    maximum_package_files: u64,
-    maximum_source_file_bytes: u64,
-    maximum_package_source_bytes: u64,
-    maximum_source_tokens: u64,
-    maximum_diagnostics_per_activity: u64,
+    maximum_package_files: ResourceLimit,
+    maximum_source_file_bytes: ResourceLimit,
+    maximum_package_source_bytes: ResourceLimit,
+    maximum_source_tokens: ResourceLimit,
+    maximum_diagnostics_per_activity: ResourceLimit,
 }
 
 impl SourceLimits {
@@ -365,6 +367,56 @@ impl SourceLimits {
             return Err(SourceLimitConfigurationError::TooLarge);
         }
         Ok(Self {
+            maximum_package_files: ResourceLimit::limited(maximum_package_files)
+                .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_source_file_bytes: ResourceLimit::limited(maximum_source_file_bytes)
+                .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_package_source_bytes: ResourceLimit::limited(maximum_package_source_bytes)
+                .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_source_tokens: ResourceLimit::limited(maximum_source_tokens)
+                .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_diagnostics_per_activity: ResourceLimit::limited(
+                maximum_diagnostics_per_activity,
+            )
+            .ok_or(SourceLimitConfigurationError::Zero)?,
+        })
+    }
+
+    /// Creates a source policy with no semantic ceilings.
+    #[must_use]
+    pub const fn unlimited() -> Self {
+        Self {
+            maximum_package_files: ResourceLimit::Unlimited,
+            maximum_source_file_bytes: ResourceLimit::Unlimited,
+            maximum_package_source_bytes: ResourceLimit::Unlimited,
+            maximum_source_tokens: ResourceLimit::Unlimited,
+            maximum_diagnostics_per_activity: ResourceLimit::Unlimited,
+        }
+    }
+
+    /// Constructs an independently finite-or-unlimited source policy.
+    pub fn with_resource_limits(
+        maximum_package_files: ResourceLimit,
+        maximum_source_file_bytes: ResourceLimit,
+        maximum_package_source_bytes: ResourceLimit,
+        maximum_source_tokens: ResourceLimit,
+        maximum_diagnostics_per_activity: ResourceLimit,
+    ) -> Result<Self, SourceLimitConfigurationError> {
+        for limit in [
+            maximum_package_files,
+            maximum_source_file_bytes,
+            maximum_package_source_bytes,
+            maximum_source_tokens,
+            maximum_diagnostics_per_activity,
+        ] {
+            if limit
+                .maximum()
+                .is_some_and(|value| value > MAXIMUM_FRONTEND_LIMIT)
+            {
+                return Err(SourceLimitConfigurationError::TooLarge);
+            }
+        }
+        Ok(Self {
             maximum_package_files,
             maximum_source_file_bytes,
             maximum_package_source_bytes,
@@ -376,35 +428,42 @@ impl SourceLimits {
     /// Returns the maximum exact bytes admitted for one selected source file.
     #[must_use]
     pub const fn maximum_source_file_bytes(self) -> u64 {
-        self.maximum_source_file_bytes
+        resource_maximum(self.maximum_source_file_bytes)
     }
 
     /// Returns the maximum selected source files admitted for one activity.
     #[must_use]
     pub const fn maximum_package_files(self) -> u64 {
-        self.maximum_package_files
+        resource_maximum(self.maximum_package_files)
     }
 
     /// Returns the maximum cumulative source bytes admitted for one activity.
     #[must_use]
     pub const fn maximum_package_source_bytes(self) -> u64 {
-        self.maximum_package_source_bytes
+        resource_maximum(self.maximum_package_source_bytes)
     }
 
     /// Returns the maximum nontrivia tokens admitted for one activity.
     #[must_use]
     pub const fn maximum_source_tokens(self) -> u64 {
-        self.maximum_source_tokens
+        resource_maximum(self.maximum_source_tokens)
     }
 
     /// Returns the maximum retained diagnostics admitted for one activity.
     #[must_use]
     pub const fn maximum_diagnostics_per_activity(self) -> u64 {
-        self.maximum_diagnostics_per_activity
+        resource_maximum(self.maximum_diagnostics_per_activity)
     }
 }
 
-/// Complete finite frontend policy accepted by package operations.
+const fn resource_maximum(limit: ResourceLimit) -> u64 {
+    match limit.maximum() {
+        Some(maximum) => maximum,
+        None => u64::MAX,
+    }
+}
+
+/// Complete finite-or-unlimited frontend policy accepted by package operations.
 ///
 /// Syntax-only validation enforces the embedded source and constructed-type
 /// limits. Semantic analysis additionally consumes the generic-instantiation
@@ -437,13 +496,13 @@ impl SourceLimits {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FrontendLimits {
     source: SourceLimits,
-    maximum_package_source_manifest_bytes: u64,
-    maximum_canonical_ir_bytes: u64,
-    maximum_source_map_bytes: u64,
-    maximum_generated_schema_bytes: u64,
-    maximum_constructed_type_depth: u64,
-    maximum_generic_instantiations_per_activity: u64,
-    maximum_trait_resolution_steps_per_activity: u64,
+    maximum_package_source_manifest_bytes: ResourceLimit,
+    maximum_canonical_ir_bytes: ResourceLimit,
+    maximum_source_map_bytes: ResourceLimit,
+    maximum_generated_schema_bytes: ResourceLimit,
+    maximum_constructed_type_depth: ResourceLimit,
+    maximum_generic_instantiations_per_activity: ResourceLimit,
+    maximum_trait_resolution_steps_per_activity: ResourceLimit,
 }
 
 impl FrontendLimits {
@@ -487,6 +546,85 @@ impl FrontendLimits {
             .any(|value| *value > MAXIMUM_FRONTEND_LIMIT)
         {
             return Err(SourceLimitConfigurationError::TooLarge);
+        }
+        Ok(Self {
+            source,
+            maximum_package_source_manifest_bytes: ResourceLimit::limited(
+                maximum_package_source_manifest_bytes,
+            )
+            .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_canonical_ir_bytes: ResourceLimit::limited(maximum_canonical_ir_bytes)
+                .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_source_map_bytes: ResourceLimit::limited(maximum_source_map_bytes)
+                .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_generated_schema_bytes: ResourceLimit::limited(maximum_generated_schema_bytes)
+                .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_constructed_type_depth: ResourceLimit::limited(maximum_constructed_type_depth)
+                .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_generic_instantiations_per_activity: ResourceLimit::limited(
+                maximum_generic_instantiations_per_activity,
+            )
+            .ok_or(SourceLimitConfigurationError::Zero)?,
+            maximum_trait_resolution_steps_per_activity: ResourceLimit::limited(
+                maximum_trait_resolution_steps_per_activity,
+            )
+            .ok_or(SourceLimitConfigurationError::Zero)?,
+        })
+    }
+
+    /// Creates a frontend policy with no semantic ceilings.
+    #[must_use]
+    pub const fn unlimited() -> Self {
+        Self {
+            source: SourceLimits::unlimited(),
+            maximum_package_source_manifest_bytes: ResourceLimit::Unlimited,
+            maximum_canonical_ir_bytes: ResourceLimit::Unlimited,
+            maximum_source_map_bytes: ResourceLimit::Unlimited,
+            maximum_generated_schema_bytes: ResourceLimit::Unlimited,
+            maximum_constructed_type_depth: ResourceLimit::Unlimited,
+            maximum_generic_instantiations_per_activity: ResourceLimit::Unlimited,
+            maximum_trait_resolution_steps_per_activity: ResourceLimit::Unlimited,
+        }
+    }
+
+    /// Constructs an independently finite-or-unlimited frontend policy.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_resource_limits(
+        maximum_package_files: ResourceLimit,
+        maximum_source_file_bytes: ResourceLimit,
+        maximum_package_source_bytes: ResourceLimit,
+        maximum_source_tokens: ResourceLimit,
+        maximum_diagnostics_per_activity: ResourceLimit,
+        maximum_package_source_manifest_bytes: ResourceLimit,
+        maximum_canonical_ir_bytes: ResourceLimit,
+        maximum_source_map_bytes: ResourceLimit,
+        maximum_generated_schema_bytes: ResourceLimit,
+        maximum_constructed_type_depth: ResourceLimit,
+        maximum_generic_instantiations_per_activity: ResourceLimit,
+        maximum_trait_resolution_steps_per_activity: ResourceLimit,
+    ) -> Result<Self, SourceLimitConfigurationError> {
+        let source = SourceLimits::with_resource_limits(
+            maximum_package_files,
+            maximum_source_file_bytes,
+            maximum_package_source_bytes,
+            maximum_source_tokens,
+            maximum_diagnostics_per_activity,
+        )?;
+        for limit in [
+            maximum_package_source_manifest_bytes,
+            maximum_canonical_ir_bytes,
+            maximum_source_map_bytes,
+            maximum_generated_schema_bytes,
+            maximum_constructed_type_depth,
+            maximum_generic_instantiations_per_activity,
+            maximum_trait_resolution_steps_per_activity,
+        ] {
+            if limit
+                .maximum()
+                .is_some_and(|value| value > MAXIMUM_FRONTEND_LIMIT)
+            {
+                return Err(SourceLimitConfigurationError::TooLarge);
+            }
         }
         Ok(Self {
             source,
@@ -539,43 +677,43 @@ impl FrontendLimits {
     /// Returns the package-source-manifest byte limit for later phases.
     #[must_use]
     pub const fn maximum_package_source_manifest_bytes(self) -> u64 {
-        self.maximum_package_source_manifest_bytes
+        resource_maximum(self.maximum_package_source_manifest_bytes)
     }
 
     /// Returns the canonical-IR byte limit for later phases.
     #[must_use]
     pub const fn maximum_canonical_ir_bytes(self) -> u64 {
-        self.maximum_canonical_ir_bytes
+        resource_maximum(self.maximum_canonical_ir_bytes)
     }
 
     /// Returns the source-map byte limit for later phases.
     #[must_use]
     pub const fn maximum_source_map_bytes(self) -> u64 {
-        self.maximum_source_map_bytes
+        resource_maximum(self.maximum_source_map_bytes)
     }
 
     /// Returns the generated-schema object byte limit for later phases.
     #[must_use]
     pub const fn maximum_generated_schema_bytes(self) -> u64 {
-        self.maximum_generated_schema_bytes
+        resource_maximum(self.maximum_generated_schema_bytes)
     }
 
     /// Returns the maximum retained constructed-type depth for one activity.
     #[must_use]
     pub const fn maximum_constructed_type_depth(self) -> u64 {
-        self.maximum_constructed_type_depth
+        resource_maximum(self.maximum_constructed_type_depth)
     }
 
     /// Returns the maximum new canonical generic instantiations for one activity.
     #[must_use]
     pub const fn maximum_generic_instantiations_per_activity(self) -> u64 {
-        self.maximum_generic_instantiations_per_activity
+        resource_maximum(self.maximum_generic_instantiations_per_activity)
     }
 
     /// Returns the maximum trait-resolution work units for one activity.
     #[must_use]
     pub const fn maximum_trait_resolution_steps_per_activity(self) -> u64 {
-        self.maximum_trait_resolution_steps_per_activity
+        resource_maximum(self.maximum_trait_resolution_steps_per_activity)
     }
 }
 
@@ -758,27 +896,27 @@ fn checked_count(
     code: FrontendResourceCode,
     current: u64,
     amount: u64,
-    limit: u64,
+    limit: ResourceLimit,
 ) -> Result<u64, FrontendResourceLimit> {
     let observed = current.checked_add(amount);
     check_limit(code, limit, observed)?;
     observed.ok_or(FrontendResourceLimit {
         code,
-        limit,
+        limit: resource_maximum(limit),
         observed: None,
     })
 }
 
 fn check_limit(
     code: FrontendResourceCode,
-    limit: u64,
+    limit: ResourceLimit,
     observed: Option<u64>,
 ) -> Result<(), FrontendResourceLimit> {
     match observed {
-        Some(value) if value <= limit => Ok(()),
+        Some(value) if limit.admits(value) => Ok(()),
         _ => Err(FrontendResourceLimit {
             code,
-            limit,
+            limit: resource_maximum(limit),
             observed,
         }),
     }
@@ -810,7 +948,7 @@ impl SourceSnapshotBuilder {
         let byte_len = u64::try_from(bytes.len()).map_err(|_| {
             SourceError::ResourceLimit(FrontendResourceLimit {
                 code: FrontendResourceCode::SourceFileByteLimit,
-                limit: self.counters.limits.maximum_source_file_bytes,
+                limit: resource_maximum(self.counters.limits.maximum_source_file_bytes),
                 observed: None,
             })
         })?;
@@ -1045,7 +1183,7 @@ pub enum DiagnosticError {
 /// Bounded collector for diagnostics already produced in canonical order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiagnosticBuffer {
-    limit: u64,
+    limit: ResourceLimit,
     diagnostics: Vec<StructuredDiagnostic>,
 }
 
@@ -1054,7 +1192,7 @@ impl DiagnosticBuffer {
     pub fn new(limit: u64) -> Result<Self, SourceLimitConfigurationError> {
         SourceLimits::new(1, 1, 1, 1, limit)?;
         Ok(Self {
-            limit,
+            limit: ResourceLimit::limited(limit).ok_or(SourceLimitConfigurationError::Zero)?,
             diagnostics: Vec::new(),
         })
     }

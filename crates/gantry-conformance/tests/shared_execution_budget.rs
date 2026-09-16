@@ -178,9 +178,9 @@ fn root_and_child_share_one_deterministic_transition_limit() {
         MachineStep::Transition(MachineLabel::Failure(ref failure))
             if failure.code == RuntimeCode::DeterministicTransitionBudget
     ));
-    assert_eq!(budget.snapshot().remaining_transitions, 0);
+    assert_eq!(budget.snapshot().remaining_transitions, Some(0));
     assert_eq!(budget.snapshot().revision, 1);
-    assert_eq!(child.remaining_budgets(), (0, 1, 1));
+    assert_eq!(child.remaining_budgets(), (Some(0), Some(1), Some(1)));
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn root_and_child_share_one_logical_operation_limit() {
         MachineStep::Transition(MachineLabel::Failure(ref failure))
             if failure.code == RuntimeCode::OperationBudget
     ));
-    assert_eq!(budget.snapshot().remaining_operations, 0);
+    assert_eq!(budget.snapshot().remaining_operations, Some(0));
     assert_eq!(budget.snapshot().revision, 1);
     assert_eq!(child.status(), gantry::runtime::MachineStatus::Failed);
 }
@@ -243,8 +243,8 @@ fn loop_and_yield_limits_remain_task_local() {
 
     assert!(matches!(root.step(), MachineStep::Transition(_)));
     assert!(matches!(child.step(), MachineStep::Transition(_)));
-    assert_eq!(root.remaining_budgets().2, 0);
-    assert_eq!(child.remaining_budgets().2, 0);
+    assert_eq!(root.remaining_budgets().2, Some(0));
+    assert_eq!(child.remaining_budgets().2, Some(0));
     assert!(root.resume_after_yield());
     for _ in 0..2 {
         assert!(matches!(root.step(), MachineStep::Transition(_)));
@@ -342,6 +342,41 @@ fn canonical_budget_and_task_checkpoints_preserve_continuation() {
         .unwrap_or_else(|error| panic!("budget recovery failed: {error:?}"));
     let mut recovered = Machine::recover_from_checkpoint(program, decoded_task, recovered_budget)
         .unwrap_or_else(|error| panic!("machine recovery failed: {error:?}"));
+    assert_eq!(drive(&mut original), drive(&mut recovered));
+    assert_eq!(original.budget_checkpoint(), recovered.budget_checkpoint());
+}
+
+#[test]
+fn unlimited_budget_and_task_checkpoints_preserve_continuation() {
+    let program = return_program();
+    let machine_limits = MachineLimits::unlimited(8, gantry::value::ValueLimits::unlimited())
+        .unwrap_or_else(|| unreachable!("yield quantum is positive"));
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let mut original = root_machine(Arc::clone(&program), machine_limits, budget);
+    assert!(matches!(original.step(), MachineStep::Transition(_)));
+
+    let task_checkpoint = original.checkpoint();
+    let budget_checkpoint = original.budget_checkpoint();
+    assert_eq!(budget_checkpoint.maximum_transitions.maximum(), None);
+    assert_eq!(budget_checkpoint.maximum_operations.maximum(), None);
+    assert_eq!(budget_checkpoint.remaining_transitions, None);
+    assert_eq!(budget_checkpoint.remaining_operations, None);
+    assert_eq!(task_checkpoint.remaining_loop_iterations(), None);
+
+    let task_bytes = task_checkpoint.canonical_bytes();
+    let budget_bytes = budget_checkpoint.canonical_bytes();
+    let decoded_task = gantry::runtime::MachineCheckpointV3::decode(&program, &task_bytes)
+        .unwrap_or_else(|error| panic!("unlimited task checkpoint decode failed: {error:?}"));
+    let decoded_budget = ExecutionBudgetSnapshot::decode(&budget_bytes)
+        .unwrap_or_else(|error| panic!("unlimited budget checkpoint decode failed: {error:?}"));
+    assert_eq!(decoded_task, task_checkpoint);
+    assert_eq!(decoded_task.canonical_bytes(), task_bytes);
+    assert_eq!(decoded_budget.canonical_bytes(), budget_bytes);
+
+    let recovered_budget = ExecutionBudget::recover_from_checkpoint(decoded_budget)
+        .unwrap_or_else(|error| panic!("unlimited budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, decoded_task, recovered_budget)
+        .unwrap_or_else(|error| panic!("unlimited machine recovery failed: {error:?}"));
     assert_eq!(drive(&mut original), drive(&mut recovered));
     assert_eq!(original.budget_checkpoint(), recovered.budget_checkpoint());
 }

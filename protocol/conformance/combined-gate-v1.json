@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "SPEC.md",
-   "sha256": "e786ea74bb47bae17d346433ed845824257fef4ded298cded091febaa440ee46"
+   "sha256": "5ba345a391922999b81de820ccb744e8fe9949546bad0fc9148f497bb7c65328"
   },
   {
    "path": "crates/gantry-conformance/tests/combined_gate.rs",
@@ -200,7 +200,7 @@
  ],
  "specification": {
   "path": "SPEC.md",
-  "sha256": "e786ea74bb47bae17d346433ed845824257fef4ded298cded091febaa440ee46"
+  "sha256": "5ba345a391922999b81de820ccb744e8fe9949546bad0fc9148f497bb7c65328"
  },
  "status": "verified",
  "validation_commands": [

@@ -3,6 +3,7 @@
 use std::fmt;
 use std::sync::Arc;
 
+use gantry_core::limit::ResourceLimit;
 use gantry_core::portable::{ConfigurationField, JitterMode, MAXIMUM_DIRECTIVE_INTEGER};
 use gantry_core::source::FrontendLimits;
 use gantry_core::value::ValueLimits;
@@ -108,23 +109,23 @@ impl RetryDefaults {
     }
 }
 
-/// Positive implementation-selected limits for fields with no normative v1 default.
+/// Implementation-selected resource policy for one interpreter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RequiredConfiguration {
     /// Activity-local frontend policy.
     pub frontend_limits: FrontendLimits,
     /// Raw entry-input byte limit.
-    pub maximum_entry_input_bytes: u64,
+    pub maximum_entry_input_bytes: ResourceLimit,
     /// Raw hook-output byte limit.
-    pub maximum_hook_output_bytes: u64,
+    pub maximum_hook_output_bytes: ResourceLimit,
     /// Logical value limits.
     pub value_limits: ValueLimits,
     /// Deterministic transitions admitted for one execution.
-    pub maximum_deterministic_transitions_per_execution: u64,
+    pub maximum_deterministic_transitions_per_execution: ResourceLimit,
     /// Logical operation preparations admitted for one execution.
-    pub maximum_operations_per_execution: u64,
+    pub maximum_operations_per_execution: ResourceLimit,
     /// Loop body entries admitted for one task.
-    pub maximum_loop_iterations_per_task: u64,
+    pub maximum_loop_iterations_per_task: ResourceLimit,
     /// Consecutive deterministic transitions before a cooperative yield.
     pub deterministic_transition_yield_quantum: u64,
 }
@@ -192,6 +193,98 @@ impl RequiredConfiguration {
         )?;
         Ok(Self {
             frontend_limits,
+            maximum_entry_input_bytes: ResourceLimit::limited(maximum_entry_input_bytes)
+                .unwrap_or_else(|| unreachable!("validated entry-input limit is positive")),
+            maximum_hook_output_bytes: ResourceLimit::limited(maximum_hook_output_bytes)
+                .unwrap_or_else(|| unreachable!("validated hook-output limit is positive")),
+            value_limits,
+            maximum_deterministic_transitions_per_execution: ResourceLimit::limited(
+                maximum_deterministic_transitions_per_execution,
+            )
+            .unwrap_or_else(|| unreachable!("validated transition limit is positive")),
+            maximum_operations_per_execution: ResourceLimit::limited(
+                maximum_operations_per_execution,
+            )
+            .unwrap_or_else(|| unreachable!("validated operation limit is positive")),
+            maximum_loop_iterations_per_task: ResourceLimit::limited(
+                maximum_loop_iterations_per_task,
+            )
+            .unwrap_or_else(|| unreachable!("validated loop limit is positive")),
+            deterministic_transition_yield_quantum,
+        })
+    }
+
+    /// Constructs independently finite-or-unlimited interpreter policy.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_resource_limits(
+        frontend_limits: FrontendLimits,
+        maximum_entry_input_bytes: ResourceLimit,
+        maximum_hook_output_bytes: ResourceLimit,
+        value_limits: ValueLimits,
+        maximum_deterministic_transitions_per_execution: ResourceLimit,
+        maximum_operations_per_execution: ResourceLimit,
+        maximum_loop_iterations_per_task: ResourceLimit,
+        deterministic_transition_yield_quantum: u64,
+    ) -> Result<Self, ConfigurationError> {
+        for (field, limit, maximum) in [
+            (
+                ConfigurationField::MaximumEntryInputBytes,
+                maximum_entry_input_bytes,
+                MAXIMUM_DIRECTIVE_INTEGER,
+            ),
+            (
+                ConfigurationField::MaximumHookOutputBytes,
+                maximum_hook_output_bytes,
+                MAXIMUM_DIRECTIVE_INTEGER,
+            ),
+            (
+                ConfigurationField::MaximumValueNestingDepth,
+                value_limits.nesting_depth_limit(),
+                MAXIMUM_DIRECTIVE_INTEGER,
+            ),
+            (
+                ConfigurationField::MaximumValueNodes,
+                value_limits.node_limit(),
+                MAXIMUM_DIRECTIVE_INTEGER,
+            ),
+            (
+                ConfigurationField::MaximumStringScalars,
+                value_limits.string_scalar_limit(),
+                MAXIMUM_LENGTH,
+            ),
+            (
+                ConfigurationField::MaximumListItems,
+                value_limits.list_item_limit(),
+                MAXIMUM_LENGTH,
+            ),
+            (
+                ConfigurationField::MaximumDeterministicTransitionsPerExecution,
+                maximum_deterministic_transitions_per_execution,
+                MAXIMUM_DIRECTIVE_INTEGER,
+            ),
+            (
+                ConfigurationField::MaximumOperationsPerExecution,
+                maximum_operations_per_execution,
+                MAXIMUM_DIRECTIVE_INTEGER,
+            ),
+            (
+                ConfigurationField::MaximumLoopIterationsPerTask,
+                maximum_loop_iterations_per_task,
+                MAXIMUM_DIRECTIVE_INTEGER,
+            ),
+        ] {
+            if let Some(value) = limit.maximum() {
+                check(field, value, false, maximum)?;
+            }
+        }
+        check(
+            ConfigurationField::DeterministicTransitionYieldQuantum,
+            deterministic_transition_yield_quantum,
+            false,
+            MAXIMUM_DIRECTIVE_INTEGER,
+        )?;
+        Ok(Self {
+            frontend_limits,
             maximum_entry_input_bytes,
             maximum_hook_output_bytes,
             value_limits,
@@ -200,6 +293,54 @@ impl RequiredConfiguration {
             maximum_loop_iterations_per_task,
             deterministic_transition_yield_quantum,
         })
+    }
+
+    /// Creates a configuration with no semantic resource ceilings.
+    pub fn unlimited(
+        frontend_limits: FrontendLimits,
+        value_limits: ValueLimits,
+        deterministic_transition_yield_quantum: u64,
+    ) -> Result<Self, ConfigurationError> {
+        check(
+            ConfigurationField::DeterministicTransitionYieldQuantum,
+            deterministic_transition_yield_quantum,
+            false,
+            MAXIMUM_DIRECTIVE_INTEGER,
+        )?;
+        Ok(Self {
+            frontend_limits,
+            maximum_entry_input_bytes: ResourceLimit::Unlimited,
+            maximum_hook_output_bytes: ResourceLimit::Unlimited,
+            value_limits,
+            maximum_deterministic_transitions_per_execution: ResourceLimit::Unlimited,
+            maximum_operations_per_execution: ResourceLimit::Unlimited,
+            maximum_loop_iterations_per_task: ResourceLimit::Unlimited,
+            deterministic_transition_yield_quantum,
+        })
+    }
+
+    /// Creates a configuration with unlimited execution budgets and bounded I/O/value policy.
+    pub fn unlimited_execution(
+        frontend_limits: FrontendLimits,
+        maximum_entry_input_bytes: u64,
+        maximum_hook_output_bytes: u64,
+        value_limits: ValueLimits,
+        deterministic_transition_yield_quantum: u64,
+    ) -> Result<Self, ConfigurationError> {
+        let mut configuration = Self::new(
+            frontend_limits,
+            maximum_entry_input_bytes,
+            maximum_hook_output_bytes,
+            value_limits,
+            1,
+            1,
+            1,
+            deterministic_transition_yield_quantum,
+        )?;
+        configuration.maximum_deterministic_transitions_per_execution = ResourceLimit::Unlimited;
+        configuration.maximum_operations_per_execution = ResourceLimit::Unlimited;
+        configuration.maximum_loop_iterations_per_task = ResourceLimit::Unlimited;
+        Ok(configuration)
     }
 }
 
@@ -380,8 +521,8 @@ pub struct InterpreterConfiguration {
     retry: RetryDefaults,
     graceful_shutdown_timeout: DurationMicros,
     post_cancellation_drain: DurationMicros,
-    maximum_workflow_call_depth: u64,
-    maximum_tasks_per_execution: u64,
+    maximum_workflow_call_depth: ResourceLimit,
+    maximum_tasks_per_execution: ResourceLimit,
 }
 
 impl fmt::Debug for InterpreterConfiguration {
@@ -426,8 +567,8 @@ impl InterpreterConfiguration {
             retry: RetryDefaults::default(),
             graceful_shutdown_timeout: duration(30_000_000),
             post_cancellation_drain: duration(5_000_000),
-            maximum_workflow_call_depth: 1_024,
-            maximum_tasks_per_execution: 65_536,
+            maximum_workflow_call_depth: ResourceLimit::Unlimited,
+            maximum_tasks_per_execution: ResourceLimit::Unlimited,
         }
     }
 
@@ -516,7 +657,25 @@ impl InterpreterConfiguration {
             false,
             MAXIMUM_DIRECTIVE_INTEGER,
         )?;
-        self.maximum_workflow_call_depth = value;
+        self.maximum_workflow_call_depth = ResourceLimit::limited(value)
+            .unwrap_or_else(|| unreachable!("validated workflow depth is positive"));
+        Ok(self)
+    }
+
+    /// Replaces the workflow-call-depth policy with a finite or unlimited limit.
+    pub fn with_workflow_call_depth_limit(
+        mut self,
+        limit: ResourceLimit,
+    ) -> Result<Self, ConfigurationError> {
+        if let Some(value) = limit.maximum() {
+            check(
+                ConfigurationField::MaximumWorkflowCallDepth,
+                value,
+                false,
+                MAXIMUM_DIRECTIVE_INTEGER,
+            )?;
+        }
+        self.maximum_workflow_call_depth = limit;
         Ok(self)
     }
 
@@ -531,7 +690,25 @@ impl InterpreterConfiguration {
             false,
             MAXIMUM_DIRECTIVE_INTEGER,
         )?;
-        self.maximum_tasks_per_execution = value;
+        self.maximum_tasks_per_execution = ResourceLimit::limited(value)
+            .unwrap_or_else(|| unreachable!("validated task limit is positive"));
+        Ok(self)
+    }
+
+    /// Replaces the cumulative task-count policy with a finite or unlimited limit.
+    pub fn with_task_count_limit(
+        mut self,
+        limit: ResourceLimit,
+    ) -> Result<Self, ConfigurationError> {
+        if let Some(value) = limit.maximum() {
+            check(
+                ConfigurationField::MaximumTasksPerExecution,
+                value,
+                false,
+                MAXIMUM_DIRECTIVE_INTEGER,
+            )?;
+        }
+        self.maximum_tasks_per_execution = limit;
         Ok(self)
     }
 
@@ -597,20 +774,20 @@ impl InterpreterConfiguration {
 
     /// Returns the effective workflow-call-depth limit.
     #[must_use]
-    pub const fn maximum_workflow_call_depth(&self) -> u64 {
+    pub const fn maximum_workflow_call_depth(&self) -> ResourceLimit {
         self.maximum_workflow_call_depth
     }
 
     /// Returns the effective cumulative task-count limit.
     #[must_use]
-    pub const fn maximum_tasks_per_execution(&self) -> u64 {
+    pub const fn maximum_tasks_per_execution(&self) -> ResourceLimit {
         self.maximum_tasks_per_execution
     }
 
     /// Projects the immutable execution limits into the explicit-frame machine.
     #[must_use]
     pub fn machine_limits(&self) -> MachineLimits {
-        MachineLimits::new(
+        MachineLimits::with_resource_limits(
             self.required
                 .maximum_deterministic_transitions_per_execution,
             self.required.maximum_operations_per_execution,

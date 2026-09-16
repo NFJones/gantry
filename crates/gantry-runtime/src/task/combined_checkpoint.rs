@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
+use gantry_core::limit::ResourceLimit;
 use gantry_core::portable::{IdentityKind, RuntimeErrorCategory, TaskHandleState, TaskStatusKind};
 use gantry_core::value::ValueLimits;
 use gantry_ir::{CanonicalPath, MachineProgram, TypeDescriptor};
@@ -1053,7 +1054,7 @@ struct TaskStateCheckpointV1 {
     execution_id: ProtocolIdentity,
     root_task_id: ProtocolIdentity,
     root: super::RootTaskRecordV1,
-    maximum_tasks: u64,
+    maximum_tasks: ResourceLimit,
     created_tasks: u64,
     tasks: Vec<ConcurrentTaskRecordV1>,
     cancellation_reasons: BTreeMap<ProtocolIdentity, Arc<str>>,
@@ -1087,7 +1088,7 @@ impl TaskStateCheckpointV1 {
         write_optional_outcome(writer, self.root.pending_outcome.as_ref(), limits);
         write_optional_outcome(writer, self.root.settled_outcome.as_ref(), limits);
         write_driver_state(writer, self.root.driver_ownership, self.root.recovery_state);
-        writer.u64(self.maximum_tasks);
+        writer.u64(self.maximum_tasks.maximum().unwrap_or(0));
         writer.u64(self.created_tasks);
         writer.count(self.tasks.len());
         for task in &self.tasks {
@@ -1128,7 +1129,11 @@ impl TaskStateCheckpointV1 {
             driver_ownership,
             recovery_state,
         };
-        let maximum_tasks = reader.u64()?;
+        let maximum_tasks = match reader.u64()? {
+            0 => ResourceLimit::Unlimited,
+            maximum => ResourceLimit::limited(maximum)
+                .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?,
+        };
         let created_tasks = reader.u64()?;
         let task_count = reader.count()?;
         let mut tasks = Vec::new();
@@ -1187,9 +1192,8 @@ impl TaskStateCheckpointV1 {
                     ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
                 ),
             }
-            || self.maximum_tasks == 0
             || expected_created_tasks != Some(self.created_tasks)
-            || self.created_tasks > self.maximum_tasks
+            || !self.maximum_tasks.admits(self.created_tasks)
             || self
                 .execution_cancellation
                 .as_ref()
@@ -2235,8 +2239,11 @@ mod tests {
         .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
 
         let mut malformed = checkpoint.clone();
-        malformed.execution_budget.remaining_transitions =
-            malformed.execution_budget.maximum_transitions + 1;
+        malformed.execution_budget.remaining_transitions = malformed
+            .execution_budget
+            .maximum_transitions
+            .maximum()
+            .map(|maximum| maximum + 1);
         assert_eq!(
             ConcurrentDurableCheckpointV4::decode_compatible(
                 &fixture.program,
@@ -2248,8 +2255,19 @@ mod tests {
         );
 
         let mut mixed = checkpoint;
-        mixed.execution_budget.maximum_transitions += 1;
-        mixed.execution_budget.remaining_transitions += 1;
+        mixed.execution_budget.maximum_transitions = gantry_core::limit::ResourceLimit::limited(
+            mixed
+                .execution_budget
+                .maximum_transitions
+                .maximum()
+                .unwrap_or_else(|| unreachable!("fixture is bounded"))
+                + 1,
+        )
+        .unwrap_or_else(|| unreachable!("fixture maximum remains positive"));
+        mixed.execution_budget.remaining_transitions = mixed
+            .execution_budget
+            .remaining_transitions
+            .map(|remaining| remaining + 1);
         assert_eq!(
             ConcurrentDurableCheckpointV4::decode_compatible(
                 &fixture.program,
@@ -2345,13 +2363,18 @@ mod tests {
             &fixture.sessions,
         )
         .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
-        checkpoint.execution_budget.remaining_transitions = 1;
-        checkpoint.execution_budget.revision = checkpoint.execution_budget.maximum_transitions - 1;
+        checkpoint.execution_budget.remaining_transitions = Some(1);
+        checkpoint.execution_budget.revision = checkpoint
+            .execution_budget
+            .maximum_transitions
+            .maximum()
+            .unwrap_or_else(|| unreachable!("fixture is bounded"))
+            - 1;
         let mut recovered = checkpoint
             .recover(Arc::clone(&fixture.program))
             .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
         let before = recovered.foreground.budget_checkpoint();
-        assert_eq!(before.remaining_transitions, 1);
+        assert_eq!(before.remaining_transitions, Some(1));
 
         for _ in 0..2 {
             recovered
@@ -2369,7 +2392,7 @@ mod tests {
             Some(&ConcurrentTaskStatusV1::Succeeded(LogicalValue::unit()))
         );
         let after = recovered.foreground.budget_checkpoint();
-        assert_eq!(after.remaining_transitions, 0);
+        assert_eq!(after.remaining_transitions, Some(0));
         assert_eq!(after.revision, before.revision + 1);
         assert_eq!(recovered.scheduler.execution_budget(), after);
         assert!(matches!(

@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
+use gantry_core::limit::ResourceLimit;
 use gantry_core::portable::{
     ExecutorAbortResultKind, IdentityKind, RuntimeErrorCategory, TaskHandleState, TaskStatusKind,
     TerminalOnlyCategory,
@@ -708,7 +709,7 @@ pub struct ConcurrentTaskStateV1 {
     execution_id: ProtocolIdentity,
     root_task_id: ProtocolIdentity,
     root: RootTaskRecordV1,
-    maximum_tasks: u64,
+    maximum_tasks: ResourceLimit,
     created_tasks: u64,
     task_paths: BTreeMap<ProtocolIdentity, Arc<[Arc<str>]>>,
     tasks: BTreeMap<ProtocolIdentity, ConcurrentTaskRecordV1>,
@@ -725,6 +726,17 @@ impl ConcurrentTaskStateV1 {
         execution_id: ProtocolIdentity,
         root_task_id: ProtocolIdentity,
         maximum_tasks: u64,
+    ) -> Result<Self, TaskStateError> {
+        let maximum_tasks =
+            ResourceLimit::limited(maximum_tasks).ok_or(TaskStateError::InvalidTaskLimit)?;
+        Self::new_with_limit(execution_id, root_task_id, maximum_tasks)
+    }
+
+    /// Creates task state under an explicit finite-or-unlimited task policy.
+    pub fn new_with_limit(
+        execution_id: ProtocolIdentity,
+        root_task_id: ProtocolIdentity,
+        maximum_tasks: ResourceLimit,
     ) -> Result<Self, TaskStateError> {
         Self::with_root_submission_state(
             execution_id,
@@ -744,7 +756,28 @@ impl ConcurrentTaskStateV1 {
         cut: crate::DurableCommitCutV1,
         outcome: Option<MachineOutcome>,
     ) -> Result<Self, TaskStateError> {
-        let mut state = Self::with_submitting_root(execution_id, root_task_id, maximum_tasks)?;
+        let maximum_tasks =
+            ResourceLimit::limited(maximum_tasks).ok_or(TaskStateError::InvalidTaskLimit)?;
+        Self::from_sequential_recovery_with_limit(
+            execution_id,
+            root_task_id,
+            maximum_tasks,
+            cut,
+            outcome,
+        )
+    }
+
+    /// Reconstructs sequential root coordinates under an explicit task policy.
+    #[cfg(feature = "durable")]
+    pub fn from_sequential_recovery_with_limit(
+        execution_id: ProtocolIdentity,
+        root_task_id: ProtocolIdentity,
+        maximum_tasks: ResourceLimit,
+        cut: crate::DurableCommitCutV1,
+        outcome: Option<MachineOutcome>,
+    ) -> Result<Self, TaskStateError> {
+        let mut state =
+            Self::with_submitting_root_with_limit(execution_id, root_task_id, maximum_tasks)?;
         state.resolve_root_submission()?;
         if matches!(
             cut,
@@ -776,6 +809,17 @@ impl ConcurrentTaskStateV1 {
         root_task_id: ProtocolIdentity,
         maximum_tasks: u64,
     ) -> Result<Self, TaskStateError> {
+        let maximum_tasks =
+            ResourceLimit::limited(maximum_tasks).ok_or(TaskStateError::InvalidTaskLimit)?;
+        Self::with_submitting_root_with_limit(execution_id, root_task_id, maximum_tasks)
+    }
+
+    /// Creates submitting-root state under an explicit task policy.
+    pub fn with_submitting_root_with_limit(
+        execution_id: ProtocolIdentity,
+        root_task_id: ProtocolIdentity,
+        maximum_tasks: ResourceLimit,
+    ) -> Result<Self, TaskStateError> {
         Self::with_root_submission_state(
             execution_id,
             root_task_id,
@@ -788,7 +832,7 @@ impl ConcurrentTaskStateV1 {
     fn with_root_submission_state(
         execution_id: ProtocolIdentity,
         root_task_id: ProtocolIdentity,
-        maximum_tasks: u64,
+        maximum_tasks: ResourceLimit,
         status: ConcurrentTaskStatusV1,
         driver_ownership: TaskDriverOwnershipV1,
     ) -> Result<Self, TaskStateError> {
@@ -797,9 +841,6 @@ impl ConcurrentTaskStateV1 {
         }
         if root_task_id.kind() != IdentityKind::Task {
             return Err(TaskStateError::InvalidTaskIdentity);
-        }
-        if maximum_tasks == 0 {
-            return Err(TaskStateError::InvalidTaskLimit);
         }
         Ok(Self {
             execution_id,
@@ -879,7 +920,7 @@ impl ConcurrentTaskStateV1 {
 
     /// Returns the configured cumulative task-count ceiling.
     #[must_use]
-    pub const fn maximum_task_count(&self) -> u64 {
+    pub const fn maximum_task_count(&self) -> ResourceLimit {
         self.maximum_tasks
     }
 
@@ -1276,7 +1317,7 @@ impl ConcurrentTaskStateV1 {
             .created_tasks
             .checked_add(1)
             .ok_or(TaskStateError::TaskCountLimit)?;
-        if next_count > self.maximum_tasks {
+        if !self.maximum_tasks.admits(next_count) {
             return Err(TaskStateError::TaskCountLimit);
         }
         if request.parent_task_id.kind() != IdentityKind::Task {
@@ -2604,7 +2645,8 @@ mod tests {
         assert_eq!(sessions_len(&sessions), session_count);
 
         state.created_tasks = u64::MAX;
-        state.maximum_tasks = u64::MAX;
+        state.maximum_tasks = gantry_core::limit::ResourceLimit::limited(u64::MAX)
+            .unwrap_or_else(|| unreachable!("maximum task fixture is positive"));
         assert_eq!(
             state.create_child(
                 &mut sessions,
@@ -3032,10 +3074,10 @@ mod tests {
             .execution_budget()
             .unwrap_or_else(|| panic!("coordinator budget projection missing"));
         assert_eq!(snapshot.execution, execution);
-        assert_eq!(snapshot.maximum_transitions, 16);
-        assert_eq!(snapshot.maximum_operations, 1);
-        assert_eq!(snapshot.remaining_transitions, 15);
-        assert_eq!(snapshot.remaining_operations, 1);
+        assert_eq!(snapshot.maximum_transitions.maximum(), Some(16));
+        assert_eq!(snapshot.maximum_operations.maximum(), Some(1));
+        assert_eq!(snapshot.remaining_transitions, Some(15));
+        assert_eq!(snapshot.remaining_operations, Some(1));
         assert_eq!(snapshot.revision, 1);
     }
 

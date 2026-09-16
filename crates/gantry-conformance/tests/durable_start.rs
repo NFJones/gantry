@@ -1110,7 +1110,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     );
     assert_eq!(
         metadata["configuration"]["interpreter"]["maximum_workflow_call_depth"],
-        "1024"
+        "unlimited"
     );
     assert_eq!(
         metadata["configuration"]["structured_output"]["model_retry_limit"],
