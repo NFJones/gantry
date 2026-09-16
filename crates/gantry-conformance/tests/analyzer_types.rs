@@ -7257,6 +7257,127 @@ fn public_calls_inside_aggregate_literals_are_lowered() {
     }
 }
 
+/// An aggregate literal nested inside another construct is lowered as that construct, so the
+/// enclosing expression keeps its own type and value: every row publishes the enclosing aggregate
+/// after the literal it contains and executes instead of failing with an internal evaluator
+/// invariant (`GNT-GP-VALUE-003`).
+#[test]
+fn public_nested_aggregate_literals_lower_as_their_enclosing_construct() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("nested aggregate did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    let root = TempDirectory::new();
+    for (source, aggregates) in [
+        (
+            "struct Item { count: Int } fn main() -> Int { let items: List<Item> = [Item { count: 1 }]; 0 }",
+            vec!["struct:crate::Item", "list"],
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { let items: List<Item> = [Item { count: 1 }, Item { count: 2 }]; 0 }",
+            vec!["struct:crate::Item", "struct:crate::Item", "list"],
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { let x: Option<Item> = Some(Item { count: 1 }); 0 }",
+            vec!["struct:crate::Item", "some"],
+        ),
+        (
+            "fn main() -> Int { discard ([1, 2], 3); 0 }",
+            vec!["list", "tuple"],
+        ),
+        (
+            "struct Bag { values: List<Int> } fn main() -> Int { let bag: Bag = Bag { values: [1, 2] }; 0 }",
+            vec!["list", "struct:crate::Bag"],
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { let item: Item = (Item { count: 1 }); discard item; 0 }",
+            vec!["struct:crate::Item"],
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: a nested aggregate must publish a program")
+        });
+        let labels = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .filter_map(|instruction| match &instruction.kind {
+                InstructionKind::Aggregate { kind, .. } => Some(match kind {
+                    AggregateKind::List => "list".to_owned(),
+                    AggregateKind::Tuple => "tuple".to_owned(),
+                    AggregateKind::Struct { type_name, .. } => format!("struct:{type_name}"),
+                    AggregateKind::Enum {
+                        type_name, variant, ..
+                    } => format!("enum:{type_name}::{variant}"),
+                    AggregateKind::Some => "some".to_owned(),
+                    AggregateKind::None => "none".to_owned(),
+                    AggregateKind::Ok => "ok".to_owned(),
+                    AggregateKind::Err => "err".to_owned(),
+                }),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels, aggregates,
+            "source: {source}: the enclosing construct is lowered after the literal it contains"
+        );
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x31; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(_)),
+            "source: {source}: expected the returned Int, observed {value:?}"
+        );
+    }
+}
+
 /// An annotation naming a type that no declaration provides is refused precisely, including when
 /// the enclosing declaration is reachable and would otherwise be lowered into an executable program.
 #[test]

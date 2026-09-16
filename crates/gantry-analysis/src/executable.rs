@@ -1562,7 +1562,14 @@ impl Compiler<'_> {
             return Ok(ty);
         }
         if let Some(struct_expression) =
-            descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
+            descendant_form(self.tree, expression, &[SyntaxForm::StructExpression]).filter(
+                |literal| {
+                    matches!(
+                        owning_value(self.tree, expression),
+                        Some(ExpressionValue::Struct(owner)) if owner == *literal
+                    )
+                },
+            )
         {
             return self.compile_struct(expression, struct_expression, ty);
         }
@@ -1608,7 +1615,14 @@ impl Compiler<'_> {
             )?;
             return Ok(ty);
         }
-        if let Some(list) = descendant_form(self.tree, expression, &[SyntaxForm::ListExpression]) {
+        if let Some(list) = descendant_form(self.tree, expression, &[SyntaxForm::ListExpression])
+            .filter(|literal| {
+                matches!(
+                    owning_value(self.tree, expression),
+                    Some(ExpressionValue::List(owner)) if owner == *literal
+                )
+            })
+        {
             let members = direct_expressions(self.tree, self.node(list)?);
             for member in &members {
                 self.compile_expression(*member)?;
@@ -1622,7 +1636,10 @@ impl Compiler<'_> {
             )?;
             return Ok(ty);
         }
-        if descendant_form(self.tree, expression, &[SyntaxForm::TupleExpression]).is_some() {
+        if matches!(
+            owning_value(self.tree, expression),
+            Some(ExpressionValue::Tuple(_))
+        ) {
             let members = direct_expressions(self.tree, &node);
             for member in &members {
                 self.compile_expression(*member)?;
@@ -2592,6 +2609,51 @@ fn aggregate_contains_span(
         work.extend(child.children().iter().copied());
     }
     false
+}
+
+/// The value construct one expression denotes at its own level.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ExpressionValue {
+    /// The expression's own list literal.
+    List(NodeId),
+    /// The expression's own struct literal.
+    Struct(NodeId),
+    /// The comma that carries the expression's own tuple literal.
+    Tuple(NodeId),
+    /// The node carrying the expression's own `Some`, `Ok`, `Err`, or `None` constructor.
+    Constructor(NodeId),
+}
+
+/// Returns the construct that owns one expression's result: the aggregate literal or option
+/// constructor the expression denotes before any operand nested inside it.
+///
+/// Only nodes that wrap this value without holding an operand of their own are descended, so a
+/// literal reached through a nested operand is not mistaken for the expression's own literal. In
+/// `[Item { count: 1 }]` the struct literal belongs to the list element and in
+/// `Some(Item { count: 1 })` it belongs to the constructor operand, so neither is the value the
+/// enclosing expression must lower.
+fn owning_value(tree: &SyntaxTree, root: NodeId) -> Option<ExpressionValue> {
+    let mut current = root;
+    loop {
+        let node = tree.node(current)?;
+        if direct_word(tree, node, &["Some", "Ok", "Err", "None"]).is_some() {
+            return Some(ExpressionValue::Constructor(current));
+        }
+        if let Some(literal) = direct_child_form(tree, node, SyntaxForm::StructExpression) {
+            return Some(ExpressionValue::Struct(literal));
+        }
+        if let Some(literal) = direct_child_form(tree, node, SyntaxForm::ListExpression) {
+            return Some(ExpressionValue::List(literal));
+        }
+        if let Some(literal) = direct_child_form(tree, node, SyntaxForm::TupleExpression) {
+            return Some(ExpressionValue::Tuple(literal));
+        }
+        let mut wrapped = semantic_children(tree, current).ok()?;
+        match wrapped.pop() {
+            Some(only) if wrapped.is_empty() => current = only,
+            _ => return None,
+        }
+    }
 }
 
 fn descendant_form(tree: &SyntaxTree, root: NodeId, forms: &[SyntaxForm]) -> Option<NodeId> {
