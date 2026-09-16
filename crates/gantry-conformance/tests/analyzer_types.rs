@@ -7196,6 +7196,66 @@ fn public_non_path_callee_shapes_are_refused() {
     }
 }
 
+/// A call nested in a list- or struct-literal operand is lowered as that call rather than as
+/// the enclosing aggregate, so the operand stream matches the expression type and no internal
+/// failure reaches analysis (`GNT-GP-VALUE-002`).
+#[test]
+fn public_calls_inside_aggregate_literals_are_lowered() {
+    let root = TempDirectory::new();
+    for source in [
+        "fn g(v: Int) -> Int { v } fn main() -> Int { discard [g(1)]; 0 }",
+        "fn g(v: Int) -> Int { v } fn main() -> Int { let xs: List<Int> = [g(1), 2]; 0 }",
+        "fn g(v: Int) -> Int { v } fn main() -> Int { discard [g(1), g(2)]; 0 }",
+        "fn g(v: Int) -> Int { v } fn main() -> Int { discard [[g(1)]]; 0 }",
+        "fn g(v: Int) -> Int { v } fn main() -> Int { discard [g(1) + 1]; 0 }",
+        "struct Item { count: Int } fn g(v: Int) -> Int { v } fn main() -> Int { discard Item { count: g(1) }; 0 }",
+        "struct Item { count: Int } fn g(v: Int) -> Int { v } fn main() -> Int { let item: Item = Item { count: g(1) }; 0 }",
+        "struct Item { count: Int } impl Item { fn read(self) -> Int { self.count } } fn main() -> Int { let item: Item = Item { count: 1 }; discard [item.read()]; 0 }",
+        "fn g(v: Int) -> Int { v } fn main() -> Int { discard [g(1), 2][0]; 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        assert!(
+            admitted.executable_program().is_some(),
+            "source: {source}: an admitted call inside an aggregate literal must publish a program"
+        );
+    }
+
+    // The statement-level, tuple, operator, grouped, no-argument, and binding forms keep
+    // their meaning.
+    for source in [
+        "fn g(v: Int) -> Int { v } fn main() -> Int { let x: Int = g(1); x }",
+        "fn g(v: Int) -> Int { v } fn main() -> Int { discard (g(1), g(2)); 0 }",
+        "fn h() -> Int { 1 } fn main() -> Int { discard [h()]; 0 }",
+        "fn g(v: Int) -> Int { v } fn f(v: Int) -> Int { v } fn main() -> Int { f(g(1)) }",
+        "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn main() -> Int { let counter: Counter = Counter { value: 5 }; counter.read() + 1 }",
+        "fn main() -> Int { let xs: List<Int> = [1, 2]; xs[0] }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+    }
+}
+
 /// An annotation naming a type that no declaration provides is refused precisely, including when
 /// the enclosing declaration is reachable and would otherwise be lowered into an executable program.
 #[test]

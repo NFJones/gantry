@@ -2464,6 +2464,13 @@ impl Compiler<'_> {
                     source == expression.span()
                 } else {
                     source_span_contains(expression.span(), source)
+                        // The matched call site must be this expression's own call rather
+                        // than a call nested inside it: a list or struct literal whose text
+                        // contains a call (for example `[g(1)]`) otherwise matches that inner
+                        // call here, so the aggregate is lowered as the call and the operand
+                        // stream no longer matches its type.
+                        && (source.bytes().start() == expression.span().bytes().start()
+                            || !aggregate_contains_span(self.tree, expression, source))
                         && !arguments
                             .iter()
                             .any(|argument| source_span_contains(argument, source))
@@ -2521,6 +2528,31 @@ fn direct_child_form(
             std::mem::discriminant(node.form()) == std::mem::discriminant(&form)
         })
     })
+}
+
+/// Whether a list or struct literal inside `node` strictly contains `source`, which makes a call
+/// at `source` a member of that literal rather than the call `node` itself performs.
+fn aggregate_contains_span(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    source: &gantry_core::source::SourceSpan,
+) -> bool {
+    let mut work = node.children().to_vec();
+    while let Some(id) = work.pop() {
+        let Some(child) = tree.node(id) else {
+            continue;
+        };
+        if matches!(
+            child.form(),
+            SyntaxForm::ListExpression | SyntaxForm::StructExpression
+        ) && child.span() != source
+            && source_span_contains(child.span(), source)
+        {
+            return true;
+        }
+        work.extend(child.children().iter().copied());
+    }
+    false
 }
 
 fn descendant_form(tree: &SyntaxTree, root: NodeId, forms: &[SyntaxForm]) -> Option<NodeId> {
