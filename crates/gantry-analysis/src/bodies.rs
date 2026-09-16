@@ -7277,12 +7277,11 @@ fn infer_projection(
             // element is a copied read and a `Copyable` element is a copy, matching the struct-field
             // projection rule. Only a place-backed receiver records that read: the element of a call
             // result or of any other value is a temporary without a caller place to read.
-            if let (Some(place), Some(prefix)) = (&place, receiver_children.first().copied()) {
-                let mut place_path = place.fields.clone();
-                place_path.push(Arc::from(format!("[{index}]")));
+            let continuing = projected_place_path(&place, Some(index));
+            if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
                 record_affine_place(
-                    AffinePlace::projected(Arc::clone(&place.root), place_path),
-                    Some(&place.binding),
+                    AffinePlace::projected(Arc::clone(&path.root), path.fields.clone()),
+                    Some(&path.binding),
                     &member,
                     projection_prefix_span(tree, prefix, index_expression)?,
                     AffineAccess::Read,
@@ -7290,7 +7289,15 @@ fn infer_projection(
                     diagnostics,
                 )?;
             }
-            return Ok(Some(member));
+            return fold_projection_steps(
+                tree,
+                node,
+                children,
+                index_postfix.saturating_add(1),
+                member,
+                context,
+                diagnostics,
+            );
         }
         diagnostics.push(body_diagnostic(
             "tuple-index-out-of-range",
@@ -7326,6 +7333,7 @@ fn infer_projection(
             )?);
         }
         let projected = receiver_type.immediate_members().into_iter().next();
+        let continuing = projected_place_path(&place, literal_index);
         if let Some(receiver) = &projected {
             diagnose_projected_shared_receiver_place(tree, node, receiver, context, diagnostics)?;
             // A read of any element of a `MustConsume` aggregate is a projection read of that value
@@ -7334,16 +7342,10 @@ fn infer_projection(
             // so a dynamic read overlaps each element place of the same list. A place-backed receiver
             // keeps its field path ahead of that index segment, while a receiver that is a call
             // result or another temporary has no caller place whose element could be read.
-            if let (Some(place), Some(prefix)) = (&place, receiver_children.first().copied()) {
-                let segment: Arc<str> = match literal_index {
-                    Some(index) => Arc::from(format!("[{index}]")),
-                    None => Arc::from(SEGMENT_ANY),
-                };
-                let mut place_path = place.fields.clone();
-                place_path.push(segment);
+            if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
                 record_affine_place(
-                    AffinePlace::projected(Arc::clone(&place.root), place_path),
-                    Some(&place.binding),
+                    AffinePlace::projected(Arc::clone(&path.root), path.fields.clone()),
+                    Some(&path.binding),
                     receiver,
                     projection_prefix_span(tree, prefix, index_expression)?,
                     AffineAccess::Read,
@@ -7352,7 +7354,18 @@ fn infer_projection(
                 )?;
             }
         }
-        return Ok(projected);
+        let Some(projected) = projected else {
+            return Ok(None);
+        };
+        return fold_projection_steps(
+            tree,
+            node,
+            children,
+            index_postfix.saturating_add(1),
+            projected,
+            context,
+            diagnostics,
+        );
     }
     Ok(None)
 }
@@ -7381,6 +7394,152 @@ enum ProjectionPlaceResolution {
     UnknownMember,
     /// A part that names no caller place at all, such as a call result.
     NotAPlace,
+}
+
+/// One resolved projection place continued past the projection that produced it.
+struct ProjectedPlacePath {
+    root: Arc<str>,
+    binding: TypeDescriptor,
+    fields: Vec<Arc<str>>,
+}
+
+/// Extends one resolved place with the element segment the projection reads next.
+///
+/// A literal index keys one element place and every other index expression keys the wildcard
+/// segment, so a dynamic read overlaps each element place of the same aggregate.
+fn projected_place_path(
+    place: &Option<ProjectionPlace>,
+    literal_index: Option<usize>,
+) -> Option<ProjectedPlacePath> {
+    let place = place.as_ref()?;
+    let mut fields = place.fields.clone();
+    fields.push(match literal_index {
+        Some(index) => Arc::from(format!("[{index}]")),
+        None => Arc::from(SEGMENT_ANY),
+    });
+    Some(ProjectedPlacePath {
+        root: Arc::clone(&place.root),
+        binding: place.binding.clone(),
+        fields,
+    })
+}
+
+/// Folds every projection step after the first one into `current`.
+///
+/// The parser flattens a postfix chain into sibling children, so the steps after the first index
+/// postfix are the remaining children: a dot-bearing postfix names a field of the value the chain
+/// has reached so far and a bracket-bearing postfix indexes it. Each step is keyed with its own
+/// intermediate type, so `xs[0][0]` types as an element of the element and `items[0].count` as that
+/// element's field instead of the first projection's result. A step this walk cannot key leaves the
+/// whole projection untyped rather than typed with the wrong intermediate value.
+///
+/// A step after the first projection reads a temporary rather than a caller place, so this walk
+/// records no affine read: the first projection already records the element read of its receiver.
+fn fold_projection_steps(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    children: &[NodeId],
+    after: usize,
+    mut current: TypeDescriptor,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let mut cursor = after;
+    while let Some(child) = children.get(cursor).copied() {
+        let Some(step) = tree.node(child) else {
+            return Ok(None);
+        };
+        if !matches!(step.form(), SyntaxForm::PostfixExpression) {
+            cursor += 1;
+            continue;
+        }
+        if node_contains_punctuation(tree, child, Punctuation::Dot) {
+            let Some(member) = children
+                .get(cursor.saturating_add(1))
+                .and_then(|id| tree.node(*id))
+            else {
+                return Ok(None);
+            };
+            let SyntaxForm::Token(TokenKind::Identifier(name)) = member.form() else {
+                return Ok(None);
+            };
+            let name = Arc::clone(name);
+            let Some(field) = projected_member_type(&current, name.as_ref(), context)? else {
+                diagnostics.push(body_diagnostic(
+                    "unknown-member",
+                    DiagnosticCategory::Type,
+                    "a receiver type has no field or inherent method with this name",
+                    member.span().clone(),
+                    [
+                        ("member", name.as_ref()),
+                        ("receiver", current.canonical_string().as_str()),
+                    ],
+                )?);
+                return Ok(None);
+            };
+            current = field;
+            cursor += 2;
+            continue;
+        }
+        if !node_contains_punctuation(tree, child, Punctuation::LeftBracket) {
+            cursor += 1;
+            continue;
+        }
+        let index_expression = children
+            .iter()
+            .copied()
+            .skip(cursor.saturating_add(1))
+            .find(|id| {
+                tree.node(*id)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+            });
+        // A step this walk cannot key statically stays untyped: the element access a dynamic index
+        // needs is not published yet, and an untyped projection keeps the enclosing expression from
+        // taking the intermediate value's type.
+        let Some(literal_index) = index_expression.and_then(|expression| {
+            let mut literals = Vec::new();
+            let mut work = vec![expression];
+            while let Some(id) = work.pop() {
+                let node = tree.node(id)?;
+                match node.form() {
+                    SyntaxForm::Token(TokenKind::IntegerLiteral(value)) => {
+                        literals.push(Arc::clone(value));
+                    }
+                    SyntaxForm::Token(_) => return None,
+                    _ => work.extend(node.children().iter().copied()),
+                }
+            }
+            match literals.as_slice() {
+                [value] => value.parse::<usize>().ok(),
+                _ => None,
+            }
+        }) else {
+            return Ok(None);
+        };
+        let projected = if current.kind() == TypeKind::Tuple {
+            let Some(member) = current.immediate_members().into_iter().nth(literal_index) else {
+                diagnostics.push(body_diagnostic(
+                    "tuple-index-out-of-range",
+                    DiagnosticCategory::Type,
+                    "a tuple projection index is outside its static arity",
+                    node.span().clone(),
+                    [("index", literal_index.to_string())],
+                )?);
+                return Ok(None);
+            };
+            Some(member)
+        } else if current.kind() == TypeKind::List {
+            current.immediate_members().into_iter().next()
+        } else {
+            None
+        };
+        let Some(projected) = projected else {
+            return Ok(None);
+        };
+        current = projected;
+        cursor += 1;
+    }
+    Ok(Some(current))
 }
 
 /// Resolves the receiver type of one index projection and, when it is place-backed, its place.

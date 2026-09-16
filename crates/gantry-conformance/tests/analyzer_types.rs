@@ -7700,6 +7700,76 @@ fn public_literal_receiver_index_projections_are_lowered_and_typed() {
         );
     }
 
+    // A postfix chain publishes every step it applies: a binding receiver loads once and then each
+    // field or member step follows, and a literal receiver publishes its aggregate before the same
+    // steps, so neither shape applies a projection to the receiver itself.
+    for (source, receiver, steps) in [
+        (
+            "struct Item { count: Int } fn main() -> Int { let items: List<Item> = [Item { count: 1 }]; items[0].count }",
+            Some("items"),
+            vec![Projection::Member(0), Projection::Field("count".into())],
+        ),
+        (
+            "fn main() -> Int { let xs: List<List<Int>> = [[1]]; xs[0][0] }",
+            Some("xs"),
+            vec![Projection::Member(0), Projection::Member(0)],
+        ),
+        (
+            "struct Item { values: List<Int> } fn main() -> Int { let item: Item = Item { values: [1] }; item.values[0] }",
+            Some("item"),
+            vec![Projection::Field("values".into()), Projection::Member(0)],
+        ),
+        (
+            "fn main() -> Int { [[1, 2], [3]][1][0] }",
+            None,
+            vec![Projection::Member(1), Projection::Member(0)],
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { Item { count: 1 }.count }",
+            None,
+            vec![Projection::Field("count".into())],
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted
+            .executable_program()
+            .unwrap_or_else(|| panic!("source: {source}: a chain must publish a program"));
+        let lowered = program.workflows().iter().any(|workflow| {
+            let kinds = workflow
+                .instructions
+                .iter()
+                .map(|instruction| &instruction.kind)
+                .collect::<Vec<_>>();
+            kinds.windows(steps.len() + 1).any(|window| {
+                let receiver_matches = match receiver {
+                    Some(name) => {
+                        matches!(window[0], InstructionKind::Load(loaded) if loaded.as_ref() == name)
+                    }
+                    None => matches!(window[0], InstructionKind::Aggregate { .. }),
+                };
+                receiver_matches
+                    && window[1..].iter().zip(&steps).all(|(kind, expected)| {
+                        matches!(kind, InstructionKind::Project(actual) if actual == expected)
+                    })
+            })
+        });
+        assert!(
+            lowered,
+            "source: {source}: the chain must publish {receiver:?} followed by {steps:?}"
+        );
+    }
+
     // A non-integer index keeps its precise refusal and publishes nothing.
     let source = "fn main() -> Int { [1, 2][true] }";
     root.write(source);

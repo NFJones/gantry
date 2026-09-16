@@ -1571,15 +1571,17 @@ impl Compiler<'_> {
                 },
             )
         {
-            return self.compile_struct(expression, struct_expression, ty);
+            let literal = self.compile_struct(expression, struct_expression, ty.clone())?;
+            return self.compile_projection_tail(&node, 0, &ty, literal);
         }
-        if let Some((root, fields)) = postfix_field_projection(self.tree, &node) {
+        if let Some((root, steps)) = postfix_projection_chain(self.tree, &node) {
             self.emit(ty.clone(), InstructionKind::Load(root))?;
-            for field in fields {
-                self.emit(
-                    ty.clone(),
-                    InstructionKind::Project(Projection::Field(field)),
-                )?;
+            for step in steps {
+                let projection = match step {
+                    ProjectionChainStep::Field(field) => Projection::Field(field),
+                    ProjectionChainStep::Member(index) => Projection::Member(index),
+                };
+                self.emit(ty.clone(), InstructionKind::Project(projection))?;
             }
             return Ok(ty);
         }
@@ -1821,7 +1823,37 @@ impl Compiler<'_> {
             ty.clone(),
             InstructionKind::Project(Projection::Member(index)),
         )?;
-        Ok(Some(ty.clone()))
+        let projected =
+            self.compile_projection_tail(node, index_postfix.saturating_add(1), ty, ty.clone())?;
+        Ok(Some(projected))
+    }
+
+    /// Emits the projection steps one chain applies after `after` of its direct children.
+    ///
+    /// A chain whose receiver is an aggregate literal publishes that receiver first and then every
+    /// remaining step, so `[[1, 2], [3]][1][0]` and `Item { count: 1 }.count` project each step
+    /// instead of stopping at the first one and leaving the program to abort.
+    fn compile_projection_tail(
+        &mut self,
+        node: &gantry_frontend::SyntaxNode,
+        after: usize,
+        ty: &TypeDescriptor,
+        receiver: TypeDescriptor,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        let Some(steps) = postfix_projection_steps(self.tree, node.children(), after) else {
+            return Ok(receiver);
+        };
+        if steps.is_empty() {
+            return Ok(receiver);
+        }
+        for step in steps {
+            let projection = match step {
+                ProjectionChainStep::Field(field) => Projection::Field(field),
+                ProjectionChainStep::Member(index) => Projection::Member(index),
+            };
+            self.emit(ty.clone(), InstructionKind::Project(projection))?;
+        }
+        Ok(ty.clone())
     }
 
     fn compile_match(&mut self, match_expression: NodeId) -> Result<bool, AnalysisError> {
@@ -3056,10 +3088,65 @@ fn receiver_place_types(
     Some(types)
 }
 
-fn postfix_field_projection(
+/// Returns the projection steps one chain applies after `after` of its direct children.
+///
+/// A child that is not a postfix step belongs to the receiver literal or to a step's own index
+/// expression, so this walk skips it; a shape it cannot key reports no steps at all, which keeps
+/// the caller's own arm responsible for the whole chain.
+fn postfix_projection_steps(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    after: usize,
+) -> Option<Vec<ProjectionChainStep>> {
+    let mut steps = Vec::new();
+    let mut cursor = after;
+    while let Some(child) = children.get(cursor).copied() {
+        let step = tree.node(child)?;
+        if !matches!(step.form(), SyntaxForm::PostfixExpression) {
+            cursor += 1;
+            continue;
+        }
+        if node_contains_punctuation(tree, step, Punctuation::Dot) {
+            let SyntaxForm::Token(TokenKind::Identifier(field)) =
+                tree.node(*children.get(cursor.checked_add(1)?)?)?.form()
+            else {
+                return None;
+            };
+            steps.push(ProjectionChainStep::Field(field.clone()));
+            cursor += 2;
+            continue;
+        }
+        if node_contains_punctuation(tree, step, Punctuation::LeftBracket) {
+            let index = children
+                .iter()
+                .copied()
+                .skip(cursor.checked_add(1)?)
+                .find_map(|child| integer_literal(tree, child))?;
+            steps.push(ProjectionChainStep::Member(index));
+            cursor += 1;
+            continue;
+        }
+        cursor += 1;
+    }
+    Some(steps)
+}
+
+/// One step of a postfix projection chain over a binding root.
+enum ProjectionChainStep {
+    Field(Arc<str>),
+    Member(usize),
+}
+
+/// Returns the root binding and the ordered steps of one postfix chain over that binding.
+///
+/// The parser flattens a postfix chain into sibling children, so a receiver part such as
+/// `item.values` is not one syntax node: the chain is the flat token sequence from the root binding
+/// through every `.field` and `[index]` step. A chain with a grouping parenthesis, a call, or a
+/// computed index reports no chain here, so the caller keeps its own arms for those shapes.
+fn postfix_projection_chain(
     tree: &SyntaxTree,
     expression: &gantry_frontend::SyntaxNode,
-) -> Option<(Arc<str>, Vec<Arc<str>>)> {
+) -> Option<(Arc<str>, Vec<ProjectionChainStep>)> {
     let mut tokens = Vec::new();
     let mut work = expression
         .children()
@@ -3078,9 +3165,7 @@ fn postfix_field_projection(
     if tokens.iter().any(|node| {
         matches!(
             node.form(),
-            SyntaxForm::Token(TokenKind::Punctuation(
-                Punctuation::LeftParenthesis | Punctuation::LeftBracket
-            ))
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
         )
     }) {
         return None;
@@ -3092,22 +3177,37 @@ fn postfix_field_projection(
         }
         _ => return None,
     };
-    let mut fields = Vec::new();
+    let mut steps = Vec::new();
     let mut cursor = 1;
     while cursor < tokens.len() {
-        if !matches!(
-            tokens.get(cursor)?.form(),
-            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
-        ) {
-            return None;
+        match tokens.get(cursor)?.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)) => {
+                let SyntaxForm::Token(TokenKind::Identifier(field)) =
+                    tokens.get(cursor + 1)?.form()
+                else {
+                    return None;
+                };
+                steps.push(ProjectionChainStep::Field(field.clone()));
+                cursor += 2;
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftBracket)) => {
+                let SyntaxForm::Token(TokenKind::IntegerLiteral(index)) =
+                    tokens.get(cursor + 1)?.form()
+                else {
+                    return None;
+                };
+                let SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightBracket)) =
+                    tokens.get(cursor + 2)?.form()
+                else {
+                    return None;
+                };
+                steps.push(ProjectionChainStep::Member(index.parse::<usize>().ok()?));
+                cursor += 3;
+            }
+            _ => return None,
         }
-        let SyntaxForm::Token(TokenKind::Identifier(field)) = tokens.get(cursor + 1)?.form() else {
-            return None;
-        };
-        fields.push(field.clone());
-        cursor += 2;
     }
-    (!fields.is_empty()).then_some((root, fields))
+    Some((root, steps))
 }
 
 /// Returns the dotted place of a split operand whose member tokens are sibling nodes.
