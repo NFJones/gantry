@@ -5907,11 +5907,12 @@ fn infer_expression_inner(
         );
     }
     if direct_reserved_word(tree, node).as_deref() == Some("None")
-        && direct_expression_count(tree, node) != 0
+        && (direct_expression_count(tree, node) != 0 || has_argument_list(tree, node))
     {
-        // `None` carries no payload, so an operand cannot make this constructor application an
-        // Option value; without the refusal the lowering emits a payload aggregate for the
-        // payload-free variant and analysis fails internally.
+        // `None` carries no payload, so neither an operand nor an empty argument list can make
+        // this constructor application an Option value: an operand makes the lowering emit a
+        // payload aggregate for the payload-free variant, and an empty argument list is dropped
+        // silently. Both are refused at the constructor token instead.
         let span = node
             .children()
             .iter()
@@ -6755,7 +6756,9 @@ fn infer_enum_constructor(
         return Ok(None);
     };
     let expression = direct_child_form(tree, node, SyntaxForm::Expression);
-    if direct_expression_count(tree, node) != usize::from(payload.is_some()) {
+    if direct_expression_count(tree, node) != usize::from(payload.is_some())
+        || (payload.is_none() && has_argument_list(tree, node))
+    {
         diagnostics.push(body_diagnostic(
             "invalid-enum-constructor",
             DiagnosticCategory::Type,
@@ -6833,7 +6836,9 @@ fn infer_generic_enum_constructor(
         return Ok(None);
     };
     let expression = direct_child_form(tree, node, SyntaxForm::Expression);
-    if direct_expression_count(tree, node) != usize::from(payload.is_some()) {
+    if direct_expression_count(tree, node) != usize::from(payload.is_some())
+        || (payload.is_none() && has_argument_list(tree, node))
+    {
         diagnostics.push(body_diagnostic(
             "invalid-enum-constructor",
             DiagnosticCategory::Type,
@@ -11560,6 +11565,28 @@ fn direct_expression_count(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
         })
         .count()
+}
+
+/// Whether one call or constructor form carries an argument list.
+///
+/// A nonempty argument list keeps its parenthesis as a direct token, while an empty one is
+/// retained as a postfix parenthesis marker, so the whole form is searched rather than the direct
+/// children alone.
+fn has_argument_list(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> bool {
+    let mut work = node.children().to_vec();
+    while let Some(id) = work.pop() {
+        let Some(child) = tree.node(id) else {
+            continue;
+        };
+        if matches!(
+            child.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        ) {
+            return true;
+        }
+        work.extend(child.children().iter().copied());
+    }
+    false
 }
 
 fn direct_identifier_span(

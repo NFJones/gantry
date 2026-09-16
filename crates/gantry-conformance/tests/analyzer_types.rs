@@ -7423,9 +7423,10 @@ fn public_nested_aggregate_literals_lower_as_their_enclosing_construct() {
     );
 }
 
-/// A constructor callee whose operand count does not match its payload shape is refused precisely
-/// at its own span instead of failing internally, and matching counts keep their meaning
-/// (`GNT-GP-CALLEE-003`).
+/// A constructor callee whose operand shape does not match its payload shape is refused precisely
+/// at its own span instead of failing internally: too many operands, a missing payload, and any
+/// argument list on a payload-free constructor (including an empty one) are all refused, while
+/// matching spellings keep their meaning (`GNT-GP-CALLEE-003`).
 #[test]
 fn public_constructor_callee_operand_counts_are_refused_precisely() {
     let root = TempDirectory::new();
@@ -7478,6 +7479,42 @@ fn public_constructor_callee_operand_counts_are_refused_precisely() {
             49,
             60,
         ),
+        (
+            "fn main() -> Option<Int> { None() }",
+            "ambiguous-constructor-type",
+            27,
+            31,
+        ),
+        (
+            "fn main() -> Int { let x: Option<Int> = None(); discard x; 0 }",
+            "ambiguous-constructor-type",
+            40,
+            44,
+        ),
+        (
+            "enum Flag { On, Off } fn main() -> Int { discard Flag::On(); 0 }",
+            "invalid-enum-constructor",
+            49,
+            59,
+        ),
+        (
+            "enum Boxed<T> { Empty, Full(T) } fn main() -> Int { let b: Boxed<Int> = Boxed::Full(1, 2); discard b; 0 }",
+            "invalid-enum-constructor",
+            72,
+            89,
+        ),
+        (
+            "enum Boxed<T> { Empty, Full(T) } fn main() -> Int { let b: Boxed<Int> = Boxed::Empty(1); discard b; 0 }",
+            "invalid-enum-constructor",
+            72,
+            87,
+        ),
+        (
+            "enum Boxed<T> { Empty, Full(T) } fn main() -> Int { let b: Boxed<Int> = Boxed::Empty(); discard b; 0 }",
+            "invalid-enum-constructor",
+            72,
+            86,
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -7515,6 +7552,10 @@ fn public_constructor_callee_operand_counts_are_refused_precisely() {
         "fn main() -> Option<Int> { Some(1) }",
         "fn main() -> Int { let x: Option<Int> = None; discard x; 0 }",
         "fn main() -> Int { let y: Option<Int> = Some(1); discard y; 0 }",
+        "fn main() -> Int { let x: Option<Int> = (None); discard x; 0 }",
+        "enum Flag { On, Off } fn main() -> Int { discard Flag::On; 0 }",
+        "enum Boxed<T> { Empty, Full(T) } fn main() -> Int { let b: Boxed<Int> = Boxed::Empty; discard b; 0 }",
+        "enum Boxed<T> { Empty, Full(T) } fn main() -> Int { let b: Boxed<Int> = Boxed::Full(1); discard b; 0 }",
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
