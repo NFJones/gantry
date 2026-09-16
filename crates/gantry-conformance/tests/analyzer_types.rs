@@ -5844,6 +5844,92 @@ fn public_callable_type_annotations_outside_signatures_are_refused_with_their_cl
     );
 }
 
+/// A callable-typed value that reaches a generic call, a capability proof, or one method call
+/// resolution is refused with a published diagnostic instead of failing internally.
+#[test]
+fn public_callable_typed_values_never_fail_internally_when_they_reach_resolution() {
+    let root = TempDirectory::new();
+    for (source, code) in [
+        (
+            "fn inner<T>(value: T) -> T { value } fn apply(callback: Fn(Int) -> Int) -> Int { discard inner(callback); 0 } fn main() -> Int { 0 }",
+            "callable-type-unadmitted",
+        ),
+        (
+            "fn inner<T>(value: T) -> T { value } fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { inner(callback) } fn main() -> Int { 0 }",
+            "callable-type-unadmitted",
+        ),
+        (
+            "fn same(callback: Fn(Int) -> Int) -> Bool { callback == callback } fn main() -> Int { 0 }",
+            "invalid-primitive",
+        ),
+        (
+            "trait Render { pure fn render(self) -> Int; } struct Item {} impl Render for Item { pure fn render(self) -> Int { 0 } } fn probe(callback: Fn(Int) -> Int) -> Int { discard callback.render(); 0 } fn main() -> Int { 0 }",
+            "missing-implementation",
+        ),
+        (
+            // The generic-method form refuses the same value with the method-resolution
+            // diagnostic because the candidate cannot be substituted; the wrong-class
+            // attribution is tracked as a separate defect rather than an internal failure.
+            "struct Item {} impl Item { fn inner<T>(self, value: T) -> T { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.inner(callback); 0 } fn main() -> Int { 0 }",
+            "unknown-member",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(refused.executable_program().is_none(), "source: {source}");
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+    }
+
+    // The instantiation-argument refusal reports its published class and reuse kind, and an
+    // ordinary instantiation argument stays admitted, so the refusal is specific to callables.
+    root.write("fn inner<T>(value: T) -> T { value } fn apply(callback: Fn(Int) -> Int) -> Int { discard inner(callback); 0 } fn main() -> Int { 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let refused = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    let refusal = refused
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted")
+        .unwrap_or_else(|| panic!("{:?}", refused.diagnostics()));
+    assert_eq!(
+        refusal.fields.get("occurrence").map(AsRef::as_ref),
+        Some("instantiation-argument")
+    );
+    assert_eq!(
+        refusal.fields.get("reuse_kind").map(AsRef::as_ref),
+        Some("Fn")
+    );
+    root.write("fn inner<T>(value: T) -> T { value } fn apply(marker: Int) -> Int { discard inner(marker); 0 } fn main() -> Int { 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let admitted = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
+}
+
 /// A callable type that is itself a component of another callable form reports the nested
 /// class, so admitting a signature annotation cannot silently admit the types it composes.
 #[test]

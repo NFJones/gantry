@@ -776,6 +776,9 @@ fn section_37_anchors_and_nonclaims_are_published() {
             && spec.contains(
                 "`non-signature` for an annotation that is not a parameter or result annotation"
             )
+            && spec.contains(
+                "`instantiation-argument` for a callable type that a generic call reaches"
+            )
             && spec.contains("`nested-component` for a type form that is a component"),
         "GNT-37.0 does not publish the callable type admission and occurrence classes"
     );

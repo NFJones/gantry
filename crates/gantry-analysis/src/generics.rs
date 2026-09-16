@@ -98,6 +98,42 @@ pub(crate) struct ExactTypeSubstitution {
     bindings: BTreeMap<TypeParameterKey, TypeDescriptor>,
 }
 
+/// Returns whether one descriptor names a callable type anywhere in its members.
+pub(crate) fn descriptor_contains_callable(descriptor: &TypeDescriptor) -> bool {
+    descriptor.kind() == TypeKind::Callable
+        || descriptor
+            .immediate_members()
+            .iter()
+            .any(descriptor_contains_callable)
+}
+
+/// Returns the constructed-type depth of one descriptor, including callable members.
+///
+/// A callable type has no template type-expression form (`GNT-37.0`), so its depth is
+/// computed from its member descriptors with the same `max(member depth) + 1` rule the
+/// expression parser applies to one application.
+pub(crate) fn descriptor_constructed_depth(
+    descriptor: &TypeDescriptor,
+) -> Result<u64, AnalysisError> {
+    let members = descriptor.immediate_members();
+    let mut depth = 0_u64;
+    for member in &members {
+        let member_depth = if descriptor_contains_callable(member) {
+            descriptor_constructed_depth(member)?
+        } else {
+            TypeExpression::closed(member, u64::MAX)
+                .map_err(|_| AnalysisError::Invariant)?
+                .depth()
+        };
+        depth = depth.max(member_depth);
+    }
+    if members.is_empty() {
+        Ok(1)
+    } else {
+        depth.checked_add(1).ok_or(AnalysisError::Invariant)
+    }
+}
+
 impl ExactTypeSubstitution {
     pub(crate) fn infer(
         required: &[TypeParameterKey],
@@ -138,6 +174,18 @@ impl ExactTypeSubstitution {
                 .zip(arguments.iter().cloned())
                 .collect(),
         })
+    }
+
+    /// Returns one bound parameter descriptor that contains a callable type, if any.
+    ///
+    /// The template type-expression grammar cannot name a callable type, so a callable
+    /// binding cannot be applied to any expression and cannot appear in an instantiation
+    /// argument list, whether the callable type is the binding itself or one of its members;
+    /// `GNT-37.0` refuses that occurrence under the instantiation-argument class.
+    pub(crate) fn callable_binding(&self) -> Option<&TypeDescriptor> {
+        self.bindings
+            .values()
+            .find(|descriptor| descriptor_contains_callable(descriptor))
     }
 
     pub(crate) fn apply(
@@ -2545,10 +2593,15 @@ fn check_stored_member_descriptor(
 ) -> Result<(), AnalysisError> {
     charge_trait_steps(counters, 1)?;
     if let Some(counters) = counters.as_ref() {
-        let expression =
-            TypeExpression::closed(descriptor, u64::MAX).map_err(|_| AnalysisError::Invariant)?;
+        let depth = if descriptor_contains_callable(descriptor) {
+            descriptor_constructed_depth(descriptor)?
+        } else {
+            TypeExpression::closed(descriptor, u64::MAX)
+                .map_err(|_| AnalysisError::Invariant)?
+                .depth()
+        };
         counters
-            .check_constructed_type_depth(expression.depth())
+            .check_constructed_type_depth(depth)
             .map_err(|error| AnalysisError::ResourceLimit {
                 error,
                 diagnostics: Vec::new(),

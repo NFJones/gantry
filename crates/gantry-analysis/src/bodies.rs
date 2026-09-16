@@ -20,9 +20,9 @@ use gantry_core::source::{
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TemplateKind, TypeKind};
 use gantry_ir::{
-    CanonicalCallableIdentity, CanonicalImplementationIdentity, CanonicalPath,
-    CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, EffectSet, GenericTemplate,
-    ImplementationHead, OwnershipClass, Predicate, ReceiverMode, TraitContract,
+    CallableDiagnosticCode, CanonicalCallableIdentity, CanonicalImplementationIdentity,
+    CanonicalPath, CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, EffectSet,
+    GenericTemplate, ImplementationHead, OwnershipClass, Predicate, ReceiverMode, TraitContract,
     TraitMethodContract, TraitReference, TransferEligibility, TypeDescriptor, TypeDescriptorError,
     TypeExpression, WorkflowParameter,
 };
@@ -30,7 +30,7 @@ use gantry_ir::{
 use crate::generics::{
     CapabilityPredicate, ExactTypeSubstitution, GenericDeclarationShape, SealedCapability,
     TypeInferenceFailure, TypeParameterKey, collect_capability_predicates,
-    collect_type_parameter_keys, collect_where_predicates,
+    collect_type_parameter_keys, collect_where_predicates, descriptor_contains_callable,
     invalid_generic_option_member_declaration, prove_ownership_class, prove_sealed_capability,
     prove_transfer_eligibility, substitute_self_type,
 };
@@ -9365,6 +9365,15 @@ fn infer_implementation_substitution(
     let mut head_expressions = vec![head.receiver()];
     head_expressions.extend(trait_reference.arguments());
     let required = collect_type_parameter_keys(&head_expressions)?;
+    // A callable receiver or trait argument cannot be named by a template type expression
+    // (`GNT-37.0`), and this revision admits no implementation for a callable receiver, so no
+    // head matches instead of failing internally.
+    if descriptor_contains_callable(receiver)
+        || trait_arguments
+            .is_some_and(|arguments| arguments.iter().any(descriptor_contains_callable))
+    {
+        return Ok(None);
+    }
     let mut constraints = vec![(
         head.receiver().clone(),
         TypeExpression::closed(receiver, u64::MAX).map_err(|_| AnalysisError::Invariant)?,
@@ -9939,16 +9948,29 @@ fn infer_generic_call(
         else {
             return Ok(None);
         };
-        let actual_expression =
-            TypeExpression::closed(&actual, u64::MAX).map_err(|_| AnalysisError::Invariant)?;
+        let actual_expression = if descriptor_contains_callable(&actual) {
+            refuse_callable_instantiation_argument(
+                &actual,
+                tree.node(*argument).ok_or(AnalysisError::Invariant)?.span(),
+                diagnostics,
+            )?;
+            return Ok(None);
+        } else {
+            TypeExpression::closed(&actual, u64::MAX).map_err(|_| AnalysisError::Invariant)?
+        };
         constraints.push((template.clone(), actual_expression));
         actual_arguments.push(actual);
     }
     if let Some(expected) = expected_result {
-        constraints.push((
-            signature.result.clone(),
-            TypeExpression::closed(expected, u64::MAX).map_err(|_| AnalysisError::Invariant)?,
-        ));
+        // A callable expectation cannot be named by the template grammar (`GNT-37.0`) and no
+        // call produces a callable value in this revision, so the expectation contributes no
+        // constraint and the enclosing position reports its own diagnostic.
+        if !descriptor_contains_callable(expected) {
+            constraints.push((
+                signature.result.clone(),
+                TypeExpression::closed(expected, u64::MAX).map_err(|_| AnalysisError::Invariant)?,
+            ));
+        }
     }
 
     let explicit = children
@@ -10117,6 +10139,47 @@ fn diagnose_invalid_inferred_option_member(
     Ok(true)
 }
 
+/// Refuses one callable type inferred into a generic instantiation argument (`GNT-37.0`).
+///
+/// A generic call whose complete substitution binds a parameter to a callable type would
+/// have to name that callable type in an instantiation argument, which the template
+/// type-expression grammar cannot express, so the call is refused with the published
+/// occurrence class instead of failing internally.
+fn refuse_callable_instantiation_argument(
+    callable: &TypeDescriptor,
+    span: &SourceSpan,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let reuse_kind = first_callable(callable)
+        .and_then(|descriptor| descriptor.callable_type())
+        .map(|ty| ty.kind().canonical_name())
+        .unwrap_or("Fn");
+    let ty = callable.canonical_string();
+    diagnostics.push(body_diagnostic(
+        CallableDiagnosticCode::TypeUnadmitted.code(),
+        DiagnosticCategory::Type,
+        "a callable type is recognised but not admitted as a generic instantiation argument by this revision",
+        span.clone(),
+        [
+            ("reuse_kind", reuse_kind),
+            ("occurrence", "instantiation-argument"),
+            ("type", ty.as_str()),
+        ],
+    )?);
+    Ok(())
+}
+
+/// Returns the first callable type named anywhere inside one descriptor.
+fn first_callable(descriptor: &TypeDescriptor) -> Option<TypeDescriptor> {
+    if descriptor.kind() == TypeKind::Callable {
+        return Some(descriptor.clone());
+    }
+    descriptor
+        .immediate_members()
+        .into_iter()
+        .find_map(|member| first_callable(&member))
+}
+
 /// Applies one closed generic type and reports a forbidden substituted option member.
 fn apply_generic_type_or_diagnose(
     substitution: &ExactTypeSubstitution,
@@ -10124,6 +10187,13 @@ fn apply_generic_type_or_diagnose(
     span: &SourceSpan,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    // The template type-expression grammar cannot name a callable type (`GNT-37.0`), so a
+    // generic call whose complete substitution binds a callable type is refused with the
+    // published instantiation-argument class instead of failing internally.
+    if let Some(callable) = substitution.callable_binding() {
+        refuse_callable_instantiation_argument(callable, span, diagnostics)?;
+        return Ok(None);
+    }
     match substitution.apply(expression) {
         Ok(descriptor) => Ok(Some(descriptor)),
         Err(TypeInferenceFailure::InvalidOptionMember) => {
