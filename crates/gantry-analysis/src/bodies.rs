@@ -7983,6 +7983,21 @@ fn infer_operand_sequence(
         }
         return Ok(None);
     }
+    // A slice that indexes the result of a receiver call is the element of that result, not the
+    // call itself, so it takes the projection walk before the member and call arms read it.
+    if operator.is_some_and(operand_projection_supported)
+        && operand_index_projection_has_receiver_call(tree, children)
+        && let Some(value) = infer_operand_index_projection_sequence(
+            tree,
+            children,
+            facts,
+            environment,
+            context,
+            diagnostics,
+        )?
+    {
+        return Ok(Some(value));
+    }
     if let Some(value) = infer_member_sequence(
         tree,
         children,
@@ -8117,9 +8132,11 @@ fn infer_operand_projection_sequence(
 /// The parser flattens a leading projection into sibling children, so `xs[0]` is not one node: the
 /// receiver part is every child ahead of the first bracket postfix and the index expression follows
 /// that postfix. The analyzer types the operand as the element the receiver projects, so an
-/// enclosing operator checks and consumes that element instead of the receiver value. Only a
-/// place-backed receiver whose index this walk can key statically resolves here, and every other
-/// shape stays untyped for the caller's own arms.
+/// enclosing operator checks and consumes that element instead of the receiver value. A receiver
+/// part that is a call or a grouping parenthesis resolves here exactly as the value-position walk
+/// resolves it, and the element of such a part is recorded as a caller read only when the part
+/// names a place. A receiver whose type publishes no element refuses with the code that walk
+/// already reports, and every other shape stays untyped for the caller's own arms.
 fn infer_operand_index_projection_sequence(
     tree: &SyntaxTree,
     children: &[NodeId],
@@ -8142,7 +8159,7 @@ fn infer_operand_index_projection_sequence(
     let receiver_children = children.get(..index_postfix).unwrap_or_default();
     let Some(ProjectionReceiver {
         receiver_type,
-        place: Some(place),
+        place,
     }) = resolve_projection_receiver(
         tree,
         receiver_children,
@@ -8201,10 +8218,6 @@ fn infer_operand_index_projection_sequence(
             .nth(literal_index),
         _ => None,
     };
-    let Some(projected) = projected else {
-        return Ok(None);
-    };
-    let continuing = projected_place_path(&Some(place), Some(literal_index));
     let span = projection_prefix_span(
         tree,
         receiver_children
@@ -8213,6 +8226,30 @@ fn infer_operand_index_projection_sequence(
             .ok_or(AnalysisError::Invariant)?,
         index_expression,
     )?;
+    // A receiver that publishes no element has nothing to project: the value-position walk
+    // refuses the same shape, and an operand that kept the receiver's own type would be consumed
+    // by the enclosing operator as if that receiver were the element.
+    let Some(projected) = projected else {
+        if receiver_type.kind() == TypeKind::Tuple {
+            diagnostics.push(body_diagnostic(
+                "tuple-index-out-of-range",
+                DiagnosticCategory::Type,
+                "a tuple projection index is outside its static arity",
+                span.clone(),
+                [("index", literal_index.to_string())],
+            )?);
+        } else {
+            diagnostics.push(body_diagnostic(
+                "projection-receiver-type",
+                DiagnosticCategory::Type,
+                "an index projection receiver is not a list or tuple",
+                span.clone(),
+                [("actual", receiver_type.canonical_string())],
+            )?);
+        }
+        return Ok(None);
+    };
+    let continuing = projected_place_path(&place, Some(literal_index));
     if let Some(path) = &continuing {
         record_affine_place(
             AffinePlace::projected(Arc::clone(&path.root), path.fields.clone()),
@@ -8255,6 +8292,35 @@ fn operand_projection_supported(operator: Punctuation) -> bool {
             | Punctuation::GreaterEqual
             | Punctuation::Bang
     )
+}
+
+/// Reports whether one operand slice indexes the result of a receiver call.
+///
+/// The parser splits a leading dotted receiver call plus index postfix into sibling children, so
+/// `b.all()[0]` arrives as the receiver path, the member, the call, and the index postfix. The
+/// member and call arms would otherwise type the whole slice as the value that call produces, so a
+/// slice whose index postfix follows a receiver call takes the projection walk first and is typed
+/// as the element. A free call (`head(xs)[0]`) is not this shape and keeps its own arms.
+fn operand_index_projection_has_receiver_call(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    let Some(index_postfix) = children.iter().position(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, *child, Punctuation::LeftBracket)
+        })
+    }) else {
+        return false;
+    };
+    let receiver = children.get(..index_postfix).unwrap_or_default();
+    let calls = receiver.iter().any(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, *child, Punctuation::LeftParenthesis)
+        })
+    });
+    let dotted = receiver
+        .iter()
+        .any(|child| node_contains_punctuation(tree, *child, Punctuation::Dot));
+    calls && dotted
 }
 
 #[allow(clippy::too_many_arguments)]

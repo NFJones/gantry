@@ -1438,13 +1438,7 @@ impl Compiler<'_> {
         // The type phase reads a node with a top-level index postfix and no operator as one
         // projection on its own, so a call nested in its receiver part must not claim the node:
         // `head(xs)[0]` projects the call result instead of being the call `head(xs)`.
-        let projection_node = binary_operators(self.tree, node.children()).is_empty()
-            && node.children().iter().any(|child| {
-                self.tree.node(*child).is_some_and(|child| {
-                    matches!(child.form(), SyntaxForm::PostfixExpression)
-                        && node_contains_punctuation(self.tree, child, Punctuation::LeftBracket)
-                })
-            });
+        let projection_node = is_projection_node(self.tree, expression);
         if let Some(callee) = self.direct_target(&node).filter(|_| !projection_node) {
             let receiver_type = callee.receiver_type();
             let shared_receiver = self.shared_receivers.contains(&callee);
@@ -1872,7 +1866,16 @@ impl Compiler<'_> {
         children: &[NodeId],
     ) -> Result<Option<TypeDescriptor>, AnalysisError> {
         if let Some(expression) = grouped_receiver_expression(self.tree, children) {
-            return self.compile_expression(expression).map(Some);
+            let compiled = self.compile_expression(expression)?;
+            // A grouping wrapper the analyzer never typed compiles to `Unit` while its inner
+            // expression holds the receiver value, so the receiver type is the type the analyzer
+            // recorded for that expression whenever one exists.
+            return Ok(Some(
+                self.body_types
+                    .get(&expression)
+                    .cloned()
+                    .unwrap_or(compiled),
+            ));
         }
         if let Some(result) = self.compile_receiver_call_operand(children)? {
             return Ok(Some(result));
@@ -2264,7 +2267,12 @@ impl Compiler<'_> {
     }
 
     fn compile_sequence(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
-        if let Some((callee, result)) = self.direct_sequence_target(children) {
+        // A slice whose own child is a projection of a call result is not that call: `head(xs)[0]`
+        // must compile the projection instead of the call and then the projection again.
+        let projects = children
+            .iter()
+            .any(|child| is_projection_node(self.tree, *child));
+        if !projects && let Some((callee, result)) = self.direct_sequence_target(children) {
             let arguments = children
                 .iter()
                 .copied()
@@ -2518,7 +2526,7 @@ impl Compiler<'_> {
         children: &[NodeId],
     ) -> Result<Option<TypeDescriptor>, AnalysisError> {
         let Some((root, path)) = operand_index_place(self.tree, children) else {
-            return Ok(None);
+            return self.compile_computed_index_projection_operand(children);
         };
         let Some(types) =
             receiver_place_types(&root, &path, &self.binding_types, self.struct_fields)
@@ -2545,6 +2553,89 @@ impl Compiler<'_> {
             return Err(AnalysisError::Invariant);
         }
         Ok(Some(result))
+    }
+
+    /// Lowers a split index-projection operand whose receiver part is computed.
+    ///
+    /// A receiver part that is a grouping parenthesis or a call (`(xs)[0]`, `head(xs)[0]`)
+    /// leaves exactly the value it produces on the stack, so the element projection reads that
+    /// value rather than a caller place. The literal index and every later step are keyed the way
+    /// the place-backed arm keys them, and a shape this walk cannot key reports no operand so the
+    /// caller keeps the ordinary child walk.
+    fn compile_computed_index_projection_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        // A computed receiver reaches the operand walk either as sibling fragments or as one
+        // nested expression, so a slice that is a single wrapper node offers its own children to
+        // the same arm before the caller falls back to the ordinary child walk.
+        if let [only] = children {
+            let nested = self
+                .tree
+                .node(*only)
+                .map(|node| node.children().to_vec())
+                .filter(|nested| !nested.is_empty());
+            if let Some(nested) = nested
+                && let Some(result) = self.compile_computed_index_projection_operand(&nested)?
+            {
+                return Ok(Some(result));
+            }
+        }
+        let Some(index_postfix) = children.iter().position(|child| {
+            self.tree.node(*child).is_some_and(|node| {
+                matches!(node.form(), SyntaxForm::PostfixExpression)
+                    && node_contains_punctuation(self.tree, node, Punctuation::LeftBracket)
+            })
+        }) else {
+            return Ok(None);
+        };
+        let receiver_children = children.get(..index_postfix).unwrap_or_default();
+        // A receiver part with no call and no grouping parenthesis is a caller place, so the place
+        // arm above already had its chance and a value left here would sit on the stack with no
+        // later instruction to consume it.
+        let computed = receiver_children.iter().any(|child| {
+            self.tree.node(*child).is_some_and(|node| {
+                node_is_call_postfix(self.tree, node)
+                    || matches!(
+                        node.form(),
+                        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+                    )
+            })
+        });
+        if !computed {
+            return Ok(None);
+        }
+        let Some(index) = children
+            .iter()
+            .copied()
+            .skip(index_postfix.saturating_add(1))
+            .find_map(|child| integer_literal(self.tree, child))
+        else {
+            return Ok(None);
+        };
+        let Some(steps) =
+            postfix_projection_steps(self.tree, children, index_postfix.saturating_add(1))
+        else {
+            return Ok(None);
+        };
+        let Some(receiver_type) = self.compile_computed_projection_receiver(receiver_children)?
+        else {
+            return Ok(None);
+        };
+        let member = Projection::Member(index);
+        let mut current = projection_step_type(&receiver_type, &member, self.struct_fields)
+            .ok_or(AnalysisError::Invariant)?;
+        self.emit(current.clone(), InstructionKind::Project(member))?;
+        for step in steps {
+            let projection = match step {
+                ProjectionChainStep::Field(field) => Projection::Field(field),
+                ProjectionChainStep::Member(index) => Projection::Member(index),
+            };
+            current = projection_step_type(&current, &projection, self.struct_fields)
+                .ok_or(AnalysisError::Invariant)?;
+            self.emit(current.clone(), InstructionKind::Project(projection))?;
+        }
+        Ok(Some(current))
     }
 
     /// Lowers a split receiver-call operand as its receiver, arguments, and one call.
@@ -3212,6 +3303,59 @@ fn receiver_place_types(
     Some(types)
 }
 
+/// Returns the type one projection step publishes over the value it reads.
+///
+/// A field step resolves through the struct fields of the receiver type and a member step through
+/// its list element or tuple member, mirroring the fold the place-backed receiver applies to its
+/// own path. A step the receiver type does not publish reports no type, so the caller keeps its
+/// own arms for the whole chain.
+fn projection_step_type(
+    receiver: &TypeDescriptor,
+    projection: &Projection,
+    struct_fields: &BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, TypeDescriptor>>,
+) -> Option<TypeDescriptor> {
+    match projection {
+        Projection::Field(field) => struct_fields
+            .get(receiver)
+            .and_then(|fields| fields.get(field.as_ref()))
+            .cloned(),
+        Projection::Member(index) => match receiver.kind() {
+            TypeKind::List => receiver.immediate_members().into_iter().next(),
+            TypeKind::Tuple => receiver.immediate_members().into_iter().nth(*index),
+            _ => None,
+        },
+        Projection::Payload => None,
+    }
+}
+
+/// Reports whether one expression is an index projection, directly or through a wrapper.
+///
+/// The parser sometimes hands an operand one extra single-child node around the projection, and
+/// the value-position arms must not read that wrapper as the call its receiver makes: `1 +
+/// head(xs)[0]` compiles the projection once instead of the call and then the projection again.
+fn is_projection_node(tree: &SyntaxTree, expression: NodeId) -> bool {
+    let Some(node) = tree.node(expression) else {
+        return false;
+    };
+    if !binary_operators(tree, node.children()).is_empty() {
+        return false;
+    }
+    if node.children().iter().any(|child| {
+        tree.node(*child).is_some_and(|child| {
+            matches!(child.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, child, Punctuation::LeftBracket)
+        })
+    }) {
+        return true;
+    }
+    let [only] = node.children() else {
+        return false;
+    };
+    tree.node(*only)
+        .is_some_and(|child| !matches!(child.form(), SyntaxForm::Token(_)))
+        && is_projection_node(tree, *only)
+}
+
 /// Returns the projection steps one chain applies after `after` of its direct children.
 ///
 /// A child that is not a postfix step belongs to the receiver literal or to a step's own index
@@ -3391,8 +3535,10 @@ fn operand_field_place(
 ///
 /// The analyzer merges the same sibling shape into one projected operand, so lowering loads the
 /// root and projects the element each step reads instead of compiling the fragments on their own.
-/// Only a binding root with dot and literal-bracket steps yields a place here; a grouping
-/// parenthesis, a call, or a computed index reports no place for the caller's own arms.
+/// Grouping parentheses round the chain or one of its names are skipped exactly as the analyzer's
+/// place chain skips them, so `(xs)[0]` and `((xs))[0]` name the same place as `xs[0]`. A
+/// parenthesis that opens right after a name calls that name, and a call, a computed index, or a
+/// root that is not a binding report no place for the caller's own arms.
 fn operand_index_place(
     tree: &SyntaxTree,
     children: &[NodeId],
@@ -3407,52 +3553,67 @@ fn operand_index_place(
             work.extend(node.children().iter().rev().copied());
         }
     }
-    if tokens.iter().any(|node| {
-        matches!(
-            node.form(),
-            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
-        )
-    }) {
-        return None;
+    let mut cursor = 0_usize;
+    let mut grouping = 0_usize;
+    while matches!(
+        tokens.get(cursor)?.form(),
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+    ) {
+        grouping = grouping.saturating_add(1);
+        cursor = cursor.checked_add(1)?;
     }
-    let root = match tokens.first()?.form() {
+    let root = match tokens.get(cursor)?.form() {
         SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
         SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
             Arc::from("self")
         }
         _ => return None,
     };
+    cursor = cursor.checked_add(1)?;
     let mut path = Vec::new();
-    let mut cursor = 1;
-    while cursor < tokens.len() {
-        match tokens.get(cursor)?.form() {
+    while let Some(token) = tokens.get(cursor) {
+        match token.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
+                if matches!(
+                    tokens.get(cursor.checked_sub(1)?).map(|node| node.form()),
+                    Some(SyntaxForm::Token(TokenKind::Identifier(_)))
+                ) {
+                    return None;
+                }
+                grouping = grouping.saturating_add(1);
+                cursor = cursor.checked_add(1)?;
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
+                grouping = grouping.checked_sub(1)?;
+                cursor = cursor.checked_add(1)?;
+            }
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)) => {
                 let SyntaxForm::Token(TokenKind::Identifier(field)) =
-                    tokens.get(cursor + 1)?.form()
+                    tokens.get(cursor.checked_add(1)?)?.form()
                 else {
                     return None;
                 };
                 path.push(ValuePathSegment::StructField(field.to_string()));
-                cursor += 2;
+                cursor = cursor.checked_add(2)?;
             }
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftBracket)) => {
                 let SyntaxForm::Token(TokenKind::IntegerLiteral(index)) =
-                    tokens.get(cursor + 1)?.form()
+                    tokens.get(cursor.checked_add(1)?)?.form()
                 else {
                     return None;
                 };
                 let SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightBracket)) =
-                    tokens.get(cursor + 2)?.form()
+                    tokens.get(cursor.checked_add(2)?)?.form()
                 else {
                     return None;
                 };
                 path.push(ValuePathSegment::ListItem(index.parse::<usize>().ok()?));
-                cursor += 3;
+                cursor = cursor.checked_add(3)?;
             }
             _ => return None,
         }
     }
-    (!path.is_empty()).then_some((root, path))
+    (grouping == 0 && !path.is_empty()).then_some((root, path))
 }
 
 /// Returns the inner expression of one projection receiver part that is a grouping parenthesis.

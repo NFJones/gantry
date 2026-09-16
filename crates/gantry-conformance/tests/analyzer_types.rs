@@ -8131,3 +8131,187 @@ fn public_split_index_projection_operands_are_typed_and_lowered() {
         "source: {source}: a refused operand must not publish a program"
     );
 }
+
+/// A computed projection receiver in operand position is typed and lowered as its element.
+///
+/// An operator receives the projection of a computed receiver either as sibling fragments or as
+/// one nested expression. The analyzer types that operand as the element of the receiver part
+/// (grouping parenthesis, a receiver call such as `b.all()[0]`, or a free call on the right
+/// operand) and the lowering leaves the receiver value on the stack immediately before its member
+/// projection, which the shape and execution checks below pin per row. The shapes the operand walk
+/// cannot key yet refuse with a published type diagnostic and publish no program instead of
+/// failing inside the evaluator (`GNT-GP-VALUE-007`).
+#[test]
+fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("computed projection operand did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    let root = TempDirectory::new();
+    for (source, expected) in [
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; (xs)[0] + 1 }",
+            2i64,
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; ((xs))[0] + 1 }",
+            2,
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; (xs)[0] + (xs)[1] }",
+            3,
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; 1 + (xs)[0] }",
+            2,
+        ),
+        (
+            "fn head(xs: List<Int>) -> List<Int> { xs } fn main() -> Int { let xs: List<Int> = [1, 2]; 1 + head(xs)[0] }",
+            2,
+        ),
+        (
+            "struct Bag { items: List<Int> } impl Bag { fn all(self) -> List<Int> { self.items } } fn main() -> Int { let b: Bag = Bag { items: [1, 2] }; b.all()[0] + 1 }",
+            2,
+        ),
+        (
+            "struct Bag { items: List<Int> } impl Bag { fn all(self) -> List<Int> { self.items } } fn main() -> Int { let b: Bag = Bag { items: [1, 2] }; b.all()[1] + 1 }",
+            3,
+        ),
+        (
+            "struct Bag { items: List<Int> } impl Bag { fn all(self) -> List<Int> { self.items } } fn main() -> Int { let b: Bag = Bag { items: [1, 2] }; b.all()[0] + b.all()[1] }",
+            3,
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Int { let items: List<Item> = [Item { count: 3 }]; (items)[0].count + 1 }",
+            4,
+        ),
+        (
+            "fn main() -> Int { let xs: List<List<Int>> = [[1, 2], [3]]; (xs)[0][1] + 1 }",
+            3,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: an admitted operand must publish a program")
+        });
+        let kinds = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .map(|instruction| &instruction.kind)
+            .collect::<Vec<_>>();
+        // The receiver part is never loaded as a callee name, and the operand carries the member
+        // projection of the element it reads.
+        assert!(
+            !kinds
+                .iter()
+                .any(|kind| matches!(kind, InstructionKind::Load(name) if name.as_ref() == "head" || name.as_ref() == "bag")),
+            "source: {source}: a callee must not be loaded as a receiver"
+        );
+        assert!(
+            kinds
+                .iter()
+                .any(|kind| matches!(kind, InstructionKind::Project(Projection::Member(_)))),
+            "source: {source}: the operand must publish a member projection"
+        );
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x42; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+
+    // A shape the operand walk cannot key yet refuses precisely and publishes no program.
+    for (source, code) in [
+        (
+            "fn head(xs: List<Int>) -> List<Int> { xs } fn main() -> Int { let xs: List<Int> = [1, 2]; head(xs)[0] + 1 }",
+            "invalid-primitive",
+        ),
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { bag()[0].count + 1 }",
+            "type-mismatch",
+        ),
+        (
+            "fn main() -> Int { let i: Int = 1; i[0] + 1 }",
+            "projection-receiver-type",
+        ),
+        (
+            "fn main() -> Int { (1 + 2)[0] + 1 }",
+            "projection-receiver-type",
+        ),
+        ("fn main() -> Int { [1, 2][0] + 1 }", "type-mismatch"),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "source: {source}: expected {code}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused operand must not publish a program"
+        );
+    }
+}
