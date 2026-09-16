@@ -6024,28 +6024,76 @@ fn public_declared_callable_parameters_accept_values_without_widening_the_refusa
     }
 
     // A concrete parameter position reports its own mismatch instead of the callable refusal.
-    root.write("struct Item {} impl Item { fn inner(self, value: Int) -> Int { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.inner(callback); 0 } fn main() -> Int { 0 }");
+    // A callable argument at a concrete parameter position is compared with that parameter
+    // type directly, so it keeps its own mismatch diagnostic instead of the refusal, in every
+    // call shape.
+    for source in [
+        "struct Item {} impl Item { fn inner(self, value: Int) -> Int { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.inner(callback); 0 } fn main() -> Int { 0 }",
+        "trait Runner { pure fn run(self, value: Int) -> Int; } struct Item {} impl Runner for Item { fn run(self, value: Int) -> Int { value } } fn apply(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.run(callback); 0 } fn main() -> Int { 0 }",
+        "struct Item {} impl Item { fn apply2<U>(self, value: Int, other: U) -> U { other } } fn outer(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.apply2(callback, 1); 0 } fn main() -> Int { 0 }",
+        "fn apply2<U>(value: Int, other: U) -> U { other } fn outer(callback: Fn(Int) -> Int) -> Int { discard apply2(callback, 1); 0 } fn main() -> Int { 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "call-argument-type"),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            !refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted"),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+    }
+
+    // When one call carries a callable at a concrete position and another at a type-argument
+    // position, the refusal names the type-argument argument and nothing else.
+    let mixed = "struct Item {} impl Item { fn apply2<U>(self, first: Int, second: U) -> U { second } } fn outer(one: Fn(Int) -> Int, two: Fn(Int) -> Int) -> Int { let item: Item = Item {}; discard item.apply2(one, two); 0 } fn main() -> Int { 0 }";
+    root.write(mixed);
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     let refused = analyze_package_types(&syntax)
         .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
     assert_eq!(refused.status(), AnalysisStatus::Invalid);
-    assert!(
-        refused
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "call-argument-type"),
+    assert_eq!(
+        refused.diagnostics().len(),
+        1,
         "{:?}",
         refused.diagnostics()
     );
-    assert!(
-        !refused
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted"),
-        "{:?}",
-        refused.diagnostics()
+    let refusal = &refused.diagnostics()[0];
+    assert_eq!(refusal.code.as_str(), "callable-type-unadmitted");
+    assert_eq!(
+        refusal.fields.get("occurrence").map(AsRef::as_ref),
+        Some("instantiation-argument")
     );
+    let primary = refusal
+        .primary
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing primary span"));
+    let call_start = mixed
+        .find("apply2(one, two)")
+        .unwrap_or_else(|| panic!("missing call")) as u64;
+    let argument_start = call_start + "apply2(one, ".len() as u64;
+    assert_eq!(primary.bytes().start(), argument_start);
+    assert_eq!(primary.bytes().end(), argument_start + "two".len() as u64);
 }
 
 /// A callable type that is itself a component of another callable form reports the nested

@@ -229,9 +229,11 @@ pub(crate) enum TypeInferenceFailure {
     Arity,
     /// A callable type the template type-expression grammar cannot name (`GNT-37.0`).
     ///
-    /// Reported by the call-instantiation helpers when a candidate would apply except for
-    /// a callable argument, whose position the grammar cannot constrain.
-    CallableArgument,
+    /// Reported by the call-instantiation helpers when a candidate would apply except for a
+    /// callable argument at a parameter position that has to name a type argument; the
+    /// payload is that argument's index. A callable argument at a closed parameter position
+    /// contributes no constraint and is compared with its parameter type directly.
+    CallableArgument(usize),
     Conflict,
     Incomplete,
     InvalidOptionMember,
