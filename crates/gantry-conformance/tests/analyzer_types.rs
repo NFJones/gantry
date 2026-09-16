@@ -6262,11 +6262,33 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
         Some("Int")
     );
 
+    // A group consumed by a binary expression is not an invocation either, so the refusal
+    // stays reserved for a group that an argument list follows.
+    root.write(
+        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback) + (1); 0 } fn main() -> Int { discard apply; 0 }",
+    );
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let grouped = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert!(
+        !grouped
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "callable-invocation-unadmitted"),
+        "{:?}",
+        grouped.diagnostics()
+    );
+
     // Declaring, passing, and holding a callable value stays admitted: only the call
     // through a callable-typed binding is refused.
     for source in [
         "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { discard apply; 0 }",
         "fn inc(value: Int) -> Int { value } fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { value } fn main() -> Int { discard apply(inc, 1); 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Int { discard (callback); 0 } fn main() -> Int { discard apply; 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback) } fn main() -> Int { discard apply; 0 }",
+        "fn consume(value: Fn(Int) -> Int) -> Int { 0 } fn apply(callback: Fn(Int) -> Int) -> Int { discard consume((callback)); 0 } fn main() -> Int { discard apply; 0 }",
+        "fn apply(callback: Fn(Int) -> Int) -> Int { discard ((callback)); 0 } fn main() -> Int { discard apply; 0 }",
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)

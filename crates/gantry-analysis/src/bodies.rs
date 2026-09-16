@@ -11368,6 +11368,15 @@ fn parenthesized_callee_path(
     let Some(close) = close else {
         return Ok(None);
     };
+    // Only a group followed by an argument list is an invocation: a bare, doubled, or
+    // binary-consumed group merely holds or passes a callable value, which `GNT-37.10`
+    // admits, so it keeps the earlier fall-through.
+    let Some(next) = tokens.get(close.saturating_add(1)).copied() else {
+        return Ok(None);
+    };
+    if !node_is_punctuation(tree, next, Punctuation::LeftParenthesis) {
+        return Ok(None);
+    }
     let mut identifiers = tokens
         .get(1..close)
         .unwrap_or_default()
