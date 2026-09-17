@@ -8988,3 +8988,151 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
         );
     }
 }
+
+/// An operator to the right of a receiver call is an ordinary operand.
+///
+/// The parser splits a leading receiver call into sibling fragments, so the lowering resolves that
+/// call before its enclosing primitive consumes the result. A trait method's recorded call site is
+/// the member name those fragments spell rather than the call sequence an inherent method records,
+/// and a grouped receiver spells its root inside parentheses, so every spelling below must lower
+/// exactly one call instruction per source call - the receiver-call form for an operand whose
+/// receiver is a place, and the plain call form a value position already used - instead of failing
+/// inside the analyzer (`GNT-GP-VALUE-005`).
+#[test]
+fn public_operator_after_receiver_call_lowers_the_call_as_the_operand() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("receiver-call operand did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    const RECEIVERS: &str = "struct Plain { value: Int } trait Greet { pure fn greet(self) -> Int; } impl Greet for Plain { pure fn greet(self) -> Int { self.value } } impl Plain { fn greet2(self) -> Int { self.value } fn add(self, x: Int) -> Int { self.value + x } } ";
+
+    let root = TempDirectory::new();
+    for (body, expected, receiver_calls, plain_calls) in [
+        (
+            "let p: Plain = Plain { value: 42 }; p.greet() + 1",
+            43i64,
+            1usize,
+            0usize,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; 1 + p.greet()",
+            43,
+            1,
+            0,
+        ),
+        ("let p: Plain = Plain { value: 42 }; p.greet()", 42, 1, 0),
+        (
+            "let p: Plain = Plain { value: 42 }; (p).greet() + 1",
+            43,
+            1,
+            0,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; (p).greet() + (p).greet()",
+            84,
+            1,
+            1,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; let xs: List<Int> = [p.greet() + 1]; xs[0]",
+            43,
+            1,
+            0,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; let q: Plain = Plain { value: 1 }; p.greet() + q.greet()",
+            43,
+            2,
+            0,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; p.greet2() + 1",
+            43,
+            1,
+            0,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; p.add(p.greet()) + 1",
+            85,
+            2,
+            0,
+        ),
+        ("let p: Plain = Plain { value: 42 }; p.add(1) + 1", 44, 1, 0),
+    ] {
+        let source = format!("{RECEIVERS}fn main() -> Int {{ {body} }}");
+        root.write(&source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: an admitted receiver call must publish a program")
+        });
+        let receiver_emitted = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .filter(|instruction| matches!(instruction.kind, InstructionKind::ReceiverCall { .. }))
+            .count();
+        let call_emitted = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .filter(|instruction| matches!(instruction.kind, InstructionKind::Call { .. }))
+            .count();
+        assert_eq!(
+            (receiver_emitted, call_emitted),
+            (receiver_calls, plain_calls),
+            "source: {source}: receiver calls {receiver_emitted} (want {receiver_calls}), plain calls {call_emitted} (want {plain_calls})"
+        );
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x53; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+}

@@ -2739,10 +2739,18 @@ impl Compiler<'_> {
         let Some(source) = sequence_call_site_span(self.tree, children) else {
             return Ok(None);
         };
+        // The type phase records one call site per resolved call - the whole call sequence for a
+        // free or inherent call, and the member name for a trait method - so a recorded site that
+        // is this slice's own member names the same call the fragments reconstruct.
+        let member = sequence_call_member_span(self.tree, children);
         let Some(callee) = self
             .direct_targets
             .iter()
-            .find(|(candidate, callee)| *candidate == source && callee.receiver_type().is_some())
+            .find(|(candidate, callee)| {
+                callee.receiver_type().is_some()
+                    && (*candidate == source
+                        || member.as_ref().is_some_and(|member| *candidate == *member))
+            })
             .map(|(_, callee)| callee.clone())
         else {
             return Ok(None);
@@ -3151,6 +3159,42 @@ fn direct_expressions(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> 
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
         })
         .collect()
+}
+
+/// Returns the identifier that names the call one split operand performs.
+///
+/// The parser splits a receiver call into sibling fragments, so the call's own member is the last
+/// identifier the slice spells outside parentheses: an argument or a grouped receiver sits inside
+/// a group, and a receiver chain still ends with the member this slice calls. The type phase keys
+/// a trait method's recorded call site at that member name rather than at the call sequence.
+fn sequence_call_member_span(tree: &SyntaxTree, children: &[NodeId]) -> Option<SourceSpan> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let mut depth = 0_u64;
+    let mut member = None;
+    for token in tokens {
+        match token.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
+                depth = depth.saturating_add(1);
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
+                depth = depth.saturating_sub(1);
+            }
+            SyntaxForm::Token(TokenKind::Identifier(_)) if depth == 0 => {
+                member = Some(token.span().clone());
+            }
+            _ => {}
+        }
+    }
+    member
 }
 
 fn sequence_call_site_span(tree: &SyntaxTree, children: &[NodeId]) -> Option<SourceSpan> {
@@ -4002,31 +4046,55 @@ fn operand_receiver_place(
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
         )
     })?;
-    let root = match tokens.first()?.form() {
+    let mut cursor = 0_usize;
+    let mut grouping = 0_usize;
+    while matches!(
+        tokens.get(cursor)?.form(),
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+    ) {
+        grouping = grouping.saturating_add(1);
+        cursor = cursor.checked_add(1)?;
+    }
+    let root = match tokens.get(cursor)?.form() {
         SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
         SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
             Arc::from("self")
         }
         _ => return None,
     };
+    cursor = cursor.checked_add(1)?;
     let mut path = Vec::new();
-    let mut cursor = 1_usize;
     while cursor < method_dot {
-        if !matches!(
-            tokens.get(cursor)?.form(),
-            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
-        ) {
-            return None;
+        match tokens.get(cursor)?.form() {
+            // A parenthesis that opens right after a name calls that name, so the receiver is a
+            // computed value rather than the place this walk keys.
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
+                if matches!(
+                    tokens.get(cursor.checked_sub(1)?).map(|node| node.form()),
+                    Some(SyntaxForm::Token(TokenKind::Identifier(_)))
+                ) {
+                    return None;
+                }
+                grouping = grouping.saturating_add(1);
+                cursor = cursor.checked_add(1)?;
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
+                grouping = grouping.checked_sub(1)?;
+                cursor = cursor.checked_add(1)?;
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)) => {
+                let SyntaxForm::Token(TokenKind::Identifier(field)) =
+                    tokens.get(cursor.checked_add(1)?)?.form()
+                else {
+                    return None;
+                };
+                path.push(ValuePathSegment::StructField(field.to_string()));
+                cursor = cursor.saturating_add(2);
+            }
+            _ => return None,
         }
-        let SyntaxForm::Token(TokenKind::Identifier(field)) =
-            tokens.get(cursor.saturating_add(1))?.form()
-        else {
-            return None;
-        };
-        path.push(ValuePathSegment::StructField(field.to_string()));
-        cursor = cursor.saturating_add(2);
     }
-    Some((root, path))
+    (grouping == 0).then_some((root, path))
 }
 
 fn node_is_dot_postfix(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> bool {
