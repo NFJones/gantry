@@ -8378,26 +8378,39 @@ fn member_identifier_node(tree: &SyntaxTree, id: NodeId) -> Option<&gantry_front
 /// Reports whether one member-chain receiver part computes its value with a call.
 ///
 /// `p.flip().greet()` and `mk().greet()` read the member of a call result, and
-/// `(p.flip()).greet()` reads it from a grouped call result, so the receiver part is not the
-/// binding root, struct-field place, or constructed value the receiver rule requires. A part
-/// whose group only wraps a place (`(p).greet()`) or whose index expression calls something
-/// (`xs[f()].greet()`) names no call result of its own and keeps its existing walk.
+/// `(p.flip()).greet()` reads it from a grouped call result: a group is transparent, so the
+/// receiver part is not the binding root, struct-field place, or constructed value the receiver
+/// rule requires in any of those spellings. A group that only wraps a place (`(p).greet()`) or
+/// an index expression that calls something (`xs[f()].greet()`) names no call result of its own
+/// and keeps its existing walk.
 fn receiver_part_contains_call(tree: &SyntaxTree, receiver: &[NodeId]) -> bool {
-    receiver.iter().any(|child| {
-        if postfix_opens_call(tree, *child) {
-            return true;
-        }
+    if receiver
+        .iter()
+        .any(|child| postfix_opens_call(tree, *child))
+    {
+        return true;
+    }
+    receiver.iter().enumerate().any(|(index, child)| {
         tree.node(*child).is_some_and(|node| {
-            matches!(
+            if !matches!(
                 node.form(),
                 SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
-            ) && (receiver.first().is_some_and(|first| first != child)
-                || node.children().iter().any(|inner| {
-                    tree.node(*inner).is_some_and(|inner_node| {
-                        matches!(inner_node.form(), SyntaxForm::Expression)
-                            && subtree_contains_call_postfix(tree, *inner)
-                    })
-                }))
+            ) {
+                return false;
+            }
+            if index > 0 {
+                // A callee prefix before the parenthesis is a split call whose callee the
+                // postfix arm above cannot see.
+                return true;
+            }
+            // The group's own expression follows the opening parenthesis as a sibling, so a
+            // grouped call result is a call postfix anywhere inside those expressions.
+            receiver.iter().skip(index.saturating_add(1)).any(|inner| {
+                tree.node(*inner).is_some_and(|inner_node| {
+                    matches!(inner_node.form(), SyntaxForm::Expression)
+                        && subtree_contains_call_postfix(tree, *inner)
+                })
+            })
         })
     })
 }
@@ -8714,11 +8727,12 @@ fn infer_member_sequence(
         };
         // A receiver call reads its receiver before the call, so the receiver part must name a
         // binding root, a struct-field receiver place, or a constructed value (`SPEC.md` line
-        // 3699). The inherent path publishes that refusal from its own receiver mode, but a trait
-        // method resolved through the root shortcut would otherwise reach lowering with no call
-        // identity for the receiver it computes, so the same refusal is published here. Literal
-        // and sealed receivers keep their existing walks; resolution continues so the call keeps
-        // its result type and no enclosing operator adds a second, cascading diagnostic.
+        // 3699). The inherent path publishes that refusal from its own receiver mode; a resolved
+        // call without inherent metadata (a trait method, or a generic inherent method that takes
+        // the root-shortcut receiver) would otherwise reach lowering with no call identity for the
+        // receiver it computes, so the same refusal is published here. Literal and sealed
+        // receivers keep their existing walks; resolution continues so the call keeps its result
+        // type and no enclosing operator adds a second, cascading diagnostic.
         let trait_receiver_call =
             !builtin_present && inherent_source.as_ref().is_some_and(Option::is_none);
         if trait_receiver_call && receiver_part_contains_call(tree, receiver_scope) {
