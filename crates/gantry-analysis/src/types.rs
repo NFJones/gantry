@@ -892,7 +892,7 @@ enum CallableOccurrence {
     OpenMember,
     /// An annotation outside a callable signature.
     NonSignature,
-    /// A `let` binding annotation, which this section admits as one declared callable's value.
+    /// A `let` binding annotation, which this section admits for a callable-typed binding value.
     BindingAnnotation,
 }
 
