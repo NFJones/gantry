@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "08e447519e2eb5c102de4ac394aaa399d070d60a6da40747855edabcda9dbed8",
-  "byte_length": 1024125,
+  "specification_sha256": "22fdf853a57ca8218ce9c20b91682aca9dd1a6bc136e1b8cb15cdbd8d3a4ce08",
+  "byte_length": 1024247,
   "line_count": 15556,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9501,
       "end_line": 15556,
-      "sha256": "274637004c332992c3121a20ffa1553d6e63faf6b3880f34596272e3b67fa37c",
+      "sha256": "cb1fd04634832a8bc475403b42ea0c032671f00bec3cfd173154a97a135c09ae",
       "rationale": null
     }
   ],
@@ -41506,11 +41506,11 @@
       "id": "GNT-37.0-callable-values-and-frame-admission",
       "span_start_line": 15501,
       "span_end_line": 15509,
-      "span_sha256": "5112eddc54a413774327cb27acd5fbda038cec5ee383652628585a97e06500c6",
+      "span_sha256": "6a96fd2d8354329bd674b87a109f589de0cf99dc707aefb15ff31b10859157a2",
       "anchor_line": 15504,
       "body_start_line": 15505,
       "body_end_line": 15509,
-      "body_sha256": "e764710ddf245e1c0f6c9f1b6ca1021174f06c5a746c9a92d3c4f29bad2f3898",
+      "body_sha256": "a86160e147e28d901226af302c675db4d3c6b1dca1be13838e18219151ebc8a0",
       "profiles": [
         "analyzer"
       ],

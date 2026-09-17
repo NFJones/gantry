@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "SPEC.md",
-   "sha256": "08e447519e2eb5c102de4ac394aaa399d070d60a6da40747855edabcda9dbed8"
+   "sha256": "22fdf853a57ca8218ce9c20b91682aca9dd1a6bc136e1b8cb15cdbd8d3a4ce08"
   },
   {
    "path": "crates/gantry-conformance/tests/combined_gate.rs",
@@ -30,19 +30,19 @@
   },
   {
    "path": "protocol/conformance/concurrent-gate-v1.json",
-   "sha256": "4e4482cd6678f598942382d95f046f9487fcf4606d1d1a0098473d239c46b3eb"
+   "sha256": "1b77e2d3131619007feb13eb002c03ac28e828ee40a199a612005abe7cec0875"
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "f1ffa6006804c53a5deaabeb443075f2b9fe6ee452bf57186b85acfe2dbdf0c8"
+   "sha256": "dfafe90b0eb791a92c77c9bd4557192d2e5590720bab04772d6105130f16c542"
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "6608373b359a0ee3145b47b2e8f8e3891af9912ff487e38a05e72ed65bc0ac00"
+   "sha256": "5838578dc6aa37f0fa44932b634fca91fc7049b5f26bb444b9c057f082639e8c"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "ebf4059400b7e2dd5f8ae6f30992fbc2af3d1ee959d425f5c3c8ed3595caef9d"
+   "sha256": "ec7487402d5655a06876b33c81df23e684b32163b514e72e8557d3fe76d0467e"
   }
  ],
  "claim": {
@@ -200,7 +200,7 @@
  ],
  "specification": {
   "path": "SPEC.md",
-  "sha256": "08e447519e2eb5c102de4ac394aaa399d070d60a6da40747855edabcda9dbed8"
+  "sha256": "22fdf853a57ca8218ce9c20b91682aca9dd1a6bc136e1b8cb15cdbd8d3a4ce08"
  },
  "status": "verified",
  "validation_commands": [
