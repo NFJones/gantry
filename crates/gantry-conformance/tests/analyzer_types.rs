@@ -8302,6 +8302,157 @@ fn public_grouped_projection_receiver_tails_are_typed_and_lowered() {
     }
 }
 
+/// A call whose argument carries a projection is lowered as one call in either operand position.
+///
+/// The parser hands `f(xs[0])` either as sibling fragments or as one expression node, and the
+/// projection it carries belongs to that argument rather than to the call's result. The lowering
+/// compiles the argument once and emits exactly one call for the source call, so an enclosing
+/// operator observes the call's result in both operand positions; the shapes below pin the value
+/// and the single call instruction per source call (`GNT-GP-VALUE-009`).
+#[test]
+fn public_call_arguments_that_project_lower_as_one_call() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("projected call argument did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    let root = TempDirectory::new();
+    for (source, expected, calls) in [
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { let xs: List<Int> = [1, 2]; f(xs[0]) + 1 }",
+            12i64,
+            1usize,
+        ),
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { let xs: List<Int> = [1, 2]; 1 + f(xs[0]) }",
+            12,
+            1,
+        ),
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { let xs: List<Int> = [1, 2]; f(xs[0]) }",
+            11,
+            1,
+        ),
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { let xs: List<Int> = [1, 2]; f(f(xs[0])) + 1 }",
+            22,
+            2,
+        ),
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { let xs: List<Int> = [1, 2]; let y: Int = f(xs[0]); y + 1 }",
+            12,
+            1,
+        ),
+        (
+            "fn f(a: Int, b: Int) -> Int { a + b + 10 } fn main() -> Int { let xs: List<Int> = [1, 2]; let ys: List<Int> = [1, 2]; f(xs[0], ys[0]) + 1 }",
+            13,
+            1,
+        ),
+        (
+            "fn f(a: Int, b: Int) -> Int { a + b + 10 } fn main() -> Int { let xs: List<Int> = [1, 2]; let ys: List<Int> = [1, 2]; 1 + f(xs[0], ys[0]) }",
+            13,
+            1,
+        ),
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { f([1, 2][0]) + 1 }",
+            12,
+            1,
+        ),
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { let xs: List<Int> = [1, 2]; f((xs)[0]) + 1 }",
+            12,
+            1,
+        ),
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { 1 + f(1) }",
+            12,
+            1,
+        ),
+        (
+            "fn f(x: Int) -> Int { x + 10 } fn main() -> Int { f(1) + 1 }",
+            12,
+            1,
+        ),
+        (
+            "struct It { count: Int } fn f(x: Int) -> Int { x + 10 } fn main() -> Int { let it: It = It { count: 1 }; f(it.count) + 1 }",
+            12,
+            1,
+        ),
+        (
+            "struct It { count: Int } fn f(x: Int) -> Int { x + 10 } fn main() -> Int { let it: It = It { count: 1 }; 1 + f(it.count) }",
+            12,
+            1,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted
+            .executable_program()
+            .unwrap_or_else(|| panic!("source: {source}: an admitted call must publish a program"));
+        let emitted = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .filter(|instruction| matches!(instruction.kind, InstructionKind::Call { .. }))
+            .count();
+        assert_eq!(
+            emitted, calls,
+            "source: {source}: the source call must be lowered exactly {calls} time(s)"
+        );
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x51; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+}
+
 /// A computed projection receiver in operand position is typed and lowered as its element.
 ///
 /// An operator receives the projection of a computed receiver either as sibling fragments or as

@@ -2272,12 +2272,24 @@ impl Compiler<'_> {
     fn compile_sequence(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
         // A slice that indexes the result of a call is not that call, whether the index postfix is
         // nested in one child or a sibling fragment of the flattened slice: `head(xs)[0]` must
-        // compile the projection instead of the call and then the projection again.
-        let projects = children
-            .iter()
-            .any(|child| is_projection_node(self.tree, *child))
-            || slice_indexes_call_result(self.tree, children);
-        if !projects && let Some((callee, result)) = self.direct_sequence_target(children) {
+        // compile the projection instead of the call and then the projection again. A projection
+        // that lies inside the call's own parentheses is that call's argument instead, so
+        // `f(xs[0])` still compiles one call whose argument projects.
+        let projects = children.iter().any(|child| {
+            is_projection_node(self.tree, *child)
+                && !child_is_inside_call_parentheses(self.tree, children, *child)
+        }) || slice_indexes_call_result(self.tree, children);
+        // The call path assembles a call from sibling fragments. A slice that opens with anything
+        // but a callee token is not one of those fragments - `(bag()[0]).count` hands the parser's
+        // inner call to the span helper - and a slice that is one expression node already is that
+        // call, so compiling the node that is the call as its own argument list would emit it
+        // twice.
+        let assembles_call = slice_opens_with_callee(self.tree, children)
+            && !slice_is_call_expression(self.tree, children);
+        if !projects
+            && assembles_call
+            && let Some((callee, result)) = self.direct_sequence_target(children)
+        {
             let arguments = children
                 .iter()
                 .copied()
@@ -3170,6 +3182,85 @@ fn sequence_call_site_span(tree: &SyntaxTree, children: &[NodeId]) -> Option<Sou
         closing.span().bytes().end(),
     )
     .ok()
+}
+
+/// Reports whether one child of a slice sits inside parentheses the slice opens before it.
+///
+/// The parser hands a call as sibling fragments, so the argument expressions of `f(xs[0])` follow
+/// the opening parenthesis as direct children of the same slice. A projection inside those
+/// parentheses projects that argument rather than the slice's own value.
+fn child_is_inside_call_parentheses(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    target: NodeId,
+) -> bool {
+    let mut depth = 0_usize;
+    for child in children {
+        if *child == target {
+            return depth > 0;
+        }
+        depth = depth.saturating_add(parenthesis_delta(tree, *child));
+    }
+    false
+}
+
+/// Counts the parentheses one subtree opens and does not close.
+fn parenthesis_delta(tree: &SyntaxTree, id: NodeId) -> usize {
+    let mut opened = 0_usize;
+    let mut closed = 0_usize;
+    let mut work = vec![id];
+    while let Some(id) = work.pop() {
+        let Some(node) = tree.node(id) else {
+            continue;
+        };
+        if let SyntaxForm::Token(kind) = node.form() {
+            match kind {
+                TokenKind::Punctuation(Punctuation::LeftParenthesis) => {
+                    opened = opened.saturating_add(1);
+                }
+                TokenKind::Punctuation(Punctuation::RightParenthesis) => {
+                    closed = closed.saturating_add(1);
+                }
+                _ => {}
+            }
+        } else {
+            work.extend(node.children().iter().copied());
+        }
+    }
+    opened.saturating_sub(closed)
+}
+
+/// Reports whether one slice opens with the token that names its callee.
+///
+/// A slice that opens with a grouping parenthesis spells that group's own expression first, so
+/// `(bag()[0]).count` is not a call of `bag` and must not take the call path.
+fn slice_opens_with_callee(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    let Some(first) = children.first() else {
+        return false;
+    };
+    let mut work = vec![*first];
+    while let Some(id) = work.pop() {
+        let Some(node) = tree.node(id) else {
+            return false;
+        };
+        if let SyntaxForm::Token(kind) = node.form() {
+            return matches!(kind, TokenKind::Identifier(_))
+                || matches!(kind, TokenKind::ReservedWord(word) if word.spelling() == "self");
+        }
+        work.extend(node.children().iter().rev().copied());
+    }
+    false
+}
+
+/// Reports whether one slice is a single expression node that already is a call.
+fn slice_is_call_expression(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    let [only] = children else {
+        return false;
+    };
+    tree.node(*only).is_some_and(|node| {
+        matches!(node.form(), SyntaxForm::Expression)
+            && sequence_call_site_span(tree, children).is_some()
+    })
 }
 
 fn source_span_contains(
