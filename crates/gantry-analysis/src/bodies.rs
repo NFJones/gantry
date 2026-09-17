@@ -8375,6 +8375,67 @@ fn member_identifier_node(tree: &SyntaxTree, id: NodeId) -> Option<&gantry_front
     }
 }
 
+/// Reports whether one member-chain receiver part computes its value with a call.
+///
+/// `p.flip().greet()` and `mk().greet()` read the member of a call result, and
+/// `(p.flip()).greet()` reads it from a grouped call result, so the receiver part is not the
+/// binding root, struct-field place, or constructed value the receiver rule requires. A part
+/// whose group only wraps a place (`(p).greet()`) or whose index expression calls something
+/// (`xs[f()].greet()`) names no call result of its own and keeps its existing walk.
+fn receiver_part_contains_call(tree: &SyntaxTree, receiver: &[NodeId]) -> bool {
+    receiver.iter().any(|child| {
+        if postfix_opens_call(tree, *child) {
+            return true;
+        }
+        tree.node(*child).is_some_and(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+            ) && (receiver.first().is_some_and(|first| first != child)
+                || node.children().iter().any(|inner| {
+                    tree.node(*inner).is_some_and(|inner_node| {
+                        matches!(inner_node.form(), SyntaxForm::Expression)
+                            && subtree_contains_call_postfix(tree, *inner)
+                    })
+                }))
+        })
+    })
+}
+
+/// Reports whether one postfix node is a call parenthesis rather than an index postfix.
+///
+/// A call postfix carries the `(` of its argument list; an index postfix carries `[` directly,
+/// so an index expression that itself calls something is not a call result of this chain part.
+fn postfix_opens_call(tree: &SyntaxTree, id: NodeId) -> bool {
+    let Some(node) = tree.node(id) else {
+        return false;
+    };
+    if !matches!(node.form(), SyntaxForm::PostfixExpression)
+        || !node_contains_punctuation(tree, id, Punctuation::LeftParenthesis)
+    {
+        return false;
+    }
+    !node.children().iter().any(|child| {
+        tree.node(*child).is_some_and(|child| {
+            matches!(
+                child.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftBracket))
+            )
+        })
+    })
+}
+
+fn subtree_contains_call_postfix(tree: &SyntaxTree, id: NodeId) -> bool {
+    if postfix_opens_call(tree, id) {
+        return true;
+    }
+    tree.node(id).is_some_and(|node| {
+        node.children()
+            .iter()
+            .any(|child| subtree_contains_call_postfix(tree, *child))
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn infer_member_sequence(
     tree: &SyntaxTree,
@@ -8592,6 +8653,7 @@ fn infer_member_sequence(
             .map(|list| closed_type_arguments(tree, list, context))
             .transpose()?;
         let builtin = builtin_method_signature(&receiver, &member)?;
+        let builtin_present = builtin.is_some();
         let inherent_source = builtin.is_none().then(|| {
             context
                 .inherent_method_sources
@@ -8650,6 +8712,24 @@ fn infer_member_sequence(
         let Some(signature) = signature else {
             return Ok(None);
         };
+        // A receiver call reads its receiver before the call, so the receiver part must name a
+        // binding root, a struct-field receiver place, or a constructed value (`SPEC.md` line
+        // 3699). The inherent path publishes that refusal from its own receiver mode, but a trait
+        // method resolved through the root shortcut would otherwise reach lowering with no call
+        // identity for the receiver it computes, so the same refusal is published here. Literal
+        // and sealed receivers keep their existing walks; resolution continues so the call keeps
+        // its result type and no enclosing operator adds a second, cascading diagnostic.
+        let trait_receiver_call =
+            !builtin_present && inherent_source.as_ref().is_some_and(Option::is_none);
+        if trait_receiver_call && receiver_part_contains_call(tree, receiver_scope) {
+            diagnostics.push(body_diagnostic(
+                "receiver-value-place",
+                DiagnosticCategory::Type,
+                "a receiver call requires a binding root, a struct-field receiver place, or a constructed value",
+                member_node.span().clone(),
+                [] as [(&str, &str); 0],
+            )?);
+        }
         if let Some(metadata) = inherent_source.flatten() {
             let exclusive_admission = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
                 Some(postfix_exclusive_receiver_place(

@@ -2937,6 +2937,65 @@ fn call_result_receiver_is_rejected_with_a_source_diagnostic() {
     );
 }
 
+/// A trait receiver call whose receiver is a call result is refused with exactly one source
+/// diagnostic in every position, including a chained or free-call receiver; no source-valid
+/// program reaches lowering with a receiver that has no caller place.
+#[test]
+fn trait_call_result_receivers_are_refused_in_every_position() {
+    let fixture = "struct Plain { value: Int }\n\
+         trait Greet { pure fn greet(self) -> Int; }\n\
+         impl Greet for Plain { pure fn greet(self) -> Int { self.value } }\n\
+         impl Plain { fn flip(self) -> Plain { self } fn add(self, other: Int) -> Int { self.value + other } }\n\
+         fn mk() -> Plain { Plain { value: 42 } }\n";
+    for body in [
+        // The value position.
+        "fn main() -> Int { let p: Plain = Plain { value: 42 }; p.flip().greet() }",
+        // The left operand.
+        "fn main() -> Int { let p: Plain = Plain { value: 42 }; p.flip().greet() + 1 }",
+        // The right operand.
+        "fn main() -> Int { let p: Plain = Plain { value: 42 }; 1 + p.flip().greet() }",
+        // A free-call receiver and a receiver chain of two calls.
+        "fn main() -> Int { mk().greet() }",
+        "fn main() -> Int { let p: Plain = Plain { value: 42 }; p.flip().flip().greet() }",
+        // An argument position.
+        "fn main() -> Int { let p: Plain = Plain { value: 42 }; p.add(p.flip().greet()) }",
+    ] {
+        let refused = analyze(&format!("{fixture}{body}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics().len(),
+            1,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics()[0].code.as_str(),
+            "receiver-value-place",
+            "{body}"
+        );
+        assert!(refused.executable_program().is_none(), "{body}");
+    }
+    for body in [
+        "fn main() -> Int { let p: Plain = Plain { value: 42 }; p.greet() + 1 }",
+        "fn main() -> Int { let p: Plain = Plain { value: 42 }; (p).greet() + 1 }",
+        "fn main() -> Int { Plain { value: 42 }.greet() }",
+        "fn main() { let p: Plain = Plain { value: 42 }; discard p.flip(); }",
+    ] {
+        let accepted = analyze(&format!("{fixture}{body}"));
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{body}: {:?}",
+            accepted.diagnostics()
+        );
+    }
+}
+
 /// A `must_consume struct` seeds `MustConsume`; nested members, affine declarations, and generic
 /// instantiations fold to the dominating class, and unrelated declarations stay accepted.
 #[test]
