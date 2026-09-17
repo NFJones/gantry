@@ -1593,6 +1593,9 @@ impl Compiler<'_> {
         if let Some(projection) = self.compile_static_projection(expression, &node, &ty)? {
             return Ok(projection);
         }
+        if let Some(projection) = self.compile_grouped_receiver_operand(node.children())? {
+            return Ok(projection);
+        }
         if let Some(variant) =
             enum_constructor_variant(self.tree, &node, self.closed_enums.get(&ty))
         {
@@ -2454,6 +2457,9 @@ impl Compiler<'_> {
         if let Some(result) = self.compile_receiver_call_operand(children)? {
             return Ok(result);
         }
+        if let Some(result) = self.compile_grouped_receiver_operand(children)? {
+            return Ok(result);
+        }
         let mut result = TypeDescriptor::UNIT;
         let valued = children
             .iter()
@@ -2628,6 +2634,43 @@ impl Compiler<'_> {
         let mut current = projection_step_type(&receiver_type, &member, self.struct_fields)
             .ok_or(AnalysisError::Invariant)?;
         self.emit(current.clone(), InstructionKind::Project(member))?;
+        for step in steps {
+            let projection = match step {
+                ProjectionChainStep::Field(field) => Projection::Field(field),
+                ProjectionChainStep::Member(index) => Projection::Member(index),
+            };
+            current = projection_step_type(&current, &projection, self.struct_fields)
+                .ok_or(AnalysisError::Invariant)?;
+            self.emit(current.clone(), InstructionKind::Project(projection))?;
+        }
+        Ok(Some(current))
+    }
+
+    /// Lowers a computed operand whose receiver part is one grouping parenthesis.
+    ///
+    /// `(bag()[0]).count` keeps its receiver inside a group rather than in sibling fragments, so no
+    /// top-level index postfix reaches the fragment walks above. The group's own expression is
+    /// compiled as the value it produces and every later step is projected from that value, exactly
+    /// as those walks project a computed receiver. A tail that carries a call belongs to the
+    /// receiver-call arm above, and a tail this walk cannot key reports no operand so the caller
+    /// keeps the ordinary child walk.
+    fn compile_grouped_receiver_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        let Some((inner, after)) = grouped_receiver_split(self.tree, children) else {
+            return Ok(None);
+        };
+        if !projection_tail_is_step_only(self.tree, children, after) {
+            return Ok(None);
+        }
+        let Some(steps) = postfix_projection_steps(self.tree, children, after) else {
+            return Ok(None);
+        };
+        if steps.is_empty() {
+            return Ok(None);
+        }
+        let mut current = self.compile_expression(inner)?;
         for step in steps {
             let projection = match step {
                 ProjectionChainStep::Field(field) => Projection::Field(field),
@@ -3396,6 +3439,51 @@ fn postfix_projection_steps(
         cursor += 1;
     }
     Some(steps)
+}
+
+/// Splits one operand that opens with a grouping parenthesis into its inner expression and the
+/// index of the child after the closing parenthesis.
+///
+/// The parser flattens a grouped receiver into an opening token, one expression, and a closing
+/// token, so `(bag()[0]).count` offers its receiver as one whole expression rather than as sibling
+/// fragments. A slice that does not open with one completed group reports no split.
+fn grouped_receiver_split(tree: &SyntaxTree, children: &[NodeId]) -> Option<(NodeId, usize)> {
+    let opening = children.first()?;
+    if !matches!(
+        tree.node(*opening)?.form(),
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+    ) {
+        return None;
+    }
+    let inner = *children.get(1)?;
+    if !matches!(tree.node(inner)?.form(), SyntaxForm::Expression) {
+        return None;
+    }
+    let close = children.iter().position(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+            )
+        })
+    })?;
+    if close != 2 {
+        return None;
+    }
+    Some((inner, close.saturating_add(1)))
+}
+
+/// Reports whether every child after `after` is a projection step rather than a call.
+///
+/// A tail that opens a call parenthesis belongs to the receiver-call arm, so this walk leaves it
+/// alone instead of projecting a field in the place of a method call.
+fn projection_tail_is_step_only(tree: &SyntaxTree, children: &[NodeId], after: usize) -> bool {
+    !children.iter().skip(after).any(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, node, Punctuation::LeftParenthesis)
+        })
+    })
 }
 
 /// Reports whether one slice indexes the result of a call with a sibling index postfix.

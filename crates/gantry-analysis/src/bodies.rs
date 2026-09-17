@@ -8320,6 +8320,26 @@ fn operand_index_projection_has_receiver_call(tree: &SyntaxTree, children: &[Nod
     })
 }
 
+/// Returns the identifier token one dotted member step names.
+///
+/// The parser hands a member name either as its own identifier token or wrapped in one
+/// one-child node, which is the shape a trailing member step arrives in when an operator
+/// follows it, so both spellings resolve to the same member and a step this walk cannot key
+/// still reports no member at all.
+fn member_identifier_node(tree: &SyntaxTree, id: NodeId) -> Option<&gantry_frontend::SyntaxNode> {
+    let node = tree.node(id)?;
+    match node.form() {
+        SyntaxForm::Token(TokenKind::Identifier(_)) => Some(node),
+        SyntaxForm::Expression | SyntaxForm::BinaryExpression | SyntaxForm::Path => {
+            let [inner] = node.children() else {
+                return None;
+            };
+            member_identifier_node(tree, *inner)
+        }
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn infer_member_sequence(
     tree: &SyntaxTree,
@@ -8472,7 +8492,9 @@ fn infer_member_sequence(
         .get(dot.saturating_add(1))
         .copied()
         .ok_or(AnalysisError::Invariant)?;
-    let member_node = tree.node(member_id).ok_or(AnalysisError::Invariant)?;
+    let Some(member_node) = member_identifier_node(tree, member_id) else {
+        return Ok(None);
+    };
     let member = match member_node.form() {
         SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
         _ => return Ok(None),

@@ -8132,6 +8132,176 @@ fn public_split_index_projection_operands_are_typed_and_lowered() {
     );
 }
 
+/// A grouping around a projected receiver keeps that projection for its member tail.
+///
+/// The parser offers a grouped receiver as one expression rather than as sibling fragments, so
+/// `(bag()[0]).count` reaches the member walk with no top-level index postfix: the analyzer resolves
+/// the member through the grouping and the lowering compiles the group's own expression as the
+/// value it produces before projecting every tail step from that value. The rows below execute in
+/// value, binding, and operand position, and the same walk covers a grouped place receiver and a
+/// grouped free call, while a grouped projection used as a value still refuses with the published
+/// type diagnostic (`GNT-GP-VALUE-010`).
+#[test]
+fn public_grouped_projection_receiver_tails_are_typed_and_lowered() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("grouped projection tail did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    let root = TempDirectory::new();
+    for (source, expected) in [
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { (bag()[0]).count }",
+            41i64,
+        ),
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { ((bag())[0]).count }",
+            41,
+        ),
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { let v: Int = (bag()[0]).count; v + 1 }",
+            42,
+        ),
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { (bag()[0]).count + 1 }",
+            42,
+        ),
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { (bag()[0]).count + (bag()[0]).count }",
+            82,
+        ),
+        (
+            "struct It { count: Int } struct Pair { inner: It } fn main() -> Int { let p: Pair = Pair { inner: It { count: 41 } }; (p.inner).count }",
+            41,
+        ),
+        (
+            "struct It { count: Int } fn main() -> Int { let v: It = It { count: 41 }; ((v)).count }",
+            41,
+        ),
+        (
+            "struct It { count: Int } struct Pair { inner: It } fn main() -> Int { let p: Pair = Pair { inner: It { count: 41 } }; [(p.inner).count][0] }",
+            41,
+        ),
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn head(items: List<It>) -> It { items[0] } fn main() -> Int { (head(bag())).count }",
+            41,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted
+            .executable_program()
+            .unwrap_or_else(|| panic!("source: {source}: an admitted tail must publish a program"));
+        let kinds = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .map(|instruction| &instruction.kind)
+            .collect::<Vec<_>>();
+        // The grouped receiver is compiled as the value it produces and the tail projects the
+        // member from that value: a callee is never loaded as the receiver of the tail.
+        assert!(
+            !kinds.iter().any(|kind| matches!(kind, InstructionKind::Load(name) if name.as_ref() == "bag" || name.as_ref() == "head")),
+            "source: {source}: a callee must not be loaded as a receiver"
+        );
+        assert!(
+            kinds.iter().any(|kind| matches!(
+                kind,
+                InstructionKind::Project(Projection::Field(field)) if field.as_ref() == "count"
+            )),
+            "source: {source}: the tail must publish the member projection"
+        );
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x43; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+
+    // A grouped projection that is the whole value is not a member tail and keeps its refusal.
+    for (source, code) in [
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { (bag()[0]) }",
+            "type-mismatch",
+        ),
+        (
+            "struct It { count: Int } fn bag() -> List<It> { [It { count: 41 }] } fn main() -> Int { (bag()[0]).missing }",
+            "unknown-member",
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "source: {source}: expected {code}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused tail must not publish a program"
+        );
+    }
+}
+
 /// A computed projection receiver in operand position is typed and lowered as its element.
 ///
 /// An operator receives the projection of a computed receiver either as sibling fragments or as
