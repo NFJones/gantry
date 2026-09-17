@@ -2282,6 +2282,21 @@ impl Compiler<'_> {
     }
 
     fn compile_sequence(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
+        // The parser leaves an operator-free `BinaryExpression` wrapper around one operand when
+        // a chain folds around it (`1 + f(1) + f(2)` wraps the middle call), and that wrapper is
+        // not a sequence: the call path would read the wrapped node as the call's argument list
+        // and emit one call with no argument. Descending to the wrapped node and compiling it as
+        // this slice gives the same shape the same call has in a two-term chain, where the
+        // operand is that expression node itself. A wrapper holding only a token child is a
+        // literal, which `compile_expression` already handles for the wrapper node.
+        if let [only] = children
+            && let Some(node) = self.tree.node(*only)
+            && matches!(node.form(), SyntaxForm::BinaryExpression)
+            && binary_operators(self.tree, node.children()).is_empty()
+            && let Some(wrapped) = single_wrapped_node(self.tree, node)
+        {
+            return self.compile_sequence(std::slice::from_ref(&wrapped));
+        }
         // A slice that indexes the result of a call is not that call, whether the index postfix is
         // nested in one child or a sibling fragment of the flattened slice: `head(xs)[0]` must
         // compile the projection instead of the call and then the projection again. A projection
@@ -4231,6 +4246,21 @@ fn binary_operators(tree: &SyntaxTree, children: &[NodeId]) -> Vec<(Punctuation,
             _ => None,
         })
         .collect()
+}
+
+/// Returns the single non-token child of one operator-free wrapper node.
+///
+/// The parser leaves a `BinaryExpression` wrapper holding no operator token around one operand
+/// when a chain folds around it, and the wrapped operand may be an expression node or a literal
+/// token; only the expression form carries a child the sequence walk can compile in the
+/// wrapper's place.
+fn single_wrapped_node(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Option<NodeId> {
+    let mut children = node.children().iter().copied().filter(|child| {
+        tree.node(*child)
+            .is_some_and(|child| !matches!(child.form(), SyntaxForm::Token(_)))
+    });
+    let only = children.next()?;
+    children.next().is_none().then_some(only)
 }
 
 /// Reports whether one node holds only grouping parenthesis boundary tokens.
