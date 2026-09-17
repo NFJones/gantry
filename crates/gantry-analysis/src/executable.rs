@@ -718,6 +718,18 @@ impl Compiler<'_> {
         let node = self.node(statement)?.clone();
         let expression = direct_child_form(self.tree, &node, SyntaxForm::Expression)
             .ok_or(AnalysisError::Invariant)?;
+        // A binding whose annotation is a callable type holds a statically resolved alias
+        // rather than a runtime value (`GNT-37.0`): every admitted use resolves to the
+        // declared callable the binding names, so the binding emits no instruction and owns
+        // no local slot.
+        if let Some(type_node) = direct_child_form(self.tree, &node, SyntaxForm::ValueType)
+            && self
+                .declaration_types
+                .get(&type_node)
+                .is_some_and(|fact| fact.descriptor.callable_type().is_some())
+        {
+            return Ok(());
+        }
         let mutable = node_has_word(self.tree, &node, "mut");
         let ty = self.compile_expression(expression)?;
         if let Some(pattern) = direct_child_form(self.tree, &node, SyntaxForm::Pattern) {

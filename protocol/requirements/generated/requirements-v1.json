@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "642d468b79f109e3a232779703b0893baa776097dfa9f8b9e81d6fbcdfdbc735",
-  "byte_length": 1023181,
+  "specification_sha256": "08e447519e2eb5c102de4ac394aaa399d070d60a6da40747855edabcda9dbed8",
+  "byte_length": 1024125,
   "line_count": 15556,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9501,
       "end_line": 15556,
-      "sha256": "a61333775071180764e6677a60db71c7859af6eadbb52830b42ef5ea0a44a9a4",
+      "sha256": "274637004c332992c3121a20ffa1553d6e63faf6b3880f34596272e3b67fa37c",
       "rationale": null
     }
   ],
@@ -41506,11 +41506,11 @@
       "id": "GNT-37.0-callable-values-and-frame-admission",
       "span_start_line": 15501,
       "span_end_line": 15509,
-      "span_sha256": "2f45bba81b94da8f6b9533252fad0231bb4dd3ff462b7e868b62583a3a065af7",
+      "span_sha256": "5112eddc54a413774327cb27acd5fbda038cec5ee383652628585a97e06500c6",
       "anchor_line": 15504,
       "body_start_line": 15505,
       "body_end_line": 15509,
-      "body_sha256": "790e328cc58746b1b6a48da705ebb4c3ccc4b2bb801b187d3597522aed16d656",
+      "body_sha256": "e764710ddf245e1c0f6c9f1b6ca1021174f06c5a746c9a92d3c4f29bad2f3898",
       "profiles": [
         "analyzer"
       ],
@@ -41921,11 +41921,11 @@
       "id": "GNT-37.10-direct-call-and-receiver-compatibility",
       "span_start_line": 15546,
       "span_end_line": 15549,
-      "span_sha256": "1f770fa99ebf296a525a1c16574d38347578f7ae93954b0da2c59ccf9b0203c8",
+      "span_sha256": "abc64983289ce50d9ac69aba2ae322c937c6064cb630635925e6eac9a3066733",
       "anchor_line": 15546,
       "body_start_line": 15547,
       "body_end_line": 15549,
-      "body_sha256": "85aae7e481b573a2844e09da8f7c96cd06f5e2bb945c87dd416a5de03de24ab7",
+      "body_sha256": "76f5d06b5bb914955cd72e9fc3a37c2bcaa4fb6c3e7acc47cc047a8cf54c2b6a",
       "profiles": [
         "analyzer"
       ],
@@ -42003,11 +42003,11 @@
       "id": "GNT-37.12-callable-non-claims",
       "span_start_line": 15554,
       "span_end_line": 15556,
-      "span_sha256": "e3e99955a8c5f6aa301294f1251e0f993393c143918b3c090fe6546d2b10d867",
+      "span_sha256": "4b760c025111170f85f5f456bb7e14cd4434b8b06197ce0968e3f484a547f966",
       "anchor_line": 15554,
       "body_start_line": 15555,
       "body_end_line": 15556,
-      "body_sha256": "d1e9d182ce32abe991ecdb644955ef08dac5b5d32b946bc2507d88b200fe947c",
+      "body_sha256": "0684aeffb9ed87679796e9694239f82db3f705b62bac93826a436f4c9db43ddf",
       "profiles": [
         "analyzer"
       ],

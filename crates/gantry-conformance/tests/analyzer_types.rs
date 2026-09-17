@@ -5675,6 +5675,210 @@ fn public_callable_type_annotations_are_admitted_in_signatures() {
     );
 }
 
+/// A `let` binding whose annotation is a callable type holds one declared callable as a
+/// statically resolved alias: the initializer is admitted there, an invocation through the
+/// binding lowers to the direct call it names (`GNT-37.0`, `GNT-37.10`), and every other
+/// value position keeps its own precise refusal.
+#[test]
+fn public_callable_binding_aliases_are_typed_and_invoked() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("a callable alias invocation did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    let root = TempDirectory::new();
+    for (source, expected) in [
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = inc; g(41) }",
+            42i64,
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = inc; let h: Fn(Int) -> Int = g; h(1) }",
+            2,
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = inc; g(41) + 1 }",
+            43,
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = inc; let h: Fn(Int) -> Int = inc; g(1) + h(2) }",
+            5,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: an admitted alias must publish a program")
+        });
+        let kinds = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.instructions.iter())
+            .map(|instruction| &instruction.kind)
+            .collect::<Vec<_>>();
+        // The alias is statically resolved rather than materialized: no workflow binds the
+        // alias name, and the invocation publishes the direct call it names.
+        assert!(
+            !kinds
+                .iter()
+                .any(|kind| matches!(kind, InstructionKind::Bind { name, .. } if name.as_ref() == "g" || name.as_ref() == "h")),
+            "source: {source}: a callable binding must hold no runtime value"
+        );
+        assert!(
+            kinds
+                .iter()
+                .any(|kind| matches!(kind, InstructionKind::Call { .. })),
+            "source: {source}: the invocation must lower to a direct call"
+        );
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x43; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+
+    // The admitted binding annotation narrows the reference refusal rather than removing it:
+    // a mismatched initializer, a grouped reference, another value position, and a bad call
+    // keep their own precise refusal.
+    for (source, code, identifier) in [
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = 0; 0 }",
+            "type-mismatch",
+            None,
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: FnMut(Int) -> Int = inc; 0 }",
+            "type-mismatch",
+            None,
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { discard inc; 0 }",
+            "callable-reference-unadmitted",
+            Some("inc"),
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = (inc); 0 }",
+            "callable-reference-unadmitted",
+            Some("inc"),
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = inc; discard g; 0 }",
+            "callable-reference-unadmitted",
+            Some("g"),
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn consume(value: Fn(Int) -> Int) -> Int { 0 } fn main() -> Int { let g: Fn(Int) -> Int = inc; consume(g) }",
+            "callable-reference-unadmitted",
+            Some("g"),
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn give() -> Fn(Int) -> Int { inc } fn main() -> Int { 0 }",
+            "callable-reference-unadmitted",
+            Some("inc"),
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = inc; g(1, 2) }",
+            "call-arity",
+            None,
+        ),
+        (
+            "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let g: Fn(Int) -> Int = inc; g(true) }",
+            "call-argument-type",
+            None,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = refused
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == code)
+            .unwrap_or_else(|| {
+                panic!(
+                    "source: {source}: expected {code}; diagnostics: {:?}",
+                    refused.diagnostics()
+                )
+            });
+        if let Some(identifier) = identifier {
+            assert_eq!(
+                refusal.fields.get("identifier").map(AsRef::as_ref),
+                Some(identifier),
+                "source: {source}"
+            );
+        }
+    }
+
+    // A callable-typed parameter is still forwarded as a call argument, and the admitted
+    // binding form changes nothing about that shape.
+    root.write("fn consume(value: Fn(Int) -> Int) -> Int { 0 } fn forward(callback: Fn(Int) -> Int) -> Int { discard consume(callback); 0 } fn main() -> Int { 0 }");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let admitted = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
+}
+
 /// A callable annotation outside a signature position, and a signature annotation whose
 /// parameter or result position does not name a closed type, are refused with the published
 /// occurrence class of their position instead of failing internally.
@@ -5726,11 +5930,6 @@ fn public_callable_type_annotations_outside_signatures_are_refused_with_their_cl
             "action read_only lookup(callback: Fn(Int) -> Int) -> String; fn main() -> Int { 0 }",
             "Fn",
             "boundary-position",
-        ),
-        (
-            "fn main() -> Int { let callback: Fn(Int) -> Int = 0; 0 }",
-            "Fn",
-            "non-signature",
         ),
         (
             "trait Callable { pure fn call(self) -> Int; } impl Callable for Fn(Int) -> Int { pure fn call(self) -> Int { 0 } } fn main() -> Int { 0 }",

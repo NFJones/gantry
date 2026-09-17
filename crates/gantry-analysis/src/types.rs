@@ -892,6 +892,8 @@ enum CallableOccurrence {
     OpenMember,
     /// An annotation outside a callable signature.
     NonSignature,
+    /// A `let` binding annotation, which this section admits as one declared callable's value.
+    BindingAnnotation,
 }
 
 impl CallableOccurrence {
@@ -903,13 +905,14 @@ impl CallableOccurrence {
             Self::BoundaryPosition => "boundary-position",
             Self::OpenMember => "open-member",
             Self::NonSignature => "non-signature",
+            Self::BindingAnnotation => "binding-annotation",
         }
     }
 
     /// Returns the refusal message of one refused class.
     const fn refusal_message(self) -> &'static str {
         match self {
-            Self::Signature | Self::OpenMember => {
+            Self::Signature | Self::OpenMember | Self::BindingAnnotation => {
                 "a source callable type whose parameter or result position does not name a closed type is recognised but not admitted by this revision"
             }
             Self::NestedComponent => {
@@ -929,7 +932,8 @@ impl CallableOccurrence {
 ///
 /// `GNT-37.0` admits the callable type form in a signature annotation: the parameter or
 /// result position of a function, method, or trait-method declaration whose parameter and
-/// result positions all name closed types. The entry parameter and result and every action
+/// result positions all name closed types, and in a `let` binding annotation, whose value
+/// is one declared callable. The entry parameter and result and every action
 /// parameter and result are boundary signature positions, because their types are boundary
 /// schema roots, and every other occurrence is either a component of another type
 /// expression or an annotation outside a signature, so an unadmitted type form never
@@ -996,6 +1000,9 @@ fn callable_occurrences(
                     } else {
                         CallableOccurrence::Signature
                     }
+                }
+                Some(declaration) if matches!(declaration.form(), SyntaxForm::LetStatement) => {
+                    CallableOccurrence::BindingAnnotation
                 }
                 _ => CallableOccurrence::NonSignature,
             }
@@ -1083,9 +1090,12 @@ fn resolve_type_node(
             .get(&id)
             .copied()
             .unwrap_or(CallableOccurrence::NonSignature);
-        if occurrence == CallableOccurrence::Signature {
-            // An admitted signature annotation resolves to the canonical callable type of
-            // its reuse kind, ordered parameter types, and result type (`GNT-37.1`).
+        if matches!(
+            occurrence,
+            CallableOccurrence::Signature | CallableOccurrence::BindingAnnotation
+        ) {
+            // An admitted signature or binding annotation resolves to the canonical callable
+            // type of its reuse kind, ordered parameter types, and result type (`GNT-37.1`).
             let members = callable_member_nodes(tree, callable)?
                 .into_iter()
                 .map(|member| resolved.get(&member).map(|fact| fact.descriptor.clone()))
@@ -1097,10 +1107,11 @@ fn resolve_type_node(
                 return Ok(Some(TypeDescriptor::callable(kind, members, result)));
             }
         }
-        let refused = if occurrence == CallableOccurrence::Signature {
-            CallableOccurrence::OpenMember
-        } else {
-            occurrence
+        let refused = match occurrence {
+            CallableOccurrence::Signature | CallableOccurrence::BindingAnnotation => {
+                CallableOccurrence::OpenMember
+            }
+            other => other,
         };
         diagnostics.push(type_diagnostic(
             "callable-type-unadmitted",

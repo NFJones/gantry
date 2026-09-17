@@ -20,11 +20,11 @@ use gantry_core::source::{
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TemplateKind, TypeKind};
 use gantry_ir::{
-    CallableDiagnosticCode, CanonicalCallableIdentity, CanonicalImplementationIdentity,
-    CanonicalPath, CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, EffectSet,
-    GenericTemplate, ImplementationHead, OwnershipClass, Predicate, ReceiverMode, TraitContract,
-    TraitMethodContract, TraitReference, TransferEligibility, TypeDescriptor, TypeDescriptorError,
-    TypeExpression, WorkflowParameter,
+    CallableDiagnosticCode, CallableKind, CanonicalCallableIdentity,
+    CanonicalImplementationIdentity, CanonicalPath, CanonicalTemplateIdentity, ConcreteIdentity,
+    ConcreteInstantiation, EffectSet, GenericTemplate, ImplementationHead, OwnershipClass,
+    Predicate, ReceiverMode, TraitContract, TraitMethodContract, TraitReference,
+    TransferEligibility, TypeDescriptor, TypeDescriptorError, TypeExpression, WorkflowParameter,
 };
 
 use crate::generics::{
@@ -6046,14 +6046,49 @@ fn infer_expression_inner(
                 if let Some(name) = direct_identifier(tree, child)?
                     && let Some(ty) = environment.get(&name).cloned()
                 {
+                    // A binding that holds one declared callable is not a runtime value: only
+                    // another binding's initializer and an invocation callee may name it
+                    // (`GNT-37.0`), so every other value position keeps the reference refusal
+                    // instead of lowering a load of a value the program never binds.
+                    if ty.callable_type().is_some()
+                        && !(expected.is_some_and(|expected| expected.callable_type().is_some())
+                            && path_is_let_initializer(tree, child)?)
+                        && callable_alias(tree, child, &name, context)?.is_some()
+                    {
+                        diagnostics.push(body_diagnostic(
+                            "callable-reference-unadmitted",
+                            DiagnosticCategory::Type,
+                            "a name that denotes a declared callable or action is not a value",
+                            child_node.span().clone(),
+                            [("identifier", name.to_string())],
+                        )?);
+                        return Ok(None);
+                    }
                     record_affine_read(name, &ty, child_node.span().clone(), context, diagnostics)?;
                     return Ok(Some(ty));
                 }
-                // A name that denotes a declared callable is not a value derivation in this
-                // revision: `GNT-37.0` admits no source callable value, and a declared callable
-                // is reachable only through a direct call, whose callee position this leaves
-                // unchanged. Refusing the name here keeps an untyped value expression out of
-                // every consumer instead of lowering a program that cannot execute it.
+                // A `let` binding whose annotation is a callable type may name one declared
+                // callable as its value (`GNT-37.0`): the binding holds a statically resolved
+                // alias rather than a runtime value, and every other value position keeps the
+                // refusal below.
+                if !context.callee_spans.contains(child_node.span())
+                    && let Some(symbol) = context.references.get(child_node.span())
+                    && let Some(signature) = context.callables.get(symbol)
+                    && expected.is_some_and(|expected| expected.callable_type().is_some())
+                    && path_is_let_initializer(tree, child)?
+                {
+                    return Ok(Some(TypeDescriptor::callable(
+                        CallableKind::Function,
+                        signature.parameters.clone(),
+                        signature.result.clone(),
+                    )));
+                }
+                // A name that denotes a declared callable is not a value derivation outside a
+                // binding initializer: `GNT-37.0` admits no source callable expression, and a
+                // declared callable is otherwise reachable only through a direct call, whose
+                // callee position this leaves unchanged. Refusing the name here keeps an
+                // untyped value expression out of every consumer instead of lowering a
+                // program that cannot execute it.
                 if !context.callee_spans.contains(child_node.span())
                     && let Some(identifier) = declared_callable_identifier(tree, child, context)?
                 {
@@ -10341,6 +10376,95 @@ fn infer_call_sequence(
     };
     let path = tree.node(path_id).ok_or(AnalysisError::Invariant)?;
     let Some(target) = context.references.get(path.span()).copied() else {
+        // A callee that names a binding whose value is one declared callable is the admitted
+        // invocation form of `GNT-37.10`: the alias lowers to the same direct call with the
+        // same identity and contributes the same callee row, while a grouped callee and every
+        // other callable-typed value keep the refusals below.
+        if !parenthesized
+            && let Some(name) = direct_identifier(tree, path_id)?
+            && let Some(alias) = callable_alias(tree, path_id, &name, context)?
+            && let Some(source) = context.callable_sources.get(&alias.symbol).cloned()
+            && environment.get(&name).is_some_and(|ty| {
+                ty.canonical_string()
+                    == TypeDescriptor::callable(
+                        CallableKind::Function,
+                        alias.parameters.clone(),
+                        alias.result.clone(),
+                    )
+                    .canonical_string()
+            })
+        {
+            let call_site =
+                call_sequence_span(tree, children, path).unwrap_or_else(|| path.span().clone());
+            if let Some(caller) = context.current_effect_owner.borrow().clone() {
+                context.resolved_calls.borrow_mut().insert(
+                    (
+                        caller,
+                        call_site.clone(),
+                        EffectNode::Source(source.clone()),
+                    ),
+                    None,
+                );
+            }
+            record_effect_call(context, EffectNode::Source(source), call_site);
+            let close = children
+                .iter()
+                .enumerate()
+                .skip(open.saturating_add(1))
+                .find(|(_, child)| {
+                    node_is_punctuation(tree, **child, Punctuation::RightParenthesis)
+                })
+                .map_or(children.len(), |(index, _)| index);
+            let arguments = children
+                .get(open.saturating_add(1)..close)
+                .unwrap_or_default()
+                .iter()
+                .copied()
+                .filter(|child| {
+                    tree.node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+                })
+                .collect::<Vec<_>>();
+            if arguments.len() != alias.parameters.len() {
+                diagnostics.push(body_diagnostic(
+                    "call-arity",
+                    DiagnosticCategory::Type,
+                    "a workflow call has the wrong number of arguments",
+                    path.span().clone(),
+                    [
+                        ("actual", arguments.len().to_string()),
+                        ("expected", alias.parameters.len().to_string()),
+                    ],
+                )?);
+            }
+            for (argument, expected) in arguments.iter().zip(&alias.parameters) {
+                if let Some(actual) = infer_expression(
+                    tree,
+                    *argument,
+                    facts,
+                    environment,
+                    Some(expected),
+                    context,
+                    diagnostics,
+                )? && &actual != expected
+                {
+                    diagnostics.push(body_diagnostic(
+                        "call-argument-type",
+                        DiagnosticCategory::Type,
+                        "a workflow argument differs from its exact parameter type",
+                        tree.node(*argument)
+                            .ok_or(AnalysisError::Invariant)?
+                            .span()
+                            .clone(),
+                        [
+                            ("actual", actual.canonical_string()),
+                            ("expected", expected.canonical_string()),
+                        ],
+                    )?);
+                }
+            }
+            return Ok(Some(alias.result.clone()));
+        }
         // A callee that names a value rather than a declared callable has no admitted
         // invocation form: a callable-typed value is refused under
         // `callable-invocation-unadmitted` (`GNT-37.10`) before the call's own arguments
@@ -12221,11 +12345,165 @@ fn direct_identifiers(tree: &SyntaxTree, node: NodeId) -> Result<Vec<Arc<str>>, 
         .collect())
 }
 
+/// Returns whether one path is the whole initializer expression of a `let` statement.
+///
+/// `GNT-37.0` admits one declared callable as a binding's own value where the binding names
+/// it directly, so a grouped or longer initializer keeps the value refusal.
+fn path_is_let_initializer(tree: &SyntaxTree, path: NodeId) -> Result<bool, AnalysisError> {
+    for node in tree.nodes() {
+        if !matches!(node.form(), SyntaxForm::LetStatement) {
+            continue;
+        }
+        let Some(expression) = direct_child_form(tree, node, SyntaxForm::Expression) else {
+            continue;
+        };
+        if expression == path {
+            return Ok(true);
+        }
+        let Some(expression_node) = tree.node(expression) else {
+            continue;
+        };
+        let mut semantic = expression_node.children().iter().copied().filter(|child| {
+            tree.node(*child)
+                .is_some_and(|node| !matches!(node.form(), SyntaxForm::Token(_)))
+        });
+        if semantic.next() == Some(path) && semantic.next().is_none() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// One declared callable that a binding's value resolves to.
+struct CallableAlias {
+    symbol: SymbolId,
+    parameters: Vec<TypeDescriptor>,
+    result: TypeDescriptor,
+}
+
+/// Resolves one binding name to the declared callable its initializer names.
+///
+/// `GNT-37.0` admits a declared callable only as a binding's own value, so an alias is read
+/// from the enclosing statements rather than from the body environment: the nearest
+/// preceding `let` binding of that name in the innermost enclosing block whose initializer
+/// names a declared callable, directly or through another such binding.
+fn callable_alias(
+    tree: &SyntaxTree,
+    use_site: NodeId,
+    name: &str,
+    context: &BodyContext,
+) -> Result<Option<CallableAlias>, AnalysisError> {
+    let mut visited = BTreeSet::new();
+    callable_alias_from(tree, use_site, name, context, &mut visited)
+}
+
+fn callable_alias_from(
+    tree: &SyntaxTree,
+    use_site: NodeId,
+    name: &str,
+    context: &BodyContext,
+    visited: &mut BTreeSet<NodeId>,
+) -> Result<Option<CallableAlias>, AnalysisError> {
+    let parents = node_parents(tree);
+    let use_start = tree
+        .node(use_site)
+        .ok_or(AnalysisError::Invariant)?
+        .span()
+        .bytes()
+        .start();
+    let mut site = use_site;
+    while let Some(parent) = parents.get(&site).copied() {
+        let parent_node = tree.node(parent).ok_or(AnalysisError::Invariant)?;
+        if matches!(parent_node.form(), SyntaxForm::Block) {
+            let mut binding = None;
+            for child in parent_node.children().iter().copied() {
+                let child_node = tree.node(child).ok_or(AnalysisError::Invariant)?;
+                if !matches!(child_node.form(), SyntaxForm::LetStatement)
+                    || child_node.span().bytes().start() >= use_start
+                {
+                    continue;
+                }
+                if direct_identifier(tree, child)?.as_deref() != Some(name) {
+                    continue;
+                }
+                binding = Some(child);
+            }
+            if let Some(binding) = binding {
+                if !visited.insert(binding) {
+                    return Ok(None);
+                }
+                let binding_node = tree.node(binding).ok_or(AnalysisError::Invariant)?;
+                let Some(expression) =
+                    direct_child_form(tree, binding_node, SyntaxForm::Expression)
+                else {
+                    return Ok(None);
+                };
+                return alias_from_initializer(tree, expression, context, visited);
+            }
+        }
+        site = parent;
+    }
+    Ok(None)
+}
+
+/// Resolves one binding initializer that names a declared callable or another alias.
+fn alias_from_initializer(
+    tree: &SyntaxTree,
+    expression: NodeId,
+    context: &BodyContext,
+    visited: &mut BTreeSet<NodeId>,
+) -> Result<Option<CallableAlias>, AnalysisError> {
+    let Some(expression_node) = tree.node(expression) else {
+        return Ok(None);
+    };
+    let mut semantic = expression_node.children().iter().copied().filter(|child| {
+        tree.node(*child)
+            .is_some_and(|node| !matches!(node.form(), SyntaxForm::Token(_)))
+    });
+    let Some(only) = semantic.next() else {
+        return Ok(None);
+    };
+    if semantic.next().is_some() {
+        return Ok(None);
+    }
+    let Some(only_node) = tree.node(only) else {
+        return Ok(None);
+    };
+    if !matches!(only_node.form(), SyntaxForm::Path) {
+        return Ok(None);
+    }
+    if let Some(symbol) = context.references.get(only_node.span())
+        && let Some(signature) = context.callables.get(symbol)
+    {
+        return Ok(Some(CallableAlias {
+            symbol: *symbol,
+            parameters: signature.parameters.clone(),
+            result: signature.result.clone(),
+        }));
+    }
+    let Some(name) = direct_identifier(tree, only)? else {
+        return Ok(None);
+    };
+    callable_alias_from(tree, only, &name, context, visited)
+}
+
+/// Returns every node's parent in one source tree.
+fn node_parents(tree: &SyntaxTree) -> BTreeMap<NodeId, NodeId> {
+    let mut parents = BTreeMap::new();
+    for (index, node) in tree.nodes().iter().enumerate() {
+        let parent = NodeId::from_index(index);
+        for child in node.children() {
+            parents.insert(*child, parent);
+        }
+    }
+    parents
+}
+
 /// Returns the identifier of one path that denotes a declared callable.
 ///
-/// `GNT-37.0` admits no source callable value, so a path whose identifier names a
-/// declared callable has no value derivation outside a direct call's callee position,
-/// which the caller excludes through the recorded call references.
+/// `GNT-37.0` admits a declared callable only as a `let` binding's own value, so a path
+/// whose identifier names a declared callable has no value derivation outside a binding
+/// initializer and a direct call's callee position, which the callers exclude.
 fn declared_callable_identifier(
     tree: &SyntaxTree,
     path: NodeId,

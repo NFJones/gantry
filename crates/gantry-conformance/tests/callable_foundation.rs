@@ -771,6 +771,7 @@ fn section_37_anchors_and_nonclaims_are_published() {
         spec.contains("admits the source callable type form in a signature annotation")
             && spec.contains("`occurrence` field")
             && spec.contains("`signature` for a parameter or result annotation")
+            && spec.contains("`binding-annotation` for the annotation of a `let` binding")
             && spec.contains(
                 "`boundary-position` for a parameter or result annotation of the entry point"
             )
