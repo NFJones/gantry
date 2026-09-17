@@ -8378,11 +8378,12 @@ fn member_identifier_node(tree: &SyntaxTree, id: NodeId) -> Option<&gantry_front
 /// Reports whether one member-chain receiver part computes its value with a call.
 ///
 /// `p.flip().greet()` and `mk().greet()` read the member of a call result, and
-/// `(p.flip()).greet()` reads it from a grouped call result: a group is transparent, so the
-/// receiver part is not the binding root, struct-field place, or constructed value the receiver
-/// rule requires in any of those spellings. A group that only wraps a place (`(p).greet()`) or
-/// an index expression that calls something (`xs[f()].greet()`) names no call result of its own
-/// and keeps its existing walk.
+/// `(p.flip()).greet()` reads it from a grouped call result: a group is transparent for the value
+/// it wraps, so a group whose own expression is a call result names no binding root, struct-field
+/// place, or constructed value and is refused like the ungrouped spelling. A group that wraps a
+/// place (`(p).greet()`), a constructed value (`(Plain { value: mk() }).greet()`), or an index
+/// projection (`(xs[0]).greet()`) keeps its existing walk: a call inside an initializer or an
+/// index expression is part of the value, not the receiver itself.
 fn receiver_part_contains_call(tree: &SyntaxTree, receiver: &[NodeId]) -> bool {
     if receiver
         .iter()
@@ -8403,16 +8404,48 @@ fn receiver_part_contains_call(tree: &SyntaxTree, receiver: &[NodeId]) -> bool {
                 // postfix arm above cannot see.
                 return true;
             }
-            // The group's own expression follows the opening parenthesis as a sibling, so a
-            // grouped call result is a call postfix anywhere inside those expressions.
+            // The group's own value is the expression that follows the opening parenthesis, so a
+            // grouped call result is one whose own expression is a call, not one that merely
+            // contains a call in an initializer or an index expression.
             receiver.iter().skip(index.saturating_add(1)).any(|inner| {
                 tree.node(*inner).is_some_and(|inner_node| {
                     matches!(inner_node.form(), SyntaxForm::Expression)
-                        && subtree_contains_call_postfix(tree, *inner)
+                        && expression_is_call_result(tree, *inner)
                 })
             })
         })
     })
+}
+
+/// Reports whether one expression is itself a call or a call chain rather than a value that only
+/// carries calls in its parts.
+///
+/// A receiver call parses as flat sibling fragments, so the expression is a call result when one
+/// of its own fragments is a call postfix (`p.flip()`, `mk()`). A single wrapper expression
+/// descends, which is how a nested group (`((p.flip()))`) carries its inner expression, while an
+/// aggregate or index projection keeps its calls inside member subtrees that build a value rather
+/// than the receiver the chain reads.
+fn expression_is_call_result(tree: &SyntaxTree, id: NodeId) -> bool {
+    let Some(node) = tree.node(id) else {
+        return false;
+    };
+    if node
+        .children()
+        .iter()
+        .any(|child| postfix_opens_call(tree, *child))
+    {
+        return true;
+    }
+    let mut semantic = node.children().iter().copied().filter(|child| {
+        tree.node(*child)
+            .is_some_and(|child| !matches!(child.form(), SyntaxForm::Token(_)))
+    });
+    let (Some(only), None) = (semantic.next(), semantic.next()) else {
+        return false;
+    };
+    tree.node(only)
+        .is_some_and(|child| matches!(child.form(), SyntaxForm::Expression))
+        && expression_is_call_result(tree, only)
 }
 
 /// Reports whether one postfix node is a call parenthesis rather than an index postfix.
@@ -8435,17 +8468,6 @@ fn postfix_opens_call(tree: &SyntaxTree, id: NodeId) -> bool {
                 SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftBracket))
             )
         })
-    })
-}
-
-fn subtree_contains_call_postfix(tree: &SyntaxTree, id: NodeId) -> bool {
-    if postfix_opens_call(tree, id) {
-        return true;
-    }
-    tree.node(id).is_some_and(|node| {
-        node.children()
-            .iter()
-            .any(|child| subtree_contains_call_postfix(tree, *child))
     })
 }
 

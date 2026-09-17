@@ -2963,6 +2963,8 @@ fn trait_call_result_receivers_are_refused_in_every_position() {
         // spelling must not reach lowering either.
         "fn main() -> Int { let p: Plain = Plain { value: 42 }; (p.flip()).greet() }",
         "fn main() -> Int { let p: Plain = Plain { value: 42 }; (p.flip()).greet() + 1 }",
+        // A nested group carries the same call result.
+        "fn main() -> Int { let p: Plain = Plain { value: 42 }; ((p.flip())).greet() + 1 }",
     ] {
         let refused = analyze(&format!("{fixture}{body}"));
         assert_eq!(
