@@ -8982,6 +8982,28 @@ fn public_split_struct_operands_are_typed_and_lowered() {
             "fn main() -> Int { let t: Tuple<Tuple<Int, Int>, Tuple<Int, Int>> = ((1, 2), (3, 4)); let v: Int = t[1][1]; v }",
             Expected::Int(4),
         ),
+        // A `Self` parameter in a trait method denotes the implementation's applied receiver
+        // (`SPEC.md` Section 6), so every receiver/argument spelling of the contract works.
+        (
+            "trait R { pure fn same(self, other: Self) -> Int; } struct S {} impl R for S { fn same(self, other: Self) -> Int { 1 } } fn main() -> Int { let s: S = S {}; s.same(s) }",
+            Expected::Int(1),
+        ),
+        (
+            "trait R { pure fn same(self, other: Self) -> Int; } struct S {} impl R for S { fn same(self, other: Self) -> Int { 1 } } fn main() -> Int { S {}.same(S {}) }",
+            Expected::Int(1),
+        ),
+        (
+            "trait R { pure fn same(self, other: Self) -> Int; } struct S {} impl R for S { fn same(self, other: Self) -> Int { 1 } } fn same_from(s: S) -> Int { s.same(s) } fn main() -> Int { same_from(S {}) }",
+            Expected::Int(1),
+        ),
+        (
+            "trait R { pure fn same(self, other: Self) -> Int; } fn main() -> Int { 1 }",
+            Expected::Int(1),
+        ),
+        (
+            "trait T { pure fn e<X>(self, x: X) -> X; } struct S {} impl T for S { fn e<X>(self, x: X) -> X { x } } fn main() -> Int { S {}.e(1) }",
+            Expected::Int(1),
+        ),
         (
             "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn main() -> Bool { Counter { value: 5 }.read() == (5) }",
             Expected::Bool(true),

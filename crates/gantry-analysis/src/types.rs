@@ -860,11 +860,31 @@ fn resolve_source_types(
     let mut resolved = BTreeMap::<NodeId, TypeFact>::new();
     let occurrences = callable_occurrences(source, structure)?;
 
+    let mut parents = BTreeMap::<NodeId, NodeId>::new();
+    for (index, node) in source.tree().nodes().iter().enumerate() {
+        let parent = NodeId::from_index(index);
+        for child in node.children() {
+            parents.insert(*child, parent);
+        }
+    }
+
     for (index, node) in source.tree().nodes().iter().enumerate() {
         if !matches!(node.form(), SyntaxForm::ValueType) {
             continue;
         }
         let id = NodeId::from_index(index);
+        // `Self` denotes the fully applied receiver inside a trait or inherent implementation
+        // (`SPEC.md` Section 6). An implementation's receiver annotation precedes the methods that
+        // name it in arena order, so its descriptor is already resolved here; an implementation
+        // whose receiver is itself contextual (a type parameter of a generic head) has none, which
+        // leaves `Self` unseeded there exactly as before.
+        if direct_reserved_word(source.tree(), id)?.as_deref() == Some("Self")
+            && let Some(fact) =
+                enclosing_implementation_receiver(source.tree(), id, &parents, &resolved)
+        {
+            resolved.insert(id, fact);
+            continue;
+        }
         if let Some(descriptor) = resolve_type_node(
             source.tree(),
             id,
@@ -884,6 +904,24 @@ fn resolve_source_types(
         }
     }
     Ok(resolved)
+}
+
+/// The resolved descriptor of the implementation a `Self` annotation belongs to.
+fn enclosing_implementation_receiver(
+    tree: &SyntaxTree,
+    id: NodeId,
+    parents: &BTreeMap<NodeId, NodeId>,
+    resolved: &BTreeMap<NodeId, TypeFact>,
+) -> Option<TypeFact> {
+    let mut ancestor = parents.get(&id).copied();
+    while let Some(current) = ancestor {
+        if matches!(tree.node(current)?.form(), SyntaxForm::ImplDeclaration) {
+            let receiver = direct_child_form(tree, current, SyntaxForm::ValueType)?;
+            return resolved.get(&receiver).cloned();
+        }
+        ancestor = parents.get(&current).copied();
+    }
+    None
 }
 
 /// The occurrence class of one source callable type form.
