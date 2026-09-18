@@ -1451,8 +1451,19 @@ impl Compiler<'_> {
                 .iter()
                 .find(|(source, _, _)| source == node.span())
         {
-            let payload =
-                self.compile_propagation(expression, ty, callee.clone(), operand_type.clone())?;
+            // The seam names the operand's `Ok` payload exactly, which is what a trailing step folds
+            // over; the node's own recorded type is the fallback for an already-folded node.
+            let payload = operand_type
+                .immediate_members()
+                .first()
+                .cloned()
+                .unwrap_or(ty);
+            self.compile_propagation(
+                expression,
+                payload.clone(),
+                callee.clone(),
+                operand_type.clone(),
+            )?;
             return self.compile_trailing_member_steps(expression, payload);
         }
         let control = if matches!(
