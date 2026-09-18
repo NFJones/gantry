@@ -9939,7 +9939,7 @@ fn infer_member_sequence(
             diagnostics.push(body_diagnostic(
                 "projection-receiver-type",
                 DiagnosticCategory::Type,
-                "an index projection over a computed receiver has no lowering route",
+                "an index projection over a constructed receiver has no lowering route",
                 tree.node(*index_step)
                     .ok_or(AnalysisError::Invariant)?
                     .span()
@@ -10091,7 +10091,7 @@ fn infer_member_sequence(
                 diagnostics.push(body_diagnostic(
                     "projection-receiver-type",
                     DiagnosticCategory::Type,
-                    "an index projection over a computed receiver has no lowering route",
+                    "an index projection over a constructed receiver has no lowering route",
                     tree.node(*index_step)
                         .ok_or(AnalysisError::Invariant)?
                         .span()
@@ -10555,7 +10555,7 @@ fn infer_member_sequence(
             diagnostics.push(body_diagnostic(
                 "projection-receiver-type",
                 DiagnosticCategory::Type,
-                "an index projection over a computed receiver has no lowering route",
+                "an index projection over a constructed receiver has no lowering route",
                 tree.node(*index_step)
                     .ok_or(AnalysisError::Invariant)?
                     .span()
