@@ -8979,6 +8979,10 @@ fn public_split_struct_operands_are_typed_and_lowered() {
             Expected::Int(3),
         ),
         (
+            "fn main() -> Int { let t: Tuple<Tuple<Int, Int>, Tuple<Int, Int>> = ((1, 2), (3, 4)); let v: Int = t[1][1]; v }",
+            Expected::Int(4),
+        ),
+        (
             "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn main() -> Bool { Counter { value: 5 }.read() == (5) }",
             Expected::Bool(true),
         ),
@@ -10903,6 +10907,12 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         (
             "let xs: List<List<Int>> = [[1, 2], [3]]; xs[0][0 + 1] == 2",
             "invalid-primitive",
+        ),
+        // A later tuple step needs a literal index exactly as the first one does: the element type
+        // must be statically known, so a computed index is refused rather than left untyped.
+        (
+            "let t: Tuple<Tuple<Int, Int>, Tuple<Int, Int>> = ((1, 2), (3, 4)); let v: Bool = t[1][0 + 0]; 0",
+            "tuple-index-not-literal",
         ),
         // A computed receiver is refused even when the member resolves for its type.
         ("(1 + 2).greet()", "receiver-value-place"),

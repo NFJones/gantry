@@ -7848,6 +7848,25 @@ fn fold_projection_steps(
             index_expression.and_then(|expression| literal_projection_index(tree, expression));
         let projected = if current.kind() == TypeKind::Tuple {
             let Some(literal_index) = literal_index else {
+                // `SPEC.md` requires a tuple projection index to be a nonnegative compile-time
+                // integer literal so the element type is statically known, and the first step of a
+                // chain already refuses such an index. A later step that declined silently left the
+                // whole chain untyped, so a `let` annotation went unchecked and the machine failed
+                // (`let v: Bool = t[1][0 + 0]; 0`). An operand position keeps the silent decline,
+                // because its enclosing operator's own refusal is the recorded verdict there.
+                if allow_expression_steps {
+                    let index_span = index_expression
+                        .and_then(|expression| tree.node(expression))
+                        .map(|node| node.span().clone())
+                        .unwrap_or_else(|| span.clone());
+                    diagnostics.push(body_diagnostic(
+                        "tuple-index-not-literal",
+                        DiagnosticCategory::Type,
+                        "a tuple projection index must be a nonnegative compile-time integer literal",
+                        index_span,
+                        [] as [(&str, &str); 0],
+                    )?);
+                }
                 return Ok(None);
             };
             let Some(member) = current.immediate_members().into_iter().nth(literal_index) else {
