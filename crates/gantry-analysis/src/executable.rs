@@ -2799,12 +2799,21 @@ impl Compiler<'_> {
                 })
             })
             .collect::<Vec<_>>();
-        let [name, body] = valued.as_slice() else {
+        let [name, body, rest @ ..] = valued.as_slice() else {
             return Ok(None);
         };
         let Some(identifier) = direct_identifier(self.tree, *name) else {
             return Ok(None);
         };
+        // Trailing fragments are the projection steps of the value the constructor builds; a call
+        // (a fragment carrying `(`) belongs to the receiver-call walk instead.
+        if rest.iter().any(|child| {
+            self.tree.node(*child).is_some_and(|node| {
+                node_contains_punctuation(self.tree, node, Punctuation::LeftParenthesis)
+            })
+        }) {
+            return Ok(None);
+        }
         let body_node = self.node(*body)?;
         let struct_expression = if matches!(body_node.form(), SyntaxForm::StructExpression) {
             Some(*body)
@@ -2817,8 +2826,48 @@ impl Compiler<'_> {
         let Some(declared) = self.struct_type_by_name(identifier.as_ref()) else {
             return Ok(None);
         };
-        let literal = self.compile_struct(*name, struct_expression, declared.clone())?;
-        Ok(Some(literal))
+        // Every step is typed before anything is emitted, so a shape this walk cannot key reports
+        // no operand instead of aborting after a partial publication.
+        let Some(after) = children.iter().position(|child| child == body) else {
+            return Ok(None);
+        };
+        let Some(steps) = postfix_projection_steps(self.tree, children, after.saturating_add(1))
+        else {
+            return Ok(None);
+        };
+        // The tail carries the projection steps followed by the operator fragment that owns this
+        // operand, so only the postfix fragments count: every one of them must be keyed before
+        // anything is emitted, and a fragment this walk does not key reports no operand instead of
+        // aborting after a partial publication.
+        let step_fragments = rest
+            .iter()
+            .filter(|child| {
+                self.tree
+                    .node(**child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::PostfixExpression))
+            })
+            .count();
+        if steps.len() != step_fragments {
+            return Ok(None);
+        }
+        let mut current = declared.clone();
+        let mut typed = Vec::with_capacity(steps.len());
+        for step in steps {
+            let projection = match step {
+                ProjectionChainStep::Field(field) => Projection::Field(field),
+                ProjectionChainStep::Member(index) => Projection::Member(index),
+            };
+            let Some(next) = projection_step_type(&current, &projection, self.struct_fields) else {
+                return Ok(None);
+            };
+            typed.push((projection, next.clone()));
+            current = next;
+        }
+        self.compile_struct(*name, struct_expression, declared)?;
+        for (projection, next) in typed {
+            self.emit(next, InstructionKind::Project(projection))?;
+        }
+        Ok(Some(current))
     }
 
     /// Returns the declared type whose canonical name ends with one identifier.

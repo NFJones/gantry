@@ -8656,6 +8656,118 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
     }
 }
 
+/// A split struct operand is the constructed value plus its field steps, not a binding load.
+///
+/// The parser hands a leading constructed receiver to an operand walk as the constructor's name
+/// path plus the struct expression it builds, so `Counter { value: 5 }.value + 1` is neither one
+/// projection node nor one place. The operand publishes the literal and then each field step, so
+/// the enclosing operator receives the field's value instead of an internal failure; a call step
+/// keeps the receiver-call arm, which its own lane covers.
+#[test]
+fn public_split_struct_operands_are_typed_and_lowered() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("split struct operand did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    /// The value one row must produce, so an integer and a comparison row share one loop.
+    #[derive(Clone, Copy, Debug)]
+    enum Expected {
+        Int(i64),
+        Bool(bool),
+    }
+
+    let root = TempDirectory::new();
+    for (source, expected) in [
+        (
+            "struct Counter { value: Int } fn main() -> Int { Counter { value: 5 }.value + 1 }",
+            Expected::Int(6),
+        ),
+        (
+            "struct Counter { value: Int } fn main() -> Int { 1 + Counter { value: 5 }.value }",
+            Expected::Int(6),
+        ),
+        (
+            "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn main() -> Int { Counter { value: 5 }.read() + 1 }",
+            Expected::Int(6),
+        ),
+        (
+            "struct Counter { value: Int } fn main() -> Int { Counter { value: 5 }.value }",
+            Expected::Int(5),
+        ),
+        (
+            "struct Item { values: List<Int> } fn main() -> Int { Item { values: [1] }.values[0] + 1 }",
+            Expected::Int(2),
+        ),
+        (
+            "struct Counter { value: Int } fn main() -> Bool { Counter { value: 5 }.value == 5 }",
+            Expected::Bool(true),
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: a split struct operand must publish a program")
+        });
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x44; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        let matched = match (expected, value.view()) {
+            (Expected::Int(expected), LogicalValueView::Int(actual)) => actual.get() == expected,
+            (Expected::Bool(expected), LogicalValueView::Bool(actual)) => actual == expected,
+            _ => false,
+        };
+        assert!(
+            matched,
+            "source: {source}: expected {expected:?}, observed {value:?}"
+        );
+    }
+}
+
 /// A split index-projection operand is the element it reads rather than its receiver.
 ///
 /// The parser flattens `xs[0]` into sibling fragments, so an enclosing operator receives a

@@ -5992,10 +5992,29 @@ fn infer_expression_inner(
         }
         return Ok(receiver);
     }
-    if let Some(struct_expression) = node.children().iter().copied().find(|child| {
+    let struct_expression = node.children().iter().copied().find(|child| {
         tree.node(*child)
             .is_some_and(|node| matches!(node.form(), SyntaxForm::StructExpression))
-    }) {
+    });
+    // A constructed receiver whose step reads a field (`Counter { value: 5 }.value + 1`) is typed
+    // by the operand walk, so a node carrying an operator must not claim it and drop the operator,
+    // exactly as the list arm above is guarded. A call step keeps the previous arm, whose
+    // receiver-call contract the operand walk does not key yet.
+    let field_step_operand = struct_expression.is_some_and(|expression| {
+        node.children()
+            .iter()
+            .copied()
+            .skip_while(|child| *child != expression)
+            .skip(1)
+            .all(|child| {
+                !tree.node(child).is_some_and(|_node| {
+                    node_contains_punctuation(tree, child, Punctuation::LeftParenthesis)
+                })
+            })
+    });
+    if (direct_binary_operator(tree, node).is_none() || !field_step_operand)
+        && let Some(struct_expression) = struct_expression
+    {
         let has_member = node
             .children()
             .iter()
@@ -8393,11 +8412,26 @@ fn infer_operand_projection_sequence(
     if fields.len() != 1 {
         return Ok(None);
     }
-    let Some(root_binding) = environment.get(&root).cloned() else {
-        return Ok(None);
-    };
     let (member, member_id) = fields.into_iter().next().ok_or(AnalysisError::Invariant)?;
     let member_node = tree.node(member_id).ok_or(AnalysisError::Invariant)?;
+    // A constructed receiver is a value rather than a place: `Counter { value: 5 }.value` reads
+    // the field of the value the constructor builds. Only a declared field is typed here, so a
+    // member step that calls keeps the member and call sequence walks.
+    let (root_binding, place) = match environment.get(&root).cloned() {
+        Some(binding) => (binding, true),
+        None => {
+            let Some(declared) = constructed_receiver_type(tree, children, context, root.as_ref())?
+            else {
+                return Ok(None);
+            };
+            let is_field = struct_fields_for_descriptor(context, &declared)?
+                .is_some_and(|fields| fields.contains_key(member.as_ref()));
+            if !is_field {
+                return Ok(None);
+            }
+            (declared, false)
+        }
+    };
     let Some(field) = projected_member_type(&root_binding, member.as_ref(), context)? else {
         diagnostics.push(body_diagnostic(
             "unknown-member",
@@ -8412,16 +8446,59 @@ fn infer_operand_projection_sequence(
         return Ok(None);
     };
     let member_span = member_node.span().clone();
-    record_affine_place(
-        AffinePlace::projected(root, vec![member]),
-        Some(&root_binding),
-        &field,
-        member_span,
-        AffineAccess::Read,
-        context,
-        diagnostics,
-    )?;
+    if place {
+        record_affine_place(
+            AffinePlace::projected(root, vec![member]),
+            Some(&root_binding),
+            &field,
+            member_span,
+            AffineAccess::Read,
+            context,
+            diagnostics,
+        )?;
+    }
     Ok(Some(field))
+}
+
+/// Resolves the declared type a constructed receiver names, when the slice builds one.
+///
+/// `Counter { value: 5 }.value` reaches the operand walk as the constructor's name path plus the
+/// struct expression it builds, so neither the environment nor the place chain can type the
+/// receiver. The declared descriptor is the one whose canonical name ends with the name the path
+/// spells, and the slice must actually construct it.
+fn constructed_receiver_type(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    context: &BodyContext,
+    name: &str,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let mut stack = children.to_vec();
+    let mut constructs = false;
+    while let Some(child) = stack.pop() {
+        let Some(node) = tree.node(child) else {
+            continue;
+        };
+        if matches!(node.form(), SyntaxForm::StructExpression) {
+            constructs = true;
+            break;
+        }
+        stack.extend(node.children().iter().copied());
+    }
+    if !constructs {
+        return Ok(None);
+    }
+    Ok(context
+        .structs
+        .values()
+        .find(|shape| {
+            shape
+                .descriptor
+                .canonical_string()
+                .rsplit("::")
+                .next()
+                .is_some_and(|last| last == name)
+        })
+        .map(|shape| shape.descriptor.clone()))
 }
 
 /// Resolves a split index-projection operand whose receiver and index fragments are siblings.
