@@ -2828,8 +2828,9 @@ fn section_38_propagation_operands_with_one_declared_conversion_are_admitted() {
         admitted.diagnostics()
     );
 
-    // Without a declared conversion the same operand stays refused, and an effectful conversion
-    // is not admitted either, because the increment publishes pure conversions only.
+    // Without a declared conversion the same operand stays refused, and a conversion impl that
+    // omits the `pure` reserved word is not admitted either, because the increment publishes
+    // conversions that are pure by declaration.
     let refused = analyze(
         "struct E {} struct F {} fn inner_ok() -> Result<Int, E> { Ok(1) } fn outer_ok() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v + 1) } fn main() -> Int { 0 }",
     );
@@ -2842,10 +2843,10 @@ fn section_38_propagation_operands_with_one_declared_conversion_are_admitted() {
 /// (`GNT-38.1-typed-error-propagation`).
 #[test]
 fn section_38_conversion_impls_without_pure_are_refused() {
-    let effectful = analyze(
+    let unannotated = analyze(
         "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { fn convert(self) -> F { F {} } } fn inner_ok() -> Result<Int, E> { Ok(1) } fn outer_ok() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v + 1) } fn main() -> Int { 0 }",
     );
-    assert!(diagnostic_codes(effectful.diagnostics()).contains(&"error-propagation-refused"));
+    assert!(diagnostic_codes(unannotated.diagnostics()).contains(&"error-propagation-refused"));
 }
 
 /// Section 38: a propagation operand has no exactly one declared conversion while no
