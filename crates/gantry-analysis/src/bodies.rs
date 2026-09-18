@@ -2808,6 +2808,14 @@ fn check_callable(
             None if annotation_is_contextual_self(tree, type_node) => {
                 method_receiver_type(tree, node, context)?.unwrap_or(TypeDescriptor::UNIT)
             }
+            // A refused `Never` result publishes no fact (`GNT-38.4`), so the body check reports
+            // the declared uninhabited type instead of defaulting to `Unit`.
+            None if tree.node(type_node).is_some_and(|annotation| {
+                direct_reserved_word(tree, annotation) == Some("Never".to_owned())
+            }) =>
+            {
+                TypeDescriptor::NEVER
+            }
             None => TypeDescriptor::UNIT,
         },
         None => TypeDescriptor::UNIT,

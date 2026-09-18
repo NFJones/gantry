@@ -2611,6 +2611,8 @@ fn section_38_never_positions_are_refused() {
     let boundary = analyze("fn main() -> Never { }");
     assert_eq!(boundary.status(), AnalysisStatus::Invalid);
     assert!(diagnostic_codes(boundary.diagnostics()).contains(&"never-boundary-refused"));
+    // A `Never` result admits no fall-through, so the empty body also reports its missing result.
+    assert!(diagnostic_codes(boundary.diagnostics()).contains(&"missing-result"));
     let action = analyze("action read_only probe() -> Never; fn main() -> Int { 0 }");
     assert!(diagnostic_codes(action.diagnostics()).contains(&"never-boundary-refused"));
     let nested = analyze("fn main() -> List<Never> { [] }");
