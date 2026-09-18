@@ -2922,7 +2922,7 @@ fn section_38_conversion_declarations_are_reserved_trait_implementations() {
         .find(|diagnostic| diagnostic.code.as_str() == "error-conversion-refused")
         .unwrap_or_else(|| panic!("the open receiver is refused"));
     assert_eq!(
-        refusal.fields.get("receiver").map(|value| value.as_ref()),
+        refusal.fields.get("type").map(|value| value.as_ref()),
         Some("crate::G<^0.0>")
     );
 }

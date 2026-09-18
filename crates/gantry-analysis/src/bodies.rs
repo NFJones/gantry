@@ -2830,26 +2830,34 @@ fn refuse_malformed_conversions(
                         .and_then(|node| context.generic_types.get(node.span()))
                         .map(|expression| (expression.is_closed(), expression.as_str().to_owned()))
                 });
-            let refusal = match (methods, receiver) {
-                (1, Some((true, _))) => None,
-                (1, Some((false, receiver))) => Some((
+            let mut refusal = None;
+            if methods != 1 {
+                refusal = Some(("a conversion declares exactly one method", None));
+            } else if let Some((false, named)) = receiver {
+                refusal = Some((
                     "a conversion receiver must be one concrete error type",
-                    receiver,
-                )),
-                (1, None) => continue,
-                _ => Some((
-                    "a conversion declares exactly one method",
-                    String::from("?"),
-                )),
-            };
-            if let Some((message, receiver)) = refusal {
-                diagnostics.push(body_diagnostic(
-                    "error-conversion-refused",
-                    DiagnosticCategory::Type,
-                    message,
-                    implementation.span().clone(),
-                    [("receiver", receiver)],
-                )?);
+                    Some(named),
+                ));
+            } else if receiver.is_none() {
+                continue;
+            }
+            if let Some((message, named)) = refusal {
+                match named {
+                    Some(named) => diagnostics.push(body_diagnostic(
+                        "error-conversion-refused",
+                        DiagnosticCategory::Type,
+                        message,
+                        implementation.span().clone(),
+                        [("type", named)],
+                    )?),
+                    None => diagnostics.push(body_diagnostic(
+                        "error-conversion-refused",
+                        DiagnosticCategory::Type,
+                        message,
+                        implementation.span().clone(),
+                        [] as [(&str, &str); 0],
+                    )?),
+                }
             }
         }
     }
