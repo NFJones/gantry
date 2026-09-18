@@ -2604,6 +2604,30 @@ fn public_index_projection_operands_are_keyed() {
     }
 }
 
+/// A type-parameterized trait plus two inherent implementation blocks resolves.
+///
+/// The receiver's calls are fully determined (`g.a()` and `g.b()` both return `Int`), so the package
+/// analyses and publishes a program; the fixture used to refuse with an `incomplete-type-inference`
+/// and `invalid-primitive` cascade.
+#[test]
+fn public_type_parameterized_trait_with_two_inherent_blocks_resolves() {
+    for source in [
+        "trait T1<X> { pure fn t1(self) -> X; } struct G<T> { v: T } impl<T> G<T> { fn b(self) -> Int { 1 } } impl G<Int> { fn a(self) -> Int { 2 } } impl T1<Int> for G<Int> { fn t1(self) -> Int { 3 } } fn main() -> Int { let g: G<Int> = G { v: 1 }; g.a() + g.b() }",
+        "struct G<T> { v: T } impl<T> G<T> { fn b(self) -> Int { 1 } } impl G<Int> { fn a(self) -> Int { 2 } } fn main() -> Int { let g: G<Int> = G { v: 1 }; g.a() + g.b() }",
+    ] {
+        let analysed = analyze(source);
+        assert!(
+            analysed.status() != AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            analysed.diagnostics()
+        );
+        assert!(
+            analysed.executable_program().is_some(),
+            "{source}: fully determined calls publish a program"
+        );
+    }
+}
+
 /// A refused operator publishes exactly one diagnostic.
 ///
 /// A declared-descriptor mismatch has no operator signature, so the operator refusal is the whole
