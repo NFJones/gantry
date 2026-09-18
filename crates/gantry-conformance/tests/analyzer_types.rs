@@ -2883,7 +2883,12 @@ fn section_38_propagation_operands_are_refused() {
     let nested = analyze(
         "fn f() -> Result<Int, String> { Err(\"x\") } fn main() -> Result<Int, String> { if true { let a: Int = f()?; discard a; } Ok(0) }",
     );
-    assert!(diagnostic_codes(nested.diagnostics()).contains(&"error-propagation-refused"));
+    let nested_count = nested
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "error-propagation-refused")
+        .count();
+    assert_eq!(nested_count, 1);
     let doubled = analyze(
         "fn f() -> Result<Int, String> { Err(\"x\") } fn main() -> Result<Int, String> { let v: Int = f()??; Ok(v) }",
     );
