@@ -7170,6 +7170,84 @@ fn public_callable_components_inside_callable_forms_report_nested_components() {
     assert_eq!(occurrences, ["boundary-position", "nested-component"]);
 }
 
+/// A callable annotation in a signature whose parameter and result positions do not all name a
+/// closed type is refused by `GNT-37.0` at the annotation itself, so the declaration is refused
+/// with one published diagnostic instead of failing body analysis internally.
+#[test]
+fn public_callable_annotations_in_open_signatures_are_refused_at_the_annotation() {
+    for source in [
+        "struct Item {} impl Item { fn apply<U>(self, callback: Fn(Int) -> Int, value: U) -> U { value } } fn main() -> Int { 0 }",
+        "struct Item {} impl Item { fn make<U>(self, value: U) -> Fn(Int) -> Int { 0 } } fn main() -> Int { 0 }",
+        "fn apply<U>(callback: Fn(Int) -> Int, value: U) -> U { value } fn main() -> Int { 0 }",
+    ] {
+        let root = TempDirectory::new();
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        let refusal = refused
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "callable-type-unadmitted")
+            .unwrap_or_else(|| {
+                panic!("source: {source}; diagnostics: {:?}", refused.diagnostics())
+            });
+        assert_eq!(
+            refusal.fields.get("occurrence").map(AsRef::as_ref),
+            Some("open-member"),
+            "source: {source}"
+        );
+        let annotation = "Fn(Int) -> Int";
+        let start = source
+            .find(annotation)
+            .unwrap_or_else(|| panic!("source: {source}; missing annotation"))
+            as u64;
+        let primary = refusal
+            .primary
+            .as_ref()
+            .unwrap_or_else(|| panic!("source: {source}; missing primary span"));
+        assert_eq!(primary.bytes().start(), start, "source: {source}");
+        assert_eq!(
+            primary.bytes().end(),
+            start + annotation.len() as u64,
+            "source: {source}"
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}; an unadmitted callable annotation must not publish a program"
+        );
+    }
+
+    // The admitted callable signatures stay admitted: a closed signature without type parameters,
+    // and a type-parameterized signature whose callable-free positions are untouched.
+    for source in [
+        "struct Item {} impl Item { fn run(self, callback: Fn(Int) -> Int) -> Int { 0 } } fn main() -> Int { 0 }",
+        "struct Item {} impl Item { fn plain<U>(self, value: U) -> U { value } } fn main() -> Int { 0 }",
+    ] {
+        let root = TempDirectory::new();
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+    }
+}
+
 /// A call through a callable-typed binding is refused with the published invocation
 /// refusal instead of the sequence being typed as its own callee, while declaring,
 /// passing, and holding a callable value stays admitted.

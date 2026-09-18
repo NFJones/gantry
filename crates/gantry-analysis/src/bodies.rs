@@ -1201,6 +1201,16 @@ fn collect_generic_method_signatures(
                     (implementation_identity.clone(), method_name.clone()),
                     method_node.span().clone(),
                 );
+                if signature_retains_callable_form(tree, method)
+                    && !crate::types::signature_positions_are_closed(tree, method)?
+                {
+                    // `GNT-37.0-callable-values-and-frame-admission` does not admit a callable
+                    // annotation in a signature whose parameter and result positions do not all
+                    // name closed types. The type phase published `callable-type-unadmitted` for
+                    // the annotation, so the method contributes no template instead of aborting
+                    // the collection.
+                    continue;
+                }
                 if implementation_required.is_empty() && method_binder.is_none() {
                     continue;
                 }
@@ -1385,6 +1395,29 @@ fn subtree_retains_callable_form(tree: &SyntaxTree, id: NodeId) -> bool {
             .iter()
             .copied()
             .any(|child| subtree_retains_callable_form(tree, child))
+}
+
+/// Returns whether one declaration's signature positions retain a recognised callable form.
+///
+/// Only parameter and result annotations count: a callable expression inside a body is a
+/// different occurrence class, so it neither admits nor refuses the declared signature.
+fn signature_retains_callable_form(tree: &SyntaxTree, declaration: NodeId) -> bool {
+    let Some(node) = tree.node(declaration) else {
+        return false;
+    };
+    node.children().iter().copied().any(|child| {
+        let Some(child_node) = tree.node(child) else {
+            return false;
+        };
+        let value = if matches!(child_node.form(), SyntaxForm::Parameter) {
+            direct_child_form(tree, child_node, SyntaxForm::ValueType)
+        } else if matches!(child_node.form(), SyntaxForm::ValueType) {
+            Some(child)
+        } else {
+            None
+        };
+        value.is_some_and(|value| subtree_retains_callable_form(tree, value))
+    })
 }
 
 /// Returns whether one implementation receiver annotation was refused by the type phase.

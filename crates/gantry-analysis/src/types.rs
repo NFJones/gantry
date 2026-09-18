@@ -1082,19 +1082,19 @@ fn callable_occurrences(
         let occurrence = if nested.contains(&id) {
             CallableOccurrence::NestedComponent
         } else {
-            let parent = parents
-                .get(&id)
-                .copied()
-                .and_then(|parent| tree.node(parent));
+            let parent = parents.get(&id).copied();
             // A parameter annotation is owned by the declaration that declares its parameter.
-            let declaration = match parent {
-                Some(node) if matches!(node.form(), SyntaxForm::Parameter) => parents
-                    .get(&id)
-                    .and_then(|parameter| parents.get(parameter))
-                    .copied()
-                    .and_then(|owner| tree.node(owner)),
-                parent => parent,
+            let declaration_id = match parent.and_then(|parent| tree.node(parent)) {
+                Some(node) if matches!(node.form(), SyntaxForm::Parameter) => parent
+                    .and_then(|parameter| parents.get(&parameter))
+                    .copied(),
+                _ => parent,
             };
+            let declaration = declaration_id.and_then(|declaration| tree.node(declaration));
+            let positions_are_closed = declaration_id
+                .map(|declaration| signature_positions_are_closed(tree, declaration))
+                .transpose()?
+                .unwrap_or(true);
             match declaration {
                 Some(declaration)
                     if matches!(
@@ -1102,7 +1102,11 @@ fn callable_occurrences(
                         SyntaxForm::MethodDeclaration | SyntaxForm::TraitMethodDeclaration
                     ) =>
                 {
-                    CallableOccurrence::Signature
+                    if positions_are_closed {
+                        CallableOccurrence::Signature
+                    } else {
+                        CallableOccurrence::OpenMember
+                    }
                 }
                 Some(declaration)
                     if matches!(declaration.form(), SyntaxForm::ActionDeclaration) =>
@@ -1114,8 +1118,10 @@ fn callable_occurrences(
                 {
                     if is_entry_declaration(tree, declaration, entry)? {
                         CallableOccurrence::BoundaryPosition
-                    } else {
+                    } else if positions_are_closed {
                         CallableOccurrence::Signature
+                    } else {
+                        CallableOccurrence::OpenMember
                     }
                 }
                 Some(declaration) if matches!(declaration.form(), SyntaxForm::LetStatement) => {
@@ -1139,6 +1145,73 @@ fn is_entry_declaration(
         return Ok(false);
     };
     Ok(direct_identifier_span(tree, declaration)? == Some(entry.span.clone()))
+}
+
+/// Returns whether one declaration's parameter and result positions all name closed types
+/// (`GNT-37.0-callable-values-and-frame-admission`).
+///
+/// A declaration that declares no type-parameter name has only closed positions. A position that
+/// mentions one of the names its own type-parameter list declares is open, and this section
+/// admits a source callable type form in a signature annotation only where every position names a
+/// closed type.
+pub(crate) fn signature_positions_are_closed(
+    tree: &SyntaxTree,
+    declaration: NodeId,
+) -> Result<bool, AnalysisError> {
+    if tree.node(declaration).is_none() {
+        return Ok(true);
+    }
+    let Some(list) = direct_child_form(tree, declaration, SyntaxForm::TypeParameterList) else {
+        return Ok(true);
+    };
+    let mut declared = BTreeSet::new();
+    let mut stack = vec![list];
+    while let Some(current) = stack.pop() {
+        let Some(node) = tree.node(current) else {
+            continue;
+        };
+        if let SyntaxForm::Token(TokenKind::Identifier(name)) = node.form() {
+            declared.insert(name.clone());
+        }
+        stack.extend(node.children().iter().copied());
+    }
+    if declared.is_empty() {
+        return Ok(true);
+    }
+    let mut positions = Vec::new();
+    for child in tree
+        .node(declaration)
+        .ok_or(AnalysisError::Invariant)?
+        .children()
+        .iter()
+        .copied()
+    {
+        let Some(node) = tree.node(child) else {
+            continue;
+        };
+        if matches!(node.form(), SyntaxForm::Parameter) {
+            if let Some(value) = direct_child_form(tree, child, SyntaxForm::ValueType) {
+                positions.push(value);
+            }
+        } else if matches!(node.form(), SyntaxForm::ValueType) {
+            positions.push(child);
+        }
+    }
+    for position in positions {
+        let mut stack = vec![position];
+        while let Some(current) = stack.pop() {
+            let Some(node) = tree.node(current) else {
+                continue;
+            };
+            if let SyntaxForm::Token(TokenKind::Identifier(name)) = node.form()
+                && declared.contains(name)
+            {
+                return Ok(false);
+            }
+            stack.extend(node.children().iter().copied());
+        }
+    }
+    Ok(true)
 }
 
 /// Collects every type node that is a component of another type expression.

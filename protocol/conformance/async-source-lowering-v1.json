@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "crates/gantry-analysis/src/bodies.rs",
-   "sha256": "f6ccc6802ee83a67cac085372df7f0448207e28ccbf1d4fb1f5ef58ff251f516"
+   "sha256": "ad41ec1bf69cda7fbf358e8bf5fdc5227c50d547487b01db9014efdef589f441"
   },
   {
    "path": "crates/gantry-analysis/src/executable.rs",
