@@ -2730,6 +2730,33 @@ fn record_direct_effects(context: &BodyContext, effects: EffectSet) {
     draft.direct = draft.direct.union(effects);
 }
 
+/// Returns the operand of the first `?` postfix form inside one body.
+///
+/// A propagation operand must resolve through exactly one declared conversion into the enclosing
+/// result type (`GNT-38.1-typed-error-propagation`). While no error-conversion contract is
+/// published every operand is refused, and this finds the operand whose types the refusal names.
+fn propagation_operand(tree: &SyntaxTree, block: NodeId) -> Option<NodeId> {
+    let mut stack = vec![block];
+    while let Some(current) = stack.pop() {
+        let node = tree.node(current)?;
+        let carries_marker = node.children().iter().any(|child| {
+            tree.node(*child).is_some_and(|child| {
+                matches!(
+                    child.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+                )
+            })
+        });
+        if carries_marker {
+            // The analyzer types no `?` of its own, so the marker-carrying expression carries
+            // the operand's type, which is what the refusal names.
+            return Some(current);
+        }
+        stack.extend(node.children().iter().copied());
+    }
+    None
+}
+
 fn check_callable(
     tree: &SyntaxTree,
     callable: NodeId,
@@ -2859,6 +2886,28 @@ fn check_callable(
         context,
         diagnostics,
     )?;
+
+    if let Some(operand) = propagation_operand(tree, block) {
+        let operand_type = context
+            .expression_types
+            .borrow()
+            .get(&operand)
+            .cloned()
+            .unwrap_or(TypeDescriptor::UNIT);
+        diagnostics.push(body_diagnostic(
+            "error-propagation-refused",
+            DiagnosticCategory::Type,
+            "a propagation operand has no exactly one declared conversion",
+            tree.node(operand)
+                .ok_or(AnalysisError::Invariant)?
+                .span()
+                .clone(),
+            [
+                ("operand", operand_type.canonical_string()),
+                ("enclosing", result.canonical_string()),
+            ],
+        )?);
+    }
 
     if !result_refused && let Some(actual) = completion.trailing {
         require_type(

@@ -758,6 +758,7 @@ impl<'a> Lexer<'a> {
             (".", Punctuation::Dot),
             ("=", Punctuation::Equal),
             ("!", Punctuation::Bang),
+            ("?", Punctuation::Question),
             ("<", Punctuation::Less),
             (">", Punctuation::Greater),
             ("+", Punctuation::Plus),

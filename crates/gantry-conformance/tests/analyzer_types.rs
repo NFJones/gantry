@@ -2806,6 +2806,45 @@ fn section_38_divergent_branches_and_loops_are_admitted() {
     assert_eq!(nested.status(), AnalysisStatus::Valid);
 }
 
+/// Section 38: a propagation operand has no exactly one declared conversion while no
+/// error-conversion contract is published, so every operand is refused with its types named
+/// (`GNT-38.1-typed-error-propagation`).
+#[test]
+fn section_38_propagation_operands_are_refused() {
+    let refused = analyze(
+        "fn f() -> Result<Int, String> { Err(\"x\") } fn main() -> Result<Int, String> { let v: Int = f()?; Ok(v) }",
+    );
+    let propagation = refused
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "error-propagation-refused")
+        .unwrap_or_else(|| panic!("the propagation operand is refused"));
+    assert_eq!(
+        propagation
+            .fields
+            .get("enclosing")
+            .map(|value| value.as_ref()),
+        Some("Result<Int,String>")
+    );
+    assert_eq!(
+        propagation
+            .fields
+            .get("operand")
+            .map(|value| value.as_ref()),
+        Some("Result<Int,String>")
+    );
+
+    // A non-`Result` operand is refused by the same code.
+    let literal = analyze("fn main() -> Int { let v: Int = 1?; v }");
+    assert!(diagnostic_codes(literal.diagnostics()).contains(&"error-propagation-refused"));
+
+    // The same call without a propagation operand stays admitted.
+    let control = analyze(
+        "fn f() -> Result<Int, String> { Err(\"x\") } fn main() -> Int { let r: Result<Int, String> = f(); match r { Ok(v) => v, Err(e) => 0 } }",
+    );
+    assert_eq!(control.status(), AnalysisStatus::Valid);
+}
+
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
 /// is never coerced into it (`GNT-38.4-boundaries-durability-and-non-claims`).
 #[test]

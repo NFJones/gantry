@@ -93,6 +93,8 @@ pub enum Punctuation {
     EqualEqual,
     /// `!`.
     Bang,
+    /// `?`.
+    Question,
     /// `!=`.
     NotEqual,
     /// `<`.
@@ -143,6 +145,7 @@ impl Punctuation {
             Self::LeftBracket => "[",
             Self::RightBracket => "]",
             Self::Comma => ",",
+            Self::Question => "?",
             Self::Semicolon => ";",
             Self::Colon => ":",
             Self::PathSeparator => "::",

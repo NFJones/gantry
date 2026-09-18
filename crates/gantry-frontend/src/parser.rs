@@ -1920,6 +1920,14 @@ impl<'a> Machine<'a> {
                 mode,
                 control_boundary: false,
             });
+        } else if self.at_punctuation(Punctuation::Question) {
+            // A propagation operand is a postfix form over the completed expression
+            // (`GNT-38.1-typed-error-propagation`): the operand stays the preceding child and the
+            // chain continues, so the form composes with member and index steps. The marker is
+            // consumed through the expected-token path so it is attached to the tree.
+            self.wrap_last_child(SyntaxForm::PostfixExpression)?;
+            self.expect_punctuation(Punctuation::Question)?;
+            self.tasks.push(Task::PostfixTail { mode });
         }
         Ok(())
     }
