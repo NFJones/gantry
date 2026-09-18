@@ -1567,25 +1567,6 @@ pub(crate) fn check_package_bodies(
                 .cloned(),
         );
         context.expression_types.borrow_mut().clear();
-        let panic_refusal_declarations = context
-            .generic_callables
-            .values()
-            .chain(context.generic_methods.iter())
-            .map(|signature| {
-                sources
-                    .get(signature.source_index)
-                    .and_then(|source| source.tree().node(signature.declaration))
-                    .map(|node| node.span().clone())
-                    .ok_or(AnalysisError::Invariant)
-            })
-            .collect::<Result<BTreeSet<_>, _>>()?;
-        refuse_unlowered_statements(
-            sources,
-            structure,
-            &context,
-            &panic_refusal_declarations,
-            diagnostics,
-        )?;
         Ok(BodyAnalysis {
             expression_types,
             struct_fields,
@@ -1608,84 +1589,6 @@ pub(crate) fn check_package_bodies(
     })();
     *generic_analysis_counters = context.generic_analysis_counters.take();
     result
-}
-
-/// Refuses every source panic or assertion whose enclosing declaration the machine could reach,
-/// because no instruction exists for either form yet (`GNT-38.2-assertions-and-panic`).
-///
-/// A declaration is reachable here when it is the entry point, when a recorded call reaches it,
-/// or when it is a generic template whose instantiation the lowering compiles: a generic callee
-/// records no source callee edge, so only the template set closes that path.
-fn refuse_unlowered_statements(
-    sources: &[ParsedSource],
-    structure: &PackageStructure,
-    context: &BodyContext,
-    generic_declarations: &BTreeSet<SourceSpan>,
-    diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<(), AnalysisError> {
-    let entry = structure
-        .symbols()
-        .iter()
-        .find(|symbol| symbol.kind == SymbolKind::Function && symbol.path.as_str() == "crate::main")
-        .and_then(|symbol| context.callable_sources.get(&symbol.id).cloned());
-    let mut called = BTreeSet::new();
-    for draft in context.effect_drafts.borrow().values() {
-        for callee in &draft.calls {
-            if let EffectNode::Source(span) = callee {
-                called.insert(span.clone());
-            }
-        }
-    }
-    for source in sources {
-        let mut parents = BTreeMap::<NodeId, NodeId>::new();
-        for (index, node) in source.tree().nodes().iter().enumerate() {
-            let parent = NodeId::from_index(index);
-            for child in node.children() {
-                parents.insert(*child, parent);
-            }
-        }
-        for (index, node) in source.tree().nodes().iter().enumerate() {
-            if !matches!(
-                node.form(),
-                SyntaxForm::PanicStatement | SyntaxForm::AssertionStatement
-            ) {
-                continue;
-            }
-            let mut ancestor = parents.get(&NodeId::from_index(index)).copied();
-            let mut enclosing = None;
-            while let Some(current) = ancestor {
-                let current_node = source
-                    .tree()
-                    .node(current)
-                    .ok_or(AnalysisError::Invariant)?;
-                if matches!(
-                    current_node.form(),
-                    SyntaxForm::FunctionDeclaration
-                        | SyntaxForm::MethodDeclaration
-                        | SyntaxForm::TraitMethodDeclaration
-                        | SyntaxForm::ActionDeclaration
-                ) {
-                    enclosing = Some(current_node.span().clone());
-                    break;
-                }
-                ancestor = parents.get(&current).copied();
-            }
-            let reachable = enclosing.as_ref().is_some_and(|span| {
-                (Some(span) == entry.as_ref() || generic_declarations.contains(span))
-                    || called.contains(span)
-            });
-            if reachable {
-                diagnostics.push(body_diagnostic(
-                    "panic-path-refused",
-                    DiagnosticCategory::Type,
-                    "a reachable source form has no instruction yet",
-                    node.span().clone(),
-                    [("reason", "lowering-unavailable")],
-                )?);
-            }
-        }
-    }
-    Ok(())
 }
 
 fn collect_concrete_callable_metadata(

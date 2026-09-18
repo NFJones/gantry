@@ -472,6 +472,9 @@ pub enum InstructionKind {
     EnterScope,
     /// Leave the innermost lexical scope.
     ExitScope,
+    /// Settle one source panic or checked assertion as the enclosing callable's failure
+    /// (`GNT-38.2-assertions-and-panic`).
+    Panic,
     /// Jump to one instruction in the current workflow.
     Jump(usize),
     /// Select one branch from a Bool or Decision and record its dynamic arm.

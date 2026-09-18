@@ -1838,6 +1838,7 @@ fn write_runtime_code(writer: &mut Writer, code: RuntimeCode) {
             writer.string(category.wire_name());
         }
         RuntimeCode::IntegrationPanic => writer.u8(9),
+        RuntimeCode::SourcePanic => writer.u8(10),
         RuntimeCode::DeterministicTransitionBudget => writer.u8(2),
         RuntimeCode::OperationBudget => writer.u8(3),
         RuntimeCode::LoopIterationBudget => writer.u8(4),
@@ -1864,6 +1865,7 @@ fn read_runtime_code(reader: &mut Reader<'_>) -> Result<RuntimeCode, MachineReco
         7 => Ok(RuntimeCode::InternalInvariant),
         8 => Ok(RuntimeCode::RootSubmissionFailure),
         9 => Ok(RuntimeCode::IntegrationPanic),
+        10 => Ok(RuntimeCode::SourcePanic),
         _ => Err(MachineRecoveryError::InvalidEncoding),
     }
 }

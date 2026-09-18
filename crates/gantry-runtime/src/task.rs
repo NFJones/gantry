@@ -2567,6 +2567,7 @@ fn machine_failure_category(code: crate::RuntimeCode) -> RuntimeErrorCategory {
             RuntimeErrorCategory::InternalInvariantFailure
         }
         crate::RuntimeCode::Deterministic(_)
+        | crate::RuntimeCode::SourcePanic
         | crate::RuntimeCode::DeterministicTransitionBudget
         | crate::RuntimeCode::OperationBudget
         | crate::RuntimeCode::LoopIterationBudget

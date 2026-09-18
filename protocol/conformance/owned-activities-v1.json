@@ -1,6 +1,6 @@
 {
  "format": "gantry.owned-activity-evidence/v1",
- "specification_sha256": "b313263d6963faa48213c6aeb625fe2ee94efd87bc753c92a991c4027e8822b5",
+ "specification_sha256": "071fd1643812c70eada225af105a52a3de8726ce7b4d5ce239c4a4d8c7048ea4",
  "issue": "GNT-ASYNC-ACT-001",
  "capabilities": [
   {

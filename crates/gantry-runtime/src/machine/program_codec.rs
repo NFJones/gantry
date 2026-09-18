@@ -372,6 +372,7 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind, wire: P
             }
         }
         InstructionKind::LeaveOccurrence => writer.u8(14),
+        InstructionKind::Panic => writer.u8(34),
         InstructionKind::Call { callee, arguments } => {
             writer.u8(15);
             writer.string(callee.as_str());
@@ -501,6 +502,7 @@ fn read_instruction(
             source_limit: reader.boolean()?.then(|| reader.u64()).transpose()?,
         },
         14 => InstructionKind::LeaveOccurrence,
+        34 => InstructionKind::Panic,
         15 => InstructionKind::Call {
             callee: CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
                 .map_err(|_| MachineRecoveryError::InvalidEncoding)?,

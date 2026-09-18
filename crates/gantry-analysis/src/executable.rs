@@ -666,6 +666,39 @@ impl Compiler<'_> {
                     let ty = self.compile_expression(expression)?;
                     self.emit(ty, InstructionKind::Pop)?;
                 }
+                SyntaxForm::PanicStatement => {
+                    let expression = direct_child_form(self.tree, node, SyntaxForm::Expression)
+                        .ok_or(AnalysisError::Invariant)?;
+                    let ty = self.compile_expression(expression)?;
+                    // The message is evaluated for its own effects and then discarded: the machine
+                    // reports the failure through its code, workflow, and site, so no message value
+                    // survives (`GNT-38.2-assertions-and-panic`).
+                    self.emit(ty, InstructionKind::Pop)?;
+                    self.emit(TypeDescriptor::UNIT, InstructionKind::Panic)?;
+                    return Ok(false);
+                }
+                SyntaxForm::AssertionStatement => {
+                    let expression = direct_child_form(self.tree, node, SyntaxForm::Expression)
+                        .ok_or(AnalysisError::Invariant)?;
+                    let condition = self.compile_expression(expression)?;
+                    // A checked assertion continues on success and settles the enclosing callable
+                    // through the same failure instruction a panic uses when its condition is false
+                    // (`GNT-38.2-assertions-and-panic`).
+                    let branch = self.emit(
+                        condition,
+                        InstructionKind::Branch {
+                            when_true: 0,
+                            when_false: 0,
+                        },
+                    )?;
+                    let when_false = self.instructions.len();
+                    self.emit(TypeDescriptor::UNIT, InstructionKind::Panic)?;
+                    let when_true = self.instructions.len();
+                    self.instructions[branch].kind = InstructionKind::Branch {
+                        when_true,
+                        when_false,
+                    };
+                }
                 SyntaxForm::ReturnStatement => {
                     if let Some(expression) =
                         direct_child_form(self.tree, node, SyntaxForm::Expression)

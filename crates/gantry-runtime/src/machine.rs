@@ -346,6 +346,8 @@ pub enum RuntimeCode {
     Operation(gantry_core::portable::RuntimeErrorCategory),
     /// An integration unwind reached an owned task boundary without a narrower boundary result.
     IntegrationPanic,
+    /// One source panic or checked assertion settled the enclosing callable as failed.
+    SourcePanic,
     /// The deterministic-transition execution budget is exhausted.
     DeterministicTransitionBudget,
     /// The logical-operation execution budget is exhausted.
@@ -370,6 +372,7 @@ impl RuntimeCode {
             Self::Deterministic(code) => code.wire_name(),
             Self::Operation(category) => category.wire_name(),
             Self::IntegrationPanic => "integration-panic",
+            Self::SourcePanic => "source-panic",
             Self::DeterministicTransitionBudget => "deterministic-transition-budget",
             Self::OperationBudget => "operation-budget",
             Self::LoopIterationBudget => "loop-iteration-budget",
@@ -2829,6 +2832,7 @@ impl Machine {
             InstructionKind::EnterScope => self.enter_scope(&mut budget_state),
             InstructionKind::ExitScope => self.exit_scope(&mut budget_state),
             InstructionKind::Jump(target) => self.jump(target, &mut budget_state),
+            InstructionKind::Panic => Err(RuntimeCode::SourcePanic),
             InstructionKind::Branch {
                 when_true,
                 when_false,
@@ -5181,6 +5185,7 @@ fn instruction_name(instruction: &InstructionKind) -> Arc<str> {
         InstructionKind::EnterScope => "scope-enter",
         InstructionKind::ExitScope => "scope-exit",
         InstructionKind::Jump(_) => "jump",
+        InstructionKind::Panic => "panic",
         InstructionKind::Branch { .. }
         | InstructionKind::BranchOption { .. }
         | InstructionKind::BranchResult { .. }

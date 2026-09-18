@@ -100,7 +100,7 @@ pub enum ErrorSemanticsDiagnosticCode {
     NeverSignatureRefused,
     /// A panic path exceeding the declared logical-frame budget.
     PanicFrameLimit,
-    /// An assertion or panic form outside the admitted path.
+    /// A panic or assertion operand whose type is not the admitted one.
     PanicPathRefused,
 }
 
@@ -168,7 +168,7 @@ impl ErrorSemanticsDiagnosticCode {
             Self::NeverDurableRefused => "durable state would carry a Never component",
             Self::NeverSignatureRefused => "a signature position names the uninhabited type",
             Self::PanicFrameLimit => "a panic path exceeds the declared logical-frame budget",
-            Self::PanicPathRefused => "an assertion or panic form leaves the admitted path",
+            Self::PanicPathRefused => "a panic or assertion operand is not the admitted type",
         }
     }
 

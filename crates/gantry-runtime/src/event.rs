@@ -1050,6 +1050,7 @@ fn runtime_category(code: RuntimeCode) -> &'static str {
             "internal-invariant-failure"
         }
         RuntimeCode::Deterministic(_)
+        | RuntimeCode::SourcePanic
         | RuntimeCode::DeterministicTransitionBudget
         | RuntimeCode::OperationBudget
         | RuntimeCode::LoopIterationBudget

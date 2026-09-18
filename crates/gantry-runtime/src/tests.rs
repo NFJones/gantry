@@ -79,6 +79,30 @@ fn program(workflows: Vec<Workflow>) -> Arc<MachineProgram> {
     )
 }
 
+/// A source panic or checked assertion settles the enclosing callable as failed with the machine
+/// code the runtime vocabulary publishes (`GNT-38.2-assertions-and-panic`).
+#[test]
+fn a_panic_instruction_settles_the_enclosing_callable_as_failed() {
+    let mut machine = new_machine(
+        program(vec![workflow(
+            "crate::main",
+            Vec::new(),
+            TypeDescriptor::UNIT,
+            EffectSet::default(),
+            vec![instruction(0, TypeDescriptor::UNIT, InstructionKind::Panic)],
+        )]),
+        "crate::main",
+        Vec::new(),
+        limits(8, 1, 2, 1, 8),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Failure(ref failure))
+            if failure.code == RuntimeCode::SourcePanic
+    ));
+    assert_eq!(RuntimeCode::SourcePanic.wire_name(), "source-panic");
+}
+
 #[cfg(feature = "concurrent")]
 fn spawn_program() -> (Arc<MachineProgram>, TaskBodyIdentity) {
     spawn_program_with_body(vec![

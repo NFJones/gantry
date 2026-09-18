@@ -2604,35 +2604,35 @@ fn public_index_projection_operands_are_keyed() {
     }
 }
 
-/// Section 38: a panic types its operand, refuses a path the machine can reach while no panic
-/// instruction exists, and leaves the source that follows it unreachable.
+/// Section 38: a panic types its operand, lowers on every path the machine reaches, and leaves
+/// the source that follows it unreachable (`GNT-38.2-assertions-and-panic`).
 #[test]
 fn section_38_panic_positions_are_typed_and_refused() {
     let admitted = analyze("fn boom() -> Int { panic(\"x\"); } fn main() -> Int { 0 }");
     assert_eq!(admitted.status(), AnalysisStatus::Valid);
     let called = analyze("fn boom() -> Int { panic(\"x\"); } fn main() -> Int { boom() }");
-    assert!(diagnostic_codes(called.diagnostics()).contains(&"panic-path-refused"));
+    assert_eq!(called.status(), AnalysisStatus::Valid);
     let operand = analyze("fn boom() -> Int { panic(1); } fn main() -> Int { 0 }");
     assert!(diagnostic_codes(operand.diagnostics()).contains(&"panic-path-refused"));
     let entry = analyze("fn main() -> Int { panic(\"x\"); 1 }");
-    assert!(diagnostic_codes(entry.diagnostics()).contains(&"panic-path-refused"));
     assert!(diagnostic_codes(entry.diagnostics()).contains(&"unreachable-source"));
+    assert!(!diagnostic_codes(entry.diagnostics()).contains(&"panic-path-refused"));
     let control = analyze("fn main() -> Int { 0 }");
     assert_eq!(control.status(), AnalysisStatus::Valid);
 }
 
-/// Section 38: an assertion operand is checked, a reachable one takes the staged refusal, and an
-/// uncalled declaration keeps it (`GNT-38.2-assertions-and-panic`).
+/// Section 38: an assertion operand is checked, an admitted path lowers it, and a refused operand
+/// names its reason (`GNT-38.2-assertions-and-panic`).
 #[test]
 fn section_38_assertions_are_typed_and_refused() {
     let admitted = analyze("fn boom() -> Int { assert(true); 1 } fn main() -> Int { 0 }");
     assert_eq!(admitted.status(), AnalysisStatus::Valid);
     let called = analyze("fn boom() -> Int { assert(true); 1 } fn main() -> Int { boom() }");
-    assert!(diagnostic_codes(called.diagnostics()).contains(&"panic-path-refused"));
+    assert_eq!(called.status(), AnalysisStatus::Valid);
     let operand = analyze("fn boom() -> Int { assert(1); 1 } fn main() -> Int { 0 }");
     assert!(diagnostic_codes(operand.diagnostics()).contains(&"panic-path-refused"));
     let entry = analyze("fn main() -> Int { assert(true); 1 }");
-    assert!(diagnostic_codes(entry.diagnostics()).contains(&"panic-path-refused"));
+    assert_eq!(entry.status(), AnalysisStatus::Valid);
     let control = analyze("fn main() -> Int { 0 }");
     assert_eq!(control.status(), AnalysisStatus::Valid);
     fn reason<'a>(
@@ -2645,22 +2645,56 @@ fn section_38_assertions_are_typed_and_refused() {
             .and_then(|diagnostic| diagnostic.fields.get(field))
             .map(|value| value.as_ref())
     }
-    assert_eq!(
-        reason(called.diagnostics(), "reason"),
-        Some("lowering-unavailable")
-    );
-    assert_eq!(
-        reason(entry.diagnostics(), "reason"),
-        Some("lowering-unavailable")
-    );
+    assert_eq!(reason(called.diagnostics(), "reason"), None);
+    assert_eq!(reason(entry.diagnostics(), "reason"), None);
     assert_eq!(
         reason(operand.diagnostics(), "reason"),
         Some("operand-type")
     );
 }
 
-/// Section 38: the staged panic refusal names its reason, covers generic and method callees, and
-/// the statement form requires its own semicolon (`GNT-38.2-assertions-and-panic`).
+/// Section 38: both admitted source forms lower to the failure instruction, and an assertion
+/// guards it with its condition branch (`GNT-38.2-assertions-and-panic`).
+#[test]
+fn section_38_panic_and_assertion_lower_to_the_failure_instruction() {
+    let panicking = analyze("fn boom() -> Int { panic(\"x\"); } fn main() -> Int { boom() }");
+    assert_eq!(panicking.status(), AnalysisStatus::Valid);
+    let program = panicking
+        .executable_program()
+        .unwrap_or_else(|| panic!("a valid package publishes a program"));
+    let boom = program
+        .workflows()
+        .iter()
+        .find(|workflow| workflow.path.as_str() == "crate::boom")
+        .unwrap_or_else(|| panic!("the called panic workflow is lowered"));
+    assert!(
+        boom.instructions
+            .iter()
+            .any(|instruction| matches!(instruction.kind, InstructionKind::Panic)),
+        "a panic body lowers to the failure instruction"
+    );
+
+    let asserted = analyze("fn check() -> Int { assert(true); 1 } fn main() -> Int { check() }");
+    assert_eq!(asserted.status(), AnalysisStatus::Valid);
+    let program = asserted
+        .executable_program()
+        .unwrap_or_else(|| panic!("a valid package publishes a program"));
+    let check = program
+        .workflows()
+        .iter()
+        .find(|workflow| workflow.path.as_str() == "crate::check")
+        .unwrap_or_else(|| panic!("the called assertion workflow is lowered"));
+    assert!(
+        check
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction.kind, InstructionKind::Panic)),
+        "an assertion lowers its failure arm to the failure instruction"
+    );
+}
+
+/// Section 38: a reachable panic lowers on generic and method callees alike, the operand refusal
+/// names its reason, and the statement form requires its own semicolon.
 #[test]
 fn section_38_panic_refusals_name_their_reason() {
     fn reason<'a>(
@@ -2674,29 +2708,20 @@ fn section_38_panic_refusals_name_their_reason() {
             .map(|value| value.as_ref())
     }
     let generic = analyze("fn boom<X>(x: X) -> Int { panic(\"x\"); } fn main() -> Int { boom(1) }");
-    assert_eq!(
-        reason(generic.diagnostics(), "reason"),
-        Some("lowering-unavailable")
-    );
+    assert_eq!(generic.status(), AnalysisStatus::Valid);
     let method = analyze(
         "struct S {} impl S { fn boom(self) -> Int { panic(\"x\"); } } fn main() -> Int { let s: S = S {}; s.boom() }",
     );
-    assert_eq!(
-        reason(method.diagnostics(), "reason"),
-        Some("lowering-unavailable")
-    );
+    assert_eq!(method.status(), AnalysisStatus::Valid);
     let operand = analyze("fn boom() -> Int { panic(1); } fn main() -> Int { 0 }");
     assert_eq!(
         reason(operand.diagnostics(), "reason"),
         Some("operand-type")
     );
-    // An uncalled generic template is refused (a template is always reachable), while an
-    // uncalled monomorphic method is admitted because neither a declaration nor a call reaches it.
+    // Neither an uncalled generic template nor an uncalled monomorphic method reaches a panic
+    // path the lowering compiles, so both stay source-valid.
     let template = analyze("fn boom<X>(x: X) -> Int { panic(\"x\"); } fn main() -> Int { 0 }");
-    assert_eq!(
-        reason(template.diagnostics(), "reason"),
-        Some("lowering-unavailable")
-    );
+    assert_eq!(template.status(), AnalysisStatus::Valid);
     let uncalled = analyze(
         "struct S {} impl S { fn boom(self) -> Int { panic(\"x\"); } } fn main() -> Int { 0 }",
     );
