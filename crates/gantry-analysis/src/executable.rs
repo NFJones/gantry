@@ -4510,16 +4510,44 @@ fn postfix_projection_steps(
             continue;
         }
         if node_contains_punctuation(tree, step, Punctuation::LeftBracket) {
-            // The step's own index is the fragment that follows it. Scanning further would read a
-            // later step's literal as this step's index (`xs[i][0]` read index `0` and answered
-            // `xs[0][0]`), so a step whose own index is not a constant this projection can carry
-            // reports no steps at all and the caller declines the chain.
-            let fragment = *children.get(cursor.checked_add(1)?)?;
-            let index = match index_candidate(tree, fragment) {
-                IndexCandidate::Value(value) => value,
-                IndexCandidate::Declined | IndexCandidate::Open => return None,
-            };
-            steps.push(ProjectionChainStep::Member(index));
+            // The step's own index lives in the fragments between it and the next postfix step:
+            // scanning past that read a later step's literal as this step's index (`xs[i][0]`
+            // read index `0` and answered `xs[0][0]`), while reading only the immediate fragment
+            // misses an index delivered through a wrapper (`let v: Int = xs[0][0 + 1]; v`). A step
+            // whose own fragments name no constant this projection can carry reports no steps at
+            // all, so the caller declines the chain.
+            let step_end = children
+                .iter()
+                .enumerate()
+                .skip(cursor.checked_add(1)?)
+                .find(|(_, child)| {
+                    tree.node(**child)
+                        .is_some_and(|child| matches!(child.form(), SyntaxForm::PostfixExpression))
+                })
+                .map(|(index, _)| index)
+                .unwrap_or(children.len());
+            let mut resolved = None;
+            let mut declined = false;
+            for child in children
+                .get(cursor.checked_add(1)?..step_end)
+                .unwrap_or_default()
+            {
+                match index_candidate(tree, *child) {
+                    IndexCandidate::Value(value) => {
+                        resolved = Some(value);
+                        break;
+                    }
+                    IndexCandidate::Declined => {
+                        declined = true;
+                        break;
+                    }
+                    IndexCandidate::Open => {}
+                }
+            }
+            if declined {
+                return None;
+            }
+            steps.push(ProjectionChainStep::Member(resolved?));
             cursor += 1;
             continue;
         }
@@ -5561,11 +5589,39 @@ fn index_candidate(tree: &SyntaxTree, root: NodeId) -> IndexCandidate {
             Err(_) => IndexCandidate::Declined,
         },
         Err(ConstantIndexError::Declined) => IndexCandidate::Declined,
-        Err(ConstantIndexError::Open) => match integer_literal(tree, root) {
-            Some(value) => IndexCandidate::Value(value),
-            None => IndexCandidate::Open,
-        },
+        Err(ConstantIndexError::Open) => {
+            if closed_index_expression(tree, root) {
+                // A closed expression the folder cannot read (a nested projection such as
+                // `xs[[1, 2][0] + 1]`) declines rather than being re-read through its first
+                // literal, which is the defect this reader exists to remove.
+                return IndexCandidate::Declined;
+            }
+            match integer_literal(tree, root) {
+                Some(value) => IndexCandidate::Value(value),
+                None => IndexCandidate::Open,
+            }
+        }
     }
+}
+
+/// Reports whether an index expression names no source entity of its own, so a shape the folder
+/// cannot read is a closed constant rather than a dynamic expression.
+fn closed_index_expression(tree: &SyntaxTree, root: NodeId) -> bool {
+    let mut work = vec![root];
+    while let Some(id) = work.pop() {
+        let Some(node) = tree.node(id) else {
+            return false;
+        };
+        if matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Identifier(_))
+                | SyntaxForm::Token(TokenKind::ReservedWord(_))
+        ) {
+            return false;
+        }
+        work.extend(node.children().iter().copied());
+    }
+    true
 }
 
 fn index_value(tree: &SyntaxTree, root: NodeId) -> Option<usize> {
