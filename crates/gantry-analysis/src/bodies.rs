@@ -6604,7 +6604,7 @@ fn infer_action_operation(
         )?);
     }
     for (argument, expected) in arguments.iter().zip(&signature.parameters) {
-        if let Some(actual) = infer_expression(
+        let Some(actual) = infer_expression(
             tree,
             *argument,
             facts,
@@ -6612,8 +6612,22 @@ fn infer_action_operation(
             Some(expected),
             context,
             diagnostics,
-        )? && &actual != expected
-        {
+        )?
+        else {
+            // A parameter type that cannot type its argument leaves the argument without a value,
+            // so an untypeable list literal reports the registered code instead of reaching
+            // lowering.
+            infer_value_slice_literal(
+                tree,
+                std::slice::from_ref(argument),
+                facts,
+                environment,
+                context,
+                diagnostics,
+            )?;
+            continue;
+        };
+        if &actual != expected {
             diagnostics.push(body_diagnostic(
                 "call-argument-type",
                 DiagnosticCategory::Type,
@@ -8770,7 +8784,7 @@ fn infer_member_sequence(
             // no member step reaches lowering without a receiver (`[].len() + 1`, `([]).len()`).
             let resolved = match resolved {
                 Some(typed) => Some(typed),
-                None => infer_receiver_literal(
+                None => infer_value_slice_literal(
                     tree,
                     receiver_part,
                     facts,
@@ -8835,6 +8849,17 @@ fn infer_member_sequence(
                 diagnostics,
             )?
             else {
+                // A receiver method's parameters are not applied to an argument here, so an
+                // argument the walk cannot type reports the registered code instead of leaving
+                // the call without a derivation and the argument without a value (`S {}.id([])`).
+                infer_value_slice_literal(
+                    tree,
+                    std::slice::from_ref(argument),
+                    facts,
+                    environment,
+                    context,
+                    diagnostics,
+                )?;
                 return Ok(None);
             };
             actual_argument_spans.push(
@@ -9268,21 +9293,23 @@ const UNTYPED_LIST_LITERAL: &str = "untyped-list-literal";
 const UNTYPED_LIST_LITERAL_MESSAGE: &str =
     "a list literal has no element type of its own in this position";
 
-/// Types one receiver part that owns a list literal, or refuses a literal with no type of its own.
+/// Types one value slice that owns a list literal, or refuses a literal with no type of its own.
 ///
-/// A receiver part that owns a list literal is a value of its own, which the operand walk types
-/// whenever the literal has a type of its own. A list literal has one only where it has members or
-/// an expected `List<T>` is known (`SPEC.md` GNT-5.4), so a literal the walk cannot type is refused
-/// here rather than leaving its member step without a receiver.
-fn infer_receiver_literal(
+/// A slice that owns a list literal is a value of its own, which the operand walk types whenever
+/// the literal has a type of its own. A list literal has one only where it has members or an
+/// expected `List<T>` is known (`SPEC.md` GNT-5.4), so a literal a walk cannot type is refused here
+/// rather than leaving the step or the argument that consumes it without a value: a receiver part
+/// (`[].len() + 1`, `([]).len()`) and a call argument whose parameter type is not concrete
+/// (`id([])` for `fn id<T>(x: T) -> T`) both report the same registered code.
+fn infer_value_slice_literal(
     tree: &SyntaxTree,
-    receiver_part: &[NodeId],
+    children: &[NodeId],
     facts: &BTreeMap<NodeId, TypeFact>,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
-    let Some(literal) = receiver_owns_aggregate_literal(tree, receiver_part) else {
+    let Some(literal) = receiver_owns_aggregate_literal(tree, children) else {
         return Ok(None);
     };
     let Some(node) = tree.node(literal) else {
@@ -11236,7 +11263,7 @@ fn infer_call_sequence(
         )?);
     }
     for (argument, expected) in arguments.iter().zip(&signature.parameters) {
-        if let Some(actual) = infer_expression(
+        let Some(actual) = infer_expression(
             tree,
             *argument,
             facts,
@@ -11244,8 +11271,22 @@ fn infer_call_sequence(
             Some(expected),
             context,
             diagnostics,
-        )? && &actual != expected
-        {
+        )?
+        else {
+            // A parameter type that cannot type its argument leaves the argument without a value,
+            // so an untypeable list literal reports the registered code instead of reaching
+            // lowering.
+            infer_value_slice_literal(
+                tree,
+                std::slice::from_ref(argument),
+                facts,
+                environment,
+                context,
+                diagnostics,
+            )?;
+            continue;
+        };
+        if &actual != expected {
             diagnostics.push(body_diagnostic(
                 "call-argument-type",
                 DiagnosticCategory::Type,
@@ -11386,6 +11427,16 @@ fn infer_qualified_trait_call(
             diagnostics,
         )?
         else {
+            // A parameter type the walk cannot apply leaves the argument without a value, so an
+            // untypeable list literal reports the registered code instead of reaching lowering.
+            infer_value_slice_literal(
+                tree,
+                std::slice::from_ref(argument),
+                facts,
+                environment,
+                context,
+                diagnostics,
+            )?;
             return Ok(None);
         };
         actual_argument_spans.push(
@@ -11516,6 +11567,17 @@ fn infer_generic_call(
             diagnostics,
         )?
         else {
+            // A generic parameter supplies no concrete expected type, so an argument the walk
+            // cannot type reports the registered code instead of leaving the call without a
+            // derivation and the argument without a value.
+            infer_value_slice_literal(
+                tree,
+                std::slice::from_ref(argument),
+                facts,
+                environment,
+                context,
+                diagnostics,
+            )?;
             return Ok(None);
         };
         let actual_expression = if descriptor_contains_callable(&actual) {

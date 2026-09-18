@@ -9269,6 +9269,131 @@ fn public_list_literal_comparisons_are_typed_and_lowered() {
     }
 }
 
+/// An argument the call walk cannot type reports the code that names the literal it drops.
+///
+/// A parameter type that is not concrete cannot type its argument, so an empty list literal in that
+/// position kept no type at all and the call lowering aborted with an internal error (`id([])` for
+/// `fn id<T>(x: T) -> T`, `S {}.id([])` for a generic method), while a literal whose parameter type
+/// is known stayed admitted (`take_list([])`). The free, receiver-method, trait, generic, and
+/// action argument walks now report the registered `untyped-list-literal` code for the literal they
+/// cannot type, and the admitted controls below keep executing their exact argument values.
+#[test]
+fn public_untyped_list_literal_arguments_report_their_code() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("an admitted list-literal argument did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    let root = TempDirectory::new();
+    for (source, expected) in [
+        (
+            "fn take_list(items: List<Int>) -> List<Int> { items } fn main() -> Int { discard take_list([]); 1 }",
+            1i64,
+        ),
+        (
+            "fn id<T>(x: T) -> T { x } fn main() -> Int { discard id([1, 2]); 1 }",
+            1,
+        ),
+        ("fn main() -> Int { discard []; 1 }", 1),
+        (
+            "struct S {} impl S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take([1, 2]); 1 }",
+            1,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: an admitted argument must publish a program")
+        });
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x42; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+
+    // Every argument walk that cannot type an untypeable literal reports the same registered code
+    // and publishes no program.
+    let method_generic = "struct S {} impl S { fn id<T>(self, x: T) -> T { x } }";
+    let trait_generic = "trait Id { pure fn id<T>(self, x: T) -> T; } struct S {} impl Id for S { fn id<T>(self, x: T) -> T { x } }";
+    for source in [
+        "fn id<T>(x: T) -> T { x } fn main() -> Int { discard id([]); 1 }".to_string(),
+        format!("{method_generic} fn main() -> Int {{ discard S {{}}.id([]); 1 }}"),
+        format!("{trait_generic} fn main() -> Int {{ discard S {{}}.id([]); 1 }}"),
+    ] {
+        root.write(&source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "untyped-list-literal"),
+            "source: {source}: expected untyped-list-literal; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused argument must not publish a program"
+        );
+    }
+}
+
 /// A builtin member call publishes the primitive that implements it.
 ///
 /// The runtime primitives were machine-tested but no source spelling reached them: a builtin
