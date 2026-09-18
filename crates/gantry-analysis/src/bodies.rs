@@ -7838,15 +7838,17 @@ fn fold_projection_steps(
                 tree.node(*id)
                     .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
             });
-        // A step this walk cannot key statically stays untyped: the element access a dynamic index
-        // needs is not published yet, and an untyped projection keeps the enclosing expression from
-        // taking the intermediate value's type.
-        let Some(literal_index) =
-            index_expression.and_then(|expression| literal_projection_index(tree, expression))
-        else {
-            return Ok(None);
-        };
+        // `SPEC.md` publishes `value[index]` with an `Int` expression, so a step over a list keys
+        // its element for any admitted index expression, exactly as the first step of a chain does;
+        // a tuple step still needs a literal because its elements differ. Requiring a literal here
+        // left the whole chain untyped, which let a `let` skip its annotation check
+        // (`let v: Bool = xs[0][0 + 1]` was admitted and then failed the machine).
+        let literal_index =
+            index_expression.and_then(|expression| literal_projection_index(tree, expression));
         let projected = if current.kind() == TypeKind::Tuple {
+            let Some(literal_index) = literal_index else {
+                return Ok(None);
+            };
             let Some(member) = current.immediate_members().into_iter().nth(literal_index) else {
                 diagnostics.push(body_diagnostic(
                     "tuple-index-out-of-range",

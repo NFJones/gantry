@@ -10884,6 +10884,20 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         ("Plain { value: 42 }.absent", "unknown-member"),
         // A step the receiver does not have is refused before an index projection reads it.
         ("Plain { value: 42 }.absent[0] + 1", "unknown-member"),
+        // A chained projection is typed, so a matching annotation is checked like any other
+        // binding: a mismatching one refuses instead of failing the machine after admission.
+        (
+            "let xs: List<List<Int>> = [[1, 2], [3]]; let v: Bool = xs[0][0 + 1]; 0",
+            "type-mismatch",
+        ),
+        (
+            "let xs: List<List<Int>> = [[1, 2], [3]]; let v: List<Int> = xs[0][0 + 1]; 0",
+            "type-mismatch",
+        ),
+        (
+            "let xs: List<List<Int>> = [[1, 2], [3]]; let v: Unit = xs[0][0 + 1]; 0",
+            "type-mismatch",
+        ),
         // A computed receiver is refused even when the member resolves for its type.
         ("(1 + 2).greet()", "receiver-value-place"),
         ("(1 + mk_int()).greet() + 1", "receiver-value-place"),
