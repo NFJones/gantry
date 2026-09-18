@@ -2594,7 +2594,27 @@ impl Compiler<'_> {
         expression: NodeId,
         payload: TypeDescriptor,
     ) -> Result<TypeDescriptor, AnalysisError> {
-        let node = self.node(expression)?.clone();
+        let mut node = self.node(expression)?.clone();
+        // The fold wraps a marker node in an operator-free `BinaryExpression` that shares its span,
+        // so the seam may match the wrapper rather than the marker node; the marker node is reached
+        // by descending that wrapper, exactly as `compile_propagation` does.
+        while !node.children().iter().any(|child| {
+            self.tree.node(*child).is_some_and(|child| {
+                matches!(
+                    child.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+                )
+            })
+        }) {
+            let Some(only) = node.children().iter().copied().find(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|child| child.span() == node.span())
+            }) else {
+                return Ok(payload);
+            };
+            node = self.node(only)?.clone();
+        }
         let Some(marker) = node.children().iter().position(|child| {
             self.tree.node(*child).is_some_and(|child| {
                 matches!(
