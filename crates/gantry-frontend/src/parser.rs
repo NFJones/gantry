@@ -1837,7 +1837,17 @@ impl<'a> Machine<'a> {
         {
             return Err(self.expected("parenthesized non-associative comparison"));
         }
-        self.wrap_last_child(SyntaxForm::BinaryExpression)?;
+        // A left operand that ends with an unparenthesized marker reaches the chain as the marker
+        // token itself (`GNT-38.1-typed-error-propagation`): the operand's fragments are this
+        // node's children, so the operand node adopts them together with the marker instead of the
+        // chain wrapping the marker token as if it were an operand of its own. A parenthesized or
+        // right-operand marker is already inside its operand node and keeps the plain wrap.
+        if self.last_child_is_bare_marker() {
+            self.begin_adopting_children(SyntaxForm::BinaryExpression)?;
+            self.finish().map_err(|_| self.invariant_fault())?;
+        } else {
+            self.wrap_last_child(SyntaxForm::BinaryExpression)?;
+        }
         self.consume_current()?;
         self.tasks.push(Task::BinaryTail {
             minimum_precedence,
@@ -2568,6 +2578,56 @@ impl<'a> Machine<'a> {
             return Err(self.invariant_fault());
         };
         parent.children.push(id);
+        Ok(())
+    }
+
+    /// Reports whether the current parent's last child is a bare `?` marker token.
+    fn last_child_is_bare_marker(&self) -> bool {
+        let Some(child) = self.open.last().and_then(|parent| parent.children.last()) else {
+            return false;
+        };
+        self.nodes.get(child.index()).is_some_and(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+            )
+        })
+    }
+
+    /// Opens a node of `form` that adopts every child the current parent already holds.
+    ///
+    /// A postfix step continues the operand it follows, so the node it builds holds that operand
+    /// together with the punctuation that completes it (`GNT-38.1-typed-error-propagation`). The
+    /// operand reaches the step as the fragments the current node holds - a primary and its postfix
+    /// fragments - so the new node adopts all of them and keeps their start, and the enclosing
+    /// expression sees one operand node that carries the marker as its last child.
+    fn begin_adopting_children(&mut self, form: SyntaxForm) -> Result<(), SyntaxFault> {
+        let Some(parent) = self.open.last_mut() else {
+            return Err(self.invariant_fault());
+        };
+        if parent.children.is_empty() {
+            return Err(SyntaxFault {
+                expected: "completed child expression",
+                span: self.current().span().clone(),
+                encountered: token_description(self.current().kind()),
+            });
+        }
+        let Some(first) = parent.children.first().copied() else {
+            return Err(self.invariant_fault());
+        };
+        let children = std::mem::take(&mut parent.children);
+        let Some(start) = self
+            .nodes
+            .get(first.index())
+            .map(|node| node.span().bytes().start())
+        else {
+            return Err(self.invariant_fault());
+        };
+        self.open.push(OpenNode {
+            form,
+            children,
+            start,
+        });
         Ok(())
     }
 

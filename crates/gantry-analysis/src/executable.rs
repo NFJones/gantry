@@ -1509,8 +1509,8 @@ impl Compiler<'_> {
                 self.emit_logical_step(operator, |compiler| compiler.compile_sequence(&right))?;
                 return Ok(ty);
             }
-            self.compile_sequence(&left)?;
-            self.compile_sequence(&right)?;
+            self.compile_operand_slice(&left)?;
+            self.compile_operand_slice(&right)?;
             let primitive = primitive_for_binary(operator).ok_or(AnalysisError::Invariant)?;
             self.emit(ty.clone(), InstructionKind::Primitive(primitive))?;
             return Ok(ty);
@@ -2695,6 +2695,40 @@ impl Compiler<'_> {
         Ok(ty)
     }
 
+    /// Compiles one operator operand slice, publishing a recorded propagation it carries.
+    ///
+    /// The analysis records an admitted propagation seam at the operand node the lowering compiles
+    /// (`GNT-38.1-typed-error-propagation`), but a one-node operand reaches the sequence walk as a
+    /// slice the walk only descends into, so the seam is matched here before that walk runs.
+    fn compile_operand_slice(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
+        let seam = match children {
+            [only] => self.tree.node(*only).and_then(|node| {
+                self.propagation_seams
+                    .iter()
+                    .find(|(source, _, _)| source == node.span())
+                    .cloned()
+            }),
+            _ => None,
+        };
+        if let Some((_, callee, operand_type)) = seam
+            && let [only] = children
+        {
+            let payload = self
+                .body_types
+                .get(only)
+                .cloned()
+                .or_else(|| {
+                    self.tree
+                        .node(*only)
+                        .and_then(|node| literal_type(self.tree, node))
+                })
+                .unwrap_or(TypeDescriptor::UNIT);
+            self.compile_propagation(*only, payload, callee, operand_type)?;
+            return Ok(());
+        }
+        self.compile_sequence(children)
+    }
+
     fn compile_sequence(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
         // The parser leaves an operator-free `BinaryExpression` wrapper around one operand when
         // a chain folds around it (`1 + f(1) + f(2)` wraps the middle call), and that wrapper is
@@ -2707,6 +2741,11 @@ impl Compiler<'_> {
             && let Some(node) = self.tree.node(*only)
             && matches!(node.form(), SyntaxForm::BinaryExpression)
             && binary_operators(self.tree, node.children()).is_empty()
+            // A propagation operand is an operator-free `BinaryExpression` whose last child is the
+            // marker token (`GNT-38.1-typed-error-propagation`), so descending would compile only
+            // the wrapped fragment and drop the propagation. Keeping the node as the sequence makes
+            // the operand compile through `compile_expression`, which recognises its seam.
+            && !node_contains_punctuation(self.tree, node, Punctuation::Question)
             && let Some(wrapped) = single_wrapped_node(self.tree, node)
         {
             return self.compile_sequence(std::slice::from_ref(&wrapped));
