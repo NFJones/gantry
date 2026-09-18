@@ -229,6 +229,7 @@ impl ReservedWord {
             "Ok" => "Ok",
             "OperationError" => "OperationError",
             "Option" => "Option",
+            "panic" => "panic",
             "prompt" => "prompt",
             "pure" => "pure",
             "read_only" => "read_only",

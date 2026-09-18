@@ -167,6 +167,8 @@ pub enum SyntaxForm {
     ExpressionStatement,
     /// `discard` statement.
     DiscardStatement,
+    /// `panic` statement.
+    PanicStatement,
     /// `return` statement.
     ReturnStatement,
     /// `break` statement.

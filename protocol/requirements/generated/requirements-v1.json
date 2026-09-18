@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "f4dfa34f90b5785cb3def3f0dd3f535058fb0d252b12b187b2536a58f3693ae3",
-  "byte_length": 1031895,
+  "specification_sha256": "5496fb2f436083cecf6fa22c55d0ba2410eed9a5ca3ac6cc2591005d0d883b71",
+  "byte_length": 1032149,
   "line_count": 15578,
   "regions": [
     {
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8297,
-      "sha256": "0d6d1c761e38ebc96dbe9d9557af39519a19a620d1917d04725b6d07e31eedaf",
+      "sha256": "13387c3e9b9ee30c5f3d4912775528a15ab6b0cc62c4418475400d695d348605",
       "rationale": null
     },
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9501,
       "end_line": 15578,
-      "sha256": "4816089dc1af8778e6e2a9192de3480b1c264a09c3d0a2ae25b9a14fed2619d9",
+      "sha256": "062b4c533f915ad00265a9830b5af517fc189bce99a88f9baa34838f308968ea",
       "rationale": null
     }
   ],
@@ -26722,11 +26722,11 @@
       "id": "GNT-13.2",
       "span_start_line": 7359,
       "span_end_line": 7585,
-      "span_sha256": "53117ee06081e168ded8c1ffc9e52f7351b0554215ff60764e9f8495328b30ac",
+      "span_sha256": "acd0621330fbff335e265b4d50c50788b7c1f08275855dc38209cff5583f20df",
       "anchor_line": 7361,
       "body_start_line": 7362,
       "body_end_line": 7585,
-      "body_sha256": "d73883011a887deaf35b70d2e5176bb0dc3b33f944fe9a109290bb38e7c4549a",
+      "body_sha256": "4a754dc48518c0593a2bf8239b48525a6012d6a11e5f9e3131fa96af146dc02f",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42126,11 +42126,11 @@
       "id": "GNT-38.2-assertions-and-panic",
       "span_start_line": 15567,
       "span_end_line": 15570,
-      "span_sha256": "904b28be48bdc853b02325abc09b0163eb2900d8f3d7af32de4ea4cb85385a7e",
+      "span_sha256": "59103ac9ab2c7c34fcd6c12eac995aae037e991366fa3d19f5dfc88c6cc31aef",
       "anchor_line": 15568,
       "body_start_line": 15569,
       "body_end_line": 15570,
-      "body_sha256": "a5e426764781e94c1178e677d051b8fb27bd534bec5ea02ac2c11020d5c027ea",
+      "body_sha256": "eee52175d865d4adebad4f736def10ee0a8e6ea62b380f4ab182d2acca0f70c7",
       "profiles": [
         "analyzer"
       ],

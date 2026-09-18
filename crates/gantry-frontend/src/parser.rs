@@ -1572,6 +1572,23 @@ impl<'a> Machine<'a> {
                 control_boundary: false,
             });
             self.consume_current()?;
+        } else if self.at_word("panic") {
+            // `GNT-38.2-assertions-and-panic`: a panic is a statement whose operand is the
+            // message it reports, and whose path has no normal completion.
+            self.begin(SyntaxForm::PanicStatement);
+            self.tasks.push(Task::Finish);
+            self.tasks
+                .push(Task::ExpectPunctuation(Punctuation::Semicolon));
+            self.tasks
+                .push(Task::ExpectPunctuation(Punctuation::RightParenthesis));
+            self.tasks.push(Task::Expression {
+                minimum_precedence: 0,
+                mode: ExpressionMode::Ordinary,
+                control_boundary: false,
+            });
+            self.tasks
+                .push(Task::ExpectPunctuation(Punctuation::LeftParenthesis));
+            self.consume_current()?;
         } else if self.at_word("return") {
             self.begin(SyntaxForm::ReturnStatement);
             self.consume_current()?;
@@ -2532,8 +2549,8 @@ impl<'a> Machine<'a> {
 
     fn starts_statement(&mut self) -> bool {
         [
-            "let", "discard", "return", "break", "continue", "spawn", "detach", "if", "loop",
-            "while", "until", "for",
+            "let", "discard", "panic", "return", "break", "continue", "spawn", "detach", "if",
+            "loop", "while", "until", "for",
         ]
         .iter()
         .any(|word| self.at_word(word))

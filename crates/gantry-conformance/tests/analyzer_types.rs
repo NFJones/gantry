@@ -2604,6 +2604,23 @@ fn public_index_projection_operands_are_keyed() {
     }
 }
 
+/// Section 38: a panic types its operand, refuses a path the machine can reach while no panic
+/// instruction exists, and leaves the source that follows it unreachable.
+#[test]
+fn section_38_panic_positions_are_typed_and_refused() {
+    let admitted = analyze("fn boom() -> Int { panic(\"x\"); } fn main() -> Int { 0 }");
+    assert_eq!(admitted.status(), AnalysisStatus::Valid);
+    let called = analyze("fn boom() -> Int { panic(\"x\"); } fn main() -> Int { boom() }");
+    assert!(diagnostic_codes(called.diagnostics()).contains(&"panic-path-refused"));
+    let operand = analyze("fn boom() -> Int { panic(1); } fn main() -> Int { 0 }");
+    assert!(diagnostic_codes(operand.diagnostics()).contains(&"panic-path-refused"));
+    let entry = analyze("fn main() -> Int { panic(\"x\"); 1 }");
+    assert!(diagnostic_codes(entry.diagnostics()).contains(&"panic-path-refused"));
+    assert!(diagnostic_codes(entry.diagnostics()).contains(&"unreachable-source"));
+    let control = analyze("fn main() -> Int { 0 }");
+    assert_eq!(control.status(), AnalysisStatus::Valid);
+}
+
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
 /// is never coerced into it (`GNT-38.4-boundaries-durability-and-non-claims`).
 #[test]

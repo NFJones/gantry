@@ -1567,6 +1567,7 @@ pub(crate) fn check_package_bodies(
                 .cloned(),
         );
         context.expression_types.borrow_mut().clear();
+        refuse_unlowered_panics(sources, structure, &context, diagnostics)?;
         Ok(BodyAnalysis {
             expression_types,
             struct_fields,
@@ -1589,6 +1590,75 @@ pub(crate) fn check_package_bodies(
     })();
     *generic_analysis_counters = context.generic_analysis_counters.take();
     result
+}
+
+/// Refuses every source panic whose enclosing declaration the machine could reach, because no
+/// panic instruction exists yet (`GNT-38.2-assertions-and-panic`).
+fn refuse_unlowered_panics(
+    sources: &[ParsedSource],
+    structure: &PackageStructure,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let entry = structure
+        .symbols()
+        .iter()
+        .find(|symbol| symbol.kind == SymbolKind::Function && symbol.path.as_str() == "crate::main")
+        .and_then(|symbol| context.callable_sources.get(&symbol.id).cloned());
+    let mut called = BTreeSet::new();
+    for draft in context.effect_drafts.borrow().values() {
+        for callee in &draft.calls {
+            if let EffectNode::Source(span) = callee {
+                called.insert(span.clone());
+            }
+        }
+    }
+    for source in sources {
+        let mut parents = BTreeMap::<NodeId, NodeId>::new();
+        for (index, node) in source.tree().nodes().iter().enumerate() {
+            let parent = NodeId::from_index(index);
+            for child in node.children() {
+                parents.insert(*child, parent);
+            }
+        }
+        for (index, node) in source.tree().nodes().iter().enumerate() {
+            if !matches!(node.form(), SyntaxForm::PanicStatement) {
+                continue;
+            }
+            let mut ancestor = parents.get(&NodeId::from_index(index)).copied();
+            let mut enclosing = None;
+            while let Some(current) = ancestor {
+                let current_node = source
+                    .tree()
+                    .node(current)
+                    .ok_or(AnalysisError::Invariant)?;
+                if matches!(
+                    current_node.form(),
+                    SyntaxForm::FunctionDeclaration
+                        | SyntaxForm::MethodDeclaration
+                        | SyntaxForm::TraitMethodDeclaration
+                        | SyntaxForm::ActionDeclaration
+                ) {
+                    enclosing = Some(current_node.span().clone());
+                    break;
+                }
+                ancestor = parents.get(&current).copied();
+            }
+            let reachable = enclosing
+                .as_ref()
+                .is_some_and(|span| Some(span) == entry.as_ref() || called.contains(span));
+            if reachable {
+                diagnostics.push(body_diagnostic(
+                    "panic-path-refused",
+                    DiagnosticCategory::Type,
+                    "a panic path the machine can reach has no instruction yet",
+                    node.span().clone(),
+                    [("reason", "lowering-unavailable")],
+                )?);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn collect_concrete_callable_metadata(
@@ -3025,6 +3095,31 @@ fn check_block(
                     context,
                     diagnostics,
                 )?;
+                reachable = false;
+            }
+            SyntaxForm::PanicStatement => {
+                let expression = direct_child_form(tree, child_node, SyntaxForm::Expression)
+                    .ok_or(AnalysisError::Invariant)?;
+                let actual = infer_expression(
+                    tree,
+                    expression,
+                    facts,
+                    &environment,
+                    None,
+                    context,
+                    diagnostics,
+                )?
+                .unwrap_or(TypeDescriptor::UNIT);
+                if actual != TypeDescriptor::STRING {
+                    diagnostics.push(body_diagnostic(
+                        "panic-path-refused",
+                        DiagnosticCategory::Type,
+                        "a panic operand is not its message string",
+                        child_node.span().clone(),
+                        [("reason", "operand-type")],
+                    )?);
+                }
+                // A panic has no normal completion, so every following statement is unreachable.
                 reachable = false;
             }
             SyntaxForm::BreakStatement | SyntaxForm::ContinueStatement => {
