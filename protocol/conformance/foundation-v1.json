@@ -42,7 +42,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-   "sha256": "347102b86790aa1587fbfedb48958cfab028acc78be2054189420ecf61c9047d"
+   "sha256": "dfdb92cae75fc8afa790313ac7181423252d985ca0a8429e642f13aaad7192a7"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
@@ -246,7 +246,7 @@
   },
   {
    "path": "protocol/conformance/combined-gate-v1.json",
-   "sha256": "6ea0fb91cad035592827af1dddfa7431c9220b6b6588eda427f304423978f32e"
+   "sha256": "5bdc54640f6970ee6c90af4613e260b25b841e7051d2318e350abbdfc693f6f1"
   },
   {
    "path": "protocol/conformance/concurrent-executor-v1.json",
@@ -254,7 +254,7 @@
   },
   {
    "path": "protocol/conformance/concurrent-gate-v1.json",
-   "sha256": "7ef5c6c0fc4e629749ca4e810adfdaf52ebacfac0f8ad16f9d9649ef1d16d75d"
+   "sha256": "93c6b24a1a06827b84beae5ad4990fdffcb5d37f0e3235fadcb0a84e31d1b62c"
   },
   {
    "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
@@ -278,7 +278,7 @@
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "f3d5cde0ff3263a515a41864b583054480fceb074664baa418422037d2a01cd2"
+   "sha256": "1c19cfe993dd8f807215beb175f6baeaf033c1087ac3edd32a576245ea3c0469"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",
@@ -310,7 +310,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "a3dc9df91bd72144a733384686e8f1ee3b11662773992c8f5f752fed814ef7ae"
+   "sha256": "fd288a64c7ffd6d5b0d29073c42e95daff63014751efb0f3a62c4d3c534d9430"
   },
   {
    "path": "protocol/conformance/sequential-machine-v1.json",

@@ -2006,6 +2006,18 @@ pub(crate) fn annotation_is_contextual_self(tree: &SyntaxTree, id: NodeId) -> bo
     }
 }
 
+/// Reports whether one type annotation mentions the uninhabited type word anywhere within it.
+fn annotation_retains_never(tree: &SyntaxTree, annotation: &gantry_frontend::SyntaxNode) -> bool {
+    if direct_reserved_word(tree, annotation).as_deref() == Some("Never") {
+        return true;
+    }
+    annotation
+        .children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .any(|child| annotation_retains_never(tree, child))
+}
+
 fn validate_shared_receiver_declarations(
     sources: &[ParsedSource],
     diagnostics: &mut Vec<StructuredDiagnostic>,
@@ -2820,6 +2832,15 @@ fn check_callable(
         },
         None => TypeDescriptor::UNIT,
     };
+    // A result annotation that mentions `Never` but is not the literal word has no resolved
+    // shape the refusal publishes, so the body check must not compare against a fallback `Unit`.
+    let result_refused = result_type_node.is_some_and(|type_node| {
+        facts.get(&type_node).is_none()
+            && tree.node(type_node).is_some_and(|annotation| {
+                annotation_retains_never(tree, annotation)
+                    && direct_reserved_word(tree, annotation) != Some("Never".to_owned())
+            })
+    });
     let block = node
         .children()
         .iter()
@@ -2839,7 +2860,7 @@ fn check_callable(
         diagnostics,
     )?;
 
-    if let Some(actual) = completion.trailing {
+    if !result_refused && let Some(actual) = completion.trailing {
         require_type(
             &result,
             &actual,
@@ -2849,7 +2870,7 @@ fn check_callable(
                 .clone(),
             diagnostics,
         )?;
-    } else if result != TypeDescriptor::UNIT && completion.falls_through {
+    } else if !result_refused && result != TypeDescriptor::UNIT && completion.falls_through {
         diagnostics.push(body_diagnostic(
             "missing-result",
             DiagnosticCategory::ControlFlow,

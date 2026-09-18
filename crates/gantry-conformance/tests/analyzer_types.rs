@@ -2625,6 +2625,26 @@ fn section_38_never_positions_are_refused() {
     assert!(diagnostic_codes(binding.diagnostics()).contains(&"type-mismatch"));
     let control = analyze("fn main() -> Int { 0 }");
     assert_eq!(control.status(), AnalysisStatus::Valid);
+    // The refined rows report the declared uninhabited type, not a fallback `Unit`.
+    fn field_of<'a>(
+        diagnostics: &'a [gantry::source::StructuredDiagnostic],
+        code: &str,
+        field: &str,
+    ) -> Option<&'a str> {
+        diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == code)
+            .and_then(|diagnostic| diagnostic.fields.get(field))
+            .map(|value| value.as_ref())
+    }
+    assert_eq!(
+        field_of(signature.diagnostics(), "type-mismatch", "expected"),
+        Some("Never")
+    );
+    // A nested refused result spelling publishes its refusal and no fallback mismatch.
+    let nested_signature = analyze("fn nested() -> List<Never> { 0 } fn main() -> Int { 0 }");
+    assert!(diagnostic_codes(nested_signature.diagnostics()).contains(&"never-signature-refused"));
+    assert!(!diagnostic_codes(nested_signature.diagnostics()).contains(&"type-mismatch"));
 }
 
 /// A refused operator publishes exactly one diagnostic.
