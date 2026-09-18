@@ -2900,11 +2900,11 @@ fn section_38_propagation_operands_are_refused() {
     assert_eq!(count, 2);
 }
 
-/// Section 38: a conversion is declared by one implementation of the reserved `ErrorConversion`
-/// trait whose receiver names one concrete error type; two methods or an open receiver are
-/// refused (`GNT-38.1-typed-error-propagation`).
+/// Section 38: a conversion is declared by one implementation of the conversion trait
+/// `ErrorConversion` whose receiver names one concrete error type; two methods or an open
+/// receiver are refused (`GNT-38.1-typed-error-propagation`).
 #[test]
-fn section_38_conversion_declarations_are_reserved_trait_implementations() {
+fn section_38_conversion_declarations_are_declared_trait_implementations() {
     let admitted = analyze(
         "trait ErrorConversion { pure fn convert(self) -> String; } struct E {} impl ErrorConversion for E { pure fn convert(self) -> String { \"x\" } } fn main() -> Int { 0 }",
     );
@@ -2912,7 +2912,12 @@ fn section_38_conversion_declarations_are_reserved_trait_implementations() {
     let two = analyze(
         "trait ErrorConversion { pure fn convert(self) -> String; } struct E {} impl ErrorConversion for E { pure fn a(self) -> String { \"x\" } pure fn b(self) -> String { \"y\" } } fn main() -> Int { 0 }",
     );
-    assert!(diagnostic_codes(two.diagnostics()).contains(&"error-conversion-refused"));
+    let two_refusal = two
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "error-conversion-refused")
+        .unwrap_or_else(|| panic!("the two-method declaration is refused"));
+    assert!(two_refusal.fields.is_empty());
     let open = analyze(
         "trait ErrorConversion { pure fn convert(self) -> String; } struct G<T> { v: T } impl<T> ErrorConversion for G<T> { pure fn convert(self) -> String { \"x\" } } fn main() -> Int { 0 }",
     );
