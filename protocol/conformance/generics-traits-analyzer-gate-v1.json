@@ -26,7 +26,7 @@
   },
   {
    "path": "crates/gantry-analysis/src/types.rs",
-   "sha256": "075ebf5a0cb0d455576805771d58eb35e9c28eaca2298de7c2229553dda898a6"
+   "sha256": "745de4113a88fe76fc8b7530577fb38f3405889fbeb04d5d0ec08a9d50e34fe9"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
@@ -38,7 +38,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-   "sha256": "ce60e4463f2f22589a35a49aca28cf737aff4b5fdd9d8e121ae6cf095e31e9d7"
+   "sha256": "6d834bc5d96652921d4f30b874bcf62a9b9a0d93ef55439cba473bfdf0c04d4c"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",

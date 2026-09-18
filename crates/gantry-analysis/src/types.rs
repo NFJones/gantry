@@ -882,7 +882,15 @@ fn resolve_source_types(
             && let Some(fact) =
                 enclosing_implementation_receiver(source.tree(), id, &parents, &resolved)
         {
-            resolved.insert(id, fact);
+            // The descriptor comes from the receiver, but the fact's span is this annotation's own
+            // (`TypeFact` promises the exact span of the complete type annotation).
+            resolved.insert(
+                id,
+                TypeFact {
+                    span: node.span().clone(),
+                    descriptor: fact.descriptor,
+                },
+            );
             continue;
         }
         if let Some(descriptor) = resolve_type_node(

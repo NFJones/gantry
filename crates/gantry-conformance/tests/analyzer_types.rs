@@ -8287,6 +8287,63 @@ fn public_unresolved_type_annotations_are_refused_without_internal_failure() {
 }
 
 #[test]
+fn public_self_annotations_keep_their_own_spans() {
+    // A `Self` annotation's fact belongs to the annotation, not to the implementation receiver it
+    // borrows its descriptor from (`TypeFact` promises the exact span of the complete annotation),
+    // so each `Self` position carries its own fact and the receiver keeps its own span.
+    let root = TempDirectory::new();
+    let source = "trait R { pure fn same(self, other: Self) -> Self; } struct S {} impl R for S { fn same(self, other: Self) -> Self { other } } fn main() -> Int { let s: S = S {}; let t: S = s.same(s); 1 }";
+    root.write(source);
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+    let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+        panic!("source: {source}; type analysis failed internally: {error:?}")
+    });
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "source: {source}; diagnostics: {:?}",
+        admitted.diagnostics()
+    );
+    let annotated = admitted
+        .types()
+        .iter()
+        .filter(|fact| {
+            let (Ok(start), Ok(end)) = (
+                usize::try_from(fact.span.bytes().start()),
+                usize::try_from(fact.span.bytes().end()),
+            ) else {
+                return false;
+            };
+            source.as_bytes().get(start..end) == Some(b"Self".as_slice())
+        })
+        .count();
+    assert_eq!(
+        annotated, 2,
+        "the implementation's parameter and result each carry their own `Self` fact"
+    );
+    // The implementation receiver keeps its own facts: the seeded annotations must not have taken
+    // the receiver's span for themselves.
+    let receivers = admitted
+        .types()
+        .iter()
+        .filter(|fact| {
+            let (Ok(start), Ok(end)) = (
+                usize::try_from(fact.span.bytes().start()),
+                usize::try_from(fact.span.bytes().end()),
+            ) else {
+                return false;
+            };
+            source.as_bytes().get(start..end) == Some(b"S".as_slice())
+        })
+        .count();
+    assert!(
+        receivers >= 2,
+        "the implementation receiver keeps its own `S` facts"
+    );
+}
+
+#[test]
 fn public_literal_receiver_index_projections_are_lowered_and_typed() {
     let root = TempDirectory::new();
     for (source, index) in [
