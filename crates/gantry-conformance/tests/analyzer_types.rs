@@ -2785,6 +2785,25 @@ fn section_38_divergent_branches_and_loops_are_admitted() {
         "fn main() -> Int { let o: Option<Int> = Some(1); let x: Int = match o { Some(v) => v, None => 0 }; x }",
     );
     assert_eq!(values.status(), AnalysisStatus::Valid);
+
+    // A non-returning statement is not an expression, so it cannot appear as a match arm: the
+    // expression-level divergence carrier this phase would need does not exist yet.
+    let root = TempDirectory::new();
+    root.write(
+        "fn main() -> Int { let o: Option<Int> = Some(1); let x: Int = match o { Some(v) => v, None => panic(\"b\") }; x }",
+    );
+    let phase = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    assert_eq!(
+        phase.status(),
+        gantry::frontend::PackageSyntaxStatus::Invalid
+    );
+
+    // A nested all-divergent branch exercises the same completion rule one level deeper.
+    let nested = analyze(
+        "fn nest(a: Bool, b: Bool) -> Int { if a { if b { panic(\"x\"); } else { return 1; } } else { panic(\"y\"); } } fn main() -> Int { nest(true, false) }",
+    );
+    assert_eq!(nested.status(), AnalysisStatus::Valid);
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
