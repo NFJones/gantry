@@ -2834,7 +2834,9 @@ fn section_38_propagation_operands_are_refused() {
         Some("Result<Int,String>")
     );
 
-    // A non-`Result` operand is refused by the same code.
+    // A non-`Result` operand is refused by the same code. The `operand` field reports the
+    // fallback `Unit` here because the analyzer records no fact for a bare literal operand;
+    // the field becomes exact when payload typing records the marker expression's own type.
     let literal = analyze("fn main() -> Int { let v: Int = 1?; v }");
     assert!(diagnostic_codes(literal.diagnostics()).contains(&"error-propagation-refused"));
 

@@ -3137,8 +3137,8 @@ Task handles are governed by Section 10 and are not source values.
    workflow, source constructor, or `attempt` expression. Gantry MUST NOT
    convert an operation failure into `Err` except at an explicit `attempt`
    expression under item 9. Journal failure, internal invariant failure, and
-   deterministic evaluation failure are never converted. V1 has no `?`
-   operator or implicit result propagation.
+   deterministic evaluation failure are never converted. V1 has no implicit
+   result propagation: the explicit `?` form is governed by `GNT-38.1`.
    When an operation's declared output type is `Result<T,E>`, an accepted,
    validated `Err(E)` hook output is an ordinary successful operation value.
    It does not represent a hook decline or failure, does not consume an
@@ -7879,7 +7879,7 @@ postfix_expression      = primary_expression, { postfix_suffix } ;
 postfix_suffix          = ".", postfix_member_name
                         | explicit_type_arguments
                         | "(", [ argument_list ], ")"
-                        | "[", expression, "]" ;
+                        | "[", expression, "]" | "?" ;
 postfix_member_name     = identifier_token | "join" ;
 explicit_type_arguments = "::", type_argument_list ;
 applied_item_path       = qualified_path, [ explicit_type_arguments ] ;

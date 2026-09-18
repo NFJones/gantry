@@ -2888,12 +2888,23 @@ fn check_callable(
     )?;
 
     if let Some(operand) = propagation_operand(tree, block) {
-        let operand_type = context
-            .expression_types
-            .borrow()
-            .get(&operand)
-            .cloned()
-            .unwrap_or(TypeDescriptor::UNIT);
+        // The marker-carrying expression carries the operand's type once its own inference runs;
+        // a literal operand has no fact of its own, so its child fact is the fallback.
+        let operand_type = {
+            let facts = context.expression_types.borrow();
+            facts
+                .get(&operand)
+                .cloned()
+                .or_else(|| {
+                    tree.node(operand).and_then(|node| {
+                        node.children()
+                            .iter()
+                            .copied()
+                            .find_map(|child| facts.get(&child).cloned())
+                    })
+                })
+                .unwrap_or(TypeDescriptor::UNIT)
+        };
         diagnostics.push(body_diagnostic(
             "error-propagation-refused",
             DiagnosticCategory::Type,
