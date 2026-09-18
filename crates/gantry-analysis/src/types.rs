@@ -3181,6 +3181,68 @@ fn main(flag: Bool) -> Int {
     }
 
     #[test]
+    fn receivers_with_escaped_parameters_are_refused_without_aborting_analysis() {
+        let invalid = analyze(
+            "trait Label { pure fn label(self) -> String; }\nstruct Envelope<T> { value: T }\nimpl Label for Envelope<T> { pure fn label(self) -> String { \"label\" } }\nfn main() {}",
+        );
+        assert_eq!(
+            invalid.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            invalid.diagnostics()
+        );
+        assert!(
+            invalid
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "escaped-type-parameter"),
+            "{:?}",
+            invalid.diagnostics()
+        );
+        assert!(invalid.implementation_heads().is_empty());
+
+        let conversion = analyze(
+            "trait ErrorConversion<X> { pure fn convert(self) -> X; }\nstruct Envelope<T> { value: T }\nimpl ErrorConversion<Int> for Envelope<T> { pure fn convert(self) -> Int { 0 } }\nfn main() {}",
+        );
+        assert_eq!(
+            conversion.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            conversion.diagnostics()
+        );
+        assert!(
+            conversion
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "escaped-type-parameter"),
+            "{:?}",
+            conversion.diagnostics()
+        );
+
+        let declared = analyze(
+            "trait Label { pure fn label(self) -> String; }\nstruct Envelope<T> { value: T }\nimpl<T> Label for Envelope<T> { pure fn label(self) -> String { \"label\" } }\nfn main() {}",
+        );
+        assert_eq!(
+            declared.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            declared.diagnostics()
+        );
+        assert_eq!(declared.implementation_heads().len(), 1);
+
+        let closed = analyze(
+            "trait Label { pure fn label(self) -> String; }\nstruct Envelope<T> { value: T }\nimpl Label for Envelope<Int> { pure fn label(self) -> String { \"label\" } }\nfn main() {}",
+        );
+        assert_eq!(
+            closed.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            closed.diagnostics()
+        );
+        assert_eq!(closed.implementation_heads().len(), 1);
+    }
+
+    #[test]
     fn overlapping_trait_implementations_are_source_order_independent() {
         for implementations in [
             "impl<T> Label for Envelope<T> { pure fn label(self) -> String { \"generic\" } }\nimpl Label for Envelope<String> { pure fn label(self) -> String { \"specific\" } }",

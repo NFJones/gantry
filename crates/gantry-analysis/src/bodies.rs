@@ -5930,10 +5930,12 @@ fn method_receiver_type(
     let Some(receiver_node) = direct_child_form(tree, implementation, SyntaxForm::ValueType) else {
         return Ok(None);
     };
-    let expression = tree
+    let Some(expression) = tree
         .node(receiver_node)
         .and_then(|node| context.generic_types.get(node.span()))
-        .ok_or(AnalysisError::Invariant)?;
+    else {
+        return Ok(None);
+    };
     context
         .current_type_substitution
         .borrow()
