@@ -2806,10 +2806,6 @@ fn section_38_divergent_branches_and_loops_are_admitted() {
     assert_eq!(nested.status(), AnalysisStatus::Valid);
 }
 
-/// Section 38: a propagation operand has no exactly one declared conversion while no
-/// error-conversion contract is published, so every operand is refused with its types named
-/// (`GNT-38.1-typed-error-propagation`).
-///
 /// Section 38: an operand whose error type has exactly one declared conversion is admitted, the
 /// marker observes the operand's `Ok` payload, and the conversion method is lowered with the
 /// enclosing callable (`GNT-38.1-typed-error-propagation`). The admitted program also proves the
@@ -2840,6 +2836,20 @@ fn section_38_propagation_operands_with_one_declared_conversion_are_admitted() {
     assert!(diagnostic_codes(refused.diagnostics()).contains(&"error-propagation-refused"));
 }
 
+/// Section 38: an effectful conversion is not admitted, because the increment publishes pure
+/// conversions only and would otherwise omit the conversion call's effects from the enclosing
+/// body's row (`GNT-38.1-typed-error-propagation`).
+#[test]
+fn section_38_effectful_conversion_operands_are_refused() {
+    let effectful = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { fn convert(self) -> F { F {} } } fn inner_ok() -> Result<Int, E> { Ok(1) } fn outer_ok() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v + 1) } fn main() -> Int { 0 }",
+    );
+    assert!(diagnostic_codes(effectful.diagnostics()).contains(&"error-propagation-refused"));
+}
+
+/// Section 38: a propagation operand has no exactly one declared conversion while no
+/// error-conversion contract is published, so every operand is refused with its types named
+/// (`GNT-38.1-typed-error-propagation`).
 #[test]
 fn section_38_propagation_operands_are_refused() {
     let refused = analyze(
