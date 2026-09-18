@@ -90,6 +90,8 @@ pub enum ErrorSemanticsDiagnosticCode {
     ErrorConversionRefused,
     /// A propagation operand without exactly one declared conversion.
     ErrorPropagationRefused,
+    /// A form converting one failure channel into another.
+    FailureChannelConversionRefused,
     /// A `Never` position in a boundary declaration.
     NeverBoundaryRefused,
     /// A `Never` component in durable state.
@@ -102,10 +104,11 @@ pub enum ErrorSemanticsDiagnosticCode {
 
 impl ErrorSemanticsDiagnosticCode {
     /// Every refusal condition, in wire-name order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::DivergenceUnconstrained,
         Self::ErrorConversionRefused,
         Self::ErrorPropagationRefused,
+        Self::FailureChannelConversionRefused,
         Self::NeverBoundaryRefused,
         Self::NeverDurableRefused,
         Self::PanicFrameLimit,
@@ -118,6 +121,7 @@ impl ErrorSemanticsDiagnosticCode {
             Self::DivergenceUnconstrained => "divergence-unconstrained",
             Self::ErrorConversionRefused => "error-conversion-refused",
             Self::ErrorPropagationRefused => "error-propagation-refused",
+            Self::FailureChannelConversionRefused => "failure-channel-conversion-refused",
             Self::NeverBoundaryRefused => "never-boundary-refused",
             Self::NeverDurableRefused => "never-durable-refused",
             Self::PanicFrameLimit => "panic-frame-limit",
@@ -131,6 +135,7 @@ impl ErrorSemanticsDiagnosticCode {
             Self::ErrorPropagationRefused | Self::ErrorConversionRefused => {
                 "GNT-38.1-typed-error-propagation"
             }
+            Self::FailureChannelConversionRefused => "GNT-38.0-error-and-divergence-scope",
             Self::PanicPathRefused | Self::PanicFrameLimit => "GNT-38.2-assertions-and-panic",
             Self::DivergenceUnconstrained => "GNT-38.3-divergence-and-never",
             Self::NeverBoundaryRefused | Self::NeverDurableRefused => {
@@ -150,6 +155,9 @@ impl ErrorSemanticsDiagnosticCode {
             }
             Self::ErrorPropagationRefused => {
                 "a propagation operand has no exactly one declared conversion"
+            }
+            Self::FailureChannelConversionRefused => {
+                "a form converts one failure channel into another"
             }
             Self::NeverBoundaryRefused => "a boundary declaration names the uninhabited type",
             Self::NeverDurableRefused => "durable state would carry a Never component",

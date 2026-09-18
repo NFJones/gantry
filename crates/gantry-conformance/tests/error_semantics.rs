@@ -88,6 +88,30 @@ fn section_38_anchors_and_nonclaims_are_published() {
         specification.contains("no implicit `Never` subtyping"),
         "the section must publish its non-claims"
     );
+    for clause in ERROR_SEMANTICS_CLAUSES {
+        assert!(
+            ErrorSemanticsDiagnosticCode::ALL
+                .iter()
+                .any(|code| code.requirement() == clause),
+            "the clause {clause} owns no frozen diagnostic"
+        );
+    }
+    let start = match specification.find("<a id=\"GNT-38.0-error-and-divergence-scope\"></a>") {
+        Some(position) => position,
+        None => panic!("Section 38.0 must be published"),
+    };
+    let end = match specification[start..].find("<a id=\"GNT-38.1-typed-error-propagation\"></a>") {
+        Some(offset) => start + offset,
+        None => panic!("Section 38.1 must be published"),
+    };
+    let scope = &specification[start..end];
+    for code in ErrorSemanticsDiagnosticCode::ALL {
+        assert!(
+            scope.contains(&format!("`{}`", code.as_str())),
+            "the scope clause does not list the frozen diagnostic {}",
+            code.as_str()
+        );
+    }
 }
 
 #[test]
