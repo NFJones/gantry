@@ -2884,6 +2884,25 @@ fn section_38_refused_literal_operands_name_their_own_type() {
     }
 }
 
+#[test]
+fn section_38_effectful_conversion_contracts_require_a_pure_impl() {
+    let prelude = "struct E {} struct F {} fn inner_ok() -> Result<Int, E> { Ok(1) } ";
+    let effectful = "trait ErrorConversion { fn convert(self) -> F effects { prompt }; } impl ErrorConversion for E { fn convert(self) -> F { F {} } } fn outer() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v) } fn main() -> Int { 0 }";
+    let refused = analyze(&format!("{prelude}{effectful}"));
+    assert!(
+        diagnostic_codes(refused.diagnostics()).contains(&"error-propagation-refused"),
+        "an effectful contract with an unannotated impl is refused: {:?}",
+        refused.diagnostics()
+    );
+    let pure_impl = "trait ErrorConversion { fn convert(self) -> F effects { prompt }; } impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } fn outer() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v) } fn main() -> Int { 0 }";
+    let admitted = analyze(&format!("{prelude}{pure_impl}"));
+    assert!(
+        !diagnostic_codes(admitted.diagnostics()).contains(&"error-propagation-refused"),
+        "a pure impl of an effectful contract is admitted: {:?}",
+        admitted.diagnostics()
+    );
+}
+
 /// Section 38: a place operand carries its marker exactly where its parenthesized spelling does,
 /// so a bare path is admitted in a `let` initializer, a `discard`, and a call argument
 /// (`GNT-38.1-typed-error-propagation`).
