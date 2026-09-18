@@ -2863,38 +2863,6 @@ fn admit_propagation_operand(
             )
         })
     });
-    // A member step whose fragment the operand walk resolves to the receiver's own type must not be
-    // admitted: the projection over the payload would be published without this analysis checking
-    // it, which silently accepts a member the receiver does not have
-    // (`GNT-38.1-typed-error-propagation`). A call or index step keeps its own typed route.
-    let member_step = node
-        .children()
-        .iter()
-        .take_while(|child| {
-            !tree.node(**child).is_some_and(|child| {
-                matches!(
-                    child.form(),
-                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
-                )
-            })
-        })
-        .filter_map(|child| tree.node(*child))
-        .any(|child| {
-            matches!(child.form(), SyntaxForm::PostfixExpression)
-                && child
-                    .children()
-                    .iter()
-                    .filter_map(|inner| tree.node(*inner))
-                    .any(|inner| {
-                        matches!(
-                            inner.form(),
-                            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
-                        )
-                    })
-        });
-    if member_step {
-        return Ok(None);
-    }
     let Some(result) = context.current_result.borrow().clone() else {
         return Ok(None);
     };
@@ -2943,40 +2911,99 @@ fn admit_propagation_operand(
     Ok(Some(payload.clone()))
 }
 
-/// Returns the type of a marker operand that arrives as one wrapped path.
+/// Returns the type of a marker operand that arrives as a place or member chain.
 ///
-/// The marker step wraps the operand it follows, so a bare place operand reaches the marker as a
-/// postfix fragment holding one path. That fragment is not an expression the operand walk types on
-/// its own, and the environment names the value the path spells
-/// (`GNT-38.1-typed-error-propagation`).
+/// The marker step wraps the operand it follows, so a bare place reaches the marker as a postfix
+/// fragment over one path and a member chain reaches it as one fragment per step. Neither is an
+/// expression the operand walk types on its own, so the operand's own type is resolved here from
+/// the environment binding and the declared fields (`GNT-38.1-typed-error-propagation`). A chain
+/// whose every step resolves is the operand's type; a chain that does not resolve, or that carries
+/// a step this walk does not own, keeps the published refusal.
 fn wrapped_place_operand(
     tree: &SyntaxTree,
     expression: NodeId,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
-) -> Option<TypeDescriptor> {
-    let node = tree.node(expression)?;
-    let marker = node.children().iter().position(|child| {
+    context: &BodyContext,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let node = tree.node(expression).ok_or(AnalysisError::Invariant)?;
+    let Some(marker) = node.children().iter().position(|child| {
         tree.node(*child).is_some_and(|child| {
             matches!(
                 child.form(),
                 SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
             )
         })
-    })?;
-    let operand = *node.children().get(marker.checked_sub(1)?)?;
-    let wrapped = tree.node(operand)?;
-    if !matches!(wrapped.form(), SyntaxForm::PostfixExpression) {
-        return None;
+    }) else {
+        return Ok(None);
+    };
+    let operand = node.children().get(..marker).unwrap_or_default();
+    if operand.is_empty() {
+        return Ok(None);
     }
-    // The fragment must hold the place alone. A fragment that carries a further step (member,
-    // index, or call) would need that step typed over the operand's own type, and resolving the
-    // receiver instead would admit a projection nobody checked, so those shapes keep the refusal.
-    if wrapped.children().len() != 1 {
-        return None;
+    if let Some((root, members)) = postfix_field_sequence(tree, operand) {
+        let Some(mut receiver) = environment.get(&root).cloned() else {
+            return Ok(None);
+        };
+        for (member, _) in &members {
+            let Some(field) = projected_member_type(&receiver, member.as_ref(), context)? else {
+                return Ok(None);
+            };
+            receiver = field;
+        }
+        return Ok(Some(receiver));
     }
-    let path = wrapped.children().first().copied()?;
-    let name = direct_identifier(tree, path).ok()??;
-    environment.get(&name).cloned()
+    // A bare place arrives as one fragment over one path, which the field sequence above does not
+    // describe.
+    if let [only] = operand
+        && let Some(wrapped) = tree.node(*only)
+        && matches!(wrapped.form(), SyntaxForm::PostfixExpression)
+        && let [path] = wrapped.children()
+        && let Some(name) = direct_identifier(tree, *path).ok().flatten()
+        && let Some(ty) = environment.get(&name)
+    {
+        return Ok(Some(ty.clone()));
+    }
+    Ok(None)
+}
+
+/// Reports whether a marker node carries a member step before its marker token.
+///
+/// The operand walk types such a fragment as the receiver itself, so a member operand is resolved
+/// through the place walk instead of that typing (`GNT-38.1-typed-error-propagation`).
+fn marker_member_step(tree: &SyntaxTree, expression: NodeId) -> bool {
+    let Some(node) = tree.node(expression) else {
+        return false;
+    };
+    // The predicate is about a marker node only: a node that carries no marker token keeps the
+    // walk's own typing, member step or not.
+    let Some(marker) = node.children().iter().position(|child| {
+        tree.node(*child).is_some_and(|child| {
+            matches!(
+                child.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+            )
+        })
+    }) else {
+        return false;
+    };
+    node.children()
+        .get(..marker)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .any(|child| {
+            matches!(child.form(), SyntaxForm::PostfixExpression)
+                && child
+                    .children()
+                    .iter()
+                    .filter_map(|inner| tree.node(*inner))
+                    .any(|inner| {
+                        matches!(
+                            inner.form(),
+                            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+                        )
+                    })
+        })
 }
 
 /// Returns the type of a node holding one literal token.
@@ -6403,13 +6430,18 @@ fn infer_expression(
         context,
         diagnostics,
     )?;
-    // A place operand reaches its marker as the postfix fragment the marker step wrapped it in, a
-    // shape the operand walk does not type on its own, so the operand's own type is resolved here:
-    // the fragment wraps one path and the environment names the value it spells
-    // (`GNT-38.1-typed-error-propagation`). A parenthesized, call, or member operand already has
-    // its type above, and every other shape keeps the published refusal.
+    // A place operand reaches its marker as the postfix fragments the marker step wrapped it in, a
+    // shape the operand walk does not type: the fragment of a bare place holds one path and a
+    // member chain holds one fragment per step, so the operand's own type is resolved here from the
+    // environment binding and the declared fields (`GNT-38.1-typed-error-propagation`). A member
+    // operand must be resolved this way rather than by that walk, which types the fragment as the
+    // receiver itself and would admit a projection nobody checked. A parenthesized or call operand
+    // already has its type above, and every shape that does not resolve keeps the published refusal.
+    if marker_member_step(tree, expression) {
+        inferred = None;
+    }
     if inferred.is_none() {
-        inferred = wrapped_place_operand(tree, expression, environment);
+        inferred = wrapped_place_operand(tree, expression, environment, context)?;
     }
     if let Some(operand_type) = inferred.clone()
         && let Some(payload) = admit_propagation_operand(tree, expression, &operand_type, context)?

@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "crates/gantry-analysis/src/bodies.rs",
-   "sha256": "f1782a0f9e6d6d7e3616c3d09ed0d7aa1e705eeafdb7bf08684eeb7ef9f15071"
+   "sha256": "c00a568de0d2ca79cb59bebbe0f4c44ec9ef3c06d0528a8def22f117042564d1"
   },
   {
    "path": "crates/gantry-analysis/src/capabilities.rs",
@@ -38,7 +38,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-   "sha256": "8b66c186db0cdaddd6b44f0f8b1ea6c8630d825daf89467bbd87edfe79411345"
+   "sha256": "46aeea9eba9cf7d9482b515a673e55cf571a9b0be86ef8e7c91e9badb30a562b"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",

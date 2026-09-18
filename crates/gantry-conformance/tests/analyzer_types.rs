@@ -2929,6 +2929,33 @@ fn section_38_place_operands_are_admitted_like_their_parenthesized_spellings() {
             refused.diagnostics()
         );
     }
+    // A member place whose chain resolves is admitted exactly where its parenthesized spelling is,
+    // and a chain that does not resolve keeps the refusal.
+    let member_prelude = "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } struct Holder { inner: Result<Int, E>, other: Int } ";
+    for (body, admitted) in [
+        (
+            "fn outer(h: Holder) -> Result<Int, F> { let v: Int = h.inner?; Ok(v) }",
+            true,
+        ),
+        (
+            "fn outer(h: Holder) -> Result<Int, F> { discard h.inner?; Ok(0) }",
+            true,
+        ),
+        (
+            "fn outer(h: Holder) -> Result<Int, F> { let v: Int = h.other?; Ok(v) }",
+            false,
+        ),
+        (
+            "fn outer(h: Holder) -> Result<Int, F> { let v: Int = h.missing?; Ok(v) }",
+            false,
+        ),
+    ] {
+        let source = format!("{member_prelude}{body} fn main() -> Int {{ 0 }}");
+        let verdict = analyze(&source);
+        let refused =
+            diagnostic_codes(verdict.diagnostics()).contains(&"error-propagation-refused");
+        assert_eq!(!refused, admitted, "{body}: {:?}", verdict.diagnostics());
+    }
 }
 
 /// Section 38: a propagation operand has no exactly one declared conversion while no
