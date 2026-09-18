@@ -34,7 +34,7 @@
   },
   {
    "path": "protocol/conformance/async-source-lowering-v1.json",
-   "sha256": "0e38b0e7609d8144ecf3e82d9e9844aeb3406346bacacc48cc3954a1d0289135"
+   "sha256": "9b173e9e1c16569251239f97d947546e63b753112593ffc92ea6ed02255722a0"
   },
   {
    "path": "protocol/conformance/durable-coordination-v1.json",

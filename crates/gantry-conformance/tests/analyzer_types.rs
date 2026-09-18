@@ -9395,10 +9395,42 @@ fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
         );
         assert!(refused.executable_program().is_none(), "{body}");
     }
+    // An operator that consumes a list literal needs that operand to have a type of its own, so an
+    // untyped literal operand is refused (`aa68886b`). The leftmost untyped operand short-circuits
+    // the operation, so a row reports at least one literal — and never an internal failure.
+    for body in [
+        "discard ([] + []); 1",
+        "([] + []).len()",
+        "([] + []).len() + 1",
+        "(1 + []).len()",
+        "([] + [1]).len()",
+        "([[]] + [[]]).len()",
+        "(([]) + ([])).len()",
+        "([] - []).len()",
+    ] {
+        let refused = analyze(&format!("fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            !refused.diagnostics().is_empty()
+                && refused
+                    .diagnostics()
+                    .iter()
+                    .all(|diagnostic| diagnostic.code.as_str() == "untyped-list-literal"),
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert!(refused.executable_program().is_none(), "{body}");
+    }
     for body in [
         "discard []; 0",
         "let xs: List<Int> = []; xs.len()",
         "[[1], []].len()",
+        "discard ([1] == [1]); 1",
     ] {
         let admitted = analyze(&format!("fn main() -> Int {{ {body} }}"));
         assert_eq!(

@@ -8145,6 +8145,42 @@ fn infer_operand_sequence(
             return Ok(Some(value));
         }
     }
+    // An operand an operator consumes must have a type of its own, and a list literal has one only
+    // where it has members or an expected `List<T>` is known (`SPEC.md` GNT-5.4): an untyped literal
+    // operand is refused here rather than leaving the operation without one (`[] + []`,
+    // `([]) + ([])`), while a literal no operator consumes keeps its admitted spellings.
+    if operator.is_some()
+        && let Some(literal) = receiver_owns_aggregate_literal(tree, children)
+        && tree
+            .node(literal)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::ListExpression))
+    {
+        let Some(typed) = infer_list(
+            tree,
+            literal,
+            facts,
+            environment,
+            None,
+            context,
+            diagnostics,
+        )?
+        else {
+            let span = tree
+                .node(literal)
+                .ok_or(AnalysisError::Invariant)?
+                .span()
+                .clone();
+            diagnostics.push(body_diagnostic(
+                UNTYPED_LIST_LITERAL,
+                DiagnosticCategory::Type,
+                UNTYPED_LIST_LITERAL_MESSAGE,
+                span,
+                [] as [(&str, &str); 0],
+            )?);
+            return Ok(None);
+        };
+        return Ok(Some(typed));
+    }
     for child in children {
         let node = tree.node(*child).ok_or(AnalysisError::Invariant)?;
         match node.form() {
