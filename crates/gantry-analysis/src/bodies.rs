@@ -8223,6 +8223,21 @@ fn infer_operand_sequence(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    // A constructed value in an operand arrives as the constructor's name path plus the wrapper
+    // that holds its struct expression, so the declared type the path spells is the operand's own
+    // type. Only a bare construct takes this arm: a slice with member or call steps keeps the
+    // projection walks below, exactly as the lowering's split-struct head declines a stepped slice.
+    if let [path, body] = children
+        && tree
+            .node(*path)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
+        && tree
+            .node(*body)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::BinaryExpression))
+        && let Some(declared) = constructed_operand_type(tree, children, context)?
+    {
+        return Ok(Some(declared));
+    }
     if let Some((operator, index)) = direct_binary_operator_in(tree, children) {
         let left = infer_operand_sequence(
             tree,
@@ -8458,6 +8473,30 @@ fn infer_operand_projection_sequence(
         )?;
     }
     Ok(Some(field))
+}
+
+/// Resolves the declared type a constructed receiver names, when the slice builds one.
+///
+/// Resolves the declared type a bare split constructed operand names.
+///
+/// `A { v: 1 }` reaches an operand walk as the constructor's name path plus the wrapper that holds
+/// the struct expression, so the declared descriptor the path spells is the operand's type exactly
+/// as it is for the split receiver parts the projection walks already key.
+fn constructed_operand_type(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    context: &BodyContext,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let Some(path) = children.iter().copied().find(|child| {
+        tree.node(*child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
+    }) else {
+        return Ok(None);
+    };
+    let Some(name) = direct_identifiers(tree, path)?.into_iter().next() else {
+        return Ok(None);
+    };
+    constructed_receiver_type(tree, children, context, name.as_ref())
 }
 
 /// Resolves the declared type a constructed receiver names, when the slice builds one.

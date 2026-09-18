@@ -8733,6 +8733,14 @@ fn public_split_struct_operands_are_typed_and_lowered() {
             Expected::Int(1),
         ),
         (
+            "struct A { v: Int } fn main() -> Bool { A { v: 1 } == A { v: 1 } }",
+            Expected::Bool(true),
+        ),
+        (
+            "struct A { v: Int } fn main() -> Bool { A { v: 1 } != A { v: 1 } }",
+            Expected::Bool(false),
+        ),
+        (
             "struct Counter { value: Int } fn main() -> Int { (Counter { value: 5 }.value) + 1 }",
             Expected::Int(6),
         ),
@@ -8788,6 +8796,38 @@ fn public_split_struct_operands_are_typed_and_lowered() {
         assert!(
             matched,
             "source: {source}: expected {expected:?}, observed {value:?}"
+        );
+    }
+
+    // A comparison of two different declared types is not a structural comparison: it refuses with
+    // the operator's own code and publishes no program, exactly as the scalar spelling does.
+    for source in [
+        "struct A { v: Int } struct B { v: Int } fn main() -> Bool { A { v: 1 } == B { v: 1 } }",
+        "struct A { v: Int } struct B { v: Int } fn main() -> Bool { A { v: 1 } != B { v: 1 } }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-primitive"),
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "source: {source}: a refused comparison must not publish a program"
         );
     }
 }
