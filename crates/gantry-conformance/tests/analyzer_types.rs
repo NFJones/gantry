@@ -8307,11 +8307,13 @@ fn public_literal_receiver_index_projections_are_lowered_and_typed() {
 /// A computed projection receiver is lowered as the value it produces, never as a callee path.
 ///
 /// `SPEC.md` keeps `(value)` as grouping, so `(xs)[0]` and `((xs))[0]` project one element of
-/// `xs`, and a call receiver such as `head(xs)[0]` or `b.all()[0]` projects the call result. Each
-/// row below publishes the receiver value immediately before its member projection and executes to
-/// the element it names, and a receiver that is neither a list nor a tuple refuses with the
-/// published `projection-receiver-type` code instead of failing inside the evaluator
-/// (`GNT-GP-VALUE-004`).
+/// `xs`, and a call receiver such as `head(xs)[0]` or `b.all()[0]` projects the call result. A
+/// receiver part that is itself a chain (`mk().items`, `(Item { values: [1] }).values`) publishes
+/// that chain's value, the call or aggregate followed by each field step, before the member
+/// projection instead of aborting on the unkeyed receiver. Each row below publishes the receiver
+/// value immediately before its member projection and executes to the element it names, and a
+/// receiver that is neither a list nor a tuple refuses with the published
+/// `projection-receiver-type` code instead of failing inside the evaluator (`GNT-GP-VALUE-004`).
 #[test]
 fn public_computed_projection_receivers_are_lowered_and_typed() {
     use std::sync::Arc;
@@ -8350,6 +8352,9 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
         Load,
         Call,
         ReceiverCall,
+        /// A field step publishes the receiver value of a chain rooted in a constructed value or a
+        /// call result (`mk().items[0]`, `(Item { values: [1] }).values[0]`).
+        Field,
     }
 
     let root = TempDirectory::new();
@@ -8410,6 +8415,62 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
             0,
             1,
         ),
+        (
+            "struct HL { items: List<Int> } fn mk() -> HL { HL { items: [7] } } fn main() -> Int { mk().items[0] }",
+            ReceiverStep::Field,
+            Some("mk"),
+            0,
+            7,
+        ),
+        (
+            "struct HL { items: List<Int> } fn mk() -> HL { HL { items: [7] } } fn main() -> Int { (mk()).items[0] }",
+            ReceiverStep::Field,
+            Some("mk"),
+            0,
+            7,
+        ),
+        (
+            "struct HL { items: List<Int> } fn mk() -> HL { HL { items: [7, 8] } } fn main() -> Int { (mk()).items[1] }",
+            ReceiverStep::Field,
+            Some("mk"),
+            1,
+            8,
+        ),
+        (
+            "struct HL { items: List<Int> } fn mk(n: Int) -> HL { HL { items: [n] } } fn main() -> Int { (mk(7)).items[0] }",
+            ReceiverStep::Field,
+            Some("mk"),
+            0,
+            7,
+        ),
+        (
+            "struct HL { items: List<Int> } fn mk() -> HL { HL { items: [7] } } fn main() -> Int { ((mk()).items)[0] }",
+            ReceiverStep::Field,
+            Some("mk"),
+            0,
+            7,
+        ),
+        (
+            "struct Item { values: List<Int> } fn main() -> Int { Item { values: [1] }.values[0] }",
+            ReceiverStep::Field,
+            None,
+            0,
+            1,
+        ),
+        (
+            "struct Item { values: List<Int> } fn main() -> Int { (Item { values: [1] }).values[0] }",
+            ReceiverStep::Field,
+            None,
+            0,
+            1,
+        ),
+        (
+            "struct Inner { items: List<Int> } struct Outer { inner: Inner } fn mk() -> Outer { Outer { inner: Inner { items: [7] } } } fn main() -> Int { (mk()).inner.items[0] }",
+            ReceiverStep::Field,
+            Some("mk"),
+            0,
+            7,
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -8438,6 +8499,9 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
                 ReceiverStep::Call => matches!(window[0], InstructionKind::Call { .. }),
                 ReceiverStep::ReceiverCall => {
                     matches!(window[0], InstructionKind::ReceiverCall { .. })
+                }
+                ReceiverStep::Field => {
+                    matches!(window[0], InstructionKind::Project(Projection::Field(_)))
                 }
             };
             receiver_matches

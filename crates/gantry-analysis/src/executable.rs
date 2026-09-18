@@ -2014,9 +2014,19 @@ impl Compiler<'_> {
             })
         });
         if computed_receiver {
+            // A receiver part that is a computed member chain (`mk().items`,
+            // `(Item { values: [1] }).values`, `(mk()).items`) publishes its call or aggregate
+            // value and then each field step, so the index projection applies to the value that
+            // chain produces; a part those walks cannot key keeps the invariant failure.
             if self
                 .compile_computed_projection_receiver(receiver_children)?
                 .is_none()
+                && self
+                    .compile_computed_member_projection_operand(receiver_children)?
+                    .is_none()
+                && self
+                    .compile_grouped_receiver_operand(receiver_children)?
+                    .is_none()
             {
                 return Err(AnalysisError::Invariant);
             }
