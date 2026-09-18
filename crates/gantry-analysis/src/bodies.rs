@@ -2765,10 +2765,10 @@ fn propagation_operands(tree: &SyntaxTree, block: NodeId) -> Vec<NodeId> {
 /// Refuses a reserved conversion declaration that is not one total concrete-to-concrete
 /// conversion (`GNT-38.1-typed-error-propagation`).
 ///
-/// A conversion is declared by one implementation of the reserved compiler-owned trait
-/// `ErrorConversion`: it declares exactly one method and its receiver names one concrete error
-/// type, because a conversion is total on its declared domain. Every other conversion
-/// declaration is refused under `error-conversion-refused`.
+/// A conversion is declared by one implementation of the conversion trait `ErrorConversion`: it
+/// declares exactly one method, its receiver names one concrete error type, and its method
+/// returns one concrete error type, because a conversion is total on its declared domain. Every
+/// other conversion declaration is refused under `error-conversion-refused`.
 fn refuse_malformed_conversions(
     sources: &[ParsedSource],
     structure: &PackageStructure,
@@ -2830,12 +2830,35 @@ fn refuse_malformed_conversions(
                         .and_then(|node| context.generic_types.get(node.span()))
                         .map(|expression| (expression.is_closed(), expression.as_str().to_owned()))
                 });
+            let result = implementation
+                .children()
+                .iter()
+                .copied()
+                .find(|child| {
+                    tree.node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
+                })
+                .and_then(|method| {
+                    let node = tree.node(method)?;
+                    let result = node.children().iter().copied().rfind(|child| {
+                        tree.node(*child)
+                            .is_some_and(|child| matches!(child.form(), SyntaxForm::ValueType))
+                    })?;
+                    tree.node(result)
+                        .and_then(|result| context.generic_types.get(result.span()))
+                        .map(|expression| (expression.is_closed(), expression.as_str().to_owned()))
+                });
             let mut refusal = None;
             if methods != 1 {
                 refusal = Some(("a conversion declares exactly one method", None));
             } else if let Some((false, named)) = receiver {
                 refusal = Some((
                     "a conversion receiver must be one concrete error type",
+                    Some(named),
+                ));
+            } else if let Some((false, named)) = result {
+                refusal = Some((
+                    "a conversion method must return one concrete error type",
                     Some(named),
                 ));
             } else if receiver.is_none() {

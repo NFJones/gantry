@@ -2930,6 +2930,11 @@ fn section_38_conversion_declarations_are_declared_trait_implementations() {
         refusal.fields.get("type").map(|value| value.as_ref()),
         Some("crate::G<^0.0>")
     );
+    // An open method result is refused by the same rule, but no admitted spelling reaches that
+    // branch: an open result needs a binding parameter, which either the receiver rule already
+    // refuses (`impl<T> ErrorConversion for G<T>` names the parameter in its receiver) or the
+    // grammar rejects (`impl<T> ErrorConversion for E { pure fn convert(self) -> List<T> }` is a
+    // syntax refusal), so the branch is defensive and pinned by the doc comment instead.
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
