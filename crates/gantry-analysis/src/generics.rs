@@ -234,6 +234,12 @@ pub(crate) enum TypeInferenceFailure {
     /// payload is that argument's index. A callable argument at a closed parameter position
     /// contributes no constraint and is compared with its parameter type directly.
     CallableArgument(usize),
+    /// A closed parameter type that does not match its argument.
+    ///
+    /// The payload is the argument's index. A contract that declares a concrete parameter type
+    /// compares against the argument exactly as the inherent path does, so this failure is reported
+    /// as the same `call-argument-type` code instead of a substitution that did not complete.
+    ArgumentMismatch(usize),
     Conflict,
     Incomplete,
     InvalidOptionMember,

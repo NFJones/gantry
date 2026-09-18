@@ -7315,6 +7315,7 @@ fn infer_generic_struct(
                 // struct-literal inference never reaches it.
                 TypeInferenceFailure::Incomplete
                 | TypeInferenceFailure::InvalidOptionMember
+                | TypeInferenceFailure::ArgumentMismatch(_)
                 | TypeInferenceFailure::CallableArgument(_) => {
                     GenericAnalysisCode::IncompleteTypeInference
                 }
@@ -10513,6 +10514,20 @@ fn resolve_trait_method(
                 inference_failed = true;
                 let code = match error {
                     TypeInferenceFailure::Arity => GenericAnalysisCode::TypeArgumentArity,
+                    TypeInferenceFailure::ArgumentMismatch(index) => {
+                        let position = index.to_string();
+                        diagnostics.push(body_diagnostic(
+                            "call-argument-type",
+                            DiagnosticCategory::Type,
+                            "a call argument does not match the declared parameter type",
+                            source.span().clone(),
+                            [
+                                ("trait", contract.path().as_str()),
+                                ("argument", position.as_str()),
+                            ],
+                        )?);
+                        continue;
+                    }
                     TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
                         GenericAnalysisCode::ConflictingTypeInference
                     }
@@ -10784,6 +10799,13 @@ fn infer_trait_call_arguments(
                     skipped_callable_argument.get_or_insert(index);
                 }
                 continue;
+            }
+            if parameter.is_closed()
+                && TypeExpression::closed(argument, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?
+                    != parameter
+            {
+                return Err(TypeInferenceFailure::ArgumentMismatch(index));
             }
             constraints.push((
                 parameter,
@@ -11084,6 +11106,7 @@ fn infer_implementation_substitution(
             | TypeInferenceFailure::Incomplete
             | TypeInferenceFailure::InvalidOptionMember
             | TypeInferenceFailure::OccursCheck
+            | TypeInferenceFailure::ArgumentMismatch(_)
             | TypeInferenceFailure::CallableArgument(_),
         ) => return Ok(None),
     };
@@ -12051,6 +12074,7 @@ fn infer_generic_call(
                 // unreachable here.
                 TypeInferenceFailure::Incomplete
                 | TypeInferenceFailure::InvalidOptionMember
+                | TypeInferenceFailure::ArgumentMismatch(_)
                 | TypeInferenceFailure::CallableArgument(_) => {
                     GenericAnalysisCode::IncompleteTypeInference
                 }

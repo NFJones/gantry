@@ -10083,7 +10083,7 @@ fn public_untyped_list_literal_arguments_report_their_code() {
         ),
         (
             "trait T { pure fn take(self, xs: List<Int>) -> List<Int>; } struct S {} impl T for S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take(1); 1 }".to_string(),
-            "conflicting-type-inference",
+            "call-argument-type",
         ),
         (
             "struct S {} impl S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take(1); 1 }".to_string(),
