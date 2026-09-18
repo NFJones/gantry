@@ -167,6 +167,8 @@ pub enum SyntaxForm {
     ExpressionStatement,
     /// `discard` statement.
     DiscardStatement,
+    /// `assert` statement.
+    AssertionStatement,
     /// `panic` statement.
     PanicStatement,
     /// `return` statement.

@@ -2621,6 +2621,22 @@ fn section_38_panic_positions_are_typed_and_refused() {
     assert_eq!(control.status(), AnalysisStatus::Valid);
 }
 
+/// Section 38: an assertion operand is checked, a reachable one takes the staged refusal, and an
+/// uncalled declaration keeps it (`GNT-38.2-assertions-and-panic`).
+#[test]
+fn section_38_assertions_are_typed_and_refused() {
+    let admitted = analyze("fn boom() -> Int { assert(true); 1 } fn main() -> Int { 0 }");
+    assert_eq!(admitted.status(), AnalysisStatus::Valid);
+    let called = analyze("fn boom() -> Int { assert(true); 1 } fn main() -> Int { boom() }");
+    assert!(diagnostic_codes(called.diagnostics()).contains(&"panic-path-refused"));
+    let operand = analyze("fn boom() -> Int { assert(1); 1 } fn main() -> Int { 0 }");
+    assert!(diagnostic_codes(operand.diagnostics()).contains(&"panic-path-refused"));
+    let entry = analyze("fn main() -> Int { assert(true); 1 }");
+    assert!(diagnostic_codes(entry.diagnostics()).contains(&"panic-path-refused"));
+    let control = analyze("fn main() -> Int { 0 }");
+    assert_eq!(control.status(), AnalysisStatus::Valid);
+}
+
 /// Section 38: the staged panic refusal names its reason, covers generic and method callees, and
 /// the statement form requires its own semicolon (`GNT-38.2-assertions-and-panic`).
 #[test]

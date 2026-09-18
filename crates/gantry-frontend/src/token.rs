@@ -187,6 +187,7 @@ impl ReservedWord {
             "agent" => "agent",
             "agents" => "agents",
             "as" => "as",
+            "assert" => "assert",
             "attempt" => "attempt",
             "Bool" => "Bool",
             "break" => "break",

@@ -1645,7 +1645,10 @@ fn refuse_unlowered_panics(
             }
         }
         for (index, node) in source.tree().nodes().iter().enumerate() {
-            if !matches!(node.form(), SyntaxForm::PanicStatement) {
+            if !matches!(
+                node.form(),
+                SyntaxForm::PanicStatement | SyntaxForm::AssertionStatement
+            ) {
                 continue;
             }
             let mut ancestor = parents.get(&NodeId::from_index(index)).copied();
@@ -3145,6 +3148,29 @@ fn check_block(
                 }
                 // A panic has no normal completion, so every following statement is unreachable.
                 reachable = false;
+            }
+            SyntaxForm::AssertionStatement => {
+                let expression = direct_child_form(tree, child_node, SyntaxForm::Expression)
+                    .ok_or(AnalysisError::Invariant)?;
+                let actual = infer_expression(
+                    tree,
+                    expression,
+                    facts,
+                    &environment,
+                    None,
+                    context,
+                    diagnostics,
+                )?
+                .unwrap_or(TypeDescriptor::UNIT);
+                if actual != TypeDescriptor::BOOL {
+                    diagnostics.push(body_diagnostic(
+                        "panic-path-refused",
+                        DiagnosticCategory::Type,
+                        "an assertion operand is not the checked condition",
+                        child_node.span().clone(),
+                        [("reason", "operand-type")],
+                    )?);
+                }
             }
             SyntaxForm::BreakStatement | SyntaxForm::ContinueStatement => {
                 if !has_valid_loop_target(tree, child_node) {

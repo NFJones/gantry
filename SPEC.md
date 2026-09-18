@@ -7561,7 +7561,7 @@ specific to model instructions rather than introducing a second multiline
 The reserved words are:
 
 ```text
-action     agent      agents      as           attempt     Bool        break
+action     agent      agents      as           assert      attempt     Bool        break
 continue   crate      Decision      decide      default     detach
 discard
 effects    else       enum       Err         false        Float       fn          fork        if
