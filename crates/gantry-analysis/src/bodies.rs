@@ -7419,19 +7419,18 @@ fn infer_projection(
     // A receiver part that owns a constructed value (`Bag { items: [7] }.items`) carries no
     // binding root for the place and member walks. The construct's declared type is the receiver
     // of the member steps that follow, so it is typed here exactly as `infer_expression` types a
-    // constructed value: it covers the receiver of no member step (`Bag { items: [7] }[0]`) and of
-    // exactly one (`Bag { items: [7] }.items[0]`), while a longer member chain keeps the ordinary
-    // resolution exactly as it resolved before this walk learned constructed roots.
+    // constructed value: it covers the receiver of no member step (`Bag { items: [7] }[0]`) and
+    // every longer chain, whose member steps each fold against the type of the step before them
+    // (`Outer { inner: Inner { rows: [7] } }.inner.rows[0]`).
     let member_steps = receiver_children
         .iter()
         .filter(|child| node_contains_punctuation(tree, **child, Punctuation::Dot))
         .count();
     let construct = match receiver_children {
         [path, struct_expression, ..]
-            if member_steps <= 1
-                && tree
-                    .node(*path)
-                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
+            if tree
+                .node(*path)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
                 && tree
                     .node(*struct_expression)
                     .is_some_and(|node| matches!(node.form(), SyntaxForm::StructExpression)) =>
@@ -7451,7 +7450,7 @@ fn infer_projection(
     };
     let receiver = match construct {
         Some(construct) => {
-            let receiver_type = if member_steps == 1 {
+            let receiver_type = if member_steps >= 1 {
                 infer_member_sequence(
                     tree,
                     receiver_children,
@@ -8918,7 +8917,31 @@ fn infer_member_sequence(
         return Ok(None);
     };
     let receiver = if let Some(receiver) = receiver {
-        receiver
+        // A supplied receiver is the value the chain root produces, so a chain that continues past
+        // it folds every member step ahead of the one this call resolves: the `rows` of
+        // `Outer { inner: Inner { rows: [7] } }.inner.rows` keys against the type of `inner`
+        // rather than against the constructed root, exactly as a binding-rooted fold would.
+        let prefix = children.get(..dot).unwrap_or_default();
+        if prefix
+            .iter()
+            .any(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
+        {
+            match infer_member_sequence(
+                tree,
+                prefix,
+                facts,
+                environment,
+                Some(receiver),
+                None,
+                context,
+                diagnostics,
+            )? {
+                Some(folded) => folded,
+                None => return Ok(None),
+            }
+        } else {
+            receiver
+        }
     } else if let Some((root, fields)) =
         postfix_field_sequence(tree, children.get(..dot).unwrap_or_default())
     {

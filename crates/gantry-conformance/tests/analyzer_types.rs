@@ -8464,6 +8464,10 @@ fn public_literal_receiver_index_projections_are_lowered_and_typed() {
 /// value immediately before its member projection and executes to the element it names, and a
 /// receiver that is neither a list nor a tuple refuses with the published
 /// `projection-receiver-type` code instead of failing inside the evaluator (`GNT-GP-VALUE-004`).
+/// A chain of more than one member step over a constructed root
+/// (`Outer { inner: Inner { rows: [7] } }.inner.rows[0]`) keys every step against the type the step
+/// before it produced, so each intermediate member resolves in turn and the trailing index is
+/// judged against the element type instead of being left to the evaluator (`e7e735fc`).
 #[test]
 fn public_computed_projection_receivers_are_lowered_and_typed() {
     use std::sync::Arc;
@@ -8650,6 +8654,35 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
             7,
         ),
         (
+            "struct Inner { rows: List<Int> } struct Outer { inner: Inner } fn main() -> Int { Outer { inner: Inner { rows: [7] } }.inner.rows[0] }",
+            ReceiverStep::Field,
+            None,
+            0,
+            7,
+        ),
+        (
+            "struct Inner { rows: List<Int> } struct Outer { inner: Inner } fn main() -> Int { (Outer { inner: Inner { rows: [7] } }).inner.rows[0] }",
+            ReceiverStep::Field,
+            None,
+            0,
+            7,
+        ),
+        (
+            "struct Inner { rows: List<Int> } struct Outer { inner: Inner } fn main() -> Int { Outer { inner: Inner { rows: [7] } }.inner.rows[0] + 1 }",
+            ReceiverStep::Field,
+            None,
+            0,
+            8,
+        ),
+        // The value position folds the same chain: the binding holds the element the chain read.
+        (
+            "struct Inner { rows: List<Int> } struct Outer { inner: Inner } fn main() -> Int { let x: List<Int> = Outer { inner: Inner { rows: [7] } }.inner.rows; x[0] }",
+            ReceiverStep::Load,
+            None,
+            0,
+            7,
+        ),
+        (
             "fn main() -> Int { let t: Tuple<Int, Int> = (1, 2); t[1] }",
             ReceiverStep::Load,
             None,
@@ -8758,6 +8791,14 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
             "Int",
         ),
         (
+            "struct Inner { rows: List<Int> } struct Outer { inner: Inner } fn main() -> Int { Outer { inner: Inner { rows: [7] } }.inner.rows[0][0] }",
+            "Int",
+        ),
+        (
+            "struct Inner { rows: List<Int> } struct Outer { inner: Inner } fn main() -> Int { Outer { inner: Inner { rows: [7] } }.inner[0] }",
+            "crate::Inner",
+        ),
+        (
             "struct Bag { items: List<Int> } fn main() -> Int { Bag { items: [7] }[0] }",
             "crate::Bag",
         ),
@@ -8804,6 +8845,39 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
             "source: {source}: a refused receiver must not publish a program"
         );
     }
+
+    // A member the fold cannot key names the receiver the step before it produced, so a wrong
+    // member of a multi-step constructed chain is attributed to the intermediate type rather than
+    // to the constructed root.
+    let source = "struct Inner { rows: Int } struct Outer { inner: Inner } fn main() -> Int { Outer { inner: Inner { rows: 1 } }.inner.nope }";
+    root.write(source);
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+    let refused = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("source: {source}; type analysis failed: {error:?}"));
+    assert_eq!(
+        refused.status(),
+        AnalysisStatus::Invalid,
+        "source: {source}; diagnostics: {:?}",
+        refused.diagnostics()
+    );
+    let refusal = refused
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "unknown-member")
+        .unwrap_or_else(|| panic!("source: {source}; diagnostics: {:?}", refused.diagnostics()));
+    assert_eq!(
+        refusal.fields.get("member").map(AsRef::as_ref),
+        Some("nope")
+    );
+    assert_eq!(
+        refusal.fields.get("receiver").map(AsRef::as_ref),
+        Some("crate::Inner")
+    );
+    assert!(
+        refused.executable_program().is_none(),
+        "source: {source}: a refused member chain must not publish a program"
+    );
 }
 
 /// A split struct operand is the constructed value plus its field steps, not a binding load.
