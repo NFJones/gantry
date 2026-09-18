@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "bb3e2e84da14f36cf85de4bdaa6a07b33bb22eca6d84fd13b8860bd6cca3ede5",
-  "byte_length": 1032325,
+  "specification_sha256": "b313263d6963faa48213c6aeb625fe2ee94efd87bc753c92a991c4027e8822b5",
+  "byte_length": 1032389,
   "line_count": 15578,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9501,
       "end_line": 15578,
-      "sha256": "725a0a47c693b92926e0155b2c8138c08084ea6553607b76f691dce61b51722b",
+      "sha256": "c013fcd69e5a4ca688acb79c8c7d109ec377e7c013b630fad365ee2a8c1aabb9",
       "rationale": null
     }
   ],
@@ -42126,11 +42126,11 @@
       "id": "GNT-38.2-assertions-and-panic",
       "span_start_line": 15567,
       "span_end_line": 15570,
-      "span_sha256": "9bd0130a9d303f9c937d42f8e5b56cd7feb49e0192de508987775dba61f9043e",
+      "span_sha256": "8c8c02c3819c1329763577769fd402fab68b9b043e9860370b92a77d7082c924",
       "anchor_line": 15568,
       "body_start_line": 15569,
       "body_end_line": 15570,
-      "body_sha256": "51d416e917695833e60e89cfcd0f70f57f6af3989ed77ed2295558fc02cd67de",
+      "body_sha256": "daf91fcf177142c6c1d82aa9042b0d5c56791455cce58b3481f5274d5fe8ec44",
       "profiles": [
         "analyzer"
       ],

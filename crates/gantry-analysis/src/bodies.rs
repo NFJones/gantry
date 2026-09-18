@@ -1579,7 +1579,7 @@ pub(crate) fn check_package_bodies(
                     .ok_or(AnalysisError::Invariant)
             })
             .collect::<Result<BTreeSet<_>, _>>()?;
-        refuse_unlowered_panics(
+        refuse_unlowered_statements(
             sources,
             structure,
             &context,
@@ -1610,13 +1610,13 @@ pub(crate) fn check_package_bodies(
     result
 }
 
-/// Refuses every source panic whose enclosing declaration the machine could reach, because no
-/// panic instruction exists yet (`GNT-38.2-assertions-and-panic`).
+/// Refuses every source panic or assertion whose enclosing declaration the machine could reach,
+/// because no instruction exists for either form yet (`GNT-38.2-assertions-and-panic`).
 ///
 /// A declaration is reachable here when it is the entry point, when a recorded call reaches it,
 /// or when it is a generic template whose instantiation the lowering compiles: a generic callee
 /// records no source callee edge, so only the template set closes that path.
-fn refuse_unlowered_panics(
+fn refuse_unlowered_statements(
     sources: &[ParsedSource],
     structure: &PackageStructure,
     context: &BodyContext,
@@ -1678,7 +1678,7 @@ fn refuse_unlowered_panics(
                 diagnostics.push(body_diagnostic(
                     "panic-path-refused",
                     DiagnosticCategory::Type,
-                    "a panic path the machine can reach has no instruction yet",
+                    "a reachable source form has no instruction yet",
                     node.span().clone(),
                     [("reason", "lowering-unavailable")],
                 )?);

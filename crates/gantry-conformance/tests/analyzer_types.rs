@@ -2635,6 +2635,28 @@ fn section_38_assertions_are_typed_and_refused() {
     assert!(diagnostic_codes(entry.diagnostics()).contains(&"panic-path-refused"));
     let control = analyze("fn main() -> Int { 0 }");
     assert_eq!(control.status(), AnalysisStatus::Valid);
+    fn reason<'a>(
+        diagnostics: &'a [gantry::source::StructuredDiagnostic],
+        field: &str,
+    ) -> Option<&'a str> {
+        diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "panic-path-refused")
+            .and_then(|diagnostic| diagnostic.fields.get(field))
+            .map(|value| value.as_ref())
+    }
+    assert_eq!(
+        reason(called.diagnostics(), "reason"),
+        Some("lowering-unavailable")
+    );
+    assert_eq!(
+        reason(entry.diagnostics(), "reason"),
+        Some("lowering-unavailable")
+    );
+    assert_eq!(
+        reason(operand.diagnostics(), "reason"),
+        Some("operand-type")
+    );
 }
 
 /// Section 38: the staged panic refusal names its reason, covers generic and method callees, and
