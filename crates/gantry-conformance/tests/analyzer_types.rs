@@ -9911,9 +9911,11 @@ fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
 ///
 /// `(p).greet2()` names the same receiver `p.greet2()` does and
 /// `(Plain { value: 42 }).greet()` publishes the constructed value before the call, so every
-/// grouped spelling below executes; a nested grouped *place*, a call-result receiver, a grouped
-/// `shared self` receiver, and a computed binary receiver keep their precise refusals
-/// (`7e58f733`, `5e20c3b2`, `403bc642`).
+/// grouped spelling below executes - including a nested grouped *place*, since grouping is
+/// transparent at every depth and the lowering peels every group. A grouped *index* receiver
+/// names a value rather than a place (`SPEC.md:3699`) and keeps its refusal, as do a call-result
+/// receiver, a grouped `shared self` receiver, and a computed binary receiver (`7e58f733`,
+/// `5e20c3b2`, `403bc642`).
 #[test]
 fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
     use std::sync::Arc;
@@ -9960,6 +9962,13 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         ("let p: Plain = Plain { value: 42 }; (p).greet2()", 42),
         // A group around a constructed value peels through every further group.
         ("((Plain { value: 42 })).greet()", 42),
+        // A nested grouped place names the same place its ungrouped spelling does.
+        ("let p: Plain = Plain { value: 42 }; ((p)).greet()", 42),
+        ("let p: Plain = Plain { value: 42 }; ((p)).greet2()", 42),
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; ((w.inner)).greet2()",
+            42,
+        ),
         // Grouped receivers in operand and argument positions.
         ("let p: Plain = Plain { value: 42 }; (p).greet2() + 1", 43),
         (
@@ -10018,11 +10027,6 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         );
     }
     for (body, code) in [
-        // A nested grouped place keeps its refusal rather than a lowered receiver.
-        (
-            "let p: Plain = Plain { value: 42 }; ((p)).greet2()",
-            "receiver-value-place",
-        ),
         // A grouped `shared self` receiver needs an admitted caller place.
         (
             "let p: Plain = Plain { value: 42 }; (p).look()",
@@ -10039,9 +10043,13 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         // A literal receiver is not a place, a struct-field place, or a constructed value.
         ("42.greet()", "receiver-value-place"),
         ("(42).greet()", "receiver-value-place"),
-        // The nested grouped place refuses in the trait spelling exactly as it does inherently.
+        // A grouped index receiver is a value rather than a place, computed or not.
         (
-            "let p: Plain = Plain { value: 42 }; ((p)).greet()",
+            "let xs: List<Int> = [42]; (xs[0]).greet()",
+            "receiver-value-place",
+        ),
+        (
+            "let xs: List<Int> = [42]; (xs[mk_int()]).greet()",
             "receiver-value-place",
         ),
     ] {

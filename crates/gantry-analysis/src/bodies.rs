@@ -9279,9 +9279,12 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
         return false;
     };
     let receiver = &tokens[..dot];
-    // A grouping parenthesis is transparent for a receiver part: `(p).greet()` names the same
-    // place `p.greet()` does, so a receiver wrapped in groups keys the place inside them.
-    let receiver = if let [first, .., last] = receiver
+    // A grouping parenthesis is transparent for a receiver part at every depth: `(p).greet()`
+    // names the same place `p.greet()` does, and `((q.value)).dbl()` reads the field place
+    // `q.value`, so every completed group pair is peeled. A grouped index receiver still names a
+    // value rather than a place, which is why the place test below follows this peel.
+    let mut receiver = receiver;
+    while let [first, .., last] = receiver
         && matches!(
             first.form(),
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
@@ -9289,11 +9292,10 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
         && matches!(
             last.form(),
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
-        ) {
-        &receiver[1..receiver.len().saturating_sub(1)]
-    } else {
-        receiver
-    };
+        )
+    {
+        receiver = &receiver[1..receiver.len().saturating_sub(1)];
+    }
     let Some(first) = receiver.first() else {
         return false;
     };
