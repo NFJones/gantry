@@ -6,7 +6,7 @@
   },
   {
    "path": "crates/gantry-analysis/src/executable.rs",
-   "sha256": "27b5f4d7365b261664a6336ce98d46d9f09edb3b18f67755796ed7efb2254929"
+   "sha256": "24b9d792706668f70c841c5cfbceeb3c1a0138698a98db9cb27bbfd417892a9f"
   },
   {
    "path": "crates/gantry-conformance/tests/executable_bridge.rs",

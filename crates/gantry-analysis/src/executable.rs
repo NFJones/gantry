@@ -1994,21 +1994,38 @@ impl Compiler<'_> {
         }) else {
             return Ok(None);
         };
-        // The projection's own index is the only candidate that may decide the value: a candidate
-        // that is a closed constant and cannot be folded or carried declines the projection rather
-        // than letting a later candidate supply a literal from elsewhere (`id([2, 3, 4])[1 / 0]`
-        // read the receiver's literal `2`). The receiver part is never a candidate.
-        let receiver = node.children().get(..index_postfix).unwrap_or_default();
-        let mut candidates = node
+        // The projection's own index lives between the index postfix and the next postfix step:
+        // anything past that belongs to a later step (`xs[i][0]` read the later `0` as this step's
+        // index and answered `xs[0][0]`), and anything before the postfix is the receiver, never an
+        // index. A candidate that is a closed constant and cannot be folded or carried declines the
+        // projection rather than letting a later candidate supply a literal from elsewhere
+        // (`id([2, 3, 4])[1 / 0]` read the receiver's literal `2`).
+        let step_end = node
             .children()
             .iter()
-            .copied()
+            .enumerate()
             .skip(index_postfix.saturating_add(1))
-            .collect::<Vec<_>>();
+            .find(|(_, child)| {
+                self.tree
+                    .node(**child)
+                    .is_some_and(|child| matches!(child.form(), SyntaxForm::PostfixExpression))
+            })
+            .map(|(index, _)| index)
+            .unwrap_or(node.children().len());
+        let mut candidates = node
+            .children()
+            .get(index_postfix.saturating_add(1)..step_end)
+            .unwrap_or_default()
+            .to_vec();
         candidates.extend(
             direct_expressions(self.tree, node)
                 .into_iter()
-                .filter(|candidate| !receiver.contains(candidate)),
+                .filter(|candidate| {
+                    node.children()
+                        .get(index_postfix.saturating_add(1)..step_end)
+                        .unwrap_or_default()
+                        .contains(candidate)
+                }),
         );
         let mut resolved = None;
         let mut declined = false;
@@ -4493,11 +4510,15 @@ fn postfix_projection_steps(
             continue;
         }
         if node_contains_punctuation(tree, step, Punctuation::LeftBracket) {
-            let index = children
-                .iter()
-                .copied()
-                .skip(cursor.checked_add(1)?)
-                .find_map(|child| index_value(tree, child))?;
+            // The step's own index is the fragment that follows it. Scanning further would read a
+            // later step's literal as this step's index (`xs[i][0]` read index `0` and answered
+            // `xs[0][0]`), so a step whose own index is not a constant this projection can carry
+            // reports no steps at all and the caller declines the chain.
+            let fragment = *children.get(cursor.checked_add(1)?)?;
+            let index = match index_candidate(tree, fragment) {
+                IndexCandidate::Value(value) => value,
+                IndexCandidate::Declined | IndexCandidate::Open => return None,
+            };
             steps.push(ProjectionChainStep::Member(index));
             cursor += 1;
             continue;
