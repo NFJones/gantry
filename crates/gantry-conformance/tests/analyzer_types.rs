@@ -2621,6 +2621,39 @@ fn section_38_panic_positions_are_typed_and_refused() {
     assert_eq!(control.status(), AnalysisStatus::Valid);
 }
 
+/// Section 38: the staged panic refusal names its reason, covers generic and method callees, and
+/// the statement form requires its own semicolon (`GNT-38.2-assertions-and-panic`).
+#[test]
+fn section_38_panic_refusals_name_their_reason() {
+    fn reason<'a>(
+        diagnostics: &'a [gantry::source::StructuredDiagnostic],
+        field: &str,
+    ) -> Option<&'a str> {
+        diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "panic-path-refused")
+            .and_then(|diagnostic| diagnostic.fields.get(field))
+            .map(|value| value.as_ref())
+    }
+    let generic = analyze("fn boom<X>(x: X) -> Int { panic(\"x\"); } fn main() -> Int { boom(1) }");
+    assert_eq!(
+        reason(generic.diagnostics(), "reason"),
+        Some("lowering-unavailable")
+    );
+    let method = analyze(
+        "struct S {} impl S { fn boom(self) -> Int { panic(\"x\"); } } fn main() -> Int { let s: S = S {}; s.boom() }",
+    );
+    assert_eq!(
+        reason(method.diagnostics(), "reason"),
+        Some("lowering-unavailable")
+    );
+    let operand = analyze("fn boom() -> Int { panic(1); } fn main() -> Int { 0 }");
+    assert_eq!(
+        reason(operand.diagnostics(), "reason"),
+        Some("operand-type")
+    );
+}
+
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
 /// is never coerced into it (`GNT-38.4-boundaries-durability-and-non-claims`).
 #[test]

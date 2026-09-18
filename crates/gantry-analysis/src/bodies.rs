@@ -1567,7 +1567,13 @@ pub(crate) fn check_package_bodies(
                 .cloned(),
         );
         context.expression_types.borrow_mut().clear();
-        refuse_unlowered_panics(sources, structure, &context, diagnostics)?;
+        refuse_unlowered_panics(
+            sources,
+            structure,
+            &context,
+            &generic_declarations,
+            diagnostics,
+        )?;
         Ok(BodyAnalysis {
             expression_types,
             struct_fields,
@@ -1594,10 +1600,15 @@ pub(crate) fn check_package_bodies(
 
 /// Refuses every source panic whose enclosing declaration the machine could reach, because no
 /// panic instruction exists yet (`GNT-38.2-assertions-and-panic`).
+///
+/// A declaration is reachable here when it is the entry point, when a recorded call reaches it,
+/// or when it is a generic template whose instantiation the lowering compiles: a generic callee
+/// records no source callee edge, so only the template set closes that path.
 fn refuse_unlowered_panics(
     sources: &[ParsedSource],
     structure: &PackageStructure,
     context: &BodyContext,
+    generic_declarations: &BTreeSet<SourceSpan>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let entry = structure
@@ -1644,9 +1655,10 @@ fn refuse_unlowered_panics(
                 }
                 ancestor = parents.get(&current).copied();
             }
-            let reachable = enclosing
-                .as_ref()
-                .is_some_and(|span| Some(span) == entry.as_ref() || called.contains(span));
+            let reachable = enclosing.as_ref().is_some_and(|span| {
+                (Some(span) == entry.as_ref() || generic_declarations.contains(span))
+                    || called.contains(span)
+            });
             if reachable {
                 diagnostics.push(body_diagnostic(
                     "panic-path-refused",
