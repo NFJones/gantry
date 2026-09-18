@@ -6033,50 +6033,19 @@ fn infer_expression_inner(
             diagnostics,
         )?;
         if has_member {
-            let Some(receiver) = receiver else {
-                return Ok(None);
+            return match receiver {
+                Some(receiver) => infer_member_sequence(
+                    tree,
+                    node.children(),
+                    facts,
+                    environment,
+                    Some(receiver),
+                    expected,
+                    context,
+                    diagnostics,
+                ),
+                None => Ok(None),
             };
-            let Some(typed) = infer_member_sequence(
-                tree,
-                node.children(),
-                facts,
-                environment,
-                Some(receiver),
-                expected,
-                context,
-                diagnostics,
-            )?
-            else {
-                return Ok(None);
-            };
-            // A step after the call is a trailing operator whose left operand is the value the
-            // member walk just keyed (`C { v: 5 }.read() == 5`), so the operator is applied here
-            // exactly as the ordinary operator dispatch would apply it.
-            let Some((operator, index)) = direct_binary_operator(tree, node) else {
-                return Ok(Some(typed));
-            };
-            let Some(right) = infer_operand_sequence(
-                tree,
-                node.children()
-                    .get(index.saturating_add(1)..)
-                    .unwrap_or_default(),
-                facts,
-                environment,
-                Some(operator),
-                context,
-                diagnostics,
-            )?
-            else {
-                return Ok(None);
-            };
-            return infer_binary_operator(
-                operator,
-                typed,
-                right,
-                node.span().clone(),
-                context,
-                diagnostics,
-            );
         }
         return Ok(receiver);
     }
