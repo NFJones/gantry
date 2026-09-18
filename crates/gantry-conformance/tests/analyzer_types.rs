@@ -1431,6 +1431,46 @@ fn main() {}
         "{:?}",
         invalid.diagnostics()
     );
+    // Two inherent implementation blocks and one trait implementation name the same receiver, and
+    // the canonical fact set keeps one head per identity while every block's methods stay
+    // collected, so the package analyses (`0c64313b`).
+    let split_inherent = analyze(
+        r#"
+struct P { v: Int }
+trait T { pure fn t(self) -> Int; }
+impl P { fn a(self) -> Int { self.v } }
+impl T for P { fn t(self) -> Int { self.v } }
+impl P { fn b(self) -> Int { self.v } }
+fn main() -> Int { let p: P = P { v: 1 }; p.a() + p.b() }
+"#,
+    );
+    assert_eq!(
+        split_inherent.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        split_inherent.diagnostics()
+    );
+    assert_eq!(split_inherent.implementation_heads().len(), 3);
+    // A duplicated inherent method name stays refused by name resolution.
+    let duplicated_method = analyze(
+        r#"
+struct P { v: Int }
+trait T { pure fn t(self) -> Int; }
+impl P { fn a(self) -> Int { self.v } }
+impl T for P { fn t(self) -> Int { self.v } }
+impl P { fn a(self) -> Int { self.v } }
+fn main() -> Int { let p: P = P { v: 1 }; p.a() }
+"#,
+    );
+    assert_eq!(duplicated_method.status(), AnalysisStatus::Invalid);
+    assert!(
+        duplicated_method
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "duplicate-member"),
+        "{:?}",
+        duplicated_method.diagnostics()
+    );
 }
 
 #[test]

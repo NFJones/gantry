@@ -655,9 +655,16 @@ fn assemble_generic_analysis_facts(
             right.arguments(),
         ))
     });
+    // Two implementation blocks that name the same receiver and trait carry the same canonical
+    // head, and the canonical fact set keeps one head per identity: each block's methods are still
+    // collected per block, while the coherence pass has already refused blocks whose method sets
+    // overlap.
+    let mut implementations = implementations.to_vec();
+    implementations.sort_by(|left, right| left.identity().cmp(right.identity()));
+    implementations.dedup_by(|left, right| left.identity() == right.identity());
     GenericAnalysisFacts::new(
         traits.to_vec(),
-        implementations.to_vec(),
+        implementations,
         templates.to_vec(),
         instantiations,
         resolved_calls,
