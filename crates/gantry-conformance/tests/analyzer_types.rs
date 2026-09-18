@@ -2884,6 +2884,36 @@ fn section_38_refused_literal_operands_name_their_own_type() {
     }
 }
 
+/// Section 38: a place operand carries its marker exactly where its parenthesized spelling does,
+/// so a bare path is admitted in a `let` initializer, a `discard`, and a call argument
+/// (`GNT-38.1-typed-error-propagation`).
+#[test]
+fn section_38_place_operands_are_admitted_like_their_parenthesized_spellings() {
+    let prelude = "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } ";
+    for body in [
+        "fn outer(r: Result<Int, E>) -> Result<Int, F> { let v: Int = r?; Ok(v) }",
+        "fn outer(r: Result<Int, E>) -> Result<Int, F> { discard r?; Ok(0) }",
+        "fn id(value: Int) -> Int { value } fn outer(r: Result<Int, E>) -> Result<Int, F> { let v: Int = id(r?); Ok(v) }",
+    ] {
+        let source = format!(
+            "{prelude}{body} fn main() -> Result<Int, F> {{ let r: Result<Int, E> = Ok(1); outer(r) }}"
+        );
+        let admitted = analyze(&source);
+        assert!(
+            !diagnostic_codes(admitted.diagnostics()).contains(&"error-propagation-refused"),
+            "the admitted place operand is not refused: {:?}",
+            admitted.diagnostics()
+        );
+    }
+    let parenthesized = analyze(&format!(
+        "{prelude}fn outer(r: Result<Int, E>) -> Result<Int, F> {{ let v: Int = (r)?; Ok(v) }} fn main() -> Result<Int, F> {{ let r: Result<Int, E> = Ok(1); outer(r) }}"
+    ));
+    assert!(
+        !diagnostic_codes(parenthesized.diagnostics()).contains(&"error-propagation-refused"),
+        "the parenthesized control stays admitted"
+    );
+}
+
 /// Section 38: a propagation operand has no exactly one declared conversion while no
 /// error-conversion contract is published, so every operand is refused with its types named
 /// (`GNT-38.1-typed-error-propagation`).

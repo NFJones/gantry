@@ -230,6 +230,34 @@ fn admitted_propagation_chains_execute_on_the_shared_sequential_machine() {
     }
 }
 
+/// A place operand carries its marker exactly where its parenthesized spelling does
+/// (`GNT-38.1-typed-error-propagation`): the bare path propagates in a `let` initializer, and the
+/// admitted payload is the value the place holds.
+#[test]
+fn admitted_place_operands_execute_on_the_shared_sequential_machine() {
+    let source = "trait ErrorConversion { pure fn convert(self) -> F; }\nstruct E {}\nstruct F {}\nimpl ErrorConversion for E { pure fn convert(self) -> F { F {} } }\nfn outer(r: Result<Int, E>) -> Result<Int, F> { let v: Int = r?; Ok(v) }\nfn main() -> Int { let r: Result<Int, E> = Ok(1); match outer(r) { Ok(v) => v, Err(_) => 0 } }\n";
+    let root = TempDirectory::new(source);
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x4c; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+        .unwrap_or_else(|error| panic!("analyzed program was rejected by the machine: {error:?}"));
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("the admitted place operand did not succeed")
+    };
+    assert!(
+        matches!(value.view(), LogicalValueView::Int(value) if value.get() == 1),
+        "the admitted place operand answers the value the place holds"
+    );
+}
+
 #[test]
 fn analyzed_closed_generic_application_executes_as_a_direct_call() {
     let root = TempDirectory::new(

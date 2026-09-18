@@ -2911,6 +2911,36 @@ fn admit_propagation_operand(
     Ok(Some(payload.clone()))
 }
 
+/// Returns the type of a marker operand that arrives as one wrapped path.
+///
+/// The marker step wraps the operand it follows, so a bare place operand reaches the marker as a
+/// postfix fragment holding one path. That fragment is not an expression the operand walk types on
+/// its own, and the environment names the value the path spells
+/// (`GNT-38.1-typed-error-propagation`).
+fn wrapped_place_operand(
+    tree: &SyntaxTree,
+    expression: NodeId,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+) -> Option<TypeDescriptor> {
+    let node = tree.node(expression)?;
+    let marker = node.children().iter().position(|child| {
+        tree.node(*child).is_some_and(|child| {
+            matches!(
+                child.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+            )
+        })
+    })?;
+    let operand = *node.children().get(marker.checked_sub(1)?)?;
+    let wrapped = tree.node(operand)?;
+    if !matches!(wrapped.form(), SyntaxForm::PostfixExpression) {
+        return None;
+    }
+    let path = wrapped.children().first().copied()?;
+    let name = direct_identifier(tree, path).ok()??;
+    environment.get(&name).cloned()
+}
+
 /// Returns the type of a node holding one literal token.
 ///
 /// The refusal for a bare literal propagation operand names the literal's own type, which the
@@ -6335,6 +6365,14 @@ fn infer_expression(
         context,
         diagnostics,
     )?;
+    // A place operand reaches its marker as the postfix fragment the marker step wrapped it in, a
+    // shape the operand walk does not type on its own, so the operand's own type is resolved here:
+    // the fragment wraps one path and the environment names the value it spells
+    // (`GNT-38.1-typed-error-propagation`). A parenthesized, call, or member operand already has
+    // its type above, and every other shape keeps the published refusal.
+    if inferred.is_none() {
+        inferred = wrapped_place_operand(tree, expression, environment);
+    }
     if let Some(operand_type) = inferred.clone()
         && let Some(payload) = admit_propagation_operand(tree, expression, &operand_type, context)?
     {
