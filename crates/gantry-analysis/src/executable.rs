@@ -1704,6 +1704,15 @@ impl Compiler<'_> {
                 },
             )
         {
+            // A literal that reaches the walk inside an operand fragment carries no recorded type
+            // of its own, so the constructor's name path names the declared type it builds.
+            let derived = direct_child_form(self.tree, &node, SyntaxForm::Path)
+                .and_then(|path| direct_identifier(self.tree, path))
+                .and_then(|name| self.struct_type_by_name(name.as_ref()));
+            let ty = match self.body_types.get(&expression) {
+                Some(recorded) if recorded.kind() != TypeKind::Unit => recorded.clone(),
+                _ => derived.unwrap_or_else(|| ty.clone()),
+            };
             let literal = self.compile_struct(expression, struct_expression, ty.clone())?;
             return self.compile_projection_tail(&node, 0, &ty, literal);
         }
@@ -2680,6 +2689,9 @@ impl Compiler<'_> {
         if let Some(result) = self.compile_literal_index_projection_operand(children)? {
             return Ok(result);
         }
+        if let Some(result) = self.compile_split_struct_operand(children)? {
+            return Ok(result);
+        }
         if let Some(result) = self.compile_computed_member_projection_operand(children)? {
             return Ok(result);
         }
@@ -2752,6 +2764,68 @@ impl Compiler<'_> {
             return Err(AnalysisError::Invariant);
         }
         Ok(Some(result))
+    }
+
+    /// Lowers a split index projection whose receiver part is a list literal.
+    ///
+    /// `Item { count: 1 }` reaches an operator operand as the constructor's name path and the
+    /// struct expression itself in sibling fragments, so the child walk would publish the name as a
+    /// binding load and then aggregate the fields with no type of their own. The declared type is
+    /// the one whose canonical name the path spells, and the struct expression supplies the fields,
+    /// so the operand lowers as the constructed value it denotes.
+    fn compile_split_struct_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        // The constructor's name and the struct expression it names are the whole operand: any
+        // further fragment is a step this walk does not own (`Counter { value: 5 }.read()`).
+        let valued = children
+            .iter()
+            .copied()
+            .filter(|child| {
+                self.tree.node(*child).is_some_and(|node| {
+                    !matches!(node.form(), SyntaxForm::Token(_))
+                        && !is_parenthesis_boundary(self.tree, node)
+                })
+            })
+            .collect::<Vec<_>>();
+        let [name, body] = valued.as_slice() else {
+            return Ok(None);
+        };
+        let Some(identifier) = direct_identifier(self.tree, *name) else {
+            return Ok(None);
+        };
+        let body_node = self.node(*body)?;
+        let struct_expression = if matches!(body_node.form(), SyntaxForm::StructExpression) {
+            Some(*body)
+        } else {
+            descendant_form(self.tree, *body, &[SyntaxForm::StructExpression])
+        };
+        let Some(struct_expression) = struct_expression else {
+            return Ok(None);
+        };
+        let Some(declared) = self.struct_type_by_name(identifier.as_ref()) else {
+            return Ok(None);
+        };
+        let literal = self.compile_struct(*name, struct_expression, declared.clone())?;
+        Ok(Some(literal))
+    }
+
+    /// Returns the declared type whose canonical name ends with one identifier.
+    ///
+    /// A struct literal that reaches the walk as an operand fragment carries no recorded type of
+    /// its own, and the constructor's name path is the only spelling it has, so the declared type
+    /// is the one whose final canonical segment is that name.
+    fn struct_type_by_name(&self, name: &str) -> Option<TypeDescriptor> {
+        self.struct_fields
+            .keys()
+            .find(|ty| {
+                ty.canonical_string()
+                    .rsplit("::")
+                    .next()
+                    .is_some_and(|last| last == name)
+            })
+            .cloned()
     }
 
     /// Lowers a split index projection whose receiver part is a list literal.

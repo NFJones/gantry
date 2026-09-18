@@ -9394,6 +9394,112 @@ fn public_untyped_list_literal_arguments_report_their_code() {
     }
 }
 
+/// A comparison of declared values is typed and lowered as the values it compares.
+///
+/// `Equatable` admits `==`/`!=` for a declared struct, but an operator splits its operands into
+/// sibling fragments: `Item { count: 1 } == Item { count: 1 }` reaches the walk as the constructor's
+/// name path beside the struct expression, so the name was published as a binding load and the
+/// fields aggregated with no type of their own - the machine then failed on the missing binding
+/// (`runtime-failure[internal-invariant-failure]`), and a nested literal aggregated under `Unit`.
+/// Every row below pins the value the comparison computes; the list row is the already-working
+/// control the direct spelling must agree with (`68d62b63`).
+#[test]
+fn public_declared_value_comparisons_are_typed_and_lowered() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("a declared-value comparison did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    let root = TempDirectory::new();
+    for (source, expected) in [
+        (
+            "struct Item { count: Int } fn main() -> Bool { Item { count: 1 } == Item { count: 1 } }",
+            true,
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Bool { Item { count: 1 } != Item { count: 1 } }",
+            false,
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Bool { Item { count: 1 } == Item { count: 2 } }",
+            false,
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Bool { let a: Item = Item { count: 1 }; let b: Item = Item { count: 1 }; a == b }",
+            true,
+        ),
+        (
+            "struct Pair { left: Int, right: Bool } fn main() -> Bool { Pair { left: 1, right: true } == Pair { left: 1, right: true } }",
+            true,
+        ),
+        (
+            "struct Inner { flag: Bool } struct Outer { inner: Inner } fn main() -> Bool { Outer { inner: Inner { flag: true } } == Outer { inner: Inner { flag: true } } }",
+            true,
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Bool { [Item { count: 1 }] == [Item { count: 1 }] }",
+            true,
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: an admitted comparison must publish a program")
+        });
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x42; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Bool(actual) if actual == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+}
+
 /// A builtin member call publishes the primitive that implements it.
 ///
 /// The runtime primitives were machine-tested but no source spelling reached them: a builtin
