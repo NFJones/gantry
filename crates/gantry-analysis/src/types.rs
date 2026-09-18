@@ -1158,51 +1158,40 @@ pub(crate) fn signature_positions_are_closed(
     tree: &SyntaxTree,
     declaration: NodeId,
 ) -> Result<bool, AnalysisError> {
-    let Some(declaration_node) = tree.node(declaration) else {
+    if tree.node(declaration).is_none() {
         return Ok(true);
-    };
-    // Every binder list that encloses the declaration is in scope for its positions: a method
-    // inherits the names its enclosing implementation or trait declares, so a position naming one
-    // of them is open exactly like a name the declaration's own list declares.
-    let span = declaration_node.span().clone();
-    // A binder list that precedes the declaration is in scope for its positions when an enclosing
-    // implementation or trait declares it, so those owner spans are collected first.
-    let owners = tree
-        .nodes()
-        .iter()
-        .filter(|node| {
+    }
+    // The declaration's own binder list and the direct list of every enclosing implementation or
+    // trait are in scope for its positions: a method inherits the names its owner declares, so a
+    // position naming one of them is open exactly like a name the declaration's own list declares.
+    // Only ancestor declarations count, so a sibling declaration's binder list cannot make an
+    // unrelated signature open.
+    let mut parents = BTreeMap::<NodeId, NodeId>::new();
+    for (index, node) in tree.nodes().iter().enumerate() {
+        let parent = NodeId::from_index(index);
+        for child in node.children() {
+            parents.insert(*child, parent);
+        }
+    }
+    let mut owners = vec![declaration];
+    let mut ancestor = parents.get(&declaration).copied();
+    while let Some(current) = ancestor {
+        if tree.node(current).is_some_and(|node| {
             matches!(
                 node.form(),
                 SyntaxForm::ImplDeclaration | SyntaxForm::TraitDeclaration
             )
-        })
-        .map(|node| node.span().clone())
-        .filter(|owner| {
-            owner.source() == span.source()
-                && owner.bytes().start() <= span.bytes().start()
-                && owner.bytes().end() >= span.bytes().end()
-        })
-        .collect::<Vec<_>>();
+        }) {
+            owners.push(current);
+        }
+        ancestor = parents.get(&current).copied();
+    }
     let mut declared = BTreeSet::new();
-    for (index, node) in tree.nodes().iter().enumerate() {
-        if !matches!(node.form(), SyntaxForm::TypeParameterList) {
+    for owner in owners {
+        let Some(list) = direct_child_form(tree, owner, SyntaxForm::TypeParameterList) else {
             continue;
-        }
-        let list = node.span();
-        if list.source() != span.source() {
-            continue;
-        }
-        let local = list.bytes().end() >= span.bytes().start()
-            && list.bytes().start() <= span.bytes().end();
-        let enclosing = list.bytes().end() <= span.bytes().start()
-            && owners.iter().any(|owner| {
-                owner.bytes().start() <= list.bytes().start()
-                    && owner.bytes().end() >= list.bytes().end()
-            });
-        if !local && !enclosing {
-            continue;
-        }
-        let mut stack = vec![NodeId::from_index(index)];
+        };
+        let mut stack = vec![list];
         while let Some(current) = stack.pop() {
             let Some(node) = tree.node(current) else {
                 continue;

@@ -7239,6 +7239,10 @@ fn public_callable_annotations_in_open_signatures_are_refused_at_the_annotation(
     for source in [
         "struct Item {} impl Item { fn run(self, callback: Fn(Int) -> Int) -> Int { 0 } } fn main() -> Int { 0 }",
         "struct Item {} impl Item { fn plain<U>(self, value: U) -> U { value } } fn main() -> Int { 0 }",
+        // A sibling declaration's binder name must not make this signature open, in either order:
+        // `U` here is the declared struct, which is a closed type.
+        "struct U {} struct Item {} impl Item { fn first<U>(self, value: U) -> U { value } fn second(self, callback: Fn(Int) -> Int, value: U) -> Int { 0 } } fn main() -> Int { 0 }",
+        "struct U {} struct Item {} impl Item { fn second(self, callback: Fn(Int) -> Int, value: U) -> Int { 0 } fn first<U>(self, value: U) -> U { value } } fn main() -> Int { 0 }",
     ] {
         let root = TempDirectory::new();
         root.write(source);
