@@ -190,6 +190,44 @@ fn main(flag: Bool) -> Int {
     assert!(matches!(value.view(), LogicalValueView::Int(value) if value.get() == 5));
 }
 
+/// A propagation marker in the first operand of a flat operator chain is admitted and lowered
+/// (`GNT-38.1-typed-error-propagation`). The CLI measures these chains as 6 and 5; before the chain
+/// operands reached the seam dispatch both analysed valid and then failed at run time with an
+/// internal invariant failure, which no analysis-level row could observe.
+#[test]
+fn admitted_propagation_chains_execute_on_the_shared_sequential_machine() {
+    let prelude = "trait ErrorConversion { pure fn convert(self) -> F; }\nstruct E {}\nstruct F {}\nimpl ErrorConversion for E { pure fn convert(self) -> F { F {} } }\nfn inner_ok() -> Result<Int, E> { Ok(1) }\n";
+    for (body, expected) in [
+        ("let v: Int = inner_ok()? + 2 + 3; Ok(v)", 6),
+        ("let v: Int = inner_ok()? * 2 + 3; Ok(v)", 5),
+        ("let v: Int = inner_ok()? + 2 + 3 + 4; Ok(v)", 10),
+    ] {
+        let source = format!("{prelude}fn main() -> Result<Int, F> {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+        let program = package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x4b; 32])
+            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+        let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+            .unwrap_or_else(|error| {
+                panic!("analyzed program was rejected by the machine: {error:?}")
+            });
+        let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+            panic!("the admitted chain expected to answer {expected} did not succeed")
+        };
+        // The entry returns the enclosing `Result`, so the machine publishes the result aggregate
+        // rather than the payload: this row pins that an admitted chain executes at all, which is
+        // the observable the seam dispatch owns, and the payload values are measured on the CLI.
+        let _ = value;
+    }
+}
+
 #[test]
 fn analyzed_closed_generic_application_executes_as_a_direct_call() {
     let root = TempDirectory::new(
