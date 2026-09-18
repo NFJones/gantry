@@ -2863,6 +2863,38 @@ fn admit_propagation_operand(
             )
         })
     });
+    // A member step whose fragment the operand walk resolves to the receiver's own type must not be
+    // admitted: the projection over the payload would be published without this analysis checking
+    // it, which silently accepts a member the receiver does not have
+    // (`GNT-38.1-typed-error-propagation`). A call or index step keeps its own typed route.
+    let member_step = node
+        .children()
+        .iter()
+        .take_while(|child| {
+            !tree.node(**child).is_some_and(|child| {
+                matches!(
+                    child.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+                )
+            })
+        })
+        .filter_map(|child| tree.node(*child))
+        .any(|child| {
+            matches!(child.form(), SyntaxForm::PostfixExpression)
+                && child
+                    .children()
+                    .iter()
+                    .filter_map(|inner| tree.node(*inner))
+                    .any(|inner| {
+                        matches!(
+                            inner.form(),
+                            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+                        )
+                    })
+        });
+    if member_step {
+        return Ok(None);
+    }
     let Some(result) = context.current_result.borrow().clone() else {
         return Ok(None);
     };
@@ -2934,6 +2966,12 @@ fn wrapped_place_operand(
     let operand = *node.children().get(marker.checked_sub(1)?)?;
     let wrapped = tree.node(operand)?;
     if !matches!(wrapped.form(), SyntaxForm::PostfixExpression) {
+        return None;
+    }
+    // The fragment must hold the place alone. A fragment that carries a further step (member,
+    // index, or call) would need that step typed over the operand's own type, and resolving the
+    // receiver instead would admit a projection nobody checked, so those shapes keep the refusal.
+    if wrapped.children().len() != 1 {
         return None;
     }
     let path = wrapped.children().first().copied()?;

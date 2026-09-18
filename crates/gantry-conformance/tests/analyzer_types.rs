@@ -2912,6 +2912,23 @@ fn section_38_place_operands_are_admitted_like_their_parenthesized_spellings() {
         !diagnostic_codes(parenthesized.diagnostics()).contains(&"error-propagation-refused"),
         "the parenthesized control stays admitted"
     );
+    // A member step whose fragment the walk resolves to the receiver's own type is not admitted:
+    // admitting it would publish a projection over the payload that this analysis never checked.
+    for source in [
+        format!(
+            "{prelude}fn outer(r: Result<Int, E>) -> Result<Int, F> {{ let v: Int = r.value?; Ok(v) }} fn main() -> Int {{ 0 }}"
+        ),
+        format!(
+            "{prelude}fn outer(r: Result<Int, E>) -> Result<Int, F> {{ let v: Int = r.nope?; Ok(v) }} fn main() -> Int {{ 0 }}"
+        ),
+    ] {
+        let refused = analyze(&source);
+        assert!(
+            diagnostic_codes(refused.diagnostics()).contains(&"error-propagation-refused"),
+            "the member step is refused: {:?}",
+            refused.diagnostics()
+        );
+    }
 }
 
 /// Section 38: a propagation operand has no exactly one declared conversion while no
