@@ -6,7 +6,7 @@
   },
   {
    "path": "crates/gantry-cli/src/main.rs",
-   "sha256": "36edf2b1678cc72442da02b70e040190b223f934a79cac649b89692aedb9afc5"
+   "sha256": "f03263c71c347c582e34c0372ba74c6ef2ce3e58bd22695a0c2ed168ede4a06b"
   },
   {
    "path": "crates/gantry-conformance/tests/activity_observation.rs",

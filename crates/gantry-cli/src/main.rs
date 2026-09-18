@@ -58,8 +58,11 @@ const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantr
 /// Starts the Gantry command-line application.
 fn main() -> ExitCode {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let mut stdout = io::stdout().lock();
-    let mut stderr = io::stderr().lock();
+    // Each write locks the process stream for its own duration only. Holding these locks for the
+    // whole command deadlocks any std stream write from analysis, the runtime, or the default
+    // panic hook, which turns a diagnosed failure into an unexplained hang.
+    let mut stdout = io::stdout();
+    let mut stderr = io::stderr();
     ExitCode::from(run(&arguments, &mut stdout, &mut stderr))
 }
 
