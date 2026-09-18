@@ -2597,6 +2597,49 @@ fn affine_place_ledger_keys_places_and_keeps_siblings_usable() {
     ] {
         assert_affine_rejected(&format!("{header}{rejected}"), "affine-value-reuse");
     }
+
+    // A consuming receiver call reads the place it names exactly once, whether or not the receiver
+    // spelling groups its root, so a second call through the same field is a reuse while a call
+    // through a sibling affine field stays admitted (`e49cbc5e`).
+    let consumers = "affine struct Leaf { value: Int }\n\
+                     affine struct Mark { value: Int }\n\
+                     struct Pair { leaf: Leaf, mark: Mark }\n\
+                     impl Leaf { fn take(self) -> Int { self.value } }\n\
+                     impl Mark { fn take(self) -> Int { self.value } }\n";
+    for rejected in [
+        "fn main() -> Int {\n\
+             let pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let first: Int = pair.leaf.take();\n\
+             let second: Int = pair.leaf.take();\n\
+             first + second\n\
+         }",
+        "fn main() -> Int {\n\
+             let pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let leaf: Leaf = pair.leaf;\n\
+             let second: Int = pair.leaf.take();\n\
+             leaf.value + second\n\
+         }",
+    ] {
+        assert_affine_rejected(&format!("{consumers}{rejected}"), "affine-value-reuse");
+    }
+    assert_affine_accepted(&format!(
+        "{consumers}fn main() -> Int {{\n\
+             let pair: Pair = Pair {{ leaf: Leaf {{ value: 1 }}, mark: Mark {{ value: 2 }} }};\n\
+             let first: Int = pair.leaf.take();\n\
+             let second: Int = pair.mark.take();\n\
+             first + second\n\
+         }}"
+    ));
+    // A copyable field receiver copies its value, so two consuming calls stay admitted.
+    assert_affine_accepted(
+        "struct Counter { value: Int }\n\
+         impl Counter { fn read(self) -> Int { self.value } }\n\
+         struct Basket { counter: Counter }\n\
+         fn main() -> Int {\n\
+             let basket: Basket = Basket { counter: Counter { value: 21 } };\n\
+             basket.counter.read() + basket.counter.read()\n\
+         }",
+    );
 }
 
 /// A partial move and a pattern commit both key the affinity ledger by place: the transferred or

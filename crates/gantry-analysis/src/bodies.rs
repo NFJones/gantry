@@ -9111,6 +9111,22 @@ fn infer_member_sequence(
                     context,
                     diagnostics,
                 )?;
+            } else if requires_consumption(&receiver, context)
+                && let Some((root, fields)) =
+                    owned_receiver_place(tree, children.get(..dot).unwrap_or_default())
+            {
+                // A receiver a callable copies is still one read of the place it names, so a second
+                // consuming call through the same struct-field subplace is a reuse (`SPEC.md`
+                // GNT-2b) exactly as the owned route above records it.
+                record_affine_place(
+                    AffinePlace::projected(root.clone(), fields),
+                    environment.get(&root),
+                    &receiver,
+                    member_node.span().clone(),
+                    AffineAccess::Read,
+                    context,
+                    diagnostics,
+                )?;
             }
             let call_site = call_sequence_span(tree, children, member_node)
                 .unwrap_or_else(|| member_node.span().clone());
