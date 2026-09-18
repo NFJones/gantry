@@ -9320,6 +9320,12 @@ fn public_untyped_list_literal_arguments_report_their_code() {
             1,
         ),
         ("fn main() -> Int { discard []; 1 }", 1),
+        // A receiver method's declared parameter types are known before resolution, so its
+        // argument is typed by the parameter it fills exactly as the free call's is.
+        (
+            "struct S {} impl S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take([]); 1 }",
+            1,
+        ),
         (
             "struct S {} impl S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take([1, 2]); 1 }",
             1,
@@ -9358,14 +9364,28 @@ fn public_untyped_list_literal_arguments_report_their_code() {
         );
     }
 
-    // Every argument walk that cannot type an untypeable literal reports the same registered code
-    // and publishes no program.
+    // Every argument walk that cannot type an untypeable literal reports the registered code and
+    // publishes no program; a concrete parameter the argument does not satisfy reports the
+    // call-argument code from the same walk.
     let method_generic = "struct S {} impl S { fn id<T>(self, x: T) -> T { x } }";
     let trait_generic = "trait Id { pure fn id<T>(self, x: T) -> T; } struct S {} impl Id for S { fn id<T>(self, x: T) -> T { x } }";
-    for source in [
-        "fn id<T>(x: T) -> T { x } fn main() -> Int { discard id([]); 1 }".to_string(),
-        format!("{method_generic} fn main() -> Int {{ discard S {{}}.id([]); 1 }}"),
-        format!("{trait_generic} fn main() -> Int {{ discard S {{}}.id([]); 1 }}"),
+    for (source, code) in [
+        (
+            "fn id<T>(x: T) -> T { x } fn main() -> Int { discard id([]); 1 }".to_string(),
+            "untyped-list-literal",
+        ),
+        (
+            format!("{method_generic} fn main() -> Int {{ discard S {{}}.id([]); 1 }}"),
+            "untyped-list-literal",
+        ),
+        (
+            format!("{trait_generic} fn main() -> Int {{ discard S {{}}.id([]); 1 }}"),
+            "untyped-list-literal",
+        ),
+        (
+            "struct S {} impl S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take(1); 1 }".to_string(),
+            "call-argument-type",
+        ),
     ] {
         root.write(&source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -9383,8 +9403,8 @@ fn public_untyped_list_literal_arguments_report_their_code() {
             refused
                 .diagnostics()
                 .iter()
-                .any(|diagnostic| diagnostic.code.as_str() == "untyped-list-literal"),
-            "source: {source}: expected untyped-list-literal; diagnostics: {:?}",
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "source: {source}: expected {code}; diagnostics: {:?}",
             refused.diagnostics()
         );
         assert!(

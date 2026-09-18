@@ -8838,13 +8838,23 @@ fn infer_member_sequence(
             .collect::<Vec<_>>();
         let mut actual_arguments = Vec::with_capacity(arguments.len());
         let mut actual_argument_spans = Vec::with_capacity(arguments.len());
-        for argument in &arguments {
+        // An inherent method's declared parameter types are known before resolution (`methods`),
+        // so an argument with no type of its own is typed by the parameter it fills, exactly as
+        // the free-workflow walk types its arguments (`S {}.take([])` beside `take_list([])`).
+        let declared_parameters = context
+            .methods
+            .get(&(receiver.clone(), member.clone()))
+            .map(|signature| signature.parameters.clone());
+        for (index, argument) in arguments.iter().enumerate() {
+            let expected_parameter = declared_parameters
+                .as_ref()
+                .and_then(|parameters| parameters.get(index));
             let Some(actual) = infer_expression(
                 tree,
                 *argument,
                 facts,
                 environment,
-                None,
+                expected_parameter,
                 context,
                 diagnostics,
             )?
