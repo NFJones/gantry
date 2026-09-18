@@ -30,11 +30,11 @@
   },
   {
    "path": "protocol/conformance/concurrent-gate-v1.json",
-   "sha256": "93c6b24a1a06827b84beae5ad4990fdffcb5d37f0e3235fadcb0a84e31d1b62c"
+   "sha256": "db7da3628133b92144648c60d6000dbfe2e54790695d95f4f43623b8bee0313f"
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "1c19cfe993dd8f807215beb175f6baeaf033c1087ac3edd32a576245ea3c0469"
+   "sha256": "6991f3289834ea5c8369d81d23215dc4e39d0c321ece848ae6affe87f274cd39"
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",

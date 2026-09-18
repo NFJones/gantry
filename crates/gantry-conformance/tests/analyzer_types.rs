@@ -2645,6 +2645,14 @@ fn section_38_never_positions_are_refused() {
     let nested_signature = analyze("fn nested() -> List<Never> { 0 } fn main() -> Int { 0 }");
     assert!(diagnostic_codes(nested_signature.diagnostics()).contains(&"never-signature-refused"));
     assert!(!diagnostic_codes(nested_signature.diagnostics()).contains(&"type-mismatch"));
+    // Both nested branches stay silent: the empty falls-through body and a body whose value the
+    // refusal left without a shape.
+    let nested_empty = analyze("fn nested() -> List<Never> { } fn main() -> Int { 0 }");
+    assert!(diagnostic_codes(nested_empty.diagnostics()).contains(&"never-signature-refused"));
+    assert!(!diagnostic_codes(nested_empty.diagnostics()).contains(&"missing-result"));
+    let nested_value = analyze("fn nested() -> List<Never> { [] } fn main() -> Int { 0 }");
+    assert!(diagnostic_codes(nested_value.diagnostics()).contains(&"never-signature-refused"));
+    assert!(!diagnostic_codes(nested_value.diagnostics()).contains(&"type-mismatch"));
 }
 
 /// A refused operator publishes exactly one diagnostic.
