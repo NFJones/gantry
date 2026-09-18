@@ -2663,6 +2663,16 @@ fn section_38_panic_refusals_name_their_reason() {
         "struct S {} impl S { fn boom(self) -> Int { panic(\"x\"); } } fn main() -> Int { 0 }",
     );
     assert_eq!(uncalled.status(), AnalysisStatus::Valid);
+    // The statement form carries its own semicolon, like `discard` and `return`: the syntax phase
+    // succeeds but reports an invalid status for the trailing spelling.
+    let root = TempDirectory::new();
+    root.write("fn main() -> Int { panic(\"x\") }");
+    let phase = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    assert_eq!(
+        phase.status(),
+        gantry::frontend::PackageSyntaxStatus::Invalid
+    );
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
