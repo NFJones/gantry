@@ -8,7 +8,7 @@ use gantry::analysis::{
     AnalysisError, AnalysisStatus, analyze_package_types, analyze_package_types_with_limits,
 };
 use gantry::frontend::validate_package_syntax;
-use gantry::ir::{AggregateKind, InstructionKind, Projection};
+use gantry::ir::{AggregateKind, InstructionKind, Primitive, Projection};
 use gantry::portable::{DiagnosticCategory, FrontendResourceCode};
 use gantry::source::{FrontendLimits, SourceLimits};
 use serde::Deserialize;
@@ -9051,6 +9051,206 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
             refused.executable_program().is_none(),
             "source: {source}: a refused operand must not publish a program"
         );
+    }
+}
+
+/// A builtin member call publishes the primitive that implements it.
+///
+/// The runtime primitives were machine-tested but no source spelling reached them: a builtin
+/// member call was typed by the analyzer and then lowered by the generic fragment walk, which
+/// published a program the machine rejected (`xs.len()` failed on a runtime invariant). Each row
+/// below asserts the primitives the entry workflow publishes and executes its value; a receiver
+/// that is neither a place, a constructed value, nor a literal is refused (`90da59aa`,
+/// `dbb4c60`).
+#[test]
+fn public_builtin_member_calls_publish_their_primitive() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("a builtin member call did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    let root = TempDirectory::new();
+    let entries: [(&str, i64, &[Primitive]); 18] = [
+        (
+            "let xs: List<Int> = [1, 2, 3]; xs.len()",
+            3,
+            &[Primitive::ListLength],
+        ),
+        (
+            "let s: String = \"abc\"; s.len()",
+            3,
+            &[Primitive::StringLength],
+        ),
+        ("\"abc\".len()", 3, &[Primitive::StringLength]),
+        (
+            "let n: Int = 3; let t: String = n.to_string(); t.len()",
+            1,
+            &[Primitive::ToString, Primitive::StringLength],
+        ),
+        (
+            "let s: String = \"  a  \"; let t: String = s.trim(); t.len()",
+            1,
+            &[Primitive::StringTrim, Primitive::StringLength],
+        ),
+        (
+            "let s: String = \"ab\"; let t: String = s.replace(\"a\", \"z\"); t.len()",
+            2,
+            &[Primitive::StringReplace, Primitive::StringLength],
+        ),
+        (
+            "let s: String = \"abc\"; discard s.contains(\"b\"); 1",
+            1,
+            &[Primitive::StringContains],
+        ),
+        (
+            "let s: String = \"abc\"; discard s.is_empty(); 1",
+            1,
+            &[Primitive::StringIsEmpty],
+        ),
+        (
+            "let n: Int = 3; discard n.to_float(); 1",
+            1,
+            &[Primitive::IntToFloat],
+        ),
+        (
+            "let s: String = \"42\"; discard s.parse_int(); 1",
+            1,
+            &[Primitive::StringParseInt],
+        ),
+        (
+            "let s: String = \"a,b\"; let parts: List<String> = s.split(\",\"); 1",
+            1,
+            &[Primitive::StringSplit],
+        ),
+        // A builtin call in either operand of an operator lowers as the operand the operator
+        // consumes.
+        (
+            "let xs: List<Int> = [1, 2]; xs.len() + 1",
+            3,
+            &[Primitive::ListLength],
+        ),
+        (
+            "let xs: List<Int> = [1, 2]; 1 + xs.len()",
+            3,
+            &[Primitive::ListLength],
+        ),
+        (
+            "let xs: List<Int> = [1, 2]; xs.len() * 2",
+            4,
+            &[Primitive::ListLength, Primitive::Multiply],
+        ),
+        (
+            "let xs: List<Int> = [1, 2]; xs.len() + xs.len()",
+            4,
+            &[Primitive::ListLength],
+        ),
+        // A grouping pair around a literal receiver is transparent in operand position too.
+        ("(\"abc\").len() + 1", 4, &[Primitive::StringLength]),
+        // An aggregate item keeps its own lowering: the literal must not claim the nested call.
+        (
+            "let xs: List<Int> = [1, 2]; let v: List<Int> = [xs.len()]; v[0]",
+            2,
+            &[Primitive::ListLength],
+        ),
+        (
+            "let xs: List<Int> = [1, 2]; let v: List<Int> = [xs.len() + 1]; v[0]",
+            3,
+            &[Primitive::ListLength],
+        ),
+    ];
+    for (body, expected, required) in entries {
+        let source = format!("fn main() -> Int {{ {body} }}");
+        root.write(&source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: a builtin member call must publish a program")
+        });
+        let entry = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("invalid entry path: {error}"));
+        let instructions = program
+            .workflows()
+            .iter()
+            .filter(|workflow| workflow.path == entry)
+            .flat_map(|workflow| workflow.instructions.iter())
+            .collect::<Vec<_>>();
+        for primitive in required {
+            assert!(
+                instructions
+                    .iter()
+                    .any(|instruction| matches!(instruction.kind, InstructionKind::Primitive(value) if value == *primitive)),
+                "source: {source}: the program must publish {primitive:?}"
+            );
+        }
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &entry,
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x56; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+    for body in [
+        "(\"a\" + \"b\").len()",
+        "let s: String = \"abc\"; s.trim().len()",
+        "(1 + 2).to_string().len()",
+        "let t: String = (-1).to_string(); t.len()",
+    ] {
+        let refused = analyze(&format!("fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics()[0].code.as_str(),
+            "receiver-value-place",
+            "{body}"
+        );
+        assert!(refused.executable_program().is_none(), "{body}");
     }
 }
 

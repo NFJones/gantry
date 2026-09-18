@@ -83,6 +83,20 @@ pub(crate) fn lower_executable_program(
         targets.sort();
         targets.dedup();
     }
+    let mut builtin_targets = BTreeMap::<
+        CanonicalCallableIdentity,
+        Vec<(gantry_core::source::SourceSpan, Primitive, TypeDescriptor)>,
+    >::new();
+    for call in &body.builtin_calls {
+        builtin_targets
+            .entry(identity_for(&call.caller)?)
+            .or_default()
+            .push((call.source.clone(), call.primitive, call.result.clone()));
+    }
+    for targets in builtin_targets.values_mut() {
+        targets.sort_by(|left, right| left.0.cmp(&right.0));
+        targets.dedup();
+    }
     let mut callable_results = body
         .source_callables
         .iter()
@@ -189,6 +203,10 @@ pub(crate) fn lower_executable_program(
                 .get(&metadata.identity)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
+            builtin_targets: builtin_targets
+                .get(&metadata.identity)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
             callable_results: &callable_results,
             shared_receivers: &shared_receivers,
             owned_move_receivers: &owned_move_receivers,
@@ -239,6 +257,10 @@ pub(crate) fn lower_executable_program(
             result: &metadata.result,
             effects,
             direct_targets: direct_targets
+                .get(&identity)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+            builtin_targets: builtin_targets
                 .get(&identity)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
@@ -302,6 +324,7 @@ struct Compiler<'a> {
     result: &'a TypeDescriptor,
     effects: EffectSet,
     direct_targets: &'a [(gantry_core::source::SourceSpan, CanonicalCallableIdentity)],
+    builtin_targets: &'a [(gantry_core::source::SourceSpan, Primitive, TypeDescriptor)],
     callable_results: &'a BTreeMap<CanonicalCallableIdentity, TypeDescriptor>,
     shared_receivers: &'a BTreeSet<CanonicalCallableIdentity>,
     owned_move_receivers: &'a BTreeMap<CanonicalCallableIdentity, OwnershipClass>,
@@ -381,6 +404,7 @@ impl Compiler<'_> {
             result: &result,
             effects: self.effects,
             direct_targets: self.direct_targets,
+            builtin_targets: self.builtin_targets,
             callable_results: self.callable_results,
             shared_receivers: self.shared_receivers,
             owned_move_receivers: self.owned_move_receivers,
@@ -1450,6 +1474,34 @@ impl Compiler<'_> {
         // The type phase reads a node with a top-level index postfix and no operator as one
         // projection on its own, so a call nested in its receiver part must not claim the node:
         // `head(xs)[0]` projects the call result instead of being the call `head(xs)`.
+        // A builtin member call lowers to the primitive that implements it: the receiver is
+        // copied first, then every argument, in the order the primitive consumes them.
+        if let Some((primitive, _)) = self.builtin_target(&node) {
+            let receiver_children = node
+                .children()
+                .iter()
+                .rposition(|child| {
+                    self.tree.node(*child).is_some_and(|child_node| {
+                        node_contains_punctuation(self.tree, child_node, Punctuation::Dot)
+                    })
+                })
+                .and_then(|dot| node.children().get(..dot))
+                .unwrap_or_default()
+                .to_vec();
+            // A receiver this walk cannot key leaves the node to the ordinary aggregate or
+            // value walk instead of aborting, so an enclosing shape keeps its own lowering.
+            if self
+                .compile_builtin_receiver(expression, &node, &receiver_children)?
+                .is_some()
+            {
+                let arguments = call_argument_expressions(self.tree, &node);
+                for argument in &arguments {
+                    self.compile_expression(*argument)?;
+                }
+                self.emit(ty.clone(), InstructionKind::Primitive(primitive))?;
+                return Ok(ty);
+            }
+        }
         let projection_node = is_projection_node(self.tree, expression);
         if let Some(callee) = self.direct_target(&node).filter(|_| !projection_node) {
             let receiver_type = callee.receiver_type();
@@ -2535,6 +2587,9 @@ impl Compiler<'_> {
         if let Some(result) = self.compile_computed_member_projection_operand(children)? {
             return Ok(result);
         }
+        if let Some(result) = self.compile_builtin_call_operand(children)? {
+            return Ok(result);
+        }
         if let Some(result) = self.compile_receiver_call_operand(children)? {
             return Ok(result);
         }
@@ -2983,6 +3038,257 @@ impl Compiler<'_> {
             })
             .min_by_key(|(source, _)| source.bytes().end().saturating_sub(source.bytes().start()))
             .map(|(_, target)| target.clone())
+    }
+
+    /// Returns the primitive one recorded builtin member call lowers to.
+    ///
+    /// The type phase records one builtin call per resolved call site, so the walk matches the
+    /// smallest recorded span the node contains outside its argument list, exactly as recorded
+    /// source calls are matched.
+    fn builtin_target(
+        &self,
+        expression: &gantry_frontend::SyntaxNode,
+    ) -> Option<(Primitive, TypeDescriptor)> {
+        let arguments = call_argument_expressions(self.tree, expression)
+            .into_iter()
+            .filter_map(|argument| self.tree.node(argument).map(|node| node.span()))
+            .collect::<Vec<_>>();
+        self.builtin_targets
+            .iter()
+            .filter(|(source, _, _)| {
+                source_span_contains(expression.span(), source)
+                    // The matched call site must be this expression's own call rather than a
+                    // call nested inside an aggregate: a list or struct literal whose text
+                    // contains a builtin call (`[xs.len()]`) otherwise claims that inner call
+                    // here, exactly as a recorded source call would.
+                    && (source.bytes().start() == expression.span().bytes().start()
+                        || !aggregate_contains_span(self.tree, expression, source))
+                    && !arguments
+                        .iter()
+                        .any(|argument| source_span_contains(argument, source))
+            })
+            .min_by_key(|(source, _, _)| {
+                source.bytes().end().saturating_sub(source.bytes().start())
+            })
+            .map(|(_, primitive, result)| (*primitive, result.clone()))
+    }
+
+    /// Returns the primitive one recorded builtin call names for one operand slice.
+    ///
+    /// The operand walk receives a call as sibling fragments, so the slice's own record is
+    /// matched by the call-site span the fragments reconstruct, exactly as the receiver-call arm
+    /// matches a recorded source call.
+    fn builtin_target_parts(&self, children: &[NodeId]) -> Option<(Primitive, TypeDescriptor)> {
+        let source = sequence_call_site_span(self.tree, children)?;
+        self.builtin_targets
+            .iter()
+            .find(|(target, _, _)| target == &source)
+            .map(|(_, primitive, result)| (*primitive, result.clone()))
+    }
+
+    /// Lowers a split builtin member call operand as its receiver, arguments, and one primitive.
+    ///
+    /// The operand walk receives the call as sibling fragments, so the receiver part is the slice
+    /// before the call parenthesis (its member dot separates the receiver from the member name)
+    /// and the arguments are the expression fragments inside it.
+    fn compile_builtin_call_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        let Some((primitive, result)) = self.builtin_target_parts(children) else {
+            return Ok(None);
+        };
+        let Some(open) = children.iter().position(|child| {
+            self.tree
+                .node(*child)
+                .is_some_and(|node| node_is_call_postfix(self.tree, node))
+        }) else {
+            return Ok(None);
+        };
+        let Some(close) = children.len().checked_sub(1) else {
+            return Ok(None);
+        };
+        if close <= open {
+            return Ok(None);
+        }
+        let receiver = children.get(..open).unwrap_or_default();
+        let Some(_) = self.compile_builtin_receiver_parts(receiver)? else {
+            return Ok(None);
+        };
+        for argument in children
+            .get(open.saturating_add(1)..close)
+            .unwrap_or_default()
+        {
+            if matches!(self.node(*argument)?.form(), SyntaxForm::Expression) {
+                self.compile_expression(*argument)?;
+            }
+        }
+        self.emit(result.clone(), InstructionKind::Primitive(primitive))?;
+        Ok(Some(result))
+    }
+
+    /// Compiles one builtin call operand's receiver from its sibling fragments.
+    ///
+    /// The operand walk sees the receiver, the member name, and the arguments as siblings, so the
+    /// receiver part is a place (grouped or not), a constructed value, or a literal value; the
+    /// type phase refuses every other receiver expression.
+    fn compile_builtin_receiver_parts(
+        &mut self,
+        receiver: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        if let Some((root, path)) = operand_receiver_place(self.tree, receiver) {
+            let mut projection_types =
+                receiver_place_types(&root, &path, &self.binding_types, self.struct_fields)
+                    .ok_or(AnalysisError::Invariant)?
+                    .into_iter();
+            let mut current = projection_types.next().ok_or(AnalysisError::Invariant)?;
+            self.emit(current.clone(), InstructionKind::Load(root.clone()))?;
+            for field in &path {
+                let ValuePathSegment::StructField(field) = field else {
+                    return Err(AnalysisError::Invariant);
+                };
+                current = projection_types.next().ok_or(AnalysisError::Invariant)?;
+                self.emit(
+                    current.clone(),
+                    InstructionKind::Project(Projection::Field(Arc::from(field.as_str()))),
+                )?;
+            }
+            if projection_types.next().is_some() {
+                return Err(AnalysisError::Invariant);
+            }
+            return Ok(Some(current));
+        }
+        for child in receiver {
+            let Some(node) = self.tree.node(*child) else {
+                continue;
+            };
+            let struct_expression = if matches!(node.form(), SyntaxForm::StructExpression) {
+                Some(*child)
+            } else {
+                descendant_form(self.tree, *child, &[SyntaxForm::StructExpression])
+            };
+            if let Some(struct_expression) = struct_expression {
+                let constructed = self
+                    .body_types
+                    .get(&struct_expression)
+                    .cloned()
+                    .ok_or(AnalysisError::Invariant)?;
+                self.compile_struct(*child, struct_expression, constructed.clone())?;
+                return Ok(Some(constructed));
+            }
+        }
+        let mut tokens = Vec::new();
+        let mut work = receiver.iter().rev().copied().collect::<Vec<_>>();
+        while let Some(id) = work.pop() {
+            let Some(node) = self.tree.node(id) else {
+                break;
+            };
+            if matches!(node.form(), SyntaxForm::Token(_)) {
+                tokens.push(id);
+            } else {
+                work.extend(node.children().iter().rev().copied());
+            }
+        }
+        let member_dot = tokens.iter().rposition(|id| {
+            matches!(
+                self.tree.node(*id).map(|node| node.form()),
+                Some(SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)))
+            )
+        });
+        let mut receiver_tokens = member_dot
+            .map_or(tokens.as_slice(), |dot| &tokens[..dot])
+            .to_vec();
+        // A grouping pair around a literal is transparent here exactly as it is in the type
+        // phase, so `("abc").len()` publishes the same literal value `"abc".len()` does.
+        if let [first, .., last] = receiver_tokens.as_slice()
+            && matches!(
+                self.tree.node(*first).map(|node| node.form()),
+                Some(SyntaxForm::Token(TokenKind::Punctuation(
+                    Punctuation::LeftParenthesis
+                )))
+            )
+            && matches!(
+                self.tree.node(*last).map(|node| node.form()),
+                Some(SyntaxForm::Token(TokenKind::Punctuation(
+                    Punctuation::RightParenthesis
+                )))
+            )
+        {
+            receiver_tokens = receiver_tokens[1..receiver_tokens.len().saturating_sub(1)].to_vec();
+        }
+        if let [only] = receiver_tokens.as_slice()
+            && let Some((value, ty)) = literal_token(self.tree, *only)?
+        {
+            self.emit(ty.clone(), InstructionKind::Push(value))?;
+            return Ok(Some(ty));
+        }
+        Ok(None)
+    }
+
+    /// Compiles one builtin member call's receiver, which the primitive copies.
+    ///
+    /// A builtin receiver is a binding root or struct-field place (grouped or not), a constructed
+    /// value, or a literal value; the type phase refuses every other receiver expression.
+    fn compile_builtin_receiver(
+        &mut self,
+        expression: NodeId,
+        node: &gantry_frontend::SyntaxNode,
+        receiver_children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        if let Some((root, path)) = postfix_method_receiver_place(self.tree, node)
+            .or_else(|| grouped_method_receiver_place(self.tree, node))
+        {
+            let mut projection_types =
+                receiver_place_types(&root, &path, &self.binding_types, self.struct_fields)
+                    .ok_or(AnalysisError::Invariant)?
+                    .into_iter();
+            let mut current = projection_types.next().ok_or(AnalysisError::Invariant)?;
+            self.emit(current.clone(), InstructionKind::Load(root.clone()))?;
+            for field in &path {
+                let ValuePathSegment::StructField(field) = field else {
+                    return Err(AnalysisError::Invariant);
+                };
+                current = projection_types.next().ok_or(AnalysisError::Invariant)?;
+                self.emit(
+                    current.clone(),
+                    InstructionKind::Project(Projection::Field(Arc::from(field.as_str()))),
+                )?;
+            }
+            if projection_types.next().is_some() {
+                return Err(AnalysisError::Invariant);
+            }
+            return Ok(Some(current));
+        }
+        if let Some(struct_expression) =
+            descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
+        {
+            let constructed = self
+                .body_types
+                .get(&struct_expression)
+                .cloned()
+                .ok_or(AnalysisError::Invariant)?;
+            self.compile_struct(expression, struct_expression, constructed.clone())?;
+            return Ok(Some(constructed));
+        }
+        if let Some(inner) = grouped_receiver_expression(self.tree, receiver_children) {
+            return Ok(Some(self.compile_expression(inner)?));
+        }
+        // A literal receiver publishes its own value (`1.to_string()`, `"abc".len()`); the type
+        // phase admits no other receiver here, so a remaining value compiles its expression.
+        if let Some(value) = literal_value(self.tree, node)? {
+            let ty = literal_type(self.tree, node).ok_or(AnalysisError::Invariant)?;
+            self.emit(ty.clone(), InstructionKind::Push(value))?;
+            return Ok(Some(ty));
+        }
+        for child in receiver_children {
+            let Some(child_node) = self.tree.node(*child) else {
+                continue;
+            };
+            if matches!(child_node.form(), SyntaxForm::Expression) {
+                return Ok(Some(self.compile_expression(*child)?));
+            }
+        }
+        Ok(None)
     }
 
     fn direct_sequence_target(
@@ -4625,6 +4931,45 @@ fn literal_type(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Option
             },
             _ => None,
         })
+}
+
+/// Returns the value and type one literal token publishes.
+///
+/// A token-level walk serves the operand path, where a literal receiver arrives as a fragment
+/// rather than as a node of its own.
+fn literal_token(
+    tree: &SyntaxTree,
+    token: NodeId,
+) -> Result<Option<(LogicalValue, TypeDescriptor)>, AnalysisError> {
+    let Some(node) = tree.node(token) else {
+        return Ok(None);
+    };
+    let value = match node.form() {
+        SyntaxForm::Token(TokenKind::IntegerLiteral(value)) => value
+            .parse::<i64>()
+            .ok()
+            .and_then(GantryInt::new)
+            .map(|value| (LogicalValue::integer(value), TypeDescriptor::INT)),
+        SyntaxForm::Token(TokenKind::FloatLiteral(value)) => value
+            .parse::<f64>()
+            .ok()
+            .and_then(GantryFloat::new)
+            .map(|value| (LogicalValue::float(value), TypeDescriptor::FLOAT)),
+        SyntaxForm::Token(TokenKind::StringLiteral(value) | TokenKind::RawStringLiteral(value)) => {
+            Some((
+                LogicalValue::string(value.to_string(), DEFAULT_VALUE_LIMITS)
+                    .map_err(|_| AnalysisError::Invariant)?,
+                TypeDescriptor::STRING,
+            ))
+        }
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) => match word.spelling() {
+            "true" => Some((LogicalValue::boolean(true), TypeDescriptor::BOOL)),
+            "false" => Some((LogicalValue::boolean(false), TypeDescriptor::BOOL)),
+            _ => None,
+        },
+        _ => None,
+    };
+    Ok(value)
 }
 
 fn literal_value(

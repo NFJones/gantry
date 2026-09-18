@@ -23,7 +23,7 @@ use gantry_ir::{
     CallableDiagnosticCode, CallableKind, CanonicalCallableIdentity,
     CanonicalImplementationIdentity, CanonicalPath, CanonicalTemplateIdentity, ConcreteIdentity,
     ConcreteInstantiation, EffectSet, GenericTemplate, ImplementationHead, OwnershipClass,
-    Predicate, ReceiverMode, TraitContract, TraitMethodContract, TraitReference,
+    Predicate, Primitive, ReceiverMode, TraitContract, TraitMethodContract, TraitReference,
     TransferEligibility, TypeDescriptor, TypeDescriptorError, TypeExpression, WorkflowParameter,
 };
 
@@ -186,6 +186,7 @@ pub(crate) struct BodyAnalysis {
     pub(crate) generic_instantiations: Vec<ConcreteInstantiation>,
     pub(crate) concrete_callables: Vec<ConcreteCallableMetadata>,
     pub(crate) resolved_calls: Vec<ResolvedCallMetadata>,
+    pub(crate) builtin_calls: Vec<BuiltinCallMetadata>,
     pub(crate) source_callables: Vec<SourceCallableMetadata>,
     pub(crate) closed_enums: BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
     pub(crate) generic_declarations: BTreeSet<SourceSpan>,
@@ -223,6 +224,14 @@ pub(crate) struct ResolvedCallMetadata {
     pub(crate) callee: EffectNode,
     pub(crate) source: SourceSpan,
     pub(crate) selected_implementation: Option<CanonicalImplementationIdentity>,
+}
+
+/// One builtin member call the lowering publishes as a primitive.
+pub(crate) struct BuiltinCallMetadata {
+    pub(crate) caller: EffectNode,
+    pub(crate) source: SourceSpan,
+    pub(crate) primitive: Primitive,
+    pub(crate) result: TypeDescriptor,
 }
 
 pub(crate) struct SourceCallableMetadata {
@@ -318,6 +327,9 @@ struct BodyContext {
     resolved_calls: RefCell<
         BTreeMap<(EffectNode, SourceSpan, EffectNode), Option<CanonicalImplementationIdentity>>,
     >,
+    /// Builtin member calls keyed by caller and call-site span, with the primitive that
+    /// implements each one.
+    builtin_calls: RefCell<BTreeMap<(EffectNode, SourceSpan), (Primitive, TypeDescriptor)>>,
     generic_instantiation_witnesses: RefCell<BTreeMap<InstantiationKey, Vec<InstantiationKey>>>,
     current_instantiation: RefCell<Option<(InstantiationKey, Vec<InstantiationKey>)>>,
     current_type_substitution: RefCell<Option<ExactTypeSubstitution>>,
@@ -1024,6 +1036,7 @@ fn build_body_context(
         generic_instantiations: RefCell::new(BTreeMap::new()),
         generic_instantiation_origins: RefCell::new(BTreeMap::new()),
         resolved_calls: RefCell::new(BTreeMap::new()),
+        builtin_calls: RefCell::new(BTreeMap::new()),
         generic_instantiation_witnesses: RefCell::new(BTreeMap::new()),
         current_instantiation: RefCell::new(None),
         current_type_substitution: RefCell::new(None),
@@ -1466,6 +1479,19 @@ pub(crate) fn check_package_bodies(
                 },
             )
             .collect();
+        let builtin_calls = context
+            .builtin_calls
+            .take()
+            .into_iter()
+            .map(
+                |((caller, source), (primitive, result))| BuiltinCallMetadata {
+                    caller,
+                    source,
+                    primitive,
+                    result,
+                },
+            )
+            .collect();
         let mut closed_types = expression_types
             .iter()
             .flat_map(BTreeMap::values)
@@ -1538,6 +1564,7 @@ pub(crate) fn check_package_bodies(
                 .collect(),
             concrete_callables,
             resolved_calls,
+            builtin_calls,
             source_callables,
             closed_enums,
             generic_declarations,
@@ -8699,6 +8726,15 @@ fn infer_member_sequence(
             .transpose()?;
         let builtin = builtin_method_signature(&receiver, &member)?;
         let builtin_present = builtin.is_some();
+        let builtin_primitive = match (
+            builtin_present,
+            builtin_method_primitive(&receiver, &member),
+        ) {
+            (true, Some(primitive)) => Some(primitive),
+            (false, None) => None,
+            // Every admitted builtin has exactly one primitive, and no other member does.
+            _ => return Err(AnalysisError::Invariant),
+        };
         let inherent_source = builtin.is_none().then(|| {
             context
                 .inherent_method_sources
@@ -8779,6 +8815,31 @@ fn infer_member_sequence(
                 member_node.span().clone(),
                 [] as [(&str, &str); 0],
             )?);
+        }
+        if let Some(primitive) = builtin_primitive {
+            // A primitive copies its receiver, so a builtin receiver is a binding root or
+            // struct-field place, a constructed value, or a literal; every other receiver
+            // expression is refused here rather than reaching the primitive.
+            if !receiver_is_syntactic_place(tree, receiver_scope)
+                && !receiver_is_constructed(tree, receiver_scope)
+                && !receiver_is_literal_value(tree, receiver_scope)
+            {
+                diagnostics.push(body_diagnostic(
+                    "receiver-value-place",
+                    DiagnosticCategory::Type,
+                    "a receiver call requires a binding root, a struct-field receiver place, or a constructed value",
+                    member_node.span().clone(),
+                    [] as [(&str, &str); 0],
+                )?);
+            }
+            let call_site = call_sequence_span(tree, children, member_node)
+                .unwrap_or_else(|| member_node.span().clone());
+            if let Some(caller) = context.current_effect_owner.borrow().clone() {
+                context
+                    .builtin_calls
+                    .borrow_mut()
+                    .insert((caller, call_site), (primitive, signature.result.clone()));
+            }
         }
         if let Some(metadata) = inherent_source.flatten() {
             let exclusive_admission = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
@@ -9065,6 +9126,70 @@ fn receiver_is_constructed(tree: &SyntaxTree, children: &[NodeId]) -> bool {
     receiver_children
         .iter()
         .any(|child| subtree_constructs_aggregate(tree, *child))
+}
+
+/// Reports whether one receiver part is a literal value.
+///
+/// A primitive copies its receiver, so a literal receiver publishes its own value: the walk peels
+/// one grouping pair and then requires one literal token.
+fn receiver_is_literal_value(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let Some(node) = tree.node(id) else {
+            return false;
+        };
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    // The member dot separates the receiver part from the member name, exactly as the place
+    // walk above keys its own receiver part.
+    let Some(dot) = tokens.iter().rposition(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    }) else {
+        return false;
+    };
+    let mut tokens = tokens[..dot].to_vec();
+    if let [first, .., last] = tokens.as_slice()
+        && matches!(
+            first.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        )
+        && matches!(
+            last.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+        )
+    {
+        tokens = tokens[1..tokens.len().saturating_sub(1)].to_vec();
+    }
+    let literal = |node: &gantry_frontend::SyntaxNode| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(
+                TokenKind::IntegerLiteral(_)
+                    | TokenKind::FloatLiteral(_)
+                    | TokenKind::StringLiteral(_)
+                    | TokenKind::RawStringLiteral(_)
+            )
+        )
+    };
+    let boolean = |node: &gantry_frontend::SyntaxNode| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::ReservedWord(word))
+                if matches!(word.spelling(), "true" | "false")
+        )
+    };
+    match tokens.as_slice() {
+        [only] => literal(only) || boolean(only),
+        _ => false,
+    }
 }
 
 /// Reports whether one subtree contains a struct expression.
@@ -10439,6 +10564,42 @@ fn builtin_method_signature(
         _ => return Ok(None),
     };
     Ok(Some(signature))
+}
+
+/// Returns the primitive that implements one builtin member call.
+///
+/// The vocabulary mirrors [`builtin_method_signature`] exactly: every builtin the type phase
+/// admits has one primitive, and the call site reports an invariant when the two disagree, so a
+/// builtin can neither be typed without a lowering nor lowered without a signature.
+fn builtin_method_primitive(receiver: &TypeDescriptor, member: &str) -> Option<Primitive> {
+    let primitive = match (receiver.kind(), member) {
+        (TypeKind::Bool | TypeKind::Int | TypeKind::Float, "to_string") => Primitive::ToString,
+        (TypeKind::Int, "to_float") => Primitive::IntToFloat,
+        (TypeKind::Float, "to_int") => Primitive::FloatToInt,
+        (TypeKind::String, "len") => Primitive::StringLength,
+        (TypeKind::String, "is_empty") => Primitive::StringIsEmpty,
+        (TypeKind::String, "contains") => Primitive::StringContains,
+        (TypeKind::String, "starts_with") => Primitive::StringStartsWith,
+        (TypeKind::String, "ends_with") => Primitive::StringEndsWith,
+        (TypeKind::String, "trim") => Primitive::StringTrim,
+        (TypeKind::String, "trim_start") => Primitive::StringTrimStart,
+        (TypeKind::String, "trim_end") => Primitive::StringTrimEnd,
+        (TypeKind::String, "to_lowercase") => Primitive::StringLowercase,
+        (TypeKind::String, "to_uppercase") => Primitive::StringUppercase,
+        (TypeKind::String, "replace") => Primitive::StringReplace,
+        (TypeKind::String, "split") => Primitive::StringSplit,
+        (TypeKind::String, "parse_bool") => Primitive::StringParseBool,
+        (TypeKind::String, "parse_int") => Primitive::StringParseInt,
+        (TypeKind::String, "parse_float") => Primitive::StringParseFloat,
+        (TypeKind::List, "len") => Primitive::ListLength,
+        (TypeKind::List, "join")
+            if receiver.immediate_members().first() == Some(&TypeDescriptor::STRING) =>
+        {
+            Primitive::StringListJoin
+        }
+        _ => return None,
+    };
+    Some(primitive)
 }
 
 fn infer_call_sequence(
