@@ -1509,7 +1509,21 @@ impl Compiler<'_> {
             let owned_move_receiver = self.owned_move_receivers.get(&callee).copied();
             let requires_place = shared_receiver || owned_move_receiver.is_some();
             let constructed_receiver = receiver_type.as_ref().and_then(|_| {
-                descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
+                // The constructed value is the receiver part's own literal, exactly as the type
+                // phase admits it: a literal inside an argument belongs to that argument.
+                let receiver_children = node
+                    .children()
+                    .iter()
+                    .rposition(|child| {
+                        self.tree.node(*child).is_some_and(|child_node| {
+                            node_contains_punctuation(self.tree, child_node, Punctuation::Dot)
+                        })
+                    })
+                    .map_or_else(
+                        || node.children(),
+                        |dot| node.children().get(..dot).unwrap_or_default(),
+                    );
+                crate::bodies::receiver_owns_aggregate_literal(self.tree, receiver_children)
             });
             let receiver_place = receiver_type.as_ref().and_then(|_| {
                 postfix_method_receiver_place(self.tree, &node)
@@ -1537,7 +1551,7 @@ impl Compiler<'_> {
                 if requires_place {
                     return Err(AnalysisError::Invariant);
                 }
-                self.compile_struct(expression, struct_expression, receiver_type.clone())?;
+                self.compile_literal_aggregate(expression, struct_expression, Some(receiver_type))?;
             } else if let (Some((root, path)), Some(_)) = (&receiver_place, receiver_type.as_ref())
                 && !requires_place
             {
@@ -1866,6 +1880,53 @@ impl Compiler<'_> {
         )?;
         let _ = expression;
         Ok(ty)
+    }
+
+    /// Compiles one aggregate literal as the value a receiver call consumes.
+    ///
+    /// The type phase admits exactly the receiver parts that own a struct or list literal, so the
+    /// lowering publishes the literal the call reads: a struct literal publishes its fields and
+    /// then the struct aggregate, and a list literal publishes its members in order and then the
+    /// list aggregate. The callee's declared receiver type is authoritative whenever the caller
+    /// knows it, and the literal's own recorded type or its first member's type otherwise.
+    fn compile_literal_aggregate(
+        &mut self,
+        expression: NodeId,
+        literal: NodeId,
+        authoritative: Option<&TypeDescriptor>,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        let node = self.node(literal)?.clone();
+        if matches!(node.form(), SyntaxForm::ListExpression) {
+            let members = direct_expressions(self.tree, &node);
+            let mut element = authoritative
+                .cloned()
+                .or_else(|| self.body_types.get(&literal).cloned())
+                .filter(|ty| ty.kind() == TypeKind::List)
+                .and_then(|ty| ty.immediate_members().into_iter().next());
+            for (index, member) in members.iter().enumerate() {
+                let member_type = self.compile_expression(*member)?;
+                if index == 0 {
+                    element = Some(member_type);
+                }
+            }
+            let Some(element) = element else {
+                return Err(AnalysisError::Invariant);
+            };
+            let list = TypeDescriptor::list(element);
+            self.emit(
+                list.clone(),
+                InstructionKind::Aggregate {
+                    kind: AggregateKind::List,
+                    operands: members.len(),
+                },
+            )?;
+            return Ok(list);
+        }
+        let constructed = authoritative
+            .cloned()
+            .or_else(|| self.body_types.get(&literal).cloned())
+            .ok_or(AnalysisError::Invariant)?;
+        self.compile_struct(expression, literal, constructed)
     }
 
     fn compile_static_projection(
@@ -3158,24 +3219,10 @@ impl Compiler<'_> {
             }
             return Ok(Some(current));
         }
-        for child in receiver {
-            let Some(node) = self.tree.node(*child) else {
-                continue;
-            };
-            let struct_expression = if matches!(node.form(), SyntaxForm::StructExpression) {
-                Some(*child)
-            } else {
-                descendant_form(self.tree, *child, &[SyntaxForm::StructExpression])
-            };
-            if let Some(struct_expression) = struct_expression {
-                let constructed = self
-                    .body_types
-                    .get(&struct_expression)
-                    .cloned()
-                    .ok_or(AnalysisError::Invariant)?;
-                self.compile_struct(*child, struct_expression, constructed.clone())?;
-                return Ok(Some(constructed));
-            }
+        if let Some(literal) = crate::bodies::receiver_owns_aggregate_literal(self.tree, receiver) {
+            return Ok(Some(
+                self.compile_literal_aggregate(literal, literal, None)?,
+            ));
         }
         let mut tokens = Vec::new();
         let mut work = receiver.iter().rev().copied().collect::<Vec<_>>();
@@ -3259,16 +3306,12 @@ impl Compiler<'_> {
             }
             return Ok(Some(current));
         }
-        if let Some(struct_expression) =
-            descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
+        if let Some(literal) =
+            crate::bodies::receiver_owns_aggregate_literal(self.tree, receiver_children)
         {
-            let constructed = self
-                .body_types
-                .get(&struct_expression)
-                .cloned()
-                .ok_or(AnalysisError::Invariant)?;
-            self.compile_struct(expression, struct_expression, constructed.clone())?;
-            return Ok(Some(constructed));
+            return Ok(Some(
+                self.compile_literal_aggregate(expression, literal, None)?,
+            ));
         }
         if let Some(inner) = grouped_receiver_expression(self.tree, receiver_children) {
             return Ok(Some(self.compile_expression(inner)?));

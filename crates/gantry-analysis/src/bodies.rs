@@ -5873,15 +5873,40 @@ fn infer_expression_inner(
         tree.node(*child)
             .is_some_and(|node| matches!(node.form(), SyntaxForm::ListExpression))
     }) {
-        return infer_list(
+        // A list literal that carries a member step is the receiver of that step: the literal is
+        // typed first and the step continues from it, exactly as a struct literal receiver does.
+        // Without the continuation the step would be dropped and the literal's own type would be
+        // published as the type of the whole expression.
+        let has_member = node
+            .children()
+            .iter()
+            .copied()
+            .any(|child| node_contains_punctuation(tree, child, Punctuation::Dot));
+        let receiver = infer_list(
             tree,
             list,
             facts,
             environment,
-            expected,
+            if has_member { None } else { expected },
             context,
             diagnostics,
-        );
+        )?;
+        if has_member {
+            return match receiver {
+                Some(receiver) => infer_member_sequence(
+                    tree,
+                    node.children(),
+                    facts,
+                    environment,
+                    Some(receiver),
+                    expected,
+                    context,
+                    diagnostics,
+                ),
+                None => Ok(None),
+            };
+        }
+        return Ok(receiver);
     }
     if let Some(struct_expression) = node.children().iter().copied().find(|child| {
         tree.node(*child)
@@ -8382,6 +8407,9 @@ fn operand_index_projection_has_receiver_call(tree: &SyntaxTree, children: &[Nod
     })
 }
 
+/// The one reserved word the parser admits as a postfix member name.
+const MEMBER_JOIN: &str = "join";
+
 /// Returns the identifier token one dotted member step names.
 ///
 /// The parser hands a member name either as its own identifier token or wrapped in one
@@ -8392,6 +8420,11 @@ fn member_identifier_node(tree: &SyntaxTree, id: NodeId) -> Option<&gantry_front
     let node = tree.node(id)?;
     match node.form() {
         SyntaxForm::Token(TokenKind::Identifier(_)) => Some(node),
+        // `join` is a reserved word because tasks join, and the parser admits it as a postfix
+        // member name, so `List<String>.join(separator)` keeps that spelling here.
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == MEMBER_JOIN => {
+            Some(node)
+        }
         SyntaxForm::Expression | SyntaxForm::BinaryExpression | SyntaxForm::Path => {
             let [inner] = node.children() else {
                 return None;
@@ -8665,6 +8698,9 @@ fn infer_member_sequence(
     };
     let member = match member_node.form() {
         SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == MEMBER_JOIN => {
+            Arc::from(MEMBER_JOIN)
+        }
         _ => return Ok(None),
     };
     let call_open = children
@@ -9117,15 +9153,111 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
         })
 }
 
-/// Reports whether any receiver child before the method dot constructs an aggregate.
+/// Reports whether the receiver before the method dot constructs an aggregate value.
 fn receiver_is_constructed(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    receiver_owns_aggregate_literal(tree, children).is_some()
+}
+
+/// Returns the aggregate literal one receiver part owns as its value, if it constructs one.
+///
+/// A receiver call copies its receiver, so a constructed value is one of the three admitted
+/// receiver forms (`SPEC.md` line 3699), and a list literal constructs a value exactly as a
+/// struct literal does. The part must *be* the literal: a part that calls, indexes, or operates on
+/// top of one (`take(Item { value: 1 }).len()`, `[1, 2][0].len()`,
+/// `["a", "b"].join("-").len()`) names the value that operation produced, so the literal it
+/// mentions belongs to an operand instead. A grouping parenthesis is transparent here exactly as
+/// it is for a receiver place or a literal value.
+pub(crate) fn receiver_owns_aggregate_literal(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Option<NodeId> {
     let receiver_children = children
         .iter()
         .rposition(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
         .map_or_else(|| children, |dot| children.get(..dot).unwrap_or_default());
-    receiver_children
+    value_slice_literal(tree, receiver_children)
+}
+
+/// Returns the aggregate literal one value slice names as its own value, if it constructs one.
+///
+/// The slice's value is named by its last operand, and only the aggregate's own type path may
+/// precede that operand: any other earlier operand, and every token after it, belongs to an
+/// operation this slice performs rather than to the literal it mentions.
+fn value_slice_literal(tree: &SyntaxTree, children: &[NodeId]) -> Option<NodeId> {
+    let inner = peel_grouping_parentheses(tree, children);
+    let mut operands = inner
         .iter()
-        .any(|child| subtree_constructs_aggregate(tree, *child))
+        .copied()
+        .filter(|child| is_value_operand(tree, *child));
+    let last = operands.next_back()?;
+    if !operands.all(|child| is_aggregate_prefix_operand(tree, child)) {
+        return None;
+    }
+    if token_follows_child(tree, inner, last) {
+        return None;
+    }
+    let node = tree.node(last)?;
+    if matches!(
+        node.form(),
+        SyntaxForm::StructExpression | SyntaxForm::ListExpression
+    ) {
+        return Some(last);
+    }
+    value_slice_literal(tree, node.children())
+}
+
+/// Removes the grouping parentheses one slice spells around a single operand.
+fn peel_grouping_parentheses<'a>(tree: &SyntaxTree, children: &'a [NodeId]) -> &'a [NodeId] {
+    let mut inner = children;
+    while let [first, middle @ .., last] = inner {
+        let wrapped = tree.node(*first).is_some_and(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+            )
+        }) && tree.node(*last).is_some_and(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+            )
+        }) && middle
+            .iter()
+            .copied()
+            .filter(|child| is_value_operand(tree, *child))
+            .count()
+            == 1;
+        if !wrapped {
+            break;
+        }
+        inner = middle;
+    }
+    inner
+}
+
+/// Reports whether one child of a value slice carries a value rather than punctuation.
+fn is_value_operand(tree: &SyntaxTree, child: NodeId) -> bool {
+    tree.node(child)
+        .is_some_and(|node| !matches!(node.form(), SyntaxForm::Token(_)))
+}
+
+/// Reports whether one operand only names the type of the aggregate that follows it.
+fn is_aggregate_prefix_operand(tree: &SyntaxTree, child: NodeId) -> bool {
+    tree.node(child)
+        .is_some_and(|node| matches!(node.form(), SyntaxForm::Path | SyntaxForm::TypeArgumentList))
+}
+
+/// Reports whether any token of one slice follows one of its children.
+fn token_follows_child(tree: &SyntaxTree, children: &[NodeId], child: NodeId) -> bool {
+    children
+        .iter()
+        .position(|candidate| *candidate == child)
+        .is_some_and(|index| {
+            children
+                .get(index.saturating_add(1)..)
+                .unwrap_or_default()
+                .iter()
+                .any(|rest| !is_value_operand(tree, *rest))
+        })
 }
 
 /// Reports whether one receiver part is a literal value.
@@ -9190,21 +9322,6 @@ fn receiver_is_literal_value(tree: &SyntaxTree, children: &[NodeId]) -> bool {
         [only] => literal(only) || boolean(only),
         _ => false,
     }
-}
-
-/// Reports whether one subtree contains a struct expression.
-fn subtree_constructs_aggregate(tree: &SyntaxTree, node: NodeId) -> bool {
-    let mut work = vec![node];
-    while let Some(id) = work.pop() {
-        let Some(node) = tree.node(id) else {
-            continue;
-        };
-        if matches!(node.form(), SyntaxForm::StructExpression) {
-            return true;
-        }
-        work.extend(node.children().iter().copied());
-    }
-    false
 }
 
 fn postfix_shared_receiver_place(

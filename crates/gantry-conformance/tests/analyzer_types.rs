@@ -9110,7 +9110,7 @@ fn public_builtin_member_calls_publish_their_primitive() {
     }
 
     let root = TempDirectory::new();
-    let entries: [(&str, i64, &[Primitive]); 18] = [
+    let entries: [(&str, i64, &[Primitive]); 25] = [
         (
             "let xs: List<Int> = [1, 2, 3]; xs.len()",
             3,
@@ -9197,6 +9197,23 @@ fn public_builtin_member_calls_publish_their_primitive() {
             3,
             &[Primitive::ListLength],
         ),
+        // A list literal receiver owns the value its call reads, so the aggregate is published
+        // before the primitive in every position, grouped or not (`2e558b5f`).
+        ("[1, 2, 3].len()", 3, &[Primitive::ListLength]),
+        ("([1, 2, 3]).len()", 3, &[Primitive::ListLength]),
+        ("[1, 2, 3].len() + 1", 4, &[Primitive::ListLength]),
+        (
+            "let n: Int = [1, 2, 3].len(); n",
+            3,
+            &[Primitive::ListLength],
+        ),
+        ("discard [1, 2, 3].len(); 3", 3, &[Primitive::ListLength]),
+        ("[1 + 1].len()", 1, &[Primitive::ListLength]),
+        (
+            "let j: String = [\"a\", \"b\"].join(\"-\"); j.len()",
+            3,
+            &[Primitive::StringListJoin, Primitive::StringLength],
+        ),
     ];
     for (body, expected, required) in entries {
         let source = format!("fn main() -> Int {{ {body} }}");
@@ -9252,6 +9269,7 @@ fn public_builtin_member_calls_publish_their_primitive() {
         "let s: String = \"abc\"; s.trim().len()",
         "(1 + 2).to_string().len()",
         "let t: String = (-1).to_string(); t.len()",
+        "[\"a\", \"b\"].join(\"-\").len()",
     ] {
         let refused = analyze(&format!("fn main() -> Int {{ {body} }}"));
         assert_eq!(
@@ -9267,6 +9285,48 @@ fn public_builtin_member_calls_publish_their_primitive() {
         );
         assert!(refused.executable_program().is_none(), "{body}");
     }
+}
+
+/// A receiver part that only mentions a constructed value through an operand is not the value its
+/// receiver call reads.
+///
+/// `take(Item { count: 1 }).len()` reads the list that call returns, and `take(items[0]).len()`
+/// reads the list a call with an indexed place returns, so neither part constructs the value its
+/// receiver copies. Both aborted internally before this row and now keep the precise refusal an
+/// indexed or call receiver already has, while a literal the part does name still executes
+/// (`2e558b5f`).
+#[test]
+fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
+    const FIXTURE: &str =
+        "struct Item { count: Int } fn take(item: Item) -> List<Int> { [item.count] } ";
+
+    for body in [
+        "let items: List<Item> = [Item { count: 1 }]; discard take(items[0]).len(); 1",
+        "discard take(Item { count: 1 }).len(); 1",
+    ] {
+        let refused = analyze(&format!("{FIXTURE}fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics()[0].code.as_str(),
+            "receiver-value-place",
+            "{body}"
+        );
+        assert!(refused.executable_program().is_none(), "{body}");
+    }
+    let admitted = analyze(&format!(
+        "{FIXTURE}fn main() -> Int {{ [Item {{ count: 1 }}].len() }}"
+    ));
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
 }
 
 /// A grouping parenthesis is transparent for a receiver call.
