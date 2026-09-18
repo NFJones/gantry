@@ -6053,50 +6053,28 @@ fn infer_expression_inner(
             // are folded in source order, so an interior operator is typed as well and
             // `C { v: 5 }.read() + true == 6` still refuses; a step with no trailing operator keeps
             // the walked value exactly as before.
-            // The boundary is the chain's own closing parenthesis, not the last parenthesis in the
-            // node: an operand of the trailing operator can own a call or a group of its own
-            // (`read() == id(5)`), whose parentheses must stay inside the suffix.
-            let mut call_end = node
+            // The walked chain ends at the first operator that follows it: the scan past the struct
+            // expression counts parentheses, so neither the chain's own call steps, nor a member
+            // step (`next().v`), nor an operand that owns a call or a group of its own
+            // (`read() == id(5)`) can be mistaken for the end of the chain.
+            let mut depth = 0_usize;
+            let mut suffix_start = None;
+            for (index, child) in node
                 .children()
                 .iter()
                 .copied()
                 .enumerate()
                 .skip_while(|(_, child)| *child != struct_expression)
                 .skip(1)
-                .find(|(_, child)| {
-                    node_contains_punctuation(tree, *child, Punctuation::LeftParenthesis)
-                })
-                .and_then(|(open, _)| split_call_close_index(tree, node.children(), open))
-                .map(|close| close.saturating_add(1));
-            // A chain that keeps stepping after that call (`next().v`, `next().read()`) extends the
-            // boundary to a following call postfix, but only across a member dot: a dot inside the
-            // trailing operand (`read() == id(5)`) must not move it.
-            while let Some(end) = call_end {
-                let Some(child) = node.children().get(end) else {
-                    break;
-                };
-                if !node_contains_punctuation(tree, *child, Punctuation::Dot) {
+            {
+                if depth == 0 && direct_binary_operator_in(tree, &[child]).is_some() {
+                    suffix_start = Some(index);
                     break;
                 }
-                let Some(open) = node
-                    .children()
-                    .iter()
-                    .enumerate()
-                    .skip(end.saturating_add(1))
-                    .take(2)
-                    .find(|(_, candidate)| {
-                        node_contains_punctuation(tree, **candidate, Punctuation::LeftParenthesis)
-                    })
-                    .map(|(index, _)| index)
-                else {
-                    break;
-                };
-                let Some(close) = split_call_close_index(tree, node.children(), open) else {
-                    break;
-                };
-                call_end = Some(close.saturating_add(1));
+                let (opens, closes) = parenthesis_counts(tree, child);
+                depth = depth.saturating_add(opens).saturating_sub(closes);
             }
-            let suffix = call_end
+            let suffix = suffix_start
                 .and_then(|index| node.children().get(index..))
                 .unwrap_or_default();
             if direct_binary_operator_in(tree, suffix).is_none() {
@@ -12616,6 +12594,25 @@ fn direct_binary_operator(
     node: &gantry_frontend::SyntaxNode,
 ) -> Option<(Punctuation, usize)> {
     direct_binary_operator_in(tree, node.children())
+}
+
+/// Counts the parentheses in `id`'s subtree, which is how a scan past a member walk tells the
+/// chain's own call steps from an operand's own group.
+fn parenthesis_counts(tree: &SyntaxTree, id: NodeId) -> (usize, usize) {
+    let mut opens = 0_usize;
+    let mut closes = 0_usize;
+    let mut work = vec![id];
+    while let Some(working) = work.pop() {
+        let Some(node) = tree.node(working) else {
+            continue;
+        };
+        match node.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => opens += 1,
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => closes += 1,
+            _ => work.extend(node.children().iter().copied()),
+        }
+    }
+    (opens, closes)
 }
 
 fn direct_binary_operator_in(
