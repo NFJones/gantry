@@ -8333,6 +8333,34 @@ fn infer_operand_sequence(
             return Ok(None);
         }
     }
+    // A constructed receiver in an operand arrives as the constructor's name path plus the
+    // fragment holding its struct expression, so the member walk is given the declared type the
+    // path spells. Without it the walk reads the slice as a place projection and declines
+    // silently, leaving a step it cannot resolve without a refusal (`C { v: 5 }.missing == 5`
+    // aborted in lowering instead of publishing `unknown-member`).
+    // An index postfix after the step belongs to the projection walks below, so a slice carrying
+    // one keeps its previous route (`Item { values: [1] }.values[0] + 1` reads the element, not
+    // the field the member step would return on its own).
+    let constructed = if children
+        .iter()
+        .any(|child| node_contains_punctuation(tree, *child, Punctuation::LeftBracket))
+    {
+        None
+    } else {
+        constructed_operand_type(tree, children, context)?
+    };
+    if let Some(value) = infer_member_sequence(
+        tree,
+        children,
+        facts,
+        environment,
+        constructed,
+        None,
+        context,
+        diagnostics,
+    )? {
+        return Ok(Some(value));
+    }
     if let Some(value) = infer_member_sequence(
         tree,
         children,

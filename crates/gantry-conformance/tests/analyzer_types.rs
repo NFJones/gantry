@@ -10860,6 +10860,10 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         // A computed receiver never reaches a member of its own.
         ("(1 + 2).dbl()", "unknown-member"),
         ("(1 + mk_int()).dbl()", "unknown-member"),
+        // A constructed receiver's member step is refused precisely in operand position too: the
+        // step used to decline silently there and abort in lowering.
+        ("Plain { value: 42 }.absent + 1", "unknown-member"),
+        ("Plain { value: 42 }.absent", "unknown-member"),
         // A computed receiver is refused even when the member resolves for its type.
         ("(1 + 2).greet()", "receiver-value-place"),
         ("(1 + mk_int()).greet() + 1", "receiver-value-place"),
