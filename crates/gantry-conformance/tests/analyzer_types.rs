@@ -2901,6 +2901,16 @@ fn section_38_effectful_conversion_contracts_require_a_pure_impl() {
         "a pure impl of an effectful contract is admitted: {:?}",
         admitted.diagnostics()
     );
+    // The gate keys on the impl's annotation rather than on the contract, which is the only case
+    // that distinguishes the two rules: an impl with a body effect and no annotation is refused
+    // for the same reason an effect-free one is.
+    let body_effect = "trait ErrorConversion { fn convert(self) -> F effects { prompt }; } impl ErrorConversion for E { fn convert(self) -> F { discard prompt \"x\" -> String; F {} } } fn outer() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v) } fn main() -> Int { 0 }";
+    let refused_body_effect = analyze(&format!("{prelude}{body_effect}"));
+    assert!(
+        diagnostic_codes(refused_body_effect.diagnostics()).contains(&"error-propagation-refused"),
+        "an effectful body without the pure annotation is refused: {:?}",
+        refused_body_effect.diagnostics()
+    );
 }
 
 /// Section 38: a place operand carries its marker exactly where its parenthesized spelling does,
