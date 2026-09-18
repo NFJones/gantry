@@ -2810,24 +2810,30 @@ impl Compiler<'_> {
                     .cloned()
             })
         {
+            // The seam names the operand's `Ok` payload exactly, which is the type a trailing step
+            // folds over; the compiled node's own fact and a literal type are the fallbacks for a
+            // node the walk already folded. Anchoring on the seam keeps a matched wrapper from
+            // degrading to `Unit` when the node it wrapped carries no fact.
             let payload = self
-                .body_types
-                .get(only)
-                .cloned()
+                .propagation_seams
+                .iter()
+                .find(|(source, _, _)| {
+                    self.tree
+                        .node(*only)
+                        .is_some_and(|node| source == node.span())
+                })
+                .and_then(|(_, _, operand_type)| operand_type.immediate_members().first().cloned())
+                .or_else(|| self.body_types.get(only).cloned())
                 .or_else(|| {
                     self.tree
                         .node(*only)
                         .and_then(|node| literal_type(self.tree, node))
                 })
                 .unwrap_or(TypeDescriptor::UNIT);
-            self.compile_propagation(*only, payload, callee, operand_type)?;
+            self.compile_propagation(*only, payload.clone(), callee, operand_type)?;
             // A marker with trailing member steps publishes the payload's fields before the operand
-            // is complete, exactly as the expression route does.
-            let payload = self
-                .body_types
-                .get(only)
-                .cloned()
-                .unwrap_or(TypeDescriptor::UNIT);
+            // is complete, exactly as the expression route does; the helper prefers each step's own
+            // recorded type over this anchor.
             self.compile_trailing_member_steps(*only, payload)?;
             return Ok(());
         }
