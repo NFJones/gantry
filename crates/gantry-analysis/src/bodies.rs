@@ -10782,7 +10782,11 @@ fn infer_call_sequence(
             let span = if parenthesized {
                 call_sequence_children_span(tree, children)
             } else {
-                call_sequence_span(tree, children, path)
+                // A plain callee may write a turbofish tail whose own parentheses end the token
+                // scan early (`callback::<Fn(Int) -> Int>(value)`), so the children span that
+                // covers the whole sequence is preferred and the token scan stays the fallback.
+                call_sequence_children_span(tree, children)
+                    .or_else(|| call_sequence_span(tree, children, path))
             }
             .unwrap_or_else(|| path.span().clone());
             diagnostics.push(body_diagnostic(
@@ -10811,7 +10815,8 @@ fn infer_call_sequence(
             let span = if parenthesized {
                 call_sequence_children_span(tree, children)
             } else {
-                call_sequence_span(tree, children, path)
+                call_sequence_children_span(tree, children)
+                    .or_else(|| call_sequence_span(tree, children, path))
             }
             .unwrap_or_else(|| path.span().clone());
             diagnostics.push(body_diagnostic(
@@ -10834,7 +10839,8 @@ fn infer_call_sequence(
             let span = if parenthesized {
                 call_sequence_children_span(tree, children)
             } else {
-                call_sequence_span(tree, children, path)
+                call_sequence_children_span(tree, children)
+                    .or_else(|| call_sequence_span(tree, children, path))
             }
             .unwrap_or_else(|| path.span().clone());
             if let Some(callee_type) = environment.get("self").cloned() {

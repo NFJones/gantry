@@ -6512,6 +6512,21 @@ fn public_callable_values_are_not_invocable_until_an_invocation_form_is_admitted
             "fn apply(callback: Fn(Int) -> Int) -> Fn(Int) -> Int { (callback)::<Int>(1) } fn main() -> Int { 0 }",
             "(callback)::<Int>(1)",
         ),
+        // A plain callee with an arrow-bearing turbofish tail: the type argument contains
+        // parentheses, so the refusal must still cover the whole call sequence.
+        (
+            "fn apply(callback: Fn(Int) -> Int) -> Int { discard callback::<Fn(Int) -> Int>(1); 0 } fn main() -> Int { 0 }",
+            "callback::<Fn(Int) -> Int>(1)",
+        ),
+        (
+            "fn apply(callback: Fn(Int) -> Int, value: Int) -> Int { discard callback::<Fn(Int) -> Int>(value); 0 } fn main() -> Int { 0 }",
+            "callback::<Fn(Int) -> Int>(value)",
+        ),
+        // A plain turbofish tail without parentheses inside the argument stays exact.
+        (
+            "fn apply(callback: Fn(Int) -> Int) -> Int { discard callback::<Int>(1); 0 } fn main() -> Int { 0 }",
+            "callback::<Int>(1)",
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
