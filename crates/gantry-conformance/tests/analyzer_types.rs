@@ -2930,11 +2930,22 @@ fn section_38_conversion_declarations_are_declared_trait_implementations() {
         refusal.fields.get("type").map(|value| value.as_ref()),
         Some("crate::G<^0.0>")
     );
-    // An open method result is refused by the same rule, but no admitted spelling reaches that
-    // branch: an open result needs a binding parameter, which either the receiver rule already
-    // refuses (`impl<T> ErrorConversion for G<T>` names the parameter in its receiver) or the
-    // grammar rejects (`impl<T> ErrorConversion for E { pure fn convert(self) -> List<T> }` is a
-    // syntax refusal), so the branch is defensive and pinned by the doc comment instead.
+    // An open method result is refused by the same rule, and the branch is not dead code: a
+    // rigid-parameter result reaches it and publishes the refusal naming `^0.0`. Such a spelling
+    // is invalid for other reasons too, so the branch never flips the status by itself, but it is
+    // the only producer of the clause consequence for an open result.
+    let rigid_result = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> String; } struct E {} impl<T> ErrorConversion for E { pure fn convert(self) -> T { 0 } } fn main() -> Int { 0 }",
+    );
+    let rigid_refusal = rigid_result
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "error-conversion-refused")
+        .unwrap_or_else(|| panic!("the rigid-parameter result is refused"));
+    assert_eq!(
+        rigid_refusal.fields.get("type").map(|value| value.as_ref()),
+        Some("^0.0")
+    );
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
