@@ -2956,6 +2956,38 @@ fn section_38_place_operands_are_admitted_like_their_parenthesized_spellings() {
             diagnostic_codes(verdict.diagnostics()).contains(&"error-propagation-refused");
         assert_eq!(!refused, admitted, "{body}: {:?}", verdict.diagnostics());
     }
+    // A chain whose prefix resolves and whose step does not names the missing member, the way the
+    // ordinary member walk does, instead of leaving only the propagation refusal.
+    for (source, member) in [
+        (
+            format!(
+                "{member_prelude}fn outer(h: Holder) -> Result<Int, F> {{ let v: Int = h.missing?; Ok(v) }} fn main() -> Int {{ 0 }}"
+            ),
+            "missing",
+        ),
+        (
+            format!(
+                "{prelude}fn outer(r: Result<Int, E>) -> Result<Int, F> {{ let v: Int = r.nope?; Ok(v) }} fn main() -> Int {{ 0 }}"
+            ),
+            "nope",
+        ),
+    ] {
+        let refused = analyze(&source);
+        let codes = diagnostic_codes(refused.diagnostics());
+        assert!(
+            codes.contains(&"error-propagation-refused") && codes.contains(&"unknown-member"),
+            "the chain names its missing member: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code.as_str() == "unknown-member"
+                    && diagnostic.fields.get("member").map(|value| value.as_ref()) == Some(member)
+            }),
+            "the missing member is named: {:?}",
+            refused.diagnostics()
+        );
+    }
 }
 
 /// Section 38: a propagation operand has no exactly one declared conversion while no

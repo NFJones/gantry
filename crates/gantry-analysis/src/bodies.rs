@@ -2924,6 +2924,7 @@ fn wrapped_place_operand(
     expression: NodeId,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
     context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let node = tree.node(expression).ok_or(AnalysisError::Invariant)?;
     let Some(marker) = node.children().iter().position(|child| {
@@ -2944,8 +2945,22 @@ fn wrapped_place_operand(
         let Some(mut receiver) = environment.get(&root).cloned() else {
             return Ok(None);
         };
-        for (member, _) in &members {
+        for (member, member_id) in &members {
             let Some(field) = projected_member_type(&receiver, member.as_ref(), context)? else {
+                // A chain whose prefix resolves and whose step does not names the missing member,
+                // exactly as the ordinary member walk does, instead of leaving only the propagation
+                // refusal (`GNT-38.1-typed-error-propagation`).
+                let member_node = tree.node(*member_id).ok_or(AnalysisError::Invariant)?;
+                diagnostics.push(body_diagnostic(
+                    "unknown-member",
+                    DiagnosticCategory::Type,
+                    "a receiver type has no field or inherent method with this name",
+                    member_node.span().clone(),
+                    [
+                        ("member", member.as_ref()),
+                        ("receiver", receiver.canonical_string().as_str()),
+                    ],
+                )?);
                 return Ok(None);
             };
             receiver = field;
@@ -6441,7 +6456,7 @@ fn infer_expression(
         inferred = None;
     }
     if inferred.is_none() {
-        inferred = wrapped_place_operand(tree, expression, environment, context)?;
+        inferred = wrapped_place_operand(tree, expression, environment, context, diagnostics)?;
     }
     if let Some(operand_type) = inferred.clone()
         && let Some(payload) = admit_propagation_operand(tree, expression, &operand_type, context)?
