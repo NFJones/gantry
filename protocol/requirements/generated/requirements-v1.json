@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "b8ea7b0704b07a78d15cfcae3e036f2ebdd848c25a1ef59e0247dd1df262d75e",
-  "byte_length": 1024270,
+  "specification_sha256": "4022a93fe6e1e801fbc7e6a7a84d39946d3f6c18baddc0a23f3280b3c2d44335",
+  "byte_length": 1024847,
   "line_count": 15556,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9501,
       "end_line": 15556,
-      "sha256": "b5cce9b0c692c5da04cb345f11856379081698a131179ad261236d61cf585b73",
+      "sha256": "a7919e4bd45c582e51a4f115d7c4683f42ca41b961daf45ad9c38a2298b1ce8a",
       "rationale": null
     }
   ],
@@ -40436,11 +40436,11 @@
       "id": "GNT-35.0-scalar-and-binary-foundation",
       "span_start_line": 15393,
       "span_end_line": 15399,
-      "span_sha256": "65f9147f2f6d1afd15ecd880a02bf6e3804eb65dff6e1feda6aa7cb9cde584f1",
+      "span_sha256": "471b258dab494d15f228cbce5e033bc4532a471dea6e0f3e0af78af62d754a1f",
       "anchor_line": 15396,
       "body_start_line": 15397,
       "body_end_line": 15399,
-      "body_sha256": "8260f620a873735f3aac1d0b945b75ff24e50cbc64838de14d3464bf4b5c8f2f",
+      "body_sha256": "60822a23ca6eca88602f42137a165f6ca3b8d20a2b88ded1d91a123594dee738",
       "profiles": [
         "analyzer"
       ],
@@ -40477,11 +40477,11 @@
       "id": "GNT-35.1-declared-widths-and-identity",
       "span_start_line": 15400,
       "span_end_line": 15403,
-      "span_sha256": "436432294bb435f73af4677f8e2ac2b2d40650da968df13e2597f405b788b8a4",
+      "span_sha256": "8da1db715b0388751c20076bb59aa76cdb83341f949d43abda66c970211bc0c6",
       "anchor_line": 15400,
       "body_start_line": 15401,
       "body_end_line": 15403,
-      "body_sha256": "b54ffc84a24263d16566c28e0a2d2455fb51300fbd0be10043ce369bbb2f00d5",
+      "body_sha256": "c521ee9556e6bc08194485858b720eff418b071e74b3fddbc0c51fc9a18c7140",
       "profiles": [
         "analyzer"
       ],
@@ -40767,11 +40767,11 @@
       "id": "GNT-35.8-bytebuffer-mutation-and-freezing",
       "span_start_line": 15428,
       "span_end_line": 15431,
-      "span_sha256": "41debadf9d4e4460308eff55541fbdb6aef5792cd6fc6c56a2c8dc0cd383c12d",
+      "span_sha256": "564fdfd7e047ba04f882b04443217c6cde5825b0263b7d4d00fff792aa2dbd60",
       "anchor_line": 15428,
       "body_start_line": 15429,
       "body_end_line": 15431,
-      "body_sha256": "53b642f913596ec20f7c78d290b9bcd97e702fa2286d198d951d61eee363a125",
+      "body_sha256": "1c2a5ad3f262c1e36155d7d5a17a0a05c4bdf66f0281cdcb40278971bc68773e",
       "profiles": [
         "analyzer"
       ],
