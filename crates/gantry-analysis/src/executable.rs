@@ -20,7 +20,10 @@ use gantry_ir::{
     Projection, StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow, WorkflowFacts,
 };
 
-use crate::bodies::{BodyAnalysis, BoolFact, EffectNode, SpawnCaptureMetadata, bool_fact};
+use crate::bodies::{
+    BodyAnalysis, BoolFact, EffectNode, SpawnCaptureMetadata, annotation_is_contextual_self,
+    bool_fact,
+};
 use crate::generics::{GenericDeclarationShape, prove_ownership_class};
 use crate::{AnalysisError, TypeFact};
 
@@ -624,6 +627,13 @@ impl Compiler<'_> {
                 .declaration_types
                 .get(&type_node)
                 .map(|fact| fact.descriptor.clone())
+                .or_else(|| {
+                    // A contextual `Self` parameter carries no syntax-phase fact of its own; it
+                    // denotes the implementation's receiver descriptor.
+                    self.receiver_type
+                        .filter(|_| annotation_is_contextual_self(self.tree, type_node))
+                        .cloned()
+                })
                 .ok_or(AnalysisError::Invariant)?;
             parameters.push(Parameter {
                 name,

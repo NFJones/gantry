@@ -9061,6 +9061,33 @@ fn public_split_struct_operands_are_typed_and_lowered() {
             "trait T { pure fn e<X>(self, x: X) -> X; } struct S {} impl T for S { fn e<X>(self, x: X) -> X { x } } fn main() -> Int { S {}.e(1) }",
             Expected::Int(1),
         ),
+        // The same `Self` contract inside an inherent implementation: the annotation denotes the
+        // implementation's receiver in parameter and result positions alone, with a checked
+        // argument, in a generic implementation, and when the method body reads the parameter.
+        (
+            "struct S {} impl S { fn same(self, other: Self) -> Int { 1 } } fn main() -> Int { let s: S = S {}; s.same(s) }",
+            Expected::Int(1),
+        ),
+        (
+            "struct S {} impl S { fn same(self, other: Self) -> Int { 1 } } fn main() -> Int { S {}.same(S {}) }",
+            Expected::Int(1),
+        ),
+        (
+            "struct S {} impl S { fn pick(self, first: Self, second: Int) -> Int { second } } fn main() -> Int { let s: S = S {}; s.pick(s, 3) }",
+            Expected::Int(3),
+        ),
+        (
+            "struct S {} impl S { fn me(self) -> Self { self } } fn main() -> Int { let s: S = S {}; let t: S = s.me(); 0 }",
+            Expected::Int(0),
+        ),
+        (
+            "struct S { value: Int } impl S { fn sum(self, other: Self) -> Int { self.value + other.value } } fn main() -> Int { let s: S = S { value: 1 }; let t: S = S { value: 2 }; s.sum(t) }",
+            Expected::Int(3),
+        ),
+        (
+            "struct S<T> { value: T } impl<T> S<T> { fn pick(self, other: Self) -> Int { 1 } } fn main() -> Int { let s: S<Int> = S::<Int> { value: 1 }; s.pick(s) }",
+            Expected::Int(1),
+        ),
         (
             "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn main() -> Bool { Counter { value: 5 }.read() == (5) }",
             Expected::Bool(true),

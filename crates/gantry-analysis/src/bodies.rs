@@ -961,8 +961,15 @@ fn build_body_context(
                     .filter_map(|parameter| {
                         direct_child_form(source.tree(), parameter, SyntaxForm::ValueType)
                     })
-                    .filter_map(|type_node| resolved.get(&type_node))
-                    .map(|fact| fact.descriptor.clone())
+                    .filter_map(|type_node| {
+                        resolved
+                            .get(&type_node)
+                            .map(|fact| fact.descriptor.clone())
+                            .or_else(|| {
+                                annotation_is_contextual_self(source.tree(), type_node)
+                                    .then(|| receiver.clone())
+                            })
+                    })
                     .collect::<Vec<_>>();
                 let result = method_node
                     .children()
@@ -974,8 +981,16 @@ fn build_body_context(
                             .node(*child)
                             .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
                     })
-                    .and_then(|type_node| resolved.get(&type_node))
-                    .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone());
+                    .and_then(|type_node| {
+                        resolved
+                            .get(&type_node)
+                            .map(|fact| fact.descriptor.clone())
+                            .or_else(|| {
+                                annotation_is_contextual_self(source.tree(), type_node)
+                                    .then(|| receiver.clone())
+                            })
+                    })
+                    .unwrap_or(TypeDescriptor::UNIT);
                 methods.insert(
                     (receiver.clone(), name),
                     CallableSignature { parameters, result },
@@ -1789,6 +1804,7 @@ fn collect_source_callable_metadata(
             tree,
             callable,
             facts.get(source_index).ok_or(AnalysisError::Invariant)?,
+            Some(receiver),
         );
         callables.push(SourceCallableMetadata {
             identity: CanonicalCallableIdentity::inherent(receiver, method, &[])
@@ -1870,6 +1886,7 @@ fn collect_source_callable_metadata(
             tree,
             callable,
             facts.get(source_index).ok_or(AnalysisError::Invariant)?,
+            Some(&receiver),
         );
         callables.push(SourceCallableMetadata {
             identity,
@@ -1948,8 +1965,16 @@ fn source_callable_parameters(
         }
         let type_node = direct_child_form(tree, parameter.1, SyntaxForm::ValueType)
             .ok_or(AnalysisError::Invariant)?;
-        let Some(ty) = facts.get(&type_node).map(|fact| fact.descriptor.clone()) else {
-            return Ok(None);
+        let ty = match facts.get(&type_node) {
+            Some(fact) => fact.descriptor.clone(),
+            // A contextual `Self` annotation carries no syntax-phase fact of its own; inside an
+            // inherent method it denotes the implementation's receiver descriptor.
+            None => match receiver {
+                Some(receiver) if annotation_is_contextual_self(tree, type_node) => {
+                    receiver.clone()
+                }
+                _ => return Ok(None),
+            },
         };
         parameters.push(WorkflowParameter {
             mutable: node_has_reserved_word(tree, parameter.1, "mut"),
@@ -1957,6 +1982,28 @@ fn source_callable_parameters(
         });
     }
     Ok(Some(parameters))
+}
+
+/// Reports whether one annotation is the contextual `Self` form, allowing the single-child
+/// wrappers the parser places around reserved words.
+pub(crate) fn annotation_is_contextual_self(tree: &SyntaxTree, id: NodeId) -> bool {
+    let mut current = id;
+    loop {
+        let Some(node) = tree.node(current) else {
+            return false;
+        };
+        if direct_reserved_word(tree, node).as_deref() == Some("Self") {
+            return true;
+        }
+        let mut semantic = node.children().iter().copied().filter(|child| {
+            tree.node(*child)
+                .is_some_and(|child| !matches!(child.form(), SyntaxForm::Token(_)))
+        });
+        match (semantic.next(), semantic.next()) {
+            (Some(only), None) => current = only,
+            _ => return false,
+        }
+    }
 }
 
 fn validate_shared_receiver_declarations(
@@ -2094,6 +2141,7 @@ fn callable_result(
     tree: &SyntaxTree,
     callable: NodeId,
     facts: &BTreeMap<NodeId, TypeFact>,
+    receiver: Option<&TypeDescriptor>,
 ) -> TypeDescriptor {
     tree.node(callable)
         .into_iter()
@@ -2102,8 +2150,18 @@ fn callable_result(
             tree.node(*child)
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
         })
-        .and_then(|type_node| facts.get(&type_node))
-        .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone())
+        .map_or(TypeDescriptor::UNIT, |type_node| {
+            match facts.get(&type_node) {
+                Some(fact) => fact.descriptor.clone(),
+                // A contextual `Self` result denotes the implementation's receiver descriptor.
+                None => match receiver {
+                    Some(receiver) if annotation_is_contextual_self(tree, type_node) => {
+                        receiver.clone()
+                    }
+                    _ => TypeDescriptor::UNIT,
+                },
+            }
+        })
 }
 
 fn source_direct_calls(context: &BodyContext, declaration: &SourceSpan) -> Vec<EffectNode> {
@@ -2707,11 +2765,20 @@ fn check_callable(
         let Some(type_node) = direct_child_form(tree, parameter_node, SyntaxForm::ValueType) else {
             continue;
         };
-        if let Some(fact) = facts.get(&type_node) {
-            environment.insert(name.clone(), fact.descriptor.clone());
+        let descriptor = match facts.get(&type_node) {
+            Some(fact) => Some(fact.descriptor.clone()),
+            // A contextual `Self` annotation carries no syntax-phase fact of its own; inside an
+            // inherent method it denotes the implementation's receiver descriptor.
+            None if annotation_is_contextual_self(tree, type_node) => {
+                method_receiver_type(tree, node, context)?
+            }
+            None => None,
+        };
+        if let Some(descriptor) = descriptor {
+            environment.insert(name.clone(), descriptor.clone());
             register_must_consume_binding(
                 name,
-                &fact.descriptor,
+                &descriptor,
                 parameter_node.span().clone(),
                 context,
             );
@@ -2730,16 +2797,21 @@ fn check_callable(
             .insert(AffinePlace::root_only(Arc::from("self")));
     }
 
-    let result = node
-        .children()
-        .iter()
-        .copied()
-        .rfind(|child| {
-            tree.node(*child)
-                .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
-        })
-        .and_then(|type_node| facts.get(&type_node))
-        .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone());
+    let result_type_node = node.children().iter().copied().rfind(|child| {
+        tree.node(*child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+    });
+    let result = match result_type_node {
+        Some(type_node) => match facts.get(&type_node) {
+            Some(fact) => fact.descriptor.clone(),
+            // A contextual `Self` result denotes the implementation's receiver descriptor.
+            None if annotation_is_contextual_self(tree, type_node) => {
+                method_receiver_type(tree, node, context)?.unwrap_or(TypeDescriptor::UNIT)
+            }
+            None => TypeDescriptor::UNIT,
+        },
+        None => TypeDescriptor::UNIT,
+    };
     let block = node
         .children()
         .iter()
