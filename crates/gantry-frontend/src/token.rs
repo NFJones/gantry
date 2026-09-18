@@ -222,6 +222,7 @@ impl ReservedWord {
             "mod" => "mod",
             "mut" => "mut",
             "new" => "new",
+            "Never" => "Never",
             "non_idempotent" => "non_idempotent",
             "None" => "None",
             "null" => "null",

@@ -859,6 +859,9 @@ fn resolve_source_types(
         .collect::<BTreeMap<_, _>>();
     let mut resolved = BTreeMap::<NodeId, TypeFact>::new();
     let occurrences = callable_occurrences(source, structure)?;
+    let entry = structure.symbols().iter().find(|symbol| {
+        symbol.kind == SymbolKind::Function && symbol.path.as_str() == "crate::main"
+    });
 
     let mut parents = BTreeMap::<NodeId, NodeId>::new();
     for (index, node) in source.tree().nodes().iter().enumerate() {
@@ -902,6 +905,22 @@ fn resolve_source_types(
             &occurrences,
             diagnostics,
         )? {
+            // `GNT-38.4-boundaries-durability-and-non-claims`: a boundary declaration refuses a
+            // `Never` position instead of publishing a fact, so no boundary schema or lowering
+            // step ever sees an uninhabited type (the callable boundary refusal works the same
+            // way). Every other position keeps the descriptor.
+            if descriptor.contains_never()
+                && let Some((code, message)) =
+                    never_occurrence_refusal(source.tree(), id, &parents, entry)?
+            {
+                diagnostics.push(type_diagnostic(
+                    code,
+                    message,
+                    node.span().clone(),
+                    [("annotation", "Never".to_owned())],
+                )?);
+                continue;
+            }
             resolved.insert(
                 id,
                 TypeFact {
@@ -912,6 +931,51 @@ fn resolve_source_types(
         }
     }
     Ok(resolved)
+}
+
+/// The frozen refusal for a `Never` annotation, or `None` when the position keeps the
+/// descriptor (`GNT-38.4-boundaries-durability-and-non-claims`).
+///
+/// A parameter annotation is owned by its enclosing declaration, a result annotation is owned
+/// directly, and every other annotation is a value position: an annotation inside a body is
+/// therefore never classified as a signature or boundary occurrence.
+fn never_occurrence_refusal(
+    tree: &SyntaxTree,
+    id: NodeId,
+    parents: &BTreeMap<NodeId, NodeId>,
+    entry: Option<&Symbol>,
+) -> Result<Option<(&'static str, &'static str)>, AnalysisError> {
+    let Some(parent) = parents.get(&id).copied() else {
+        return Ok(None);
+    };
+    let parent_node = tree.node(parent).ok_or(AnalysisError::Invariant)?;
+    let declaration = if matches!(parent_node.form(), SyntaxForm::Parameter) {
+        parents.get(&parent).copied()
+    } else {
+        Some(parent)
+    };
+    let Some(declaration) = declaration.and_then(|declaration| tree.node(declaration)) else {
+        return Ok(None);
+    };
+    match declaration.form() {
+        SyntaxForm::ActionDeclaration => Ok(Some((
+            "never-boundary-refused",
+            "a boundary declaration names the uninhabited type",
+        ))),
+        SyntaxForm::FunctionDeclaration if is_entry_declaration(tree, declaration, entry)? => {
+            Ok(Some((
+                "never-boundary-refused",
+                "a boundary declaration names the uninhabited type",
+            )))
+        }
+        SyntaxForm::FunctionDeclaration
+        | SyntaxForm::MethodDeclaration
+        | SyntaxForm::TraitMethodDeclaration => Ok(Some((
+            "never-signature-refused",
+            "a signature position names the uninhabited type",
+        ))),
+        _ => Ok(None),
+    }
 }
 
 /// The resolved descriptor of the implementation a `Self` annotation belongs to.
@@ -1189,6 +1253,7 @@ fn resolve_type_node(
         Some("String") => Some(TypeDescriptor::STRING),
         Some("Decision") => Some(TypeDescriptor::DECISION),
         Some("OperationError") => Some(TypeDescriptor::OPERATION_ERROR),
+        Some("Never") => Some(TypeDescriptor::NEVER),
         Some("Option") => {
             let Some(mut members) = members else {
                 return Ok(None);

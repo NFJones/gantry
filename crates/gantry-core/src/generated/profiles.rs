@@ -34,7 +34,7 @@ impl ConformanceProfile {
 }
 
 /// SHA-256 of the exact specification revision owning these profiles.
-pub const PROFILE_SPECIFICATION_REVISION: &str = "09287971e723713a6acce2f96634b18dbbc532e5afa2fcdb6a0fdbf8387dcf29";
+pub const PROFILE_SPECIFICATION_REVISION: &str = "f4dfa34f90b5785cb3def3f0dd3f535058fb0d252b12b187b2536a58f3693ae3";
 
 /// Whether this staged baseline may advertise conformance profiles.
 pub const PROFILE_CLAIMS_ENABLED: bool = true;

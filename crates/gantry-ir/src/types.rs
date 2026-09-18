@@ -41,6 +41,20 @@ impl TypeDescriptor {
     /// The sealed `OperationError` type.
     pub const OPERATION_ERROR: Self = Self::primitive(TypeKind::OperationError, true);
 
+    /// The uninhabited `Never` type.
+    pub const NEVER: Self = Self::primitive(TypeKind::Never, true);
+
+    /// Reports whether this descriptor names the uninhabited type anywhere within it.
+    #[must_use]
+    pub fn contains_never(&self) -> bool {
+        if self.kind == TypeKind::Never {
+            return true;
+        }
+        self.immediate_members()
+            .iter()
+            .any(|member| member.contains_never())
+    }
+
     const fn primitive(kind: TypeKind, contains_sealed_boundary: bool) -> Self {
         Self {
             kind,

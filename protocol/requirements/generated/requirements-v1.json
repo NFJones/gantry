@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "09287971e723713a6acce2f96634b18dbbc532e5afa2fcdb6a0fdbf8387dcf29",
-  "byte_length": 1031562,
+  "specification_sha256": "f4dfa34f90b5785cb3def3f0dd3f535058fb0d252b12b187b2536a58f3693ae3",
+  "byte_length": 1031895,
   "line_count": 15578,
   "regions": [
     {
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8297,
-      "sha256": "906e64a26350612ca905c9c109375da27e228419573b63572e8d76b3b52ea9ba",
+      "sha256": "0d6d1c761e38ebc96dbe9d9557af39519a19a620d1917d04725b6d07e31eedaf",
       "rationale": null
     },
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9501,
       "end_line": 15578,
-      "sha256": "91823ac466624ab139085020c6f47b833197ebf2e88fdfa3fe35846d7e6d656d",
+      "sha256": "4816089dc1af8778e6e2a9192de3480b1c264a09c3d0a2ae25b9a14fed2619d9",
       "rationale": null
     }
   ],
@@ -26722,11 +26722,11 @@
       "id": "GNT-13.2",
       "span_start_line": 7359,
       "span_end_line": 7585,
-      "span_sha256": "0669d8e056330c6fccaa0c11371f68c1841a897f40563fcee8349e7e1ff51488",
+      "span_sha256": "53117ee06081e168ded8c1ffc9e52f7351b0554215ff60764e9f8495328b30ac",
       "anchor_line": 7361,
       "body_start_line": 7362,
       "body_end_line": 7585,
-      "body_sha256": "3e9fbf0ab92799b461b587018ac072625f5a133fdb2f6c56d7e640a9674ba452",
+      "body_sha256": "d73883011a887deaf35b70d2e5176bb0dc3b33f944fe9a109290bb38e7c4549a",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42044,11 +42044,11 @@
       "id": "GNT-38.0-error-and-divergence-scope",
       "span_start_line": 15557,
       "span_end_line": 15562,
-      "span_sha256": "af74fbc02206b99bee1edb0079ee139dc283dad60a324d4859e2831b6a6c4096",
+      "span_sha256": "7eaebb049d35aa1232ca13e458d760173b3b829890e21566ec4da226f39fd62b",
       "anchor_line": 15560,
       "body_start_line": 15561,
       "body_end_line": 15562,
-      "body_sha256": "5ad8d99a519334ce5810737e952bc181386d2e44019ca5c4f339fda47a4c938d",
+      "body_sha256": "a76019a2e8d5c03c1fd71fa6b8881ea7a406bed58e3741de8af82a6231db3aef",
       "profiles": [
         "analyzer"
       ],
@@ -42208,11 +42208,11 @@
       "id": "GNT-38.4-boundaries-durability-and-non-claims",
       "span_start_line": 15575,
       "span_end_line": 15578,
-      "span_sha256": "a02780da22e1b07689965de8ffaa6bed1f40e41784097f5fe700c91b5b289d99",
+      "span_sha256": "591ca5591c6d8639789e36bb5c1cc9b7f935eba5731a8f838165aeb90e3edbd1",
       "anchor_line": 15576,
       "body_start_line": 15577,
       "body_end_line": 15578,
-      "body_sha256": "7c7b49f7bf366df114784caff81e7da3888bf973deff538c5bccad02013b5cdb",
+      "body_sha256": "9c3fe25efe88262e37a25a1053a0bbed57abc0eb40bde5ec5525c0552dcdd1a1",
       "profiles": [
         "analyzer"
       ],

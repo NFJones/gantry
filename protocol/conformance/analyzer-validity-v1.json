@@ -1,6 +1,6 @@
 {
  "format": "gantry.analyzer-validity-evidence/v1",
- "specification_sha256": "09287971e723713a6acce2f96634b18dbbc532e5afa2fcdb6a0fdbf8387dcf29",
+ "specification_sha256": "f4dfa34f90b5785cb3def3f0dd3f535058fb0d252b12b187b2536a58f3693ae3",
  "issue": "GNT-GEN-PROOF-001",
  "profile": "analyzer",
  "argument": "docs/analyzer-package-validity.md",

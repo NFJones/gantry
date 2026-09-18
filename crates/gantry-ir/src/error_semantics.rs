@@ -54,7 +54,7 @@ impl FailureChannel {
         Self::UnknownExternalOutcome,
     ];
 
-    /// The wire spelling of this channel.
+    /// The contract-level spelling of this channel.
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::AdapterFailure => "adapter-failure",
@@ -96,6 +96,8 @@ pub enum ErrorSemanticsDiagnosticCode {
     NeverBoundaryRefused,
     /// A `Never` component in durable state.
     NeverDurableRefused,
+    /// A signature position naming the uninhabited type.
+    NeverSignatureRefused,
     /// A panic path exceeding the declared logical-frame budget.
     PanicFrameLimit,
     /// An assertion or panic form outside the admitted path.
@@ -104,13 +106,14 @@ pub enum ErrorSemanticsDiagnosticCode {
 
 impl ErrorSemanticsDiagnosticCode {
     /// Every refusal condition, in wire-name order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::DivergenceUnconstrained,
         Self::ErrorConversionRefused,
         Self::ErrorPropagationRefused,
         Self::FailureChannelConversionRefused,
         Self::NeverBoundaryRefused,
         Self::NeverDurableRefused,
+        Self::NeverSignatureRefused,
         Self::PanicFrameLimit,
         Self::PanicPathRefused,
     ];
@@ -124,6 +127,7 @@ impl ErrorSemanticsDiagnosticCode {
             Self::FailureChannelConversionRefused => "failure-channel-conversion-refused",
             Self::NeverBoundaryRefused => "never-boundary-refused",
             Self::NeverDurableRefused => "never-durable-refused",
+            Self::NeverSignatureRefused => "never-signature-refused",
             Self::PanicFrameLimit => "panic-frame-limit",
             Self::PanicPathRefused => "panic-path-refused",
         }
@@ -141,6 +145,7 @@ impl ErrorSemanticsDiagnosticCode {
             Self::NeverBoundaryRefused | Self::NeverDurableRefused => {
                 "GNT-38.4-boundaries-durability-and-non-claims"
             }
+            Self::NeverSignatureRefused => "GNT-38.4-boundaries-durability-and-non-claims",
         }
     }
 
@@ -161,6 +166,7 @@ impl ErrorSemanticsDiagnosticCode {
             }
             Self::NeverBoundaryRefused => "a boundary declaration names the uninhabited type",
             Self::NeverDurableRefused => "durable state would carry a Never component",
+            Self::NeverSignatureRefused => "a signature position names the uninhabited type",
             Self::PanicFrameLimit => "a panic path exceeds the declared logical-frame budget",
             Self::PanicPathRefused => "an assertion or panic form leaves the admitted path",
         }

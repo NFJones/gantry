@@ -345,6 +345,7 @@ impl<'a> ExpressionParser<'a> {
             ("String", TypeKind::String),
             ("Decision", TypeKind::Decision),
             ("OperationError", TypeKind::OperationError),
+            ("Never", TypeKind::Never),
         ] {
             if self.consume_word(name) {
                 self.value = Some(ExpressionSummary {

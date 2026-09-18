@@ -1418,6 +1418,7 @@ impl<'a> Machine<'a> {
             "String",
             "Decision",
             "OperationError",
+            "Never",
         ]
         .iter()
         .any(|word| self.at_word(word))

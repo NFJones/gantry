@@ -2604,6 +2604,27 @@ fn public_index_projection_operands_are_keyed() {
     }
 }
 
+/// Section 38: `Never` is refused at a boundary and in a signature position, and a value
+/// is never coerced into it (`GNT-38.4-boundaries-durability-and-non-claims`).
+#[test]
+fn section_38_never_positions_are_refused() {
+    let boundary = analyze("fn main() -> Never { }");
+    assert_eq!(boundary.status(), AnalysisStatus::Invalid);
+    assert!(diagnostic_codes(boundary.diagnostics()).contains(&"never-boundary-refused"));
+    let action = analyze("action read_only probe() -> Never; fn main() -> Int { 0 }");
+    assert!(diagnostic_codes(action.diagnostics()).contains(&"never-boundary-refused"));
+    let nested = analyze("fn main() -> List<Never> { [] }");
+    assert!(diagnostic_codes(nested.diagnostics()).contains(&"never-boundary-refused"));
+    let signature = analyze("fn never_value() -> Never { 1 } fn main() -> Int { 0 }");
+    assert!(diagnostic_codes(signature.diagnostics()).contains(&"never-signature-refused"));
+    let parameter = analyze("fn takes(x: Never) -> Int { 1 } fn main() -> Int { 0 }");
+    assert!(diagnostic_codes(parameter.diagnostics()).contains(&"never-signature-refused"));
+    let binding = analyze("fn main() -> Int { let x: Never = 1; 0 }");
+    assert!(diagnostic_codes(binding.diagnostics()).contains(&"type-mismatch"));
+    let control = analyze("fn main() -> Int { 0 }");
+    assert_eq!(control.status(), AnalysisStatus::Valid);
+}
+
 /// A refused operator publishes exactly one diagnostic.
 ///
 /// A declared-descriptor mismatch has no operator signature, so the operator refusal is the whole

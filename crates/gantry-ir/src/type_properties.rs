@@ -282,7 +282,7 @@ impl PrimitiveTypeProperties {
                 orderable: true,
                 source_protection: SourceProtectionClass::Unsealed,
             }),
-            TypeKind::Decision | TypeKind::OperationError => Some(Self {
+            TypeKind::Decision | TypeKind::OperationError | TypeKind::Never => Some(Self {
                 canonical_scalar_key: false,
                 equatable: false,
                 external: false,

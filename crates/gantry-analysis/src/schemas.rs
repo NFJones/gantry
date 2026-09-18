@@ -772,6 +772,11 @@ fn schema_fragment(
                 // fragment remains an analysis invariant.
                 return Err(SchemaAnalysisError::Invariant);
             }
+            TypeKind::Never => {
+                // An uninhabited type admits no value, so its schema is the false schema:
+                // a fragment exists yet matches nothing (`GNT-38.3-divergence-and-never`).
+                "{\"not\":{}}".to_owned()
+            }
         };
         built.insert(ty, value);
     }

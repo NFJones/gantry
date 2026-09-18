@@ -362,6 +362,8 @@ pub enum TypeKind {
     OperationError,
     /// The `Callable` value.
     Callable,
+    /// The `Never` value.
+    Never,
 }
 
 impl TypeKind {
@@ -382,6 +384,7 @@ impl TypeKind {
             Self::Decision => "Decision",
             Self::OperationError => "OperationError",
             Self::Callable => "Callable",
+            Self::Never => "Never",
         }
     }
 }

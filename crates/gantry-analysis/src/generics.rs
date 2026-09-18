@@ -2544,6 +2544,11 @@ fn stored_member_node(
             // contains, because what a callable value holds is its capture plan.
             Ok(StoredMemberNode::Opaque)
         }
+        TypeKind::Never => {
+            // An uninhabited type stores nothing: no value of it exists, so a
+            // stored-member walk can never reach one.
+            Ok(StoredMemberNode::Opaque)
+        }
         TypeKind::Declared => {
             let path = descriptor.declared_path().ok_or(AnalysisError::Invariant)?;
             let Some(declaration) = declarations.get(path.as_str()) else {
@@ -2667,6 +2672,13 @@ fn resolve_generic_type_node(
         Some("String") => closed_expression(TypeDescriptor::STRING)?,
         Some("Decision") => closed_expression(TypeDescriptor::DECISION)?,
         Some("OperationError") => closed_expression(TypeDescriptor::OPERATION_ERROR)?,
+        Some("Never") => {
+            // `GNT-38.4-boundaries-durability-and-non-claims` owns the refusal: the type phase
+            // publishes `never-boundary-refused` or `never-signature-refused` and publishes no
+            // fact for those positions, so no type expression is ever built for the uninhabited
+            // type. Skipping silently here leaves a value position's descriptor untouched.
+            return Ok(None);
+        }
         Some("Option") => {
             let Some(mut arguments) = arguments else {
                 return Ok(None);
