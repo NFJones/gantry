@@ -1567,6 +1567,7 @@ pub(crate) fn check_package_bodies(
                 .cloned(),
         );
         context.expression_types.borrow_mut().clear();
+        refuse_malformed_conversions(sources, structure, &context, diagnostics)?;
         Ok(BodyAnalysis {
             expression_types,
             struct_fields,
@@ -2759,6 +2760,100 @@ fn propagation_operands(tree: &SyntaxTree, block: NodeId) -> Vec<NodeId> {
         stack.extend(node.children().iter().copied());
     }
     operands
+}
+
+/// Refuses a reserved conversion declaration that is not one total concrete-to-concrete
+/// conversion (`GNT-38.1-typed-error-propagation`).
+///
+/// A conversion is declared by one implementation of the reserved compiler-owned trait
+/// `ErrorConversion`: it declares exactly one method and its receiver names one concrete error
+/// type, because a conversion is total on its declared domain. Every other conversion
+/// declaration is refused under `error-conversion-refused`.
+fn refuse_malformed_conversions(
+    sources: &[ParsedSource],
+    structure: &PackageStructure,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let references = structure
+        .references()
+        .iter()
+        .map(|reference| (reference.span.clone(), reference.target))
+        .collect::<BTreeMap<_, _>>();
+    let symbols_by_id = structure
+        .symbols()
+        .iter()
+        .map(|symbol| (symbol.id, symbol))
+        .collect::<BTreeMap<_, _>>();
+    for source in sources {
+        let tree = source.tree();
+        for implementation in tree
+            .nodes()
+            .iter()
+            .filter(|node| matches!(node.form(), SyntaxForm::ImplDeclaration))
+        {
+            let Some(reference) =
+                direct_child_form(tree, implementation, SyntaxForm::TraitReference)
+            else {
+                continue;
+            };
+            let Some(reference_node) = tree.node(reference) else {
+                continue;
+            };
+            let Some(symbol) = references
+                .get(reference_node.span())
+                .and_then(|target| symbols_by_id.get(target))
+            else {
+                continue;
+            };
+            if symbol.path.as_str() != "crate::ErrorConversion" {
+                continue;
+            }
+            let methods = implementation
+                .children()
+                .iter()
+                .filter(|child| {
+                    tree.node(**child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
+                })
+                .count();
+            let receiver = implementation
+                .children()
+                .iter()
+                .copied()
+                .find(|child| {
+                    tree.node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+                })
+                .and_then(|receiver| {
+                    tree.node(receiver)
+                        .and_then(|node| context.generic_types.get(node.span()))
+                        .map(|expression| (expression.is_closed(), expression.as_str().to_owned()))
+                });
+            let refusal = match (methods, receiver) {
+                (1, Some((true, _))) => None,
+                (1, Some((false, receiver))) => Some((
+                    "a conversion receiver must be one concrete error type",
+                    receiver,
+                )),
+                (1, None) => continue,
+                _ => Some((
+                    "a conversion declares exactly one method",
+                    String::from("?"),
+                )),
+            };
+            if let Some((message, receiver)) = refusal {
+                diagnostics.push(body_diagnostic(
+                    "error-conversion-refused",
+                    DiagnosticCategory::Type,
+                    message,
+                    implementation.span().clone(),
+                    [("receiver", receiver)],
+                )?);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn check_callable(

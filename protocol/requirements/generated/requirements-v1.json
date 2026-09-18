@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "40cc30fb93f214c8c8267f1186fcc95dafa56c3c41d337fc6c31269c9cfa794e",
-  "byte_length": 1032314,
+  "specification_sha256": "0e703fbe45c8fc070b97dc1218d76b46f86bb258a48a5c380e7b81bad213d9c6",
+  "byte_length": 1032436,
   "line_count": 15578,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9501,
       "end_line": 15578,
-      "sha256": "b3f07771c516dae9f9efbf364a0aa9af3a83eeac8d0f93d8f54c98476306f0c5",
+      "sha256": "b41c4fe8a76905f0c2fdace150355a22b060ffcbe53ec25bfba8b7b705d69bfa",
       "rationale": null
     }
   ],
@@ -42085,11 +42085,11 @@
       "id": "GNT-38.1-typed-error-propagation",
       "span_start_line": 15563,
       "span_end_line": 15566,
-      "span_sha256": "e460f5fca36d4a75535120a45cc6edb6218eadbe1d84a2f6c08886d745f18611",
+      "span_sha256": "4235fd2e896b59342bd0a7b5127ec0edccf258f75497cf51be0179b7985ed7ea",
       "anchor_line": 15564,
       "body_start_line": 15565,
       "body_end_line": 15566,
-      "body_sha256": "c45bdfee929cc38e43b7289a56d29d254d4cd167ff85af8f0e29077c4279a405",
+      "body_sha256": "22be9250e7a523acb767a3328fcaa1f3bdbb73c8d327f2a855fcbe749bfe3556",
       "profiles": [
         "analyzer"
       ],

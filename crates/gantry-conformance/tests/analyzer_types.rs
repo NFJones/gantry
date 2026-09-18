@@ -2900,6 +2900,33 @@ fn section_38_propagation_operands_are_refused() {
     assert_eq!(count, 2);
 }
 
+/// Section 38: a conversion is declared by one implementation of the reserved `ErrorConversion`
+/// trait whose receiver names one concrete error type; two methods or an open receiver are
+/// refused (`GNT-38.1-typed-error-propagation`).
+#[test]
+fn section_38_conversion_declarations_are_reserved_trait_implementations() {
+    let admitted = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> String; } struct E {} impl ErrorConversion for E { pure fn convert(self) -> String { \"x\" } } fn main() -> Int { 0 }",
+    );
+    assert_eq!(admitted.status(), AnalysisStatus::Valid);
+    let two = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> String; } struct E {} impl ErrorConversion for E { pure fn a(self) -> String { \"x\" } pure fn b(self) -> String { \"y\" } } fn main() -> Int { 0 }",
+    );
+    assert!(diagnostic_codes(two.diagnostics()).contains(&"error-conversion-refused"));
+    let open = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> String; } struct G<T> { v: T } impl<T> ErrorConversion for G<T> { pure fn convert(self) -> String { \"x\" } } fn main() -> Int { 0 }",
+    );
+    let refusal = open
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "error-conversion-refused")
+        .unwrap_or_else(|| panic!("the open receiver is refused"));
+    assert_eq!(
+        refusal.fields.get("receiver").map(|value| value.as_ref()),
+        Some("crate::G<^0.0>")
+    );
+}
+
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
 /// is never coerced into it (`GNT-38.4-boundaries-durability-and-non-claims`).
 #[test]
