@@ -8499,6 +8499,13 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
             0,
             7,
         ),
+        (
+            "fn main() -> Int { let t: Tuple<Int, Int> = (1, 2); t[1] }",
+            ReceiverStep::Load,
+            None,
+            1,
+            2,
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -8607,6 +8614,14 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
         (
             "struct Bag { items: List<Int> } fn main() -> Int { (Bag { items: [7] })[0] }",
             "crate::Bag",
+        ),
+        (
+            "fn main() -> Int { let t: Tuple<Int, Int> = (1, 2); t[0][0] }",
+            "Int",
+        ),
+        (
+            "fn main() -> Int { let t: Tuple<Int, Tuple<Int, Int>> = (1, (2, 3)); t[1][0][0] }",
+            "Int",
         ),
     ] {
         root.write(source);
