@@ -8349,6 +8349,46 @@ fn infer_operand_sequence(
     } else {
         constructed_operand_type(tree, children, context)?
     };
+    // A member step followed by a projection still has to name a member: the construct's declared
+    // type resolves the step, and a refusal it publishes (`unknown-member`) stops the operand
+    // before the projection walks read a step the receiver does not have
+    // (`C { v: 5 }.missing[0] + 1` aborted in lowering). A step that resolves keeps its previous
+    // route, so the projection still reads the element (`Item { values: [1] }.values[0] + 1`).
+    if constructed.is_none() {
+        let projected = children
+            .iter()
+            .enumerate()
+            .rposition(|(_, child)| node_contains_punctuation(tree, *child, Punctuation::Dot))
+            .and_then(|dot| {
+                children
+                    .iter()
+                    .enumerate()
+                    .skip(dot.saturating_add(1))
+                    .find(|(_, child)| {
+                        node_contains_punctuation(tree, **child, Punctuation::LeftBracket)
+                    })
+                    .map(|(bracket, _)| &children[..bracket])
+            })
+            .unwrap_or_default();
+        if !projected.is_empty()
+            && let Some(receiver) = constructed_operand_type(tree, projected, context)?
+        {
+            let published = diagnostics.len();
+            let _ = infer_member_sequence(
+                tree,
+                projected,
+                facts,
+                environment,
+                Some(receiver),
+                None,
+                context,
+                diagnostics,
+            )?;
+            if diagnostics.len() > published {
+                return Ok(None);
+            }
+        }
+    }
     if let Some(value) = infer_member_sequence(
         tree,
         children,

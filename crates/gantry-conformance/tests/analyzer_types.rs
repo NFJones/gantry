@@ -10864,6 +10864,8 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         // step used to decline silently there and abort in lowering.
         ("Plain { value: 42 }.absent + 1", "unknown-member"),
         ("Plain { value: 42 }.absent", "unknown-member"),
+        // A step the receiver does not have is refused before an index projection reads it.
+        ("Plain { value: 42 }.absent[0] + 1", "unknown-member"),
         // A computed receiver is refused even when the member resolves for its type.
         ("(1 + 2).greet()", "receiver-value-place"),
         ("(1 + mk_int()).greet() + 1", "receiver-value-place"),
