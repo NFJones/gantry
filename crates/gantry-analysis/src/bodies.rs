@@ -8590,6 +8590,14 @@ fn infer_member_sequence(
         // the root binding rather than the binding itself, so the element it reads is the
         // receiver of the member step. A part without an index postfix keeps the root shortcut
         // below, which leaves every dotted operand that resolves today unchanged.
+        // A field projection whose receiver part computes a call result (`p.flip().value`) must
+        // resolve that call so lowering can publish it: the root shortcut below would type the
+        // receiver as the root binding and leave the call unrecorded. The call-member spelling
+        // keeps the shortcut because that receiver call owns its own refusal.
+        let member_is_call = children
+            .iter()
+            .skip(dot.saturating_add(2))
+            .any(|child| postfix_opens_call(tree, *child));
         if let Some(projected) = infer_operand_index_projection_sequence(
             tree,
             children.get(..dot).unwrap_or_default(),
@@ -8601,6 +8609,8 @@ fn infer_member_sequence(
             projected
         } else if let Some(root) = root
             && let Some(receiver) = environment.get(&root).cloned()
+            && (member_is_call
+                || !receiver_part_contains_call(tree, children.get(..dot).unwrap_or_default()))
         {
             receiver
         } else {

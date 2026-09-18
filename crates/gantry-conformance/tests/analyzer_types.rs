@@ -9054,6 +9054,178 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
     }
 }
 
+/// A field projection whose receiver part is a call result publishes that call and then the field.
+///
+/// `p.flip().value` reads a field of the temporary the receiver call returns rather than a caller
+/// place, and `head(items).count` reads the field of a free call result, so each spelling below
+/// must lower one call per source call followed by one field projection instead of failing on a
+/// runtime invariant (`1142adea`).
+#[test]
+fn public_field_projection_on_a_call_result_publishes_call_then_field() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("projected call result did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    const FIXTURE: &str = "struct Plain { value: Int } impl Plain { fn flip(self) -> Plain { self } fn add(self, x: Int) -> Int { self.value + x } } fn mk() -> Plain { Plain { value: 42 } } struct Bag { count: Int } fn head(items: List<Bag>) -> Bag { items[0] } ";
+
+    let root = TempDirectory::new();
+    for (body, expected, receiver_calls, plain_calls) in [
+        // The reported row: a receiver call whose result is projected.
+        (
+            "let p: Plain = Plain { value: 42 }; p.flip().value",
+            42i64,
+            1usize,
+            0usize,
+        ),
+        // A free-call receiver as a value and as an operand, and a list element result.
+        ("mk().value", 42, 0, 1),
+        ("mk().value + 1", 43, 0, 1),
+        (
+            "let items: List<Bag> = [Bag { count: 7 }]; head(items).count",
+            7,
+            0,
+            1,
+        ),
+        // A grouped call result is the same receiver.
+        (
+            "let p: Plain = Plain { value: 42 }; (p.flip()).value",
+            42,
+            1,
+            0,
+        ),
+        // The projected call in operand, argument, and initializer positions.
+        (
+            "let p: Plain = Plain { value: 42 }; p.flip().value + 1",
+            43,
+            1,
+            0,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; 1 + p.flip().value",
+            43,
+            1,
+            0,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; p.add(p.flip().value)",
+            84,
+            2,
+            0,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; let v: Int = p.flip().value; v",
+            42,
+            1,
+            0,
+        ),
+    ] {
+        let source = format!("{FIXTURE}fn main() -> Int {{ {body} }}");
+        root.write(&source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: a projected call result must publish a program")
+        });
+        let entry = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("invalid entry path: {error}"));
+        let entry_instructions = program
+            .workflows()
+            .iter()
+            .filter(|workflow| workflow.path == entry)
+            .flat_map(|workflow| workflow.instructions.iter())
+            .collect::<Vec<_>>();
+        let receiver_emitted = entry_instructions
+            .iter()
+            .filter(|instruction| matches!(instruction.kind, InstructionKind::ReceiverCall { .. }))
+            .count();
+        let call_emitted = entry_instructions
+            .iter()
+            .filter(|instruction| matches!(instruction.kind, InstructionKind::Call { .. }))
+            .count();
+        let field_emitted = entry_instructions
+            .iter()
+            .filter(|instruction| {
+                matches!(
+                    instruction.kind,
+                    InstructionKind::Project(Projection::Field(_))
+                )
+            })
+            .count();
+        assert_eq!(
+            (receiver_emitted, call_emitted, field_emitted),
+            (receiver_calls, plain_calls, 1),
+            "source: {source}: receiver calls {receiver_emitted} (want {receiver_calls}), plain calls {call_emitted} (want {plain_calls}), field projections {field_emitted}"
+        );
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x54; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+    // A receiver chain of two calls still refuses the inner call-result receiver, so the executed
+    // rows above never depend on an admitted chain (`GNT-GP-VALUE-005-FU`).
+    let refused = analyze(&format!(
+        "{FIXTURE}fn main() -> Int {{ let p: Plain = Plain {{ value: 42 }}; p.flip().flip().value }}"
+    ));
+    assert_eq!(
+        refused.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        refused.diagnostics()
+    );
+    assert_eq!(
+        refused.diagnostics()[0].code.as_str(),
+        "receiver-value-place"
+    );
+    assert!(refused.executable_program().is_none());
+}
+
 /// An operator to the right of a receiver call is an ordinary operand.
 ///
 /// The parser splits a leading receiver call into sibling fragments, so the lowering resolves that

@@ -1462,6 +1462,15 @@ impl Compiler<'_> {
             let receiver_place = receiver_type
                 .as_ref()
                 .and_then(|_| postfix_method_receiver_place(self.tree, &node));
+            // A receiver call whose result is projected (`p.flip().value`) must publish the call
+            // before the projection steps apply: the place walk below would read the called member
+            // as this node's own call and leave the field unread, so the computed receiver and its
+            // steps are compiled first whenever this node carries such a tail.
+            if let Some(result) =
+                self.compile_computed_member_projection_operand(node.children())?
+            {
+                return Ok(result);
+            }
             let has_implicit_receiver = constructed_receiver.is_some() || receiver_place.is_some();
             let caller_place = if requires_place {
                 postfix_method_receiver_place(self.tree, &node)
@@ -2493,6 +2502,9 @@ impl Compiler<'_> {
         if let Some(result) = self.compile_index_projection_operand(children)? {
             return Ok(result);
         }
+        if let Some(result) = self.compile_computed_member_projection_operand(children)? {
+            return Ok(result);
+        }
         if let Some(result) = self.compile_receiver_call_operand(children)? {
             return Ok(result);
         }
@@ -2673,6 +2685,80 @@ impl Compiler<'_> {
         let mut current = projection_step_type(&receiver_type, &member, self.struct_fields)
             .ok_or(AnalysisError::Invariant)?;
         self.emit(current.clone(), InstructionKind::Project(member))?;
+        for step in steps {
+            let projection = match step {
+                ProjectionChainStep::Field(field) => Projection::Field(field),
+                ProjectionChainStep::Member(index) => Projection::Member(index),
+            };
+            current = projection_step_type(&current, &projection, self.struct_fields)
+                .ok_or(AnalysisError::Invariant)?;
+            self.emit(current.clone(), InstructionKind::Project(projection))?;
+        }
+        Ok(Some(current))
+    }
+
+    /// Lowers a split member projection whose receiver part computes a value.
+    ///
+    /// `p.flip().value` and `mk().value` read a field of the value the receiver call publishes:
+    /// the receiver part up to the call's closing parenthesis is compiled to that value (grouped
+    /// and free-call receivers included), and every `.member` or literal index step after it
+    /// projects from that value. A tail that still opens a call belongs to the receiver-call arm,
+    /// and a shape this walk cannot key reports no operand so the caller keeps its own walk.
+    fn compile_computed_member_projection_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        // A computed receiver reaches the operand walk either as sibling fragments or as one
+        // nested expression, so a slice that is a single wrapper node offers its own children to
+        // the same arm before the caller falls back to the ordinary child walk.
+        if let [only] = children {
+            let nested = self
+                .tree
+                .node(*only)
+                .map(|node| node.children().to_vec())
+                .filter(|nested| !nested.is_empty());
+            if let Some(nested) = nested
+                && let Some(result) = self.compile_computed_member_projection_operand(&nested)?
+            {
+                return Ok(Some(result));
+            }
+        }
+        let Some(close) = children.iter().position(|child| {
+            self.tree
+                .node(*child)
+                .is_some_and(|node| node_is_closing_parenthesis(self.tree, node))
+        }) else {
+            return Ok(None);
+        };
+        let receiver_children = children.get(..=close).unwrap_or_default();
+        // A receiver part that is only a dotted place was already keyed by the place arm, and one
+        // without a call or grouping parenthesis has no computed value to project from.
+        let computed = receiver_children.iter().any(|child| {
+            self.tree.node(*child).is_some_and(|node| {
+                node_is_call_postfix(self.tree, node)
+                    || matches!(
+                        node.form(),
+                        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+                    )
+            })
+        });
+        if !computed {
+            return Ok(None);
+        }
+        if !projection_tail_is_step_only(self.tree, children, close.saturating_add(1)) {
+            return Ok(None);
+        }
+        let Some(steps) = postfix_projection_steps(self.tree, children, close.saturating_add(1))
+        else {
+            return Ok(None);
+        };
+        if steps.is_empty() {
+            return Ok(None);
+        }
+        let Some(mut current) = self.compile_computed_projection_receiver(receiver_children)?
+        else {
+            return Ok(None);
+        };
         for step in steps {
             let projection = match step {
                 ProjectionChainStep::Field(field) => Projection::Field(field),
@@ -2873,6 +2959,19 @@ impl Compiler<'_> {
         &self,
         children: &[NodeId],
     ) -> Option<(CanonicalCallableIdentity, TypeDescriptor)> {
+        // A slice whose call result is projected (`head(xs).count`) is not the call alone: the
+        // computed member-projection arm publishes the call and then the projection steps, so this
+        // path leaves the slice to that arm instead of emitting the call and dropping the tail.
+        if let Some(close) = children.iter().position(|child| {
+            self.tree
+                .node(*child)
+                .is_some_and(|node| node_is_closing_parenthesis(self.tree, node))
+        }) && projection_tail_is_step_only(self.tree, children, close.saturating_add(1))
+            && postfix_projection_steps(self.tree, children, close.saturating_add(1))
+                .is_some_and(|steps| !steps.is_empty())
+        {
+            return None;
+        }
         let source = sequence_call_site_span(self.tree, children)?;
         self.direct_targets
             .iter()
