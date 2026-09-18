@@ -1451,6 +1451,8 @@ fn main() -> Int { let p: P = P { v: 1 }; p.a() + p.b() }
         split_inherent.diagnostics()
     );
     assert_eq!(split_inherent.implementation_heads().len(), 3);
+    // This accessor reports one head per block, while the canonical fact set built for execution
+    // keeps one per identity; the two counts differ exactly by the redundant inherent head.
     // A duplicated inherent method name stays refused by name resolution.
     let duplicated_method = analyze(
         r#"
