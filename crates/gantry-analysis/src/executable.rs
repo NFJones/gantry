@@ -5484,24 +5484,37 @@ fn integer_literal(tree: &SyntaxTree, root: NodeId) -> Option<usize> {
     None
 }
 
+/// Why an index expression is not the constant a static projection carries.
+enum ConstantIndexError {
+    /// The expression is not a closed constant, so the first-literal read still applies.
+    Open,
+    /// The expression is a closed constant whose evaluation or conversion declined: re-reading its
+    /// first literal would project a different element (`xs[1 / 0]` read index `1`).
+    Declined,
+}
+
 /// Evaluates the value a place's index expression names, when it is a constant integer.
 ///
 /// The first integer literal in the subtree is not the value when the index carries operators:
 /// `xs[3 - 1]` was lowered with index `3` and read out of bounds, and `xs[1 + 1]` read element `1`.
-/// The expression is therefore folded; one that is not a closed constant declines to the previous
-/// first-literal read, so a dynamic index keeps whatever route it had.
+/// The expression is therefore folded. Only an expression that is not a closed constant declines
+/// to the previous first-literal read, so a dynamic index keeps whatever route it had; a closed
+/// constant that cannot be folded or carried declines outright.
 fn index_value(tree: &SyntaxTree, root: NodeId) -> Option<usize> {
-    if let Some(value) = constant_index(tree, root) {
-        return usize::try_from(value).ok();
+    match constant_index(tree, root) {
+        Ok(value) => usize::try_from(value).ok(),
+        Err(ConstantIndexError::Declined) => None,
+        Err(ConstantIndexError::Open) => integer_literal(tree, root),
     }
-    integer_literal(tree, root)
 }
 
-fn constant_index(tree: &SyntaxTree, root: NodeId) -> Option<i64> {
+fn constant_index(tree: &SyntaxTree, root: NodeId) -> Result<i64, ConstantIndexError> {
     let mut tokens = Vec::new();
     let mut work = vec![root];
     while let Some(id) = work.pop() {
-        let node = tree.node(id)?;
+        let Some(node) = tree.node(id) else {
+            return Err(ConstantIndexError::Open);
+        };
         if matches!(node.form(), SyntaxForm::Token(_)) {
             tokens.push(node);
         } else {
@@ -5510,28 +5523,36 @@ fn constant_index(tree: &SyntaxTree, root: NodeId) -> Option<i64> {
     }
     let mut position = 0_usize;
     let value = constant_index_sum(&tokens, &mut position)?;
-    (position == tokens.len()).then_some(value)
+    if position == tokens.len() {
+        Ok(value)
+    } else {
+        Err(ConstantIndexError::Open)
+    }
 }
 
 fn constant_index_sum(
     tokens: &[&gantry_frontend::SyntaxNode],
     position: &mut usize,
-) -> Option<i64> {
+) -> Result<i64, ConstantIndexError> {
     let mut value = constant_index_product(tokens, position)?;
     loop {
         let Some(node) = tokens.get(*position) else {
-            return Some(value);
+            return Ok(value);
         };
         value = match node.form() {
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Plus)) => {
                 *position += 1;
-                value.checked_add(constant_index_product(tokens, position)?)?
+                value
+                    .checked_add(constant_index_product(tokens, position)?)
+                    .ok_or(ConstantIndexError::Declined)?
             }
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Minus)) => {
                 *position += 1;
-                value.checked_sub(constant_index_product(tokens, position)?)?
+                value
+                    .checked_sub(constant_index_product(tokens, position)?)
+                    .ok_or(ConstantIndexError::Declined)?
             }
-            _ => return Some(value),
+            _ => return Ok(value),
         };
     }
 }
@@ -5539,16 +5560,18 @@ fn constant_index_sum(
 fn constant_index_product(
     tokens: &[&gantry_frontend::SyntaxNode],
     position: &mut usize,
-) -> Option<i64> {
+) -> Result<i64, ConstantIndexError> {
     let mut value = constant_index_factor(tokens, position)?;
     loop {
         let Some(node) = tokens.get(*position) else {
-            return Some(value);
+            return Ok(value);
         };
         value = match node.form() {
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Star)) => {
                 *position += 1;
-                value.checked_mul(constant_index_factor(tokens, position)?)?
+                value
+                    .checked_mul(constant_index_factor(tokens, position)?)
+                    .ok_or(ConstantIndexError::Declined)?
             }
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Slash))
             | SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Percent)) => {
@@ -5559,15 +5582,19 @@ fn constant_index_product(
                 *position += 1;
                 let divisor = constant_index_factor(tokens, position)?;
                 if divisor == 0 {
-                    return None;
+                    return Err(ConstantIndexError::Declined);
                 }
                 if remainder {
-                    value.checked_rem(divisor)?
+                    value
+                        .checked_rem(divisor)
+                        .ok_or(ConstantIndexError::Declined)?
                 } else {
-                    value.checked_div(divisor)?
+                    value
+                        .checked_div(divisor)
+                        .ok_or(ConstantIndexError::Declined)?
                 }
             }
-            _ => return Some(value),
+            _ => return Ok(value),
         };
     }
 }
@@ -5575,29 +5602,36 @@ fn constant_index_product(
 fn constant_index_factor(
     tokens: &[&gantry_frontend::SyntaxNode],
     position: &mut usize,
-) -> Option<i64> {
-    let node = *tokens.get(*position)?;
+) -> Result<i64, ConstantIndexError> {
+    let Some(node) = tokens.get(*position).copied() else {
+        return Err(ConstantIndexError::Open);
+    };
     match node.form() {
         SyntaxForm::Token(TokenKind::IntegerLiteral(text)) => {
             *position += 1;
-            text.parse().ok()
+            text.parse().map_err(|_| ConstantIndexError::Open)
         }
         SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Minus)) => {
             *position += 1;
-            constant_index_factor(tokens, position)?.checked_neg()
+            constant_index_factor(tokens, position)?
+                .checked_neg()
+                .ok_or(ConstantIndexError::Declined)
         }
         SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
             *position += 1;
             let value = constant_index_sum(tokens, position)?;
-            match tokens.get(*position)?.form() {
+            let Some(close) = tokens.get(*position) else {
+                return Err(ConstantIndexError::Open);
+            };
+            match close.form() {
                 SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
                     *position += 1;
-                    Some(value)
+                    Ok(value)
                 }
-                _ => None,
+                _ => Err(ConstantIndexError::Open),
             }
         }
-        _ => None,
+        _ => Err(ConstantIndexError::Open),
     }
 }
 
