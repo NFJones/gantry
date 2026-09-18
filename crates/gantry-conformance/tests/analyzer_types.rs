@@ -8218,6 +8218,19 @@ fn public_literal_receiver_index_projections_are_lowered_and_typed() {
             None,
             vec![Projection::Member(1), Projection::Member(0)],
         ),
+        // A group around the chain's root segment keys the same chain and publishes the same steps
+        // as its ungrouped spelling, whether the whole part or only the root segment is grouped
+        // (`541af029`).
+        (
+            "struct Item { values: List<Int> } fn main() -> Int { let item: Item = Item { values: [1] }; (item).values[0] }",
+            Some("item"),
+            vec![Projection::Field("values".into()), Projection::Member(0)],
+        ),
+        (
+            "struct Item { values: List<Int> } fn main() -> Int { let item: Item = Item { values: [1] }; ((item).values)[0] }",
+            Some("item"),
+            vec![Projection::Field("values".into()), Projection::Member(0)],
+        ),
         (
             "struct Item { count: Int } fn main() -> Int { Item { count: 1 }.count }",
             None,

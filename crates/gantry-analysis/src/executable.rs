@@ -4533,8 +4533,10 @@ fn projection_member_identifier(tree: &SyntaxTree, id: NodeId) -> Option<Arc<str
 ///
 /// The parser flattens a postfix chain into sibling children, so a receiver part such as
 /// `item.values` is not one syntax node: the chain is the flat token sequence from the root binding
-/// through every `.field` and `[index]` step. A chain with a grouping parenthesis, a call, or a
-/// computed index reports no chain here, so the caller keeps its own arms for those shapes.
+/// through every `.field` and `[index]` step. A group around the chain's root segment is
+/// transparent (`(h).items[0]` keys the same chain `h.items[0]` does), while a chain with any other
+/// grouping parenthesis, a call, or a computed index reports no chain here, so the caller keeps its
+/// own arms for those shapes.
 fn postfix_projection_chain(
     tree: &SyntaxTree,
     expression: &gantry_frontend::SyntaxNode,
@@ -4553,6 +4555,46 @@ fn postfix_projection_chain(
         } else {
             work.extend(node.children().iter().rev().copied());
         }
+    }
+    // A grouping parenthesis around the root segment of a place chain is transparent for the
+    // projection exactly as it is for a receiver place: `(h).items[0]` reads the place chain
+    // `h.items[0]` reads, so each completed group pair that wraps the chain's root segment is
+    // dropped before the chain is keyed. A group that wraps anything else reports no chain.
+    while let [first, ..] = tokens.as_slice() {
+        if !matches!(
+            first.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        ) {
+            break;
+        }
+        let mut depth = 0_usize;
+        let mut close = None;
+        for (index, token) in tokens.iter().enumerate() {
+            match token.form() {
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
+                    depth = depth.saturating_add(1);
+                }
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        close = Some(index);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close) = close else {
+            break;
+        };
+        if !matches!(
+            tokens.get(close.saturating_add(1)).map(|node| node.form()),
+            Some(SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)))
+        ) {
+            break;
+        }
+        tokens.remove(close);
+        tokens.remove(0);
     }
     if tokens.iter().any(|node| {
         matches!(
