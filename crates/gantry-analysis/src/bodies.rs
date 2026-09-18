@@ -9279,10 +9279,12 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
         return false;
     };
     let receiver = &tokens[..dot];
-    // A grouping parenthesis is transparent for a receiver part at every depth: `(p).greet()`
-    // names the same place `p.greet()` does, and `((q.value)).dbl()` reads the field place
-    // `q.value`, so every completed group pair is peeled. A grouped index receiver still names a
-    // value rather than a place, which is why the place test below follows this peel.
+    // A grouping parenthesis is transparent for a receiver part: `(p).greet()` names the same
+    // place `p.greet()` does, and `((q.value)).dbl()` reads the field place `q.value`, so every
+    // group pair that wraps the *whole* receiver part is peeled, repeatedly. A group around an
+    // interior segment of a dotted receiver part (`(w).inner.greet2()`) wraps no whole receiver
+    // part, so it is not peeled and that spelling keeps the value refusal. A grouped index
+    // receiver still names a value rather than a place, which is why the place test follows.
     let mut receiver = receiver;
     while let [first, .., last] = receiver
         && matches!(

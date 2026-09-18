@@ -4186,7 +4186,9 @@ fn receiver_place_tokens(
 /// Returns the place one grouped receiver names.
 ///
 /// A grouping parenthesis is transparent for a receiver call, so `(p).greet()` names the same
-/// place `p.greet()` does and every nested group peels before the place is keyed.
+/// place `p.greet()` does and every group pair wrapping the *whole* receiver part peels before
+/// the place is keyed. A group around an interior segment of a dotted receiver part (`(w).inner`)
+/// names no place here, because the receiver-place test refuses that spelling before this walk.
 fn grouped_method_receiver_place(
     tree: &SyntaxTree,
     node: &gantry_frontend::SyntaxNode,
