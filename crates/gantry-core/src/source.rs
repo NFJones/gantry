@@ -1375,12 +1375,6 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An implementation method infers effects outside its trait method contract.",
     },
     DiagnosticCodeDefinition {
-        code: "empty-literal-type",
-        phase: DiagnosticPhase::Analysis,
-        category: DiagnosticCategory::Type,
-        meaning: "An empty list literal has no expected element type in this position.",
-    },
-    DiagnosticCodeDefinition {
         code: "exclusive-reborrow-subplace",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -2225,6 +2219,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Lexical,
         category: DiagnosticCategory::Lexical,
         meaning: "A quoted string has no closing delimiter.",
+    },
+    DiagnosticCodeDefinition {
+        code: "untyped-list-literal",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A list literal has no element type of its own in this position.",
     },
 ];
 

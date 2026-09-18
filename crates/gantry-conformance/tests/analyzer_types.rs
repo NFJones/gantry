@@ -9362,13 +9362,18 @@ fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
         "{:?}",
         admitted.diagnostics()
     );
-    // An empty literal receiver has no element type of its own, so the member step is refused
-    // instead of publishing a program whose receiver carries no type (`ee62b32a`). The same
-    // literal keeps its admitted spellings where an expected `List<T>` is known.
+    // A list literal with no element type of its own is refused wherever its member step sits:
+    // statement and initializer positions, either operand of a chain, and through any grouping
+    // pair (`ee62b32a`). Each row reports its literal exactly once, and the same literal keeps its
+    // admitted spellings where an expected `List<T>` is known.
     for body in [
         "[].len()",
         "discard [].join(\"-\"); 1",
         "let n: Int = [].len(); n",
+        "[].len() + 1",
+        "let n: Int = [].len() + 1; n",
+        "([]).len()",
+        "(([])).len()",
     ] {
         let refused = analyze(&format!("fn main() -> Int {{ {body} }}"));
         assert_eq!(
@@ -9378,8 +9383,14 @@ fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
             refused.diagnostics()
         );
         assert_eq!(
+            refused.diagnostics().len(),
+            1,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
             refused.diagnostics()[0].code.as_str(),
-            "empty-literal-type",
+            "untyped-list-literal",
             "{body}"
         );
         assert!(refused.executable_program().is_none(), "{body}");

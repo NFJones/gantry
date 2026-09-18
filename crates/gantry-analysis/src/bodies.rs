@@ -5901,15 +5901,15 @@ fn infer_expression_inner(
         )?;
         if literal_member {
             let Some(receiver) = receiver else {
-                // A member step reads the value its receiver part names, and an empty literal has a
-                // type only where an expected `List<T>` is known (`SPEC.md` GNT-5.4): without one
-                // the step cannot be resolved, so the source is refused here rather than reaching
-                // lowering with no receiver type at all.
+                // A member step reads the value its receiver part names, and a list literal has a
+                // type of its own only where it has members or an expected `List<T>` is known
+                // (`SPEC.md` GNT-5.4): without one the step cannot be resolved, so the source is
+                // refused here rather than reaching lowering with no receiver type at all.
                 let literal = tree.node(list).ok_or(AnalysisError::Invariant)?;
                 diagnostics.push(body_diagnostic(
-                    "empty-literal-type",
+                    UNTYPED_LIST_LITERAL,
                     DiagnosticCategory::Type,
-                    "an empty list literal has no expected element type in this position",
+                    UNTYPED_LIST_LITERAL_MESSAGE,
                     literal.span().clone(),
                     [] as [(&str, &str); 0],
                 )?);
@@ -8704,16 +8704,31 @@ fn infer_member_sequence(
         {
             receiver
         } else {
-            let Some(receiver) = infer_operand_sequence(
+            let receiver_part = children.get(..dot).unwrap_or_default();
+            let resolved = infer_operand_sequence(
                 tree,
-                children.get(..dot).unwrap_or_default(),
+                receiver_part,
                 facts,
                 environment,
                 None,
                 context,
                 diagnostics,
-            )?
-            else {
+            )?;
+            // A receiver part that owns a list literal is a value of its own; the operand walk
+            // types it when the literal has a type, and a literal it cannot type is refused here so
+            // no member step reaches lowering without a receiver (`[].len() + 1`, `([]).len()`).
+            let resolved = match resolved {
+                Some(typed) => Some(typed),
+                None => infer_receiver_literal(
+                    tree,
+                    receiver_part,
+                    facts,
+                    environment,
+                    context,
+                    diagnostics,
+                )?,
+            };
+            let Some(receiver) = resolved else {
                 return Ok(None);
             };
             receiver
@@ -9193,6 +9208,60 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
 /// Reports whether the receiver before the method dot constructs an aggregate value.
 fn receiver_is_constructed(tree: &SyntaxTree, children: &[NodeId]) -> bool {
     receiver_owns_aggregate_literal(tree, children).is_some()
+}
+
+/// The published code that names a list literal with no element type of its own.
+const UNTYPED_LIST_LITERAL: &str = "untyped-list-literal";
+
+/// The message that code publishes.
+const UNTYPED_LIST_LITERAL_MESSAGE: &str =
+    "a list literal has no element type of its own in this position";
+
+/// Types one receiver part that owns a list literal, or refuses a literal with no type of its own.
+///
+/// A receiver part that owns a list literal is a value of its own, which the operand walk types
+/// whenever the literal has a type of its own. A list literal has one only where it has members or
+/// an expected `List<T>` is known (`SPEC.md` GNT-5.4), so a literal the walk cannot type is refused
+/// here rather than leaving its member step without a receiver.
+fn infer_receiver_literal(
+    tree: &SyntaxTree,
+    receiver_part: &[NodeId],
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let Some(literal) = receiver_owns_aggregate_literal(tree, receiver_part) else {
+        return Ok(None);
+    };
+    let Some(node) = tree.node(literal) else {
+        return Ok(None);
+    };
+    if !matches!(node.form(), SyntaxForm::ListExpression) {
+        return Ok(None);
+    }
+    let span = node.span().clone();
+    match infer_list(
+        tree,
+        literal,
+        facts,
+        environment,
+        None,
+        context,
+        diagnostics,
+    )? {
+        Some(typed) => Ok(Some(typed)),
+        None => {
+            diagnostics.push(body_diagnostic(
+                UNTYPED_LIST_LITERAL,
+                DiagnosticCategory::Type,
+                UNTYPED_LIST_LITERAL_MESSAGE,
+                span,
+                [] as [(&str, &str); 0],
+            )?);
+            Ok(None)
+        }
+    }
 }
 
 /// Returns the aggregate literal one receiver part owns as its value, if it constructs one.
