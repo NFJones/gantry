@@ -10914,6 +10914,14 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
             "let t: Tuple<Tuple<Int, Int>, Tuple<Int, Int>> = ((1, 2), (3, 4)); let v: Bool = t[1][0 + 0]; 0",
             "tuple-index-not-literal",
         ),
+        (
+            "let t: Tuple<Tuple<Int, Int>, Tuple<Int, Int>> = ((1, 2), (3, 4)); let v: Int = t[1][0 + 0]; v",
+            "tuple-index-not-literal",
+        ),
+        (
+            "let t: Tuple<Tuple<Int, Int>, Tuple<Int, Int>> = ((1, 2), (3, 4)); t[1][0 + 0]",
+            "tuple-index-not-literal",
+        ),
         // A computed receiver is refused even when the member resolves for its type.
         ("(1 + 2).greet()", "receiver-value-place"),
         ("(1 + mk_int()).greet() + 1", "receiver-value-place"),
