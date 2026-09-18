@@ -7179,6 +7179,8 @@ fn public_callable_annotations_in_open_signatures_are_refused_at_the_annotation(
         "struct Item {} impl Item { fn apply<U>(self, callback: Fn(Int) -> Int, value: U) -> U { value } } fn main() -> Int { 0 }",
         "struct Item {} impl Item { fn make<U>(self, value: U) -> Fn(Int) -> Int { 0 } } fn main() -> Int { 0 }",
         "fn apply<U>(callback: Fn(Int) -> Int, value: U) -> U { value } fn main() -> Int { 0 }",
+        "struct Item<T> { v: T } impl<T> Item<T> { fn apply(self, callback: Fn(Int) -> Int, value: T) -> T { value } } fn main() -> Int { 0 }",
+        "trait Holder<T> { pure fn read(self, callback: Fn(Int) -> Int) -> T; } fn main() -> Int { 0 }",
     ] {
         let root = TempDirectory::new();
         root.write(source);
@@ -7191,6 +7193,12 @@ fn public_callable_annotations_in_open_signatures_are_refused_at_the_annotation(
             refused.status(),
             AnalysisStatus::Invalid,
             "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics().len(),
+            1,
+            "source: {source}; one announced failure: {:?}",
             refused.diagnostics()
         );
         let refusal = refused

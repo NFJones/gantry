@@ -1158,22 +1158,60 @@ pub(crate) fn signature_positions_are_closed(
     tree: &SyntaxTree,
     declaration: NodeId,
 ) -> Result<bool, AnalysisError> {
-    if tree.node(declaration).is_none() {
-        return Ok(true);
-    }
-    let Some(list) = direct_child_form(tree, declaration, SyntaxForm::TypeParameterList) else {
+    let Some(declaration_node) = tree.node(declaration) else {
         return Ok(true);
     };
+    // Every binder list that encloses the declaration is in scope for its positions: a method
+    // inherits the names its enclosing implementation or trait declares, so a position naming one
+    // of them is open exactly like a name the declaration's own list declares.
+    let span = declaration_node.span().clone();
+    // A binder list that precedes the declaration is in scope for its positions when an enclosing
+    // implementation or trait declares it, so those owner spans are collected first.
+    let owners = tree
+        .nodes()
+        .iter()
+        .filter(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::ImplDeclaration | SyntaxForm::TraitDeclaration
+            )
+        })
+        .map(|node| node.span().clone())
+        .filter(|owner| {
+            owner.source() == span.source()
+                && owner.bytes().start() <= span.bytes().start()
+                && owner.bytes().end() >= span.bytes().end()
+        })
+        .collect::<Vec<_>>();
     let mut declared = BTreeSet::new();
-    let mut stack = vec![list];
-    while let Some(current) = stack.pop() {
-        let Some(node) = tree.node(current) else {
+    for (index, node) in tree.nodes().iter().enumerate() {
+        if !matches!(node.form(), SyntaxForm::TypeParameterList) {
             continue;
-        };
-        if let SyntaxForm::Token(TokenKind::Identifier(name)) = node.form() {
-            declared.insert(name.clone());
         }
-        stack.extend(node.children().iter().copied());
+        let list = node.span();
+        if list.source() != span.source() {
+            continue;
+        }
+        let local = list.bytes().end() >= span.bytes().start()
+            && list.bytes().start() <= span.bytes().end();
+        let enclosing = list.bytes().end() <= span.bytes().start()
+            && owners.iter().any(|owner| {
+                owner.bytes().start() <= list.bytes().start()
+                    && owner.bytes().end() >= list.bytes().end()
+            });
+        if !local && !enclosing {
+            continue;
+        }
+        let mut stack = vec![NodeId::from_index(index)];
+        while let Some(current) = stack.pop() {
+            let Some(node) = tree.node(current) else {
+                continue;
+            };
+            if let SyntaxForm::Token(TokenKind::Identifier(name)) = node.form() {
+                declared.insert(name.clone());
+            }
+            stack.extend(node.children().iter().copied());
+        }
     }
     if declared.is_empty() {
         return Ok(true);
