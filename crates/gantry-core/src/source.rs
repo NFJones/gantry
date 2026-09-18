@@ -1375,6 +1375,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An implementation method infers effects outside its trait method contract.",
     },
     DiagnosticCodeDefinition {
+        code: "empty-literal-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An empty list literal has no expected element type in this position.",
+    },
+    DiagnosticCodeDefinition {
         code: "exclusive-reborrow-subplace",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,

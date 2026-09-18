@@ -5900,19 +5900,31 @@ fn infer_expression_inner(
             diagnostics,
         )?;
         if literal_member {
-            return match receiver {
-                Some(receiver) => infer_member_sequence(
-                    tree,
-                    node.children(),
-                    facts,
-                    environment,
-                    Some(receiver),
-                    expected,
-                    context,
-                    diagnostics,
-                ),
-                None => Ok(None),
+            let Some(receiver) = receiver else {
+                // A member step reads the value its receiver part names, and an empty literal has a
+                // type only where an expected `List<T>` is known (`SPEC.md` GNT-5.4): without one
+                // the step cannot be resolved, so the source is refused here rather than reaching
+                // lowering with no receiver type at all.
+                let literal = tree.node(list).ok_or(AnalysisError::Invariant)?;
+                diagnostics.push(body_diagnostic(
+                    "empty-literal-type",
+                    DiagnosticCategory::Type,
+                    "an empty list literal has no expected element type in this position",
+                    literal.span().clone(),
+                    [] as [(&str, &str); 0],
+                )?);
+                return Ok(None);
             };
+            return infer_member_sequence(
+                tree,
+                node.children(),
+                facts,
+                environment,
+                Some(receiver),
+                expected,
+                context,
+                diagnostics,
+            );
         }
         return Ok(receiver);
     }

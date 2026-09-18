@@ -9110,7 +9110,7 @@ fn public_builtin_member_calls_publish_their_primitive() {
     }
 
     let root = TempDirectory::new();
-    let entries: [(&str, i64, &[Primitive]); 28] = [
+    let entries: [(&str, i64, &[Primitive]); 29] = [
         (
             "let xs: List<Int> = [1, 2, 3]; xs.len()",
             3,
@@ -9222,6 +9222,11 @@ fn public_builtin_member_calls_publish_their_primitive() {
             &[Primitive::ListLength, Primitive::Multiply],
         ),
         ("[1 + 1].len() + 1", 2, &[Primitive::ListLength]),
+        (
+            "let xs: List<Int> = []; xs.len()",
+            0,
+            &[Primitive::ListLength],
+        ),
     ];
     for (body, expected, required) in entries {
         let source = format!("fn main() -> Int {{ {body} }}");
@@ -9357,6 +9362,45 @@ fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
         "{:?}",
         admitted.diagnostics()
     );
+    // An empty literal receiver has no element type of its own, so the member step is refused
+    // instead of publishing a program whose receiver carries no type (`ee62b32a`). The same
+    // literal keeps its admitted spellings where an expected `List<T>` is known.
+    for body in [
+        "[].len()",
+        "discard [].join(\"-\"); 1",
+        "let n: Int = [].len(); n",
+    ] {
+        let refused = analyze(&format!("fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics()[0].code.as_str(),
+            "empty-literal-type",
+            "{body}"
+        );
+        assert!(refused.executable_program().is_none(), "{body}");
+    }
+    for body in [
+        "discard []; 0",
+        "let xs: List<Int> = []; xs.len()",
+        "[[1], []].len()",
+    ] {
+        let admitted = analyze(&format!("fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "{body}: {:?}",
+            admitted.diagnostics()
+        );
+        assert!(
+            admitted.executable_program().is_some(),
+            "{body}: an admitted empty literal spelling must publish a program"
+        );
+    }
 }
 
 /// A grouping parenthesis is transparent for a receiver call.
