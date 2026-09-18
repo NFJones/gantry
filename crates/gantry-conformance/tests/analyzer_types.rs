@@ -2944,6 +2944,28 @@ fn section_38_trailing_member_steps_fold_over_the_payload() {
         "a bare marker yields the payload, which an Int annotation cannot hold: {:?}",
         payload_only.diagnostics()
     );
+    // The pre-marker operand goes through the same place resolution the ended-marker path uses, so
+    // a place and a member-place operand carry their trailing steps exactly like the grouped
+    // spelling.
+    let place_prelude = format!("{prelude}struct Holder {{ inner: Result<V, E> }} ");
+    for source in [
+        format!(
+            "{prelude}fn outer(r: Result<V, E>) -> Result<Int, F> {{ let v: Int = r?.value; Ok(v) }} fn main() -> Int {{ 0 }}"
+        ),
+        format!(
+            "{prelude}fn outer(r: Result<V, E>) -> Result<Int, F> {{ let v: Int = (r)?.value; Ok(v) }} fn main() -> Int {{ 0 }}"
+        ),
+        format!(
+            "{place_prelude}fn outer(h: Holder) -> Result<Int, F> {{ let v: Int = h.inner?.value; Ok(v) }} fn main() -> Int {{ 0 }}"
+        ),
+    ] {
+        let admitted = analyze(&source);
+        assert!(
+            !diagnostic_codes(admitted.diagnostics()).contains(&"error-propagation-refused"),
+            "the place or member-place trailing step is admitted: {:?}",
+            admitted.diagnostics()
+        );
+    }
 }
 
 /// Section 38: a place operand carries its marker exactly where its parenthesized spelling does,

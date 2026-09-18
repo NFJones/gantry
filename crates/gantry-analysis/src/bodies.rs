@@ -2862,19 +2862,22 @@ fn admit_propagation_operand(
         })
     });
     let trailing_are_steps = marker_index.is_some_and(|marker| {
-        node.children()
+        // A trailing chain is one member step per pair: the fragment that carries the dot and the
+        // identifier token it names. A trailing call or index does not admit here.
+        let trailing = node
+            .children()
             .get(marker.saturating_add(1)..)
-            .unwrap_or_default()
-            .iter()
-            .all(|child| {
-                tree.node(*child).is_some_and(|child| {
-                    matches!(
-                        child.form(),
-                        SyntaxForm::PostfixExpression
-                            | SyntaxForm::Token(TokenKind::Identifier(_))
-                            | SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
-                    )
-                })
+            .unwrap_or_default();
+        trailing.len() % 2 == 0
+            && trailing.chunks(2).all(|pair| {
+                let [fragment, name] = pair else {
+                    return false;
+                };
+                tree.node(*fragment)
+                    .is_some_and(|child| matches!(child.form(), SyntaxForm::PostfixExpression))
+                    && tree.node(*name).is_some_and(|child| {
+                        matches!(child.form(), SyntaxForm::Token(TokenKind::Identifier(_)))
+                    })
             })
     });
     let Some(result) = context.current_result.borrow().clone() else {
@@ -6546,6 +6549,17 @@ fn infer_expression(
             context,
             diagnostics,
         )?;
+        // A place or member-place operand is typed by the same place resolution the ended-marker
+        // path uses, because the operand walk types those fragments as the receiver itself
+        // (`GNT-38.1-typed-error-propagation`).
+        let operand_type = if marker_member_step(tree, expression) {
+            wrapped_place_operand(tree, expression, environment, context, diagnostics)?
+        } else {
+            match operand_type {
+                Some(ty) => Some(ty),
+                None => wrapped_place_operand(tree, expression, environment, context, diagnostics)?,
+            }
+        };
         let inferred = match operand_type {
             Some(operand_type) => {
                 match admit_propagation_operand(tree, expression, &operand_type, context)? {
