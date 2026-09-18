@@ -230,6 +230,46 @@ fn public_parser_rejects_malformed_shared_receiver_forms() {
     }
 }
 
+/// A malformed callable type spelling is refused by the parser with a structured diagnostic.
+///
+/// The admitted annotation form is `Fn(<parameters>) -> <result>`; a lowercase `fn(...)` spelling
+/// must not reach the type phase, where it would otherwise abort internally (`3f66325e`).
+#[test]
+fn public_parser_rejects_malformed_callable_annotations() {
+    for source in [
+        "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let f: fn(Int) -> Int = crate::inc; 0 }",
+        "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let f: fn() -> Int = crate::inc; 0 }",
+        "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let f: fn = crate::inc; 0 }",
+        "fn apply(callback: fn(Int) -> Int) -> Int { 0 } fn main() -> Int { 0 }",
+    ] {
+        let outcome = parse(source, 256, 8);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        let annotation = source
+            .find(": fn")
+            .or_else(|| source.find("(fn"))
+            .map(|index| index as u64 + 2)
+            .unwrap_or_else(|| unreachable!("each source spells the annotation"));
+        assert!(
+            outcome.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code.as_str() == "unexpected-token"
+                    && diagnostic
+                        .primary
+                        .as_ref()
+                        .is_some_and(|span| span.bytes().start() == annotation)
+            }),
+            "source: {source}; diagnostics: {:?}",
+            outcome.diagnostics()
+        );
+    }
+    // The admitted annotation form stays valid.
+    let admitted = parse(
+        "fn inc(value: Int) -> Int { value + 1 } fn main() -> Int { let f: Fn(Int) -> Int = crate::inc; 0 }",
+        256,
+        8,
+    );
+    assert!(admitted.is_valid(), "{:?}", admitted.diagnostics());
+}
+
 /// The contextual exclusive receiver form rejects incomplete and parameter-like spellings.
 #[test]
 fn public_parser_rejects_malformed_exclusive_receiver_forms() {

@@ -150,7 +150,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/parser_frontend.rs",
-   "sha256": "51cb5e07924375782418ce32342cceee27fff4d0c78f569ae911d789143315e9"
+   "sha256": "669e4feba08e5bd314467918d072b8a56e0ef1d23f7928e0b55a861f39149c8f"
   },
   {
    "path": "crates/gantry-conformance/tests/persistent_values.rs",
