@@ -6033,19 +6033,53 @@ fn infer_expression_inner(
             diagnostics,
         )?;
         if has_member {
-            return match receiver {
-                Some(receiver) => infer_member_sequence(
-                    tree,
-                    node.children(),
-                    facts,
-                    environment,
-                    Some(receiver),
-                    expected,
-                    context,
-                    diagnostics,
-                ),
-                None => Ok(None),
+            let Some(receiver) = receiver else {
+                return Ok(None);
             };
+            let Some(value) = infer_member_sequence(
+                tree,
+                node.children(),
+                facts,
+                environment,
+                Some(receiver),
+                expected,
+                context,
+                diagnostics,
+            )?
+            else {
+                return Ok(None);
+            };
+            // Operators after the call step take the walked value as their left-most operand and
+            // are folded in source order, so an interior operator is typed as well and
+            // `C { v: 5 }.read() + true == 6` still refuses; a step with no trailing operator keeps
+            // the walked value exactly as before.
+            let call_end = node
+                .children()
+                .iter()
+                .copied()
+                .enumerate()
+                .skip_while(|(_, child)| *child != struct_expression)
+                .skip(1)
+                .filter(|(_, child)| {
+                    node_contains_punctuation(tree, *child, Punctuation::RightParenthesis)
+                })
+                .map(|(index, _)| index + 1)
+                .last();
+            let suffix = call_end
+                .and_then(|index| node.children().get(index..))
+                .unwrap_or_default();
+            if direct_binary_operator_in(tree, suffix).is_none() {
+                return Ok(Some(value));
+            }
+            return infer_stepped_operator_suffix(
+                tree,
+                suffix,
+                (&value, node.span()),
+                facts,
+                environment,
+                context,
+                diagnostics,
+            );
         }
         return Ok(receiver);
     }
@@ -12584,6 +12618,52 @@ fn direct_binary_operator_in(
             }
             _ => None,
         })
+}
+
+/// Folds the operators of a member-walk suffix over `value` in source order. The slice begins
+/// immediately after the call step, so its first operator takes the walked value as its left-most
+/// operand and each further operator is typed by the recursion, which keeps precedence and types
+/// interior operators (`C { v: 5 }.read() + true == 6` still refuses).
+fn infer_stepped_operator_suffix(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    operand: (&TypeDescriptor, &SourceSpan),
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let (value, span) = operand;
+    let Some((operator, index)) = direct_binary_operator_in(tree, children) else {
+        // An empty suffix is the walked value itself; a suffix holding tokens the walk did not key
+        // declines the whole expression rather than inventing a value for it.
+        return Ok(children.is_empty().then(|| value.clone()));
+    };
+    let Some(left) = infer_stepped_operator_suffix(
+        tree,
+        &children[..index],
+        operand,
+        facts,
+        environment,
+        context,
+        diagnostics,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(right) = infer_operand_sequence(
+        tree,
+        children.get(index.saturating_add(1)..).unwrap_or_default(),
+        facts,
+        environment,
+        Some(operator),
+        context,
+        diagnostics,
+    )?
+    else {
+        return Ok(None);
+    };
+    infer_binary_operator(operator, left, right, span.clone(), context, diagnostics)
 }
 
 fn infer_binary_operator(
