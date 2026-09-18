@@ -2856,6 +2856,28 @@ fn section_38_propagation_operands_are_refused() {
         .filter(|diagnostic| diagnostic.code.as_str() == "error-propagation-refused")
         .count();
     assert_eq!(refused, 2);
+    // Each refusal names its own operand at a distinct span, so attribution is pinned rather
+    // than only the count.
+    let mut attributions = both
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "error-propagation-refused")
+        .map(|diagnostic| {
+            (
+                format!("{:?}", diagnostic.primary),
+                diagnostic
+                    .fields
+                    .get("operand")
+                    .map(|value| value.as_ref().to_owned()),
+            )
+        })
+        .collect::<Vec<_>>();
+    attributions.sort();
+    attributions.dedup_by(|left, right| left.0 == right.0);
+    assert_eq!(attributions.len(), 2);
+    for (_, operand) in &attributions {
+        assert_eq!(operand.as_deref(), Some("Result<Int,String>"));
+    }
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
