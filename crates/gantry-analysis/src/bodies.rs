@@ -9501,6 +9501,48 @@ fn postfix_field_sequence(tree: &SyntaxTree, children: &[NodeId]) -> Option<Post
             work.extend(node.children().iter().rev().copied());
         }
     }
+    // A group around a place's root is transparent to the place it names: `(w).inner` spells the
+    // same binding-root field sequence as `w.inner`, exactly as the class requires. Only a run of
+    // parentheses that closes immediately after one identifier or reserved word is dropped, so a
+    // call head or any other parenthesized expression keeps every token and still refuses below.
+    let opens = tokens
+        .iter()
+        .take_while(|(_, node)| {
+            matches!(
+                node.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+            )
+        })
+        .count();
+    if opens > 0
+        && tokens.get(opens).is_some_and(|(_, node)| {
+            matches!(
+                node.form(),
+                SyntaxForm::Token(TokenKind::Identifier(_))
+                    | SyntaxForm::Token(TokenKind::ReservedWord(_))
+            )
+        })
+        && (0..opens).all(|offset| {
+            tokens
+                .get(opens.saturating_add(1).saturating_add(offset))
+                .is_some_and(|(_, node)| {
+                    matches!(
+                        node.form(),
+                        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+                    )
+                })
+        })
+    {
+        let root = tokens[opens];
+        let mut kept = Vec::with_capacity(tokens.len().saturating_sub(opens));
+        kept.push(root);
+        kept.extend(
+            tokens[opens.saturating_add(1).saturating_add(opens)..]
+                .iter()
+                .copied(),
+        );
+        tokens = kept;
+    }
     if tokens.iter().any(|(_, node)| {
         matches!(
             node.form(),

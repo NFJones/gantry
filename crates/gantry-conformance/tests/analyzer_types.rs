@@ -2504,6 +2504,39 @@ fn affine_moved_place_cannot_be_read_again() {
 }
 
 /// Requires one affine misuse to be rejected by a source diagnostic, never an internal failure.
+///
+/// A group around an affine receiver's root is transparent to the place it names: `(w).inner.take()`
+/// keys the same binding-root struct-field place as `w.inner.take()`, so two sibling fields are two
+/// places rather than one reuse, while a second call through the same field stays a reuse of it.
+#[test]
+fn public_grouped_affine_receiver_places_are_field_precise() {
+    let header = "affine struct Plain { value: Int } affine struct Marker { value: Int } \
+        struct Wrap { inner: Plain, marker: Marker } \
+        impl Plain { fn take(self) -> Int { self.value } } \
+        impl Marker { fn take(self) -> Int { self.value } } \
+        fn main() -> Int { let w: Wrap = Wrap { inner: Plain { value: 42 }, marker: Marker { value: 1 } }; ";
+    for tail in [
+        "let a: Int = (w).inner.take(); let b: Int = (w).marker.take(); a + b }",
+        "let a: Int = w.inner.take(); let b: Int = w.marker.take(); a + b }",
+    ] {
+        let source = format!("{header}{tail}");
+        let admitted = analyze(&source);
+        assert!(
+            admitted.status() != AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            admitted.diagnostics()
+        );
+        assert!(
+            admitted.executable_program().is_some(),
+            "{source}: two sibling fields publish a program"
+        );
+    }
+    let reuse =
+        format!("{header}let a: Int = (w).inner.take(); let b: Int = (w).inner.take(); a + b }}");
+    assert_affine_rejected(&reuse, "affine-value-reuse");
+}
+
+/// Requires one affine misuse to be rejected by a source diagnostic, never an internal failure.
 fn assert_affine_rejected(source: &str, code: &str) {
     let rejected = analyze(source);
     assert_eq!(
