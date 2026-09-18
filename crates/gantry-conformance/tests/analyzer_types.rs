@@ -10898,6 +10898,12 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
             "let xs: List<List<Int>> = [[1, 2], [3]]; let v: Unit = xs[0][0 + 1]; 0",
             "type-mismatch",
         ),
+        // An operand position has no lowering route for that chain, so the enclosing operator's own
+        // refusal stays the verdict there.
+        (
+            "let xs: List<List<Int>> = [[1, 2], [3]]; xs[0][0 + 1] == 2",
+            "invalid-primitive",
+        ),
         // A computed receiver is refused even when the member resolves for its type.
         ("(1 + 2).greet()", "receiver-value-place"),
         ("(1 + mk_int()).greet() + 1", "receiver-value-place"),

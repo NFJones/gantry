@@ -7578,7 +7578,7 @@ fn infer_projection(
             }
             return fold_projection_steps(
                 tree,
-                node.span(),
+                (node.span(), true),
                 children,
                 index_postfix.saturating_add(1),
                 member,
@@ -7646,7 +7646,7 @@ fn infer_projection(
         };
         return fold_projection_steps(
             tree,
-            node.span(),
+            (node.span(), true),
             children,
             index_postfix.saturating_add(1),
             projected,
@@ -7783,13 +7783,14 @@ pub(crate) fn literal_projection_index(tree: &SyntaxTree, expression: NodeId) ->
 /// records no affine read: the first projection already records the element read of its receiver.
 fn fold_projection_steps(
     tree: &SyntaxTree,
-    span: &SourceSpan,
+    scope: (&SourceSpan, bool),
     children: &[NodeId],
     after: usize,
     mut current: TypeDescriptor,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let (span, allow_expression_steps) = scope;
     let mut cursor = after;
     while let Some(child) = children.get(cursor).copied() {
         let Some(step) = tree.node(child) else {
@@ -7861,6 +7862,12 @@ fn fold_projection_steps(
             };
             Some(member)
         } else if current.kind() == TypeKind::List {
+            if literal_index.is_none() && !allow_expression_steps {
+                // An operand position has no lowering route for a step whose index is an expression,
+                // so the enclosing operator's own refusal stays the recorded verdict there rather
+                // than an admitted chain the machine cannot publish.
+                return Ok(None);
+            }
             current.immediate_members().into_iter().next()
         } else {
             // `SPEC.md` publishes postfix `[expression]` over a list or a tuple alone, so a
@@ -8813,7 +8820,7 @@ fn infer_operand_index_projection_sequence(
     }
     fold_projection_steps(
         tree,
-        &span,
+        (&span, false),
         children,
         index_postfix.saturating_add(1),
         projected,
