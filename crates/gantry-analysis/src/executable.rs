@@ -2701,17 +2701,21 @@ impl Compiler<'_> {
     /// (`GNT-38.1-typed-error-propagation`), but a one-node operand reaches the sequence walk as a
     /// slice the walk only descends into, so the seam is matched here before that walk runs.
     fn compile_operand_slice(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
-        let seam = match children {
-            [only] => self.tree.node(*only).and_then(|node| {
+        self.compile_sequence(children)
+    }
+
+    fn compile_sequence(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
+        // The analysis records an admitted propagation seam at the operand node the lowering
+        // compiles (`GNT-38.1-typed-error-propagation`), and one operand reaches this walk as a
+        // one-node slice the rest of it only descends into or skips, so the seam is matched before
+        // any of that routing runs. A flat multi-operator chain reaches this walk per operand.
+        if let [only] = children
+            && let Some((_, callee, operand_type)) = self.tree.node(*only).and_then(|node| {
                 self.propagation_seams
                     .iter()
                     .find(|(source, _, _)| source == node.span())
                     .cloned()
-            }),
-            _ => None,
-        };
-        if let Some((_, callee, operand_type)) = seam
-            && let [only] = children
+            })
         {
             let payload = self
                 .body_types
@@ -2726,10 +2730,6 @@ impl Compiler<'_> {
             self.compile_propagation(*only, payload, callee, operand_type)?;
             return Ok(());
         }
-        self.compile_sequence(children)
-    }
-
-    fn compile_sequence(&mut self, children: &[NodeId]) -> Result<(), AnalysisError> {
         // The parser leaves an operator-free `BinaryExpression` wrapper around one operand when
         // a chain folds around it (`1 + f(1) + f(2)` wraps the middle call), and that wrapper is
         // not a sequence: the call path would read the wrapped node as the call's argument list
