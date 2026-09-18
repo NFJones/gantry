@@ -756,6 +756,19 @@ impl Compiler<'_> {
         }
         let mutable = node_has_word(self.tree, &node, "mut");
         let ty = self.compile_expression(expression)?;
+        // A projection chain the analysis recorded no fact for compiles its steps but reports no
+        // type, so the initializer reads as `Unit` while the steps leave the projected value on the
+        // stack; binding that value as `Unit` failed the machine where the same chain in a tail
+        // position ran (`let v: Int = xs[0][0 + 1]; v`). The binding's own annotation is the type it
+        // holds, so it decides when the initializer reports none.
+        let ty = if ty == TypeDescriptor::UNIT {
+            direct_child_form(self.tree, &node, SyntaxForm::ValueType)
+                .and_then(|type_node| self.declaration_types.get(&type_node))
+                .map(|fact| fact.descriptor.clone())
+                .unwrap_or(ty)
+        } else {
+            ty
+        };
         if let Some(pattern) = direct_child_form(self.tree, &node, SyntaxForm::Pattern) {
             let temporary = self.compiler_temporary("tuple");
             self.emit(

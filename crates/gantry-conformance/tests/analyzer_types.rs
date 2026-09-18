@@ -8967,6 +8967,17 @@ fn public_split_struct_operands_are_typed_and_lowered() {
             "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn id(x: Int) -> Int { x } fn main() -> Bool { Counter { value: 5 }.read() == id(5) }",
             Expected::Bool(true),
         ),
+        // A chained projection in a let initializer holds the element its steps read, exactly as the
+        // tail spelling does: the binding used to be emitted as `Unit` while the steps left the
+        // projected value, which failed the machine.
+        (
+            "fn main() -> Int { let xss: List<List<Int>> = [[1, 2], [3]]; let v: Int = xss[0][0 + 1]; v }",
+            Expected::Int(2),
+        ),
+        (
+            "fn main() -> Int { let xss: List<List<Int>> = [[1, 2], [3]]; let v: Int = xss[1][0 + 0]; v }",
+            Expected::Int(3),
+        ),
         (
             "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn main() -> Bool { Counter { value: 5 }.read() == (5) }",
             Expected::Bool(true),
