@@ -5109,7 +5109,8 @@ struct AffineReadFacts {
     tracked: bool,
     must_consume: bool,
     receiver_read: bool,
-    repeated: bool,
+    repeats_in_loop: bool,
+    intersects: bool,
 }
 
 /// Returns whether one read of `place` repeats an earlier transfer or move of it.
@@ -5128,7 +5129,8 @@ fn affine_read_facts(
             tracked: false,
             must_consume: false,
             receiver_read: false,
-            repeated: false,
+            repeats_in_loop: false,
+            intersects: false,
         };
     }
     let must_consume = place_class == Some(OwnershipClass::MustConsume)
@@ -5167,7 +5169,8 @@ fn affine_read_facts(
         tracked,
         must_consume,
         receiver_read,
-        repeated: !receiver_read && (repeats_in_loop || intersects),
+        repeats_in_loop,
+        intersects,
     }
 }
 
@@ -5184,7 +5187,9 @@ fn check_affine_place_read(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let facts = affine_read_facts(&place, root_type, place_type, context);
-    if facts.repeated {
+    // A loan inserts no mark of its own, so repeating it across loop iterations is harmless: only
+    // a place an earlier transfer or move already claimed is a reuse of it.
+    if !facts.receiver_read && facts.intersects {
         diagnostics.push(body_diagnostic(
             "affine-value-reuse",
             DiagnosticCategory::Type,
@@ -5226,7 +5231,7 @@ fn record_affine_place(
         }
         access => access,
     };
-    if facts.repeated {
+    if !facts.receiver_read && (facts.repeats_in_loop || facts.intersects) {
         diagnostics.push(body_diagnostic(
             "affine-value-reuse",
             DiagnosticCategory::Type,

@@ -2700,6 +2700,66 @@ fn affine_place_ledger_keys_places_and_keeps_siblings_usable() {
              first + second\n\
          }}"
     ));
+    // A loan inserts no mark, so repeating it across loop iterations is harmless; a transfer
+    // inside a loop body stays a potentially repeated transfer.
+    for loaned in [
+        "fn main() -> Int {\n\
+             let pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let mut total: Int = 0;\n\
+             let mut index: Int = 0;\n\
+             while index < 2 {\n\
+                 total = total + pair.leaf.look();\n\
+                 index = index + 1;\n\
+             }\n\
+             total\n\
+         }",
+        "fn main() -> Int {\n\
+             let mut pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let mut total: Int = 0;\n\
+             let mut index: Int = 0;\n\
+             while index < 2 {\n\
+                 total = total + pair.leaf.bump();\n\
+                 index = index + 1;\n\
+             }\n\
+             total\n\
+         }",
+    ] {
+        assert_affine_accepted(&format!("{consumers}{loaned}"));
+    }
+    assert_affine_rejected(
+        &format!(
+            "{consumers}fn main() -> Int {{\n\
+                 let pair: Pair = Pair {{ leaf: Leaf {{ value: 1 }}, mark: Mark {{ value: 2 }} }};\n\
+                 let mut total: Int = 0;\n\
+                 let mut index: Int = 0;\n\
+                 while index < 2 {{\n\
+                     total = total + pair.leaf.take();\n\
+                     index = index + 1;\n\
+                 }}\n\
+                 total\n\
+             }}"
+        ),
+        "affine-value-reuse",
+    );
+    // An owned consumption of a `MustConsume` place discharges it, so a later loan reuses it: the
+    // reuse verdict joins the copy verdict rather than replacing it.
+    assert_eq!(
+        diagnostic_codes(
+            analyze(
+                "must_consume struct Token { value: Int }\n\
+                 struct Holder { token: Token }\n\
+                 impl Token { fn consume(owned self) -> Int { self.value } fn look(shared self) -> Int { self.value } }\n\
+                 fn main() -> Int {\n\
+                     let holder: Holder = Holder { token: Token { value: 1 } };\n\
+                     let first: Int = holder.token.consume();\n\
+                     let second: Int = holder.token.look();\n\
+                     first + second\n\
+                 }"
+            )
+            .diagnostics()
+        ),
+        ["affine-value-reuse", "must-consume-copy"],
+    );
     // A copyable field receiver copies its value, so two consuming calls stay admitted.
     assert_affine_accepted(
         "struct Counter { value: Int }\n\

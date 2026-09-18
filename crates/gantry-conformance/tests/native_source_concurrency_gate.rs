@@ -103,7 +103,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-source-lowering-v1.json",
-        "859e047c906059f3aaad4ac5130fa8552878802c3b103497332b839c1f349c8e",
+        "ac8152def4517ac83778444d466ccbf450aa4258f3a4f7bb019c72c207a38494",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",
