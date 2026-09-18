@@ -8471,6 +8471,34 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
             0,
             7,
         ),
+        (
+            "struct LL { rows: List<List<Int>> } fn mkll() -> LL { LL { rows: [[7]] } } fn main() -> Int { (mkll()).rows[0][0] }",
+            ReceiverStep::Field,
+            Some("mkll"),
+            0,
+            7,
+        ),
+        (
+            "struct LL { rows: List<List<Int>> } fn mkll() -> LL { LL { rows: [[7]] } } fn main() -> Int { mkll().rows[0][0] }",
+            ReceiverStep::Field,
+            Some("mkll"),
+            0,
+            7,
+        ),
+        (
+            "struct LL { rows: List<List<Int>> } fn mkll() -> LL { LL { rows: [[7], [8]] } } fn main() -> Int { (mkll()).rows[1][0] }",
+            ReceiverStep::Field,
+            Some("mkll"),
+            1,
+            8,
+        ),
+        (
+            "struct Bag { items: List<Int> } fn main() -> Int { Bag { items: [7] }.items[0] }",
+            ReceiverStep::Field,
+            None,
+            0,
+            7,
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -8547,6 +8575,38 @@ fn public_computed_projection_receivers_are_lowered_and_typed() {
         (
             "fn main() -> Int { let t: String = \"ab\"; t[0] }",
             "String",
+        ),
+        (
+            "struct HL { items: List<Int> } fn mk() -> HL { HL { items: [7] } } fn main() -> Int { mk().items[0][0] }",
+            "Int",
+        ),
+        (
+            "struct HL { items: List<Int> } fn mk() -> HL { HL { items: [7] } } fn main() -> Int { (mk()).items[0][0] }",
+            "Int",
+        ),
+        (
+            "struct Item { values: List<Int> } fn main() -> Int { Item { values: [1] }.values[0][0] }",
+            "Int",
+        ),
+        (
+            "struct Item { values: List<Int> } fn main() -> Int { (Item { values: [1] }).values[0][0] }",
+            "Int",
+        ),
+        (
+            "struct Item { values: Int } fn main() -> Int { Item { values: 1 }.values[0] }",
+            "Int",
+        ),
+        (
+            "struct Item { values: Int } fn main() -> Int { (Item { values: 1 }).values[0] }",
+            "Int",
+        ),
+        (
+            "struct Bag { items: List<Int> } fn main() -> Int { Bag { items: [7] }[0] }",
+            "crate::Bag",
+        ),
+        (
+            "struct Bag { items: List<Int> } fn main() -> Int { (Bag { items: [7] })[0] }",
+            "crate::Bag",
         ),
     ] {
         root.write(source);

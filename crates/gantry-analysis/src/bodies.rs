@@ -7395,15 +7395,70 @@ fn infer_projection(
         return Ok(None);
     };
     let receiver_children = children.get(..index_postfix).unwrap_or_default();
-    let Some(receiver) = resolve_projection_receiver(
-        tree,
-        receiver_children,
-        facts,
-        environment,
-        context,
-        diagnostics,
-    )?
-    else {
+    // A receiver part that owns a constructed value (`Bag { items: [7] }.items`) carries no
+    // binding root for the place and member walks. The construct's declared type is the receiver
+    // of the member steps that follow, so it is typed here exactly as `infer_expression` types a
+    // constructed value: it covers the receiver of no member step (`Bag { items: [7] }[0]`) and of
+    // exactly one (`Bag { items: [7] }.items[0]`), while a longer member chain keeps the ordinary
+    // resolution exactly as it resolved before this walk learned constructed roots.
+    let member_steps = receiver_children
+        .iter()
+        .filter(|child| node_contains_punctuation(tree, **child, Punctuation::Dot))
+        .count();
+    let construct = match receiver_children {
+        [path, struct_expression, ..]
+            if member_steps <= 1
+                && tree
+                    .node(*path)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
+                && tree
+                    .node(*struct_expression)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::StructExpression)) =>
+        {
+            infer_struct(
+                tree,
+                node,
+                *struct_expression,
+                facts,
+                environment,
+                None,
+                context,
+                diagnostics,
+            )?
+        }
+        _ => None,
+    };
+    let receiver = match construct {
+        Some(construct) => {
+            let receiver_type = if member_steps == 1 {
+                infer_member_sequence(
+                    tree,
+                    receiver_children,
+                    facts,
+                    environment,
+                    Some(construct),
+                    None,
+                    context,
+                    diagnostics,
+                )?
+            } else {
+                Some(construct)
+            };
+            receiver_type.map(|receiver_type| ProjectionReceiver {
+                receiver_type,
+                place: None,
+            })
+        }
+        None => resolve_projection_receiver(
+            tree,
+            receiver_children,
+            facts,
+            environment,
+            context,
+            diagnostics,
+        )?,
+    };
+    let Some(receiver) = receiver else {
         return Ok(None);
     };
     let ProjectionReceiver {
@@ -7743,7 +7798,18 @@ fn fold_projection_steps(
         } else if current.kind() == TypeKind::List {
             current.immediate_members().into_iter().next()
         } else {
-            None
+            // `SPEC.md` publishes postfix `[expression]` over a list or a tuple alone, so a
+            // trailing step whose receiver is any other value has no element to project. The
+            // first-index check refuses that shape, and a step left untyped here would let the
+            // lowering publish a projection the runtime cannot execute.
+            diagnostics.push(body_diagnostic(
+                "projection-receiver-type",
+                DiagnosticCategory::Type,
+                "an index projection receiver is not a list or tuple",
+                step.span().clone(),
+                [("actual", current.canonical_string())],
+            )?);
+            return Ok(None);
         };
         let Some(projected) = projected else {
             return Ok(None);
