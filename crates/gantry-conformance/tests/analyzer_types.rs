@@ -2836,11 +2836,12 @@ fn section_38_propagation_operands_with_one_declared_conversion_are_admitted() {
     assert!(diagnostic_codes(refused.diagnostics()).contains(&"error-propagation-refused"));
 }
 
-/// Section 38: an effectful conversion is not admitted, because the increment publishes pure
-/// conversions only and would otherwise omit the conversion call's effects from the enclosing
-/// body's row (`GNT-38.1-typed-error-propagation`).
+/// Section 38: a conversion whose implementation does not carry the `pure` reserved word is not
+/// admitted, because the increment publishes conversions that are pure by declaration and would
+/// otherwise omit the conversion call's effects from the enclosing body's row
+/// (`GNT-38.1-typed-error-propagation`).
 #[test]
-fn section_38_effectful_conversion_operands_are_refused() {
+fn section_38_conversion_impls_without_pure_are_refused() {
     let effectful = analyze(
         "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { fn convert(self) -> F { F {} } } fn inner_ok() -> Result<Int, E> { Ok(1) } fn outer_ok() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v + 1) } fn main() -> Int { 0 }",
     );
