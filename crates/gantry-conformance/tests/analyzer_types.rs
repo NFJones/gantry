@@ -2913,6 +2913,39 @@ fn section_38_effectful_conversion_contracts_require_a_pure_impl() {
     );
 }
 
+/// Section 38: a marker may be followed by the member steps of the payload's own chain
+/// (`GNT-38.1-typed-error-propagation`): the steps fold over the `Ok` payload, a step the payload
+/// type does not declare is refused by name, and the payload's own type is what an annotation has
+/// to match.
+#[test]
+fn section_38_trailing_member_steps_fold_over_the_payload() {
+    let prelude = "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } struct V { value: Int } fn inner_wrap() -> Result<V, E> { Ok(V { value: 3 }) } ";
+    let admitted = analyze(&format!(
+        "{prelude}fn main() -> Result<Int, F> {{ let v: Int = inner_wrap()?.value; Ok(v) }}"
+    ));
+    assert!(
+        !diagnostic_codes(admitted.diagnostics()).contains(&"error-propagation-refused"),
+        "the trailing step is admitted: {:?}",
+        admitted.diagnostics()
+    );
+    let refused = analyze(&format!(
+        "{prelude}fn main() -> Result<Int, F> {{ let v: Int = inner_wrap()?.missing; Ok(v) }}"
+    ));
+    assert!(
+        diagnostic_codes(refused.diagnostics()).contains(&"unknown-member"),
+        "the missing trailing step is named: {:?}",
+        refused.diagnostics()
+    );
+    let payload_only = analyze(&format!(
+        "{prelude}fn main() -> Result<Int, F> {{ let v: Int = inner_wrap()?; Ok(v) }}"
+    ));
+    assert!(
+        diagnostic_codes(payload_only.diagnostics()).contains(&"type-mismatch"),
+        "a bare marker yields the payload, which an Int annotation cannot hold: {:?}",
+        payload_only.diagnostics()
+    );
+}
+
 /// Section 38: a place operand carries its marker exactly where its parenthesized spelling does,
 /// so a bare path is admitted in a `let` initializer, a `discard`, and a call argument
 /// (`GNT-38.1-typed-error-propagation`).

@@ -2853,9 +2853,7 @@ fn admit_propagation_operand(
     let Some(node) = tree.node(expression) else {
         return Ok(None);
     };
-    // A trailing step after the marker would need a projection over the payload, which no
-    // lowering publishes yet, so only a marker that ends its chain is admitted.
-    let marker_last = node.children().last().is_some_and(|child| {
+    let marker_index = node.children().iter().position(|child| {
         tree.node(*child).is_some_and(|child| {
             matches!(
                 child.form(),
@@ -2863,10 +2861,28 @@ fn admit_propagation_operand(
             )
         })
     });
+    let trailing_are_steps = marker_index.is_some_and(|marker| {
+        node.children()
+            .get(marker.saturating_add(1)..)
+            .unwrap_or_default()
+            .iter()
+            .all(|child| {
+                tree.node(*child).is_some_and(|child| {
+                    matches!(
+                        child.form(),
+                        SyntaxForm::PostfixExpression
+                            | SyntaxForm::Token(TokenKind::Identifier(_))
+                            | SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+                    )
+                })
+            })
+    });
     let Some(result) = context.current_result.borrow().clone() else {
         return Ok(None);
     };
-    if !marker_last || operand_type.kind() != TypeKind::Result || result.kind() != TypeKind::Result
+    if !trailing_are_steps
+        || operand_type.kind() != TypeKind::Result
+        || result.kind() != TypeKind::Result
     {
         return Ok(None);
     }
@@ -2979,6 +2995,78 @@ fn wrapped_place_operand(
         return Ok(Some(ty.clone()));
     }
     Ok(None)
+}
+
+/// Returns a marker node's children after its marker token.
+fn marker_trailing_steps(tree: &SyntaxTree, expression: NodeId) -> Vec<NodeId> {
+    let Some(node) = tree.node(expression) else {
+        return Vec::new();
+    };
+    let Some(marker) = node.children().iter().position(|child| {
+        tree.node(*child).is_some_and(|child| {
+            matches!(
+                child.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+            )
+        })
+    }) else {
+        return Vec::new();
+    };
+    node.children()
+        .get(marker.saturating_add(1)..)
+        .unwrap_or_default()
+        .to_vec()
+}
+
+/// Folds the member steps that follow a marker over the operand's payload.
+fn payload_member_steps(
+    tree: &SyntaxTree,
+    trailing: &[NodeId],
+    payload: TypeDescriptor,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let mut current = payload;
+    let mut pending_member: Option<(Arc<str>, SourceSpan, NodeId)> = None;
+    for child in trailing {
+        let Some(child_node) = tree.node(*child) else {
+            continue;
+        };
+        let mut forms: Vec<(NodeId, &gantry_frontend::SyntaxNode)> = vec![(*child, child_node)];
+        forms.extend(
+            child_node
+                .children()
+                .iter()
+                .filter_map(|inner| tree.node(*inner).map(|node| (*inner, node))),
+        );
+        for (id, node) in forms {
+            if let SyntaxForm::Token(TokenKind::Identifier(name)) = node.form() {
+                pending_member = Some((Arc::clone(name), node.span().clone(), id));
+            }
+        }
+        let Some((member, span, member_id)) = pending_member.take() else {
+            continue;
+        };
+        let Some(field) = projected_member_type(&current, member.as_ref(), context)? else {
+            diagnostics.push(body_diagnostic(
+                "unknown-member",
+                DiagnosticCategory::Type,
+                "a receiver type has no field or inherent method with this name",
+                span,
+                [
+                    ("member", member.as_ref()),
+                    ("receiver", current.canonical_string().as_str()),
+                ],
+            )?);
+            return Ok(None);
+        };
+        context
+            .expression_types
+            .borrow_mut()
+            .insert(member_id, field.clone());
+        current = field;
+    }
+    Ok(Some(current))
 }
 
 /// Reports whether a marker node carries a member step before its marker token.
@@ -6436,6 +6524,48 @@ fn infer_expression(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let trailing = marker_trailing_steps(tree, expression);
+    if !trailing.is_empty()
+        && let Some(node) = tree.node(expression)
+        && let Some(marker) = node.children().iter().position(|child| {
+            tree.node(*child).is_some_and(|child| {
+                matches!(
+                    child.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+                )
+            })
+        })
+    {
+        let operand = node.children().get(..marker).unwrap_or_default();
+        let operand_type = infer_operand_sequence(
+            tree,
+            operand,
+            facts,
+            environment,
+            None,
+            context,
+            diagnostics,
+        )?;
+        let inferred = match operand_type {
+            Some(operand_type) => {
+                match admit_propagation_operand(tree, expression, &operand_type, context)? {
+                    Some(payload) => {
+                        payload_member_steps(tree, &trailing, payload, context, diagnostics)?
+                    }
+                    None => None,
+                }
+            }
+            None => None,
+        };
+        if let Some(ty) = &inferred {
+            check_inferred_type_depth(ty, context.maximum_constructed_type_depth)?;
+            context
+                .expression_types
+                .borrow_mut()
+                .insert(expression, ty.clone());
+        }
+        return Ok(inferred);
+    }
     let mut inferred = infer_expression_inner(
         tree,
         expression,

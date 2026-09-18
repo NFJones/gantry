@@ -1451,7 +1451,9 @@ impl Compiler<'_> {
                 .iter()
                 .find(|(source, _, _)| source == node.span())
         {
-            return self.compile_propagation(expression, ty, callee.clone(), operand_type.clone());
+            let payload =
+                self.compile_propagation(expression, ty, callee.clone(), operand_type.clone())?;
+            return self.compile_trailing_member_steps(expression, payload);
         }
         let control = if matches!(
             node.form(),
@@ -2514,7 +2516,7 @@ impl Compiler<'_> {
             let Some(node) = self.tree.node(marker) else {
                 return Err(AnalysisError::Invariant);
             };
-            if node.children().last().is_some_and(|child| {
+            if node.children().iter().any(|child| {
                 self.tree.node(*child).is_some_and(|child| {
                     matches!(
                         child.form(),
@@ -2534,7 +2536,20 @@ impl Compiler<'_> {
             marker = next;
         }
         let node = self.node(marker)?.clone();
-        let marker_index = node.children().len().saturating_sub(1);
+        // The marker may be followed by the member steps of the payload's chain, so the operand is
+        // everything before the marker token rather than everything before the last child.
+        let marker_index = node
+            .children()
+            .iter()
+            .position(|child| {
+                self.tree.node(*child).is_some_and(|child| {
+                    matches!(
+                        child.form(),
+                        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+                    )
+                })
+            })
+            .ok_or(AnalysisError::Invariant)?;
         let operand_children = node.children()[..marker_index].to_vec();
         let target_type = self
             .result
@@ -2571,6 +2586,64 @@ impl Compiler<'_> {
         let when_ok = self.instructions.len();
         self.instructions[branch].kind = InstructionKind::BranchResult { when_ok, when_err };
         Ok(payload)
+    }
+
+    /// Compiles the member steps that follow an admitted marker over its payload.
+    fn compile_trailing_member_steps(
+        &mut self,
+        expression: NodeId,
+        payload: TypeDescriptor,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        let node = self.node(expression)?.clone();
+        let Some(marker) = node.children().iter().position(|child| {
+            self.tree.node(*child).is_some_and(|child| {
+                matches!(
+                    child.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+                )
+            })
+        }) else {
+            return Ok(payload);
+        };
+        let mut members: Vec<(Arc<str>, NodeId)> = Vec::new();
+        for child in node
+            .children()
+            .get(marker.saturating_add(1)..)
+            .unwrap_or_default()
+        {
+            let Some(child_node) = self.tree.node(*child) else {
+                continue;
+            };
+            let mut forms: Vec<(NodeId, &SyntaxForm)> = vec![(*child, child_node.form())];
+            forms.extend(
+                child_node
+                    .children()
+                    .iter()
+                    .filter_map(|inner| self.tree.node(*inner).map(|node| (*inner, node.form()))),
+            );
+            for (id, form) in forms {
+                if let SyntaxForm::Token(TokenKind::Identifier(name)) = form {
+                    members.push((Arc::clone(name), id));
+                }
+            }
+        }
+        let mut current = payload;
+        for (member, id) in members {
+            let Some(field) = self.body_types.get(&id).cloned().or_else(|| {
+                self.struct_fields
+                    .get(&current)
+                    .and_then(|fields| fields.get(&member))
+                    .cloned()
+            }) else {
+                return Err(AnalysisError::Invariant);
+            };
+            self.emit(
+                field.clone(),
+                InstructionKind::Project(Projection::Field(member)),
+            )?;
+            current = field;
+        }
+        Ok(current)
     }
 
     fn compile_operation(
