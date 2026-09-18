@@ -2849,6 +2849,41 @@ fn section_38_conversion_impls_without_pure_are_refused() {
     assert!(diagnostic_codes(unannotated.diagnostics()).contains(&"error-propagation-refused"));
 }
 
+/// Section 38: a refused propagation operand names the operand's own type, and a bare literal
+/// operand is named by its literal type rather than the `Unit` fallback
+/// (`GNT-38.1-typed-error-propagation`).
+#[test]
+fn section_38_refused_literal_operands_name_their_own_type() {
+    for (source, expected) in [
+        (
+            "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } fn main() -> Result<Int, F> { let v: Int = 1?; Ok(v) }",
+            "Int",
+        ),
+        (
+            "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } fn main() -> Result<Int, F> { let v: Int = (1)?; Ok(v) }",
+            "Int",
+        ),
+        (
+            "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } fn main() -> Result<Int, F> { let v: Int = \"x\"?; Ok(v) }",
+            "String",
+        ),
+    ] {
+        let refused = analyze(source);
+        let propagation = refused
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "error-propagation-refused")
+            .unwrap_or_else(|| panic!("the operand is refused"));
+        assert_eq!(
+            propagation
+                .fields
+                .get("operand")
+                .map(|value| value.as_ref()),
+            Some(expected)
+        );
+    }
+}
+
 /// Section 38: a propagation operand has no exactly one declared conversion while no
 /// error-conversion contract is published, so every operand is refused with its types named
 /// (`GNT-38.1-typed-error-propagation`).

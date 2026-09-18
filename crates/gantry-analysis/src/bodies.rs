@@ -2911,6 +2911,50 @@ fn admit_propagation_operand(
     Ok(Some(payload.clone()))
 }
 
+/// Returns the type of a node holding one literal token.
+///
+/// The refusal for a bare literal propagation operand names the literal's own type, which the
+/// literal node carries as its token child (`GNT-38.1-typed-error-propagation`). This mirrors the
+/// lowering's rule so a refusal and an emission agree on the type they name.
+fn literal_type(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Option<TypeDescriptor> {
+    // A literal operand arrives as the token wrapped by the postfix steps that build its
+    // expression, so the search descends a bounded few levels rather than one.
+    fn search(
+        tree: &SyntaxTree,
+        node: &gantry_frontend::SyntaxNode,
+        depth: u8,
+    ) -> Option<TypeDescriptor> {
+        if let Some(value) = token_literal_type(node.form()) {
+            return Some(value);
+        }
+        if depth == 0 {
+            return None;
+        }
+        node.children()
+            .iter()
+            .filter_map(|child| tree.node(*child))
+            .find_map(|child| search(tree, child, depth.saturating_sub(1)))
+    }
+    search(tree, node, 3)
+}
+
+/// Returns the type of one literal token form.
+fn token_literal_type(form: &SyntaxForm) -> Option<TypeDescriptor> {
+    match form {
+        SyntaxForm::Token(TokenKind::IntegerLiteral(_)) => Some(TypeDescriptor::INT),
+        SyntaxForm::Token(TokenKind::FloatLiteral(_)) => Some(TypeDescriptor::FLOAT),
+        SyntaxForm::Token(TokenKind::StringLiteral(_) | TokenKind::RawStringLiteral(_)) => {
+            Some(TypeDescriptor::STRING)
+        }
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) => match word.spelling() {
+            "true" | "false" => Some(TypeDescriptor::BOOL),
+            "null" => Some(TypeDescriptor::UNIT),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Reports whether one propagation operand was admitted, which the inference records as a seam at
 /// the marker's own span.
 fn propagation_operand_is_admitted(
@@ -3231,6 +3275,11 @@ fn check_callable(
                             .find_map(|child| facts.get(&child).cloned())
                     })
                 })
+                // A bare literal operand carries no expression fact at all, so the refusal names
+                // the literal's own type instead of the `Unit` fallback
+                // (`GNT-38.1-typed-error-propagation`); a parenthesized or call operand already
+                // has its fact above.
+                .or_else(|| tree.node(operand).and_then(|node| literal_type(tree, node)))
                 .unwrap_or(TypeDescriptor::UNIT)
         };
         if propagation_operand_is_admitted(tree, operand, context) {
