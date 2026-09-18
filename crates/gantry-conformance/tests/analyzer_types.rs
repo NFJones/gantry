@@ -2536,6 +2536,74 @@ fn public_grouped_affine_receiver_places_are_field_precise() {
     assert_affine_rejected(&reuse, "affine-value-reuse");
 }
 
+/// An index projection in an operand position is the element it reads.
+///
+/// `h.items[0]` is one element of the list a field holds, so an operator sees `Int` whether the
+/// receiver is a binding, a grouped binding, or a constructed value; a projection whose receiver
+/// publishes no element refuses with the projection's own code and publishes no program.
+#[test]
+fn public_index_projection_operands_are_keyed() {
+    for (source, admitted) in [
+        (
+            "struct HL { items: List<Int> } fn main() -> Int { let h: HL = HL { items: [7] }; h.items[0] + h.items[0] }",
+            true,
+        ),
+        (
+            "struct HL { items: List<Int> } fn main() -> Int { let h: HL = HL { items: [7] }; (h).items[0] + h.items[0] }",
+            true,
+        ),
+        (
+            "fn main() -> Int { let xs: List<Int> = [1, 2]; xs[0] + xs[1] }",
+            true,
+        ),
+        ("fn main() -> Int { [1, 2][0] + [3, 4][1] }", true),
+        (
+            "struct Bag { items: List<Int> } fn main() -> Int { Bag { items: [7] }.items[0] + Bag { items: [7] }.items[0] }",
+            true,
+        ),
+        ("fn main() -> Int { [1, 2][0][0] + 1 }", false),
+        ("fn main() -> Bool { [1, 2][0][0] == 1 }", false),
+    ] {
+        let analysed = analyze(source);
+        if admitted {
+            assert!(
+                analysed.status() != AnalysisStatus::Invalid,
+                "{source}: {:?}",
+                analysed.diagnostics()
+            );
+            assert!(
+                analysed.executable_program().is_some(),
+                "{source}: an admitted projection operand publishes a program"
+            );
+            continue;
+        }
+        assert_eq!(
+            analysed.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            analysed.diagnostics()
+        );
+        assert_eq!(
+            analysed.diagnostics().len(),
+            1,
+            "{source}: {:?}",
+            analysed.diagnostics()
+        );
+        assert!(
+            analysed
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "projection-receiver-type"),
+            "{source}: {:?}",
+            analysed.diagnostics()
+        );
+        assert!(
+            analysed.executable_program().is_none(),
+            "{source}: a refused projection operand publishes no program"
+        );
+    }
+}
+
 /// A refused operator publishes exactly one diagnostic.
 ///
 /// A declared-descriptor mismatch has no operator signature, so the operator refusal is the whole

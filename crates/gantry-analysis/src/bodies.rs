@@ -8270,18 +8270,25 @@ fn infer_operand_sequence(
     }
     // A slice that indexes the result of a receiver call is the element of that result, not the
     // call itself, so it takes the projection walk before the member and call arms read it.
-    if operator.is_some_and(operand_projection_supported)
-        && operand_index_projection_has_receiver_call(tree, children)
-        && let Some(value) = infer_operand_index_projection_sequence(
+    // An operand that indexes a receiver is the element it reads, not the receiver, so every index
+    // projection takes the projection walk before the member and call arms read it. When that walk
+    // refuses the shape it has already published the precise diagnostic, so the operand stays
+    // untyped and the enclosing operator cannot report the same expression a second time.
+    if operator.is_some_and(operand_projection_supported) {
+        let published = diagnostics.len();
+        if let Some(value) = infer_operand_index_projection_sequence(
             tree,
             children,
             facts,
             environment,
             context,
             diagnostics,
-        )?
-    {
-        return Ok(Some(value));
+        )? {
+            return Ok(Some(value));
+        }
+        if diagnostics.len() > published {
+            return Ok(None);
+        }
     }
     if let Some(value) = infer_member_sequence(
         tree,
