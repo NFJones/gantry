@@ -2878,6 +2878,21 @@ fn section_38_propagation_operands_are_refused() {
     for (_, operand) in &attributions {
         assert_eq!(operand.as_deref(), Some("Result<Int,String>"));
     }
+    // A marker inside a nested block and a marker nested in another marker are both reached by
+    // the body traversal.
+    let nested = analyze(
+        "fn f() -> Result<Int, String> { Err(\"x\") } fn main() -> Result<Int, String> { if true { let a: Int = f()?; discard a; } Ok(0) }",
+    );
+    assert!(diagnostic_codes(nested.diagnostics()).contains(&"error-propagation-refused"));
+    let doubled = analyze(
+        "fn f() -> Result<Int, String> { Err(\"x\") } fn main() -> Result<Int, String> { let v: Int = f()??; Ok(v) }",
+    );
+    let count = doubled
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "error-propagation-refused")
+        .count();
+    assert_eq!(count, 2);
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
