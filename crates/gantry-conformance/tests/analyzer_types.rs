@@ -9330,6 +9330,12 @@ fn public_untyped_list_literal_arguments_report_their_code() {
             "struct S {} impl S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take([1, 2]); 1 }",
             1,
         ),
+        // The trait spelling supplies its declared parameters from the visible contracts, so its
+        // argument is typed exactly as the inherent and free calls type theirs.
+        (
+            "trait T { pure fn take(self, xs: List<Int>) -> List<Int>; } struct S {} impl T for S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take([]); 1 }",
+            1,
+        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -9381,6 +9387,10 @@ fn public_untyped_list_literal_arguments_report_their_code() {
         (
             format!("{trait_generic} fn main() -> Int {{ discard S {{}}.id([]); 1 }}"),
             "untyped-list-literal",
+        ),
+        (
+            "trait T { pure fn take(self, xs: List<Int>) -> List<Int>; } struct S {} impl T for S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take(1); 1 }".to_string(),
+            "conflicting-type-inference",
         ),
         (
             "struct S {} impl S { fn take(self, xs: List<Int>) -> List<Int> { xs } } fn main() -> Int { discard S {}.take(1); 1 }".to_string(),

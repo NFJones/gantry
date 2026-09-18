@@ -8840,15 +8840,45 @@ fn infer_member_sequence(
         let mut actual_argument_spans = Vec::with_capacity(arguments.len());
         // An inherent method's declared parameter types are known before resolution (`methods`),
         // so an argument with no type of its own is typed by the parameter it fills, exactly as
-        // the free-workflow walk types its arguments (`S {}.take([])` beside `take_list([])`).
+        // the free-workflow walk types its arguments (`S {}.take([])` beside `take_list([])`). A
+        // trait implementation resolves later in this walk, so its visible contracts supply the
+        // same expectation: a closed parameter becomes the argument's type and a rigid one stays
+        // open, which keeps the untyped-literal refusal for a generic method.
+        let visible_traits = context.current_visible_traits.borrow().clone();
+        let trait_parameters = context
+            .trait_contracts
+            .iter()
+            .filter(|contract| visible_traits.contains(contract.path()))
+            .find_map(|contract| {
+                contract
+                    .methods()
+                    .iter()
+                    .find(|method| method.name() == member.as_ref())
+                    .map(|method| {
+                        method
+                            .parameters()
+                            .iter()
+                            .map(|parameter| parameter.to_descriptor(u64::MAX).ok())
+                            .collect::<Vec<_>>()
+                    })
+            });
         let declared_parameters = context
             .methods
             .get(&(receiver.clone(), member.clone()))
-            .map(|signature| signature.parameters.clone());
+            .map(|signature| {
+                signature
+                    .parameters
+                    .iter()
+                    .cloned()
+                    .map(Some)
+                    .collect::<Vec<_>>()
+            })
+            .or(trait_parameters);
         for (index, argument) in arguments.iter().enumerate() {
             let expected_parameter = declared_parameters
                 .as_ref()
-                .and_then(|parameters| parameters.get(index));
+                .and_then(|parameters| parameters.get(index))
+                .and_then(Option::as_ref);
             let Some(actual) = infer_expression(
                 tree,
                 *argument,
