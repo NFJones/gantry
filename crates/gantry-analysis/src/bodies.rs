@@ -6053,18 +6053,49 @@ fn infer_expression_inner(
             // are folded in source order, so an interior operator is typed as well and
             // `C { v: 5 }.read() + true == 6` still refuses; a step with no trailing operator keeps
             // the walked value exactly as before.
-            let call_end = node
+            // The boundary is the chain's own closing parenthesis, not the last parenthesis in the
+            // node: an operand of the trailing operator can own a call or a group of its own
+            // (`read() == id(5)`), whose parentheses must stay inside the suffix.
+            let mut call_end = node
                 .children()
                 .iter()
                 .copied()
                 .enumerate()
                 .skip_while(|(_, child)| *child != struct_expression)
                 .skip(1)
-                .filter(|(_, child)| {
-                    node_contains_punctuation(tree, *child, Punctuation::RightParenthesis)
+                .find(|(_, child)| {
+                    node_contains_punctuation(tree, *child, Punctuation::LeftParenthesis)
                 })
-                .map(|(index, _)| index + 1)
-                .last();
+                .and_then(|(open, _)| split_call_close_index(tree, node.children(), open))
+                .map(|close| close.saturating_add(1));
+            // A chain that keeps stepping after that call (`next().v`, `next().read()`) extends the
+            // boundary to a following call postfix, but only across a member dot: a dot inside the
+            // trailing operand (`read() == id(5)`) must not move it.
+            while let Some(end) = call_end {
+                let Some(child) = node.children().get(end) else {
+                    break;
+                };
+                if !node_contains_punctuation(tree, *child, Punctuation::Dot) {
+                    break;
+                }
+                let Some(open) = node
+                    .children()
+                    .iter()
+                    .enumerate()
+                    .skip(end.saturating_add(1))
+                    .take(2)
+                    .find(|(_, candidate)| {
+                        node_contains_punctuation(tree, **candidate, Punctuation::LeftParenthesis)
+                    })
+                    .map(|(index, _)| index)
+                else {
+                    break;
+                };
+                let Some(close) = split_call_close_index(tree, node.children(), open) else {
+                    break;
+                };
+                call_end = Some(close.saturating_add(1));
+            }
             let suffix = call_end
                 .and_then(|index| node.children().get(index..))
                 .unwrap_or_default();
