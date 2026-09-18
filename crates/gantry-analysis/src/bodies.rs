@@ -2785,6 +2785,11 @@ fn refuse_malformed_conversions(
         .iter()
         .map(|symbol| (symbol.id, symbol))
         .collect::<BTreeMap<_, _>>();
+    let facts_by_span = context
+        .generic_types
+        .iter()
+        .map(|(span, expression)| (span.clone(), expression))
+        .collect::<BTreeMap<_, _>>();
     for source in sources {
         let tree = source.tree();
         for implementation in tree
@@ -2797,16 +2802,19 @@ fn refuse_malformed_conversions(
             else {
                 continue;
             };
-            let Some(reference_node) = tree.node(reference) else {
-                continue;
-            };
-            let Some(symbol) = references
-                .get(reference_node.span())
-                .and_then(|target| symbols_by_id.get(target))
+            // The reference is resolved through its path child, so a reference carrying type
+            // arguments (`ErrorConversion<T>`) keys the same trait as the bare spelling.
+            let Some(reference) = crate::generics::collect_trait_reference(
+                tree,
+                reference,
+                &facts_by_span,
+                &references,
+                &symbols_by_id,
+            )?
             else {
                 continue;
             };
-            if symbol.path.as_str() != "crate::ErrorConversion" {
+            if reference.path().as_str() != "crate::ErrorConversion" {
                 continue;
             }
             let methods = implementation

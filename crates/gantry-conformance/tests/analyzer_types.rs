@@ -2946,6 +2946,23 @@ fn section_38_conversion_declarations_are_declared_trait_implementations() {
         rigid_refusal.fields.get("type").map(|value| value.as_ref()),
         Some("^0.0")
     );
+    // An applied trait reference keys the same trait as the bare spelling, so a parameterized
+    // `ErrorConversion<T>` declaration is refused by the same rule instead of escaping the check.
+    let applied = analyze(
+        "trait ErrorConversion<T> { pure fn convert(self) -> T; } struct E {} impl<T> ErrorConversion<T> for E { pure fn convert(self) -> T { 0 } } fn main() -> Int { 0 }",
+    );
+    let applied_refusal = applied
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "error-conversion-refused")
+        .unwrap_or_else(|| panic!("the applied conversion is refused"));
+    assert_eq!(
+        applied_refusal
+            .fields
+            .get("type")
+            .map(|value| value.as_ref()),
+        Some("^0.0")
+    );
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value

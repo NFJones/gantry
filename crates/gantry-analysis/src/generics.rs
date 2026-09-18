@@ -1775,7 +1775,7 @@ pub(crate) fn implementation_receiver_expression(
     Ok(Some(expression))
 }
 
-fn collect_trait_reference(
+pub(crate) fn collect_trait_reference(
     tree: &SyntaxTree,
     reference: NodeId,
     facts: &BTreeMap<SourceSpan, &TypeExpression>,
