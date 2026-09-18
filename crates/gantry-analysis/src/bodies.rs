@@ -9111,13 +9111,15 @@ fn infer_member_sequence(
                     context,
                     diagnostics,
                 )?;
-            } else if requires_consumption(&receiver, context)
+            } else if metadata.receiver_mode.copies_receiver()
+                && requires_consumption(&receiver, context)
                 && let Some((root, fields)) =
                     owned_receiver_place(tree, children.get(..dot).unwrap_or_default())
             {
                 // A receiver a callable copies is still one read of the place it names, so a second
                 // consuming call through the same struct-field subplace is a reuse (`SPEC.md`
-                // GNT-2b) exactly as the owned route above records it.
+                // GNT-2b) exactly as the owned route above records it. A `shared self` or
+                // `exclusive self` receiver only borrows the place, so its loan records nothing.
                 record_affine_place(
                     AffinePlace::projected(root.clone(), fields),
                     environment.get(&root),

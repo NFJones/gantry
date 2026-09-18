@@ -2142,7 +2142,8 @@ fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     root.write(source);
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
-    analyze_package_types(&syntax).unwrap_or_else(|error| panic!("type analysis failed: {error:?}"))
+    analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed: {error:?} in source: {source}"))
 }
 
 /// Requires one substituted ambiguous option to invalidate analysis without publishing a program.
@@ -2604,7 +2605,7 @@ fn affine_place_ledger_keys_places_and_keeps_siblings_usable() {
     let consumers = "affine struct Leaf { value: Int }\n\
                      affine struct Mark { value: Int }\n\
                      struct Pair { leaf: Leaf, mark: Mark }\n\
-                     impl Leaf { fn take(self) -> Int { self.value } }\n\
+                     impl Leaf { fn take(self) -> Int { self.value } fn look(shared self) -> Int { self.value } fn bump(exclusive self) -> Int { self.value } }\n\
                      impl Mark { fn take(self) -> Int { self.value } }\n";
     for rejected in [
         "fn main() -> Int {\n\
@@ -2630,6 +2631,43 @@ fn affine_place_ledger_keys_places_and_keeps_siblings_usable() {
              first + second\n\
          }}"
     ));
+    // A transfer mark survives whole-root re-initialization, exactly as the move rows pin.
+    assert_affine_rejected(
+        &format!(
+            "{consumers}fn main() -> Int {{\n\
+                 let mut pair: Pair = Pair {{ leaf: Leaf {{ value: 1 }}, mark: Mark {{ value: 2 }} }};\n\
+                 let first: Int = pair.leaf.take();\n\
+                 pair = Pair {{ leaf: Leaf {{ value: 3 }}, mark: Mark {{ value: 4 }} }};\n\
+                 let second: Int = pair.leaf.take();\n\
+                 first + second\n\
+             }}"
+        ),
+        "affine-value-reuse",
+    );
+    // A `shared self` or `exclusive self` receiver only borrows the place, so its loan records
+    // no transfer and two borrows, or a borrow followed by a transfer, stay admitted.
+    for borrowed in [
+        "fn main() -> Int {\n\
+             let pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let first: Int = pair.leaf.look();\n\
+             let second: Int = pair.leaf.look();\n\
+             first + second\n\
+         }",
+        "fn main() -> Int {\n\
+             let pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let first: Int = pair.leaf.look();\n\
+             let second: Int = pair.leaf.take();\n\
+             first + second\n\
+         }",
+        "fn main() -> Int {\n\
+             let mut pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let first: Int = pair.leaf.bump();\n\
+             let second: Int = pair.leaf.bump();\n\
+             first + second\n\
+         }",
+    ] {
+        assert_affine_accepted(&format!("{consumers}{borrowed}"));
+    }
     // A copyable field receiver copies its value, so two consuming calls stay admitted.
     assert_affine_accepted(
         "struct Counter { value: Int }\n\
