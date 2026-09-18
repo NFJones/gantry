@@ -1704,6 +1704,13 @@ impl Compiler<'_> {
                 },
             )
         {
+            // Grouping parentheses are transparent, so a node that is only such a pair around the
+            // expression owning the literal carries no steps of its own: the inner expression is
+            // compiled instead, exactly as the same chain without the extra pair is
+            // (`((Counter { value: 5 }.value)) + 1`).
+            if let Some(inner) = grouped_receiver_expression(self.tree, node.children()) {
+                return self.compile_expression(inner);
+            }
             // A literal that reaches the walk inside an operand fragment carries no recorded type
             // of its own, so the constructor's name path names the declared type it builds.
             let derived = direct_child_form(self.tree, &node, SyntaxForm::Path)

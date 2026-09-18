@@ -8717,6 +8717,18 @@ fn public_split_struct_operands_are_typed_and_lowered() {
             Expected::Int(6),
         ),
         (
+            "struct Counter { value: Int } fn main() -> Int { ((Counter { value: 5 }.value)) + 1 }",
+            Expected::Int(6),
+        ),
+        (
+            "struct Counter { value: Int } fn main() -> Int { (Counter { value: 5 }.value) + 1 }",
+            Expected::Int(6),
+        ),
+        (
+            "struct Counter { value: Int } fn main() -> Int { ((Counter { value: 5 })).value + 1 }",
+            Expected::Int(6),
+        ),
+        (
             "struct Counter { value: Int } fn main() -> Int { Counter { value: 5 }.value }",
             Expected::Int(5),
         ),
