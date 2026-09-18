@@ -186,6 +186,9 @@ pub(crate) struct BodyAnalysis {
     pub(crate) generic_instantiations: Vec<ConcreteInstantiation>,
     pub(crate) concrete_callables: Vec<ConcreteCallableMetadata>,
     pub(crate) resolved_calls: Vec<ResolvedCallMetadata>,
+    /// Admitted propagations carrying the conversion identity the lowering publishes on each
+    /// marker's error arm (`GNT-38.1-typed-error-propagation`).
+    pub(crate) propagation_seams: Vec<PropagationSeam>,
     pub(crate) builtin_calls: Vec<BuiltinCallMetadata>,
     pub(crate) source_callables: Vec<SourceCallableMetadata>,
     pub(crate) closed_enums: BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
@@ -346,6 +349,15 @@ struct BodyContext {
     generic_analysis_counters: RefCell<Option<GenericAnalysisCounters>>,
     trait_obligations: RefCell<BTreeMap<String, ObligationProof>>,
     expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
+    /// Well-formed pure conversion declarations (`GNT-38.1-typed-error-propagation`), published by
+    /// the declaration scan and consulted when one propagation operand is admitted.
+    conversions: RefCell<Vec<ConversionDeclaration>>,
+    /// Declared result of the callable whose body is being checked, so an admitted propagation
+    /// knows its target error type.
+    current_result: RefCell<Option<TypeDescriptor>>,
+    /// Admitted propagations, keyed by the marker's own span and carrying the conversion method
+    /// identity the lowering publishes on the error arm.
+    propagation_seams: RefCell<Vec<PropagationSeam>>,
     shared_receiver_value_roots: RefCell<BTreeSet<Arc<str>>>,
     affine_consumed: RefCell<BTreeSet<AffinePlace>>,
     affine_loop_entry_roots: RefCell<Vec<BTreeSet<Arc<str>>>>,
@@ -1066,6 +1078,9 @@ fn build_body_context(
         generic_analysis_counters: RefCell::new(generic_analysis_counters),
         trait_obligations: RefCell::new(BTreeMap::new()),
         expression_types: RefCell::new(BTreeMap::new()),
+        conversions: RefCell::new(Vec::new()),
+        current_result: RefCell::new(None),
+        propagation_seams: RefCell::new(Vec::new()),
         shared_receiver_value_roots: RefCell::new(BTreeSet::new()),
         affine_consumed: RefCell::new(BTreeSet::new()),
         affine_loop_entry_roots: RefCell::new(Vec::new()),
@@ -1464,6 +1479,8 @@ pub(crate) fn check_package_bodies(
         maximum_constructed_type_depth,
         generic_analysis_counters.take(),
     )?;
+    *context.conversions.borrow_mut() =
+        refuse_malformed_conversions(sources, structure, &context, diagnostics)?;
     let result = (|| {
         let mut expression_types = Vec::with_capacity(sources.len());
         for (source_index, source) in sources.iter().enumerate() {
@@ -1600,7 +1617,6 @@ pub(crate) fn check_package_bodies(
                 .cloned(),
         );
         context.expression_types.borrow_mut().clear();
-        refuse_malformed_conversions(sources, structure, &context, diagnostics)?;
         Ok(BodyAnalysis {
             expression_types,
             struct_fields,
@@ -1613,6 +1629,7 @@ pub(crate) fn check_package_bodies(
                 .collect(),
             concrete_callables,
             resolved_calls,
+            propagation_seams: context.propagation_seams.take(),
             builtin_calls,
             source_callables,
             closed_enums,
@@ -2795,6 +2812,122 @@ fn propagation_operands(tree: &SyntaxTree, block: NodeId) -> Vec<NodeId> {
     operands
 }
 
+/// One admitted propagation: the marker's own span and the conversion method the lowering calls
+/// on the error arm (`GNT-38.1-typed-error-propagation`).
+#[derive(Clone, Debug)]
+pub(crate) struct PropagationSeam {
+    /// Span of the marker-carrying expression.
+    pub(crate) span: SourceSpan,
+    /// Type of the operand the marker propagates, which the lowerer branches on.
+    pub(crate) operand_type: TypeDescriptor,
+    /// Identity of the declared conversion method, resolved here so the lowering needs no call
+    /// resolution of its own.
+    pub(crate) identity: CanonicalCallableIdentity,
+}
+
+/// One well-formed pure conversion declaration (`GNT-38.1-typed-error-propagation`).
+#[derive(Clone, Debug)]
+pub(crate) struct ConversionDeclaration {
+    /// Canonical spelling of the closed receiver (source error) type.
+    pub(crate) receiver: String,
+    /// Canonical spelling of the closed result (target error) type.
+    pub(crate) result: String,
+    /// Declaration span of the single conversion method.
+    pub(crate) method: SourceSpan,
+    /// Callable identity of that method.
+    pub(crate) identity: CanonicalCallableIdentity,
+}
+
+/// Admits one propagation operand whose error type has exactly one declared conversion
+/// (`GNT-38.1-typed-error-propagation`).
+///
+/// Admission records the conversion call seam the lowering publishes on the error arm and returns
+/// the `Ok` payload the enclosing expression observes, so a marker is admitted only when both
+/// halves exist and every other operand keeps the published refusal.
+fn admit_propagation_operand(
+    tree: &SyntaxTree,
+    expression: NodeId,
+    operand_type: &TypeDescriptor,
+    context: &BodyContext,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let Some(node) = tree.node(expression) else {
+        return Ok(None);
+    };
+    // A trailing step after the marker would need a projection over the payload, which no
+    // lowering publishes yet, so only a marker that ends its chain is admitted.
+    let marker_last = node.children().last().is_some_and(|child| {
+        tree.node(*child).is_some_and(|child| {
+            matches!(
+                child.form(),
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+            )
+        })
+    });
+    let Some(result) = context.current_result.borrow().clone() else {
+        return Ok(None);
+    };
+    if !marker_last || operand_type.kind() != TypeKind::Result || result.kind() != TypeKind::Result
+    {
+        return Ok(None);
+    }
+    let members = operand_type.immediate_members();
+    let enclosing = result.immediate_members();
+    let (Some(payload), Some(source_error), Some(target_error)) =
+        (members.first(), members.get(1), enclosing.get(1))
+    else {
+        return Ok(None);
+    };
+    let conversions = context.conversions.borrow();
+    let mut matching = conversions.iter().filter(|conversion| {
+        conversion.receiver == source_error.canonical_string()
+            && conversion.result == target_error.canonical_string()
+    });
+    let Some(conversion) = matching.next().cloned() else {
+        return Ok(None);
+    };
+    if matching.next().is_some() {
+        return Ok(None);
+    }
+    // Admission is defined inside one callable body, which is what the effect draft needs.
+    if context.current_effect_owner.borrow().is_none() {
+        return Ok(None);
+    }
+    // The conversion call is a real call of the enclosing body: recording it keeps the effect row
+    // exact and makes the conversion method reachable, so the lowering publishes its workflow.
+    let span = node.span().clone();
+    record_effect_call(
+        context,
+        EffectNode::Source(conversion.method.clone()),
+        span.clone(),
+    );
+    context
+        .propagation_seams
+        .borrow_mut()
+        .push(PropagationSeam {
+            span,
+            operand_type: operand_type.clone(),
+            identity: conversion.identity,
+        });
+    Ok(Some(payload.clone()))
+}
+
+/// Reports whether one propagation operand was admitted, which the inference records as a seam at
+/// the marker's own span.
+fn propagation_operand_is_admitted(
+    tree: &SyntaxTree,
+    operand: NodeId,
+    context: &BodyContext,
+) -> bool {
+    let Some(node) = tree.node(operand) else {
+        return false;
+    };
+    context
+        .propagation_seams
+        .borrow()
+        .iter()
+        .any(|seam| seam.span == *node.span())
+}
+
 /// Refuses a reserved conversion declaration that is not one total concrete-to-concrete
 /// conversion (`GNT-38.1-typed-error-propagation`).
 ///
@@ -2807,7 +2940,8 @@ fn refuse_malformed_conversions(
     structure: &PackageStructure,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<(), AnalysisError> {
+) -> Result<Vec<ConversionDeclaration>, AnalysisError> {
+    let mut conversions = Vec::new();
     let references = structure
         .references()
         .iter()
@@ -2871,41 +3005,37 @@ fn refuse_malformed_conversions(
                         .and_then(|node| context.generic_types.get(node.span()))
                         .map(|expression| (expression.is_closed(), expression.as_str().to_owned()))
                 });
-            let result = implementation
-                .children()
-                .iter()
-                .copied()
-                .find(|child| {
+            let method = implementation.children().iter().copied().find(|child| {
+                tree.node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
+            });
+            let result = method.and_then(|method| {
+                let node = tree.node(method)?;
+                let result = node.children().iter().copied().rfind(|child| {
                     tree.node(*child)
-                        .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
-                })
-                .and_then(|method| {
-                    let node = tree.node(method)?;
-                    let result = node.children().iter().copied().rfind(|child| {
-                        tree.node(*child)
-                            .is_some_and(|child| matches!(child.form(), SyntaxForm::ValueType))
-                    })?;
-                    tree.node(result)
-                        .and_then(|result| context.generic_types.get(result.span()))
-                        .map(|expression| (expression.is_closed(), expression.as_str().to_owned()))
-                });
+                        .is_some_and(|child| matches!(child.form(), SyntaxForm::ValueType))
+                })?;
+                tree.node(result)
+                    .and_then(|result| context.generic_types.get(result.span()))
+                    .map(|expression| (expression.is_closed(), expression.as_str().to_owned()))
+            });
             let mut refusal = None;
             if methods != 1 {
                 refusal = Some(("a conversion declares exactly one method", None));
-            } else if let Some((false, named)) = receiver {
+            } else if let Some((false, named)) = receiver.as_ref() {
                 refusal = Some((
                     "a conversion receiver must be one concrete error type",
-                    Some(named),
+                    Some(named.clone()),
                 ));
-            } else if let Some((false, named)) = result {
+            } else if let Some((false, named)) = result.as_ref() {
                 refusal = Some((
                     "a conversion method must return one concrete error type",
-                    Some(named),
+                    Some(named.clone()),
                 ));
             } else if receiver.is_none() {
                 continue;
             }
-            if let Some((message, named)) = refusal {
+            if let Some((message, named)) = refusal.clone() {
                 match named {
                     Some(named) => diagnostics.push(body_diagnostic(
                         "error-conversion-refused",
@@ -2923,9 +3053,34 @@ fn refuse_malformed_conversions(
                     )?),
                 }
             }
+            if refusal.is_none()
+                && let Some(receiver) = receiver.as_ref().filter(|entry| entry.0)
+                && let Some(result) = result.as_ref().filter(|entry| entry.0)
+                && let Some(method) = method
+                && reference.arguments().is_empty()
+                && let Some(method_node) = tree.node(method)
+                && node_has_reserved_word(tree, method_node, "pure")
+                && let Some(method_name) = direct_identifier(tree, method)?
+                && let Ok(receiver_descriptor) =
+                    TypeDescriptor::from_canonical_string(receiver.1.as_str())
+                && let Ok(identity) = CanonicalCallableIdentity::trait_method(
+                    &receiver_descriptor,
+                    reference.path(),
+                    &[],
+                    method_name.as_ref(),
+                    &[],
+                )
+            {
+                conversions.push(ConversionDeclaration {
+                    receiver: receiver.1.clone(),
+                    result: result.1.clone(),
+                    method: method_node.span().clone(),
+                    identity,
+                });
+            }
         }
     }
-    Ok(())
+    Ok(conversions)
 }
 
 fn check_callable(
@@ -3048,6 +3203,7 @@ fn check_callable(
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
         })
         .ok_or(AnalysisError::Invariant)?;
+    *context.current_result.borrow_mut() = Some(result.clone());
     let completion = check_block(
         tree,
         block,
@@ -3057,6 +3213,7 @@ fn check_callable(
         context,
         diagnostics,
     )?;
+    *context.current_result.borrow_mut() = None;
 
     for operand in propagation_operands(tree, block) {
         // The marker-carrying expression carries the operand's type once its own inference runs;
@@ -3076,6 +3233,9 @@ fn check_callable(
                 })
                 .unwrap_or(TypeDescriptor::UNIT)
         };
+        if propagation_operand_is_admitted(tree, operand, context) {
+            continue;
+        }
         diagnostics.push(body_diagnostic(
             "error-propagation-refused",
             DiagnosticCategory::Type,
@@ -6117,7 +6277,7 @@ fn infer_expression(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
-    let inferred = infer_expression_inner(
+    let mut inferred = infer_expression_inner(
         tree,
         expression,
         facts,
@@ -6126,6 +6286,13 @@ fn infer_expression(
         context,
         diagnostics,
     )?;
+    if let Some(operand_type) = inferred.clone()
+        && let Some(payload) = admit_propagation_operand(tree, expression, &operand_type, context)?
+    {
+        // An admitted propagation observes the operand's `Ok` payload, not the operand's own
+        // `Result` type (`GNT-38.1-typed-error-propagation`).
+        inferred = Some(payload);
+    }
     if let Some(ty) = &inferred {
         check_inferred_type_depth(ty, context.maximum_constructed_type_depth)?;
         context

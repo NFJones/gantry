@@ -26,6 +26,7 @@ use crate::bodies::{
 };
 use crate::generics::{GenericDeclarationShape, prove_ownership_class};
 use crate::{AnalysisError, TypeFact};
+use gantry_ir::ReceiverSource;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_executable_program(
@@ -82,6 +83,17 @@ pub(crate) fn lower_executable_program(
             .or_default()
             .push((call.source.clone(), identity_for(&call.callee)?));
     }
+    let propagation_seams = body
+        .propagation_seams
+        .iter()
+        .map(|seam| {
+            (
+                seam.span.clone(),
+                seam.identity.clone(),
+                seam.operand_type.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
     for targets in direct_targets.values_mut() {
         targets.sort();
         targets.dedup();
@@ -206,6 +218,7 @@ pub(crate) fn lower_executable_program(
                 .get(&metadata.identity)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
+            propagation_seams: &propagation_seams,
             builtin_targets: builtin_targets
                 .get(&metadata.identity)
                 .map(Vec::as_slice)
@@ -263,6 +276,7 @@ pub(crate) fn lower_executable_program(
                 .get(&identity)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
+            propagation_seams: &propagation_seams,
             builtin_targets: builtin_targets
                 .get(&identity)
                 .map(Vec::as_slice)
@@ -327,6 +341,9 @@ struct Compiler<'a> {
     result: &'a TypeDescriptor,
     effects: EffectSet,
     direct_targets: &'a [(gantry_core::source::SourceSpan, CanonicalCallableIdentity)],
+    /// Admitted propagations: marker span, conversion method, and the operand type that method's
+    /// caller branches on (`GNT-38.1-typed-error-propagation`).
+    propagation_seams: &'a [(SourceSpan, CanonicalCallableIdentity, TypeDescriptor)],
     builtin_targets: &'a [(gantry_core::source::SourceSpan, Primitive, TypeDescriptor)],
     callable_results: &'a BTreeMap<CanonicalCallableIdentity, TypeDescriptor>,
     shared_receivers: &'a BTreeSet<CanonicalCallableIdentity>,
@@ -407,6 +424,7 @@ impl Compiler<'_> {
             result: &result,
             effects: self.effects,
             direct_targets: self.direct_targets,
+            propagation_seams: self.propagation_seams,
             builtin_targets: self.builtin_targets,
             callable_results: self.callable_results,
             shared_receivers: self.shared_receivers,
@@ -1423,6 +1441,18 @@ impl Compiler<'_> {
             .or_else(|| literal_type(self.tree, &node))
             .unwrap_or(TypeDescriptor::UNIT);
 
+        // One admitted propagation (`GNT-38.1-typed-error-propagation`) lowers to a result branch:
+        // the `Ok` payload continues the expression while the `Err` payload is converted and
+        // returned from the enclosing callable. Only an admitted marker carries a seam at its own
+        // span.
+        if node_contains_punctuation(self.tree, &node, Punctuation::Question)
+            && let Some((_, callee, operand_type)) = self
+                .propagation_seams
+                .iter()
+                .find(|(source, _, _)| source == node.span())
+        {
+            return self.compile_propagation(expression, ty, callee.clone(), operand_type.clone());
+        }
         let control = if matches!(
             node.form(),
             SyntaxForm::JoinExpression | SyntaxForm::JoinAllExpression
@@ -2463,6 +2493,84 @@ impl Compiler<'_> {
             self.emit(TypeDescriptor::UNIT, InstructionKind::Pop)?;
         }
         Ok(falls_through)
+    }
+
+    /// Lowers one admitted propagation (`GNT-38.1-typed-error-propagation`).
+    ///
+    /// The operand's `Result` is branched: the `Ok` payload is this expression's value, and the
+    /// `Err` payload is converted by the declared conversion method and returned from the
+    /// enclosing callable.
+    fn compile_propagation(
+        &mut self,
+        expression: NodeId,
+        payload: TypeDescriptor,
+        callee: CanonicalCallableIdentity,
+        operand_type: TypeDescriptor,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        // The dispatched node may be an enclosing expression whose descendant carries the marker,
+        // so the marker node is located by descending towards the question token.
+        let mut marker = expression;
+        loop {
+            let Some(node) = self.tree.node(marker) else {
+                return Err(AnalysisError::Invariant);
+            };
+            if node.children().last().is_some_and(|child| {
+                self.tree.node(*child).is_some_and(|child| {
+                    matches!(
+                        child.form(),
+                        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Question))
+                    )
+                })
+            }) {
+                break;
+            }
+            let Some(next) = node.children().iter().copied().find(|child| {
+                self.tree.node(*child).is_some_and(|child| {
+                    node_contains_punctuation(self.tree, child, Punctuation::Question)
+                })
+            }) else {
+                return Err(AnalysisError::Invariant);
+            };
+            marker = next;
+        }
+        let node = self.node(marker)?.clone();
+        let marker_index = node.children().len().saturating_sub(1);
+        let operand_children = node.children()[..marker_index].to_vec();
+        let target_type = self
+            .result
+            .immediate_members()
+            .get(1)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        let result = self.result.clone();
+        self.compile_sequence(&operand_children)?;
+        let branch = self.emit(
+            operand_type,
+            InstructionKind::BranchResult {
+                when_ok: 0,
+                when_err: 0,
+            },
+        )?;
+        let when_err = self.instructions.len();
+        self.emit(
+            target_type.clone(),
+            InstructionKind::ReceiverCall {
+                callee,
+                arguments: 1,
+                source: ReceiverSource::CopiedValue,
+            },
+        )?;
+        self.emit(
+            target_type,
+            InstructionKind::Aggregate {
+                kind: AggregateKind::Err,
+                operands: 1,
+            },
+        )?;
+        self.emit(result, InstructionKind::Return)?;
+        let when_ok = self.instructions.len();
+        self.instructions[branch].kind = InstructionKind::BranchResult { when_ok, when_err };
+        Ok(payload)
     }
 
     fn compile_operation(

@@ -2809,6 +2809,37 @@ fn section_38_divergent_branches_and_loops_are_admitted() {
 /// Section 38: a propagation operand has no exactly one declared conversion while no
 /// error-conversion contract is published, so every operand is refused with its types named
 /// (`GNT-38.1-typed-error-propagation`).
+///
+/// Section 38: an operand whose error type has exactly one declared conversion is admitted, the
+/// marker observes the operand's `Ok` payload, and the conversion method is lowered with the
+/// enclosing callable (`GNT-38.1-typed-error-propagation`). The admitted program also proves the
+/// error arm's conversion call is reachable: an unreachable conversion method fails program
+/// validation and would surface as an internal failure instead of `Valid`.
+#[test]
+fn section_38_propagation_operands_with_one_declared_conversion_are_admitted() {
+    let admitted = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } fn inner_ok() -> Result<Int, E> { Ok(1) } fn inner_err() -> Result<Int, E> { Err(E {}) } fn outer_ok() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v + 1) } fn outer_err() -> Result<Int, F> { let v: Int = inner_err()?; Ok(v + 1) } fn main() -> Int { 0 }",
+    );
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
+    assert!(
+        !diagnostic_codes(admitted.diagnostics()).contains(&"error-propagation-refused"),
+        "the admitted operand is not refused: {:?}",
+        admitted.diagnostics()
+    );
+
+    // Without a declared conversion the same operand stays refused, and an effectful conversion
+    // is not admitted either, because the increment publishes pure conversions only.
+    let refused = analyze(
+        "struct E {} struct F {} fn inner_ok() -> Result<Int, E> { Ok(1) } fn outer_ok() -> Result<Int, F> { let v: Int = inner_ok()?; Ok(v + 1) } fn main() -> Int { 0 }",
+    );
+    assert!(diagnostic_codes(refused.diagnostics()).contains(&"error-propagation-refused"));
+}
+
 #[test]
 fn section_38_propagation_operands_are_refused() {
     let refused = analyze(
