@@ -9054,6 +9054,163 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
     }
 }
 
+/// A grouping parenthesis is transparent for a receiver call.
+///
+/// `(p).greet2()` names the same receiver `p.greet2()` does and
+/// `(Plain { value: 42 }).greet()` publishes the constructed value before the call, so every
+/// grouped spelling below executes; a nested grouped *place*, a call-result receiver, a grouped
+/// `shared self` receiver, and a computed binary receiver keep their precise refusals
+/// (`7e58f733`, `5e20c3b2`, `403bc642`).
+#[test]
+fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("a grouped receiver call did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    const FIXTURE: &str = "struct Plain { value: Int } struct Wrap { inner: Plain } trait Greet { pure fn greet(self) -> Int; } impl Plain { fn greet2(self) -> Int { self.value } fn add(self, x: Int) -> Int { self.value + x } fn look(shared self) -> Int { self.value } } impl Greet for Plain { pure fn greet(self) -> Int { self.value } } impl Greet for Int { pure fn greet(self) -> Int { 1 } } fn mk() -> Plain { Plain { value: 42 } } struct Counter { value: Int } impl Counter { fn dbl(self) -> Int { self.value } } fn mk_int() -> Int { 7 } ";
+
+    let root = TempDirectory::new();
+    for (body, expected) in [
+        // The reported row and the grouped inherent spelling of its sibling defect.
+        (
+            "let p: Plain = Plain { value: 42 }; (Plain { value: 42 }).greet()",
+            42i64,
+        ),
+        ("let p: Plain = Plain { value: 42 }; (p).greet()", 42),
+        ("(Plain { value: 42 }).greet2()", 42),
+        ("let p: Plain = Plain { value: 42 }; (p).greet2()", 42),
+        // A group around a constructed value peels through every further group.
+        ("((Plain { value: 42 })).greet()", 42),
+        // Grouped receivers in operand and argument positions.
+        ("let p: Plain = Plain { value: 42 }; (p).greet2() + 1", 43),
+        (
+            "let p: Plain = Plain { value: 42 }; 1 + (Plain { value: 42 }).greet()",
+            43,
+        ),
+        (
+            "let p: Plain = Plain { value: 42 }; p.add((p).greet2())",
+            84,
+        ),
+        // A grouped dotted place names the same struct-field place its ungrouped spelling does.
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; (w.inner).greet()",
+            42,
+        ),
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; (w.inner).greet2()",
+            42,
+        ),
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; (w.inner).greet() + 1",
+            43,
+        ),
+    ] {
+        let source = format!("{FIXTURE}fn main() -> Int {{ {body} }}");
+        root.write(&source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: a grouped receiver call must publish a program")
+        });
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x55; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(actual) if actual.get() == expected),
+            "source: {source}: expected {expected}, observed {value:?}"
+        );
+    }
+    for (body, code) in [
+        // A nested grouped place keeps its refusal rather than a lowered receiver.
+        (
+            "let p: Plain = Plain { value: 42 }; ((p)).greet2()",
+            "receiver-value-place",
+        ),
+        // A grouped `shared self` receiver needs an admitted caller place.
+        (
+            "let p: Plain = Plain { value: 42 }; (p).look()",
+            "shared-receiver-place",
+        ),
+        // A grouped call result is still not a place.
+        ("(mk()).greet2()", "receiver-value-place"),
+        // A computed receiver never reaches a member of its own.
+        ("(1 + 2).dbl()", "unknown-member"),
+        ("(1 + mk_int()).dbl()", "unknown-member"),
+        // A computed receiver is refused even when the member resolves for its type.
+        ("(1 + 2).greet()", "receiver-value-place"),
+        ("(1 + mk_int()).greet() + 1", "receiver-value-place"),
+        // A literal receiver is not a place, a struct-field place, or a constructed value.
+        ("42.greet()", "receiver-value-place"),
+        ("(42).greet()", "receiver-value-place"),
+        // The nested grouped place refuses in the trait spelling exactly as it does inherently.
+        (
+            "let p: Plain = Plain { value: 42 }; ((p)).greet()",
+            "receiver-value-place",
+        ),
+    ] {
+        let refused = analyze(&format!("{FIXTURE}fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "{body}: expected {code}, observed {:?}",
+            refused.diagnostics()
+        );
+        assert!(refused.executable_program().is_none(), "{body}");
+    }
+}
+
 /// A field projection whose receiver part is a call result publishes that call and then the field.
 ///
 /// `p.flip().value` reads a field of the temporary the receiver call returns rather than a caller
@@ -9293,8 +9450,11 @@ fn public_operator_after_receiver_call_lowers_the_call_as_the_operand() {
         (
             "let p: Plain = Plain { value: 42 }; (p).greet() + (p).greet()",
             84,
-            1,
-            1,
+            // Both grouped receivers lower as receiver calls: grouping is transparent, so a
+            // grouped receiver no longer reaches the plain-call path that passed the receiver
+            // as an argument.
+            2,
+            0,
         ),
         (
             "let p: Plain = Plain { value: 42 }; let xs: List<Int> = [p.greet() + 1]; xs[0]",

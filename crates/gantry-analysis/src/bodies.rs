@@ -8767,7 +8767,11 @@ fn infer_member_sequence(
         // type and no enclosing operator adds a second, cascading diagnostic.
         let trait_receiver_call =
             !builtin_present && inherent_source.as_ref().is_some_and(Option::is_none);
-        if trait_receiver_call && receiver_part_contains_call(tree, receiver_scope) {
+        if trait_receiver_call
+            && (receiver_part_contains_call(tree, receiver_scope)
+                || (!receiver_is_syntactic_place(tree, receiver_scope)
+                    && !receiver_is_constructed(tree, receiver_scope)))
+        {
             diagnostics.push(body_diagnostic(
                 "receiver-value-place",
                 DiagnosticCategory::Type,
@@ -9017,6 +9021,21 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
         return false;
     };
     let receiver = &tokens[..dot];
+    // A grouping parenthesis is transparent for a receiver part: `(p).greet()` names the same
+    // place `p.greet()` does, so a receiver wrapped in groups keys the place inside them.
+    let receiver = if let [first, .., last] = receiver
+        && matches!(
+            first.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        )
+        && matches!(
+            last.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+        ) {
+        &receiver[1..receiver.len().saturating_sub(1)]
+    } else {
+        receiver
+    };
     let Some(first) = receiver.first() else {
         return false;
     };

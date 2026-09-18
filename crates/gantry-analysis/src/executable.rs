@@ -1459,9 +1459,10 @@ impl Compiler<'_> {
             let constructed_receiver = receiver_type.as_ref().and_then(|_| {
                 descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
             });
-            let receiver_place = receiver_type
-                .as_ref()
-                .and_then(|_| postfix_method_receiver_place(self.tree, &node));
+            let receiver_place = receiver_type.as_ref().and_then(|_| {
+                postfix_method_receiver_place(self.tree, &node)
+                    .or_else(|| grouped_method_receiver_place(self.tree, &node))
+            });
             // A receiver call whose result is projected (`p.flip().value`) must publish the call
             // before the projection steps apply: the place walk below would read the called member
             // as this node's own call and leave the field unread, so the computed receiver and its
@@ -1474,6 +1475,7 @@ impl Compiler<'_> {
             let has_implicit_receiver = constructed_receiver.is_some() || receiver_place.is_some();
             let caller_place = if requires_place {
                 postfix_method_receiver_place(self.tree, &node)
+                    .or_else(|| grouped_method_receiver_place(self.tree, &node))
             } else {
                 None
             };
@@ -1508,7 +1510,7 @@ impl Compiler<'_> {
                     return Err(AnalysisError::Invariant);
                 }
             }
-            let arguments = direct_expressions(self.tree, &node);
+            let arguments = call_argument_expressions(self.tree, &node);
             for argument in &arguments {
                 self.compile_expression(*argument)?;
             }
@@ -1545,18 +1547,46 @@ impl Compiler<'_> {
             .find(|call| &call.source == node.span())
             .filter(|_| !projection_node)
         {
-            let receiver = postfix_method_receiver(self.tree, &node);
+            let receiver_place = postfix_method_receiver_place(self.tree, &node)
+                .or_else(|| grouped_method_receiver_place(self.tree, &node));
+            let receiver = postfix_method_receiver(self.tree, &node)
+                .or_else(|| receiver_place.as_ref().map(|(root, _)| Arc::clone(root)));
             let callee = CanonicalCallableIdentity::free(&call.callee, &[]);
             let shared_receiver = self.shared_receivers.contains(&callee);
             let owned_move_receiver = self.owned_move_receivers.get(&callee).copied();
             let requires_place = shared_receiver || owned_move_receiver.is_some();
-            if let Some(receiver) = &receiver
+            if let (Some((root, path)), false) = (receiver_place.as_ref(), requires_place)
+                && !path.is_empty()
+            {
+                // A dotted receiver place loads its root and projects every field, so the call
+                // reads the place it names rather than the root alone.
+                let mut projection_types =
+                    receiver_place_types(root, path, &self.binding_types, self.struct_fields)
+                        .ok_or(AnalysisError::Invariant)?
+                        .into_iter();
+                self.emit(
+                    projection_types.next().ok_or(AnalysisError::Invariant)?,
+                    InstructionKind::Load(root.clone()),
+                )?;
+                for field in path {
+                    let ValuePathSegment::StructField(field) = field else {
+                        return Err(AnalysisError::Invariant);
+                    };
+                    self.emit(
+                        projection_types.next().ok_or(AnalysisError::Invariant)?,
+                        InstructionKind::Project(Projection::Field(Arc::from(field.as_str()))),
+                    )?;
+                }
+                if projection_types.next().is_some() {
+                    return Err(AnalysisError::Invariant);
+                }
+            } else if let Some(receiver) = &receiver
                 && !requires_place
             {
                 let receiver_type = method_receiver_type(&call.callee)?;
                 self.emit(receiver_type, InstructionKind::Load(receiver.clone()))?;
             }
-            let arguments = direct_expressions(self.tree, &node);
+            let arguments = call_argument_expressions(self.tree, &node);
             for argument in &arguments {
                 self.compile_expression(*argument)?;
             }
@@ -1570,11 +1600,11 @@ impl Compiler<'_> {
                         callee,
                         arguments,
                         source: if requires_place {
-                            let (root, path) = postfix_method_receiver_place(self.tree, &node)
-                                .ok_or(AnalysisError::Invariant)?;
+                            let (root, path) =
+                                receiver_place.as_ref().ok_or(AnalysisError::Invariant)?;
                             gantry_ir::ReceiverSource::CallerPlace {
-                                root,
-                                path,
+                                root: Arc::clone(root),
+                                path: path.clone(),
                                 ownership: owned_move_receiver.unwrap_or(OwnershipClass::Copyable),
                             }
                         } else {
@@ -3260,6 +3290,30 @@ fn direct_expressions(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> 
         .collect()
 }
 
+/// Returns the argument expressions of one call node, excluding its receiver part.
+///
+/// A grouped receiver spells its inner expression as a direct child of the same node
+/// (`(Plain { value: 42 }).greet()`), so taking every direct expression child would count the
+/// receiver as one argument; only expressions after the call parenthesis are arguments.
+fn call_argument_expressions(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Vec<NodeId> {
+    let children = node.children();
+    let Some(open) = children.iter().position(|child| {
+        tree.node(*child)
+            .is_some_and(|child| node_is_call_postfix(tree, child))
+    }) else {
+        return direct_expressions(tree, node);
+    };
+    children
+        .iter()
+        .copied()
+        .skip(open.saturating_add(1))
+        .filter(|child| {
+            tree.node(*child)
+                .is_some_and(|child| matches!(child.form(), SyntaxForm::Expression))
+        })
+        .collect()
+}
+
 /// Returns the identifier that names the call one split operand performs.
 ///
 /// The parser splits a receiver call into sibling fragments, so the call's own member is the last
@@ -3494,6 +3548,17 @@ fn postfix_method_receiver_place(
             })
         })
     })?;
+    receiver_place_tokens(tree, tokens.get(..method_dot)?)
+}
+
+/// Returns the dotted place one receiver-part token sequence names.
+///
+/// The sequence must be a binding root or `self` followed by zero or more `.field` steps and
+/// nothing else, so a computed receiver or an aggregate literal reports no place.
+fn receiver_place_tokens(
+    tree: &SyntaxTree,
+    tokens: &[NodeId],
+) -> Option<(Arc<str>, Vec<ValuePathSegment>)> {
     let root = match tree.node(*tokens.first()?)?.form() {
         SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
         SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
@@ -3503,9 +3568,9 @@ fn postfix_method_receiver_place(
     };
     let mut path = Vec::new();
     let mut cursor = 1;
-    while cursor < method_dot {
+    while let Some(token) = tokens.get(cursor) {
         if !matches!(
-            tree.node(*tokens.get(cursor)?)?.form(),
+            tree.node(*token)?.form(),
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
         ) {
             return None;
@@ -3519,6 +3584,23 @@ fn postfix_method_receiver_place(
         cursor = cursor.saturating_add(2);
     }
     Some((root, path))
+}
+
+/// Returns the place one grouped receiver names.
+///
+/// A grouping parenthesis is transparent for a receiver call, so `(p).greet()` names the same
+/// place `p.greet()` does and every nested group peels before the place is keyed.
+fn grouped_method_receiver_place(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+) -> Option<(Arc<str>, Vec<ValuePathSegment>)> {
+    let (inner, _) = grouped_receiver_split(tree, node.children())?;
+    let mut current = tree.node(inner)?;
+    while let Some((nested, _)) = grouped_receiver_split(tree, current.children()) {
+        current = tree.node(nested)?;
+    }
+    let tokens = authored_tokens(tree, current)?;
+    receiver_place_tokens(tree, &tokens)
 }
 
 /// Returns every retained token of one expression in authored order.
