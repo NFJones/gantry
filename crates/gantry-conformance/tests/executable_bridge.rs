@@ -202,7 +202,9 @@ fn admitted_propagation_chains_execute_on_the_shared_sequential_machine() {
         ("let v: Int = inner_ok()? * 2 + 3; Ok(v)", 5),
         ("let v: Int = inner_ok()? + 2 + 3 + 4; Ok(v)", 10),
     ] {
-        let source = format!("{prelude}fn main() -> Result<Int, F> {{ {body} }}\n");
+        let source = format!(
+            "{prelude}fn outer() -> Result<Int, F> {{ {body} }}\nfn main() -> Int {{ match outer() {{ Ok(v) => v, Err(_) => 0 }} }}\n"
+        );
         let root = TempDirectory::new(&source);
         let package = analyze(&root);
         let entry = package
@@ -221,10 +223,10 @@ fn admitted_propagation_chains_execute_on_the_shared_sequential_machine() {
         let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
             panic!("the admitted chain expected to answer {expected} did not succeed")
         };
-        // The entry returns the enclosing `Result`, so the machine publishes the result aggregate
-        // rather than the payload: this row pins that an admitted chain executes at all, which is
-        // the observable the seam dispatch owns, and the payload values are measured on the CLI.
-        let _ = value;
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected),
+            "the admitted chain answers the value its operands determine"
+        );
     }
 }
 
