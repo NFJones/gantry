@@ -2845,6 +2845,17 @@ fn section_38_propagation_operands_are_refused() {
         "fn f() -> Result<Int, String> { Err(\"x\") } fn main() -> Int { let r: Result<Int, String> = f(); match r { Ok(v) => v, Err(e) => 0 } }",
     );
     assert_eq!(control.status(), AnalysisStatus::Valid);
+
+    // Every operand is named, not only the first one in the body.
+    let both = analyze(
+        "fn f() -> Result<Int, String> { Err(\"x\") } fn g() -> Result<Int, String> { Err(\"y\") } fn main() -> Result<Int, String> { let a: Int = f()?; let b: Int = g()?; Ok(a + b) }",
+    );
+    let refused = both
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "error-propagation-refused")
+        .count();
+    assert_eq!(refused, 2);
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value

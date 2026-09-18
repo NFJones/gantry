@@ -2730,15 +2730,19 @@ fn record_direct_effects(context: &BodyContext, effects: EffectSet) {
     draft.direct = draft.direct.union(effects);
 }
 
-/// Returns the operand of the first `?` postfix form inside one body.
+/// Returns every operand of a `?` postfix form inside one body, in walk order.
 ///
 /// A propagation operand must resolve through exactly one declared conversion into the enclosing
 /// result type (`GNT-38.1-typed-error-propagation`). While no error-conversion contract is
-/// published every operand is refused, and this finds the operand whose types the refusal names.
-fn propagation_operand(tree: &SyntaxTree, block: NodeId) -> Option<NodeId> {
+/// published every operand is refused, and each refusal names its own operand.
+fn propagation_operands(tree: &SyntaxTree, block: NodeId) -> Vec<NodeId> {
+    let mut operands = Vec::new();
     let mut stack = vec![block];
     while let Some(current) = stack.pop() {
-        let node = tree.node(current)?;
+        let node = match tree.node(current) {
+            Some(node) => node,
+            None => break,
+        };
         let carries_marker = node.children().iter().any(|child| {
             tree.node(*child).is_some_and(|child| {
                 matches!(
@@ -2750,11 +2754,11 @@ fn propagation_operand(tree: &SyntaxTree, block: NodeId) -> Option<NodeId> {
         if carries_marker {
             // The analyzer types no `?` of its own, so the marker-carrying expression carries
             // the operand's type, which is what the refusal names.
-            return Some(current);
+            operands.push(current);
         }
         stack.extend(node.children().iter().copied());
     }
-    None
+    operands
 }
 
 fn check_callable(
@@ -2887,7 +2891,7 @@ fn check_callable(
         diagnostics,
     )?;
 
-    if let Some(operand) = propagation_operand(tree, block) {
+    for operand in propagation_operands(tree, block) {
         // The marker-carrying expression carries the operand's type once its own inference runs;
         // a literal operand has no fact of its own, so its child fact is the fallback.
         let operand_type = {
