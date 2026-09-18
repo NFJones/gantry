@@ -1999,11 +1999,11 @@ impl Compiler<'_> {
             .iter()
             .copied()
             .skip(index_postfix.saturating_add(1))
-            .find_map(|child| integer_literal(self.tree, child))
+            .find_map(|child| index_value(self.tree, child))
             .or_else(|| {
                 direct_expressions(self.tree, node)
                     .into_iter()
-                    .find_map(|index| integer_literal(self.tree, index))
+                    .find_map(|index| index_value(self.tree, index))
             })
             .ok_or(AnalysisError::Invariant)?;
         let receiver_children = node.children().get(..index_postfix).unwrap_or_default();
@@ -3060,7 +3060,7 @@ impl Compiler<'_> {
             .iter()
             .copied()
             .skip(index_postfix.saturating_add(1))
-            .find_map(|child| integer_literal(self.tree, child))
+            .find_map(|child| index_value(self.tree, child))
         else {
             return Ok(None);
         };
@@ -4474,7 +4474,7 @@ fn postfix_projection_steps(
                 .iter()
                 .copied()
                 .skip(cursor.checked_add(1)?)
-                .find_map(|child| integer_literal(tree, child))?;
+                .find_map(|child| index_value(tree, child))?;
             steps.push(ProjectionChainStep::Member(index));
             cursor += 1;
             continue;
@@ -5482,6 +5482,123 @@ fn integer_literal(tree: &SyntaxTree, root: NodeId) -> Option<usize> {
         work.extend(node.children().iter().rev().copied());
     }
     None
+}
+
+/// Evaluates the value a place's index expression names, when it is a constant integer.
+///
+/// The first integer literal in the subtree is not the value when the index carries operators:
+/// `xs[3 - 1]` was lowered with index `3` and read out of bounds, and `xs[1 + 1]` read element `1`.
+/// The expression is therefore folded; one that is not a closed constant declines to the previous
+/// first-literal read, so a dynamic index keeps whatever route it had.
+fn index_value(tree: &SyntaxTree, root: NodeId) -> Option<usize> {
+    if let Some(value) = constant_index(tree, root) {
+        return usize::try_from(value).ok();
+    }
+    integer_literal(tree, root)
+}
+
+fn constant_index(tree: &SyntaxTree, root: NodeId) -> Option<i64> {
+    let mut tokens = Vec::new();
+    let mut work = vec![root];
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let mut position = 0_usize;
+    let value = constant_index_sum(&tokens, &mut position)?;
+    (position == tokens.len()).then_some(value)
+}
+
+fn constant_index_sum(
+    tokens: &[&gantry_frontend::SyntaxNode],
+    position: &mut usize,
+) -> Option<i64> {
+    let mut value = constant_index_product(tokens, position)?;
+    loop {
+        let Some(node) = tokens.get(*position) else {
+            return Some(value);
+        };
+        value = match node.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Plus)) => {
+                *position += 1;
+                value.checked_add(constant_index_product(tokens, position)?)?
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Minus)) => {
+                *position += 1;
+                value.checked_sub(constant_index_product(tokens, position)?)?
+            }
+            _ => return Some(value),
+        };
+    }
+}
+
+fn constant_index_product(
+    tokens: &[&gantry_frontend::SyntaxNode],
+    position: &mut usize,
+) -> Option<i64> {
+    let mut value = constant_index_factor(tokens, position)?;
+    loop {
+        let Some(node) = tokens.get(*position) else {
+            return Some(value);
+        };
+        value = match node.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Star)) => {
+                *position += 1;
+                value.checked_mul(constant_index_factor(tokens, position)?)?
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Slash))
+            | SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Percent)) => {
+                let remainder = matches!(
+                    node.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Percent))
+                );
+                *position += 1;
+                let divisor = constant_index_factor(tokens, position)?;
+                if divisor == 0 {
+                    return None;
+                }
+                if remainder {
+                    value.checked_rem(divisor)?
+                } else {
+                    value.checked_div(divisor)?
+                }
+            }
+            _ => return Some(value),
+        };
+    }
+}
+
+fn constant_index_factor(
+    tokens: &[&gantry_frontend::SyntaxNode],
+    position: &mut usize,
+) -> Option<i64> {
+    let node = *tokens.get(*position)?;
+    match node.form() {
+        SyntaxForm::Token(TokenKind::IntegerLiteral(text)) => {
+            *position += 1;
+            text.parse().ok()
+        }
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Minus)) => {
+            *position += 1;
+            constant_index_factor(tokens, position)?.checked_neg()
+        }
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
+            *position += 1;
+            let value = constant_index_sum(tokens, position)?;
+            match tokens.get(*position)?.form() {
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
+                    *position += 1;
+                    Some(value)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn enum_constructor_variant(

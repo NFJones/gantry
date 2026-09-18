@@ -8308,6 +8308,13 @@ fn public_literal_receiver_index_projections_are_lowered_and_typed() {
             0,
         ),
         ("fn main() -> List<Int> { [[1, 2], [3]][1] }", 1),
+        // A constant index expression is folded to the value it names: the first literal token is
+        // not the index when the expression carries operators (`[3 - 1]` used to read index 3).
+        ("fn main() -> Int { [1, 2, 3][3 - 1] }", 2),
+        ("fn main() -> Int { [1, 2, 3][1 + 1] }", 2),
+        ("fn main() -> Int { [1, 2, 3][(1 + 1)] }", 2),
+        ("fn main() -> Int { [1, 2, 3][2 - 1 + 1] }", 2),
+        ("fn main() -> Int { [1, 2, 3][5 - 4] }", 1),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
