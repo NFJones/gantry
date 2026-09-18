@@ -5869,29 +5869,37 @@ fn infer_expression_inner(
     {
         return infer_projection(tree, node, facts, environment, context, diagnostics);
     }
-    if let Some(list) = node.children().iter().copied().find(|child| {
-        tree.node(*child)
-            .is_some_and(|node| matches!(node.form(), SyntaxForm::ListExpression))
-    }) {
+    let literal_member = node
+        .children()
+        .iter()
+        .copied()
+        .any(|child| node_contains_punctuation(tree, child, Punctuation::Dot));
+    // A node that carries both a member step and an operator is not one member step on its own, so
+    // its operands are typed instead: a literal receiver must not claim the whole expression and
+    // drop the other operand, which would leave that operand untyped and unrecorded
+    // (`[1, 2, 3].len() + 1`). A node without a member step keeps the aggregate arm's existing
+    // behavior, so an operand the operand walk cannot key keeps its precise refusal
+    // (`[1, 2][0] + 1`).
+    if (direct_binary_operator(tree, node).is_none() || !literal_member)
+        && let Some(list) = node.children().iter().copied().find(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::ListExpression))
+        })
+    {
         // A list literal that carries a member step is the receiver of that step: the literal is
         // typed first and the step continues from it, exactly as a struct literal receiver does.
         // Without the continuation the step would be dropped and the literal's own type would be
         // published as the type of the whole expression.
-        let has_member = node
-            .children()
-            .iter()
-            .copied()
-            .any(|child| node_contains_punctuation(tree, child, Punctuation::Dot));
         let receiver = infer_list(
             tree,
             list,
             facts,
             environment,
-            if has_member { None } else { expected },
+            if literal_member { None } else { expected },
             context,
             diagnostics,
         )?;
-        if has_member {
+        if literal_member {
             return match receiver {
                 Some(receiver) => infer_member_sequence(
                     tree,
@@ -8135,6 +8143,16 @@ fn infer_operand_sequence(
                     return Ok(Some(value));
                 }
             }
+            // A list literal is a value of its own, and an operand slice spells one as its own
+            // node rather than as an expression wrapper: `[1, 2, 3].len() + 1` reads the literal as
+            // the receiver of its member step, exactly as `[1, 2, 3].len()` does on its own.
+            SyntaxForm::ListExpression => {
+                if let Some(value) =
+                    infer_list(tree, *child, facts, environment, None, context, diagnostics)?
+                {
+                    return Ok(Some(value));
+                }
+            }
             SyntaxForm::Path => {
                 if let Some(name) = direct_identifier(tree, *child)?
                     && let Some(value) = environment.get(&name)
@@ -8762,6 +8780,13 @@ fn infer_member_sequence(
             .transpose()?;
         let builtin = builtin_method_signature(&receiver, &member)?;
         let builtin_present = builtin.is_some();
+        if std::env::var_os("GNT_TRACE_MEMBER").is_some() {
+            eprintln!(
+                "GNT_TRACE_MEMBER member {member} receiver {} builtin {builtin_present} open {open} close {close} owner {}",
+                receiver.canonical_string(),
+                context.current_effect_owner.borrow().is_some()
+            );
+        }
         let builtin_primitive = match (
             builtin_present,
             builtin_method_primitive(&receiver, &member),

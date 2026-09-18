@@ -3699,6 +3699,53 @@ fn sequence_call_member_span(tree: &SyntaxTree, children: &[NodeId]) -> Option<S
     member
 }
 
+/// Returns the index of the parenthesis one closing parenthesis at `close` ends.
+fn matching_open_parenthesis(
+    tokens: &[&gantry_frontend::SyntaxNode],
+    close: usize,
+) -> Option<usize> {
+    let mut depth = 0_u64;
+    for index in (0..=close).rev() {
+        let token = tokens.get(index)?;
+        if matches!(
+            token.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+        ) {
+            depth = depth.saturating_add(1);
+        }
+        if matches!(
+            token.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        ) {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+    }
+    None
+}
+
+/// Reports whether one opening parenthesis announces a member call.
+///
+/// A member call is spelled `<receiver> . <member> (`, so the pair is a member call's when the two
+/// tokens before the parenthesis are the dot and the member name it names.
+fn member_call_parenthesis(tokens: &[&gantry_frontend::SyntaxNode], open: usize) -> bool {
+    let Some(member) = open.checked_sub(1).and_then(|index| tokens.get(index)) else {
+        return false;
+    };
+    let Some(dot) = open.checked_sub(2).and_then(|index| tokens.get(index)) else {
+        return false;
+    };
+    matches!(
+        member.form(),
+        SyntaxForm::Token(TokenKind::Identifier(_) | TokenKind::ReservedWord(_))
+    ) && matches!(
+        dot.form(),
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+    )
+}
+
 fn sequence_call_site_span(tree: &SyntaxTree, children: &[NodeId]) -> Option<SourceSpan> {
     let mut local_tokens = Vec::new();
     let mut work = children.iter().rev().copied().collect::<Vec<_>>();
@@ -3711,6 +3758,27 @@ fn sequence_call_site_span(tree: &SyntaxTree, children: &[NodeId]) -> Option<Sou
         }
     }
     let callee = local_tokens.first()?;
+    // The call a slice performs is the member call it names, and that call's closing parenthesis is
+    // the last one the slice spells: a receiver containing a call of its own (`[f(1)].len()`) or a
+    // grouped receiver that does (`([f(1)]).len()`) spells an inner pair before the member pair, so
+    // the pair this slice performs is the one a member name announces. A slice whose last
+    // parenthesis is not a member call keeps the token walk below.
+    if let Some(closing) = local_tokens.iter().rposition(|token| {
+        matches!(
+            token.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+        )
+    }) && let Some(open) = matching_open_parenthesis(&local_tokens, closing)
+        && member_call_parenthesis(&local_tokens, open)
+        && let Some(close) = local_tokens.get(closing)
+    {
+        return SourceSpan::from_portable_parts(
+            close.span().source().package_path().as_str(),
+            callee.span().bytes().start(),
+            close.span().bytes().end(),
+        )
+        .ok();
+    }
     let mut tokens = tree
         .nodes()
         .iter()

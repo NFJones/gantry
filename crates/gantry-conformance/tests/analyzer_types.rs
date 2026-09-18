@@ -9110,7 +9110,7 @@ fn public_builtin_member_calls_publish_their_primitive() {
     }
 
     let root = TempDirectory::new();
-    let entries: [(&str, i64, &[Primitive]); 25] = [
+    let entries: [(&str, i64, &[Primitive]); 28] = [
         (
             "let xs: List<Int> = [1, 2, 3]; xs.len()",
             3,
@@ -9214,6 +9214,14 @@ fn public_builtin_member_calls_publish_their_primitive() {
             3,
             &[Primitive::StringListJoin, Primitive::StringLength],
         ),
+        // A literal receiver inside a chain keeps its member step and the operator applies to it.
+        ("[[1]].len() + [[2]].len()", 2, &[Primitive::ListLength]),
+        (
+            "[[1]].len() * [[2]].len() + 1",
+            2,
+            &[Primitive::ListLength, Primitive::Multiply],
+        ),
+        ("[1 + 1].len() + 1", 2, &[Primitive::ListLength]),
     ];
     for (body, expected, required) in entries {
         let source = format!("fn main() -> Int {{ {body} }}");
@@ -9297,12 +9305,15 @@ fn public_builtin_member_calls_publish_their_primitive() {
 /// (`2e558b5f`).
 #[test]
 fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
-    const FIXTURE: &str =
-        "struct Item { count: Int } fn take(item: Item) -> List<Int> { [item.count] } ";
+    const FIXTURE: &str = "struct Item { count: Int } fn take(item: Item) -> List<Int> { [item.count] } fn take_list(items: List<Int>) -> List<Int> { items } fn add_one(value: Int) -> Int { value + 1 } ";
 
     for body in [
         "let items: List<Item> = [Item { count: 1 }]; discard take(items[0]).len(); 1",
         "discard take(Item { count: 1 }).len(); 1",
+        // A chain whose left operand is a literal receiver still refuses the right operand that
+        // only mentions a literal through a call.
+        "discard [1, 2].len() + take_list([3]).len(); 1",
+        "discard take_list([3]).len() + [1, 2].len(); 1",
     ] {
         let refused = analyze(&format!("{FIXTURE}fn main() -> Int {{ {body} }}"));
         assert_eq!(
@@ -9317,6 +9328,25 @@ fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
             "{body}"
         );
         assert!(refused.executable_program().is_none(), "{body}");
+    }
+    // A literal receiver inside a chain keeps its member step: the chain is typed as the operator
+    // applied to that step, so the program publishes and the item call is analyzed.
+    for body in [
+        "[add_one(1)].len() + 1",
+        "([add_one(1)]).len() + 1",
+        "[Item { count: 1 }].len() + 1",
+    ] {
+        let admitted = analyze(&format!("{FIXTURE}fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "{body}: {:?}",
+            admitted.diagnostics()
+        );
+        assert!(
+            admitted.executable_program().is_some(),
+            "{body}: a chain over a literal receiver must publish a program"
+        );
     }
     let admitted = analyze(&format!(
         "{FIXTURE}fn main() -> Int {{ [Item {{ count: 1 }}].len() }}"
