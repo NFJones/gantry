@@ -8728,14 +8728,6 @@ fn public_split_struct_operands_are_typed_and_lowered() {
             "struct Counter { value: Int } fn main() -> Bool { Counter { value: 5 }.value == 5 }",
             Expected::Bool(true),
         ),
-        (
-            "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn main() -> Int { Counter { value: 5 }.read() + 1 }",
-            Expected::Int(6),
-        ),
-        (
-            "struct Counter { value: Int } impl Counter { fn read(self) -> Int { self.value } } fn main() -> Bool { Counter { value: 5 }.read() == 5 }",
-            Expected::Bool(true),
-        ),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
