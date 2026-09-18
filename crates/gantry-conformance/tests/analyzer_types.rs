@@ -2738,6 +2738,55 @@ fn section_38_panic_refusals_name_their_reason() {
     );
 }
 
+/// Section 38: divergence through statement branches and loops is admitted and lowers to the
+/// failure instruction, and it never constrains the declared result
+/// (`GNT-38.3-divergence-and-never`).
+#[test]
+fn section_38_divergent_branches_and_loops_are_admitted() {
+    // Every branch diverges, so the declared `Int` result is satisfied without a value.
+    let both = analyze(
+        "fn both(flag: Bool) -> Int { if flag { panic(\"a\"); } else { panic(\"b\"); } } fn main() -> Int { both(true) }",
+    );
+    assert_eq!(both.status(), AnalysisStatus::Valid);
+    let program = both
+        .executable_program()
+        .unwrap_or_else(|| panic!("a valid package publishes a program"));
+    let divergent = program
+        .workflows()
+        .iter()
+        .find(|workflow| workflow.path.as_str() == "crate::both")
+        .unwrap_or_else(|| panic!("the divergent workflow is lowered"));
+    assert!(
+        divergent
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction.kind, InstructionKind::Panic)),
+        "a divergent branch lowers to the failure instruction"
+    );
+
+    // One branch returns and the other diverges; the body still has no normal completion.
+    let mixed = analyze(
+        "fn stop(flag: Bool) -> Int { if flag { return 1; } else { panic(\"s\"); } } fn main() -> Int { stop(false) }",
+    );
+    assert_eq!(mixed.status(), AnalysisStatus::Valid);
+
+    // An unbroken loop has no normal completion either.
+    let looping = analyze("fn main() -> Int { loop { } }");
+    assert_eq!(looping.status(), AnalysisStatus::Valid);
+
+    // A loop that can fall through still reports the missing result.
+    let falling = analyze("fn main() -> Int { let mut i: Int = 0; while i < 3 { i += 1; } }");
+    assert!(diagnostic_codes(falling.diagnostics()).contains(&"missing-result"));
+
+    // Value-position branching cannot diverge today: `match` arms are expressions, so the
+    // statement forms and loops are the divergence carriers (`if` is a command, not an
+    // expression). The value match remains the admitted control.
+    let values = analyze(
+        "fn main() -> Int { let o: Option<Int> = Some(1); let x: Int = match o { Some(v) => v, None => 0 }; x }",
+    );
+    assert_eq!(values.status(), AnalysisStatus::Valid);
+}
+
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
 /// is never coerced into it (`GNT-38.4-boundaries-durability-and-non-claims`).
 #[test]
