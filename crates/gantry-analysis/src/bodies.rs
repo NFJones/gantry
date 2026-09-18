@@ -3872,7 +3872,9 @@ fn check_assignment(
                 context,
                 diagnostics,
             )?;
-            require_type(&expected, &result, node.span().clone(), diagnostics)?;
+            if let Some(result) = result {
+                require_type(&expected, &result, node.span().clone(), diagnostics)?;
+            }
         }
     }
     // Replacing a place that still owes consumption would silently discard an initialized
@@ -6142,8 +6144,7 @@ fn infer_expression_inner(
                 node.span().clone(),
                 context,
                 diagnostics,
-            )
-            .map(Some);
+            );
         }
         return Ok(None);
     }
@@ -8263,8 +8264,7 @@ fn infer_operand_sequence(
                 .and_then(|child| tree.node(*child))
                 .map(|node| node.span().clone())
                 .ok_or(AnalysisError::Invariant)?;
-            return infer_binary_operator(operator, left, right, span, context, diagnostics)
-                .map(Some);
+            return infer_binary_operator(operator, left, right, span, context, diagnostics);
         }
         return Ok(None);
     }
@@ -12565,7 +12565,7 @@ fn infer_binary_operator(
     span: SourceSpan,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<TypeDescriptor, AnalysisError> {
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let result = match operator {
         Punctuation::Plus
             if left == right
@@ -12612,7 +12612,7 @@ fn infer_binary_operator(
         _ => None,
     };
     if let Some(result) = result {
-        return Ok(result);
+        return Ok(Some(result));
     }
     diagnostics.push(body_diagnostic(
         "invalid-primitive",
@@ -12624,7 +12624,11 @@ fn infer_binary_operator(
             ("right", right.canonical_string()),
         ],
     )?);
-    Ok(left)
+    // The refusal above already names the operator's mistake, and returning the left descriptor
+    // here would let the enclosing context reject the same expression a second time
+    // (`type-mismatch`), so a refused operator stays untyped and the single precise diagnostic
+    // stands alone.
+    Ok(None)
 }
 
 fn node_contains_punctuation(tree: &SyntaxTree, id: NodeId, expected: Punctuation) -> bool {

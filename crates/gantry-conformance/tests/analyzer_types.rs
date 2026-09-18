@@ -2536,6 +2536,51 @@ fn public_grouped_affine_receiver_places_are_field_precise() {
     assert_affine_rejected(&reuse, "affine-value-reuse");
 }
 
+/// A refused operator publishes exactly one diagnostic.
+///
+/// A declared-descriptor mismatch has no operator signature, so the operator refusal is the whole
+/// answer: the enclosing result or annotation position must not reject the same expression a second
+/// time. The scalar spelling and the nested-operator control publish one diagnostic too.
+#[test]
+fn public_refused_operators_publish_one_diagnostic() {
+    for source in [
+        "struct A { v: Int } struct B { v: Int } fn main() -> Bool { A { v: 1 } == B { v: 1 } }",
+        "struct A { v: Int } struct B { v: Int } fn main() -> Bool { A { v: 1 } != B { v: 1 } }",
+        "struct A { v: Int } fn main() -> Bool { A { v: 1 } == 1 }",
+        "struct A { v: Int } fn main() -> Bool { A { v: 1 } != 1 }",
+        "struct A { v: Int } fn main() -> Bool { A { v: 1 } == true }",
+        "struct A { v: Int } struct B { v: Int } fn main() -> Bool { A { v: 1 } < B { v: 1 } }",
+        "struct A { v: Int } struct B { v: Int } fn main() -> Bool { A { v: 1 } + B { v: 1 } == A { v: 1 } }",
+        "fn main() -> Bool { [1] == [\"a\"] }",
+    ] {
+        let refused = analyze(source);
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics().len(),
+            1,
+            "{source}: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-primitive"),
+            "{source}: {:?}",
+            refused.diagnostics()
+        );
+        assert!(
+            refused.executable_program().is_none(),
+            "{source}: a refused operator publishes no program"
+        );
+    }
+}
+
 /// Requires one affine misuse to be rejected by a source diagnostic, never an internal failure.
 fn assert_affine_rejected(source: &str, code: &str) {
     let rejected = analyze(source);
