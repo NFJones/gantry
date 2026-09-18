@@ -26,7 +26,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-   "sha256": "23909eddc04056f3e49dcbfac567534394a26cbff72a3d570e58d85bea89eebd"
+   "sha256": "f37c44244950e871c3168e4b93eaf868b9ad1f7d0a02b49cbd8d4883fd5a9b0a"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs",

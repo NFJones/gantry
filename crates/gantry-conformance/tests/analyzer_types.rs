@@ -2606,7 +2606,7 @@ fn affine_place_ledger_keys_places_and_keeps_siblings_usable() {
                      affine struct Mark { value: Int }\n\
                      struct Pair { leaf: Leaf, mark: Mark }\n\
                      impl Leaf { fn take(self) -> Int { self.value } fn look(shared self) -> Int { self.value } fn bump(exclusive self) -> Int { self.value } }\n\
-                     impl Mark { fn take(self) -> Int { self.value } }\n";
+                     impl Mark { fn take(self) -> Int { self.value } fn look(shared self) -> Int { self.value } }\n";
     for rejected in [
         "fn main() -> Int {\n\
              let pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
@@ -2668,6 +2668,38 @@ fn affine_place_ledger_keys_places_and_keeps_siblings_usable() {
     ] {
         assert_affine_accepted(&format!("{consumers}{borrowed}"));
     }
+    // A loan reads the place it borrows, so a place an earlier transfer or move claimed refuses
+    // the loan exactly as a field read of it does, while a sibling field stays usable.
+    for loaned in [
+        "fn main() -> Int {\n\
+             let pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let first: Int = pair.leaf.take();\n\
+             let second: Int = pair.leaf.look();\n\
+             first + second\n\
+         }",
+        "fn main() -> Int {\n\
+             let mut pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let first: Int = pair.leaf.take();\n\
+             let second: Int = pair.leaf.bump();\n\
+             first + second\n\
+         }",
+        "fn main() -> Int {\n\
+             let pair: Pair = Pair { leaf: Leaf { value: 1 }, mark: Mark { value: 2 } };\n\
+             let leaf: Leaf = pair.leaf;\n\
+             let second: Int = pair.leaf.look();\n\
+             leaf.value + second\n\
+         }",
+    ] {
+        assert_affine_rejected(&format!("{consumers}{loaned}"), "affine-value-reuse");
+    }
+    assert_affine_accepted(&format!(
+        "{consumers}fn main() -> Int {{\n\
+             let pair: Pair = Pair {{ leaf: Leaf {{ value: 1 }}, mark: Mark {{ value: 2 }} }};\n\
+             let first: Int = pair.leaf.take();\n\
+             let second: Int = pair.mark.look();\n\
+             first + second\n\
+         }}"
+    ));
     // A copyable field receiver copies its value, so two consuming calls stay admitted.
     assert_affine_accepted(
         "struct Counter { value: Int }\n\

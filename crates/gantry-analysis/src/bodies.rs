@@ -5104,37 +5104,35 @@ fn report_loop_consumption(
     Ok(())
 }
 
-/// Records one affine read or move place, rejecting any intersecting or repeated use.
-fn record_affine_place(
-    place: AffinePlace,
+/// One ledger verdict for a read of an affinity place.
+struct AffineReadFacts {
+    tracked: bool,
+    must_consume: bool,
+    receiver_read: bool,
+    repeated: bool,
+}
+
+/// Returns whether one read of `place` repeats an earlier transfer or move of it.
+fn affine_read_facts(
+    place: &AffinePlace,
     root_type: Option<&TypeDescriptor>,
     place_type: &TypeDescriptor,
-    span: SourceSpan,
-    access: AffineAccess,
     context: &BodyContext,
-    diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<(), AnalysisError> {
+) -> AffineReadFacts {
     let place_class = ownership_class(place_type, context);
     let root_class = root_type.and_then(|root| ownership_class(root, context));
     let tracked = place_class.is_some_and(OwnershipClass::requires_consumption)
         || root_class.is_some_and(OwnershipClass::requires_consumption);
     if !tracked {
-        return Ok(());
+        return AffineReadFacts {
+            tracked: false,
+            must_consume: false,
+            receiver_read: false,
+            repeated: false,
+        };
     }
     let must_consume = place_class == Some(OwnershipClass::MustConsume)
         || root_class == Some(OwnershipClass::MustConsume);
-    // A `return` hands one `MustConsume` place back to the caller rather than copying it. Only a
-    // read of the value itself is that transfer: reading a `Copyable` member inside such a value
-    // stays a copy, which item 2d rejects.
-    let access = match access {
-        AffineAccess::Read
-            if place_class == Some(OwnershipClass::MustConsume)
-                && context.must_consume_consuming.take() =>
-        {
-            AffineAccess::Consume
-        }
-        access => access,
-    };
     let repeats_in_loop = context
         .affine_loop_entry_roots
         .borrow()
@@ -5149,7 +5147,7 @@ fn record_affine_place(
         let partial = context.must_consume_partial.borrow();
         let fresh = context.must_consume_fresh_all.borrow();
         discharged.iter().chain(partial.iter()).any(|consumed| {
-            consumed.intersects(&place)
+            consumed.intersects(place)
                 && !fresh.iter().any(|refreshed| {
                     refreshed.root == place.root && place.path.starts_with(&refreshed.path)
                 })
@@ -5159,17 +5157,80 @@ fn record_affine_place(
             .affine_consumed
             .borrow()
             .iter()
-            .any(|consumed| consumed.intersects(&place))
+            .any(|consumed| consumed.intersects(place))
     };
     // The receiver of one consuming callable is the value this admission already consumed, so
     // reading it inside that callable is neither an unaccounted copy nor a reuse.
     let receiver_read =
         must_consume && context.must_consume_receiver.get() && place.root.as_ref() == "self";
-    if !receiver_read && (repeats_in_loop || intersects) {
+    AffineReadFacts {
+        tracked,
+        must_consume,
+        receiver_read,
+        repeated: !receiver_read && (repeats_in_loop || intersects),
+    }
+}
+
+/// Refuses a read of one place the ledger already transferred, without marking the place.
+///
+/// A shared or exclusive receiver loan reads the place without consuming it, so it inserts no
+/// mark of its own; a place an earlier transfer or move claimed is still a reuse.
+fn check_affine_place_read(
+    place: AffinePlace,
+    root_type: Option<&TypeDescriptor>,
+    place_type: &TypeDescriptor,
+    span: SourceSpan,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let facts = affine_read_facts(&place, root_type, place_type, context);
+    if facts.repeated {
         diagnostics.push(body_diagnostic(
             "affine-value-reuse",
             DiagnosticCategory::Type,
-            if must_consume {
+            if facts.must_consume {
+                "a MustConsume value is used more than once"
+            } else {
+                "an AffineDroppable value is used more than once"
+            },
+            span,
+            [] as [(&str, &str); 0],
+        )?);
+    }
+    Ok(())
+}
+
+/// Records one affine read or move place, rejecting any intersecting or repeated use.
+fn record_affine_place(
+    place: AffinePlace,
+    root_type: Option<&TypeDescriptor>,
+    place_type: &TypeDescriptor,
+    span: SourceSpan,
+    access: AffineAccess,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let facts = affine_read_facts(&place, root_type, place_type, context);
+    if !facts.tracked {
+        return Ok(());
+    }
+    // A `return` hands one `MustConsume` place back to the caller rather than copying it. Only a
+    // read of the value itself is that transfer: reading a `Copyable` member inside such a value
+    // stays a copy, which item 2d rejects.
+    let access = match access {
+        AffineAccess::Read
+            if ownership_class(place_type, context) == Some(OwnershipClass::MustConsume)
+                && context.must_consume_consuming.take() =>
+        {
+            AffineAccess::Consume
+        }
+        access => access,
+    };
+    if facts.repeated {
+        diagnostics.push(body_diagnostic(
+            "affine-value-reuse",
+            DiagnosticCategory::Type,
+            if facts.must_consume {
                 "a MustConsume value is used more than once"
             } else {
                 "an AffineDroppable value is used more than once"
@@ -5177,7 +5238,7 @@ fn record_affine_place(
             span.clone(),
             [] as [(&str, &str); 0],
         )?);
-    } else if must_consume && access == AffineAccess::Read && !receiver_read {
+    } else if facts.must_consume && access == AffineAccess::Read && !facts.receiver_read {
         let discarding = context.must_consume_discarding.get();
         diagnostics.push(body_diagnostic(
             if discarding {
@@ -5195,7 +5256,7 @@ fn record_affine_place(
             [] as [(&str, &str); 0],
         )?);
     }
-    if must_consume && access == AffineAccess::Consume {
+    if facts.must_consume && access == AffineAccess::Consume {
         discharge_must_consume(&place, context);
     }
     context.affine_consumed.borrow_mut().insert(place);
@@ -9118,14 +9179,29 @@ fn infer_member_sequence(
             {
                 // A receiver a callable copies is still one read of the place it names, so a second
                 // consuming call through the same struct-field subplace is a reuse (`SPEC.md`
-                // GNT-2b) exactly as the owned route above records it. A `shared self` or
-                // `exclusive self` receiver only borrows the place, so its loan records nothing.
+                // GNT-2b) exactly as the owned route above records it.
                 record_affine_place(
                     AffinePlace::projected(root.clone(), fields),
                     environment.get(&root),
                     &receiver,
                     member_node.span().clone(),
                     AffineAccess::Read,
+                    context,
+                    diagnostics,
+                )?;
+            } else if (metadata.receiver_mode.borrows_shared_place()
+                || metadata.receiver_mode.borrows_exclusive_place())
+                && let Some((root, fields)) =
+                    owned_receiver_place(tree, children.get(..dot).unwrap_or_default())
+            {
+                // A `shared self` or `exclusive self` receiver only borrows the place, so its loan
+                // records no mark of its own; a place an earlier transfer or move claimed is still
+                // a reuse of it, exactly as the group-transparent spelling already refuses.
+                check_affine_place_read(
+                    AffinePlace::projected(root.clone(), fields),
+                    environment.get(&root),
+                    &receiver,
+                    member_node.span().clone(),
                     context,
                     diagnostics,
                 )?;
