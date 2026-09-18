@@ -2623,6 +2623,7 @@ fn public_refused_operators_publish_one_diagnostic() {
         "struct A { v: Int } struct B { v: Int } fn main() -> Bool { let x: Bool = A { v: 1 } == B { v: 1 }; x }",
         "struct A { v: Int } struct B { v: Int } fn main() -> Bool { (A { v: 1 } == B { v: 1 }) == true }",
         "struct A { v: Int } struct B { v: Int } fn main() -> Bool { A { v: 1 } == B { v: 1 } && true }",
+        "struct A { v: Int } struct B { v: Int } fn main() -> Int { if (A { v: 1 } == B { v: 1 }) { discard 1; } else { discard 2; } 0 }",
     ] {
         let refused = analyze(source);
         assert_eq!(
