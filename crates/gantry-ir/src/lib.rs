@@ -22,6 +22,7 @@ mod callable_identity;
 mod canonical;
 mod constant;
 mod effects;
+pub mod error_semantics;
 mod executable;
 mod facts;
 pub mod fault;
@@ -146,6 +147,7 @@ pub use constant::{
     checked_int,
 };
 pub use effects::{EFFECT_ORDER, EffectSet};
+pub use error_semantics::{ERROR_SEMANTICS_CLAUSES, ErrorSemanticsDiagnosticCode, FailureChannel};
 pub use executable::{
     AggregateKind, ExecutableAction, ExecutableOperation, ExecutableTaskBody,
     ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,

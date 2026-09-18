@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "4022a93fe6e1e801fbc7e6a7a84d39946d3f6c18baddc0a23f3280b3c2d44335",
-  "byte_length": 1024847,
-  "line_count": 15556,
+  "specification_sha256": "f970242b46dc5bad79680a18c300cdc2941fd62e7fe3f0b8406bd3823c3e609e",
+  "byte_length": 1031183,
+  "line_count": 15578,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9501,
-      "end_line": 15556,
-      "sha256": "a7919e4bd45c582e51a4f115d7c4683f42ca41b961daf45ad9c38a2298b1ce8a",
+      "end_line": 15578,
+      "sha256": "c0f978b4dc06b6f6ecc31e5de18cf556236ce42c2ec1734ea41ddd549dd9260f",
       "rationale": null
     }
   ],
@@ -42033,6 +42033,211 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/callable_foundation.rs#section_37_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-38.0-error-and-divergence-scope",
+      "span_start_line": 15557,
+      "span_end_line": 15562,
+      "span_sha256": "8f23021c56eae4fc79c5d18a60bd397d592956449ab9020e6c0e38cc2421f6bf",
+      "anchor_line": 15560,
+      "body_start_line": 15561,
+      "body_end_line": 15562,
+      "body_sha256": "6374d001275c2f457e9b33c313f28683ba0cb2250768665852591b510e34bf02",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15561,
+          "end_line": 15562,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/error_semantics.rs#section_38_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-38.1-typed-error-propagation",
+      "span_start_line": 15563,
+      "span_end_line": 15566,
+      "span_sha256": "e460f5fca36d4a75535120a45cc6edb6218eadbe1d84a2f6c08886d745f18611",
+      "anchor_line": 15564,
+      "body_start_line": 15565,
+      "body_end_line": 15566,
+      "body_sha256": "c45bdfee929cc38e43b7289a56d29d254d4cd167ff85af8f0e29077c4279a405",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15565,
+          "end_line": 15566,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/error_semantics.rs#section_38_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-38.2-assertions-and-panic",
+      "span_start_line": 15567,
+      "span_end_line": 15570,
+      "span_sha256": "904b28be48bdc853b02325abc09b0163eb2900d8f3d7af32de4ea4cb85385a7e",
+      "anchor_line": 15568,
+      "body_start_line": 15569,
+      "body_end_line": 15570,
+      "body_sha256": "a5e426764781e94c1178e677d051b8fb27bd534bec5ea02ac2c11020d5c027ea",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15569,
+          "end_line": 15570,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/error_semantics.rs#section_38_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-38.3-divergence-and-never",
+      "span_start_line": 15571,
+      "span_end_line": 15574,
+      "span_sha256": "406ed82040d3a33bd74905c4bada4a9cb16c286955d3c8d3bd57f2342f0003c4",
+      "anchor_line": 15572,
+      "body_start_line": 15573,
+      "body_end_line": 15574,
+      "body_sha256": "7c839053e327ef302fea4b2542e62f1690b67cfd2cd015fb464e8d61a8cf1c25",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15573,
+          "end_line": 15574,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/error_semantics.rs#section_38_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-38.4-boundaries-durability-and-non-claims",
+      "span_start_line": 15575,
+      "span_end_line": 15578,
+      "span_sha256": "a02780da22e1b07689965de8ffaa6bed1f40e41784097f5fe700c91b5b289d99",
+      "anchor_line": 15576,
+      "body_start_line": 15577,
+      "body_end_line": 15578,
+      "body_sha256": "7c7b49f7bf366df114784caff81e7da3888bf973deff538c5bccad02013b5cdb",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15577,
+          "end_line": 15578,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/error_semantics.rs#section_38_anchors_and_nonclaims_are_published"
               ],
               "rationale": null
             }
