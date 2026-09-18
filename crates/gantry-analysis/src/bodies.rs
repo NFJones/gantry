@@ -8883,13 +8883,6 @@ fn infer_member_sequence(
             .transpose()?;
         let builtin = builtin_method_signature(&receiver, &member)?;
         let builtin_present = builtin.is_some();
-        if std::env::var_os("GNT_TRACE_MEMBER").is_some() {
-            eprintln!(
-                "GNT_TRACE_MEMBER member {member} receiver {} builtin {builtin_present} open {open} close {close} owner {}",
-                receiver.canonical_string(),
-                context.current_effect_owner.borrow().is_some()
-            );
-        }
         let builtin_primitive = match (
             builtin_present,
             builtin_method_primitive(&receiver, &member),
