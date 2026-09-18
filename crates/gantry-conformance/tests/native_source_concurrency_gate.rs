@@ -75,7 +75,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "crates/gantry-conformance/tests/executable_bridge.rs",
-        "37ac3171f9498d063cb1fc98b54547800c3dc1be059d3fb30dcaa251524b817b",
+        "8b2e7a6de5443a0ee24a3dbb2170b4666a012429f626fdd8ba9a7c6dcbca1902",
     ),
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
@@ -103,7 +103,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-source-lowering-v1.json",
-        "cbe865c25fc09d27f14531136fd783369b1697e44154970eaa9d20e4e2208ed7",
+        "206650b1f860b237207884b8dc60623aab1b46789e038caa8b340b3aca79c3f9",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",

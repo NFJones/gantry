@@ -2801,6 +2801,14 @@ impl Compiler<'_> {
                 })
                 .unwrap_or(TypeDescriptor::UNIT);
             self.compile_propagation(*only, payload, callee, operand_type)?;
+            // A marker with trailing member steps publishes the payload's fields before the operand
+            // is complete, exactly as the expression route does.
+            let payload = self
+                .body_types
+                .get(only)
+                .cloned()
+                .unwrap_or(TypeDescriptor::UNIT);
+            self.compile_trailing_member_steps(*only, payload)?;
             return Ok(());
         }
         // The parser leaves an operator-free `BinaryExpression` wrapper around one operand when

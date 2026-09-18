@@ -341,6 +341,34 @@ fn admitted_place_operand_trailing_steps_execute_on_the_shared_sequential_machin
     );
 }
 
+/// The same trailing step in an operand position publishes its field before the operator runs
+/// (`GNT-38.1-typed-error-propagation`): the operand route reaches the marker through the sequence
+/// walk, which must continue into the step exactly as the expression route does.
+#[test]
+fn admitted_trailing_steps_in_operand_position_execute_on_the_shared_sequential_machine() {
+    let source = "trait ErrorConversion { pure fn convert(self) -> F; }\nstruct E {}\nstruct F {}\nimpl ErrorConversion for E { pure fn convert(self) -> F { F {} } }\nstruct V { value: Int }\nfn inner_wrap() -> Result<V, E> { Ok(V { value: 3 }) }\nfn outer() -> Result<Int, F> { let v: Int = 1 + inner_wrap()?.value; Ok(v) }\nfn main() -> Int { match outer() { Ok(v) => v, Err(_) => 0 } }\n";
+    let root = TempDirectory::new(source);
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x50; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+        .unwrap_or_else(|error| panic!("analyzed program was rejected by the machine: {error:?}"));
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("the admitted operand-position trailing step did not succeed")
+    };
+    assert!(
+        matches!(value.view(), LogicalValueView::Int(value) if value.get() == 4),
+        "the admitted operand-position trailing step answers the summed value"
+    );
+}
+
 #[test]
 fn analyzed_closed_generic_application_executes_as_a_direct_call() {
     let root = TempDirectory::new(

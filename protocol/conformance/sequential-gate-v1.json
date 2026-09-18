@@ -74,7 +74,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-   "sha256": "37ac3171f9498d063cb1fc98b54547800c3dc1be059d3fb30dcaa251524b817b"
+   "sha256": "8b2e7a6de5443a0ee24a3dbb2170b4666a012429f626fdd8ba9a7c6dcbca1902"
   },
   {
    "path": "crates/gantry-conformance/tests/execution_observation.rs",
