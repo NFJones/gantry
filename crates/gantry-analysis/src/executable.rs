@@ -1994,18 +1994,41 @@ impl Compiler<'_> {
         }) else {
             return Ok(None);
         };
-        let index = node
+        // The projection's own index is the only candidate that may decide the value: a candidate
+        // that is a closed constant and cannot be folded or carried declines the projection rather
+        // than letting a later candidate supply a literal from elsewhere (`id([2, 3, 4])[1 / 0]`
+        // read the receiver's literal `2`). The receiver part is never a candidate.
+        let receiver = node.children().get(..index_postfix).unwrap_or_default();
+        let mut candidates = node
             .children()
             .iter()
             .copied()
             .skip(index_postfix.saturating_add(1))
-            .find_map(|child| index_value(self.tree, child))
-            .or_else(|| {
-                direct_expressions(self.tree, node)
-                    .into_iter()
-                    .find_map(|index| index_value(self.tree, index))
-            })
-            .ok_or(AnalysisError::Invariant)?;
+            .collect::<Vec<_>>();
+        candidates.extend(
+            direct_expressions(self.tree, node)
+                .into_iter()
+                .filter(|candidate| !receiver.contains(candidate)),
+        );
+        let mut resolved = None;
+        let mut declined = false;
+        for candidate in candidates {
+            match index_candidate(self.tree, candidate) {
+                IndexCandidate::Value(value) => {
+                    resolved = Some(value);
+                    break;
+                }
+                IndexCandidate::Declined => {
+                    declined = true;
+                    break;
+                }
+                IndexCandidate::Open => {}
+            }
+        }
+        if declined {
+            return Err(AnalysisError::Invariant);
+        }
+        let index = resolved.ok_or(AnalysisError::Invariant)?;
         let receiver_children = node.children().get(..index_postfix).unwrap_or_default();
         // A receiver part that carries a call or grouping parenthesis is a computed receiver:
         // `head(xs)[0]` projects the call result, so the callee path must not be read as the
@@ -5500,11 +5523,34 @@ enum ConstantIndexError {
 /// The expression is therefore folded. Only an expression that is not a closed constant declines
 /// to the previous first-literal read, so a dynamic index keeps whatever route it had; a closed
 /// constant that cannot be folded or carried declines outright.
-fn index_value(tree: &SyntaxTree, root: NodeId) -> Option<usize> {
+enum IndexCandidate {
+    /// The candidate names a closed constant this projection can carry.
+    Value(usize),
+    /// The candidate is a closed constant that cannot be folded or carried, so no later candidate
+    /// may be tried: the projection declines instead.
+    Declined,
+    /// The candidate is not itself a constant index, so another candidate may be tried.
+    Open,
+}
+
+fn index_candidate(tree: &SyntaxTree, root: NodeId) -> IndexCandidate {
     match constant_index(tree, root) {
-        Ok(value) => usize::try_from(value).ok(),
-        Err(ConstantIndexError::Declined) => None,
-        Err(ConstantIndexError::Open) => integer_literal(tree, root),
+        Ok(value) => match usize::try_from(value) {
+            Ok(value) => IndexCandidate::Value(value),
+            Err(_) => IndexCandidate::Declined,
+        },
+        Err(ConstantIndexError::Declined) => IndexCandidate::Declined,
+        Err(ConstantIndexError::Open) => match integer_literal(tree, root) {
+            Some(value) => IndexCandidate::Value(value),
+            None => IndexCandidate::Open,
+        },
+    }
+}
+
+fn index_value(tree: &SyntaxTree, root: NodeId) -> Option<usize> {
+    match index_candidate(tree, root) {
+        IndexCandidate::Value(value) => Some(value),
+        IndexCandidate::Declined | IndexCandidate::Open => None,
     }
 }
 
