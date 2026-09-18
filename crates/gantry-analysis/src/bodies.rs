@@ -1567,11 +1567,23 @@ pub(crate) fn check_package_bodies(
                 .cloned(),
         );
         context.expression_types.borrow_mut().clear();
+        let panic_refusal_declarations = context
+            .generic_callables
+            .values()
+            .chain(context.generic_methods.iter())
+            .map(|signature| {
+                sources
+                    .get(signature.source_index)
+                    .and_then(|source| source.tree().node(signature.declaration))
+                    .map(|node| node.span().clone())
+                    .ok_or(AnalysisError::Invariant)
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
         refuse_unlowered_panics(
             sources,
             structure,
             &context,
-            &generic_declarations,
+            &panic_refusal_declarations,
             diagnostics,
         )?;
         Ok(BodyAnalysis {

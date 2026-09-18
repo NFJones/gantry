@@ -2652,6 +2652,17 @@ fn section_38_panic_refusals_name_their_reason() {
         reason(operand.diagnostics(), "reason"),
         Some("operand-type")
     );
+    // An uncalled generic template is refused (a template is always reachable), while an
+    // uncalled monomorphic method is admitted because neither a declaration nor a call reaches it.
+    let template = analyze("fn boom<X>(x: X) -> Int { panic(\"x\"); } fn main() -> Int { 0 }");
+    assert_eq!(
+        reason(template.diagnostics(), "reason"),
+        Some("lowering-unavailable")
+    );
+    let uncalled = analyze(
+        "struct S {} impl S { fn boom(self) -> Int { panic(\"x\"); } } fn main() -> Int { 0 }",
+    );
+    assert_eq!(uncalled.status(), AnalysisStatus::Valid);
 }
 
 /// Section 38: `Never` is refused at a boundary and in a signature position, and a value
