@@ -9280,11 +9280,12 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
     };
     let receiver = &tokens[..dot];
     // A grouping parenthesis is transparent for a receiver part: `(p).greet()` names the same
-    // place `p.greet()` does, and `((q.value)).dbl()` reads the field place `q.value`, so every
-    // group pair that wraps the *whole* receiver part is peeled, repeatedly. A group around an
-    // interior segment of a dotted receiver part (`(w).inner.greet2()`) wraps no whole receiver
-    // part, so it is not peeled and that spelling keeps the value refusal. A grouped index
-    // receiver still names a value rather than a place, which is why the place test follows.
+    // place `p.greet()` does, `((q.value)).dbl()` reads the field place `q.value`, and a group
+    // around the root segment of a dotted receiver part (`(w).inner`, `((w).inner)`) names the
+    // same field place `w.inner` its ungrouped spelling does, so every group pair wrapping the
+    // whole receiver part peels first and every group pair wrapping the root segment peels after
+    // it. A grouped index receiver still names a value rather than a place, which is why the place
+    // test follows.
     let mut receiver = receiver;
     while let [first, .., last] = receiver
         && matches!(
@@ -9298,6 +9299,29 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
     {
         receiver = &receiver[1..receiver.len().saturating_sub(1)];
     }
+    let mut normalized = receiver.to_vec();
+    while let [first, ..] = normalized.as_slice() {
+        if !matches!(
+            first.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis))
+        ) {
+            break;
+        }
+        let Some(close) = matching_group_close(&normalized, 0) else {
+            break;
+        };
+        if !matches!(
+            normalized
+                .get(close.saturating_add(1))
+                .map(|token| token.form()),
+            Some(SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)))
+        ) {
+            break;
+        }
+        normalized.remove(close);
+        normalized.remove(0);
+    }
+    let receiver = &normalized[..];
     let Some(first) = receiver.first() else {
         return false;
     };
@@ -9316,6 +9340,26 @@ fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
                 Some(SyntaxForm::Token(TokenKind::Identifier(_)))
             )
         })
+}
+
+/// Returns the index of the parenthesis closing the group that opens at `open`, if any.
+fn matching_group_close(tokens: &[&gantry_frontend::SyntaxNode], open: usize) -> Option<usize> {
+    let mut depth = 0_usize;
+    for (index, token) in tokens.iter().enumerate().skip(open) {
+        match token.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
+                depth = depth.saturating_add(1);
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Reports whether the receiver before the method dot constructs an aggregate value.

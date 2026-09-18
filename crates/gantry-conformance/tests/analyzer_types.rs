@@ -4027,13 +4027,10 @@ fn public_must_consume_index_projection_receivers_are_resolved() {
         "{paren_tuple}"
     );
 
-    // Grouping parentheses are transparent at every position of a projection receiver chain, not only
-    // around the whole receiver part: `(h).items`, `((h).items)`, and `(h.items)` all name the same
-    // place chain `h.items` names. The chain root stays the binding and each element is its own list
-    // segment, so two sibling reads are two element places rather than two reads of the whole chain
-    // root. A receiver *call* peels only the groups wrapping its whole receiver part, so the same
-    // spellings stay value refusals there
-    // (`public_grouped_receivers_are_transparent_for_a_receiver_call`).
+    // Grouping parentheses are transparent at every position of a receiver chain, not only around the
+    // whole receiver part: `(h).items`, `((h).items)`, and `(h.items)` all name the same place chain
+    // `h.items` names. The chain root stays the binding and each element is its own list segment, so
+    // two sibling reads are two element places rather than two reads of the whole chain root.
     const CHAIN_DECLARATIONS: &str = "affine struct Leaf { value: Int }\n\
          struct HL { items: List<Leaf> }\n\
          fn main() {}\n";
@@ -9914,13 +9911,12 @@ fn public_receiver_aggregates_must_be_the_receiver_part_itself() {
 ///
 /// `(p).greet2()` names the same receiver `p.greet2()` does and
 /// `(Plain { value: 42 }).greet()` publishes the constructed value before the call, so every
-/// grouped spelling below executes - including a nested grouped *place*, since the lowering peels
-/// every group pair that wraps the *whole* receiver part (`((w.inner)).greet2()`). A group around
-/// an *interior* segment of a dotted receiver part wraps no whole receiver part, so `(w).inner`
-/// and `((w).inner)` name a value and keep the refusal of their ungrouped spelling. A grouped
-/// *index* receiver names a value rather than a place (`SPEC.md:3699`) and keeps its refusal, as
-/// do a call-result receiver, a grouped `shared self` receiver, and a computed binary receiver
-/// (`7e58f733`, `5e20c3b2`, `403bc642`).
+/// grouped spelling below executes: every group pair wrapping the whole receiver part peels
+/// (`((w.inner)).greet2()`), and so does every group pair wrapping the root segment of a dotted
+/// receiver part (`(w).inner.greet2()`), because neither changes the place the receiver part names
+/// (`SPEC.md:3699`). A grouped *index* receiver names a value rather than a place and keeps its
+/// refusal, as do a call-result receiver, a grouped `shared self` receiver, and a computed binary
+/// receiver (`7e58f733`, `5e20c3b2`, `403bc642`).
 #[test]
 fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
     use std::sync::Arc;
@@ -9973,6 +9969,28 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         (
             "let w: Wrap = Wrap { inner: Plain { value: 42 } }; ((w.inner)).greet2()",
             42,
+        ),
+        // A group around the root segment of a dotted place names the same field place its
+        // ungrouped spelling does, at every depth of nesting and in operand position.
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; (w).inner.greet2()",
+            42,
+        ),
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; ((w).inner).greet2()",
+            42,
+        ),
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; (((w).inner)).greet2()",
+            42,
+        ),
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; (w).inner.greet()",
+            42,
+        ),
+        (
+            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; (w).inner.greet() + 1",
+            43,
         ),
         // Grouped receivers in operand and argument positions.
         ("let p: Plain = Plain { value: 42 }; (p).greet2() + 1", 43),
@@ -10048,17 +10066,6 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
         // A literal receiver is not a place, a struct-field place, or a constructed value.
         ("42.greet()", "receiver-value-place"),
         ("(42).greet()", "receiver-value-place"),
-        // A group around an interior segment of a dotted receiver part wraps no whole receiver
-        // part, so it names a value and keeps the refusal of the ungrouped spelling; only group
-        // pairs wrapping the whole receiver part peel (`SPEC.md:3699`).
-        (
-            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; (w).inner.greet2()",
-            "receiver-value-place",
-        ),
-        (
-            "let w: Wrap = Wrap { inner: Plain { value: 42 } }; ((w).inner).greet2()",
-            "receiver-value-place",
-        ),
         // A grouped index receiver is a value rather than a place, computed or not.
         (
             "let xs: List<Int> = [42]; (xs[0]).greet()",

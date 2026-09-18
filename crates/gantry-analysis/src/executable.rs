@@ -4186,20 +4186,55 @@ fn receiver_place_tokens(
 /// Returns the place one grouped receiver names.
 ///
 /// A grouping parenthesis is transparent for a receiver call, so `(p).greet()` names the same
-/// place `p.greet()` does and every group pair wrapping the *whole* receiver part peels before
-/// the place is keyed. A group around an interior segment of a dotted receiver part (`(w).inner`)
-/// names no place here, because the receiver-place test refuses that spelling before this walk.
+/// place `p.greet()` does, `((q.value)).dbl()` reads the field place `q.value`, and `(w).inner`
+/// names the field place `w.inner` its ungrouped spelling does. Every group pair wrapping the
+/// whole receiver part peels before the place is keyed, and the steps that follow a peeled group
+/// are kept, so the keyed place is the whole dotted path.
 fn grouped_method_receiver_place(
     tree: &SyntaxTree,
     node: &gantry_frontend::SyntaxNode,
 ) -> Option<(Arc<str>, Vec<ValuePathSegment>)> {
-    let (inner, _) = grouped_receiver_split(tree, node.children())?;
+    // The receiver part is every child before the method dot, so a step that follows a peeled group
+    // (`(w).inner`) is read as part of the place and the call's own dot is left to the arm above.
+    let receiver = node
+        .children()
+        .iter()
+        .rposition(|child| {
+            tree.node(*child).is_some_and(|child_node| {
+                node_contains_punctuation(tree, child_node, Punctuation::Dot)
+            })
+        })
+        .map_or_else(
+            || node.children(),
+            |dot| node.children().get(..dot).unwrap_or_default(),
+        );
+    let (inner, after) = grouped_receiver_split(tree, receiver)?;
     let mut current = tree.node(inner)?;
-    while let Some((nested, _)) = grouped_receiver_split(tree, current.children()) {
+    let mut tail = tokens_of_children(tree, receiver.get(after..)?)?;
+    while let Some((nested, nested_after)) = grouped_receiver_split(tree, current.children()) {
+        let mut rest = tokens_of_children(tree, current.children().get(nested_after..)?)?;
+        rest.extend(tail);
+        tail = rest;
         current = tree.node(nested)?;
     }
-    let tokens = authored_tokens(tree, current)?;
+    let mut tokens = authored_tokens(tree, current)?;
+    tokens.extend(tail);
     receiver_place_tokens(tree, &tokens)
+}
+
+/// Returns the tokens of one child slice in authored order, flattening every nested node.
+fn tokens_of_children(tree: &SyntaxTree, children: &[NodeId]) -> Option<Vec<NodeId>> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(id);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    Some(tokens)
 }
 
 /// Returns every retained token of one expression in authored order.
