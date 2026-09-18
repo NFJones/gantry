@@ -1683,6 +1683,17 @@ impl Compiler<'_> {
             )?;
             return Ok(ty);
         }
+        // The parser splits an operator operand into sibling fragments, so a list literal operand
+        // reaches this walk as the literal node itself rather than through a wrapper expression:
+        // `[1, 2] == [1, 2]` lowers its left operand here, where the aggregate arm below cannot key
+        // the literal and the fallback would publish one member alone or fail on a multi-member
+        // literal. The literal owns the whole node whatever its members are, so the arm runs before
+        // the aggregate arms a single member would otherwise let claim it (`[Item { count: 1 }]`).
+        if matches!(node.form(), SyntaxForm::ListExpression)
+            && let Some(value) = self.compile_list_literal_value(expression, None)?
+        {
+            return Ok(value);
+        }
         if let Some(struct_expression) =
             descendant_form(self.tree, expression, &[SyntaxForm::StructExpression]).filter(
                 |literal| {
@@ -1750,15 +1761,16 @@ impl Compiler<'_> {
                 )
             })
         {
-            let members = direct_expressions(self.tree, self.node(list)?);
-            for member in &members {
-                self.compile_expression(*member)?;
+            if let Some(value) = self.compile_list_literal_value(list, Some(&ty))? {
+                return Ok(value);
             }
+            // A literal this walk cannot give an element type keeps the type its own node already
+            // carries: `discard []; 0` records no element and stays the unit-typed empty list.
             self.emit(
                 ty.clone(),
                 InstructionKind::Aggregate {
                     kind: AggregateKind::List,
-                    operands: members.len(),
+                    operands: 0,
                 },
             )?;
             return Ok(ty);
@@ -1897,36 +1909,56 @@ impl Compiler<'_> {
     ) -> Result<TypeDescriptor, AnalysisError> {
         let node = self.node(literal)?.clone();
         if matches!(node.form(), SyntaxForm::ListExpression) {
-            let members = direct_expressions(self.tree, &node);
-            let mut element = authoritative
-                .cloned()
-                .or_else(|| self.body_types.get(&literal).cloned())
-                .filter(|ty| ty.kind() == TypeKind::List)
-                .and_then(|ty| ty.immediate_members().into_iter().next());
-            for (index, member) in members.iter().enumerate() {
-                let member_type = self.compile_expression(*member)?;
-                if index == 0 {
-                    element = Some(member_type);
-                }
-            }
-            let Some(element) = element else {
-                return Err(AnalysisError::Invariant);
-            };
-            let list = TypeDescriptor::list(element);
-            self.emit(
-                list.clone(),
-                InstructionKind::Aggregate {
-                    kind: AggregateKind::List,
-                    operands: members.len(),
-                },
-            )?;
-            return Ok(list);
+            return self
+                .compile_list_literal_value(literal, authoritative)?
+                .ok_or(AnalysisError::Invariant);
         }
         let constructed = authoritative
             .cloned()
             .or_else(|| self.body_types.get(&literal).cloned())
             .ok_or(AnalysisError::Invariant)?;
         self.compile_struct(expression, literal, constructed)
+    }
+
+    /// Publishes one list literal as the list value its members build.
+    ///
+    /// The members are compiled in source order and the aggregate carries `List<element>`, where
+    /// the element comes from the authoritative receiver type, the literal's own recorded type, or
+    /// the first member. A literal with neither a recorded element type nor a member reports no
+    /// value at all, so the caller keeps whichever arm it would otherwise take.
+    fn compile_list_literal_value(
+        &mut self,
+        literal: NodeId,
+        authoritative: Option<&TypeDescriptor>,
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        let node = self.node(literal)?.clone();
+        let members = direct_expressions(self.tree, &node);
+        let mut element = authoritative
+            .cloned()
+            .or_else(|| self.body_types.get(&literal).cloned())
+            .filter(|ty| ty.kind() == TypeKind::List)
+            .and_then(|ty| ty.immediate_members().into_iter().next());
+        if element.is_none() && members.is_empty() {
+            return Ok(None);
+        }
+        for (index, member) in members.iter().enumerate() {
+            let member_type = self.compile_expression(*member)?;
+            if index == 0 {
+                element = Some(member_type);
+            }
+        }
+        let Some(element) = element else {
+            return Err(AnalysisError::Invariant);
+        };
+        let list = TypeDescriptor::list(element);
+        self.emit(
+            list.clone(),
+            InstructionKind::Aggregate {
+                kind: AggregateKind::List,
+                operands: members.len(),
+            },
+        )?;
+        Ok(Some(list))
     }
 
     fn compile_static_projection(
@@ -2645,6 +2677,9 @@ impl Compiler<'_> {
         if let Some(result) = self.compile_index_projection_operand(children)? {
             return Ok(result);
         }
+        if let Some(result) = self.compile_literal_index_projection_operand(children)? {
+            return Ok(result);
+        }
         if let Some(result) = self.compile_computed_member_projection_operand(children)? {
             return Ok(result);
         }
@@ -2717,6 +2752,77 @@ impl Compiler<'_> {
             return Err(AnalysisError::Invariant);
         }
         Ok(Some(result))
+    }
+
+    /// Lowers a split index projection whose receiver part is a list literal.
+    ///
+    /// `[1, 2][0]` reaches an operator operand as the literal and its index postfix in sibling
+    /// fragments, which the place walk above cannot key because its receiver is not a place: the
+    /// literal publishes the list value it denotes and the projection reads the element the index
+    /// expression names. Only an index that is exactly one integer-literal token is read here, the
+    /// same rule the type phase applies to the operand, and a shape this walk cannot key reports no
+    /// operand so the caller keeps the ordinary child walk.
+    fn compile_literal_index_projection_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        let Some(index_postfix) = children.iter().position(|child| {
+            self.tree.node(*child).is_some_and(|node| {
+                matches!(node.form(), SyntaxForm::PostfixExpression)
+                    && node_contains_punctuation(self.tree, node, Punctuation::LeftBracket)
+            })
+        }) else {
+            return Ok(None);
+        };
+        let receiver_children = children.get(..index_postfix).unwrap_or_default();
+        let Some(literal) = receiver_children.iter().copied().find(|child| {
+            self.tree
+                .node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::ListExpression))
+        }) else {
+            return Ok(None);
+        };
+        let Some(index_expression) = children
+            .iter()
+            .copied()
+            .skip(index_postfix.saturating_add(1))
+            .find(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+            })
+        else {
+            return Ok(None);
+        };
+        let Some(index) = crate::bodies::literal_projection_index(self.tree, index_expression)
+        else {
+            return Ok(None);
+        };
+        // Every later step belongs to the same chain, so the literal publishes the value the first
+        // index reads and each following step projects from it (`[[1, 2], [3]][0][1]` reads the
+        // second element of the list the first step selected).
+        let Some(steps) =
+            postfix_projection_steps(self.tree, children, index_postfix.saturating_add(1))
+        else {
+            return Ok(None);
+        };
+        let Some(list) = self.compile_list_literal_value(literal, None)? else {
+            return Ok(None);
+        };
+        let member = Projection::Member(index);
+        let mut current = projection_step_type(&list, &member, self.struct_fields)
+            .ok_or(AnalysisError::Invariant)?;
+        self.emit(current.clone(), InstructionKind::Project(member))?;
+        for step in steps {
+            let projection = match step {
+                ProjectionChainStep::Field(field) => Projection::Field(field),
+                ProjectionChainStep::Member(index) => Projection::Member(index),
+            };
+            current = projection_step_type(&current, &projection, self.struct_fields)
+                .ok_or(AnalysisError::Invariant)?;
+            self.emit(current.clone(), InstructionKind::Project(projection))?;
+        }
+        Ok(Some(current))
     }
 
     /// Lowers a split index-projection operand as one root load plus one projection per step.

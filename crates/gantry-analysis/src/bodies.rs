@@ -5874,13 +5874,11 @@ fn infer_expression_inner(
         .iter()
         .copied()
         .any(|child| node_contains_punctuation(tree, child, Punctuation::Dot));
-    // A node that carries both a member step and an operator is not one member step on its own, so
-    // its operands are typed instead: a literal receiver must not claim the whole expression and
-    // drop the other operand, which would leave that operand untyped and unrecorded
-    // (`[1, 2, 3].len() + 1`). A node without a member step keeps the aggregate arm's existing
-    // behavior, so an operand the operand walk cannot key keeps its precise refusal
-    // (`[1, 2][0] + 1`).
-    if (direct_binary_operator(tree, node).is_none() || !literal_member)
+    // A node that carries an operator is not one aggregate on its own, so its operands are typed
+    // instead: a literal receiver must not claim the whole expression and drop the other operand or
+    // the step that follows, which would leave both untyped and unrecorded (`[1, 2, 3].len() + 1`,
+    // `[1, 2][0] + 1`, `[1, 2][0] == 1`).
+    if direct_binary_operator(tree, node).is_none()
         && let Some(list) = node.children().iter().copied().find(|child| {
             tree.node(*child)
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::ListExpression))
@@ -7555,7 +7553,7 @@ fn projected_member_name(tree: &SyntaxTree, id: NodeId) -> Option<Arc<str>> {
 /// `items[2 - 2]` names the same element as `items[0]`, so only an index expression that is
 /// exactly one integer-literal token yields an index here and every other expression keys the
 /// wildcard segment of the place the projection reads.
-fn literal_projection_index(tree: &SyntaxTree, expression: NodeId) -> Option<usize> {
+pub(crate) fn literal_projection_index(tree: &SyntaxTree, expression: NodeId) -> Option<usize> {
     let mut literals = Vec::new();
     let mut work = vec![expression];
     while let Some(id) = work.pop() {
@@ -8298,6 +8296,23 @@ fn infer_operand_index_projection_sequence(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    // A slice that is one wrapper node offers its own children to this walk: an operand such as
+    // `[1, 2][0]` reaches the comparison as the wrapper the parser builds around the split
+    // projection, and the fragments inside it are the receiver and the index this walk keys.
+    if let [only] = children
+        && let Some(node) = tree.node(*only)
+        && !matches!(node.form(), SyntaxForm::Token(_))
+        && let Some(value) = infer_operand_index_projection_sequence(
+            tree,
+            node.children(),
+            facts,
+            environment,
+            context,
+            diagnostics,
+        )?
+    {
+        return Ok(Some(value));
+    }
     if children.len() < 2 {
         return Ok(None);
     }

@@ -8976,6 +8976,13 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
             "fn main() -> Int { let xs: List<List<Int>> = [[1, 2], [3]]; (xs)[0][1] + 1 }",
             3,
         ),
+        // A literal receiver is a value of its own, so its projection is the element it names:
+        // the operand was refused while the receiver had no element type, and it now reads the
+        // element the index expression selects.
+        ("fn main() -> Int { [1, 2][0] + 1 }", 2),
+        ("fn main() -> Int { [1, 2][1] + 1 }", 3),
+        ("fn main() -> Int { [[1, 2], [3]][0][1] }", 2),
+        ("fn main() -> Int { [[1, 2], [3]][1][0] }", 3),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -9040,7 +9047,6 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
             "fn main() -> Int { (1 + 2)[0] + 1 }",
             "projection-receiver-type",
         ),
-        ("fn main() -> Int { [1, 2][0] + 1 }", "type-mismatch"),
     ] {
         root.write(source);
         let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
@@ -9066,6 +9072,200 @@ fn public_computed_projection_receiver_operands_are_typed_and_lowered() {
             refused.executable_program().is_none(),
             "source: {source}: a refused operand must not publish a program"
         );
+    }
+}
+
+/// A comparison of list literals is typed and lowered as the list values it compares.
+///
+/// An operator splits its operands into sibling fragments, so a literal operand reaches the
+/// comparison without the wrapper expression the aggregate arm keys on. A multi-member literal had
+/// no arm of its own and aborted the lowering with an internal error, while a single-member literal
+/// fell through to that member alone, so `[1] == [1]` published `1 == [1]` and answered `false`.
+/// Every row below pins an admitted spelling, the value it computes, and the list aggregate the
+/// entry workflow publishes; the projection rows pin the element a literal receiver indexes
+/// (`8697c9b8`).
+#[test]
+fn public_list_literal_comparisons_are_typed_and_lowered() {
+    use std::sync::Arc;
+
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::CanonicalPath;
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{Machine, MachineLimits, MachineStep};
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
+
+    fn drive(machine: &mut Machine) -> LogicalValue {
+        for _ in 0..10_000 {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    panic!("unexpected session-scope wait: {:?}", scope.site)
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => {
+                    let gantry::runtime::MachineOutcome::Succeeded(value) = outcome else {
+                        panic!("a list-literal comparison did not execute: {outcome:?}");
+                    };
+                    return value;
+                }
+            }
+        }
+        panic!("machine did not terminate within the fixture bound")
+    }
+
+    enum Expected {
+        Bool(bool),
+        Int(i64),
+    }
+
+    // The four admitted controls come last: the one-member comparisons are the rows that answered
+    // the wrong value while a literal operand resolved to its first member.
+    let rows: [(&str, Expected); 30] = [
+        (
+            "fn main() -> Bool { [1, 2] == [1, 2] }",
+            Expected::Bool(true),
+        ),
+        ("fn main() -> Bool { [1, 2] == [1] }", Expected::Bool(false)),
+        (
+            "fn main() -> Bool { [1, 2, 3] == [1, 2, 3] }",
+            Expected::Bool(true),
+        ),
+        (
+            "fn main() -> Bool { [1, 2] != [1, 2] }",
+            Expected::Bool(false),
+        ),
+        (
+            "fn main() -> Bool { ([1, 2] == [1, 2]) }",
+            Expected::Bool(true),
+        ),
+        (
+            "fn main() -> Bool { let b: Bool = [1, 2] == [1, 2]; b }",
+            Expected::Bool(true),
+        ),
+        ("fn main() -> Bool { [1, 2][0] == 1 }", Expected::Bool(true)),
+        ("fn main() -> Bool { [1, 2][1] == 2 }", Expected::Bool(true)),
+        ("fn main() -> Bool { 1 == [1, 2][0] }", Expected::Bool(true)),
+        ("fn main() -> Bool { [1, 2][0] < 2 }", Expected::Bool(true)),
+        (
+            "fn main() -> Bool { [[1, 2], [3]][0][1] == 2 }",
+            Expected::Bool(true),
+        ),
+        (
+            "fn main() -> Bool { [[1, 2], [3]][1][0] == 3 }",
+            Expected::Bool(true),
+        ),
+        ("fn main() -> Bool { [1] == [1] }", Expected::Bool(true)),
+        ("fn main() -> Bool { [1] != [1] }", Expected::Bool(false)),
+        ("fn main() -> Bool { [1] == [1, 2] }", Expected::Bool(false)),
+        ("fn main() -> Bool { [1] == [2] }", Expected::Bool(false)),
+        (
+            "fn main() -> Bool { [[1], [2]] == [[1], [2]] }",
+            Expected::Bool(true),
+        ),
+        (
+            "fn main() -> Bool { let a: List<Int> = [1, 2]; let b: List<Int> = [1, 2]; a == b }",
+            Expected::Bool(true),
+        ),
+        ("fn main() -> Bool { [1].len() == 1 }", Expected::Bool(true)),
+        // A member that is itself a constructed value is the aggregate arm's own shape, so the
+        // literal must own the node before that arm can claim the member the literal contains.
+        (
+            "struct Item { count: Int } fn main() -> Bool { [Item { count: 1 }] == [Item { count: 1 }] }",
+            Expected::Bool(true),
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Bool { [Item { count: 1 }] != [Item { count: 1 }] }",
+            Expected::Bool(false),
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Bool { [Item { count: 1 }] == [Item { count: 2 }] }",
+            Expected::Bool(false),
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Bool { [Item { count: 1 }, Item { count: 2 }] == [Item { count: 1 }, Item { count: 2 }] }",
+            Expected::Bool(true),
+        ),
+        (
+            "struct Item { count: Int } fn main() -> Bool { let a: List<Item> = [Item { count: 1 }]; [Item { count: 1 }] == a }",
+            Expected::Bool(true),
+        ),
+        (
+            "fn main() -> Bool { [(1, 2)] == [(1, 2)] }",
+            Expected::Bool(true),
+        ),
+        (
+            "fn main() -> Bool { [\"a\"] == [\"a\"] }",
+            Expected::Bool(true),
+        ),
+        (
+            "fn main() -> Int { discard [1, 2] == [1, 2]; 1 }",
+            Expected::Int(1),
+        ),
+        (
+            "fn main() -> Int { discard [1, 2] != [1, 2]; 1 }",
+            Expected::Int(1),
+        ),
+        (
+            "fn main() -> Int { discard ([1, 2] == [1, 2]); 1 }",
+            Expected::Int(1),
+        ),
+        (
+            "fn main() -> Int { let b: Bool = [1, 2] == [1, 2]; discard b; 1 }",
+            Expected::Int(1),
+        ),
+    ];
+    let root = TempDirectory::new();
+    for (source, expected) in rows {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        let program = admitted.executable_program().unwrap_or_else(|| {
+            panic!("source: {source}: an admitted comparison must publish a program")
+        });
+        assert!(
+            program
+                .workflows()
+                .iter()
+                .flat_map(|workflow| workflow.instructions.iter())
+                .any(|instruction| matches!(
+                    instruction.kind,
+                    InstructionKind::Aggregate {
+                        kind: AggregateKind::List,
+                        ..
+                    }
+                )),
+            "source: {source}: the comparison must publish the list value its operands build"
+        );
+        let mut machine = Machine::new(
+            Arc::new(program.clone()),
+            &CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("invalid entry path: {error}")),
+            Vec::new(),
+            ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x42; 32])
+                .unwrap_or_else(|error| panic!("invalid fixture identity: {error}")),
+            MachineLimits::new(256, 64, 16, 16, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("fixture limits are positive")),
+        )
+        .unwrap_or_else(|error| panic!("source: {source}; machine construction failed: {error:?}"));
+        let value = drive(&mut machine);
+        let observed = match (value.view(), expected) {
+            (LogicalValueView::Bool(actual), Expected::Bool(want)) => actual == want,
+            (LogicalValueView::Int(actual), Expected::Int(want)) => actual.get() == want,
+            (view, _) => panic!("source: {source}: unexpected value {view:?}"),
+        };
+        assert!(observed, "source: {source}: unexpected value {value:?}");
     }
 }
 
