@@ -5992,28 +5992,16 @@ fn infer_expression_inner(
         }
         return Ok(receiver);
     }
-    let struct_expression = node.children().iter().copied().find(|child| {
-        tree.node(*child)
-            .is_some_and(|node| matches!(node.form(), SyntaxForm::StructExpression))
-    });
-    // A constructed receiver whose step reads a field (`Counter { value: 5 }.value + 1`) is typed
-    // by the operand walk, so a node carrying an operator must not claim it and drop the operator,
-    // exactly as the list arm above is guarded. A call step keeps the previous arm, whose
-    // receiver-call contract the operand walk does not key yet.
-    let field_step_operand = struct_expression.is_some_and(|expression| {
-        node.children()
-            .iter()
-            .copied()
-            .skip_while(|child| *child != expression)
-            .skip(1)
-            .all(|child| {
-                !tree.node(child).is_some_and(|_node| {
-                    node_contains_punctuation(tree, child, Punctuation::LeftParenthesis)
-                })
-            })
-    });
-    if (direct_binary_operator(tree, node).is_none() || !field_step_operand)
-        && let Some(struct_expression) = struct_expression
+    // A node that carries an operator is not one aggregate of its own, so its operands are typed
+    // instead: a constructed receiver must not claim the whole expression and drop the operator
+    // or the step that follows, exactly as the list arm above is guarded. Both step kinds now key
+    // from the operand walk, a field read through the declared field and a call through the
+    // resolved call it records there.
+    if direct_binary_operator(tree, node).is_none()
+        && let Some(struct_expression) = node.children().iter().copied().find(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::StructExpression))
+        })
     {
         let has_member = node
             .children()
@@ -8406,6 +8394,12 @@ fn infer_operand_projection_sequence(
     if children.len() < 2 {
         return Ok(None);
     }
+    // A constructed receiver that calls a method records its resolved call before the field guard
+    // chain: the slice carries the call fragments and the operator, so the dotted-field walk below
+    // reports no single field for it even though the analyzer types the operand as the call result.
+    if record_constructed_receiver_call(tree, children, context)? {
+        return Ok(None);
+    }
     let Some((root, fields)) = postfix_field_sequence(tree, children) else {
         return Ok(None);
     };
@@ -8458,6 +8452,89 @@ fn infer_operand_projection_sequence(
         )?;
     }
     Ok(Some(field))
+}
+
+/// Resolves the declared type a constructed receiver names, when the slice builds one.
+///
+/// Records the resolved call of one method a constructed receiver calls in an operand position.
+///
+/// `Counter { value: 5 }.read()` reaches the operand walk as the constructor's name path, the
+/// struct expression it builds, the member step, and the call fragments, so the dotted-field guard
+/// chain of that walk never reaches the member-call arm that records resolved calls for a place
+/// receiver. The lowering resolves the callee of that shape by the member name the fragments spell,
+/// so the call is recorded here with that name exactly as the place-receiver arm records its own.
+fn record_constructed_receiver_call(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    context: &BodyContext,
+) -> Result<bool, AnalysisError> {
+    if !children.iter().copied().any(|child| {
+        tree.node(child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::StructExpression))
+    }) {
+        return Ok(false);
+    }
+    let Some(path) = children.iter().copied().find(|child| {
+        tree.node(*child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::Path))
+    }) else {
+        return Ok(false);
+    };
+    let Some(name) = direct_identifiers(tree, path)?.into_iter().next() else {
+        return Ok(false);
+    };
+    let Some(dot) = children.iter().position(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, *child, Punctuation::Dot)
+        })
+    }) else {
+        return Ok(false);
+    };
+    let Some(member_id) = children.get(dot.saturating_add(1)).copied() else {
+        return Ok(false);
+    };
+    let Some(member) = projected_member_name(tree, member_id) else {
+        return Ok(false);
+    };
+    let called = children
+        .iter()
+        .copied()
+        .skip(dot.saturating_add(2))
+        .any(|child| node_contains_punctuation(tree, child, Punctuation::LeftParenthesis));
+    if !called {
+        return Ok(false);
+    }
+    let Some(declared) = constructed_receiver_type(tree, children, context, name.as_ref())? else {
+        return Ok(false);
+    };
+    let Some(metadata) = context
+        .inherent_method_sources
+        .get(&(declared.clone(), member.clone()))
+    else {
+        return Ok(false);
+    };
+    let call_site = tree
+        .node(member_id)
+        .ok_or(AnalysisError::Invariant)?
+        .span()
+        .clone();
+    if let Some(caller) = context.current_effect_owner.borrow().clone() {
+        context.resolved_calls.borrow_mut().insert(
+            (
+                caller,
+                call_site.clone(),
+                EffectNode::Source(metadata.declaration.clone()),
+            ),
+            None,
+        );
+    }
+    record_effect_call(
+        context,
+        EffectNode::Source(metadata.declaration.clone()),
+        call_site,
+    );
+    Ok(true)
 }
 
 /// Resolves the declared type a constructed receiver names, when the slice builds one.
