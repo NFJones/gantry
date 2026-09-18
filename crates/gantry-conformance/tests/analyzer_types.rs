@@ -2179,6 +2179,42 @@ fn main(value: Envelope<String>) -> String {
     }));
 }
 
+/// An index step over a computed receiver has no lowering route (`GNT-5.4`), so both spellings
+/// refuse with one precise `projection-receiver-type` (`89ca58c3`): an index over a method call on
+/// a constructed receiver (`C { v: 1 }.items()[0]`) and an index inside the receiver part of a
+/// chained member (`Outer { .. }.items[0].values[0]`). Every receiver the walks can key keeps its
+/// element projection.
+#[test]
+fn projection_over_a_computed_receiver_is_refused_precisely() {
+    for source in [
+        "struct C { v: Int } impl C { fn items(self) -> List<Int> { [1] } } fn main() -> Int { C { v: 1 }.items()[0] + 1 }",
+        "struct Item { values: List<Int> } struct Outer { items: List<Item> } fn main() -> Int { Outer { items: [Item { values: [3] }] }.items[0].values[0] + 1 }",
+    ] {
+        let analyzed = analyze(source);
+        assert_eq!(
+            diagnostic_codes(analyzed.diagnostics()),
+            vec!["projection-receiver-type"],
+            "one precise refusal: {source}"
+        );
+    }
+    for source in [
+        "fn main() -> Int { let xs: List<Int> = [1, 2, 3]; xs[0] + 1 }",
+        "fn main() -> Int { [1, 2][0] + 1 }",
+        "fn id(xs: List<Int>) -> List<Int> { xs } fn main() -> Int { id([9, 8, 7])[0] + 1 }",
+        "struct Item { values: List<Int> } fn main() -> Int { Item { values: [1] }.values[0] + 1 }",
+        "struct M { rows: List<Int> } fn mk() -> M { M { rows: [1] } } fn main() -> Int { mk().rows[0] + 1 }",
+        "struct W { rows: List<Int> } fn main() -> Int { let w: W = W { rows: [4] }; w.rows[0] + 1 }",
+        "struct W { rows: List<Int> } impl W { fn rows2(self) -> List<Int> { [5] } } fn main() -> Int { let w: W = W { rows: [0] }; w.rows2()[0] + 1 }",
+    ] {
+        let admitted = analyze(source);
+        assert!(
+            !diagnostic_codes(admitted.diagnostics()).contains(&"projection-receiver-type"),
+            "a keyed receiver keeps its projection: {source} {:?}",
+            admitted.diagnostics()
+        );
+    }
+}
+
 fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let root = TempDirectory::new();
     root.write(source);

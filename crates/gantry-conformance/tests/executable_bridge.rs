@@ -3617,6 +3617,24 @@ fn parenthesized_operands_override_chain_association() {
     }
 }
 
+/// An index over a computed receiver that the walks can key keeps its element projection
+/// (`Item { values: [1] }.values[0] + 1`), and the same receiver shape compares its element
+/// (`Bag { items: [7] }.items[0] == 7`); the unkeyed spellings refuse in analysis (`89ca58c3`).
+#[test]
+fn computed_projection_controls_keep_their_element_projection() {
+    let root = TempDirectory::new(
+        "struct Item { values: List<Int> } fn main() -> Int { Item { values: [1] }.values[0] + 1 }",
+    );
+    assert_eq!(run_single_entry(&root), 2, "constructed field receiver");
+    let root = TempDirectory::new(
+        "struct Bag { items: List<Int> } fn main() -> Bool { Bag { items: [7] }.items[0] == 7 }",
+    );
+    assert!(
+        boolean_entry(&root),
+        "constructed field receiver in a comparison"
+    );
+}
+
 /// Mixed-precedence chains fold left to right while tighter precedence still binds first.
 #[test]
 fn mixed_precedence_chains_keep_tighter_binding() {

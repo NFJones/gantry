@@ -9926,6 +9926,28 @@ fn infer_member_sequence(
         // `Outer { inner: Inner { rows: [7] } }.inner.rows` keys against the type of `inner`
         // rather than against the constructed root, exactly as a binding-rooted fold would.
         let prefix = children.get(..dot).unwrap_or_default();
+        // An index step inside the receiver part that this fold does not project leaves the folded
+        // member as the receiver of the next step (`Outer { .. }.items[0].values`), so the member
+        // would read a list where the element belongs: the projection over a computed receiver is
+        // refused instead (`GNT-5.4`).
+        if let Some(index_step) = prefix.iter().find(|child| {
+            tree.node(**child).is_some_and(|node| {
+                matches!(node.form(), SyntaxForm::PostfixExpression)
+                    && node_contains_punctuation(tree, **child, Punctuation::LeftBracket)
+            })
+        }) {
+            diagnostics.push(body_diagnostic(
+                "projection-receiver-type",
+                DiagnosticCategory::Type,
+                "an index projection over a computed receiver has no lowering route",
+                tree.node(*index_step)
+                    .ok_or(AnalysisError::Invariant)?
+                    .span()
+                    .clone(),
+                [] as [(&str, &str); 0],
+            )?);
+            return Ok(None);
+        }
         if prefix
             .iter()
             .any(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
@@ -9935,12 +9957,42 @@ fn infer_member_sequence(
                 prefix,
                 facts,
                 environment,
-                Some(receiver),
+                Some(receiver.clone()),
                 None,
                 context,
                 diagnostics,
             )? {
-                Some(folded) => folded,
+                Some(folded) => {
+                    // An index step inside the receiver part that the fold could not key leaves
+                    // the folded type as the receiver itself (`Outer { .. }.items[0].values`), so
+                    // the member step would read a list where the element belongs: the projection
+                    // over a computed receiver is refused instead (`GNT-5.4`).
+                    if folded == receiver
+                        && let Some(index_step) = prefix.iter().find(|child| {
+                            tree.node(**child).is_some_and(|node| {
+                                matches!(node.form(), SyntaxForm::PostfixExpression)
+                                    && node_contains_punctuation(
+                                        tree,
+                                        **child,
+                                        Punctuation::LeftBracket,
+                                    )
+                            })
+                        })
+                    {
+                        diagnostics.push(body_diagnostic(
+                            "projection-receiver-type",
+                            DiagnosticCategory::Type,
+                            "an index projection over a computed receiver has no lowering route",
+                            tree.node(*index_step)
+                                .ok_or(AnalysisError::Invariant)?
+                                .span()
+                                .clone(),
+                            [] as [(&str, &str); 0],
+                        )?);
+                        return Ok(None);
+                    }
+                    folded
+                }
                 None => return Ok(None),
             }
         } else {
@@ -10027,6 +10079,27 @@ fn infer_member_sequence(
             receiver
         } else {
             let receiver_part = children.get(..dot).unwrap_or_default();
+            // A receiver part that carries an index step the operand walk cannot key names no
+            // value the projection could read, so the member step has no receiver the lowering
+            // can publish (`GNT-5.4`; `Outer { .. }.items[0].values[0] + 1`).
+            if let Some(index_step) = receiver_part.iter().find(|child| {
+                tree.node(**child).is_some_and(|node| {
+                    matches!(node.form(), SyntaxForm::PostfixExpression)
+                        && node_contains_punctuation(tree, **child, Punctuation::LeftBracket)
+                })
+            }) {
+                diagnostics.push(body_diagnostic(
+                    "projection-receiver-type",
+                    DiagnosticCategory::Type,
+                    "an index projection over a computed receiver has no lowering route",
+                    tree.node(*index_step)
+                        .ok_or(AnalysisError::Invariant)?
+                        .span()
+                        .clone(),
+                    [] as [(&str, &str); 0],
+                )?);
+                return Ok(None);
+            }
             let resolved = infer_operand_sequence(
                 tree,
                 receiver_part,
@@ -10465,6 +10538,31 @@ fn infer_member_sequence(
                 context,
                 diagnostics,
             )?;
+        }
+        // An index step after a call over a computed receiver has no lowering route: the operand
+        // walk keys a literal index over a place-backed receiver, and a constructed receiver
+        // reaches this fold directly, so the call's own type would be consumed by the enclosing
+        // operator as if the element were the list (`GNT-5.4`; `C { v: 1 }.items()[0] + 1`).
+        let trailing_after_call = children.get(close.saturating_add(1)..).unwrap_or_default();
+        if !receiver_is_syntactic_place(tree, receiver_scope)
+            && let Some(index_step) = trailing_after_call.iter().find(|child| {
+                tree.node(**child).is_some_and(|node| {
+                    matches!(node.form(), SyntaxForm::PostfixExpression)
+                        && node_contains_punctuation(tree, **child, Punctuation::LeftBracket)
+                })
+            })
+        {
+            diagnostics.push(body_diagnostic(
+                "projection-receiver-type",
+                DiagnosticCategory::Type,
+                "an index projection over a computed receiver has no lowering route",
+                tree.node(*index_step)
+                    .ok_or(AnalysisError::Invariant)?
+                    .span()
+                    .clone(),
+                [] as [(&str, &str); 0],
+            )?);
+            return Ok(None);
         }
         return Ok(Some(signature.result.clone()));
     }
