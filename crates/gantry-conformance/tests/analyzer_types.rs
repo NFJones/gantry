@@ -2284,6 +2284,12 @@ fn projected_receiver_calls_are_refused_precisely() {
         !diagnostic_codes(analyzed_distinct.diagnostics()).contains(&"affine-value-reuse"),
         "sibling fields of one element are distinct places: {distinct}"
     );
+    let tuple_distinct = "affine struct Plain { value: Int } affine struct Marker { value: Int } struct W { inner: Plain, marker: Marker } fn main() -> Int { let t: Tuple<W, Int> = (W { inner: Plain { value: 1 }, marker: Marker { value: 2 } }, 0); let a: Plain = t[0].inner; let b: Marker = t[0].marker; 0 }";
+    let analyzed_tuple = analyze(tuple_distinct);
+    assert!(
+        !diagnostic_codes(analyzed_tuple.diagnostics()).contains(&"affine-value-reuse"),
+        "tuple sibling fields are distinct places: {tuple_distinct}"
+    );
     let admitted = [
         format!(
             "{prelude}fn main() -> Int {{ let w: C = C {{ v: 7 }}; let a: Int = w.read(); a }}"

@@ -8431,8 +8431,18 @@ fn infer_projection(
             // result or of any other value is a temporary without a caller place to read.
             let continuing = projected_place_path(&place, Some(index));
             if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
+                // The place the chain reads is the subplace it continues to: the member steps after
+                // this index belong to the key, so two sibling fields of one element stay distinct
+                // places (issue 3c224a99). A further index step is not keyed here; that coarseness
+                // is tracked as its own follow-up defect.
+                let mut fields = path.fields.clone();
+                fields.extend(projection_member_suffix(
+                    tree,
+                    children,
+                    index_postfix.saturating_add(1),
+                ));
                 record_affine_place(
-                    AffinePlace::projected(Arc::clone(&path.root), path.fields.clone()),
+                    AffinePlace::projected(Arc::clone(&path.root), fields),
                     Some(&path.binding),
                     &member,
                     projection_prefix_span(tree, prefix, index_expression)?,
@@ -8495,9 +8505,10 @@ fn infer_projection(
             // keeps its field path ahead of that index segment, while a receiver that is a call
             // result or another temporary has no caller place whose element could be read.
             if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
-                // The place the chain reads is the subplace it continues to, not the element: the
-                // member steps after the index belong to the key, so two sibling fields of one
-                // element stay distinct places (`3c224a99`).
+                // The place the chain reads is the subplace it continues to: the member steps after
+                // this index belong to the key, so two sibling fields of one element stay distinct
+                // places (issue 3c224a99). A further index step is not keyed here; that coarseness
+                // is tracked as its own follow-up defect.
                 let mut fields = path.fields.clone();
                 fields.extend(projection_member_suffix(
                     tree,
