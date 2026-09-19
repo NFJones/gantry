@@ -29,6 +29,8 @@
 //! freeze, a yank, a revocation, a pinned checkout, a modified path, a vendored directory, a
 //! mirror substitution, and stale lockfile evidence are each decided here.
 
+use std::fs;
+
 use gantry::ir::TargetKind;
 use gantry::ir::registry::{
     AcquisitionRouteKind, AdvisoryBoundary, AdvisoryScope, AdvisorySetProof, AdvisoryStore,
@@ -55,6 +57,15 @@ fn digest(seed: &str) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(seed.as_bytes());
     hasher.finalize().into()
+}
+
+/// Returns the repository root that owns the committed documentation note.
+fn workspace_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .unwrap_or_else(|| unreachable!("conformance crate is nested below the workspace"))
+        .to_path_buf()
 }
 
 /// Returns the admitted value of one trust decision.
@@ -7423,4 +7434,24 @@ fn gnt_27_snapshot_evidence_rejects_a_same_source_wrong_subject_attribution() {
     ));
     assert!(!refusal.is_bound());
     assert_eq!(refusal.declaration_identity(), &source);
+}
+
+/// The committed registry-trust note names every clause anchor and non-claim the model publishes.
+/// The check is deliberately narrow: it pins the declared names so a renamed or added clause or
+/// non-claim cannot leave the note stale, and it says nothing about the note's wording, which the
+/// clause lanes above cover.
+#[test]
+fn registry_trust_note_names_every_declared_clause_and_non_claim() {
+    let note = fs::read_to_string(workspace_root().join("docs/registry-trust.md"))
+        .unwrap_or_else(|error| panic!("the registry note is readable: {error}"));
+    for clause in REGISTRY_CLAUSES {
+        assert!(note.contains(clause), "the note names `{clause}`");
+    }
+    for claim in RegistryNonClaim::ALL {
+        assert!(
+            note.contains(claim.wire_name()),
+            "the note names `{}`",
+            claim.wire_name()
+        );
+    }
 }
