@@ -478,6 +478,13 @@
   },
   {
    "requirements": [
+    "GNT-37.1-reuse-kinds-and-canonical-shape"
+   ],
+   "rust": "Callable",
+   "wire": "callable"
+  },
+  {
+   "requirements": [
     "GNT-3-F-GENERICS"
    ],
    "rust": "DeclaredApplication",

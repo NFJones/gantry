@@ -42,7 +42,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_types.rs",
-   "sha256": "d7380c7f149dbe2aced1b044182285d83cfc86616537f9e40fed999822f58d9f"
+   "sha256": "41d96b4614321760e65f863d66d9b911fe0f4ace64d1643c71567f95e7a8fd93"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
@@ -162,7 +162,7 @@
   },
   {
    "path": "crates/gantry-ir/src/generated/contracts.rs",
-   "sha256": "8fcf85e5429928dcfe87de6da947f5b0cfdd56b9244ba31d69aee70bfe7dfc14"
+   "sha256": "32e816a9e529dcbf220e9423b676333bfdf4e3e59be40c22f251e8d42f6e4654"
   },
   {
    "path": "crates/gantry-runtime/Cargo.toml",
@@ -202,7 +202,7 @@
   },
   {
    "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "918843949f1c16ac7e76175f8bea4638cb94a5292108e9a469de70e7489cfaa7"
+   "sha256": "4d9032de2e63a89956b7b3cd0a11cfede484edb853e2c536797c2554dbf02636"
   },
   {
    "path": "protocol/catalogs/portable-contracts-v1.json",
@@ -214,7 +214,7 @@
   },
   {
    "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "44d7a0bd8793645e6b487300d495b220f6b950e4165b3c60f864486c246ead34"
+   "sha256": "7c2bc391b5e2a1ae4628a89473e9487370c9ad7ad6a87048fa7e24a9acc9042d"
   },
   {
    "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -246,7 +246,7 @@
   },
   {
    "path": "protocol/conformance/combined-gate-v1.json",
-   "sha256": "27eac957c8e374ac99669bab7b2c33144b306fb1b84232d1b700405dfa1f9da1"
+   "sha256": "dac204d1fcb360f0ff98c498a9805aff8c12bd81d7cde6afadfd949de8b5837c"
   },
   {
    "path": "protocol/conformance/concurrent-executor-v1.json",
@@ -254,7 +254,7 @@
   },
   {
    "path": "protocol/conformance/concurrent-gate-v1.json",
-   "sha256": "e919ba91f1d1bcb573a224ec4e693630b4c7b105e0da9d655e3d8972a9d49178"
+   "sha256": "792fc1297b9c206031741e1cb1400d1b2679858359e9370dde45455323ef4964"
   },
   {
    "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
@@ -278,7 +278,7 @@
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "a27293799533c4809ec7060c9e18012bd51fce63bab47139080254bd0f640dfc"
+   "sha256": "ff83edac682409ad91b412ba26a72a7a8241cb4d5f6a792bcc5c9fd8643eeec2"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",
@@ -310,7 +310,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "a2145406a17f78d0270738bff8f7e5f2d3ccb0a2697de2fd76543b12503ff8b9"
+   "sha256": "64960c63e4f72884e00f9e80495bbad9c7a8f97d67a94ed06fd5fac830f3a131"
   },
   {
    "path": "protocol/conformance/sequential-machine-v1.json",
@@ -378,7 +378,7 @@
   },
   {
    "path": "protocol/goldens/ir-contracts-v1.canonical.json",
-   "sha256": "2118eb10d521c91366c6bb3cc37b013f5ca3296e148b65d4f9c3172a326bebef"
+   "sha256": "4093199dcfe65418c2e9faebd2ee3cea04bd8e2b80940c8cd2581a9ada6a8119"
   },
   {
    "path": "protocol/goldens/journal-storage-v1.json",

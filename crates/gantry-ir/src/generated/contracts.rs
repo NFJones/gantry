@@ -309,6 +309,8 @@ impl TemplateKind {
 pub enum TypeExpressionKind {
     /// The `builtin-application` value.
     BuiltinApplication,
+    /// The `callable` value.
+    Callable,
     /// The `declared-application` value.
     DeclaredApplication,
     /// The `parameter` value.
@@ -325,6 +327,7 @@ impl TypeExpressionKind {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::BuiltinApplication => "builtin-application",
+            Self::Callable => "callable",
             Self::DeclaredApplication => "declared-application",
             Self::Parameter => "parameter",
             Self::Primitive => "primitive",

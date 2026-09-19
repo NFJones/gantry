@@ -7690,6 +7690,122 @@ fn public_callable_annotations_in_open_signatures_are_refused_at_the_annotation(
     }
 }
 
+/// A callable annotation `GNT-37.0` admits in a signature is expressible in the generic template
+/// it belongs to (`GNT-37.1`): a type-parameterized declaration that declares a callable parameter
+/// no longer fails template collection internally, a generic workflow keeps that parameter so its
+/// call reports the real arity and the exact mismatch, and a trait method that declares a callable
+/// parameter is recorded in its contract instead of being dropped.
+#[test]
+fn public_callable_annotations_in_generic_signatures_are_expressible() {
+    let root = TempDirectory::new();
+    for source in [
+        // An owner-binder implementation and a method with its own unused binder: both were
+        // internal failures while the template grammar could not name a callable type.
+        "struct Item<T> { value: T } impl<T> Item<T> { fn run(self, callback: Fn(Int) -> Int) -> Int { 0 } } fn main() {}",
+        "struct Item {} impl Item { fn run<U>(self, callback: Fn(Int) -> Int) -> Int { 0 } } fn main() {}",
+        // A trait declaration and an implementation whose method declares a callable parameter.
+        "trait Render { pure fn run(self, callback: Fn(Int) -> Int) -> Int; } fn main() {}",
+        "trait Render { pure fn run(self, callback: Fn(Int) -> Int) -> Int; } struct Item {} impl Render for Item { fn run(self, callback: Fn(Int) -> Int) -> Int { 0 } } fn outer(callback: Fn(Int) -> Int) -> Int { let item: Item = Item {}; item.run(callback) } fn main() -> Int { 0 }",
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "source: {source}; diagnostics: {:?}",
+            admitted.diagnostics()
+        );
+        assert!(
+            admitted.executable_program().is_some(),
+            "source: {source}; an admitted callable annotation must publish a program"
+        );
+    }
+
+    // The trait contract records the declared callable parameter rather than dropping the method.
+    root.write("trait Render { pure fn run(self, callback: Fn(Int) -> Int) -> Int; } fn main() {}");
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    let admitted = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed internally: {error:?}"));
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
+    let contract = admitted
+        .trait_contracts()
+        .iter()
+        .find(|contract| contract.path().as_str() == "crate::Render")
+        .unwrap_or_else(|| {
+            panic!(
+                "the trait contract is missing: {:?}",
+                admitted.trait_contracts()
+            )
+        });
+    let method = contract
+        .methods()
+        .iter()
+        .find(|method| method.name() == "run")
+        .unwrap_or_else(|| panic!("the declared method was dropped: {contract:?}"));
+    assert_eq!(
+        method
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.as_str())
+            .collect::<Vec<_>>(),
+        ["Callable<Fn,Int,Int>"]
+    );
+    assert_eq!(method.result().as_str(), "Int");
+
+    // The generic workflow keeps its callable parameter: the arity refusal reports the real
+    // expected count, and a concrete argument reports the exact parameter type it differs from.
+    for (source, code, expected_fields) in [
+        (
+            "fn apply<U>(callback: Fn(Int) -> Int) -> Int { 0 } fn main() -> Int { apply::<Int>() }",
+            "call-arity",
+            [("actual", "0"), ("expected", "1")],
+        ),
+        (
+            "fn apply<U>(callback: Fn(Int) -> Int) -> Int { 0 } fn main() -> Int { apply::<Int>(1) }",
+            "call-argument-type",
+            [("actual", "Int"), ("expected", "Callable<Fn,Int,Int>")],
+        ),
+    ] {
+        root.write(source);
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+            .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
+        let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+            panic!("source: {source}; type analysis failed internally: {error:?}")
+        });
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "source: {source}; diagnostics: {:?}",
+            refused.diagnostics()
+        );
+        assert_eq!(
+            refused.diagnostics().len(),
+            1,
+            "source: {source}; one diagnosis: {:?}",
+            refused.diagnostics()
+        );
+        let diagnostic = &refused.diagnostics()[0];
+        assert_eq!(diagnostic.code.as_str(), code, "source: {source}");
+        for (field, value) in expected_fields {
+            assert_eq!(
+                diagnostic.fields.get(field).map(AsRef::as_ref),
+                Some(value),
+                "source: {source}"
+            );
+        }
+    }
+}
+
 /// A call through a callable-typed binding is refused with the published invocation
 /// refusal instead of the sequence being typed as its own callee, while declaring,
 /// passing, and holding a callable value stays admitted.

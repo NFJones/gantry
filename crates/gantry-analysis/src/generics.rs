@@ -18,11 +18,14 @@ use gantry_core::source::{
 use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
 use gantry_ir::{
-    EFFECT_ORDER, EffectSet, ImplementationHead, IndependentTypeProperties, OwnershipClass,
-    Predicate, PrimitiveTypeProperties, ReceiverMode, TraitContract, TraitMethodContract,
-    TraitReference, TransferEligibility, TypeDescriptor, TypeExpression,
+    CallableKind, EFFECT_ORDER, EffectSet, ImplementationHead, IndependentTypeProperties,
+    OwnershipClass, Predicate, PrimitiveTypeProperties, ReceiverMode, TraitContract,
+    TraitMethodContract, TraitReference, TransferEligibility, TypeDescriptor, TypeExpression,
 };
 
+use crate::types::{
+    CallableOccurrence, callable_member_nodes, callable_occurrences, callable_reuse_kind,
+};
 use crate::{
     AnalysisError, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind, TypeBinder,
     TypeBinderId, TypeParameterBinding,
@@ -109,9 +112,8 @@ pub(crate) fn descriptor_contains_callable(descriptor: &TypeDescriptor) -> bool 
 
 /// Returns the constructed-type depth of one descriptor, including callable members.
 ///
-/// A callable type has no template type-expression form (`GNT-37.0`), so its depth is
-/// computed from its member descriptors with the same `max(member depth) + 1` rule the
-/// expression parser applies to one application.
+/// A callable type is one application of the same `max(member depth) + 1` rule the expression
+/// parser applies (`GNT-37.1`), so its depth is computed from its member descriptors.
 pub(crate) fn descriptor_constructed_depth(
     descriptor: &TypeDescriptor,
 ) -> Result<u64, AnalysisError> {
@@ -178,10 +180,9 @@ impl ExactTypeSubstitution {
 
     /// Returns one bound parameter descriptor that contains a callable type, if any.
     ///
-    /// The template type-expression grammar cannot name a callable type, so a callable
-    /// binding cannot be applied to any expression and cannot appear in an instantiation
-    /// argument list, whether the callable type is the binding itself or one of its members;
-    /// `GNT-37.0` refuses that occurrence under the instantiation-argument class.
+    /// A callable type never binds a type parameter (`GNT-37.0`): whether the callable type is
+    /// the binding itself or one of its members, it cannot appear in an instantiation argument
+    /// list, and that occurrence is refused under the instantiation-argument class.
     pub(crate) fn callable_binding(&self) -> Option<&TypeDescriptor> {
         self.bindings
             .values()
@@ -780,6 +781,7 @@ pub(crate) fn collect_generic_type_facts(
     for source in sources {
         let tree = source.tree();
         let parents = parent_index(tree)?;
+        let callable_occurrences = callable_occurrences(source, structure)?;
         let mut resolved = BTreeMap::<NodeId, TypeExpression>::new();
         for (index, node) in tree.nodes().iter().enumerate() {
             if !matches!(node.form(), SyntaxForm::ValueType) {
@@ -794,6 +796,7 @@ pub(crate) fn collect_generic_type_facts(
                 binders: &binders_by_declaration,
                 parameter_names: &parameter_names,
                 arities: &arities,
+                callable_occurrences: &callable_occurrences,
             };
             if let Some(expression) =
                 resolve_generic_type_node(id, &resolved, &context, diagnostics)?
@@ -2651,6 +2654,7 @@ struct TypeResolutionContext<'a> {
     binders: &'a BTreeMap<SourceSpan, &'a TypeBinder>,
     parameter_names: &'a BTreeSet<Arc<str>>,
     arities: &'a BTreeMap<SymbolId, usize>,
+    callable_occurrences: &'a BTreeMap<NodeId, CallableOccurrence>,
 }
 
 fn resolve_generic_type_node(
@@ -2716,11 +2720,30 @@ fn resolve_generic_type_node(
             .map_err(|_| AnalysisError::Invariant)?,
         Some(_) => return Err(AnalysisError::Invariant),
         None => {
-            if direct_child(context.tree, id, SyntaxForm::CallableType).is_some() {
-                // A recognised callable annotation carries no generic type expression in
-                // this revision: its parameter and result positions name closed types,
-                // which type resolution decides with its own published diagnostics.
-                return Ok(None);
+            if let Some(callable) = direct_child(context.tree, id, SyntaxForm::CallableType) {
+                // `GNT-37.0` admits the callable form in a signature annotation whose parameter
+                // and result positions all name closed types. Any other occurrence keeps the
+                // type phase's own published refusal and contributes no expression.
+                if context.callable_occurrences.get(&id) != Some(&CallableOccurrence::Signature) {
+                    return Ok(None);
+                }
+                let reuse_kind = callable_reuse_kind(context.tree, callable)?;
+                let mut members = callable_member_nodes(context.tree, callable)?
+                    .into_iter()
+                    .map(|member| resolved.get(&member).cloned())
+                    .collect::<Option<Vec<_>>>();
+                let Some(members) = members.as_mut() else {
+                    // A member position without an expression (a refused `Never` position, for
+                    // example) keeps the annotation unexpressed; the type phase already
+                    // published that refusal.
+                    return Ok(None);
+                };
+                let result = members.pop().ok_or(AnalysisError::Invariant)?;
+                let kind = CallableKind::from_canonical_name(&reuse_kind)
+                    .map_err(|_| AnalysisError::Invariant)?;
+                let expression = TypeExpression::callable(kind, members, &result, u64::MAX)
+                    .map_err(|_| AnalysisError::Invariant)?;
+                return Ok(Some(expression));
             }
             let path_id =
                 direct_child(context.tree, id, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;

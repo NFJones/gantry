@@ -998,7 +998,7 @@ fn enclosing_implementation_receiver(
 
 /// The occurrence class of one source callable type form.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CallableOccurrence {
+pub(crate) enum CallableOccurrence {
     /// A parameter or result annotation of a callable declaration.
     Signature,
     /// A component of another type expression.
@@ -1055,7 +1055,7 @@ impl CallableOccurrence {
 /// schema roots, and every other occurrence is either a component of another type
 /// expression or an annotation outside a signature, so an unadmitted type form never
 /// silently reaches a boundary schema, a stored member, or a value position.
-fn callable_occurrences(
+pub(crate) fn callable_occurrences(
     source: &ParsedSource,
     structure: &PackageStructure,
 ) -> Result<BTreeMap<NodeId, CallableOccurrence>, AnalysisError> {
@@ -1271,7 +1271,10 @@ fn nested_type_member_nodes(tree: &SyntaxTree) -> Result<BTreeSet<NodeId>, Analy
 }
 
 /// Returns the parameter and result type nodes of one callable type form in authored order.
-fn callable_member_nodes(tree: &SyntaxTree, id: NodeId) -> Result<Vec<NodeId>, AnalysisError> {
+pub(crate) fn callable_member_nodes(
+    tree: &SyntaxTree,
+    id: NodeId,
+) -> Result<Vec<NodeId>, AnalysisError> {
     let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
     Ok(node
         .children()
@@ -2067,7 +2070,7 @@ fn descendant_type_roots(
 }
 
 /// Returns the authored reuse-kind spelling of one callable type form.
-fn callable_reuse_kind(tree: &SyntaxTree, id: NodeId) -> Result<String, AnalysisError> {
+pub(crate) fn callable_reuse_kind(tree: &SyntaxTree, id: NodeId) -> Result<String, AnalysisError> {
     let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
     Ok(node
         .children()

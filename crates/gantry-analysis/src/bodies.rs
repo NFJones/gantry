@@ -1226,6 +1226,13 @@ fn collect_generic_method_signatures(
                     // the collection.
                     continue;
                 }
+                if signature_callable_annotations_missing_fact(tree, method, generic_types) {
+                    // An annotation that retains a callable form without a resolved expression
+                    // was refused by the type phase (a member position with no expression, such
+                    // as `Never`, for example), so the method contributes no template instead of
+                    // aborting the collection.
+                    continue;
+                }
                 if implementation_required.is_empty() && method_binder.is_none() {
                     continue;
                 }
@@ -1432,6 +1439,40 @@ fn signature_retains_callable_form(tree: &SyntaxTree, declaration: NodeId) -> bo
             None
         };
         value.is_some_and(|value| subtree_retains_callable_form(tree, value))
+    })
+}
+
+/// Returns whether one declaration's callable-form annotation has no resolved expression.
+///
+/// The type phase admits a callable annotation only where its positions name closed types, and
+/// an admitted annotation resolves to a generic type expression. A callable annotation without
+/// one was therefore refused (a member position with no expression, such as `Never`, for
+/// example), so its declaration must not abort template collection.
+fn signature_callable_annotations_missing_fact(
+    tree: &SyntaxTree,
+    declaration: NodeId,
+    generic_types: &BTreeMap<SourceSpan, TypeExpression>,
+) -> bool {
+    let Some(node) = tree.node(declaration) else {
+        return false;
+    };
+    node.children().iter().copied().any(|child| {
+        let Some(child_node) = tree.node(child) else {
+            return false;
+        };
+        let value = if matches!(child_node.form(), SyntaxForm::Parameter) {
+            direct_child_form(tree, child_node, SyntaxForm::ValueType)
+        } else if matches!(child_node.form(), SyntaxForm::ValueType) {
+            Some(child)
+        } else {
+            None
+        };
+        value.is_some_and(|value| {
+            subtree_retains_callable_form(tree, value)
+                && tree
+                    .node(value)
+                    .is_some_and(|value_node| !generic_types.contains_key(value_node.span()))
+        })
     })
 }
 
@@ -11503,11 +11544,11 @@ fn instantiate_generic_method(
     if actual_arguments.len() != signature.parameters.len() {
         return Err(TypeInferenceFailure::Arity);
     }
-    // A callable descriptor has no template type-expression form (`GNT-37.0`), so a
-    // callable argument contributes no constraint; a candidate that unifies without it and
-    // has to name the callable at a parameter position is reported as a callable
-    // instantiation argument instead of being filtered out, while a callable argument at a
-    // closed position is compared with its substituted parameter type directly.
+    // A callable type never binds a type parameter (`GNT-37.0`), so a callable argument
+    // contributes no constraint; a candidate that unifies without it and has to name the
+    // callable at a parameter position is reported as a callable instantiation argument
+    // instead of being filtered out, while a callable argument at a closed position is
+    // compared with its substituted parameter type directly.
     let mut callable_argument: Option<usize> = None;
     for (index, (template, argument)) in signature
         .parameters
@@ -11530,10 +11571,9 @@ fn instantiate_generic_method(
         ));
     }
     if let Some(expected) = expected_result {
-        // A callable expectation cannot be named by the template grammar either, and no
-        // call produces a callable value in this revision, so it contributes no
-        // constraint and the enclosing position reports its own diagnostic, exactly as
-        // the free-call path decides.
+        // No call produces a callable value in this revision, so a callable expectation
+        // contributes no constraint and the enclosing position reports its own diagnostic,
+        // exactly as the free-call path decides.
         if !descriptor_contains_callable(expected) {
             constraints.push((
                 substitute_self_type(&signature.result, receiver)
@@ -11986,7 +12026,7 @@ fn infer_trait_call_arguments(
         .copied()
         .collect::<Vec<_>>();
     let mut constraints = Vec::new();
-    // Tracks a callable argument whose position the template grammar cannot constrain
+    // Tracks a callable argument whose parameter position must name a type argument
     // (`GNT-37.0`), so the call reports the published refusal instead of failing inference; a
     // callable argument at a closed position contributes no constraint and is compared with
     // its parameter type directly.
@@ -12015,11 +12055,11 @@ fn infer_trait_call_arguments(
         if arguments.len() != method.parameters().len() {
             return Err(TypeInferenceFailure::Arity);
         }
-        // A callable descriptor has no template type-expression form (`GNT-37.0`), so a
-        // callable argument contributes no constraint; a contract that unifies without it
-        // and has to name the callable at a parameter position is reported as a callable
-        // instantiation argument instead of failing inference, while a callable argument at
-        // a closed position is compared with its substituted parameter type directly.
+        // A callable type never binds a type parameter (`GNT-37.0`), so a callable argument
+        // contributes no constraint; a contract that unifies without it and has to name the
+        // callable at a parameter position is reported as a callable instantiation argument
+        // instead of failing inference, while a callable argument at a closed position is
+        // compared with its substituted parameter type directly.
         for (index, (template, argument)) in method.parameters().iter().zip(arguments).enumerate() {
             let parameter = substitute_self_type(template, receiver)
                 .map_err(|_| TypeInferenceFailure::Conflict)?;
@@ -12044,9 +12084,8 @@ fn infer_trait_call_arguments(
         }
     }
     if let Some(expected) = expected_result {
-        // A callable expectation cannot be named by the template grammar either, and no
-        // call produces a callable value in this revision, so it contributes no constraint
-        // and the enclosing position reports its own diagnostic.
+        // No call produces a callable value in this revision, so a callable expectation
+        // contributes no constraint and the enclosing position reports its own diagnostic.
         if !descriptor_contains_callable(expected) {
             constraints.push((
                 substitute_self_type(method.result(), receiver)
@@ -13239,9 +13278,8 @@ fn infer_generic_call(
         actual_arguments.push(actual);
     }
     if let Some(expected) = expected_result {
-        // A callable expectation cannot be named by the template grammar (`GNT-37.0`) and no
-        // call produces a callable value in this revision, so the expectation contributes no
-        // constraint and the enclosing position reports its own diagnostic.
+        // No call produces a callable value in this revision, so a callable expectation
+        // contributes no constraint and the enclosing position reports its own diagnostic.
         if !descriptor_contains_callable(expected) {
             constraints.push((
                 signature.result.clone(),
@@ -13455,9 +13493,9 @@ fn refuse_callable_instantiation_argument(
 ///
 /// A generic call whose candidate would apply except for a callable argument reports the
 /// published occurrence class at the argument carried by the instantiation failure instead of
-/// dropping the candidate and reporting a member or substitution diagnostic for a call the
-/// template grammar cannot instantiate. A missing or non-callable index falls back to the
-/// first callable-containing argument, and `fallback` covers a caller without argument spans.
+/// dropping the candidate and reporting a member or substitution diagnostic for a call that
+/// would bind a callable type. A missing or non-callable index falls back to the first
+/// callable-containing argument, and `fallback` covers a caller without argument spans.
 fn refuse_callable_argument_at(
     arguments: &[TypeDescriptor],
     index: usize,
@@ -13497,9 +13535,9 @@ fn apply_generic_type_or_diagnose(
     span: &SourceSpan,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
-    // The template type-expression grammar cannot name a callable type (`GNT-37.0`), so a
-    // generic call whose complete substitution binds a callable type is refused with the
-    // published instantiation-argument class instead of failing internally.
+    // A callable type never binds a type parameter (`GNT-37.0`), so a generic call whose
+    // complete substitution binds a callable type is refused with the published
+    // instantiation-argument class instead of failing internally.
     if let Some(callable) = substitution.callable_binding() {
         refuse_callable_instantiation_argument(callable, span, diagnostics)?;
         return Ok(None);

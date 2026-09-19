@@ -3,6 +3,7 @@
 use std::fmt;
 use std::sync::Arc;
 
+use crate::callable::CallableKind;
 use crate::generated::{TypeExpressionKind, TypeKind};
 use crate::{CanonicalPath, TypeDescriptor};
 
@@ -101,6 +102,30 @@ impl TypeExpression {
             return Self::from_canonical_string(path.as_str(), maximum_constructed_type_depth);
         }
         Self::application(path.as_str(), &arguments, maximum_constructed_type_depth)
+    }
+
+    /// Constructs one callable type over its reuse kind, ordered parameters, and result.
+    ///
+    /// The canonical spelling is the one `TypeDescriptor` publishes for the same shape
+    /// (`Callable<Fn,Int,Bool>`), so an expression built here converts back to that descriptor
+    /// through [`Self::to_descriptor`].
+    pub fn callable(
+        kind: CallableKind,
+        parameters: &[Self],
+        result: &Self,
+        maximum_constructed_type_depth: u64,
+    ) -> Result<Self, TypeExpressionError> {
+        let mut canonical = String::from(TypeKind::Callable.wire_name());
+        canonical.push('<');
+        canonical.push_str(kind.canonical_name());
+        for parameter in parameters {
+            canonical.push(',');
+            canonical.push_str(parameter.as_str());
+        }
+        canonical.push(',');
+        canonical.push_str(result.as_str());
+        canonical.push('>');
+        Self::from_canonical_string(&canonical, maximum_constructed_type_depth)
     }
 
     /// Decodes one exact canonical expression under an inclusive depth limit.
@@ -220,6 +245,7 @@ enum ExpressionContainer {
     List,
     Tuple,
     Declared,
+    Callable,
 }
 
 struct ExpressionFrame {
@@ -304,12 +330,39 @@ impl<'a> ExpressionParser<'a> {
                     }
                     _ => return Err(TypeExpressionError::InvalidCanonicalString),
                 },
+                ExpressionContainer::Callable => match delimiter {
+                    Some(b',') => self.cursor += 1,
+                    Some(b'>') if frame.members.len() >= 2 => {
+                        self.cursor += 1;
+                        self.close_frame()?;
+                    }
+                    _ => return Err(TypeExpressionError::InvalidCanonicalString),
+                },
             }
         }
     }
 
     fn parse_atom(&mut self) -> Result<(), TypeExpressionError> {
         self.check_depth()?;
+        if self.frames.last().is_some_and(|frame| {
+            matches!(frame.container, ExpressionContainer::Callable) && frame.members.is_empty()
+        }) {
+            // A callable application declares its reuse kind before any member, so the first
+            // member of a `Callable<...>` frame is the introducer token rather than a type atom.
+            for name in ["FnOnce", "FnMut", "Fn"] {
+                if !self.consume_word(name) {
+                    continue;
+                }
+                self.value = Some(ExpressionSummary {
+                    kind: TypeExpressionKind::Callable,
+                    outer_type: Some(TypeKind::Callable),
+                    depth: 1,
+                    closed: true,
+                });
+                return Ok(());
+            }
+            return Err(TypeExpressionError::InvalidCanonicalString);
+        }
         if self.source[self.cursor..].starts_with("^self:") {
             self.cursor += "^self:".len();
             self.parse_decimal()?;
@@ -362,6 +415,7 @@ impl<'a> ExpressionParser<'a> {
             ("Result<", ExpressionContainer::Result),
             ("List<", ExpressionContainer::List),
             ("Tuple<", ExpressionContainer::Tuple),
+            ("Callable<", ExpressionContainer::Callable),
         ] {
             if self.source[self.cursor..].starts_with(prefix) {
                 self.cursor += prefix.len();
@@ -423,6 +477,14 @@ impl<'a> ExpressionParser<'a> {
         {
             return Err(TypeExpressionError::InvalidCanonicalString);
         }
+        if matches!(frame.container, ExpressionContainer::Callable)
+            && !frame
+                .members
+                .first()
+                .is_some_and(|member| member.kind == TypeExpressionKind::Callable)
+        {
+            return Err(TypeExpressionError::InvalidCanonicalString);
+        }
         let (kind, outer_type) = match frame.container {
             ExpressionContainer::Option => (
                 TypeExpressionKind::BuiltinApplication,
@@ -443,6 +505,9 @@ impl<'a> ExpressionParser<'a> {
                 TypeExpressionKind::DeclaredApplication,
                 Some(TypeKind::Declared),
             ),
+            ExpressionContainer::Callable => {
+                (TypeExpressionKind::Callable, Some(TypeKind::Callable))
+            }
         };
         self.value = Some(ExpressionSummary {
             kind,
@@ -581,5 +646,39 @@ mod tests {
             .unwrap_or_else(|_| unreachable!("expression is exactly at limit"));
         assert_eq!(expression.depth(), depth + 1);
         assert!(!expression.is_closed());
+    }
+
+    #[test]
+    fn callable_expressions_name_the_reuse_kind_and_round_trip() {
+        use crate::callable::CallableKind;
+        use crate::generated::TypeExpressionKind;
+
+        let parameter = TypeExpression::closed(&TypeDescriptor::INT, 8)
+            .unwrap_or_else(|_| unreachable!("closed primitive is valid"));
+        let result = TypeExpression::closed(&TypeDescriptor::BOOL, 8)
+            .unwrap_or_else(|_| unreachable!("closed primitive is valid"));
+        let expression =
+            TypeExpression::callable(CallableKind::FunctionMut, &[parameter], &result, 8)
+                .unwrap_or_else(|_| unreachable!("bounded callable expression is valid"));
+        assert_eq!(expression.as_str(), "Callable<FnMut,Int,Bool>");
+        assert_eq!(expression.kind(), TypeExpressionKind::Callable);
+        assert_eq!(expression.depth(), 2);
+        assert!(expression.is_closed());
+        assert_eq!(
+            expression
+                .to_descriptor(8)
+                .map(|value| value.canonical_string()),
+            Ok("Callable<FnMut,Int,Bool>".to_owned())
+        );
+        for value in ["Callable<Int,Int>", "Callable<Fn>", "List<Fn>", "^Fn"] {
+            assert_eq!(
+                TypeExpression::from_canonical_string(value, 8),
+                Err(TypeExpressionError::InvalidCanonicalString)
+            );
+        }
+        let open = TypeExpression::from_canonical_string("Callable<Fn,^0.0>", 8)
+            .unwrap_or_else(|_| unreachable!("a callable over one parameter is expressible"));
+        assert!(!open.is_closed());
+        assert_eq!(open.depth(), 2);
     }
 }
