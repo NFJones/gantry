@@ -3785,3 +3785,191 @@ fn compatibility_report_refuses_an_axis_report_in_another_axis_slot() {
         "{refusal} is owned by the compatibility-axes clause"
     );
 }
+
+/// `SPEC.md` `GNT-16.5-reexports` (11142-11144) with the plan's re-export requirement: an alias
+/// re-export reaches the defining item without creating a new identity, and that holds for
+/// capability, agent, trait, and operation items exactly as it does for actions — the defining
+/// package instance, defining name, item kind, and every identity-bearing fact survive the facade,
+/// and the defining name stays unreachable through it.
+#[test]
+fn reexport_preserves_capability_agent_trait_and_operation_identity() {
+    fn case(kind: ItemKind, defining_name: &str, alias: &str) {
+        let mut item = InterfaceItem::new(
+            defining_name,
+            kind,
+            Visibility::Exported,
+            TargetKind::Library,
+        )
+        .unwrap_or_else(|_| unreachable!("fixture name is an identifier"));
+        // Each recorded kind admits exactly its own content: a trait carries trait facts and an
+        // operation carries a signature, while capability and agent items carry neither. Every
+        // case also carries a distinguishing fact the facade must not be able to replace.
+        match kind {
+            ItemKind::Trait => {
+                item.trait_facts = Some(TraitFacts {
+                    owner: Some(Arc::from("provider")),
+                    methods: vec![Arc::from("compare")],
+                    coherence_impls: vec![Arc::from("provider::impl")],
+                });
+            }
+            ItemKind::Function | ItemKind::Action | ItemKind::Operation => {
+                item.signature = Some(CanonicalSignature::function(
+                    &path(&format!("crate::{defining_name}")),
+                    &[],
+                    &TypeDescriptor::INT,
+                ));
+                item.requirements = vec![Arc::from("provider::net")];
+            }
+            ItemKind::Capability => item.requirements = vec![Arc::from("provider::net")],
+            ItemKind::Agent => item.agents = vec![Arc::from("review-slot")],
+            ItemKind::Nominal => {}
+        }
+        let defining_item = item.clone();
+        let defining_manifest = seal(&[item], &[defining_name], &[], &[])
+            .unwrap_or_else(|error| panic!("{kind:?} interface: {error}"));
+        let defining = bound_identity("provider", "1.0.0", &[], &defining_manifest);
+        let facade_manifest = seal(
+            &[],
+            &[alias],
+            &[ExportEntry {
+                exported_name: Arc::from(alias),
+                defining_name: Arc::from(defining_name),
+                kind,
+                target: TargetKind::Library,
+                defining: defining.clone(),
+            }],
+            &[DependencyInterfacePin {
+                package: defining.clone(),
+                interface: defining_manifest.digest().clone(),
+            }],
+        )
+        .unwrap_or_else(|_| unreachable!("fixture interface is closed"));
+        let facade = bound_identity("facade", "1.0.0", &[], &facade_manifest);
+        let mut graph = PackageGraph::new();
+        graph
+            .register_discovered(
+                &[
+                    instance(defining.clone(), defining_manifest),
+                    instance(facade.clone(), facade_manifest.clone()),
+                ],
+                &[(facade.clone(), defining.clone())],
+            )
+            .unwrap_or_else(|_| unreachable!("every endpoint is registered"));
+
+        let resolved = graph
+            .resolve_name(&facade, alias)
+            .unwrap_or_else(|_| unreachable!("the re-export reaches an exported item"));
+        assert_eq!(resolved.exported_name(), alias, "{kind:?}");
+        assert_eq!(resolved.defining_name(), defining_name, "{kind:?}");
+        assert_eq!(resolved.defining_instance(), &defining, "{kind:?}");
+        assert_eq!(resolved.kind(), kind, "{kind:?}");
+        assert!(resolved.is_reexported(), "{kind:?}");
+        assert_eq!(resolved.chain().len(), 1, "{kind:?}");
+        assert!(facade_manifest.items().is_empty(), "{kind:?}");
+        assert_eq!(facade_manifest.exports().len(), 1, "{kind:?}");
+
+        let item = graph
+            .defined_item(&resolved)
+            .unwrap_or_else(|_| unreachable!("the defining item is recorded"));
+        // The retrieved item is the defining item itself: kind, name, and every identity-bearing
+        // fact survive the facade rather than being rebuilt from the facade's claim.
+        assert_eq!(item.kind, defining_item.kind, "{kind:?}");
+        assert_eq!(item.name, defining_item.name, "{kind:?}");
+        assert_eq!(item.requirements, defining_item.requirements, "{kind:?}");
+        assert_eq!(item.agents, defining_item.agents, "{kind:?}");
+        assert_eq!(item.signature, defining_item.signature, "{kind:?}");
+        assert_eq!(item.trait_facts, defining_item.trait_facts, "{kind:?}");
+        assert_eq!(item.recovery, defining_item.recovery, "{kind:?}");
+        // The facade introduces reachability only: the defining name is not nameable through it.
+        assert_eq!(
+            graph.resolve_name(&facade, defining_name),
+            Err(PackageError::ItemNotExported {
+                package: facade.clone(),
+                name: Arc::from(defining_name),
+            }),
+            "{kind:?}"
+        );
+    }
+
+    case(ItemKind::Capability, "net", "connect");
+    case(ItemKind::Agent, "reviewer", "ask");
+    case(ItemKind::Trait, "comparable", "ordered");
+    case(ItemKind::Operation, "load", "fetch");
+}
+
+/// `SPEC.md` `GNT-16.5-reexports`: a facade cannot substitute its own claim for the defining
+/// item's kind. Either the model refuses the mismatched re-export before resolution, or resolution
+/// still reports the defining item's kind; a facade kind silently winning would fail this lane.
+#[test]
+fn a_facade_cannot_substitute_another_kind_for_a_reexported_operation() {
+    let mut operation = InterfaceItem::new(
+        "load",
+        ItemKind::Operation,
+        Visibility::Exported,
+        TargetKind::Library,
+    )
+    .unwrap_or_else(|_| unreachable!("fixture name is an identifier"));
+    operation.signature = Some(CanonicalSignature::function(
+        &path("crate::load"),
+        &[],
+        &TypeDescriptor::INT,
+    ));
+    let defining_manifest = seal(&[operation], &["load"], &[], &[])
+        .unwrap_or_else(|error| panic!("operation interface: {error}"));
+    let defining = bound_identity("provider", "1.0.0", &[], &defining_manifest);
+    let facade_manifest = seal(
+        &[],
+        &["fetch"],
+        &[ExportEntry {
+            exported_name: Arc::from("fetch"),
+            defining_name: Arc::from("load"),
+            kind: ItemKind::Action,
+            target: TargetKind::Library,
+            defining: defining.clone(),
+        }],
+        &[DependencyInterfacePin {
+            package: defining.clone(),
+            interface: defining_manifest.digest().clone(),
+        }],
+    );
+    let facade_manifest = match facade_manifest {
+        Ok(manifest) => manifest,
+        // Refusing the mismatched claim at seal time is the strict outcome.
+        Err(error) => {
+            assert!(
+                !error.clause().is_empty(),
+                "a refused kind mismatch names a clause: {error}"
+            );
+            return;
+        }
+    };
+    let facade = bound_identity("facade", "1.0.0", &[], &facade_manifest);
+    let mut graph = PackageGraph::new();
+    if graph
+        .register_discovered(
+            &[
+                instance(defining.clone(), defining_manifest),
+                instance(facade.clone(), facade_manifest),
+            ],
+            &[(facade.clone(), defining.clone())],
+        )
+        .is_err()
+    {
+        return;
+    }
+    match graph.resolve_name(&facade, "fetch") {
+        Ok(resolved) => {
+            assert_eq!(
+                resolved.kind(),
+                ItemKind::Operation,
+                "the defining kind wins over the facade's action claim"
+            );
+            assert_eq!(resolved.defining_name(), "load");
+            assert_eq!(resolved.defining_instance(), &defining);
+        }
+        Err(error) => assert!(
+            !error.clause().is_empty(),
+            "a refused kind mismatch names a clause: {error}"
+        ),
+    }
+}
