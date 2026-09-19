@@ -909,6 +909,74 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
         );
     }
 
+    /// Drives one analyzed program through a real session registry, returning its outcome, the
+    /// retained session count, and every created child as `(mode, occurrence)` in creation order.
+    fn drive_session_scopes(
+        source: &str,
+    ) -> (MachineOutcome, usize, Vec<(SessionCreationModeV1, u64)>) {
+        let root = TempDirectory::new(source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+        let program = package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x57; 32])
+            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+        let root_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0x56; 32])
+            .unwrap_or_else(|error| panic!("session identity failed: {error}"));
+        let mut sessions = LogicalSessionRegistryV1::new(
+            execution,
+            root_session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("root session registry failed: {error:?}"));
+        let mut machine = Machine::new_with_context(
+            Arc::new(program),
+            &entry.path,
+            vec![],
+            execution,
+            limits(),
+            None,
+            Some(root_session),
+        )
+        .unwrap_or_else(|error| panic!("machine construction failed: {error:?}"));
+        let mut created = Vec::new();
+        let outcome = loop {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    let child = sessions
+                        .create(
+                            scope.parent_session_id,
+                            root_task_identity(execution),
+                            scope.site.clone(),
+                            scope.occurrence,
+                            scope.mode,
+                            SessionEstablishmentV1::Separate,
+                        )
+                        .unwrap_or_else(|error| panic!("child session creation failed: {error:?}"));
+                    let id = child.id;
+                    created.push((scope.mode, scope.occurrence));
+                    machine
+                        .complete_session_scope(&scope, id)
+                        .unwrap_or_else(|error| {
+                            panic!("session scope completion failed: {error:?}")
+                        });
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => break outcome,
+            }
+        };
+        (outcome, sessions.sessions().count(), created)
+    }
+
     // Execution: every creation point really creates one logical child session before the work it
     // scopes, and the child count follows the clause exactly.
     for (prelude, body, expected_value, expected_children, expected_mode) in [
@@ -963,67 +1031,7 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
         ),
     ] {
         let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
-        let root = TempDirectory::new(&source);
-        let package = analyze(&root);
-        let entry = package
-            .entry()
-            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
-        let program = package
-            .executable_program()
-            .cloned()
-            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
-        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x57; 32])
-            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
-        let root_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0x56; 32])
-            .unwrap_or_else(|error| panic!("session identity failed: {error}"));
-        let mut sessions = LogicalSessionRegistryV1::new(
-            execution,
-            root_session,
-            SessionCreationModeV1::GantryRoot,
-            CanonicalTranscriptV1::empty(),
-        )
-        .unwrap_or_else(|error| panic!("root session registry failed: {error:?}"));
-        let mut machine = Machine::new_with_context(
-            Arc::new(program),
-            &entry.path,
-            vec![],
-            execution,
-            limits(),
-            None,
-            Some(root_session),
-        )
-        .unwrap_or_else(|error| panic!("machine construction failed: {error:?}"));
-        let mut occurrences = Vec::new();
-        let outcome = loop {
-            match machine.step() {
-                MachineStep::Transition(_) => {}
-                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
-                MachineStep::WaitingSessionScope(scope) => {
-                    assert_eq!(scope.mode, expected_mode, "{source} created another mode");
-                    let child = sessions
-                        .create(
-                            scope.parent_session_id,
-                            root_task_identity(execution),
-                            scope.site.clone(),
-                            scope.occurrence,
-                            scope.mode,
-                            SessionEstablishmentV1::Separate,
-                        )
-                        .unwrap_or_else(|error| panic!("child session creation failed: {error:?}"));
-                    let id = child.id;
-                    occurrences.push(scope.occurrence);
-                    machine
-                        .complete_session_scope(&scope, id)
-                        .unwrap_or_else(|error| {
-                            panic!("session scope completion failed: {error:?}")
-                        });
-                }
-                MachineStep::WaitingOperation(operation) => {
-                    panic!("unexpected operation wait: {}", operation.identity)
-                }
-                MachineStep::Complete(outcome) => break outcome,
-            }
-        };
+        let (outcome, session_count, created) = drive_session_scopes(&source);
         let MachineOutcome::Succeeded(value) = outcome else {
             panic!("{source} did not succeed: {outcome:?}");
         };
@@ -1032,20 +1040,92 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
             "{source} answered another value"
         );
         assert_eq!(
-            occurrences.len(),
+            created.len(),
             expected_children,
-            "{source} created {occurrences:?}"
+            "{source} created {created:?}"
+        );
+        assert!(
+            created.iter().all(|(mode, _)| *mode == expected_mode),
+            "{source} created another mode: {created:?}"
         );
         assert_eq!(
-            occurrences,
+            created
+                .iter()
+                .map(|(_, occurrence)| *occurrence)
+                .collect::<Vec<_>>(),
             (0..expected_children as u64).collect::<Vec<_>>(),
             "{source} reused an occurrence instead of creating a fresh child"
         );
         assert_eq!(
-            sessions.sessions().count(),
+            session_count,
             expected_children + 1,
             "{source} retained another session count"
         );
+    }
+
+    // Nested session-bearing loops, and a limit that rejects a prospective body entry: `until`/
+    // `loop` check the entry before creating its child while a `while` child already exists because
+    // its condition must use it (`SPEC.md` GNT-9.6), so the failing forms stop exactly one child
+    // apart — three children for `while` (the rejected entry's child remains) and two for `until`.
+    for (prelude, body, expected_value, expected_children, expect_limit_failure) in [
+        (
+            "",
+            "let mut i: Int = 0; while (session = fork) i < 2 { let mut j: Int = 0; until (session = fork) { j = j + 1; } when j > 1; i = i + 1; } i",
+            2,
+            7,
+            false,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; while (session = fork, limit = 2) i < 5 { i = i + 1; } i",
+            0,
+            3,
+            true,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; until (session = fork, limit = 2) { i = i + 1; } when i > 5; i",
+            0,
+            2,
+            true,
+        ),
+    ] {
+        let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
+        let (outcome, session_count, created) = drive_session_scopes(&source);
+        assert_eq!(
+            created.len(),
+            expected_children,
+            "{source} created {created:?}"
+        );
+        assert!(
+            created
+                .iter()
+                .all(|(mode, _)| *mode == SessionCreationModeV1::Fork),
+            "{source} created another mode: {created:?}"
+        );
+        assert_eq!(
+            session_count,
+            expected_children + 1,
+            "{source} retained another session count"
+        );
+        if expect_limit_failure {
+            let MachineOutcome::Failed(failure) = outcome else {
+                panic!("{source} did not report the exhausted body-entry limit");
+            };
+            assert_eq!(
+                failure.code,
+                RuntimeCode::LoopLimitExhausted,
+                "{source} failed for another reason"
+            );
+        } else {
+            let MachineOutcome::Succeeded(value) = outcome else {
+                panic!("{source} did not succeed: {outcome:?}");
+            };
+            assert!(
+                matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected_value),
+                "{source} answered another value"
+            );
+        }
     }
 }
 
