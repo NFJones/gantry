@@ -441,6 +441,16 @@ fn computed_element_access_reads_the_evaluated_index() {
             "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; discard xs[i]; 0",
             0,
         ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; let v: Int = xs[0][i]; v",
+            2,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; let v: Int = xs[i][0]; v",
+            3,
+        ),
     ] {
         let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
         let root = TempDirectory::new(&source);

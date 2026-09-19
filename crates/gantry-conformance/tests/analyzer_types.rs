@@ -12093,6 +12093,16 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
             "let xs: List<List<Int>> = [[1, 2], [3]]; let v: Unit = xs[0][0 + 1]; 0",
             "type-mismatch",
         ),
+        // A dynamic step is typed on the same path, so a mismatching annotation refuses for it too
+        // (`2acff485`), whether the computed index is the later or the first step.
+        (
+            "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; let v: Bool = xs[0][i]; 0",
+            "type-mismatch",
+        ),
+        (
+            "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; let v: Bool = xs[i][0]; 0",
+            "type-mismatch",
+        ),
         // An operand position has no lowering route for that chain, so the enclosing operator's own
         // refusal stays the verdict there.
         (
@@ -12143,6 +12153,38 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
                 .any(|diagnostic| diagnostic.code.as_str() == code),
             "{body}: expected {code}, observed {:?}",
             refused.diagnostics()
+        );
+        assert!(refused.executable_program().is_none(), "{body}");
+    }
+}
+
+/// A mismatching annotation on a chained projection initializer publishes exactly one
+/// `type-mismatch` (`2acff485`): the shared refusal table only requires the code to appear among
+/// the diagnostics, so this pins that no second diagnostic accompanies it, for the static and for
+/// the computed spellings.
+#[test]
+fn mismatching_chain_initializer_annotations_publish_exactly_one_diagnostic() {
+    for body in [
+        "let xs: List<List<Int>> = [[1, 2], [3]]; let v: Bool = xs[0][0 + 1]; 0",
+        "let xs: List<List<Int>> = [[1, 2], [3]]; let v: List<Int> = xs[0][0 + 1]; 0",
+        "let xs: List<List<Int>> = [[1, 2], [3]]; let v: Unit = xs[0][0 + 1]; 0",
+        "let xs: List<List<Int>> = [[1, 2], [3]]; let v: String = xs[0][0 + 1]; 0",
+        "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; let v: Bool = xs[0][i]; 0",
+        "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; let v: Bool = xs[i][0]; 0",
+    ] {
+        let refused = analyze(&format!("fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        let diagnostics = refused.diagnostics();
+        assert_eq!(diagnostics.len(), 1, "{body}: {diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].code.as_str(),
+            "type-mismatch",
+            "{body}: {diagnostics:?}"
         );
         assert!(refused.executable_program().is_none(), "{body}");
     }
