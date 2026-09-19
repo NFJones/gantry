@@ -8676,6 +8676,21 @@ fn fold_projection_steps(
                 return Ok(None);
             };
             let Some(field) = projected_member_type(&current, name.as_ref(), context)? else {
+                // A called member the projection cannot key (`.read()`) names a method over an
+                // indexed receiver, which the lowering cannot publish: the receiver is an indexed
+                // element rather than a binding root, a struct-field receiver place, or a
+                // constructed value, so the operand position publishes the same precise refusal as
+                // the expression position instead of the coarse `unknown-member` (`8ee59eae`).
+                if projection_step_opens_call(tree, children, cursor) {
+                    diagnostics.push(body_diagnostic(
+                        "receiver-value-place",
+                        DiagnosticCategory::Type,
+                        "a receiver call requires a binding root, a struct-field receiver place, or a constructed value",
+                        member.span().clone(),
+                        [] as [(&str, &str); 0],
+                    )?);
+                    return Ok(None);
+                }
                 diagnostics.push(body_diagnostic(
                     "unknown-member",
                     DiagnosticCategory::Type,
@@ -8777,6 +8792,14 @@ fn fold_projection_steps(
 }
 
 /// Resolves the receiver type of one index projection and, when it is place-backed, its place.
+/// Reports whether the member step at `cursor` is immediately called, which is the shape a
+/// projection step over an indexed receiver cannot publish (`8ee59eae`).
+fn projection_step_opens_call(tree: &SyntaxTree, children: &[NodeId], cursor: usize) -> bool {
+    children
+        .get(cursor.saturating_add(2))
+        .is_some_and(|child| postfix_opens_call(tree, *child))
+}
+
 ///
 /// The parser flattens a postfix chain into sibling children, so the receiver part is every child
 /// ahead of the index postfix and takes one of a few shapes: a bare binding root, a dotted field

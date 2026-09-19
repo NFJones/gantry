@@ -2215,6 +2215,79 @@ fn projection_over_a_computed_receiver_is_refused_precisely() {
     }
 }
 
+/// `8ee59eae`: a method call on an element reached through an index projection is refused by
+/// design with one precise code (`receiver-value-place`) for the ungrouped and grouped spellings,
+/// the operand position, a literal receiver, a function parameter, a builtin member, and a
+/// constructed receiver. Field and index steps over an element, and calls on place receivers,
+/// keep their verbs. The false sibling reuse the affine pair reports is tracked separately (the
+/// element-relative place record), so this row pins the refusals alone.
+#[test]
+fn projected_receiver_calls_are_refused_precisely() {
+    let prelude = "struct C { v: Int } impl C { fn read(self) -> Int { self.v } } ";
+    for source in [
+        format!(
+            "{prelude}fn main() -> Int {{ let xs: List<C> = [C {{ v: 7 }}]; let a: Int = xs[0].read(); a }}"
+        ),
+        format!(
+            "{prelude}fn main() -> Int {{ let xs: List<C> = [C {{ v: 7 }}]; let a: Int = xs[0].read() + 1; a }}"
+        ),
+        format!(
+            "{prelude}struct Inner {{ v: Int }} struct Outer {{ inner: Inner }} impl Inner {{ fn read(self) -> Int {{ self.v }} }} fn main() -> Int {{ let xs: List<Outer> = [Outer {{ inner: Inner {{ v: 7 }} }}]; let a: Int = xs[0].inner.read(); a }}"
+        ),
+        format!(
+            "{prelude}fn main() -> Int {{ let xs: List<C> = [C {{ v: 7 }}]; let a: Int = (xs[0]).read(); a }}"
+        ),
+        format!("{prelude}fn main() -> Int {{ let a: Int = [C {{ v: 7 }}][0].read(); a }}"),
+        format!(
+            "{prelude}fn f(xs: List<C>) -> Int {{ let a: Int = xs[0].read(); a }} fn main() -> Int {{ f([C {{ v: 7 }}]) }}"
+        ),
+        "fn main() -> Int { let xs: List<List<Int>> = [[1, 2], [3]]; xs[0].len() }".to_owned(),
+        format!(
+            "{prelude}struct Bag {{ items: List<C> }} fn mk() -> Bag {{ Bag {{ items: [C {{ v: 7 }}] }} }} fn main() -> Int {{ let a: Int = mk().items[0].read(); a }}"
+        ),
+    ] {
+        assert_eq!(
+            diagnostic_codes(analyze(&source).diagnostics()),
+            vec!["receiver-value-place"],
+            "one precise refusal: {source}"
+        );
+    }
+    let affine = "affine struct Plain { value: Int } affine struct Marker { value: Int } struct Wrap { inner: Plain, marker: Marker } impl Plain { fn take(self) -> Int { self.value } } impl Marker { fn take(self) -> Int { self.value } } fn main() -> Int { let xs: List<Wrap> = [Wrap { inner: Plain { value: 42 }, marker: Marker { value: 1 } }]; let a: Int = xs[0].inner.take(); let b: Int = xs[0].marker.take(); a + b }";
+    let analyzed_affine = analyze(affine);
+    let codes = diagnostic_codes(analyzed_affine.diagnostics());
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|code| **code == "receiver-value-place")
+            .count(),
+        2,
+        "one refusal per call site: {codes:?}"
+    );
+    let admitted = [
+        format!(
+            "{prelude}fn main() -> Int {{ let w: C = C {{ v: 7 }}; let a: Int = w.read(); a }}"
+        ),
+        format!(
+            "{prelude}fn main() -> Int {{ let w: C = C {{ v: 7 }}; let a: Int = (w).read(); a }}"
+        ),
+        format!(
+            "{prelude}fn main() -> Int {{ let xs: List<C> = [C {{ v: 7 }}]; let a: Int = xs[0].v; a }}"
+        ),
+        format!(
+            "{prelude}fn main() -> Int {{ let xs: List<C> = [C {{ v: 7 }}]; let c: C = xs[0]; let a: Int = c.read(); a }}"
+        ),
+        "fn main() -> Int { let xs: List<List<Int>> = [[1, 2], [3]]; let a: Int = xs[0][0]; a }"
+            .to_owned(),
+        format!("{prelude}fn main() -> Int {{ let a: Int = [C {{ v: 7 }}][0].v; a }}"),
+    ];
+    for source in admitted {
+        assert!(
+            !diagnostic_codes(analyze(&source).diagnostics()).contains(&"receiver-value-place"),
+            "a resolved receiver keeps its verb: {source}"
+        );
+    }
+}
+
 fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let root = TempDirectory::new();
     root.write(source);
