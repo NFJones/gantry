@@ -6,11 +6,11 @@
   },
   {
    "path": "crates/gantry-analysis/src/executable.rs",
-   "sha256": "4136ded45a68f64c21fb30241f1068e63fca201abab56aa769e697e4158b46ad"
+   "sha256": "d3a63f42ee673e8f0246b71d86031a821ec6b925ae4a61d8b0b9afd288e537c2"
   },
   {
    "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-   "sha256": "c48347884a2ab0e032ebf78ffe4b5419616ec2c2478bf6827e485daa645de23d"
+   "sha256": "44974a64fedaa1791a40dc2b69b25b964852b22ee179a30767854a2e01c38071"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",

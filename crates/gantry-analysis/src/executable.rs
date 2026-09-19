@@ -1408,7 +1408,8 @@ impl Compiler<'_> {
             .next()
             .ok_or(AnalysisError::Invariant)?;
         let list = self.compiler_temporary("for_source");
-        self.binding_types.insert(list.clone(), source_type.clone());
+        let list_type = source_type.clone();
+        self.binding_types.insert(list.clone(), list_type.clone());
         self.emit(
             source_type.clone(),
             InstructionKind::Bind {
@@ -1443,7 +1444,7 @@ impl Compiler<'_> {
             },
         )?;
         self.emit(TypeDescriptor::INT, InstructionKind::Load(index.clone()))?;
-        self.emit(TypeDescriptor::INT, InstructionKind::Load(list.clone()))?;
+        self.emit(list_type.clone(), InstructionKind::Load(list.clone()))?;
         self.emit(
             TypeDescriptor::INT,
             InstructionKind::Primitive(Primitive::ListLength),
@@ -1481,7 +1482,7 @@ impl Compiler<'_> {
         self.cleanup.push(InstructionKind::ExitScope);
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         let body_bindings = self.binding_types.clone();
-        self.emit(TypeDescriptor::INT, InstructionKind::Load(list.clone()))?;
+        self.emit(list_type.clone(), InstructionKind::Load(list.clone()))?;
         self.emit(TypeDescriptor::INT, InstructionKind::Load(index.clone()))?;
         self.emit(
             element_type.clone(),

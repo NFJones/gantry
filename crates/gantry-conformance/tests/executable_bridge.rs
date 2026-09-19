@@ -645,6 +645,35 @@ fn for_loops_lower_and_execute_the_iteration() {
             "the for statement answers the value its iterations determine"
         );
     }
+    // Every load publishes the type of the binding it reads: the synthetic `for` bindings hold the
+    // source list and the machine-computed index, so a list load that reported the element type
+    // would mis-type the executable IR for traces and inspection.
+    let source = "fn main() -> Int { for x in [1, 2] { discard x; } 0 }\n";
+    let root = TempDirectory::new(source);
+    let package = analyze(&root);
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+    for workflow in program.workflows() {
+        let mut bound = BTreeMap::new();
+        for instruction in &workflow.instructions {
+            match &instruction.kind {
+                InstructionKind::Bind { name, ty, .. } => {
+                    bound.insert(name.to_string(), ty.clone());
+                }
+                InstructionKind::Load(name) => {
+                    if let Some(ty) = bound.get(name.as_ref()) {
+                        assert_eq!(
+                            &instruction.ty, ty,
+                            "load {name} published a different type than its binding"
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// An index expression the checked folder cannot read is a value the machine computes
