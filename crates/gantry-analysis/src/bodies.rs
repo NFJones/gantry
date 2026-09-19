@@ -8431,12 +8431,11 @@ fn infer_projection(
             // result or of any other value is a temporary without a caller place to read.
             let continuing = projected_place_path(&place, Some(index));
             if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
-                // The place the chain reads is the subplace it continues to: the member steps after
-                // this index belong to the key, so two sibling fields of one element stay distinct
-                // places (issue 3c224a99). A further index step is not keyed here; that coarseness
-                // is tracked as its own follow-up defect.
+                // The place the chain reads is the subplace it continues to: every segment after
+                // this first index belongs to the key, so sibling fields and distinct inner
+                // elements stay distinct places (issues 3c224a99, 5ceb69e0).
                 let mut fields = path.fields.clone();
-                fields.extend(projection_member_suffix(
+                fields.extend(projection_place_suffix(
                     tree,
                     children,
                     index_postfix.saturating_add(1),
@@ -8505,12 +8504,11 @@ fn infer_projection(
             // keeps its field path ahead of that index segment, while a receiver that is a call
             // result or another temporary has no caller place whose element could be read.
             if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
-                // The place the chain reads is the subplace it continues to: the member steps after
-                // this index belong to the key, so two sibling fields of one element stay distinct
-                // places (issue 3c224a99). A further index step is not keyed here; that coarseness
-                // is tracked as its own follow-up defect.
+                // The place the chain reads is the subplace it continues to: every segment after
+                // this first index belongs to the key, so sibling fields and distinct inner
+                // elements stay distinct places (issues 3c224a99, 5ceb69e0).
                 let mut fields = path.fields.clone();
-                fields.extend(projection_member_suffix(
+                fields.extend(projection_place_suffix(
                     tree,
                     children,
                     index_postfix.saturating_add(1),
@@ -8820,19 +8818,38 @@ fn projection_step_opens_call(tree: &SyntaxTree, children: &[NodeId], cursor: us
         .is_some_and(|child| postfix_opens_call(tree, *child))
 }
 
-/// Returns the member names a projection chain reads after its first index step, in order.
+/// Returns the segments a projection chain reads after its first index step, in order.
 ///
 /// The place a projection read names is the subplace the chain continues to: `xs[0].inner` is the
-/// place of `inner` in the element, so two sibling fields of one element stay distinct places
-/// (`3c224a99`).
-fn projection_member_suffix(tree: &SyntaxTree, children: &[NodeId], after: usize) -> Vec<Arc<str>> {
-    let mut names = Vec::new();
+/// place of `inner` in the element, so two sibling fields of one element stay distinct places, and
+/// a chain with a further index step keys each of its segments (`3c224a99`, `5ceb69e0`). A literal
+/// index keys its own segment and every other index expression keys the wildcard segment, exactly
+/// as the first step does.
+fn projection_place_suffix(tree: &SyntaxTree, children: &[NodeId], after: usize) -> Vec<Arc<str>> {
+    let mut segments = Vec::new();
     let mut cursor = after;
     while let Some(child) = children.get(cursor).copied() {
         let Some(step) = tree.node(child) else {
             break;
         };
         if !matches!(step.form(), SyntaxForm::PostfixExpression) {
+            cursor += 1;
+            continue;
+        }
+        if node_contains_punctuation(tree, child, Punctuation::LeftBracket) {
+            let literal = children
+                .iter()
+                .copied()
+                .skip(cursor.saturating_add(1))
+                .find(|id| {
+                    tree.node(*id)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+                })
+                .and_then(|expression| literal_projection_index(tree, expression));
+            segments.push(match literal {
+                Some(index) => Arc::from(format!("[{index}]")),
+                None => Arc::from(SEGMENT_ANY),
+            });
             cursor += 1;
             continue;
         }
@@ -8846,10 +8863,10 @@ fn projection_member_suffix(tree: &SyntaxTree, children: &[NodeId], after: usize
         else {
             break;
         };
-        names.push(name);
+        segments.push(name);
         cursor += 2;
     }
-    names
+    segments
 }
 
 ///

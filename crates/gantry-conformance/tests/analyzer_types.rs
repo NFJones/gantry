@@ -2290,6 +2290,18 @@ fn projected_receiver_calls_are_refused_precisely() {
         !diagnostic_codes(analyzed_tuple.diagnostics()).contains(&"affine-value-reuse"),
         "tuple sibling fields are distinct places: {tuple_distinct}"
     );
+    let nested_distinct = "affine struct Plain { value: Int } struct W { inner: Plain } fn main() -> Int { let xss: List<List<W>> = [[W { inner: Plain { value: 1 } }]]; let a: Plain = xss[0][0].inner; let b: Plain = xss[0][1].inner; 0 }";
+    let analyzed_nested = analyze(nested_distinct);
+    assert!(
+        !diagnostic_codes(analyzed_nested.diagnostics()).contains(&"affine-value-reuse"),
+        "distinct inner elements are distinct places: {nested_distinct}"
+    );
+    let nested_repeat = "affine struct Plain { value: Int } struct W { inner: Plain } fn main() -> Int { let xss: List<List<W>> = [[W { inner: Plain { value: 1 } }]]; let a: Plain = xss[0][0].inner; let b: Plain = xss[0][0].inner; 0 }";
+    let analyzed_repeat = analyze(nested_repeat);
+    assert!(
+        diagnostic_codes(analyzed_repeat.diagnostics()).contains(&"affine-value-reuse"),
+        "a repeated nested read stays a reuse: {nested_repeat}"
+    );
     let admitted = [
         format!(
             "{prelude}fn main() -> Int {{ let w: C = C {{ v: 7 }}; let a: Int = w.read(); a }}"
