@@ -571,6 +571,82 @@ fn computed_element_access_reports_the_bounds_failure() {
     }
 }
 
+/// A `for` statement over a list lowers as an indexed traversal (`97644e31`): the analyzer types
+/// the source as a `List` and binds each iteration's item to its element, so the lowering
+/// evaluates the source once, reads each element with the element-access primitive, and settles
+/// `break`/`continue` through the loop machinery instead of failing with an internal error.
+#[test]
+fn for_loops_lower_and_execute_the_iteration() {
+    for (prelude, body, expected) in [
+        ("", "for x in [1, 2] { discard x; } 0", 0),
+        (
+            "",
+            "let mut n: Int = 0; for x in [1, 2, 3] { n = n + x; } n",
+            6,
+        ),
+        (
+            "",
+            "let mut n: Int = 0; for x in [1, 2, 3] { if (x == 2) { continue; } n = n + x; } n",
+            4,
+        ),
+        (
+            "",
+            "let mut n: Int = 0; for x in [1, 2, 3] { if (x == 2) { break; } n = n + x; } n",
+            1,
+        ),
+        (
+            "",
+            "let empty: List<Int> = []; for x in empty { discard x; } 7",
+            7,
+        ),
+        (
+            "fn sum(items: List<Int>) -> Int { let mut n: Int = 0; for item in items { n = n + item; } n } ",
+            "sum([1, 2, 3])",
+            6,
+        ),
+        (
+            "",
+            "let mut n: Int = 0; for x in [1, 2] { for y in [10, 20] { n = n + x + y; } } n",
+            66,
+        ),
+        (
+            "",
+            "let mut n: Int = 0; for x in [1, 2, 3] { for y in [10, 20] { if (y == 20) { continue; } n = n + x + y; } } n",
+            36,
+        ),
+        ("", "for x in [1, 2] { return x; } 9", 1),
+        (
+            "",
+            "let mut i: Int = 0; while i < 3 { for x in [1, 2] { if (x == 2) { continue; } discard x; } i = i + 1; } i",
+            3,
+        ),
+    ] {
+        let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+        let program = package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x53; 32])
+            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+        let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+            .unwrap_or_else(|error| {
+                panic!("analyzed program was rejected by the machine: {error:?}")
+            });
+        let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+            panic!("the for statement {expected} did not succeed")
+        };
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected),
+            "the for statement answers the value its iterations determine"
+        );
+    }
+}
+
 /// An index expression the checked folder cannot read is a value the machine computes
 /// (`3937f91d`): such an index failed analysis internally instead of being applied, so `xs[1 / 0]`
 /// now reports the published division failure and a nested projection inside the index reads its

@@ -371,6 +371,7 @@ struct LoopTarget {
     start: usize,
     cleanup_depth: usize,
     breaks: Vec<usize>,
+    continues: Vec<usize>,
 }
 
 impl Compiler<'_> {
@@ -737,6 +738,9 @@ impl Compiler<'_> {
                 }
                 SyntaxForm::WhileStatement | SyntaxForm::LoopStatement => {
                     falls_through = self.compile_while(child)?;
+                }
+                SyntaxForm::ForStatement => {
+                    falls_through = self.compile_for(child)?;
                 }
                 SyntaxForm::BreakStatement | SyntaxForm::ContinueStatement => {
                     self.compile_loop_transfer(matches!(node.form(), SyntaxForm::BreakStatement))?;
@@ -1334,6 +1338,7 @@ impl Compiler<'_> {
             start,
             cleanup_depth: self.cleanup.len(),
             breaks: Vec::new(),
+            continues: Vec::new(),
         });
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
@@ -1377,6 +1382,169 @@ impl Compiler<'_> {
         })
     }
 
+    /// Lowers a `for item in source { body }` statement as an indexed traversal of the source.
+    ///
+    /// The analyzer types the source as a `List` and binds each iteration's item to that list's
+    /// element type, so the lowering evaluates the source once, walks it by index, and reads each
+    /// element with the element-access primitive before the body runs. `break` and `continue`
+    /// settle through the same loop machinery `while` uses; a `continue` jumps to the increment
+    /// rather than to the condition, so the traversal advances without re-running the body. A `for`
+    /// over a finite list always admits its zero-iteration path, so the statement completes
+    /// normally.
+    fn compile_for(&mut self, statement: NodeId) -> Result<bool, AnalysisError> {
+        let node = self.node(statement)?.clone();
+        let source = direct_child_form(self.tree, &node, SyntaxForm::Expression)
+            .ok_or(AnalysisError::Invariant)?;
+        let body = direct_child_form(self.tree, &node, SyntaxForm::Block)
+            .ok_or(AnalysisError::Invariant)?;
+        let item = direct_identifier(self.tree, statement).ok_or(AnalysisError::Invariant)?;
+        let source_type = self.compile_expression(source)?;
+        if source_type.kind() != TypeKind::List {
+            return Err(AnalysisError::Invariant);
+        }
+        let element_type = source_type
+            .immediate_members()
+            .into_iter()
+            .next()
+            .ok_or(AnalysisError::Invariant)?;
+        let list = self.compiler_temporary("for_source");
+        self.binding_types.insert(list.clone(), source_type.clone());
+        self.emit(
+            source_type.clone(),
+            InstructionKind::Bind {
+                name: list.clone(),
+                ty: source_type,
+                mutable: false,
+            },
+        )?;
+        let index = self.compiler_temporary("for_index");
+        self.binding_types
+            .insert(index.clone(), TypeDescriptor::INT);
+        self.emit(
+            TypeDescriptor::INT,
+            InstructionKind::Push(LogicalValue::integer(
+                GantryInt::new(0).ok_or(AnalysisError::Invariant)?,
+            )),
+        )?;
+        self.emit(
+            TypeDescriptor::INT,
+            InstructionKind::Bind {
+                name: index.clone(),
+                ty: TypeDescriptor::INT,
+                mutable: true,
+            },
+        )?;
+        let start = self.instructions.len();
+        self.emit(
+            TypeDescriptor::UNIT,
+            InstructionKind::EnterLoop {
+                phase: LoopPhase::Condition,
+                source_limit: None,
+            },
+        )?;
+        self.emit(TypeDescriptor::INT, InstructionKind::Load(index.clone()))?;
+        self.emit(TypeDescriptor::INT, InstructionKind::Load(list.clone()))?;
+        self.emit(
+            TypeDescriptor::INT,
+            InstructionKind::Primitive(Primitive::ListLength),
+        )?;
+        self.emit(
+            TypeDescriptor::BOOL,
+            InstructionKind::Primitive(Primitive::Compare(Comparison::Less)),
+        )?;
+        let branch = self.emit(
+            TypeDescriptor::BOOL,
+            InstructionKind::Branch {
+                when_true: 0,
+                when_false: 0,
+            },
+        )?;
+        let when_true = self.instructions.len();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.emit(
+            TypeDescriptor::UNIT,
+            InstructionKind::EnterLoop {
+                phase: LoopPhase::Body,
+                // `SPEC.md` gives `for` no source limit: its snapshotted list is finite, and the
+                // `limit` modifier belongs to `loop`, `while`, and `until` alone.
+                source_limit: None,
+            },
+        )?;
+        self.loops.push(LoopTarget {
+            start,
+            cleanup_depth: self.cleanup.len(),
+            breaks: Vec::new(),
+            continues: Vec::new(),
+        });
+        self.cleanup.push(InstructionKind::LeaveOccurrence);
+        self.cleanup.push(InstructionKind::ExitScope);
+        self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+        let body_bindings = self.binding_types.clone();
+        self.emit(TypeDescriptor::INT, InstructionKind::Load(list.clone()))?;
+        self.emit(TypeDescriptor::INT, InstructionKind::Load(index.clone()))?;
+        self.emit(
+            element_type.clone(),
+            InstructionKind::Primitive(Primitive::ListIndex),
+        )?;
+        self.binding_types
+            .insert(item.clone(), element_type.clone());
+        self.emit(
+            element_type.clone(),
+            InstructionKind::Bind {
+                name: item,
+                ty: element_type,
+                mutable: false,
+            },
+        )?;
+        self.compile_block(body, BlockMode::Statement)?;
+        self.binding_types = body_bindings;
+        self.cleanup.pop();
+        self.cleanup.pop();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        // The increment is the `continue` target: a transfer leaves the body scope through the
+        // same cleanup the normal path uses and lands here, so the traversal advances once per
+        // iteration instead of re-reading the element it already visited.
+        let increment = self.instructions.len();
+        self.emit(TypeDescriptor::INT, InstructionKind::Load(index.clone()))?;
+        self.emit(
+            TypeDescriptor::INT,
+            InstructionKind::Push(LogicalValue::integer(
+                GantryInt::new(1).ok_or(AnalysisError::Invariant)?,
+            )),
+        )?;
+        self.emit(
+            TypeDescriptor::INT,
+            InstructionKind::Primitive(Primitive::Add),
+        )?;
+        self.emit(
+            TypeDescriptor::INT,
+            InstructionKind::Assign {
+                name: index,
+                path: Vec::new(),
+                target_type: TypeDescriptor::INT,
+            },
+        )?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(start))?;
+        let when_false = self.instructions.len();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.instructions[branch].kind = InstructionKind::Branch {
+            when_true,
+            when_false,
+        };
+        let end = self.instructions.len();
+        let target = self.loops.pop().ok_or(AnalysisError::Invariant)?;
+        for jump in target.continues {
+            self.instructions[jump].kind = InstructionKind::Jump(increment);
+        }
+        for jump in target.breaks {
+            self.instructions[jump].kind = InstructionKind::Jump(end);
+        }
+        Ok(true)
+    }
+
     /// Leaves nested lexical scopes before transferring to the nearest loop.
     fn compile_loop_transfer(&mut self, is_break: bool) -> Result<(), AnalysisError> {
         let target = self.loops.last().ok_or(AnalysisError::Invariant)?;
@@ -1392,9 +1560,11 @@ impl Compiler<'_> {
             return Ok(());
         }
         let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(start))?;
+        let target = self.loops.last_mut().ok_or(AnalysisError::Invariant)?;
         if is_break {
-            let target = self.loops.last_mut().ok_or(AnalysisError::Invariant)?;
             target.breaks.push(jump);
+        } else {
+            target.continues.push(jump);
         }
         Ok(())
     }
