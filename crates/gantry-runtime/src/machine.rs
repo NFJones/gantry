@@ -5272,6 +5272,22 @@ fn evaluate_primitive(
             };
             length_value(length)
         }
+        Primitive::ListIndex => {
+            let LogicalValueView::List(_) = operands[0].view() else {
+                return Err(RuntimeCode::InternalInvariant);
+            };
+            let LogicalValueView::Int(index) = operands[1].view() else {
+                return Err(RuntimeCode::InternalInvariant);
+            };
+            let Ok(index) = usize::try_from(index.get()) else {
+                return Err(RuntimeCode::Deterministic(
+                    DeterministicEvaluationCode::ListIndexOutOfBounds,
+                ));
+            };
+            operands[0].member(index).ok_or(RuntimeCode::Deterministic(
+                DeterministicEvaluationCode::ListIndexOutOfBounds,
+            ))
+        }
         Primitive::StringLength => length_value(string_operand(operands, 0)?.chars().count()),
         Primitive::StringIsEmpty => Ok(LogicalValue::boolean(
             string_operand(operands, 0)?.is_empty(),

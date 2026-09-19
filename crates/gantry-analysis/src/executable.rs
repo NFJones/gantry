@@ -2128,7 +2128,7 @@ impl Compiler<'_> {
         );
         let mut resolved = None;
         let mut declined = false;
-        for candidate in candidates {
+        for candidate in candidates.iter().copied() {
             match index_candidate(self.tree, candidate) {
                 IndexCandidate::Value(value) => {
                     resolved = Some(value);
@@ -2141,10 +2141,17 @@ impl Compiler<'_> {
                 IndexCandidate::Open => {}
             }
         }
+        // A dynamic index is a value the machine computes: the receiver and the index expression
+        // are compiled in order and the element-access primitive reads the element with the same
+        // bounds failure a static projection reports. Reading the first literal of an open
+        // expression would project an element nobody asked for (`xs[i + 1]` answered `xs[1]`).
+        let dynamic_index = candidates
+            .iter()
+            .copied()
+            .find(|candidate| !closed_index_expression(self.tree, *candidate));
         if declined {
             return Err(AnalysisError::Invariant);
         }
-        let index = resolved.ok_or(AnalysisError::Invariant)?;
         let receiver_children = node.children().get(..index_postfix).unwrap_or_default();
         // A receiver part that carries a call or grouping parenthesis is a computed receiver:
         // `head(xs)[0]` projects the call result, so the callee path must not be read as the
@@ -2209,10 +2216,16 @@ impl Compiler<'_> {
         } else {
             return Err(AnalysisError::Invariant);
         }
-        self.emit(
-            ty.clone(),
-            InstructionKind::Project(Projection::Member(index)),
-        )?;
+        if let Some(index_expression) = dynamic_index {
+            self.compile_expression(index_expression)?;
+            self.emit(ty.clone(), InstructionKind::Primitive(Primitive::ListIndex))?;
+        } else {
+            let index = resolved.ok_or(AnalysisError::Invariant)?;
+            self.emit(
+                ty.clone(),
+                InstructionKind::Project(Projection::Member(index)),
+            )?;
+        }
         let projected =
             self.compile_projection_tail(node, index_postfix.saturating_add(1), ty, ty.clone())?;
         Ok(Some(projected))

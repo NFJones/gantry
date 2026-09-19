@@ -44,6 +44,8 @@ pub enum Primitive {
     ToString,
     /// List item count.
     ListLength,
+    /// List element at one machine-computed index.
+    ListIndex,
     /// Unicode scalar count.
     StringLength,
     /// String emptiness.
@@ -110,6 +112,7 @@ impl Primitive {
             | Self::StringContains
             | Self::StringStartsWith
             | Self::StringEndsWith
+            | Self::ListIndex
             | Self::StringSplit
             | Self::StringListJoin => 2,
             Self::StringReplace => 3,

@@ -380,6 +380,49 @@ fn admitted_trailing_steps_in_operand_position_execute_on_the_shared_sequential_
     }
 }
 
+/// A computed index reads the element the machine evaluates (`GNT-GP-COLL-001`): an open index
+/// expression that reaches the value-position projection compiler is compiled as a value and the
+/// element-access primitive applies it, so the program answers the element the index names instead
+/// of the first literal the expression carries. A bare place-route index (`xs[i]`, `xs[idx()]`)
+/// reaches the chain walker instead and remains the next phase of this contract.
+#[test]
+fn computed_element_access_reads_the_evaluated_index() {
+    for (body, expected) in [
+        (
+            "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; xs[i + 1]",
+            3,
+        ),
+        (
+            "let ys: List<Int> = [1, 2]; let xs: List<Int> = [1, 2, 3]; xs[ys[0] + 1]",
+            3,
+        ),
+    ] {
+        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+        let program = package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x52; 32])
+            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+        let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+            .unwrap_or_else(|error| {
+                panic!("analyzed program was rejected by the machine: {error:?}")
+            });
+        let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+            panic!("the computed element access {expected} did not succeed")
+        };
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected),
+            "the computed element access answers the element its index evaluates to"
+        );
+    }
+}
+
 /// A comparison continuation answers the operator's own result type
 /// (`GNT-38.1-typed-error-propagation`): the folded comparison publishes `Bool`, not the projected
 /// member type it compares, and the machine executes it.

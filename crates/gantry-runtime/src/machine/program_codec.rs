@@ -890,6 +890,7 @@ fn write_primitive(writer: &mut Writer, value: Primitive) {
         Primitive::StringParseInt => 30,
         Primitive::StringParseFloat => 31,
         Primitive::StringListJoin => 32,
+        Primitive::ListIndex => 33,
     };
     writer.u8(tag);
 }
@@ -928,6 +929,7 @@ fn read_primitive(reader: &mut Reader<'_>) -> Result<Primitive, MachineRecoveryE
         30 => Primitive::StringParseInt,
         31 => Primitive::StringParseFloat,
         32 => Primitive::StringListJoin,
+        33 => Primitive::ListIndex,
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     })
 }
@@ -1040,6 +1042,56 @@ mod tests {
             Err(MachineRecoveryError::InvalidEncoding)
         );
         let _ = Arc::<[u8]>::from(trailing);
+    }
+
+    #[test]
+    fn executable_program_codec_round_trips_the_list_index_primitive() {
+        let program = MachineProgram::new(vec![Workflow {
+            path: CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("path failed: {error}")),
+            parameters: Vec::new(),
+            result: TypeDescriptor::INT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site failed: {error}")),
+                    ty: TypeDescriptor::INT,
+                    kind: InstructionKind::Push(LogicalValue::integer(
+                        GantryInt::new(7)
+                            .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                    )),
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site failed: {error}")),
+                    ty: TypeDescriptor::INT,
+                    kind: InstructionKind::Push(LogicalValue::integer(
+                        GantryInt::new(0)
+                            .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                    )),
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![2])
+                        .unwrap_or_else(|error| panic!("site failed: {error}")),
+                    ty: TypeDescriptor::INT,
+                    kind: InstructionKind::Primitive(gantry_ir::Primitive::ListIndex),
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![3])
+                        .unwrap_or_else(|error| panic!("site failed: {error}")),
+                    ty: TypeDescriptor::INT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program failed: {error:?}"));
+
+        let encoded = encode_machine_program(&program);
+        let decoded = decode_machine_program(&encoded)
+            .unwrap_or_else(|error| panic!("program decode failed: {error:?}"));
+        assert_eq!(decoded, program);
+        assert_eq!(encode_machine_program(&decoded), encoded);
     }
 
     #[test]

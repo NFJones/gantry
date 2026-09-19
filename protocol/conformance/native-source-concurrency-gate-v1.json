@@ -6,7 +6,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-   "sha256": "e4bb7f310092805b5a5742090bc1e1f210811172996eadf1d9aa5f3e81f6136e"
+   "sha256": "0c17abd88aa4c3204230401ac0f760ecd7111cf62f0bb3bcde8429a2bfaf7e40"
   },
   {
    "path": "crates/gantry-conformance/tests/source_spawn.rs",
@@ -34,7 +34,7 @@
   },
   {
    "path": "protocol/conformance/async-source-lowering-v1.json",
-   "sha256": "f2942d98c64fb750cde711c73192406f24582cbcc1261479d41b159263916bfa"
+   "sha256": "130cac99a7dfdb4142bb54d58add42e43a7920a0a26155be2ecc5832fb82683b"
   },
   {
    "path": "protocol/conformance/durable-coordination-v1.json",
