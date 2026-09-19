@@ -9786,8 +9786,18 @@ fn infer_operand_index_projection_sequence(
     };
     let continuing = projected_place_path(&place, Some(literal_index));
     if let Some(path) = &continuing {
+        // The operand route records the same subplace the value route does: every segment the walk
+        // sees after this first index belongs to the key, so an operand chain's sibling fields and
+        // further index segments stay distinct places (`0150b16c`). A member the parser wrapped for
+        // a following operator is read through its wrapper by the suffix walk.
+        let mut fields = path.fields.clone();
+        fields.extend(projection_place_suffix(
+            tree,
+            children,
+            index_postfix.saturating_add(1),
+        ));
         record_affine_place(
-            AffinePlace::projected(Arc::clone(&path.root), path.fields.clone()),
+            AffinePlace::projected(Arc::clone(&path.root), fields),
             Some(&path.binding),
             &projected,
             span.clone(),

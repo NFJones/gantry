@@ -2302,13 +2302,19 @@ fn projected_receiver_calls_are_refused_precisely() {
         diagnostic_codes(analyzed_repeat.diagnostics()).contains(&"affine-value-reuse"),
         "a repeated nested read stays a reuse: {nested_repeat}"
     );
-    // An unparenthesized operand chain keys only its first index segment, so this sibling pair is
-    // still refused; the gap is tracked as defect 0150b16c and pinned here so it stays deliberate.
+    // The operand spelling keys the same subplace as the binding and parenthesized spellings
+    // (defect 0150b16c), while a repeated operand chain stays a reuse.
     let operand_sibling = "affine struct Plain { value: Int } affine struct Marker { value: Int } struct W { inner: Plain, marker: Marker } fn main() -> Int { let xs: List<W> = [W { inner: Plain { value: 1 }, marker: Marker { value: 2 } }]; xs[0].inner.value + xs[0].marker.value }";
     let analyzed_operand = analyze(operand_sibling);
     assert!(
-        diagnostic_codes(analyzed_operand.diagnostics()).contains(&"affine-value-reuse"),
-        "the operand-position gap is pinned until defect 0150b16c: {operand_sibling}"
+        !diagnostic_codes(analyzed_operand.diagnostics()).contains(&"affine-value-reuse"),
+        "operand-position sibling fields are distinct places: {operand_sibling}"
+    );
+    let operand_repeat = "affine struct Plain { value: Int } affine struct Marker { value: Int } struct W { inner: Plain, marker: Marker } fn main() -> Int { let xs: List<W> = [W { inner: Plain { value: 1 }, marker: Marker { value: 2 } }]; xs[0].inner.value + xs[0].inner.value }";
+    let analyzed_operand_repeat = analyze(operand_repeat);
+    assert!(
+        diagnostic_codes(analyzed_operand_repeat.diagnostics()).contains(&"affine-value-reuse"),
+        "a repeated operand chain stays a reuse: {operand_repeat}"
     );
     let admitted = [
         format!(
