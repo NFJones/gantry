@@ -10,7 +10,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-   "sha256": "760f063a9e53cffef537b2eed7627b656f091836dfb8b1f6e98f03bee2dce6e6"
+   "sha256": "a63d6cc40ec694e5b26b77a2b24133bfb53492eda01de0cf918930d2b7b8b04c"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",

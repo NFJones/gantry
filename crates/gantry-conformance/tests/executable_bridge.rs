@@ -4558,6 +4558,41 @@ fn main() -> Int {
     assert_eq!(run_single_entry(&root), 6);
 }
 
+/// A computed index over a place-backed chain evaluates (`899c8154`): the value-position chain with
+/// a dynamic index failed internally in analysis or disagreed between `analyze` and `run`, while
+/// the literal twin executed.
+#[test]
+fn computed_index_over_a_place_backed_chain_executes() {
+    let root = TempDirectory::new(
+        r#"
+affine struct Plain { value: Int }
+struct V { v: List<Plain> }
+struct W { a: V }
+fn main() -> Int {
+    let iv: Int = 0;
+    let xs: List<W> = [W { a: V { v: [Plain { value: 40 }] } }];
+    let b: Plain = xs[0].a.v[iv];
+    b.value
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 40);
+
+    let root = TempDirectory::new(
+        r#"
+affine struct Plain { value: Int }
+struct W { inner: Plain }
+fn main() -> Int {
+    let iv: Int = 0;
+    let xs: List<W> = [W { inner: Plain { value: 7 } }];
+    let b: Int = xs[iv].inner.value;
+    b
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 7);
+}
+
 /// A `MustConsume` return transfer carries the obligation through the call and executes.
 #[test]
 fn must_consume_return_transfer_executes() {
