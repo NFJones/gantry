@@ -1530,6 +1530,23 @@ fn canonical_pure_hierarchy_declares_each_pure_family_once() {
             StabilityTier::Foundational,
             "{member} is a foundational prelude item"
         );
+        // Class and applicability are folded into the interface digest, so they are pinned here
+        // exactly as the owning package declares them.
+        assert_eq!(
+            item.class(),
+            NameClass::Module,
+            "{member} is a library-owned declaration"
+        );
+        assert_eq!(
+            item.modes(),
+            core.modes(),
+            "{member} inherits core applicability"
+        );
+        assert_eq!(
+            item.targets(),
+            core.targets(),
+            "{member} inherits the core target set"
+        );
     }
     let manifest = graph
         .manifest(
