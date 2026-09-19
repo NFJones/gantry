@@ -38,17 +38,18 @@ use gantry::ir::registry::{
     ConfigurationAlias, DeclaredSignature, Delegation, DelegationTiming, DeliveredRelease,
     EntryAuthority, EpochObservation, EvidenceDefect, ExternalAliasMap, ExternalName,
     FreshnessMode, KeyId, KeyRecord, LockedDependency, Lockfile, LockfileInputs, LockfileRecord,
-    MetadataSnapshot, MirrorBinding, MirrorDefect, PathPin, PinDefect, PinnedTree,
+    MetadataSnapshot, MirrorBinding, MirrorDefect, NameDefect, PathPin, PinDefect, PinnedTree,
     PublicationDefect, PublicationLedger, PublicationNameSet, PublicationState, PublisherIdentity,
-    REGISTRY_CLAUSES, REGISTRY_NON_CLAIM_ORDER, REGISTRY_NON_CLAIMS, RegistryDiagnosticCode,
-    RegistryError, RegistryName, RegistryNameKind, RegistryNonClaim, RegistryNonClaimAssertion,
-    RegistryRefusal, RetainedState, RootId, RootSelectionPolicy, RotationContext, RotationDefect,
-    RotationEvidence, RotationSignatures, RotationTiming, RunRequest, SecurityAdvisory, Severity,
-    SnapshotDependency, SnapshotEntry, SourceAlias, SourceDeclaration, SourceIdentity, SourceKind,
-    TargetArtifact, TrustFailureReason, TrustRoot, TrustStore, VcsPin, VendorDefect,
-    VendorDirectory, VendorEntry, VerificationInput, VerifiedSnapshot, check_registry_non_claims,
-    collision, declared_signature, resolve_new_release, resolve_source, verify_mirror,
-    verify_path_tree, verify_pinned_tree, verify_vendor,
+    REGISTRY_CLAUSES, REGISTRY_NAME_SCALAR_LIMIT, REGISTRY_NON_CLAIM_ORDER, REGISTRY_NON_CLAIMS,
+    RegistryDiagnosticCode, RegistryError, RegistryName, RegistryNameKind, RegistryNonClaim,
+    RegistryNonClaimAssertion, RegistryRefusal, RetainedState, RootId, RootSelectionPolicy,
+    RotationContext, RotationDefect, RotationEvidence, RotationSignatures, RotationTiming,
+    RunRequest, SecurityAdvisory, Severity, SnapshotDependency, SnapshotEntry, SourceAlias,
+    SourceDeclaration, SourceIdentity, SourceKind, TargetArtifact, TrustFailureReason, TrustRoot,
+    TrustStore, VcsPin, VendorDefect, VendorDirectory, VendorEntry, VerificationInput,
+    VerifiedSnapshot, check_registry_non_claims, collision, declared_signature,
+    resolve_new_release, resolve_source, verify_mirror, verify_path_tree, verify_pinned_tree,
+    verify_vendor,
 };
 use sha2::{Digest, Sha256};
 
@@ -7454,4 +7455,38 @@ fn registry_trust_note_names_every_declared_clause_and_non_claim() {
             claim.wire_name()
         );
     }
+}
+
+/// `GNT-27.2` inherits the identifier bound, and the model declares that bound once: a name of
+/// exactly `REGISTRY_NAME_SCALAR_LIMIT` scalars is canonical, one more scalar is refused as too long
+/// rather than truncated, normalized, or accepted as a second name, and the kind stays part of the
+/// identity at the boundary.
+#[test]
+fn gnt_27_2_name_scalar_bound_is_inclusive_and_refuses_one_more_scalar() {
+    let boundary = "a".repeat(REGISTRY_NAME_SCALAR_LIMIT);
+    assert_eq!(boundary.chars().count(), REGISTRY_NAME_SCALAR_LIMIT);
+    let package = name(RegistryNameKind::Package, &boundary);
+    let namespace = name(RegistryNameKind::Namespace, &boundary);
+    assert_ne!(package, namespace);
+
+    let overlong = format!("{boundary}a");
+    let refused = reject(
+        RegistryName::new(RegistryNameKind::Package, &overlong),
+        "an overlong publication name",
+    );
+    assert!(matches!(
+        refused,
+        RegistryError::NameMalformed {
+            defect: NameDefect::TooLong,
+            ..
+        }
+    ));
+    assert_eq!(
+        refused.trust_failure_reason(),
+        TrustFailureReason::MalformedPublicationName
+    );
+    assert_eq!(
+        refused.clause(),
+        "GNT-27.2-canonical-publication-names-and-external-name-mapping"
+    );
 }
