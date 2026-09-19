@@ -2990,6 +2990,43 @@ fn section_38_propagation_operands_with_one_declared_conversion_are_admitted() {
         admitted.diagnostics()
     );
 
+    // An ungrouped left-operand continuation is the same operand with one operator suffix folded
+    // over the payload (`GNT-38.1-typed-error-propagation`): the marker's member run is followed by
+    // one top-level operator, whose right operand the fold applies after the payload is projected.
+    let continued = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } struct V { value: Int } fn inner_wrap() -> Result<V, E> { Ok(V { value: 3 }) } fn main() -> Result<Int, F> { let v: Int = inner_wrap()?.value + 1; Ok(v) }",
+    );
+    assert_eq!(
+        continued.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        continued.diagnostics()
+    );
+    assert!(
+        !diagnostic_codes(continued.diagnostics()).contains(&"error-propagation-refused"),
+        "the continued operand is not refused: {:?}",
+        continued.diagnostics()
+    );
+    // A longer continuation stays refused instead of folding a suffix this revision does not own.
+    let longer = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } struct V { value: Int } fn inner_wrap() -> Result<V, E> { Ok(V { value: 3 }) } fn main() -> Result<Int, F> { let v: Int = inner_wrap()?.value + 1 + 2; Ok(v) }",
+    );
+    assert!(
+        diagnostic_codes(longer.diagnostics()).contains(&"error-propagation-refused"),
+        "a longer operator continuation stays refused: {:?}",
+        longer.diagnostics()
+    );
+    // A short-circuit suffix is refused rather than admitted into a lowering path this
+    // continuation does not use.
+    let logical = analyze(
+        "trait ErrorConversion { pure fn convert(self) -> F; } struct E {} struct F {} impl ErrorConversion for E { pure fn convert(self) -> F { F {} } } struct V { value: Int } fn inner_wrap() -> Result<V, E> { Ok(V { value: 3 }) } fn main() -> Result<Bool, F> { let v: Bool = inner_wrap()?.value && true; Ok(v) }",
+    );
+    assert!(
+        diagnostic_codes(logical.diagnostics()).contains(&"error-propagation-refused"),
+        "a short-circuit continuation stays refused: {:?}",
+        logical.diagnostics()
+    );
+
     // Without a declared conversion the same operand stays refused, and a conversion impl that
     // omits the `pure` reserved word is not admitted either, because the increment publishes
     // conversions that are pure by declaration.

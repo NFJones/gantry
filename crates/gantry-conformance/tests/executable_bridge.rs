@@ -343,12 +343,14 @@ fn admitted_place_operand_trailing_steps_execute_on_the_shared_sequential_machin
 
 /// The same trailing step in an operand position publishes its field before the operator runs
 /// (`GNT-38.1-typed-error-propagation`): the operand route reaches the marker through the sequence
-/// walk, which must continue into the step exactly as the expression route does.
+/// walk, which must continue into the step exactly as the expression route does, and an ungrouped
+/// left continuation folds its one operator over the projected payload.
 #[test]
 fn admitted_trailing_steps_in_operand_position_execute_on_the_shared_sequential_machine() {
     for (body, expected) in [
         ("let v: Int = 1 + inner_wrap()?.value; Ok(v)", 4),
         ("let v: Int = 1 + inner_wrap()?.value + 2; Ok(v)", 6),
+        ("let v: Int = inner_wrap()?.value + 1; Ok(v)", 4),
     ] {
         let source = format!(
             "trait ErrorConversion {{ pure fn convert(self) -> F; }}\nstruct E {{}}\nstruct F {{}}\nimpl ErrorConversion for E {{ pure fn convert(self) -> F {{ F {{}} }} }}\nstruct V {{ value: Int }}\nfn inner_wrap() -> Result<V, E> {{ Ok(V {{ value: 3 }}) }}\nfn outer() -> Result<Int, F> {{ {body} }}\nfn main() -> Int {{ match outer() {{ Ok(v) => v, Err(_) => 0 }} }}\n"
@@ -376,6 +378,34 @@ fn admitted_trailing_steps_in_operand_position_execute_on_the_shared_sequential_
             "the admitted operand-position trailing step answers the value its operands determine"
         );
     }
+}
+
+/// A comparison continuation answers the operator's own result type
+/// (`GNT-38.1-typed-error-propagation`): the folded comparison publishes `Bool`, not the projected
+/// member type it compares, and the machine executes it.
+#[test]
+fn admitted_comparison_continuations_execute_on_the_shared_sequential_machine() {
+    let source = "trait ErrorConversion { pure fn convert(self) -> F; }\nstruct E {}\nstruct F {}\nimpl ErrorConversion for E { pure fn convert(self) -> F { F {} } }\nstruct V { value: Int }\nfn inner_wrap() -> Result<V, E> { Ok(V { value: 3 }) }\nfn outer() -> Result<Bool, F> { let v: Bool = inner_wrap()?.value == 3; Ok(v) }\nfn main() -> Bool { match outer() { Ok(v) => v, Err(_) => false } }\n";
+    let root = TempDirectory::new(source);
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x51; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+        .unwrap_or_else(|error| panic!("analyzed program was rejected by the machine: {error:?}"));
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("the admitted comparison continuation did not succeed")
+    };
+    assert!(
+        matches!(value.view(), LogicalValueView::Bool(true)),
+        "the comparison continuation answers the operator's Boolean result"
+    );
 }
 
 #[test]

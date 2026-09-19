@@ -2903,22 +2903,29 @@ fn admit_propagation_operand(
         })
     });
     let trailing_are_steps = marker_index.is_some_and(|marker| {
-        // A trailing chain is one member step per pair: the fragment that carries the dot and the
-        // identifier token it names. A trailing call or index does not admit here.
+        // A trailing chain starts with one member step per pair: the fragment that carries the dot
+        // and the name it reads, which the parser may wrap in one operator-free `BinaryExpression`.
+        // A trailing call or index does not admit here. One top-level operator may follow the run
+        // (`inner_wrap()?.value + 1`), whose right operand the caller folds over the payload; a
+        // longer or nested operator continuation stays refused.
         let trailing = node
             .children()
             .get(marker.saturating_add(1)..)
             .unwrap_or_default();
-        trailing.len() % 2 == 0
-            && trailing.chunks(2).all(|pair| {
-                let [fragment, name] = pair else {
-                    return false;
-                };
-                tree.node(*fragment)
-                    .is_some_and(|child| matches!(child.form(), SyntaxForm::PostfixExpression))
-                    && tree.node(*name).is_some_and(|child| {
-                        matches!(child.form(), SyntaxForm::Token(TokenKind::Identifier(_)))
-                    })
+        let run = marker_member_run_length(tree, trailing);
+        if run == 0 {
+            return trailing.is_empty();
+        }
+        if run == trailing.len() {
+            return true;
+        }
+        let suffix = &trailing[run..];
+        suffix.len() >= 2
+            && direct_binary_operator_in(tree, suffix).is_some_and(|(operator, index)| {
+                // A short-circuit operator needs the lowering's control-flow path, which this
+                // continuation does not use, so it stays refused instead of reaching an
+                // invariant.
+                index == 0 && !matches!(operator, Punctuation::AndAnd | Punctuation::OrOr)
             })
     });
     let Some(result) = context.current_result.borrow().clone() else {
@@ -3039,6 +3046,49 @@ fn wrapped_place_operand(
         return Ok(Some(ty.clone()));
     }
     Ok(None)
+}
+
+/// Returns how many of one marker node's trailing children belong to its member run.
+///
+/// A member step is the postfix fragment that carries the dot followed by the name it reads. The
+/// parser wraps that name in one operator-free `BinaryExpression` when a chain folds around the
+/// marker, so the name is accepted in either shape. The run ends at the first child that is not a
+/// member step, which is where an operator continuation begins.
+fn marker_member_run_length(tree: &SyntaxTree, trailing: &[NodeId]) -> usize {
+    let mut index = 0_usize;
+    while index < trailing.len() {
+        let Some(fragment) = tree.node(trailing[index]) else {
+            break;
+        };
+        if !matches!(fragment.form(), SyntaxForm::PostfixExpression)
+            || trailing
+                .get(index.saturating_add(1))
+                .is_none_or(|name| !marker_member_name(tree, *name))
+        {
+            break;
+        }
+        index = index.saturating_add(2);
+    }
+    index
+}
+
+/// Returns whether one trailing child names a member read.
+fn marker_member_name(tree: &SyntaxTree, id: NodeId) -> bool {
+    let Some(node) = tree.node(id) else {
+        return false;
+    };
+    if matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(_))) {
+        return true;
+    }
+    // A chain that folds around the marker wraps the name in one operator-free `BinaryExpression`
+    // holding exactly the identifier token.
+    matches!(node.form(), SyntaxForm::BinaryExpression)
+        && node.children().len() == 1
+        && node
+            .children()
+            .iter()
+            .filter_map(|child| tree.node(*child))
+            .all(|child| matches!(child.form(), SyntaxForm::Token(TokenKind::Identifier(_))))
 }
 
 /// Returns a marker node's children after its marker token.
@@ -3207,11 +3257,13 @@ fn propagation_operand_is_admitted(
     let Some(node) = tree.node(operand) else {
         return false;
     };
-    context
-        .propagation_seams
-        .borrow()
-        .iter()
-        .any(|seam| seam.span == *node.span())
+    context.propagation_seams.borrow().iter().any(|seam| {
+        // A relaxed read of `inner_wrap()?.value + 1` records its seam at the whole expression,
+        // so an operand contained in that seam is admitted exactly like one the seam names.
+        seam.span == *node.span()
+            || (seam.span.bytes().start() <= node.span().bytes().start()
+                && node.span().bytes().end() <= seam.span.bytes().end())
+    })
 }
 
 /// Refuses a reserved conversion declaration that is not one total concrete-to-concrete
@@ -6604,9 +6656,31 @@ fn infer_expression(
         let inferred = match operand_type {
             Some(operand_type) => {
                 match admit_propagation_operand(tree, expression, &operand_type, context)? {
-                    Some(payload) => {
-                        payload_member_steps(tree, &trailing, payload, context, diagnostics)?
-                    }
+                    Some(payload) => match payload_member_steps(
+                        tree,
+                        &trailing[..marker_member_run_length(tree, &trailing)],
+                        payload,
+                        context,
+                        diagnostics,
+                    )? {
+                        Some(folded) => {
+                            let suffix = &trailing[marker_member_run_length(tree, &trailing)..];
+                            if suffix.is_empty() {
+                                Some(folded)
+                            } else {
+                                infer_stepped_operator_suffix(
+                                    tree,
+                                    suffix,
+                                    (&folded, node.span()),
+                                    facts,
+                                    environment,
+                                    context,
+                                    diagnostics,
+                                )?
+                            }
+                        }
+                        None => None,
+                    },
                     None => None,
                 }
             }

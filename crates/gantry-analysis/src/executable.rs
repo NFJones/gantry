@@ -1464,7 +1464,7 @@ impl Compiler<'_> {
                 callee.clone(),
                 operand_type.clone(),
             )?;
-            return self.compile_trailing_member_steps(expression, payload);
+            return self.compile_marker_trailing(expression, payload);
         }
         let control = if matches!(
             node.form(),
@@ -2604,7 +2604,7 @@ impl Compiler<'_> {
         &mut self,
         expression: NodeId,
         payload: TypeDescriptor,
-    ) -> Result<TypeDescriptor, AnalysisError> {
+    ) -> Result<(TypeDescriptor, Vec<NodeId>), AnalysisError> {
         let mut node = self.node(expression)?.clone();
         // The fold wraps a marker node in an operator-free `BinaryExpression` that shares its span,
         // so the seam may match the wrapper rather than the marker node; the marker node is reached
@@ -2622,7 +2622,7 @@ impl Compiler<'_> {
                     .node(*child)
                     .is_some_and(|child| child.span() == node.span())
             }) else {
-                return Ok(payload);
+                return Ok((payload, Vec::new()));
             };
             node = self.node(only)?.clone();
         }
@@ -2634,20 +2634,46 @@ impl Compiler<'_> {
                 )
             })
         }) else {
-            return Ok(payload);
+            return Ok((payload, Vec::new()));
         };
-        let mut members: Vec<(Arc<str>, NodeId)> = Vec::new();
-        for child in node
+        // Only the member run belongs to the marker: an operator continuation after it stays
+        // outside the propagation and is applied to the folded value by the caller.
+        let trailing: Vec<NodeId> = node
             .children()
             .get(marker.saturating_add(1)..)
             .unwrap_or_default()
-        {
-            let Some(child_node) = self.tree.node(*child) else {
-                continue;
+            .to_vec();
+        let mut members: Vec<(Arc<str>, NodeId)> = Vec::new();
+        let mut run = 0_usize;
+        while run < trailing.len() {
+            let Some(fragment) = self.tree.node(trailing[run]) else {
+                break;
             };
-            let mut forms: Vec<(NodeId, &SyntaxForm)> = vec![(*child, child_node.form())];
+            let Some(name_node) = trailing
+                .get(run.saturating_add(1))
+                .and_then(|name| self.tree.node(*name))
+            else {
+                break;
+            };
+            let name_is_member = matches!(
+                name_node.form(),
+                SyntaxForm::Token(TokenKind::Identifier(_))
+            ) || (matches!(name_node.form(), SyntaxForm::BinaryExpression)
+                && name_node.children().len() == 1
+                && name_node
+                    .children()
+                    .iter()
+                    .filter_map(|inner| self.tree.node(*inner))
+                    .all(|inner| {
+                        matches!(inner.form(), SyntaxForm::Token(TokenKind::Identifier(_)))
+                    }));
+            if !matches!(fragment.form(), SyntaxForm::PostfixExpression) || !name_is_member {
+                break;
+            }
+            let mut forms: Vec<(NodeId, &SyntaxForm)> =
+                vec![(trailing[run.saturating_add(1)], name_node.form())];
             forms.extend(
-                child_node
+                name_node
                     .children()
                     .iter()
                     .filter_map(|inner| self.tree.node(*inner).map(|node| (*inner, node.form()))),
@@ -2657,7 +2683,9 @@ impl Compiler<'_> {
                     members.push((Arc::clone(name), id));
                 }
             }
+            run = run.saturating_add(2);
         }
+        let suffix = trailing.get(run..).unwrap_or_default().to_vec();
         let mut current = payload;
         for (member, id) in members {
             let Some(field) = self.body_types.get(&id).cloned().or_else(|| {
@@ -2674,7 +2702,41 @@ impl Compiler<'_> {
             )?;
             current = field;
         }
-        Ok(current)
+        Ok((current, suffix))
+    }
+
+    /// Compiles the member steps and one operator continuation that follow an admitted marker.
+    ///
+    /// The analyzer folds `inner_wrap()?.value + 1` over the payload, so the lowering applies the
+    /// same continuation after the member steps instead of dropping it
+    /// (`GNT-38.1-typed-error-propagation`).
+    fn compile_marker_trailing(
+        &mut self,
+        expression: NodeId,
+        payload: TypeDescriptor,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        let (current, suffix) = self.compile_trailing_member_steps(expression, payload)?;
+        if suffix.is_empty() {
+            return Ok(current);
+        }
+        let operators = binary_operators(self.tree, &suffix);
+        let [(operator, index)] = operators.as_slice() else {
+            return Err(AnalysisError::Invariant);
+        };
+        if *index != 0 {
+            return Err(AnalysisError::Invariant);
+        }
+        let primitive = primitive_for_binary(*operator).ok_or(AnalysisError::Invariant)?;
+        let ty = self
+            .body_types
+            .get(&expression)
+            .cloned()
+            .unwrap_or_else(|| current.clone());
+        self.compile_operand_slice(suffix.get(index.saturating_add(1)..).unwrap_or_default())?;
+        self.emit(ty.clone(), InstructionKind::Primitive(primitive))?;
+        // The continuation answers the operator's own result type, which the analyzer recorded for
+        // the whole expression (a comparison answers `Bool`, not the projected member type).
+        Ok(ty)
     }
 
     fn compile_operation(
@@ -2845,7 +2907,7 @@ impl Compiler<'_> {
             // A marker with trailing member steps publishes the payload's fields before the operand
             // is complete, exactly as the expression route does; the helper prefers each step's own
             // recorded type over this anchor.
-            self.compile_trailing_member_steps(*only, payload)?;
+            self.compile_marker_trailing(*only, payload)?;
             return Ok(());
         }
         // The parser leaves an operator-free `BinaryExpression` wrapper around one operand when
