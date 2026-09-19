@@ -2116,6 +2116,19 @@ impl Compiler<'_> {
             .get(index_postfix.saturating_add(1)..step_end)
             .unwrap_or_default()
             .to_vec();
+        // The closing bracket is a sibling token of the index expression, and a scan that offers
+        // it as a candidate declines the whole projection: `xs[i]` aborted while `xs[i + 1]` only
+        // survived because an inner literal broke the scan first.
+        while candidates.last().is_some_and(|candidate| {
+            self.tree.node(*candidate).is_some_and(|child| {
+                matches!(
+                    child.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightBracket))
+                )
+            })
+        }) {
+            candidates.pop();
+        }
         candidates.extend(
             direct_expressions(self.tree, node)
                 .into_iter()
@@ -2145,10 +2158,10 @@ impl Compiler<'_> {
         // are compiled in order and the element-access primitive reads the element with the same
         // bounds failure a static projection reports. Reading the first literal of an open
         // expression would project an element nobody asked for (`xs[i + 1]` answered `xs[1]`).
-        let dynamic_index = candidates
-            .iter()
-            .copied()
-            .find(|candidate| !closed_index_expression(self.tree, *candidate));
+        let dynamic_index = candidates.iter().copied().find(|candidate| {
+            !closed_index_expression(self.tree, *candidate)
+                || matches!(index_candidate(self.tree, *candidate), IndexCandidate::Open)
+        });
         if declined {
             return Err(AnalysisError::Invariant);
         }
@@ -5982,7 +5995,10 @@ fn index_candidate(tree: &SyntaxTree, root: NodeId) -> IndexCandidate {
     match constant_index(tree, root) {
         Ok(value) => match usize::try_from(value) {
             Ok(value) => IndexCandidate::Value(value),
-            Err(_) => IndexCandidate::Declined,
+            // A folded constant that does not fit an index (`xs[0 - 1]`) is applied as a value by
+            // the dynamic route instead of declining into an internal failure: the machine reports
+            // the same bounds failure a computed index reports.
+            Err(_) => IndexCandidate::Open,
         },
         Err(ConstantIndexError::Declined) => IndexCandidate::Declined,
         Err(ConstantIndexError::Open) => {

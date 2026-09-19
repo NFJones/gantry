@@ -383,21 +383,34 @@ fn admitted_trailing_steps_in_operand_position_execute_on_the_shared_sequential_
 /// A computed index reads the element the machine evaluates (`GNT-GP-COLL-001`): an open index
 /// expression that reaches the value-position projection compiler is compiled as a value and the
 /// element-access primitive applies it, so the program answers the element the index names instead
-/// of the first literal the expression carries. A bare place-route index (`xs[i]`, `xs[idx()]`)
-/// reaches the chain walker instead and remains the next phase of this contract.
+/// of the first literal the expression carries. A later dynamic step in a chain (`xs[0][i]`) still
+/// reaches the chain walker and remains the next phase of this contract.
 #[test]
 fn computed_element_access_reads_the_evaluated_index() {
-    for (body, expected) in [
+    for (prelude, body, expected) in [
         (
+            "",
             "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; xs[i + 1]",
             3,
         ),
         (
+            "",
             "let ys: List<Int> = [1, 2]; let xs: List<Int> = [1, 2, 3]; xs[ys[0] + 1]",
             3,
         ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; xs[i]",
+            2,
+        ),
+        ("", "let i: Int = 1; [1, 2, 3][i]", 2),
+        (
+            "fn idx() -> Int { 2 } ",
+            "let xs: List<Int> = [1, 2, 3]; xs[idx()]",
+            3,
+        ),
     ] {
-        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
         let root = TempDirectory::new(&source);
         let package = analyze(&root);
         let entry = package
@@ -419,6 +432,30 @@ fn computed_element_access_reads_the_evaluated_index() {
         assert!(
             matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected),
             "the computed element access answers the element its index evaluates to"
+        );
+    }
+}
+
+/// A computed index outside the list reports the published bounds failure (`GNT-GP-COLL-001`): a
+/// machine-computed index and a folded constant that does not fit an index both settle as the
+/// deterministic `list-index-out-of-bounds` failure instead of an internal abort.
+#[test]
+fn computed_element_access_reports_the_bounds_failure() {
+    for body in [
+        "let i: Int = 3; let xs: List<Int> = [1, 2, 3]; xs[i]",
+        "let xs: List<Int> = [1, 2, 3]; xs[0 - 1]",
+    ] {
+        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let MachineOutcome::Failed(failure) = run_entry_outcome(&analyze(&root)) else {
+            panic!("{source} did not report the bounds failure");
+        };
+        assert_eq!(
+            failure.code,
+            RuntimeCode::Deterministic(
+                gantry::portable::DeterministicEvaluationCode::ListIndexOutOfBounds
+            ),
+            "{source} failed for another reason"
         );
     }
 }
