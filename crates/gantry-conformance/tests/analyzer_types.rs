@@ -10427,6 +10427,37 @@ fn public_split_index_projection_operands_are_typed_and_lowered() {
     );
 }
 
+/// A computed tuple index publishes exactly one `tuple-index-not-literal` in every route
+/// (`062b99fd` phase 4): `SPEC.md` requires a tuple projection index to be a compile-time integer
+/// literal, and the operand walk now keys computed list steps, so an unkeyable tuple step names
+/// that requirement instead of leaving the enclosing operator to report a coarse signature failure
+/// for the receiver's own type.
+#[test]
+fn computed_tuple_indices_publish_one_literal_requirement() {
+    for body in [
+        "let t: Tuple<Int, Int> = (1, 2); let v: Int = t[0 + 0]; v",
+        "let t: Tuple<Int, Int> = (1, 2); let j: Int = 0; t[j] + 1",
+        "let ts: List<Tuple<Int, Int>> = [(1, 2)]; let i: Int = 0; let j: Int = 0; ts[i][j] + 1",
+        "let ts: List<Tuple<Int, Int>> = [(1, 2)]; let i: Int = 0; let j: Int = 0; let v: Int = ts[i][j]; v",
+    ] {
+        let refused = analyze(&format!("fn main() -> Int {{ {body} }}"));
+        assert_eq!(
+            refused.status(),
+            AnalysisStatus::Invalid,
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+        let diagnostics = refused.diagnostics();
+        assert_eq!(diagnostics.len(), 1, "{body}: {diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].code.as_str(),
+            "tuple-index-not-literal",
+            "{body}: {diagnostics:?}"
+        );
+        assert!(refused.executable_program().is_none(), "{body}");
+    }
+}
+
 /// A grouping around a projected receiver keeps that projection for its member tail.
 ///
 /// The parser offers a grouped receiver as one expression rather than as sibling fragments, so

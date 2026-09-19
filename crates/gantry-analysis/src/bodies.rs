@@ -8569,7 +8569,7 @@ fn infer_projection(
                 tree,
                 facts,
                 environment,
-                (node.span(), true),
+                node.span().clone(),
                 children,
                 index_postfix.saturating_add(1),
                 member,
@@ -8648,7 +8648,7 @@ fn infer_projection(
             tree,
             facts,
             environment,
-            (node.span(), true),
+            node.span().clone(),
             children,
             index_postfix.saturating_add(1),
             projected,
@@ -8788,14 +8788,13 @@ fn fold_projection_steps(
     tree: &SyntaxTree,
     facts: &BTreeMap<NodeId, TypeFact>,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
-    scope: (&SourceSpan, bool),
+    span: SourceSpan,
     children: &[NodeId],
     after: usize,
     mut current: TypeDescriptor,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
-    let (span, allow_expression_steps) = scope;
     let mut cursor = after;
     while let Some(child) = children.get(cursor).copied() {
         let Some(step) = tree.node(child) else {
@@ -8872,21 +8871,21 @@ fn fold_projection_steps(
                 // integer literal so the element type is statically known, and the first step of a
                 // chain already refuses such an index. A later step that declined silently left the
                 // whole chain untyped, so a `let` annotation went unchecked and the machine failed
-                // (`let v: Bool = t[1][0 + 0]; 0`). An operand position keeps the silent decline,
-                // because its enclosing operator's own refusal is the recorded verdict there.
-                if allow_expression_steps {
-                    let index_span = index_expression
-                        .and_then(|expression| tree.node(expression))
-                        .map(|node| node.span().clone())
-                        .unwrap_or_else(|| span.clone());
-                    diagnostics.push(body_diagnostic(
-                        "tuple-index-not-literal",
-                        DiagnosticCategory::Type,
-                        "a tuple projection index must be a nonnegative compile-time integer literal",
-                        index_span,
-                        [] as [(&str, &str); 0],
-                    )?);
-                }
+                // (`let v: Bool = t[1][0 + 0]; 0`). Every route publishes the refusal, operand
+                // positions included: the operand walk keys computed list steps, so the enclosing
+                // operator's coarse signature failure is no longer the right verdict for a tuple
+                // index the projection cannot key.
+                let index_span = index_expression
+                    .and_then(|expression| tree.node(expression))
+                    .map(|node| node.span().clone())
+                    .unwrap_or_else(|| span.clone());
+                diagnostics.push(body_diagnostic(
+                    "tuple-index-not-literal",
+                    DiagnosticCategory::Type,
+                    "a tuple projection index must be a nonnegative compile-time integer literal",
+                    index_span,
+                    [] as [(&str, &str); 0],
+                )?);
                 return Ok(None);
             };
             let Some(member) = current.immediate_members().into_iter().nth(literal_index) else {
@@ -8901,12 +8900,6 @@ fn fold_projection_steps(
             };
             Some(member)
         } else if current.kind() == TypeKind::List {
-            if literal_index.is_none() && !allow_expression_steps {
-                // An operand position has no lowering route for a step whose index is an expression,
-                // so the enclosing operator's own refusal stays the recorded verdict there rather
-                // than an admitted chain the machine cannot publish.
-                return Ok(None);
-            }
             if let Some(index_expression) = index_expression {
                 // The index expression is a value the machine computes: inferring it records the
                 // calls and effects it names, so the lowering publishes the callable an index-
@@ -9894,11 +9887,30 @@ fn infer_operand_index_projection_sequence(
     }
     // A list step keys its element for any admitted index expression, exactly as the value route
     // does (`Primitive::ListIndex` applies the computed index). A tuple step still needs a literal
-    // because its elements differ, and one that is not a literal stays untyped so the enclosing
-    // operator's own refusal is the recorded verdict.
+    // because its elements differ, and a computed tuple index publishes the value route's own
+    // refusal rather than leaving the enclosing operator to report a coarse signature failure for
+    // the receiver's type.
     let literal_index =
         index_expression.and_then(|expression| literal_projection_index(tree, expression));
     if receiver_type.kind() == TypeKind::Tuple && literal_index.is_none() {
+        let span = match index_expression.and_then(|expression| tree.node(expression)) {
+            Some(node) => node.span().clone(),
+            None => projection_prefix_span(
+                tree,
+                receiver_children
+                    .first()
+                    .copied()
+                    .ok_or(AnalysisError::Invariant)?,
+                index_expression,
+            )?,
+        };
+        diagnostics.push(body_diagnostic(
+            "tuple-index-not-literal",
+            DiagnosticCategory::Type,
+            "a tuple projection index must be a nonnegative compile-time integer literal",
+            span,
+            [] as [(&str, &str); 0],
+        )?);
         return Ok(None);
     }
     let projected = match receiver_type.kind() {
@@ -9970,7 +9982,7 @@ fn infer_operand_index_projection_sequence(
         tree,
         facts,
         environment,
-        (&span, true),
+        span.clone(),
         children,
         index_postfix.saturating_add(1),
         projected,

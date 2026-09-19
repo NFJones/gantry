@@ -385,8 +385,9 @@ fn admitted_trailing_steps_in_operand_position_execute_on_the_shared_sequential_
 /// element-access primitive applies it, so the program answers the element the index names instead
 /// of the first literal the expression carries. A later dynamic step in a chain (`xs[0][i]`) and a
 /// dynamic first step followed by a static one (`xs[i][0]`) both apply the same primitive per step.
-/// A dynamic index in an operator operand position (`xs[i] + 1`) still refuses at analysis under
-/// the operand scope and remains a later phase of this contract.
+/// A dynamic index in an operator operand position (`xs[i] + 1`) is keyed the same way, and a
+/// computed tuple index in any position publishes `tuple-index-not-literal` instead of a coarse
+/// operator refusal (`062b99fd` phase 4).
 #[test]
 fn computed_element_access_reads_the_evaluated_index() {
     for (prelude, body, expected) in [
@@ -507,6 +508,12 @@ fn computed_element_access_reads_the_evaluated_index() {
             "struct Boxed { items: List<Int> } ",
             "let i: Int = 1; let hs: List<Boxed> = [Boxed { items: [1] }, Boxed { items: [2, 3] }]; hs[i].items[0] + 1",
             3,
+        ),
+        ("", "let t: Tuple<Int, Int> = (1, 2); t[0] + 1", 2),
+        (
+            "",
+            "let ts: List<Tuple<Int, Int>> = [(1, 2)]; let i: Int = 0; ts[i][0] + 1",
+            2,
         ),
     ] {
         let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
