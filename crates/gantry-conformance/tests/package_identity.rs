@@ -3643,3 +3643,145 @@ fn compatibility_axes_report_five_separate_relations_and_refuse_unchecked_claims
         Some(AxisVerdict::Changed)
     );
 }
+
+/// `SPEC.md` 11277-11320 (`GNT-16.8-compatibility-axes`): each of the five axes lives in its own
+/// report slot. `CompatibilityReport::new` refuses a scalar axis report whose embedded axis does not
+/// match the slot it is placed in, and that incompleteness refusal is owned by this clause with no
+/// published diagnostic code.
+#[test]
+fn compatibility_report_refuses_an_axis_report_in_another_axis_slot() {
+    let compared = || {
+        let previous = nominal_interface("widget");
+        let candidate = nominal_interface("widget");
+        ComparedInputs {
+            previous: ComparedInput::new(
+                "previous",
+                bound_identity("widget", "1.0.0", &[], &previous),
+                previous.digest().clone(),
+            )
+            .unwrap_or_else(|error| panic!("the previous compared input is valid: {error}")),
+            candidate: ComparedInput::new(
+                "candidate",
+                bound_identity("widget", "1.1.0", &[], &candidate),
+                candidate.digest().clone(),
+            )
+            .unwrap_or_else(|error| panic!("the candidate compared input is valid: {error}")),
+        }
+    };
+    let schema = || {
+        BoundarySchemaReport::new(
+            &BoundarySchemaSurface::ALL
+                .into_iter()
+                .map(|surface| {
+                    BoundarySchemaSubReport::new(surface, true, AxisVerdict::Unchanged)
+                        .unwrap_or_else(|error| {
+                            panic!("a checked surface reports unchanged: {error}")
+                        })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_else(|error| panic!("every boundary surface is reported: {error}"))
+    };
+    let durable = || {
+        DurableArtifactReport::new(
+            &DurableArtifactRelation::ALL
+                .into_iter()
+                .map(|relation| {
+                    DurableArtifactSubReport::new(relation, true, AxisVerdict::Changed)
+                        .unwrap_or_else(|error| {
+                            panic!("a checked relation reports changed: {error}")
+                        })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_else(|error| panic!("every durable relation is reported: {error}"))
+    };
+    let source = || {
+        AxisReport::new(CompatibilityAxis::Source, true, AxisVerdict::Unchanged)
+            .unwrap_or_else(|error| panic!("a checked source axis: {error}"))
+    };
+    let authority = || {
+        AxisReport::new(CompatibilityAxis::Authority, false, AxisVerdict::NotChecked)
+            .unwrap_or_else(|error| panic!("an unchecked authority axis: {error}"))
+    };
+    let behaviour = || {
+        AxisReport::new(
+            CompatibilityAxis::DeclaredBehaviour,
+            false,
+            AxisVerdict::NotChecked,
+        )
+        .unwrap_or_else(|error| panic!("an unchecked behaviour axis: {error}"))
+    };
+    // The builder returns the model's own refusal type, whose variants are large because they
+    // carry the whole declaration surface; the lane asserts those variants, so the type is kept.
+    #[allow(clippy::result_large_err)]
+    let build =
+        |source_axis: AxisReport, authority_axis: AxisReport, behaviour_axis: AxisReport| {
+            CompatibilityReport::new(
+                compared(),
+                source_axis,
+                schema(),
+                authority_axis,
+                behaviour_axis,
+                durable(),
+            )
+        };
+
+    // The correctly placed axes are admitted, so each refusal below is caused by its slot.
+    let report = build(source(), authority(), behaviour())
+        .unwrap_or_else(|error| panic!("correct slots are admitted: {error}"));
+    assert_eq!(report.source().axis(), CompatibilityAxis::Source);
+
+    let misplaced_source = build(
+        AxisReport::new(CompatibilityAxis::Authority, true, AxisVerdict::Changed)
+            .unwrap_or_else(|error| panic!("a checked authority axis: {error}")),
+        authority(),
+        behaviour(),
+    );
+    assert!(matches!(
+        misplaced_source,
+        Err(PackageError::IncompleteCompatibilityReport {
+            axis: CompatibilityAxis::Source
+        })
+    ));
+    let misplaced_authority = build(
+        source(),
+        AxisReport::new(
+            CompatibilityAxis::DeclaredBehaviour,
+            true,
+            AxisVerdict::Changed,
+        )
+        .unwrap_or_else(|error| panic!("a checked behaviour axis: {error}")),
+        behaviour(),
+    );
+    assert!(matches!(
+        misplaced_authority,
+        Err(PackageError::IncompleteCompatibilityReport {
+            axis: CompatibilityAxis::Authority
+        })
+    ));
+    let misplaced_behaviour = build(
+        source(),
+        authority(),
+        AxisReport::new(CompatibilityAxis::Source, true, AxisVerdict::Changed)
+            .unwrap_or_else(|error| panic!("a checked source axis: {error}")),
+    );
+    assert!(matches!(
+        misplaced_behaviour,
+        Err(PackageError::IncompleteCompatibilityReport {
+            axis: CompatibilityAxis::DeclaredBehaviour
+        })
+    ));
+
+    // The incompleteness refusal carries no published code and is owned by this clause.
+    let refusal = match misplaced_authority {
+        Ok(_) => panic!("a misplaced authority axis cannot be admitted"),
+        Err(error) => error,
+    };
+    assert_eq!(refusal.code(), None, "{refusal} has no published code");
+    assert_eq!(
+        refusal.clause(),
+        "GNT-16.8-compatibility-axes",
+        "{refusal} is owned by the compatibility-axes clause"
+    );
+}
