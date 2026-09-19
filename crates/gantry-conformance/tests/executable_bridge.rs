@@ -764,6 +764,267 @@ fn until_loops_lower_and_execute_the_post_test() {
     );
 }
 
+/// `SPEC.md` GNT-9.6: a loop `session` modifier creates a session at the clause's creation point,
+/// leaves the enclosing session on every exit edge, and `inline` allocates none.
+#[test]
+fn loop_session_modifiers_establish_the_specified_scopes() {
+    use gantry::runtime::{LoopPhase, SessionEstablishmentV1};
+
+    fn label(kind: &InstructionKind) -> &'static str {
+        match kind {
+            InstructionKind::EnterSession(mode) if mode.as_ref() == "fork" => "enter:fork",
+            InstructionKind::EnterSession(mode) if mode.as_ref() == "new" => "enter:new",
+            InstructionKind::EnterSession(_) => "enter:other",
+            InstructionKind::ExitSession => "exit",
+            InstructionKind::EnterLoop {
+                phase: LoopPhase::Condition,
+                ..
+            } => "loop:condition",
+            InstructionKind::EnterLoop {
+                phase: LoopPhase::Body,
+                ..
+            } => "loop:body",
+            _ => "other",
+        }
+    }
+
+    // Creation points: `while` creates its session immediately before the condition evaluation,
+    // `until` and `loop` immediately after the body-entry limit check. A `break` leaves the loop's
+    // session and a `continue` leaves it only where the next creation point allocates a new child,
+    // so each form keeps exactly the exit edges the clause requires; the `loop` rows therefore
+    // carry one more exit because their `break` closes its own session on the transfer path.
+    for (body, mode, previous, next, exits) in [
+        (
+            "let mut i: Int = 0; while (session = fork) i < 2 { i = i + 1; } i",
+            "enter:fork",
+            "",
+            "loop:condition",
+            2,
+        ),
+        (
+            "let mut i: Int = 0; while (session = new) i < 2 { i = i + 1; } i",
+            "enter:new",
+            "",
+            "loop:condition",
+            1,
+        ),
+        (
+            "let mut i: Int = 0; until (session = fork) { i = i + 1; } when i > 1; i",
+            "enter:fork",
+            "loop:body",
+            "",
+            2,
+        ),
+        (
+            "let mut i: Int = 0; until (session = new) { i = i + 1; } when i > 1; i",
+            "enter:new",
+            "",
+            "loop:body",
+            1,
+        ),
+        (
+            "let mut i: Int = 0; loop (session = fork) { i = i + 1; if (i > 1) { break; } } i",
+            "enter:fork",
+            "loop:body",
+            "",
+            3,
+        ),
+        (
+            "let mut i: Int = 0; loop (session = new) { i = i + 1; if (i > 1) { break; } } i",
+            "enter:new",
+            "",
+            "loop:condition",
+            2,
+        ),
+    ] {
+        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let described = entry_workflow(&package)
+            .instructions
+            .iter()
+            .map(|instruction| label(&instruction.kind))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            described
+                .iter()
+                .filter(|label| label.starts_with("enter:"))
+                .count(),
+            1,
+            "{source} emitted {described:?}"
+        );
+        assert_eq!(
+            described.iter().filter(|label| **label == "exit").count(),
+            exits,
+            "{source} emitted {described:?}"
+        );
+        let at = described
+            .iter()
+            .position(|label| *label == mode)
+            .unwrap_or_else(|| panic!("{source} emitted no session instruction: {described:?}"));
+        if !previous.is_empty() {
+            assert_eq!(
+                described[at - 1],
+                previous,
+                "{source} created its session away from the creation point: {described:?}"
+            );
+        }
+        if !next.is_empty() {
+            assert_eq!(
+                described[at + 1],
+                next,
+                "{source} created its session away from the creation point: {described:?}"
+            );
+        }
+    }
+
+    // `inline` and an omitted modifier allocate no loop session at all: the deterministic driver
+    // panics on any scope request, so a succeeding execution is that evidence.
+    for body in [
+        "let mut i: Int = 0; while i < 2 { i = i + 1; } i",
+        "let mut i: Int = 0; while (session = inline) i < 2 { i = i + 1; } i",
+        "let mut i: Int = 0; until { i = i + 1; } when i > 1; i",
+        "let mut i: Int = 0; loop { i = i + 1; if (i > 1) { break; } } i",
+    ] {
+        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let described = entry_workflow(&package)
+            .instructions
+            .iter()
+            .map(|instruction| label(&instruction.kind))
+            .collect::<Vec<_>>();
+        assert!(
+            !described
+                .iter()
+                .any(|label| label.starts_with("enter:") || *label == "exit"),
+            "{source} allocated a loop session: {described:?}"
+        );
+        let MachineOutcome::Succeeded(value) = run_entry_outcome(&package) else {
+            panic!("{source} did not succeed");
+        };
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == 2),
+            "{source} answered another value"
+        );
+    }
+
+    // Execution: every creation point really creates one logical child session before the work it
+    // scopes, and the child count follows the clause exactly.
+    for (body, expected_children, expected_mode) in [
+        (
+            "let mut i: Int = 0; while (session = fork) i < 2 { i = i + 1; } i",
+            3,
+            SessionCreationModeV1::Fork,
+        ),
+        (
+            "let mut i: Int = 0; while (session = new) i < 2 { i = i + 1; } i",
+            1,
+            SessionCreationModeV1::New,
+        ),
+        (
+            "let mut i: Int = 0; until (session = fork) { i = i + 1; } when i > 1; i",
+            2,
+            SessionCreationModeV1::Fork,
+        ),
+        (
+            "let mut i: Int = 0; until (session = new) { i = i + 1; } when i > 1; i",
+            1,
+            SessionCreationModeV1::New,
+        ),
+        (
+            "let mut i: Int = 0; loop (session = fork) { i = i + 1; if (i > 1) { break; } } i",
+            2,
+            SessionCreationModeV1::Fork,
+        ),
+    ] {
+        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+        let program = package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x57; 32])
+            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+        let root_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0x56; 32])
+            .unwrap_or_else(|error| panic!("session identity failed: {error}"));
+        let mut sessions = LogicalSessionRegistryV1::new(
+            execution,
+            root_session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("root session registry failed: {error:?}"));
+        let mut machine = Machine::new_with_context(
+            Arc::new(program),
+            &entry.path,
+            vec![],
+            execution,
+            limits(),
+            None,
+            Some(root_session),
+        )
+        .unwrap_or_else(|error| panic!("machine construction failed: {error:?}"));
+        let mut occurrences = Vec::new();
+        let outcome = loop {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    assert_eq!(scope.mode, expected_mode, "{source} created another mode");
+                    let child = sessions
+                        .create(
+                            scope.parent_session_id,
+                            root_task_identity(execution),
+                            scope.site.clone(),
+                            scope.occurrence,
+                            scope.mode,
+                            SessionEstablishmentV1::Separate,
+                        )
+                        .unwrap_or_else(|error| panic!("child session creation failed: {error:?}"));
+                    let id = child.id;
+                    occurrences.push(scope.occurrence);
+                    machine
+                        .complete_session_scope(&scope, id)
+                        .unwrap_or_else(|error| {
+                            panic!("session scope completion failed: {error:?}")
+                        });
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    panic!("unexpected operation wait: {}", operation.identity)
+                }
+                MachineStep::Complete(outcome) => break outcome,
+            }
+        };
+        let MachineOutcome::Succeeded(value) = outcome else {
+            panic!("{source} did not succeed: {outcome:?}");
+        };
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == 2),
+            "{source} answered another value"
+        );
+        assert_eq!(
+            occurrences.len(),
+            expected_children,
+            "{source} created {occurrences:?}"
+        );
+        assert_eq!(
+            occurrences,
+            (0..expected_children as u64).collect::<Vec<_>>(),
+            "{source} reused an occurrence instead of creating a fresh child"
+        );
+        assert_eq!(
+            sessions.sessions().count(),
+            expected_children + 1,
+            "{source} retained another session count"
+        );
+    }
+}
+
 /// An index expression the checked folder cannot read is a value the machine computes
 /// (`3937f91d`): such an index failed analysis internally instead of being applied, so `xs[1 / 0]`
 /// now reports the published division failure and a nested projection inside the index reads its

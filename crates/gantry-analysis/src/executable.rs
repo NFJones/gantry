@@ -372,6 +372,10 @@ struct LoopTarget {
     cleanup_depth: usize,
     breaks: Vec<usize>,
     continues: Vec<usize>,
+    /// `SPEC.md` GNT-9.6: a `break` leaves the loop's session; a `continue` leaves it only when the
+    /// next creation point allocates a new child (`while` and `loop` under `fork`).
+    break_exits_session: bool,
+    continue_exits_session: bool,
 }
 
 impl Compiler<'_> {
@@ -1303,7 +1307,26 @@ impl Compiler<'_> {
         let body = direct_child_form(self.tree, &node, SyntaxForm::Block)
             .ok_or(AnalysisError::Invariant)?;
         let source_limit = loop_limit(self.tree, &node);
+        // `inline` allocates no loop session (`SPEC.md` GNT-9.6), so an explicit `inline` lowers
+        // exactly like an omitted modifier.
+        let session = loop_session_mode(self.tree, &node).filter(|mode| mode.as_ref() != "inline");
+        let loop_statement = matches!(node.form(), SyntaxForm::LoopStatement);
+        // `SPEC.md` GNT-9.6: `new` creates one session on loop entry and reuses it for every
+        // condition and body, while `while` creates a `fork` child before each condition evaluation
+        // and `loop` creates it before each body entry, after the body-entry limit check.
+        if session.as_deref() == Some("new") {
+            self.emit(
+                TypeDescriptor::UNIT,
+                InstructionKind::EnterSession(Arc::from("new")),
+            )?;
+        }
         let start = self.instructions.len();
+        if session.as_deref() == Some("fork") && !loop_statement {
+            self.emit(
+                TypeDescriptor::UNIT,
+                InstructionKind::EnterSession(Arc::from("fork")),
+            )?;
+        }
         self.emit(
             TypeDescriptor::UNIT,
             InstructionKind::EnterLoop {
@@ -1337,11 +1360,19 @@ impl Compiler<'_> {
                 source_limit,
             },
         )?;
+        if session.as_deref() == Some("fork") && loop_statement {
+            self.emit(
+                TypeDescriptor::UNIT,
+                InstructionKind::EnterSession(Arc::from("fork")),
+            )?;
+        }
         self.loops.push(LoopTarget {
             start,
             cleanup_depth: self.cleanup.len(),
             breaks: Vec::new(),
             continues: Vec::new(),
+            break_exits_session: session.is_some(),
+            continue_exits_session: session.as_deref() == Some("fork"),
         });
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
@@ -1360,10 +1391,20 @@ impl Compiler<'_> {
         self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        // A completed `fork` iteration closes its child before the next creation point; `new` keeps
+        // one session for the whole loop (`SPEC.md` GNT-9.6).
+        if session.as_deref() == Some("fork") {
+            self.emit(TypeDescriptor::UNIT, InstructionKind::ExitSession)?;
+        }
         self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(start))?;
         let when_false = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        // `new` and `fork` sessions close on the loop's normal completion path; a transfer closes
+        // its own session and jumps past this point (`SPEC.md` GNT-9.6).
+        if session.is_some() {
+            self.emit(TypeDescriptor::UNIT, InstructionKind::ExitSession)?;
+        }
         self.instructions[branch].kind = InstructionKind::Branch {
             when_true,
             when_false,
@@ -1398,6 +1439,17 @@ impl Compiler<'_> {
         let body = direct_child_form(self.tree, &node, SyntaxForm::Block)
             .ok_or(AnalysisError::Invariant)?;
         let source_limit = loop_limit(self.tree, &node);
+        // `inline` allocates no loop session (`SPEC.md` GNT-9.6), so an explicit `inline` lowers
+        // exactly like an omitted modifier.
+        let session = loop_session_mode(self.tree, &node).filter(|mode| mode.as_ref() != "inline");
+        // `SPEC.md` GNT-9.6: `new` creates one session on loop entry, and `until` creates a `fork`
+        // child before each body entry, after the body-entry limit or budget check.
+        if session.as_deref() == Some("new") {
+            self.emit(
+                TypeDescriptor::UNIT,
+                InstructionKind::EnterSession(Arc::from("new")),
+            )?;
+        }
         let start = self.instructions.len();
         self.emit(
             TypeDescriptor::UNIT,
@@ -1406,11 +1458,21 @@ impl Compiler<'_> {
                 source_limit,
             },
         )?;
+        if session.as_deref() == Some("fork") {
+            self.emit(
+                TypeDescriptor::UNIT,
+                InstructionKind::EnterSession(Arc::from("fork")),
+            )?;
+        }
         self.loops.push(LoopTarget {
             start,
             cleanup_depth: self.cleanup.len(),
             breaks: Vec::new(),
             continues: Vec::new(),
+            break_exits_session: session.is_some(),
+            // A `continue` lands on the post-test, which shares the iteration's child session
+            // (`SPEC.md` GNT-9.6), so only `break` leaves it.
+            continue_exits_session: false,
         });
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
@@ -1449,10 +1511,20 @@ impl Compiler<'_> {
         let when_false = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        // A false post-test begins the next iteration, so a `fork` child closes here before the next
+        // body entry; `new` keeps its single session and `inline` has none (`SPEC.md` GNT-9.6).
+        if session.as_deref() == Some("fork") {
+            self.emit(TypeDescriptor::UNIT, InstructionKind::ExitSession)?;
+        }
         self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(start))?;
         let when_true = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        // `new` and `fork` sessions close on the loop's exit path; `break` closes its own session
+        // and jumps past this point (`SPEC.md` GNT-9.6).
+        if session.is_some() {
+            self.emit(TypeDescriptor::UNIT, InstructionKind::ExitSession)?;
+        }
         self.instructions[branch].kind = InstructionKind::Branch {
             when_true,
             when_false,
@@ -1573,6 +1645,8 @@ impl Compiler<'_> {
             cleanup_depth: self.cleanup.len(),
             breaks: Vec::new(),
             continues: Vec::new(),
+            break_exits_session: false,
+            continue_exits_session: false,
         });
         self.cleanup.push(InstructionKind::LeaveOccurrence);
         self.cleanup.push(InstructionKind::ExitScope);
@@ -1646,9 +1720,19 @@ impl Compiler<'_> {
     fn compile_loop_transfer(&mut self, is_break: bool) -> Result<(), AnalysisError> {
         let target = self.loops.last().ok_or(AnalysisError::Invariant)?;
         let start = target.start;
+        let exits_session = if is_break {
+            target.break_exits_session
+        } else {
+            target.continue_exits_session
+        };
         let cleanup = self.cleanup[target.cleanup_depth..].to_vec();
         for kind in cleanup.into_iter().rev() {
             self.emit(TypeDescriptor::UNIT, kind)?;
+        }
+        // A transfer that leaves the loop's session closes it before the jump, so the next creation
+        // point starts from the enclosing session (`SPEC.md` GNT-9.6).
+        if exits_session {
+            self.emit(TypeDescriptor::UNIT, InstructionKind::ExitSession)?;
         }
         // A transfer on a path that a compile-time fact excludes keeps its cleanup shape but
         // emits no jump: its target label may not exist, and an unreachable transfer must not
@@ -6845,6 +6929,34 @@ fn descendant_pattern_tokens(
         }
     }
     tokens.into_iter()
+}
+
+/// Reads one loop statement's `session` modifier (`SPEC.md` GNT-9.5, `GNT-9.6`).
+///
+/// `loop`, `while`, and `until` admit `session = inline|fork|new`; the frontend refuses the modifier
+/// on every other statement form, so a loop statement either carries one admitted session word or
+/// no session modifier at all.
+fn loop_session_mode(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Option<Arc<str>> {
+    node.children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .filter(|child| matches!(child.form(), SyntaxForm::ModifierList))
+        .flat_map(gantry_frontend::SyntaxNode::children)
+        .filter_map(|child| tree.node(*child))
+        .filter(|modifier| {
+            modifier
+                .children()
+                .iter()
+                .filter_map(|child| tree.node(*child))
+                .any(|token| {
+                    matches!(
+                        token.form(),
+                        SyntaxForm::Token(TokenKind::ReservedWord(word))
+                            if word.spelling() == "session"
+                    )
+                })
+        })
+        .find_map(|modifier| direct_word(tree, modifier, &["inline", "fork", "new"]))
 }
 
 fn loop_limit(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Option<u64> {

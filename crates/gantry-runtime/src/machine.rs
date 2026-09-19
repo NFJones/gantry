@@ -4078,7 +4078,11 @@ impl Machine {
             "new" => SessionCreationModeV1::New,
             _ => return self.fail_at(RuntimeCode::InternalInvariant, workflow, site),
         };
-        let key = self.counter_key("session", &workflow, &site);
+        // One loop creation point executes once per iteration and each execution must create its own
+        // child (`SPEC.md` GNT-9.6), so the occurrence counts executions of this static site rather
+        // than inheriting the enclosing loop or call occurrence: a site reached from any dynamic
+        // context advances the same sequence, and a single execution still derives occurrence zero.
+        let key = occurrence_counter_key(&[], "session", &workflow, &site);
         let occurrence = self.counters.get(&key).copied().unwrap_or(0);
         self.counters.insert(key, occurrence.saturating_add(1));
         let pending = SessionScopeOccurrence {
