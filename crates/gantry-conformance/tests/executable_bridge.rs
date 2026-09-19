@@ -476,6 +476,7 @@ fn computed_element_access_reports_the_bounds_failure() {
     for body in [
         "let i: Int = 3; let xs: List<Int> = [1, 2, 3]; xs[i]",
         "let xs: List<Int> = [1, 2, 3]; xs[0 - 1]",
+        "let xs: List<Int> = [1, 2, 3]; xs[-1]",
     ] {
         let source = format!("fn main() -> Int {{ {body} }}\n");
         let root = TempDirectory::new(&source);
@@ -488,6 +489,101 @@ fn computed_element_access_reports_the_bounds_failure() {
                 gantry::portable::DeterministicEvaluationCode::ListIndexOutOfBounds
             ),
             "{source} failed for another reason"
+        );
+    }
+}
+
+/// An index expression the checked folder cannot read is a value the machine computes
+/// (`3937f91d`): such an index failed analysis internally instead of being applied, so `xs[1 / 0]`
+/// now reports the published division failure and a nested projection inside the index reads its
+/// element.
+#[test]
+fn unfoldable_index_expressions_take_the_computed_route() {
+    for body in [
+        "let xs: List<Int> = [1, 2, 3]; xs[1 / 0]",
+        "let xs: List<Int> = [1, 2, 3]; xs[[1, 2][0] / 0]",
+    ] {
+        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let MachineOutcome::Failed(failure) = run_entry_outcome(&analyze(&root)) else {
+            panic!("{source} did not report the division failure");
+        };
+        assert_eq!(
+            failure.code,
+            RuntimeCode::Deterministic(
+                gantry::portable::DeterministicEvaluationCode::IntegerDivisionByZero
+            ),
+            "{source} failed for another reason"
+        );
+    }
+    for (body, expected) in [
+        ("let xs: List<Int> = [1, 2, 3]; xs[[1, 2][0] + 1]", 3),
+        ("let xs: List<Int> = [1, 2, 3]; xs[[1, 2][1]]", 3),
+    ] {
+        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+        let program = package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x53; 32])
+            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+        let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+            .unwrap_or_else(|error| {
+                panic!("analyzed program was rejected by the machine: {error:?}")
+            });
+        let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+            panic!("the computed index {expected} did not succeed")
+        };
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected),
+            "a nested projection inside an index reads its element"
+        );
+    }
+}
+
+/// A literal operand of a unary operator is a value the machine publishes (`6b31db0f`): the
+/// operand walk skipped the literal token, so `-1` and `!true` reached the primitive with no
+/// operand and failed internally while their bound spellings worked. A prefix operator inside a
+/// chain (`-3 + 1`, `-x + 1`) is the same operand shape.
+#[test]
+fn literal_unary_operands_evaluate_on_the_machine() {
+    for (body, expected) in [
+        ("-1", -1),
+        ("let i: Int = -1; i", -1),
+        ("discard -2; 0", 0),
+        ("discard !true; 0", 0),
+        ("-3 + 1", -2),
+        ("-3 - 1", -4),
+        ("let x: Int = 3; -x + 1", -2),
+        ("10 - 2 - 3", 5),
+    ] {
+        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+        let program = package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x54; 32])
+            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+        let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+            .unwrap_or_else(|error| {
+                panic!("analyzed program was rejected by the machine: {error:?}")
+            });
+        let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+            panic!("the unary expression {expected} did not succeed")
+        };
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected),
+            "a literal operand of a unary operator evaluates"
         );
     }
 }

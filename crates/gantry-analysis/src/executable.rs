@@ -1528,14 +1528,20 @@ impl Compiler<'_> {
             self.emit(ty.clone(), InstructionKind::Primitive(primitive))?;
             return Ok(ty);
         }
-        if matches!(node.form(), SyntaxForm::UnaryExpression)
-            || descendant_form(self.tree, expression, &[SyntaxForm::UnaryExpression]).is_some()
-        {
+        // A projection node that merely carries a unary inside its index (`xs[-1]`) is a
+        // projection: the descendant descent below compiled the index and dropped the element read
+        // (the program answered `-1`). The projection arms own any node with a top-level index.
+        let unary_descendant = if matches!(node.form(), SyntaxForm::UnaryExpression) {
+            None
+        } else {
+            descendant_form(self.tree, expression, &[SyntaxForm::UnaryExpression])
+                .filter(|_| !is_projection_node(self.tree, expression))
+        };
+        if matches!(node.form(), SyntaxForm::UnaryExpression) || unary_descendant.is_some() {
             let unary = if matches!(node.form(), SyntaxForm::UnaryExpression) {
                 expression
             } else {
-                descendant_form(self.tree, expression, &[SyntaxForm::UnaryExpression])
-                    .ok_or(AnalysisError::Invariant)?
+                unary_descendant.ok_or(AnalysisError::Invariant)?
             };
             let unary_node = self.node(unary)?.clone();
             let operator =
@@ -1559,7 +1565,17 @@ impl Compiler<'_> {
                 .get(operator_index.saturating_add(1)..)
                 .unwrap_or_default()
                 .to_vec();
-            self.compile_sequence(&children)?;
+            if let [only] = children.as_slice()
+                && let Some((value, literal_ty)) = literal_token(self.tree, *only)?
+            {
+                // A literal operand arrives as its own token rather than as a node the operand
+                // walk compiles, so that walk skipped it and the primitive consumed no operand:
+                // `-1` and `!true` failed the machine while their bound spellings worked. The
+                // token's own value is the operand.
+                self.emit(literal_ty, InstructionKind::Push(value))?;
+            } else {
+                self.compile_sequence(&children)?;
+            }
             self.emit(
                 ty.clone(),
                 InstructionKind::Primitive(match operator {
@@ -2154,6 +2170,17 @@ impl Compiler<'_> {
                     break;
                 }
                 IndexCandidate::Declined => {
+                    // An expression the checked folder cannot read is still a value the machine
+                    // computes: `xs[1 / 0]` reports the division failure and `xs[[1, 2][0] + 1]`
+                    // reads the nested projection, exactly as those expressions report in any
+                    // other position. Only a receiver-free token keeps the terminal decline.
+                    if self
+                        .tree
+                        .node(candidate)
+                        .is_some_and(|child| !matches!(child.form(), SyntaxForm::Token(_)))
+                    {
+                        continue;
+                    }
                     declined = true;
                     break;
                 }
@@ -2166,7 +2193,10 @@ impl Compiler<'_> {
         // expression would project an element nobody asked for (`xs[i + 1]` answered `xs[1]`).
         let dynamic_index = candidates.iter().copied().find(|candidate| {
             !closed_index_expression(self.tree, *candidate)
-                || matches!(index_candidate(self.tree, *candidate), IndexCandidate::Open)
+                || matches!(
+                    index_candidate(self.tree, *candidate),
+                    IndexCandidate::Open | IndexCandidate::Declined
+                )
         });
         if declined {
             return Err(AnalysisError::Invariant);
@@ -3139,6 +3169,32 @@ impl Compiler<'_> {
         &mut self,
         children: &[NodeId],
     ) -> Result<TypeDescriptor, AnalysisError> {
+        // A chain fragment can open with a unary operator (`-3 + 1`, `-x + 1`): the parser keeps
+        // that operator as its own token ahead of the operand, so the operator scan that splits
+        // the enclosing chain must not read it as binary and this walk must apply it.
+        if let Some(first) = children.first()
+            && let Some(node) = self.tree.node(*first)
+            && let SyntaxForm::Token(TokenKind::Punctuation(operator)) = node.form()
+            && matches!(operator, Punctuation::Minus | Punctuation::Bang)
+            && prefix_operator(self.tree, children, 0)
+        {
+            let operand = children.get(1..).unwrap_or_default();
+            let primitive = match operator {
+                Punctuation::Minus => Primitive::Negate,
+                Punctuation::Bang => Primitive::Not,
+                _ => return Err(AnalysisError::Invariant),
+            };
+            let operand_type = if let [only] = operand
+                && let Some((value, literal_ty)) = literal_token(self.tree, *only)?
+            {
+                self.emit(literal_ty.clone(), InstructionKind::Push(value))?;
+                literal_ty
+            } else {
+                self.compile_operand_sequence(operand)?
+            };
+            self.emit(operand_type.clone(), InstructionKind::Primitive(primitive))?;
+            return Ok(operand_type);
+        }
         if carries_split_projection(self.tree, children)
             && let Some((operator, index)) = children_binary_operator(self.tree, children)
         {
@@ -5042,6 +5098,12 @@ fn postfix_projection_steps(
                         break;
                     }
                     IndexCandidate::Declined => {
+                        // See the value-position scan: an expression the folder cannot read is a
+                        // computed index whose failure the machine reports, not a decline.
+                        if !matches!(child_node.form(), SyntaxForm::Token(_)) {
+                            dynamic.get_or_insert(*child);
+                            continue;
+                        }
                         declined = true;
                         break;
                     }
@@ -5819,12 +5881,35 @@ fn binary_operators(tree: &SyntaxTree, children: &[NodeId]) -> Vec<(Punctuation,
         .iter()
         .enumerate()
         .filter_map(|(index, child)| match tree.node(*child)?.form() {
-            SyntaxForm::Token(TokenKind::Punctuation(value)) if is_binary_operator(*value) => {
+            SyntaxForm::Token(TokenKind::Punctuation(value))
+                if is_binary_operator(*value)
+                    && !(matches!(value, Punctuation::Minus | Punctuation::Bang)
+                        && prefix_operator(tree, children, index)) =>
+            {
                 Some((*value, index))
             }
             _ => None,
         })
         .collect()
+}
+
+/// Reports whether the operator token at `index` is prefix rather than binary.
+///
+/// A `-` or `!` that opens a fragment, or that follows another operator token, names no left
+/// operand; reading it as binary split `-3 + 1` into an empty first operand and left the machine
+/// with a stack the primitive could not read.
+fn prefix_operator(tree: &SyntaxTree, children: &[NodeId], index: usize) -> bool {
+    let Some(previous) = index.checked_sub(1).and_then(|at| children.get(at)) else {
+        return true;
+    };
+    matches!(
+        tree.node(*previous).map(|node| node.form()),
+        Some(SyntaxForm::Token(TokenKind::Punctuation(value)))
+            if !matches!(
+                value,
+                Punctuation::RightBracket | Punctuation::RightParenthesis
+            )
+    )
 }
 
 /// Returns the single non-token child of one operator-free wrapper node.
