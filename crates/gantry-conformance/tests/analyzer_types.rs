@@ -10404,23 +10404,26 @@ fn public_split_index_projection_operands_are_typed_and_lowered() {
         );
     }
 
-    // A non-literal index still refuses instead of taking the receiver's type as its operand.
+    // A computed index in an operand position is keyed like the value route (`062b99fd` phase 4):
+    // the receiver keeps its own type until the element-access primitive reads the element, and the
+    // enclosing operator consumes that element rather than the receiver. The executed value is
+    // pinned in the executable lane (`xs[i] + 1` answers 3).
     let source = "fn main() -> Int { let i: Int = 1; let xs: List<Int> = [1, 2]; xs[i] + 1 }";
     root.write(source);
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("source: {source}; syntax phase failed: {error:?}"));
-    let refused = analyze_package_types(&syntax).unwrap_or_else(|error| {
+    let admitted = analyze_package_types(&syntax).unwrap_or_else(|error| {
         panic!("source: {source}; type analysis failed internally: {error:?}")
     });
     assert_eq!(
-        refused.status(),
-        AnalysisStatus::Invalid,
+        admitted.status(),
+        AnalysisStatus::Valid,
         "source: {source}; diagnostics: {:?}",
-        refused.diagnostics()
+        admitted.diagnostics()
     );
     assert!(
-        refused.executable_program().is_none(),
-        "source: {source}: a refused operand must not publish a program"
+        admitted.executable_program().is_some(),
+        "source: {source}: an admitted operand must publish a program"
     );
 }
 
@@ -12104,10 +12107,11 @@ fn public_grouped_receivers_are_transparent_for_a_receiver_call() {
             "type-mismatch",
         ),
         // An operand position has no lowering route for that chain, so the enclosing operator's own
-        // refusal stays the verdict there.
+        // refusal stays the verdict there. The chain itself is keyed (`062b99fd` phase 4), so the
+        // refusal the fixture sees is the comparison's own `Bool` result against its `Int` main.
         (
             "let xs: List<List<Int>> = [[1, 2], [3]]; xs[0][0 + 1] == 2",
-            "invalid-primitive",
+            "type-mismatch",
         ),
         // A later tuple step needs a literal index exactly as the first one does: the element type
         // must be statically known, so a computed index is refused rather than left untyped.

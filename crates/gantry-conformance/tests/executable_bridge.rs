@@ -451,6 +451,63 @@ fn computed_element_access_reads_the_evaluated_index() {
             "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; let v: Int = xs[i][0]; v",
             3,
         ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; xs[i] + 1",
+            3,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; let v: Bool = xs[i] == 2; if (v) { return 1; } else { return 0; }",
+            1,
+        ),
+        ("", "let i: Int = 1; [1, 2, 3][i] + 1", 3),
+        (
+            "",
+            "let v: Bool = [1, 2, 3][3 - 1] == 3; if (v) { return 1; } else { return 0; }",
+            1,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; xs[0][i] + 1",
+            3,
+        ),
+        (
+            "struct Boxed { items: List<Int> } ",
+            "let i: Int = 1; let h: Boxed = Boxed { items: [1, 2, 3] }; h.items[i] + 1",
+            3,
+        ),
+        (
+            "fn bump(x: Int) -> Int { x + 1 } ",
+            "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; bump(xs[i])",
+            3,
+        ),
+        (
+            "fn head() -> List<Int> { return [1, 2, 3]; } ",
+            "let i: Int = 1; head()[i] + 1",
+            3,
+        ),
+        ("fn at() -> Int { 1 } ", "[1, 2, 3][at()] + 1", 3),
+        (
+            "",
+            "let i: Int = 1; let j: Int = 0; let xs: List<List<Int>> = [[1, 2], [3]]; xs[i][j] + 1",
+            4,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; (xs[i] + 1) * 2",
+            6,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; xs[i] + xs[0]",
+            3,
+        ),
+        (
+            "struct Boxed { items: List<Int> } ",
+            "let i: Int = 1; let hs: List<Boxed> = [Boxed { items: [1] }, Boxed { items: [2, 3] }]; hs[i].items[0] + 1",
+            3,
+        ),
     ] {
         let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
         let root = TempDirectory::new(&source);
@@ -487,6 +544,10 @@ fn computed_element_access_reports_the_bounds_failure() {
         "let i: Int = 3; let xs: List<Int> = [1, 2, 3]; xs[i]",
         "let xs: List<Int> = [1, 2, 3]; xs[0 - 1]",
         "let xs: List<Int> = [1, 2, 3]; xs[-1]",
+        "let i: Int = 3; let xs: List<Int> = [1, 2, 3]; xs[i] + 1",
+        "let xs: List<Int> = [1, 2, 3]; xs[0 - 1] + 1",
+        "let xs: List<Int> = [1, 2, 3]; xs[-1] + 1",
+        "let i: Int = 3; let xs: List<List<Int>> = [[1, 2], [3]]; xs[i][0] + 1",
     ] {
         let source = format!("fn main() -> Int {{ {body} }}\n");
         let root = TempDirectory::new(&source);

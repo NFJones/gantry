@@ -3223,6 +3223,9 @@ impl Compiler<'_> {
         if let Some(result) = self.compile_literal_index_projection_operand(children)? {
             return Ok(result);
         }
+        if let Some(result) = self.compile_dynamic_index_projection_operand(children)? {
+            return Ok(result);
+        }
         if let Some(result) = self.compile_split_struct_operand(children)? {
             return Ok(result);
         }
@@ -3471,6 +3474,138 @@ impl Compiler<'_> {
         let mut current = projection_step_type(&list, &member, self.struct_fields)
             .ok_or(AnalysisError::Invariant)?;
         self.emit(current.clone(), InstructionKind::Project(member))?;
+        for step in steps {
+            if let ProjectionChainStep::ListIndex(index) = step {
+                self.compile_expression(index)?;
+                current = current
+                    .immediate_members()
+                    .first()
+                    .cloned()
+                    .ok_or(AnalysisError::Invariant)?;
+                self.emit(
+                    current.clone(),
+                    InstructionKind::Primitive(Primitive::ListIndex),
+                )?;
+                continue;
+            }
+            let projection = match step {
+                ProjectionChainStep::Field(field) => Projection::Field(field),
+                ProjectionChainStep::Member(index) => Projection::Member(index),
+                ProjectionChainStep::ListIndex(_) => continue,
+            };
+            current = projection_step_type(&current, &projection, self.struct_fields)
+                .ok_or(AnalysisError::Invariant)?;
+            self.emit(current.clone(), InstructionKind::Project(projection))?;
+        }
+        Ok(Some(current))
+    }
+
+    /// Lowers a split index-projection operand whose first computed step reads the element.
+    ///
+    /// `xs[i] + 1` and `[1, 2, 3][3 - 1] == 3` reach the enclosing operator as sibling fragments:
+    /// the receiver part before the computed step compiles as its own value (a place, a literal
+    /// aggregate, a grouping, or a call result), the index expression compiles as a value, and the
+    /// element-access primitive reads the element that index names. Every later step applies on top
+    /// of that element. A slice whose index step is one literal stays with the static arms, which
+    /// run first.
+    fn compile_dynamic_index_projection_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        let mut cursor = 0_usize;
+        let mut computed = None;
+        while let Some(child) = children.get(cursor) {
+            let Some(node) = self.tree.node(*child) else {
+                return Ok(None);
+            };
+            if matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(self.tree, node, Punctuation::LeftBracket)
+            {
+                let index_expression = children
+                    .iter()
+                    .copied()
+                    .skip(cursor.saturating_add(1))
+                    .find(|child| {
+                        self.tree
+                            .node(*child)
+                            .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+                    });
+                if let Some(index_expression) = index_expression
+                    && crate::bodies::literal_projection_index(self.tree, index_expression)
+                        .is_none()
+                {
+                    computed = Some((cursor, index_expression));
+                    break;
+                }
+            }
+            cursor += 1;
+        }
+        let Some((index_postfix, index_expression)) = computed else {
+            return Ok(None);
+        };
+        let receiver_children = children.get(..index_postfix).unwrap_or_default();
+        let receiver_type = if let [only] = receiver_children {
+            if let Some(name) = direct_identifier(self.tree, *only) {
+                // A place receiver loads its binding: the projected value is the element of the
+                // value that binding holds, exactly as the value route reads it.
+                let Some(ty) = self.binding_types.get(&name).cloned() else {
+                    return Ok(None);
+                };
+                self.emit(ty.clone(), InstructionKind::Load(name))?;
+                ty
+            } else {
+                self.compile_expression(*only)?
+            }
+        } else if let Some((root, path)) = operand_index_place(self.tree, receiver_children) {
+            // A receiver prefix that is a static projection (`xs[0][i] + 1`): the place loads its
+            // root and applies every prefix segment before the computed step reads its element.
+            let Some(types) =
+                receiver_place_types(&root, &path, &self.binding_types, self.struct_fields)
+            else {
+                return Ok(None);
+            };
+            let mut types = types.into_iter();
+            let mut result = types.next().ok_or(AnalysisError::Invariant)?;
+            self.emit(result.clone(), InstructionKind::Load(root))?;
+            for segment in &path {
+                let projection = match segment {
+                    ValuePathSegment::StructField(field) => {
+                        Projection::Field(Arc::from(field.as_str()))
+                    }
+                    ValuePathSegment::ListItem(index) | ValuePathSegment::TupleMember(index) => {
+                        Projection::Member(*index)
+                    }
+                    _ => return Err(AnalysisError::Invariant),
+                };
+                result = types.next().ok_or(AnalysisError::Invariant)?;
+                self.emit(result.clone(), InstructionKind::Project(projection))?;
+            }
+            result
+        } else {
+            match self.compile_computed_projection_receiver(receiver_children)? {
+                Some(receiver_type) => receiver_type,
+                // A receiver part this walk cannot key leaves the ordinary child walk responsible.
+                None => return Ok(None),
+            }
+        };
+        if receiver_type.kind() != TypeKind::List {
+            return Ok(None);
+        }
+        let mut current = receiver_type
+            .immediate_members()
+            .first()
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        self.compile_expression(index_expression)?;
+        self.emit(
+            current.clone(),
+            InstructionKind::Primitive(Primitive::ListIndex),
+        )?;
+        let Some(steps) =
+            postfix_projection_steps(self.tree, children, index_postfix.saturating_add(1))
+        else {
+            return Ok(None);
+        };
         for step in steps {
             if let ProjectionChainStep::ListIndex(index) = step {
                 self.compile_expression(index)?;

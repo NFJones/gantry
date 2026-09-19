@@ -9892,20 +9892,20 @@ fn infer_operand_index_projection_sequence(
             [("actual", actual.canonical_string())],
         )?);
     }
-    // A step this walk cannot key statically stays untyped: the element access a dynamic index
-    // needs is not published yet, and the enclosing operator must not consume the receiver's type
-    // in the element's place.
-    let Some(literal_index) =
-        index_expression.and_then(|expression| literal_projection_index(tree, expression))
-    else {
+    // A list step keys its element for any admitted index expression, exactly as the value route
+    // does (`Primitive::ListIndex` applies the computed index). A tuple step still needs a literal
+    // because its elements differ, and one that is not a literal stays untyped so the enclosing
+    // operator's own refusal is the recorded verdict.
+    let literal_index =
+        index_expression.and_then(|expression| literal_projection_index(tree, expression));
+    if receiver_type.kind() == TypeKind::Tuple && literal_index.is_none() {
         return Ok(None);
-    };
+    }
     let projected = match receiver_type.kind() {
         TypeKind::List => receiver_type.immediate_members().into_iter().next(),
-        TypeKind::Tuple => receiver_type
-            .immediate_members()
-            .into_iter()
-            .nth(literal_index),
+        TypeKind::Tuple => {
+            literal_index.and_then(|index| receiver_type.immediate_members().into_iter().nth(index))
+        }
         _ => None,
     };
     let span = projection_prefix_span(
@@ -9921,12 +9921,17 @@ fn infer_operand_index_projection_sequence(
     // by the enclosing operator as if that receiver were the element.
     let Some(projected) = projected else {
         if receiver_type.kind() == TypeKind::Tuple {
+            // The guard above keeps a tuple step on a literal index, so this path always names the
+            // literal it read.
+            let index = literal_index
+                .map(|index| index.to_string())
+                .unwrap_or_default();
             diagnostics.push(body_diagnostic(
                 "tuple-index-out-of-range",
                 DiagnosticCategory::Type,
                 "a tuple projection index is outside its static arity",
                 span.clone(),
-                [("index", literal_index.to_string())],
+                [("index", index)],
             )?);
         } else {
             diagnostics.push(body_diagnostic(
@@ -9939,7 +9944,7 @@ fn infer_operand_index_projection_sequence(
         }
         return Ok(None);
     };
-    let continuing = projected_place_path(&place, Some(literal_index));
+    let continuing = projected_place_path(&place, literal_index);
     if let Some(path) = &continuing {
         // The operand route records the same subplace the value route does: every segment the walk
         // sees after this first index belongs to the key, so an operand chain's sibling fields and
@@ -9965,7 +9970,7 @@ fn infer_operand_index_projection_sequence(
         tree,
         facts,
         environment,
-        (&span, false),
+        (&span, true),
         children,
         index_postfix.saturating_add(1),
         projected,
