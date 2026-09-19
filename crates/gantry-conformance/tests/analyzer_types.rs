@@ -2218,9 +2218,10 @@ fn projection_over_a_computed_receiver_is_refused_precisely() {
 /// `8ee59eae`: a method call on an element reached through an index projection is refused by
 /// design with one precise code (`receiver-value-place`) for the ungrouped and grouped spellings,
 /// the operand position, a literal receiver, a function parameter, a builtin member, and a
-/// constructed receiver. Field and index steps over an element, and calls on place receivers,
-/// keep their verbs. The false sibling reuse the affine pair reports is tracked separately (the
-/// element-relative place record), so this row pins the refusals alone.
+/// constructed receiver, and the affine sibling pair is not a reuse: the recorded place carries the
+/// member steps after the index, so two fields of one element stay distinct while a repeated
+/// whole-element read or a repeated chain read stays refused. Field and index steps over an
+/// element, and calls on place receivers, keep their verbs.
 #[test]
 fn projected_receiver_calls_are_refused_precisely() {
     let prelude = "struct C { v: Int } impl C { fn read(self) -> Int { self.v } } ";
@@ -2262,6 +2263,26 @@ fn projected_receiver_calls_are_refused_precisely() {
             .count(),
         2,
         "one refusal per call site: {codes:?}"
+    );
+    assert!(
+        !codes.contains(&"affine-value-reuse"),
+        "the sibling pair is not a reuse: {codes:?}"
+    );
+    for source in [
+        "affine struct Plain { value: Int } struct Wrap { inner: Plain } fn main() -> Int { let xs: List<Wrap> = [Wrap { inner: Plain { value: 1 } }]; let a: Wrap = xs[0]; let b: Wrap = xs[0]; 0 }",
+        "affine struct Plain { value: Int } struct Wrap { inner: Plain } fn main() -> Int { let xs: List<Wrap> = [Wrap { inner: Plain { value: 1 } }]; let a: Plain = xs[0].inner; let b: Plain = xs[0].inner; 0 }",
+    ] {
+        let analyzed = analyze(source);
+        assert!(
+            diagnostic_codes(analyzed.diagnostics()).contains(&"affine-value-reuse"),
+            "a repeated projected read stays a reuse: {source}"
+        );
+    }
+    let distinct = "affine struct Plain { value: Int } affine struct Marker { value: Int } struct Wrap { inner: Plain, marker: Marker } fn main() -> Int { let xs: List<Wrap> = [Wrap { inner: Plain { value: 1 }, marker: Marker { value: 2 } }]; let a: Plain = xs[0].inner; let b: Marker = xs[0].marker; 0 }";
+    let analyzed_distinct = analyze(distinct);
+    assert!(
+        !diagnostic_codes(analyzed_distinct.diagnostics()).contains(&"affine-value-reuse"),
+        "sibling fields of one element are distinct places: {distinct}"
     );
     let admitted = [
         format!(

@@ -8495,8 +8495,17 @@ fn infer_projection(
             // keeps its field path ahead of that index segment, while a receiver that is a call
             // result or another temporary has no caller place whose element could be read.
             if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
+                // The place the chain reads is the subplace it continues to, not the element: the
+                // member steps after the index belong to the key, so two sibling fields of one
+                // element stay distinct places (`3c224a99`).
+                let mut fields = path.fields.clone();
+                fields.extend(projection_member_suffix(
+                    tree,
+                    children,
+                    index_postfix.saturating_add(1),
+                ));
                 record_affine_place(
-                    AffinePlace::projected(Arc::clone(&path.root), path.fields.clone()),
+                    AffinePlace::projected(Arc::clone(&path.root), fields),
                     Some(&path.binding),
                     receiver,
                     projection_prefix_span(tree, prefix, index_expression)?,
@@ -8798,6 +8807,38 @@ fn projection_step_opens_call(tree: &SyntaxTree, children: &[NodeId], cursor: us
     children
         .get(cursor.saturating_add(2))
         .is_some_and(|child| postfix_opens_call(tree, *child))
+}
+
+/// Returns the member names a projection chain reads after its first index step, in order.
+///
+/// The place a projection read names is the subplace the chain continues to: `xs[0].inner` is the
+/// place of `inner` in the element, so two sibling fields of one element stay distinct places
+/// (`3c224a99`).
+fn projection_member_suffix(tree: &SyntaxTree, children: &[NodeId], after: usize) -> Vec<Arc<str>> {
+    let mut names = Vec::new();
+    let mut cursor = after;
+    while let Some(child) = children.get(cursor).copied() {
+        let Some(step) = tree.node(child) else {
+            break;
+        };
+        if !matches!(step.form(), SyntaxForm::PostfixExpression) {
+            cursor += 1;
+            continue;
+        }
+        if !node_contains_punctuation(tree, child, Punctuation::Dot) {
+            cursor += 1;
+            continue;
+        }
+        let Some(name) = children
+            .get(cursor.saturating_add(1))
+            .and_then(|member| projected_member_name(tree, *member))
+        else {
+            break;
+        };
+        names.push(name);
+        cursor += 2;
+    }
+    names
 }
 
 ///
