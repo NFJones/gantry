@@ -1581,6 +1581,45 @@ fn canonical_pure_hierarchy_declares_each_pure_family_once() {
     };
     assert!(position(CORE) < position(COLLECTIONS));
     assert_eq!(graph.prelude().edition(), "2026");
+    // Edition additions and removals against the canonical prelude (`GNT-34.4`): the declared
+    // member set is redeclarable under its own edition, any changed set under that edition is
+    // refused, an explicit new edition is admitted, and an automatic name outside the enumeration
+    // is refused.
+    let declared_prelude = graph.prelude();
+    let same = declared_prelude
+        .for_edition("2026", &[OPTION_ITEM, "std.core::result"])
+        .unwrap_or_else(|error| panic!("the canonical edition is redeclarable: {error}"));
+    assert_eq!(same.members(), declared_prelude.members());
+    for (members, context) in [
+        ([OPTION_ITEM].as_slice(), "a narrower member set"),
+        (
+            [OPTION_ITEM, "std.core::result", "std.core::map"].as_slice(),
+            "a wider member set",
+        ),
+    ] {
+        assert_eq!(
+            refuse(
+                declared_prelude.for_edition("2026", members),
+                "a changed member set under a declared edition"
+            )
+            .code(),
+            StdlibDiagnosticCode::UnenumeratedPreludeMember,
+            "{context} under the same edition is refused"
+        );
+    }
+    let next = declared_prelude
+        .for_edition("2027", &[OPTION_ITEM])
+        .unwrap_or_else(|error| panic!("a new edition is admitted: {error}"));
+    assert_eq!(next.edition(), "2027");
+    assert_eq!(next.members().len(), 1);
+    assert_eq!(
+        refuse(
+            declared_prelude.admit("std.core::map"),
+            "an automatic name outside the enumeration"
+        )
+        .code(),
+        StdlibDiagnosticCode::UnenumeratedPreludeMember
+    );
 }
 
 /// The committed standard-library architecture note names every family and prelude member the
