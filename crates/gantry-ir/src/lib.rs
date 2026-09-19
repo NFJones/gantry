@@ -305,7 +305,8 @@ pub use stdlib::{
     SelectedInstance, StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation,
     StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest, StdManifestEntry,
     StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
-    StdlibNonClaimAssertion, check_layout_identity, check_stdlib_non_claims, require_applicable,
+    StdlibNonClaimAssertion, canonical_pure_hierarchy, check_layout_identity,
+    check_stdlib_non_claims, require_applicable,
 };
 pub use target::{
     AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,

@@ -14,8 +14,8 @@ use gantry::ir::{
     STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance, SemanticMode,
     StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation, StdGraph, StdItem,
     StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
-    StdlibNonClaimAssertion, TargetKind, check_layout_identity, check_stdlib_non_claims,
-    require_applicable,
+    StdlibNonClaimAssertion, TargetKind, canonical_pure_hierarchy, check_layout_identity,
+    check_stdlib_non_claims, require_applicable,
 };
 
 const CORE: &str = "std.core";
@@ -1450,4 +1450,79 @@ fn preludes_are_edition_versioned_and_never_silently_extended() {
         refuse(Prelude::new("", &[]), "an undeclared edition").code(),
         StdlibDiagnosticCode::UnenumeratedPreludeMember
     );
+}
+
+/// The canonical pure hierarchy declares each pure family exactly once with the roadmap's
+/// dependency direction, so `std.collections` has one canonical package identity and no pure
+/// package reaches a capability-backed family (`GNT-34.1`, `GNT-34.3`, `GNT-34.8`).
+#[test]
+fn canonical_pure_hierarchy_declares_each_pure_family_once() {
+    let graph = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy is valid: {error}"));
+    graph
+        .validate()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy validates: {error}"));
+    let mut names = graph.package_names();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        vec![
+            "std.codec",
+            "std.collections",
+            "std.core",
+            "std.crypto",
+            "std.data",
+            "std.num",
+            "std.text",
+        ]
+    );
+    for name in &names {
+        let package = graph
+            .package(name)
+            .unwrap_or_else(|| panic!("{name} is declared"));
+        assert!(
+            package
+                .dependencies()
+                .iter()
+                .all(|dependency| names.contains(&dependency.as_str())),
+            "{name} depends only on declared pure packages"
+        );
+        assert!(
+            !package.identity().as_str().is_empty(),
+            "{name} publishes an interface identity"
+        );
+        // The declaration carries no items: a public item's tier and defining identity belong to
+        // the family that owns its API surface (`GNT-34.6`, `GNT-34.8`).
+        assert!(
+            package.items().is_empty(),
+            "{name} declares no items in the hierarchy constructor"
+        );
+    }
+    let collections = graph
+        .package(COLLECTIONS)
+        .unwrap_or_else(|| panic!("`{COLLECTIONS}` is declared"));
+    assert_eq!(
+        collections
+            .dependencies()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![CORE],
+        "`std.collections` depends only on `std.core`"
+    );
+    let order = graph
+        .topological_order()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy orders: {error}"));
+    let again = graph
+        .topological_order()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy orders again: {error}"));
+    assert_eq!(order, again, "the topological order is deterministic");
+    let position = |name: &str| {
+        order
+            .iter()
+            .position(|entry| entry.as_str() == name)
+            .unwrap_or_else(|| panic!("{name} appears in the topological order"))
+    };
+    assert!(position(CORE) < position(COLLECTIONS));
+    assert_eq!(graph.prelude().edition(), "2026");
 }

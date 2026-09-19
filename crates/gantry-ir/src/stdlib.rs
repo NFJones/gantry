@@ -1621,6 +1621,64 @@ impl StdManifest {
     }
 }
 
+/// Declares the canonical pure standard-library hierarchy of
+/// `GNT-34.1-canonical-hierarchy-and-package-names`: the root `std.core` and the six pure families
+/// that build on it, with the dependency direction frozen by the reviewed roadmap
+/// (`std.collections` and `std.num` depend only on `std.core`; `std.text` may add `std.collections`;
+/// `std.codec` may add core, collections, and text; `std.crypto` may add core, num, and codec;
+/// `std.data` may add core, collections, text, and codec).
+///
+/// The declaration carries package identities, applicability, and edges only. `GNT-34.6` and
+/// `GNT-34.8` give every public item its own tier and defining identity, so an item belongs to the
+/// family that owns its API surface (`GNT-GP-COLL-001` for `std.collections`) rather than to this
+/// constructor.
+pub fn canonical_pure_hierarchy() -> Result<StdGraph, StdlibError> {
+    let mut graph = StdGraph::new(Prelude::new(
+        "2026",
+        &["std.core::option", "std.core::result"],
+    )?);
+    let core = PackageFamily::Core.package_name();
+    let collections = PackageFamily::Collections.package_name();
+    let text = PackageFamily::Text.package_name();
+    let num = PackageFamily::Num.package_name();
+    let codec = PackageFamily::Codec.package_name();
+    for (family, dependencies) in [
+        (PackageFamily::Core, Vec::new()),
+        (PackageFamily::Collections, vec![core.clone()]),
+        (PackageFamily::Text, vec![core.clone(), collections.clone()]),
+        (PackageFamily::Num, vec![core.clone()]),
+        (
+            PackageFamily::Codec,
+            vec![core.clone(), collections.clone(), text.clone()],
+        ),
+        (
+            PackageFamily::Crypto,
+            vec![core.clone(), num.clone(), codec.clone()],
+        ),
+        (
+            PackageFamily::Data,
+            vec![
+                core.clone(),
+                collections.clone(),
+                text.clone(),
+                codec.clone(),
+            ],
+        ),
+    ] {
+        let declared: Vec<&str> = dependencies.iter().map(String::as_str).collect();
+        graph.declare(StdPackage::new(
+            family,
+            NameClass::Package,
+            StabilityTier::Stable,
+            &[SemanticMode::Portable, SemanticMode::Application],
+            &[TargetKind::Library, TargetKind::Binary],
+            &declared,
+            &[],
+        )?)?;
+    }
+    Ok(graph)
+}
+
 /// One declared standard-library package graph of `GNT-34.3`-`GNT-34.11`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StdGraph {
