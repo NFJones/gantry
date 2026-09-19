@@ -1416,7 +1416,7 @@ impl Compiler<'_> {
         self.cleanup.push(InstructionKind::ExitScope);
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         let body_bindings = self.binding_types.clone();
-        self.compile_block(body, BlockMode::Statement)?;
+        let body_falls_through = self.compile_block(body, BlockMode::Statement)?;
         self.binding_types = body_bindings;
         self.cleanup.pop();
         self.cleanup.pop();
@@ -1460,6 +1460,7 @@ impl Compiler<'_> {
         let end = self.instructions.len();
         let target = self.loops.pop().ok_or(AnalysisError::Invariant)?;
         let breaks = !target.breaks.is_empty();
+        let body_continues = !target.continues.is_empty();
         for jump in target.continues {
             self.instructions[jump].kind = InstructionKind::Jump(post_test);
         }
@@ -1470,9 +1471,11 @@ impl Compiler<'_> {
             .map(|condition| bool_fact(self.tree, condition))
             .transpose()?
             .unwrap_or(BoolFact::Unknown);
-        // A post-test the analysis cannot prove `false` admits its exit edge, so the statement
-        // completes normally unless only `break` can leave the loop.
-        Ok(breaks || condition_fact != BoolFact::False)
+        // The post-test is only reachable from a body that completes or continues, and a post-test
+        // the analysis cannot prove `false` admits its exit edge; `break` leaves the loop normally
+        // from any body path (`SPEC.md` GNT-9.4 and the analyzer's own completion rule).
+        let reaches_post_test = body_falls_through || body_continues;
+        Ok(breaks || (reaches_post_test && condition_fact != BoolFact::False))
     }
 
     /// Lowers a `for item in source { body }` statement as an indexed traversal of the source.

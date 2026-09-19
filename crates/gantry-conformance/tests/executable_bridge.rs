@@ -713,6 +713,16 @@ fn until_loops_lower_and_execute_the_post_test() {
             "count()",
             3,
         ),
+        (
+            "fn take() -> Int { until { return 1; } when true; } ",
+            "take()",
+            1,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; until { if (i > 1) { break; } i = i + 1; } when false; i",
+            2,
+        ),
     ] {
         let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
         let root = TempDirectory::new(&source);
@@ -738,6 +748,20 @@ fn until_loops_lower_and_execute_the_post_test() {
             "the until statement answers the value its iterations determine"
         );
     }
+    // A body that never reaches its post-test still completes the workflow through its own
+    // transfer, and an exhausted body-entry `limit` is a deterministic failure rather than normal
+    // completion (`SPEC.md` GNT-9.5).
+    let source =
+        "fn main() -> Int { let mut i: Int = 0; until (limit = 2) { i = i + 1; } when i > 5; i }\n";
+    let root = TempDirectory::new(source);
+    let MachineOutcome::Failed(failure) = run_entry_outcome(&analyze(&root)) else {
+        panic!("{source} did not report the exhausted body-entry limit");
+    };
+    assert_eq!(
+        failure.code,
+        RuntimeCode::LoopLimitExhausted,
+        "{source} failed for another reason"
+    );
 }
 
 /// An index expression the checked folder cannot read is a value the machine computes
