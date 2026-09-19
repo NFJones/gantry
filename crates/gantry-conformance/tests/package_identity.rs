@@ -3467,3 +3467,179 @@ fn every_published_package_diagnostic_code_is_registered_sorted_unique_with_a_un
         Some(PackageDiagnosticCode::TransitiveUndeclared)
     );
 }
+
+/// `SPEC.md` 11277-11320 (`GNT-16.8-compatibility-axes`): one comparison reports five axes, marks
+/// each axis machine-checked or not, refuses an unchecked axis presented as checked or compatible,
+/// keeps the boundary-schema and durable-artifact sub-relations complete and distinct, and exposes
+/// each axis separately rather than aggregating them into one verdict.
+#[test]
+fn compatibility_axes_report_five_separate_relations_and_refuse_unchecked_claims() {
+    // The five axes refine the four landed classes in reporting order: source and boundary schema
+    // refine class 1, authority is class 2, declared behaviour is class 3, and the durable artifact
+    // axis refines class 4.
+    assert_eq!(
+        CompatibilityAxis::ALL.map(CompatibilityAxis::wire_name),
+        [
+            "source",
+            "boundary-schema",
+            "authority",
+            "declared-behaviour",
+            "durable-artifact"
+        ]
+    );
+    assert_eq!(
+        CompatibilityAxis::ALL.map(CompatibilityAxis::landed_class),
+        [1, 1, 2, 3, 4]
+    );
+    assert_eq!(
+        BoundarySchemaSurface::ALL.map(BoundarySchemaSurface::wire_name),
+        [
+            "entry",
+            "action",
+            "model",
+            "tool",
+            "artifact",
+            "protected-reference"
+        ]
+    );
+    assert_eq!(
+        DurableArtifactRelation::ALL.map(DurableArtifactRelation::wire_name),
+        ["linked-replacement", "durable-resume"]
+    );
+
+    // A machine-checked axis reports changed or unchanged; an unchecked axis reports only
+    // `not-checked`, and no unchecked axis is ever reported as compatible.
+    for verdict in [AxisVerdict::Changed, AxisVerdict::Unchanged] {
+        assert!(
+            AxisReport::new(CompatibilityAxis::Source, true, verdict).is_ok(),
+            "a checked source axis reports `{verdict:?}`"
+        );
+    }
+    assert!(AxisReport::new(CompatibilityAxis::Source, false, AxisVerdict::NotChecked).is_ok());
+    let marked_checked =
+        match AxisReport::new(CompatibilityAxis::Source, true, AxisVerdict::NotChecked) {
+            Ok(_) => panic!("an unchecked axis cannot be marked checked"),
+            Err(error) => error,
+        };
+    assert!(matches!(
+        marked_checked,
+        PackageError::NotCheckedAxisMarkedChecked {
+            axis: CompatibilityAxis::Source
+        }
+    ));
+    let checked_claim =
+        match AxisReport::new(CompatibilityAxis::Authority, false, AxisVerdict::Unchanged) {
+            Ok(_) => panic!("an unchecked axis cannot be reported compatible"),
+            Err(error) => error,
+        };
+    assert!(matches!(
+        checked_claim,
+        PackageError::UncheckedAxisReportedAsCompatible {
+            axis: CompatibilityAxis::Authority
+        }
+    ));
+    for refusal in [marked_checked, checked_claim] {
+        assert_eq!(refusal.code(), None, "{refusal} has no published code");
+        assert_eq!(
+            refusal.clause(),
+            "GNT-16.8-compatibility-axes",
+            "{refusal} is owned by the compatibility-axes clause"
+        );
+    }
+
+    // Every boundary surface and both durable sub-relations are reported; an incomplete set is
+    // refused rather than partially reported.
+    let surfaces = BoundarySchemaSurface::ALL
+        .into_iter()
+        .map(|surface| {
+            BoundarySchemaSubReport::new(surface, true, AxisVerdict::Unchanged)
+                .unwrap_or_else(|error| panic!("a checked surface reports unchanged: {error}"))
+        })
+        .collect::<Vec<_>>();
+    let schema = BoundarySchemaReport::new(&surfaces)
+        .unwrap_or_else(|error| panic!("every boundary surface is reported: {error}"));
+    assert!(matches!(
+        BoundarySchemaReport::new(&surfaces[..BoundarySchemaSurface::ALL.len() - 1]),
+        Err(PackageError::IncompleteCompatibilityReport {
+            axis: CompatibilityAxis::BoundarySchema
+        })
+    ));
+    let relations = DurableArtifactRelation::ALL
+        .into_iter()
+        .map(|relation| {
+            DurableArtifactSubReport::new(relation, true, AxisVerdict::Changed)
+                .unwrap_or_else(|error| panic!("a checked relation reports changed: {error}"))
+        })
+        .collect::<Vec<_>>();
+    let durable = DurableArtifactReport::new(&relations)
+        .unwrap_or_else(|error| panic!("every durable relation is reported: {error}"));
+    assert!(matches!(
+        DurableArtifactReport::new(&relations[..1]),
+        Err(PackageError::IncompleteCompatibilityReport {
+            axis: CompatibilityAxis::DurableArtifact
+        })
+    ));
+
+    // The report exposes the compared inputs and each axis separately, so the two durable
+    // sub-relations keep their own verdicts and no aggregate verdict exists.
+    let previous = nominal_interface("widget");
+    let candidate = nominal_interface("widget");
+    let compared = ComparedInputs {
+        previous: ComparedInput::new(
+            "previous",
+            bound_identity("widget", "1.0.0", &[], &previous),
+            previous.digest().clone(),
+        )
+        .unwrap_or_else(|error| panic!("the previous compared input is valid: {error}")),
+        candidate: ComparedInput::new(
+            "candidate",
+            bound_identity("widget", "1.1.0", &[], &candidate),
+            candidate.digest().clone(),
+        )
+        .unwrap_or_else(|error| panic!("the candidate compared input is valid: {error}")),
+    };
+    let report = CompatibilityReport::new(
+        compared,
+        AxisReport::new(CompatibilityAxis::Source, true, AxisVerdict::Unchanged)
+            .unwrap_or_else(|error| panic!("a checked source axis: {error}")),
+        schema,
+        AxisReport::new(CompatibilityAxis::Authority, false, AxisVerdict::NotChecked)
+            .unwrap_or_else(|error| panic!("an unchecked authority axis: {error}")),
+        AxisReport::new(
+            CompatibilityAxis::DeclaredBehaviour,
+            false,
+            AxisVerdict::NotChecked,
+        )
+        .unwrap_or_else(|error| panic!("an unchecked behaviour axis: {error}")),
+        durable,
+    )
+    .unwrap_or_else(|error| panic!("a complete five-axis report is admitted: {error}"));
+    assert_eq!(report.compared().previous.name.as_ref(), "previous");
+    assert_eq!(report.source().axis(), CompatibilityAxis::Source);
+    assert!(report.source().machine_checked());
+    assert_eq!(report.source().verdict(), AxisVerdict::Unchanged);
+    assert_eq!(report.authority().verdict(), AxisVerdict::NotChecked);
+    assert!(!report.authority().machine_checked());
+    assert_eq!(
+        report.declared_behaviour().axis(),
+        CompatibilityAxis::DeclaredBehaviour
+    );
+    assert_eq!(
+        report
+            .boundary_schema()
+            .verdict(BoundarySchemaSurface::Model),
+        Some(AxisVerdict::Unchanged)
+    );
+    assert_eq!(
+        report
+            .durable_artifact()
+            .verdict(DurableArtifactRelation::LinkedReplacement),
+        Some(AxisVerdict::Changed)
+    );
+    assert_eq!(
+        report
+            .durable_artifact()
+            .verdict(DurableArtifactRelation::DurableResume),
+        Some(AxisVerdict::Changed)
+    );
+}
