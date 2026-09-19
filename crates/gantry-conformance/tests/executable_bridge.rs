@@ -911,34 +911,58 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
 
     // Execution: every creation point really creates one logical child session before the work it
     // scopes, and the child count follows the clause exactly.
-    for (body, expected_children, expected_mode) in [
+    for (prelude, body, expected_value, expected_children, expected_mode) in [
         (
+            "",
             "let mut i: Int = 0; while (session = fork) i < 2 { i = i + 1; } i",
+            2,
             3,
             SessionCreationModeV1::Fork,
         ),
         (
+            "",
             "let mut i: Int = 0; while (session = new) i < 2 { i = i + 1; } i",
+            2,
             1,
             SessionCreationModeV1::New,
         ),
         (
+            "",
+            "let mut i: Int = 0; let mut n: Int = 0; while (session = fork) i < 3 { i = i + 1; if (i == 2) { continue; } n = n + i; } n",
+            4,
+            4,
+            SessionCreationModeV1::Fork,
+        ),
+        (
+            "fn f() -> Int { let mut i: Int = 0; while (session = fork) i < 1 { i = i + 1; } i } ",
+            "f() + f()",
+            2,
+            4,
+            SessionCreationModeV1::Fork,
+        ),
+        (
+            "",
             "let mut i: Int = 0; until (session = fork) { i = i + 1; } when i > 1; i",
+            2,
             2,
             SessionCreationModeV1::Fork,
         ),
         (
+            "",
             "let mut i: Int = 0; until (session = new) { i = i + 1; } when i > 1; i",
+            2,
             1,
             SessionCreationModeV1::New,
         ),
         (
+            "",
             "let mut i: Int = 0; loop (session = fork) { i = i + 1; if (i > 1) { break; } } i",
+            2,
             2,
             SessionCreationModeV1::Fork,
         ),
     ] {
-        let source = format!("fn main() -> Int {{ {body} }}\n");
+        let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
         let root = TempDirectory::new(&source);
         let package = analyze(&root);
         let entry = package
@@ -1004,7 +1028,7 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
             panic!("{source} did not succeed: {outcome:?}");
         };
         assert!(
-            matches!(value.view(), LogicalValueView::Int(value) if value.get() == 2),
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected_value),
             "{source} answered another value"
         );
         assert_eq!(
