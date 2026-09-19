@@ -913,6 +913,7 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
     /// retained session count, and every created child as `(mode, occurrence)` in creation order.
     fn drive_session_scopes(
         source: &str,
+        loop_iterations: u64,
     ) -> (MachineOutcome, usize, Vec<(SessionCreationModeV1, u64)>) {
         let root = TempDirectory::new(source);
         let package = analyze(&root);
@@ -934,12 +935,14 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
             CanonicalTranscriptV1::empty(),
         )
         .unwrap_or_else(|error| panic!("root session registry failed: {error:?}"));
+        let limits = MachineLimits::new(1_000, 100, loop_iterations, 64, 100, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| unreachable!("positive fixture loop budget"));
         let mut machine = Machine::new_with_context(
             Arc::new(program),
             &entry.path,
             vec![],
             execution,
-            limits(),
+            limits,
             None,
             Some(root_session),
         )
@@ -1031,7 +1034,7 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
         ),
     ] {
         let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
-        let (outcome, session_count, created) = drive_session_scopes(&source);
+        let (outcome, session_count, created) = drive_session_scopes(&source, 100);
         let MachineOutcome::Succeeded(value) = outcome else {
             panic!("{source} did not succeed: {outcome:?}");
         };
@@ -1067,31 +1070,50 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
     // `loop` check the entry before creating its child while a `while` child already exists because
     // its condition must use it (`SPEC.md` GNT-9.6), so the failing forms stop exactly one child
     // apart — three children for `while` (the rejected entry's child remains) and two for `until`.
-    for (prelude, body, expected_value, expected_children, expect_limit_failure) in [
+    for (prelude, body, expected_value, expected_children, expected_failure, loop_iterations) in [
         (
             "",
             "let mut i: Int = 0; while (session = fork) i < 2 { let mut j: Int = 0; until (session = fork) { j = j + 1; } when j > 1; i = i + 1; } i",
             2,
             7,
-            false,
+            None,
+            100,
         ),
         (
             "",
             "let mut i: Int = 0; while (session = fork, limit = 2) i < 5 { i = i + 1; } i",
             0,
             3,
-            true,
+            Some(RuntimeCode::LoopLimitExhausted),
+            100,
         ),
         (
             "",
             "let mut i: Int = 0; until (session = fork, limit = 2) { i = i + 1; } when i > 5; i",
             0,
             2,
-            true,
+            Some(RuntimeCode::LoopLimitExhausted),
+            100,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; while (session = fork) i < 5 { i = i + 1; } i",
+            0,
+            3,
+            Some(RuntimeCode::LoopIterationBudget),
+            2,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; until (session = fork) { i = i + 1; } when i > 5; i",
+            0,
+            2,
+            Some(RuntimeCode::LoopIterationBudget),
+            2,
         ),
     ] {
         let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
-        let (outcome, session_count, created) = drive_session_scopes(&source);
+        let (outcome, session_count, created) = drive_session_scopes(&source, loop_iterations);
         assert_eq!(
             created.len(),
             expected_children,
@@ -1108,15 +1130,11 @@ fn loop_session_modifiers_establish_the_specified_scopes() {
             expected_children + 1,
             "{source} retained another session count"
         );
-        if expect_limit_failure {
+        if let Some(expected) = expected_failure {
             let MachineOutcome::Failed(failure) = outcome else {
-                panic!("{source} did not report the exhausted body-entry limit");
+                panic!("{source} did not report {expected:?}");
             };
-            assert_eq!(
-                failure.code,
-                RuntimeCode::LoopLimitExhausted,
-                "{source} failed for another reason"
-            );
+            assert_eq!(failure.code, expected, "{source} failed for another reason");
         } else {
             let MachineOutcome::Succeeded(value) = outcome else {
                 panic!("{source} did not succeed: {outcome:?}");
