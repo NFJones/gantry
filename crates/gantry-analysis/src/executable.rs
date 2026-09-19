@@ -739,6 +739,9 @@ impl Compiler<'_> {
                 SyntaxForm::WhileStatement | SyntaxForm::LoopStatement => {
                     falls_through = self.compile_while(child)?;
                 }
+                SyntaxForm::UntilStatement => {
+                    falls_through = self.compile_until(child)?;
+                }
                 SyntaxForm::ForStatement => {
                     falls_through = self.compile_for(child)?;
                 }
@@ -1380,6 +1383,96 @@ impl Compiler<'_> {
             SyntaxForm::WhileStatement => breaks || condition_fact != BoolFact::True,
             _ => return Err(AnalysisError::Invariant),
         })
+    }
+
+    /// Lowers an `until { body } when condition;` statement as a post-test loop.
+    ///
+    /// `SPEC.md` GNT-9.4 runs the body before the post-test, exits when that test is `true`, and
+    /// sends `continue` to the post-test, so the lowering enters the body occurrence first, closes
+    /// each iteration with the condition occurrence, and patches continue transfers to the test
+    /// rather than to the next body entry. `break` stays normal completion, and a body-entry limit
+    /// counts the body entries exactly as `while` does (`GNT-9.5`).
+    fn compile_until(&mut self, statement: NodeId) -> Result<bool, AnalysisError> {
+        let node = self.node(statement)?.clone();
+        let condition = direct_child_form(self.tree, &node, SyntaxForm::Expression);
+        let body = direct_child_form(self.tree, &node, SyntaxForm::Block)
+            .ok_or(AnalysisError::Invariant)?;
+        let source_limit = loop_limit(self.tree, &node);
+        let start = self.instructions.len();
+        self.emit(
+            TypeDescriptor::UNIT,
+            InstructionKind::EnterLoop {
+                phase: LoopPhase::Body,
+                source_limit,
+            },
+        )?;
+        self.loops.push(LoopTarget {
+            start,
+            cleanup_depth: self.cleanup.len(),
+            breaks: Vec::new(),
+            continues: Vec::new(),
+        });
+        self.cleanup.push(InstructionKind::LeaveOccurrence);
+        self.cleanup.push(InstructionKind::ExitScope);
+        self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+        let body_bindings = self.binding_types.clone();
+        self.compile_block(body, BlockMode::Statement)?;
+        self.binding_types = body_bindings;
+        self.cleanup.pop();
+        self.cleanup.pop();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        let post_test = self.instructions.len();
+        self.emit(
+            TypeDescriptor::UNIT,
+            InstructionKind::EnterLoop {
+                phase: LoopPhase::Condition,
+                source_limit: None,
+            },
+        )?;
+        let condition_type = if let Some(condition) = condition {
+            self.compile_expression(condition)?
+        } else {
+            self.emit(
+                TypeDescriptor::BOOL,
+                InstructionKind::Push(LogicalValue::boolean(true)),
+            )?;
+            TypeDescriptor::BOOL
+        };
+        let branch = self.emit(
+            condition_type,
+            InstructionKind::Branch {
+                when_true: 0,
+                when_false: 0,
+            },
+        )?;
+        let when_false = self.instructions.len();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(start))?;
+        let when_true = self.instructions.len();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.instructions[branch].kind = InstructionKind::Branch {
+            when_true,
+            when_false,
+        };
+        let end = self.instructions.len();
+        let target = self.loops.pop().ok_or(AnalysisError::Invariant)?;
+        let breaks = !target.breaks.is_empty();
+        for jump in target.continues {
+            self.instructions[jump].kind = InstructionKind::Jump(post_test);
+        }
+        for jump in target.breaks {
+            self.instructions[jump].kind = InstructionKind::Jump(end);
+        }
+        let condition_fact = condition
+            .map(|condition| bool_fact(self.tree, condition))
+            .transpose()?
+            .unwrap_or(BoolFact::Unknown);
+        // A post-test the analysis cannot prove `false` admits its exit edge, so the statement
+        // completes normally unless only `break` can leave the loop.
+        Ok(breaks || condition_fact != BoolFact::False)
     }
 
     /// Lowers a `for item in source { body }` statement as an indexed traversal of the source.

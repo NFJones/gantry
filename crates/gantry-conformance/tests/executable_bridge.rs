@@ -676,6 +676,70 @@ fn for_loops_lower_and_execute_the_iteration() {
     }
 }
 
+/// An `until` statement lowers as a post-test loop (`9d2cc582`): `SPEC.md` GNT-9.4 runs the body
+/// before the post-test, exits when that test is `true`, and sends `continue` to the post-test, so
+/// the body runs at least once, `break` stays normal completion, and a `continue` still evaluates
+/// the post-test instead of skipping it.
+#[test]
+fn until_loops_lower_and_execute_the_post_test() {
+    for (prelude, body, expected) in [
+        (
+            "",
+            "let mut i: Int = 0; until { i = i + 1; } when i > 2; i",
+            3,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; until { i = i + 1; } when i > 1; i",
+            2,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; until { i = i + 1; if (i == 2) { break; } } when i > 5; i",
+            2,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; let mut n: Int = 0; until { i = i + 1; if (i == 2) { continue; } n = n + i; } when i > 3; n",
+            8,
+        ),
+        (
+            "",
+            "let mut i: Int = 0; let mut n: Int = 0; until { i = i + 1; let mut j: Int = 0; until { j = j + 1; n = n + 1; } when j > 1; } when i > 1; n",
+            4,
+        ),
+        (
+            "fn count() -> Int { let mut i: Int = 0; until { i = i + 1; } when i > 2; i } ",
+            "count()",
+            3,
+        ),
+    ] {
+        let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
+        let root = TempDirectory::new(&source);
+        let package = analyze(&root);
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+        let program = package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x54; 32])
+            .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+        let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+            .unwrap_or_else(|error| {
+                panic!("analyzed program was rejected by the machine: {error:?}")
+            });
+        let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+            panic!("the until statement {expected} did not succeed")
+        };
+        assert!(
+            matches!(value.view(), LogicalValueView::Int(value) if value.get() == expected),
+            "the until statement answers the value its iterations determine"
+        );
+    }
+}
+
 /// An index expression the checked folder cannot read is a value the machine computes
 /// (`3937f91d`): such an index failed analysis internally instead of being applied, so `xs[1 / 0]`
 /// now reports the published division failure and a nested projection inside the index reads its
