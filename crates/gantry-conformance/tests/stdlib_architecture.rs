@@ -1491,6 +1491,13 @@ fn canonical_pure_hierarchy_declares_each_pure_family_once() {
             !package.identity().as_str().is_empty(),
             "{name} publishes an interface identity"
         );
+        // `std.core` is the foundational root; every other pure family is stable (`GNT-34.6`).
+        let tier = if *name == CORE {
+            StabilityTier::Foundational
+        } else {
+            StabilityTier::Stable
+        };
+        assert_eq!(package.tier(), tier, "{name} declares its canonical tier");
         // The declaration carries no items: a public item's tier and defining identity belong to
         // the family that owns its API surface (`GNT-34.6`, `GNT-34.8`).
         assert!(

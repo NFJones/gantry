@@ -1642,21 +1642,36 @@ pub fn canonical_pure_hierarchy() -> Result<StdGraph, StdlibError> {
     let text = PackageFamily::Text.package_name();
     let num = PackageFamily::Num.package_name();
     let codec = PackageFamily::Codec.package_name();
-    for (family, dependencies) in [
-        (PackageFamily::Core, Vec::new()),
-        (PackageFamily::Collections, vec![core.clone()]),
-        (PackageFamily::Text, vec![core.clone(), collections.clone()]),
-        (PackageFamily::Num, vec![core.clone()]),
+    for (family, tier, dependencies) in [
+        (PackageFamily::Core, StabilityTier::Foundational, Vec::new()),
+        (
+            PackageFamily::Collections,
+            StabilityTier::Stable,
+            vec![core.clone()],
+        ),
+        (
+            PackageFamily::Text,
+            StabilityTier::Stable,
+            vec![core.clone(), collections.clone()],
+        ),
+        (
+            PackageFamily::Num,
+            StabilityTier::Stable,
+            vec![core.clone()],
+        ),
         (
             PackageFamily::Codec,
+            StabilityTier::Stable,
             vec![core.clone(), collections.clone(), text.clone()],
         ),
         (
             PackageFamily::Crypto,
+            StabilityTier::Stable,
             vec![core.clone(), num.clone(), codec.clone()],
         ),
         (
             PackageFamily::Data,
+            StabilityTier::Stable,
             vec![
                 core.clone(),
                 collections.clone(),
@@ -1669,7 +1684,7 @@ pub fn canonical_pure_hierarchy() -> Result<StdGraph, StdlibError> {
         graph.declare(StdPackage::new(
             family,
             NameClass::Package,
-            StabilityTier::Stable,
+            tier,
             &[SemanticMode::Portable, SemanticMode::Application],
             &[TargetKind::Library, TargetKind::Binary],
             &declared,
