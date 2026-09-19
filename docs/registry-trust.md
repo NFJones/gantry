@@ -43,11 +43,19 @@ documentation: it names what the model declares and what it refuses, and it gran
 
 ## Trust-failure attribution and diagnostics
 
-The model publishes 41 trust-failure reasons and 33 registry diagnostic codes; each condition owns
-exactly one reason and one anchor, and no spelling is shared by two refusal conditions. The lane
+The model publishes 41 trust-failure reasons and 33 registry diagnostic codes. Every refusal carries
+exactly one `TrustFailureReason` and the clause anchor that owns it, and the reason and clause
+matches are exhaustive, so a new refusal cannot be added without naming a reason and an anchor.
+Published diagnostic codes are a coarser surface rather than a one-to-one alias: 15 conditions
+deliberately report no code (`RegistryError::code` returns `None` for structural, declaration, and
+retained-state conditions, including `TrustRootAbsent`, `ObservedInstantMissing`, and
+`RetainedContentMissing`), and several conditions share one spelling where the specification groups
+them — `PinMismatch` and `VcsPinIdentityMismatch` both report `registry-vcs-pin-mismatch`, and the
+name-collision and yank-condition families share their reasons. The lanes
 `gnt_27_13_reason_owned_anchors_cover_every_error_surface` and
-`gnt_27_clause_owned_structural_failures_have_matching_reasons_and_anchors` pin that coverage, so a
-new refusal cannot be added without an owning reason, code, and clause.
+`gnt_27_clause_owned_structural_failures_have_matching_reasons_and_anchors` exercise representative
+conditions of that surface; the exhaustive guarantee is the compiler-checked match, not a test over
+every variant.
 
 ## Non-claims (`GNT-27.14-registry-non-claims`)
 
