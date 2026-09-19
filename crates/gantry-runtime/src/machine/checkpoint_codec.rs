@@ -2417,11 +2417,17 @@ fn read_value_header(
         3 => Ok((ValueHeader::Float(f64::from_bits(reader.u64()?)), 0)),
         4 => Ok((ValueHeader::String(reader.string()?), 0)),
         5 => {
-            let count = reader.count()?;
+            // The value encoding is post-order: a list header follows its children, so this count
+            // names members that are already decoded rather than the bytes that remain. The
+            // generic `count` bound rejects a count above the remaining length, which rejected
+            // every non-empty list (`decode(encode(Push(list)))` failed while scalars
+            // round-tripped); the caller validates the count against the decoded values instead.
+            let count = reader.usize()?;
             Ok((ValueHeader::List(count), count))
         }
         6 => {
-            let count = reader.count()?;
+            // See the list arm: tuple members precede their header as well.
+            let count = reader.usize()?;
             Ok((ValueHeader::Tuple(count), count))
         }
         7 => {

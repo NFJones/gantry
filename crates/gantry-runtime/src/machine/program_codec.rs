@@ -1045,6 +1045,46 @@ mod tests {
     }
 
     #[test]
+    fn executable_program_codec_round_trips_a_pushed_list_value() {
+        let program = MachineProgram::new(vec![Workflow {
+            path: CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("path failed: {error}")),
+            parameters: Vec::new(),
+            result: TypeDescriptor::list(TypeDescriptor::INT),
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site failed: {error}")),
+                    ty: TypeDescriptor::list(TypeDescriptor::INT),
+                    kind: InstructionKind::Push(
+                        LogicalValue::list(
+                            vec![LogicalValue::integer(GantryInt::new(7).unwrap_or_else(
+                                || unreachable!("fixture integer is admitted"),
+                            ))],
+                            super::codec_limits(),
+                        )
+                        .unwrap_or_else(|error| panic!("list value failed: {error:?}")),
+                    ),
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site failed: {error}")),
+                    ty: TypeDescriptor::list(TypeDescriptor::INT),
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program failed: {error:?}"));
+
+        let encoded = encode_machine_program(&program);
+        let decoded = decode_machine_program(&encoded)
+            .unwrap_or_else(|error| panic!("program decode failed: {error:?}"));
+        assert_eq!(decoded, program);
+        assert_eq!(encode_machine_program(&decoded), encoded);
+    }
+
+    #[test]
     fn executable_program_codec_round_trips_the_list_index_primitive() {
         let program = MachineProgram::new(vec![Workflow {
             path: CanonicalPath::new("crate::main")
