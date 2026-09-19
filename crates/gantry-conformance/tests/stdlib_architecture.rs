@@ -1582,3 +1582,19 @@ fn canonical_pure_hierarchy_declares_each_pure_family_once() {
     assert!(position(CORE) < position(COLLECTIONS));
     assert_eq!(graph.prelude().edition(), "2026");
 }
+
+/// The committed standard-library architecture note names every family and prelude member the
+/// canonical hierarchy declares, so the prose cannot drift from the model it describes.
+#[test]
+fn standard_library_architecture_note_matches_the_canonical_hierarchy() {
+    let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
+        .unwrap_or_else(|error| panic!("the architecture note is readable: {error}"));
+    let graph = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy is valid: {error}"));
+    for name in graph.package_names() {
+        assert!(note.contains(name), "the note names `{name}`");
+    }
+    for member in [OPTION_ITEM, "std.core::result"] {
+        assert!(note.contains(member), "the note names `{member}`");
+    }
+}
