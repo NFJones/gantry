@@ -1631,7 +1631,9 @@ impl StdManifest {
 /// The declaration carries package identities, applicability, and edges only. `GNT-34.6` and
 /// `GNT-34.8` give every public item its own tier and defining identity, so an item belongs to the
 /// family that owns its API surface (`GNT-GP-COLL-001` for `std.collections`) rather than to this
-/// constructor.
+/// constructor. The one exception is the enumerated edition prelude of `GNT-34.4`: its members are
+/// foundational items of `std.core`, so they are declared here because that clause fixes the exact
+/// set.
 pub fn canonical_pure_hierarchy() -> Result<StdGraph, StdlibError> {
     let mut graph = StdGraph::new(Prelude::new(
         "2026",
@@ -1689,6 +1691,26 @@ pub fn canonical_pure_hierarchy() -> Result<StdGraph, StdlibError> {
             &[TargetKind::Library, TargetKind::Binary],
             &declared,
             &[],
+        )?)?;
+    }
+    let core_package = graph
+        .package(&core)
+        .ok_or_else(|| {
+            StdlibError::new(
+                StdlibDiagnosticCode::InvalidPackageName,
+                "`std.core` is not declared before its prelude items".to_owned(),
+            )
+        })?
+        .clone();
+    let modes = core_package.modes().iter().copied().collect::<Vec<_>>();
+    let targets = core_package.targets().iter().copied().collect::<Vec<_>>();
+    for member in ["std.core::option", "std.core::result"] {
+        graph.declare_item(StdItem::new(
+            member,
+            NameClass::Module,
+            StabilityTier::Foundational,
+            &modes,
+            &targets,
         )?)?;
     }
     Ok(graph)

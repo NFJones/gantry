@@ -1498,16 +1498,48 @@ fn canonical_pure_hierarchy_declares_each_pure_family_once() {
             StabilityTier::Stable
         };
         assert_eq!(package.tier(), tier, "{name} declares its canonical tier");
-        // The declaration carries no items: a public item's tier and defining identity belong to
-        // the family that owns its API surface (`GNT-34.6`, `GNT-34.8`).
-        assert!(
-            package.items().is_empty(),
-            "{name} declares no items in the hierarchy constructor"
+        // Only `std.core` declares items here: the enumerated prelude members of `GNT-34.4`.
+        // Every other family's items belong to the issue that owns its API surface
+        // (`GNT-GP-COLL-001` and the focused family issues).
+        let expected_items = if *name == CORE { 2 } else { 0 };
+        assert_eq!(
+            package.items().len(),
+            expected_items,
+            "{name} declares only its reviewed items"
         );
     }
     let collections = graph
         .package(COLLECTIONS)
         .unwrap_or_else(|| panic!("`{COLLECTIONS}` is declared"));
+    let core = graph
+        .package(CORE)
+        .unwrap_or_else(|| panic!("`{CORE}` is declared"));
+    let members = core.items().keys().cloned().collect::<Vec<_>>();
+    // The model's canonical item identity is the dotted path, exactly as `canonical_std_path`
+    // normalizes the `std.core::NAME` prelude spelling; `OPTION_ITEM` is that canonical spelling's
+    // prelude-name form.
+    assert_eq!(members, vec!["std.core.option", "std.core.result"]);
+    for member in &members {
+        let item = core
+            .items()
+            .get(member)
+            .unwrap_or_else(|| panic!("{member} is declared"));
+        assert_eq!(item.owner(), CORE, "{member} is owned by `std.core`");
+        assert_eq!(
+            item.tier(),
+            StabilityTier::Foundational,
+            "{member} is a foundational prelude item"
+        );
+    }
+    let manifest = graph
+        .manifest(
+            StdContractVersion::new(1, 0)
+                .unwrap_or_else(|error| panic!("the contract version is valid: {error}")),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the canonical pure hierarchy publishes a manifest: {error}")
+        });
+    assert_eq!(manifest.entries().len(), 7);
     assert_eq!(
         collections
             .dependencies()
