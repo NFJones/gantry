@@ -1584,9 +1584,11 @@ fn canonical_pure_hierarchy_declares_each_pure_family_once() {
 }
 
 /// The committed standard-library architecture note names every family and prelude member the
-/// canonical hierarchy declares, so the prose cannot drift from the model it describes.
+/// canonical hierarchy declares. The check is deliberately narrow: it pins the declared names so a
+/// renamed or added family cannot leave the note stale, and it says nothing about the note's
+/// tier, edge, or non-claim wording, which the model tests cover.
 #[test]
-fn standard_library_architecture_note_matches_the_canonical_hierarchy() {
+fn standard_library_architecture_note_names_every_declared_family_and_prelude_member() {
     let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
         .unwrap_or_else(|error| panic!("the architecture note is readable: {error}"));
     let graph = canonical_pure_hierarchy()

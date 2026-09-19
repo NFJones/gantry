@@ -25,9 +25,11 @@ depends on a host adapter. Physical Rust crate layout is nonsemantic: splitting 
 combining crates does not change logical source identity
 (`GNT-34.8-defining-identity-and-interface-digest`).
 
-The declaration carries package identities, applicability, and edges only. Items belong
-to the family that owns their API surface, so `std.collections` declares no items until
-its collection API rows are normative (`GNT-GP-COLL-001`).
+The declaration carries package identities, applicability, and edges, plus the two
+enumerated prelude items of `std.core` (the explicit exception below). Every other item
+belongs to the family that owns its API surface, so the non-core families declare no
+items yet: `std.collections`, for example, declares none until its collection API rows are
+normative (`GNT-GP-COLL-001`).
 
 ## Edition prelude
 
