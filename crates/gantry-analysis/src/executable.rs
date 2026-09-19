@@ -1825,9 +1825,15 @@ impl Compiler<'_> {
         if let Some((root, steps)) = postfix_projection_chain(self.tree, &node) {
             self.emit(ty.clone(), InstructionKind::Load(root))?;
             for step in steps {
+                if let ProjectionChainStep::ListIndex(index) = step {
+                    self.compile_expression(index)?;
+                    self.emit(ty.clone(), InstructionKind::Primitive(Primitive::ListIndex))?;
+                    continue;
+                }
                 let projection = match step {
                     ProjectionChainStep::Field(field) => Projection::Field(field),
                     ProjectionChainStep::Member(index) => Projection::Member(index),
+                    ProjectionChainStep::ListIndex(_) => continue,
                 };
                 self.emit(ty.clone(), InstructionKind::Project(projection))?;
             }
@@ -2314,9 +2320,15 @@ impl Compiler<'_> {
             return Ok(receiver);
         }
         for step in steps {
+            if let ProjectionChainStep::ListIndex(index) = step {
+                self.compile_expression(index)?;
+                self.emit(ty.clone(), InstructionKind::Primitive(Primitive::ListIndex))?;
+                continue;
+            }
             let projection = match step {
                 ProjectionChainStep::Field(field) => Projection::Field(field),
                 ProjectionChainStep::Member(index) => Projection::Member(index),
+                ProjectionChainStep::ListIndex(_) => continue,
             };
             self.emit(ty.clone(), InstructionKind::Project(projection))?;
         }
@@ -3312,6 +3324,7 @@ impl Compiler<'_> {
             let projection = match step {
                 ProjectionChainStep::Field(field) => Projection::Field(field),
                 ProjectionChainStep::Member(index) => Projection::Member(index),
+                ProjectionChainStep::ListIndex(_) => return Ok(None),
             };
             let Some(next) = projection_step_type(&current, &projection, self.struct_fields) else {
                 return Ok(None);
@@ -3403,9 +3416,23 @@ impl Compiler<'_> {
             .ok_or(AnalysisError::Invariant)?;
         self.emit(current.clone(), InstructionKind::Project(member))?;
         for step in steps {
+            if let ProjectionChainStep::ListIndex(index) = step {
+                self.compile_expression(index)?;
+                current = current
+                    .immediate_members()
+                    .first()
+                    .cloned()
+                    .ok_or(AnalysisError::Invariant)?;
+                self.emit(
+                    current.clone(),
+                    InstructionKind::Primitive(Primitive::ListIndex),
+                )?;
+                continue;
+            }
             let projection = match step {
                 ProjectionChainStep::Field(field) => Projection::Field(field),
                 ProjectionChainStep::Member(index) => Projection::Member(index),
+                ProjectionChainStep::ListIndex(_) => continue,
             };
             current = projection_step_type(&current, &projection, self.struct_fields)
                 .ok_or(AnalysisError::Invariant)?;
@@ -3527,9 +3554,23 @@ impl Compiler<'_> {
             .ok_or(AnalysisError::Invariant)?;
         self.emit(current.clone(), InstructionKind::Project(member))?;
         for step in steps {
+            if let ProjectionChainStep::ListIndex(index) = step {
+                self.compile_expression(index)?;
+                current = current
+                    .immediate_members()
+                    .first()
+                    .cloned()
+                    .ok_or(AnalysisError::Invariant)?;
+                self.emit(
+                    current.clone(),
+                    InstructionKind::Primitive(Primitive::ListIndex),
+                )?;
+                continue;
+            }
             let projection = match step {
                 ProjectionChainStep::Field(field) => Projection::Field(field),
                 ProjectionChainStep::Member(index) => Projection::Member(index),
+                ProjectionChainStep::ListIndex(_) => continue,
             };
             current = projection_step_type(&current, &projection, self.struct_fields)
                 .ok_or(AnalysisError::Invariant)?;
@@ -3601,9 +3642,23 @@ impl Compiler<'_> {
             return Ok(None);
         };
         for step in steps {
+            if let ProjectionChainStep::ListIndex(index) = step {
+                self.compile_expression(index)?;
+                current = current
+                    .immediate_members()
+                    .first()
+                    .cloned()
+                    .ok_or(AnalysisError::Invariant)?;
+                self.emit(
+                    current.clone(),
+                    InstructionKind::Primitive(Primitive::ListIndex),
+                )?;
+                continue;
+            }
             let projection = match step {
                 ProjectionChainStep::Field(field) => Projection::Field(field),
                 ProjectionChainStep::Member(index) => Projection::Member(index),
+                ProjectionChainStep::ListIndex(_) => continue,
             };
             current = projection_step_type(&current, &projection, self.struct_fields)
                 .ok_or(AnalysisError::Invariant)?;
@@ -3638,9 +3693,23 @@ impl Compiler<'_> {
         }
         let mut current = self.compile_expression(inner)?;
         for step in steps {
+            if let ProjectionChainStep::ListIndex(index) = step {
+                self.compile_expression(index)?;
+                current = current
+                    .immediate_members()
+                    .first()
+                    .cloned()
+                    .ok_or(AnalysisError::Invariant)?;
+                self.emit(
+                    current.clone(),
+                    InstructionKind::Primitive(Primitive::ListIndex),
+                )?;
+                continue;
+            }
             let projection = match step {
                 ProjectionChainStep::Field(field) => Projection::Field(field),
                 ProjectionChainStep::Member(index) => Projection::Member(index),
+                ProjectionChainStep::ListIndex(_) => continue,
             };
             current = projection_step_type(&current, &projection, self.struct_fields)
                 .ok_or(AnalysisError::Invariant)?;
@@ -4936,11 +5005,37 @@ fn postfix_projection_steps(
                 .map(|(index, _)| index)
                 .unwrap_or(children.len());
             let mut resolved = None;
+            let mut dynamic = None;
             let mut declined = false;
             for child in children
                 .get(cursor.checked_add(1)?..step_end)
                 .unwrap_or_default()
             {
+                // The closing bracket is a sibling token of the index expression; offering it to
+                // the classifier declined the whole step and silently dropped it from the tail.
+                let Some(child_node) = tree.node(*child) else {
+                    continue;
+                };
+                if matches!(
+                    child_node.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightBracket))
+                ) {
+                    continue;
+                }
+                // An expression that is not a closed constant is computed, even when it carries a
+                // literal the classifier could read as a static index (`xs[0][i + 1]` once lowered
+                // with index 1): the whole expression is applied by the element-access primitive.
+                if !matches!(child_node.form(), SyntaxForm::Token(_))
+                    && !closed_index_expression(tree, *child)
+                {
+                    // The expression wrapper is the node the compile keys; a raw postfix fragment
+                    // reaches the same call only through its own walk and can fail internally
+                    // (`xs[0][idx()]`).
+                    if matches!(child_node.form(), SyntaxForm::Expression) || dynamic.is_none() {
+                        dynamic = Some(*child);
+                    }
+                    continue;
+                }
                 match index_candidate(tree, *child) {
                     IndexCandidate::Value(value) => {
                         resolved = Some(value);
@@ -4950,13 +5045,23 @@ fn postfix_projection_steps(
                         declined = true;
                         break;
                     }
-                    IndexCandidate::Open => {}
+                    // The index expression is the fragment the compile applies as a value; other
+                    // tokens are not expressions.
+                    IndexCandidate::Open => {
+                        dynamic.get_or_insert(*child);
+                    }
                 }
             }
             if declined {
                 return None;
             }
-            steps.push(ProjectionChainStep::Member(resolved?));
+            // A step with no carried constant is a computed index: the caller applies the
+            // element-access primitive with the index expression's value.
+            steps.push(match (resolved, dynamic) {
+                (Some(value), _) => ProjectionChainStep::Member(value),
+                (None, Some(index)) => ProjectionChainStep::ListIndex(index),
+                (None, None) => return None,
+            });
             cursor += 1;
             continue;
         }
@@ -5055,6 +5160,8 @@ fn slice_indexes_call_result(tree: &SyntaxTree, children: &[NodeId]) -> bool {
 enum ProjectionChainStep {
     Field(Arc<str>),
     Member(usize),
+    /// One index step whose index the machine computes, carrying the index expression node.
+    ListIndex(NodeId),
 }
 
 /// Returns the member name one dotted projection step names.

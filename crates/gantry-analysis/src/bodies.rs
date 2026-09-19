@@ -8567,6 +8567,8 @@ fn infer_projection(
             }
             return fold_projection_steps(
                 tree,
+                facts,
+                environment,
                 (node.span(), true),
                 children,
                 index_postfix.saturating_add(1),
@@ -8644,6 +8646,8 @@ fn infer_projection(
         };
         return fold_projection_steps(
             tree,
+            facts,
+            environment,
             (node.span(), true),
             children,
             index_postfix.saturating_add(1),
@@ -8779,8 +8783,11 @@ pub(crate) fn literal_projection_index(tree: &SyntaxTree, expression: NodeId) ->
 ///
 /// A step after the first projection reads a temporary rather than a caller place, so this walk
 /// records no affine read: the first projection already records the element read of its receiver.
+#[allow(clippy::too_many_arguments)]
 fn fold_projection_steps(
     tree: &SyntaxTree,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
     scope: (&SourceSpan, bool),
     children: &[NodeId],
     after: usize,
@@ -8899,6 +8906,39 @@ fn fold_projection_steps(
                 // so the enclosing operator's own refusal stays the recorded verdict there rather
                 // than an admitted chain the machine cannot publish.
                 return Ok(None);
+            }
+            if let Some(index_expression) = index_expression {
+                // The index expression is a value the machine computes: inferring it records the
+                // calls and effects it names, so the lowering publishes the callable an index-
+                // position call needs, and checks it is an `Int` (`SPEC.md` GNT-5.4).
+                let Some(index_type) = infer_expression(
+                    tree,
+                    index_expression,
+                    facts,
+                    environment,
+                    None,
+                    context,
+                    diagnostics,
+                )?
+                else {
+                    return Ok(None);
+                };
+                if index_type != TypeDescriptor::INT {
+                    diagnostics.push(body_diagnostic(
+                        "type-mismatch",
+                        DiagnosticCategory::Type,
+                        "an expression type does not match its required exact type",
+                        tree.node(index_expression)
+                            .ok_or(AnalysisError::Invariant)?
+                            .span()
+                            .clone(),
+                        [
+                            ("actual", index_type.canonical_string()),
+                            ("expected", TypeDescriptor::INT.canonical_string()),
+                        ],
+                    )?);
+                    return Ok(None);
+                }
             }
             current.immediate_members().into_iter().next()
         } else {
@@ -9923,6 +9963,8 @@ fn infer_operand_index_projection_sequence(
     }
     fold_projection_steps(
         tree,
+        facts,
+        environment,
         (&span, false),
         children,
         index_postfix.saturating_add(1),

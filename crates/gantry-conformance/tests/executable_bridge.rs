@@ -383,8 +383,10 @@ fn admitted_trailing_steps_in_operand_position_execute_on_the_shared_sequential_
 /// A computed index reads the element the machine evaluates (`GNT-GP-COLL-001`): an open index
 /// expression that reaches the value-position projection compiler is compiled as a value and the
 /// element-access primitive applies it, so the program answers the element the index names instead
-/// of the first literal the expression carries. A later dynamic step in a chain (`xs[0][i]`) still
-/// reaches the chain walker and remains the next phase of this contract.
+/// of the first literal the expression carries. A later dynamic step in a chain (`xs[0][i]`) and a
+/// dynamic first step followed by a static one (`xs[i][0]`) both apply the same primitive per step.
+/// A dynamic index in an operator operand position (`xs[i] + 1`) still refuses at analysis under
+/// the operand scope and remains a later phase of this contract.
 #[test]
 fn computed_element_access_reads_the_evaluated_index() {
     for (prelude, body, expected) in [
@@ -408,6 +410,36 @@ fn computed_element_access_reads_the_evaluated_index() {
             "fn idx() -> Int { 2 } ",
             "let xs: List<Int> = [1, 2, 3]; xs[idx()]",
             3,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<List<Int>> = [[1, 2, 3]]; xs[0][i + 1]",
+            3,
+        ),
+        (
+            "",
+            "let ys: List<Int> = [1, 2]; let xs: List<List<Int>> = [[1, 2, 3]]; xs[0][ys[0] + 1]",
+            3,
+        ),
+        (
+            "fn idx() -> Int { 2 } ",
+            "let xs: List<List<Int>> = [[1, 2, 3]]; xs[0][idx()]",
+            3,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; xs[0][i]",
+            2,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<List<Int>> = [[1, 2], [3]]; xs[i][0]",
+            3,
+        ),
+        (
+            "",
+            "let i: Int = 1; let xs: List<Int> = [1, 2, 3]; discard xs[i]; 0",
+            0,
         ),
     ] {
         let source = format!("{prelude}fn main() -> Int {{ {body} }}\n");
