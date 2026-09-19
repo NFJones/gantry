@@ -8431,9 +8431,9 @@ fn infer_projection(
             // result or of any other value is a temporary without a caller place to read.
             let continuing = projected_place_path(&place, Some(index));
             if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
-                // The place the chain reads is the subplace it continues to: every segment after
-                // this first index belongs to the key, so sibling fields and distinct inner
-                // elements stay distinct places (issues 3c224a99, 5ceb69e0).
+                // The place the chain reads is the subplace it continues to: every segment the walk
+                // sees after this first index belongs to the key, so sibling fields and distinct
+                // inner elements stay distinct places (issues 3c224a99, 5ceb69e0).
                 let mut fields = path.fields.clone();
                 fields.extend(projection_place_suffix(
                     tree,
@@ -8504,9 +8504,9 @@ fn infer_projection(
             // keeps its field path ahead of that index segment, while a receiver that is a call
             // result or another temporary has no caller place whose element could be read.
             if let (Some(path), Some(prefix)) = (&continuing, receiver_children.first().copied()) {
-                // The place the chain reads is the subplace it continues to: every segment after
-                // this first index belongs to the key, so sibling fields and distinct inner
-                // elements stay distinct places (issues 3c224a99, 5ceb69e0).
+                // The place the chain reads is the subplace it continues to: every segment the walk
+                // sees after this first index belongs to the key, so sibling fields and distinct
+                // inner elements stay distinct places (issues 3c224a99, 5ceb69e0).
                 let mut fields = path.fields.clone();
                 fields.extend(projection_place_suffix(
                     tree,
@@ -8824,7 +8824,9 @@ fn projection_step_opens_call(tree: &SyntaxTree, children: &[NodeId], cursor: us
 /// place of `inner` in the element, so two sibling fields of one element stay distinct places, and
 /// a chain with a further index step keys each of its segments (`3c224a99`, `5ceb69e0`). A literal
 /// index keys its own segment and every other index expression keys the wildcard segment, exactly
-/// as the first step does.
+/// as the first step does. Only the steps this walk sees are collected: an unparenthesized operand
+/// chain reaches it with its trailing steps wrapped, so such a chain keeps the receiver path and
+/// its first index segment alone, and that positional gap is tracked as its own defect.
 fn projection_place_suffix(tree: &SyntaxTree, children: &[NodeId], after: usize) -> Vec<Arc<str>> {
     let mut segments = Vec::new();
     let mut cursor = after;

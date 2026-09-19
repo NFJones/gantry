@@ -2302,6 +2302,14 @@ fn projected_receiver_calls_are_refused_precisely() {
         diagnostic_codes(analyzed_repeat.diagnostics()).contains(&"affine-value-reuse"),
         "a repeated nested read stays a reuse: {nested_repeat}"
     );
+    // An unparenthesized operand chain keys only its first index segment, so this sibling pair is
+    // still refused; the gap is tracked as defect 0150b16c and pinned here so it stays deliberate.
+    let operand_sibling = "affine struct Plain { value: Int } affine struct Marker { value: Int } struct W { inner: Plain, marker: Marker } fn main() -> Int { let xs: List<W> = [W { inner: Plain { value: 1 }, marker: Marker { value: 2 } }]; xs[0].inner.value + xs[0].marker.value }";
+    let analyzed_operand = analyze(operand_sibling);
+    assert!(
+        diagnostic_codes(analyzed_operand.diagnostics()).contains(&"affine-value-reuse"),
+        "the operand-position gap is pinned until defect 0150b16c: {operand_sibling}"
+    );
     let admitted = [
         format!(
             "{prelude}fn main() -> Int {{ let w: C = C {{ v: 7 }}; let a: Int = w.read(); a }}"
