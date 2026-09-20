@@ -1,10 +1,12 @@
-//! Coupling lane: every diagnostic code the analyzer emits is registered.
+//! Coupling lane: every diagnostic code in the analyzer sources is registered.
 //!
 //! The source-substrate registry (`crates/gantry-core/src/source.rs`) is the vocabulary tooling
 //! reads, but `DiagnosticCode::new` validates only the kebab-case shape, so an emitted code could
-//! stay unregistered indefinitely. This lane scans the analyzer's string-code emission sites —
-//! calls into the `*diagnostic(` helpers and direct `DiagnosticCode::new("...")` constructions —
-//! and requires each observed code to appear in `DIAGNOSTIC_CODE_REGISTRY`.
+//! stay unregistered indefinitely. This lane scans every code-shaped string literal in
+//! `crates/gantry-analysis/src` — whether it is passed to a diagnostic constructor, asserted in a
+//! test, or compared against an emitted code — and requires each one to appear in
+//! `DIAGNOSTIC_CODE_REGISTRY`, except for the field-value spellings listed below, which are
+//! structured-diagnostic field values and wire names rather than diagnostic codes.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -20,32 +22,48 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Returns the code literals passed to the analyzer's diagnostic constructors.
+/// Code-shaped analyzer literals that are structured-diagnostic field values or wire names rather
+/// than diagnostic codes: the occurrence and access kinds, classifier values, namespace
+/// comparisons, binding positions, and expression forms the analyzer reports inside a diagnostic's
+/// `fields` map.
+const FIELD_VALUE_SPELLINGS: [&str; 12] = [
+    "action-result",
+    "binding-annotation",
+    "boundary-position",
+    "cross-namespace",
+    "declared-type",
+    "instantiation-argument",
+    "nested-component",
+    "non-signature",
+    "open-member",
+    "operand-type",
+    "prompt-result",
+    "same-namespace",
+];
+
+/// Returns the code-shaped string literals in one analyzer source file.
 ///
-/// A candidate is the first string literal after a `diagnostic(` call or a
-/// `DiagnosticCode::new(` construction, and it counts only when every character is a lowercase
-/// letter, a digit, or a hyphen with at least one hyphen, which excludes messages and prose.
-fn emitted_codes(source: &str) -> BTreeSet<String> {
+/// A candidate is a lowercase kebab-case literal with at least one hyphen, which excludes prose,
+/// schema names, paths, and wire spellings outside this vocabulary.
+fn code_shaped_literals(source: &str) -> BTreeSet<String> {
     let mut codes = BTreeSet::new();
-    for marker in ["diagnostic(", "DiagnosticCode::new("] {
-        for (index, _) in source.match_indices(marker) {
-            let rest = &source[index + marker.len()..];
-            let Some(candidate) = rest.trim_start().strip_prefix('"') else {
-                continue;
-            };
-            let Some(end) = candidate.find('"') else {
-                continue;
-            };
-            let literal = &candidate[..end];
-            if !literal.is_empty()
-                && literal.contains('-')
-                && literal.chars().all(|character| {
-                    character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
-                })
-            {
-                codes.insert(literal.to_owned());
-            }
+    for (index, _) in source.match_indices('"') {
+        let rest = &source[index + 1..];
+        let Some(end) = rest.find('"') else {
+            continue;
+        };
+        let literal = &rest[..end];
+        if !literal.contains('-')
+            || !literal
+                .chars()
+                .any(|character| character.is_ascii_lowercase())
+            || !literal.chars().all(|character| {
+                character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+            })
+        {
+            continue;
         }
+        codes.insert(literal.to_owned());
     }
     codes
 }
@@ -71,11 +89,18 @@ fn analyzer_emitted_codes_are_registered() {
         }
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("the analyzer source is readable: {error}"));
-        observed.extend(emitted_codes(&source));
+        observed.extend(code_shaped_literals(&source));
+    }
+
+    for spelling in FIELD_VALUE_SPELLINGS {
+        assert!(
+            observed.remove(spelling),
+            "`{spelling}` is a field value, not a diagnostic code, so the scan must observe it"
+        );
     }
 
     assert!(
-        observed.len() >= 80,
+        observed.len() >= 100,
         "the scan observed {} analyzer codes; a refactor that breaks the scanner must fail here",
         observed.len()
     );

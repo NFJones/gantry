@@ -1273,6 +1273,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "Both permitted file-module candidates exist, so neither is selected.",
     },
     DiagnosticCodeDefinition {
+        code: "ambiguous-trait-method",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A trait method resolves ambiguously.",
+    },
+    DiagnosticCodeDefinition {
         code: "call-argument-type",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1319,6 +1325,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "A control-flow condition is neither Bool nor Decision.",
+    },
+    DiagnosticCodeDefinition {
+        code: "conflicting-type-inference",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "Two inference sources disagree about one type.",
     },
     DiagnosticCodeDefinition {
         code: "consumed-task-handle",
@@ -1387,6 +1399,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A task handle appears more than once in one consumption.",
     },
     DiagnosticCodeDefinition {
+        code: "duplicate-type-parameter",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A type parameter is declared twice.",
+    },
+    DiagnosticCodeDefinition {
         code: "duplicate-where-predicate",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1415,6 +1433,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "A propagation operand has no exactly one declared conversion.",
+    },
+    DiagnosticCodeDefinition {
+        code: "escaped-type-parameter",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A type parameter escapes its declaring scope.",
     },
     DiagnosticCodeDefinition {
         code: "exclusive-reborrow-subplace",
@@ -1525,6 +1549,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An assignment target is rooted in an immutable binding or receiver.",
     },
     DiagnosticCodeDefinition {
+        code: "implementation-method-mismatch",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An implementation method does not match its trait declaration.",
+    },
+    DiagnosticCodeDefinition {
         code: "import-name-collision",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
@@ -1541,6 +1571,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "A pattern constructor is incompatible with its scrutinee type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "incomplete-type-inference",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A type cannot be inferred from the available facts.",
     },
     DiagnosticCodeDefinition {
         code: "inconsistent-task-ownership",
@@ -1613,6 +1649,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "An inherent implementation target is not a package struct.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-implementation-head",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An implementation head is not admitted.",
     },
     DiagnosticCodeDefinition {
         code: "invalid-loop-limit",
@@ -1723,6 +1765,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "The canonical module graph contains a parent cycle.",
     },
     DiagnosticCodeDefinition {
+        code: "must-consume-copy",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A MustConsume place is copied instead of consumed.",
+    },
+    DiagnosticCodeDefinition {
         code: "must-consume-discard",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1753,6 +1801,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A MustConsume place leaves its scope without being consumed.",
     },
     DiagnosticCodeDefinition {
+        code: "never-boundary-refused",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A boundary declaration names the uninhabited type.",
+    },
+    DiagnosticCodeDefinition {
         code: "never-signature-refused",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1769,6 +1823,18 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::ControlFlow,
         meaning: "A structural match does not cover every value of its scrutinee type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "overlapping-implementation",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "Two trait implementations overlap.",
+    },
+    DiagnosticCodeDefinition {
+        code: "overlapping-inherent-method",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "Two inherent methods overlap.",
     },
     DiagnosticCodeDefinition {
         code: "owned-receiver-scope",
@@ -1901,6 +1967,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
         meaning: "A lexical declaration duplicates or shadows a visible name.",
+    },
+    DiagnosticCodeDefinition {
+        code: "shadowed-type-parameter",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A type parameter shadows an enclosing declaration.",
     },
     DiagnosticCodeDefinition {
         code: "shared-receiver-place",
@@ -2171,6 +2243,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "A tuple projection index exceeds its static arity.",
+    },
+    DiagnosticCodeDefinition {
+        code: "type-argument-arity",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A type argument list has the wrong arity.",
     },
     DiagnosticCodeDefinition {
         code: "type-mismatch",
