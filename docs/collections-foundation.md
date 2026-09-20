@@ -141,9 +141,10 @@ separately in `docs/canonical-scalar-keys.md`.
   collection order of `GNT-39.2`, with a visitor able to end the traversal — and a `Range` value is
   traversed stepwise through `RangeValue::next_position`, beginning at the inclusive start bound
   when it is present, publishing no first position for an absent start bound and no next position
-  for a position the value does not admit. Traversal publishes no iterator value, no source
-  iteration protocol, no adapter, no ownership or invalidation rule, no suspension, and no
-  exhaustion diagnostic.
+  for a position the value does not admit. Traversal publishes no source-level iterator value, no
+  iteration protocol, no composable adapter, no ownership or invalidation rule, no suspension, and
+  no exhaustion diagnostic; the traversal forms it publishes are the visitor, the cursor, the
+  terminal fold, and the bounded view.
   `CollectionValue::cursor` opens the one temporary cursor form: it borrows the value it traverses,
   each advance through `CollectionCursor::next` publishes the next visit or none at exhaustion
   (`is_exhausted`), and a `Range` value publishes positions through the same stepwise protocol the
@@ -154,10 +155,14 @@ separately in `docs/canonical-scalar-keys.md`.
   the value it was called on unchanged, so a cursor opened over that value keeps traversing exactly
   that value and no invalidation rule is needed.
   `CollectionValue::fold` is the one terminal form: it visits the same content in the same order with
-  one accumulator and consumes one step of its published budget per visit, so it always terminates
+  one accumulator and consumes one step of the budget it is given per visit, so it always terminates
   even over a `Range` side that publishes no end, and it publishes the accumulator with
   `CollectionOutcome::Completed` when the content was exhausted or `Stopped` when the folder ended it
   or the budget was reached.
+  `CollectionValue::take` is the one bounded view: it publishes no more than its budget of visits in
+  the same order, reports through `CollectionTake::remaining` how many it may still publish, holds
+  its position rather than restarting (so the view is not `Clone`), and publishes no visit at all at
+  a budget of zero.
   It reports how a visitor-form traversal ended: `CollectionOutcome::Completed` when every entry
   or element that form publishes was visited and `Stopped` when the visitor ended it early, with
   `is_completed` reading that outcome; a `Range` value publishes no visit through that form and

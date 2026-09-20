@@ -304,9 +304,9 @@ pub use signature::{
 pub use collections::{
     COLLECTION_CLAUSES, CollectionCursor, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
-    CollectionNonClaimName, CollectionOutcome, CollectionTraversal, CollectionValue,
-    CollectionValueKind, CollectionVisit, MapTypeIdentity, MapValue, RangeStepContract,
-    RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, canonical_order,
+    CollectionNonClaimName, CollectionOutcome, CollectionTake, CollectionTraversal,
+    CollectionValue, CollectionValueKind, CollectionVisit, MapTypeIdentity, MapValue,
+    RangeStepContract, RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, canonical_order,
     check_collection_non_claims,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned

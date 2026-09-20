@@ -1262,6 +1262,22 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         (count + 1, CollectionTraversal::Continue)
     });
     assert_eq!((visits, outcome), (1, CollectionOutcome::Stopped));
+    let (visits, outcome) = carried_map.fold(0usize, 8, &mut |count, _| {
+        (count + 1, CollectionTraversal::Stop)
+    });
+    assert_eq!(
+        (visits, outcome),
+        (1, CollectionOutcome::Stopped),
+        "the folder ends the fold after one visit"
+    );
+    let (visits, outcome) = carried_map.fold(7usize, 0, &mut |count, _| {
+        (count + 1, CollectionTraversal::Continue)
+    });
+    assert_eq!(
+        (visits, outcome),
+        (7, CollectionOutcome::Stopped),
+        "a zero budget stops before any advance"
+    );
     let (visits, outcome) = CollectionValue::Range(range).fold(0usize, 8, &mut |count, _| {
         (count + 1, CollectionTraversal::Continue)
     });
@@ -1274,6 +1290,26 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         (2, CollectionOutcome::Stopped),
         "the budget bounds a value whose end is not published"
     );
+
+    // The bounded view (`GNT-39.8`): at most its budget of visits in the same order, reporting how
+    // many remain, with no restart and no visit at all at a budget of zero.
+    let mut take = carried_map.take(1);
+    assert_eq!(take.remaining(), 1);
+    assert!(matches!(take.next(), Some(CollectionVisit::Entry { .. })));
+    assert_eq!(take.next(), None);
+    assert_eq!(take.remaining(), 0);
+    let mut take_range = carried_range.take(4);
+    assert_eq!(take_range.next(), Some(CollectionVisit::Position(bound(1))));
+    assert_eq!(take_range.next(), Some(CollectionVisit::Position(bound(2))));
+    assert_eq!(take_range.next(), Some(CollectionVisit::Position(bound(3))));
+    assert_eq!(take_range.next(), None);
+    assert_eq!(
+        take_range.remaining(),
+        0,
+        "exhaustion clears the remaining budget"
+    );
+    let mut take_none = carried_map.take(0);
+    assert_eq!(take_none.next(), None);
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);

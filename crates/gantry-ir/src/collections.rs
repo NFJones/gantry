@@ -649,15 +649,14 @@ impl SetValue {
         element: &LogicalValue,
     ) -> Result<Self, CollectionKeyRefusal> {
         let admitted = policy.admit(element)?;
-        if self.contains(&admitted) {
-            return Ok(self.clone());
-        }
         let mut elements = self.elements.clone();
-        let index = elements
-            .binary_search_by(|existing| canonical_order(existing, &admitted))
-            .unwrap_or_else(|index| index);
-        elements.insert(index, admitted);
-        Ok(Self { elements })
+        match elements.binary_search_by(|existing| canonical_order(existing, &admitted)) {
+            Ok(_) => Ok(self.clone()),
+            Err(index) => {
+                elements.insert(index, admitted);
+                Ok(Self { elements })
+            }
+        }
     }
 }
 
@@ -993,6 +992,51 @@ impl<'a> CollectionCursor<'a> {
     }
 }
 
+/// One bounded view over a cursor: at most `budget` further advances (`GNT-39.8`).
+///
+/// The view publishes no more than its budget of visits, reports how many it may still publish,
+/// and holds its position in the cursor rather than restarting, so it is deliberately not `Clone`.
+/// A budget of zero publishes no visit.
+#[derive(Debug)]
+pub struct CollectionTake<'a> {
+    cursor: CollectionCursor<'a>,
+    remaining: u64,
+}
+
+impl<'a> CollectionTake<'a> {
+    /// Opens one bounded view over the given value.
+    #[must_use]
+    pub const fn new(value: &'a CollectionValue, budget: u64) -> Self {
+        Self {
+            cursor: CollectionCursor::new(value),
+            remaining: budget,
+        }
+    }
+
+    /// Advances the view and publishes the next visit, or none at its budget or exhaustion.
+    pub fn next(&mut self) -> Option<CollectionVisit<'a>> {
+        if self.remaining == 0 {
+            return None;
+        }
+        match self.cursor.next() {
+            Some(visit) => {
+                self.remaining -= 1;
+                Some(visit)
+            }
+            None => {
+                self.remaining = 0;
+                None
+            }
+        }
+    }
+
+    /// Returns the visits this view may still publish.
+    #[must_use]
+    pub const fn remaining(&self) -> u64 {
+        self.remaining
+    }
+}
+
 impl CollectionValue {
     /// Folds the carried value's content in order and publishes the accumulator and outcome
     /// (`GNT-39.8`).
@@ -1023,6 +1067,12 @@ impl CollectionValue {
             }
         }
         (accumulator, CollectionOutcome::Stopped)
+    }
+
+    /// Opens one bounded view of at most `budget` visits over this value (`GNT-39.8`).
+    #[must_use]
+    pub const fn take(&self, budget: u64) -> CollectionTake<'_> {
+        CollectionTake::new(self, budget)
     }
 }
 
