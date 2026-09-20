@@ -332,7 +332,12 @@ impl TaskSupervisor {
             observation_armed: AtomicBool::new(registration.observation_armed),
             unclean_relinquished: AtomicBool::new(false),
         });
-        {
+        // The insertion into `active` completes this submission and can be the
+        // transition that makes the supervisor quiescent - notably for the shutdown
+        // coordinator observing its own in-flight registration. A waiter that polled
+        // while `submitting` still held this id is woken here instead of staying
+        // parked until the caller's graceful deadline.
+        let quiescence_waiters = {
             let mut state = lock(&self.inner.state);
             state.submitting.remove(&registration.id);
             if state.closed {
@@ -342,7 +347,13 @@ impl TaskSupervisor {
                 observation.control_relinquished = true;
             }
             state.active.insert(registration.id, Arc::clone(&entry));
-        }
+            if shutdown_quiescent(&state) {
+                std::mem::take(&mut state.quiescence_waiters)
+            } else {
+                Vec::new()
+            }
+        };
+        wake_all(quiescence_waiters);
         if entry.observation_armed.load(Ordering::Acquire)
             || entry.unclean_relinquished.load(Ordering::Acquire)
         {
@@ -1093,11 +1104,25 @@ mod tests {
         tasks: Mutex<Vec<Arc<RecordedTaskState>>>,
         fail_abort: AtomicBool,
         pending_abort: AtomicBool,
+        gate_spawn: AtomicBool,
+        spawn_release: (Mutex<bool>, std::sync::Condvar),
     }
 
     impl RecordingExecutor {
         fn tasks(&self) -> Vec<Arc<RecordedTaskState>> {
             lock(&self.tasks).clone()
+        }
+
+        fn gate_spawn(&self) {
+            self.gate_spawn.store(true, Ordering::Release);
+        }
+
+        fn release_spawn(&self) {
+            let (released, condvar) = &self.spawn_release;
+            *released
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = true;
+            condvar.notify_all();
         }
 
         fn fail_abort(&self) {
@@ -1121,6 +1146,17 @@ mod tests {
                 pending_abort: self.pending_abort.load(Ordering::Acquire),
             });
             lock(&self.tasks).push(Arc::clone(&state));
+            if self.gate_spawn.load(Ordering::Acquire) {
+                let (released, condvar) = &self.spawn_release;
+                let mut released = released
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                while !*released {
+                    released = condvar
+                        .wait(released)
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                }
+            }
             Ok(Box::new(RecordedTask { state }))
         }
 
@@ -1349,6 +1385,88 @@ mod tests {
 
     fn supervisor() -> (TaskSupervisor, Arc<RecordingExecutor>) {
         supervisor_with_root_capacity(8)
+    }
+
+    #[derive(Default)]
+    struct CountingWake {
+        woken: AtomicBool,
+    }
+
+    impl CountingWake {
+        fn woken(&self) -> bool {
+            self.woken.load(Ordering::Acquire)
+        }
+    }
+
+    impl std::task::Wake for CountingWake {
+        fn wake(self: Arc<Self>) {
+            self.woken.store(true, Ordering::Release);
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.woken.store(true, Ordering::Release);
+        }
+    }
+
+    /// A waiter that polls while its own submission is still in flight must be woken
+    /// when that submission lands: the insertion into `active` is the transition that
+    /// can make the supervisor quiescent for the submitting task, and leaving the
+    /// waiter parked makes the caller wait out its whole graceful deadline (the
+    /// observed sporadic ~30 s shutdown stall).
+    #[test]
+    fn submission_completion_wakes_a_registered_quiescence_waiter() {
+        let (supervisor, executor) = supervisor_with_root_capacity(1);
+        executor.gate_spawn();
+        let registration = supervisor.prepare(SupervisedTaskDomain::Shutdown, None);
+        let permit = supervisor
+            .try_reserve_control_plane()
+            .unwrap_or_else(|error| panic!("control-plane reservation failed: {error}"))
+            .transfer();
+        let submitting = Arc::clone(&supervisor.inner);
+        let submitter = TaskSupervisor {
+            inner: Arc::clone(&supervisor.inner),
+        };
+        let spawner = std::thread::spawn(move || {
+            let _ = submitter.submit(
+                registration,
+                Box::pin(async { OwnedTaskResult::new() }),
+                permit,
+            );
+        });
+        while executor.tasks().is_empty() {
+            std::thread::yield_now();
+        }
+        assert!(
+            !lock(&submitting.state).submitting.is_empty(),
+            "the gated spawn runs while the submission still holds its id"
+        );
+        let wake = Arc::new(CountingWake::default());
+        let waker = Waker::from(Arc::clone(&wake));
+        let mut context = Context::from_waker(&waker);
+        assert!(
+            supervisor
+                .poll_shutdown_quiescence(&mut context)
+                .is_pending()
+        );
+        assert!(
+            !wake.woken(),
+            "the in-flight submission keeps quiescence false"
+        );
+        executor.release_spawn();
+        spawner
+            .join()
+            .unwrap_or_else(|_| panic!("the submitting thread must not panic"));
+        for _ in 0..1_000 {
+            if wake.woken() {
+                break;
+            }
+            std::thread::yield_now();
+        }
+        assert!(
+            wake.woken(),
+            "the completed submission must wake the parked quiescence waiter"
+        );
+        assert!(supervisor.poll_shutdown_quiescence(&mut context).is_ready());
     }
 
     fn supervisor_with_root_capacity(
