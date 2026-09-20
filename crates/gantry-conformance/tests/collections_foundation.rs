@@ -422,10 +422,10 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_the_rest() {
             CollectionDiagnosticCode::InvalidKey,
             "`{text}`"
         );
-        assert!(
-            error.detail().contains(named),
-            "`{text}` names the whole refused key member: {}",
-            error.detail()
+        assert_eq!(
+            error.detail(),
+            format!("`{named}` is not an admitted collection key type"),
+            "`{text}` names the whole refused key member"
         );
     }
 }
