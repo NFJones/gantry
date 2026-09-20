@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "f972ecd53702fb89cfd08eb06eaf796994610ad30028ad7c58c5107ceea20088",
-  "byte_length": 1036321,
+  "specification_sha256": "d2be4c9068d80bb9838279183db4f76bc9f31943d4093eb6a2de5a71b3b5f8bd",
+  "byte_length": 1036720,
   "line_count": 15596,
   "regions": [
     {
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8297,
-      "sha256": "7bf760f48d81a7bce56cefb948746fef7763946a029e5d5218ad1d3fcda029be",
+      "sha256": "07bd88cc4d15d230db70b3584617f3d335b2ca351226c7204f62a8d27b3abf58",
       "rationale": null
     },
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9501,
       "end_line": 15596,
-      "sha256": "de135734c81bde0d097b7e6ded16309660ec2ed444b40f2d14c87eefc0513709",
+      "sha256": "cd4a4775352b3c4519a1a30dbda8ef704d7152a18bb64e1702c945448db0c84b",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "bfd08187ce271b440a9b6e074e1a8df9b0a40d5b60767e271bf78ea6410e683b",
+      "span_sha256": "fce2f2b87649c3e58ac89fe224070635e8852f3934a9abba3b4f2e855bc6c324",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "9292ff6fc81dbb0b19f35e1acee6792c509162aadba8e95a2d8865463fa8e797",
+      "body_sha256": "93777effae1ea74f05aeba13395cd6fec4f3f5a2da9c6a831937c627c32c30ec",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42249,11 +42249,11 @@
       "id": "GNT-39.0-collection-key-and-order-scope",
       "span_start_line": 15579,
       "span_end_line": 15585,
-      "span_sha256": "17b37fab6eee175715151fc3c19066708e38ddbf50fdf2405679b61540fefb5e",
+      "span_sha256": "51cab66252edcc66bd8292b5ad1b3d398025337ac3c2e030a0c59d5808688622",
       "anchor_line": 15582,
       "body_start_line": 15583,
       "body_end_line": 15585,
-      "body_sha256": "1cd26b8763cefec4e9af10f35098721a9951bad5de3b750fa6d532c7fd50d88b",
+      "body_sha256": "2a8cba3606916cce324a09318a137377089dadc5708f4bacbd3ef60aee5abcf7",
       "profiles": [
         "analyzer"
       ],
@@ -42331,11 +42331,11 @@
       "id": "GNT-39.2-canonical-collection-order-and-duplicate-identity",
       "span_start_line": 15590,
       "span_end_line": 15593,
-      "span_sha256": "508ef8323497f9aabe675a7ddccf927d65a28841ec2e25f828e918b88ccc0c3a",
+      "span_sha256": "ffde4e24d9aaef7964f2bf0d2655bfa7eb8e938183379494fb29016f434da5c3",
       "anchor_line": 15590,
       "body_start_line": 15591,
       "body_end_line": 15593,
-      "body_sha256": "426fe24616c2f8052be81b2b1c05c6ac8f536e14c271f89e3a04f44d1c8e7091",
+      "body_sha256": "fa4df839350e298f6c3a0594ab17ba9efca16ff0b73664b75d32f3d56d9ebb5e",
       "profiles": [
         "analyzer"
       ],
@@ -42373,11 +42373,11 @@
       "id": "GNT-39.3-collection-foundation-non-claims",
       "span_start_line": 15594,
       "span_end_line": 15596,
-      "span_sha256": "e62e106799f32f29b2d70df02887d0b806735642d96f993cbdf1a0c413d66466",
+      "span_sha256": "2b7844ff887b8419bf6fd1a820273ca5ae7346bb35da382903e5c2a22d14a7ca",
       "anchor_line": 15594,
       "body_start_line": 15595,
       "body_end_line": 15596,
-      "body_sha256": "aca27492651673f9be4f94707bcc8eb8e26b07b31f07382af8ac1572a86da2bc",
+      "body_sha256": "8511bf214979b48545599919a36947a9213c22a9954c68355a59a0defe2866c8",
       "profiles": [
         "analyzer"
       ],

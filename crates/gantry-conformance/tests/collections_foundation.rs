@@ -9,7 +9,9 @@ use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::canonical_key::{CanonicalKey, DEFAULT_CANONICAL_KEY_LIMITS};
+use gantry::canonical_key::{
+    CanonicalKey, CanonicalKeyError, CanonicalKeyLimits, DEFAULT_CANONICAL_KEY_LIMITS,
+};
 use gantry::ir::{
     COLLECTION_CLAUSES, CollectionDiagnosticCode, CollectionError, CollectionKeyPolicy,
     CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName, canonical_order,
@@ -239,6 +241,20 @@ fn duplicate_identity_refuses_with_the_first_and_first_repeated_indices() {
         CollectionDiagnosticCode::InvalidKey,
         "an ineligible candidate refuses before any identity is published"
     );
+}
+
+/// The canonical scalar-key contract's own refusals pass through unchanged (`GNT-39.1`).
+#[test]
+fn canonical_refusals_pass_through_without_a_new_spelling() {
+    let limits = CanonicalKeyLimits::new(64).unwrap_or_else(|| panic!("64 is a positive limit"));
+    let policy = CollectionKeyPolicy::new(limits);
+    let oversized = string(&"a".repeat(128));
+    match policy.admit(&oversized) {
+        Err(CollectionKeyRefusal::Canonical(CanonicalKeyError::ResourceLimit { .. })) => {}
+        other => panic!(
+            "an over-limit frame stays the canonical contract's refusal, not a collection one: {other:?}"
+        ),
+    }
 }
 
 /// Every declared non-claim must be asserted and none presented as a guarantee (`GNT-39.3`).
