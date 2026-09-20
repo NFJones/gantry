@@ -4,7 +4,7 @@
   "minor": 0,
   "schema": "gantry.host-domain-contracts/v1",
   "schema_path": "protocol/schemas/host-domain-contracts-v1.schema.json",
- "specification_revision": "b36f88e25d4f7c05ff2c342e6d5d730a6a787639769dcb8f6cce8afaef2718b1",
+ "specification_revision": "0497abf0fd4949f70198696e03573397d70dfd4955db1a589fbf701ef233ac1c",
   "families": [
     {"wire":"codec","rust":"Codec","categories":["decode","encode","malformed-input","resource-limit","unclassified"],"targets":["application","durable","portable"]},
     {"wire":"console","rust":"Console","categories":["closed","interrupted","read","write","unclassified"],"targets":["application"]},

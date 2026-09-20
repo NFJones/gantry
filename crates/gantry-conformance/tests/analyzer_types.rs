@@ -2543,8 +2543,9 @@ fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
     );
 }
 
-/// The grammar recognises `Map<K, V>` and analysis refuses it until the type is admitted
-/// (`GNT-39.4`).
+/// The grammar recognises `Map<K, V>`; analysis admits it as a constructed value type in value
+/// positions and refuses it under the clause-owned refusal in signature and declared-type
+/// positions (`GNT-39.4`).
 #[test]
 fn map_type_form_is_recognised_and_refused_until_admitted() {
     let source = "fn f(x: Map<Int, String>) -> Int { 0 }\nfn main() -> Int { 0 }";
@@ -2711,10 +2712,25 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments()
         ["collection-type-unadmitted"]
     );
     assert!(parameter.executable_program().is_none());
+
+    // A value position admits the form: the annotation resolves to the identity's constructed type,
+    // and the declaration is refused, if at all, for the value it binds rather than for its form.
+    let local = "fn main() -> Int { let m: Map<Int, String> = 0; 0 }";
+    assert_eq!(
+        syntax(local).status(),
+        gantry::frontend::PackageSyntaxStatus::Valid,
+        "the local annotation is recognised by the grammar"
+    );
+    assert!(
+        !diagnostic_codes(analyze(local).diagnostics()).contains(&"collection-type-unadmitted"),
+        "a value position admits the form: {:?}",
+        diagnostic_codes(analyze(local).diagnostics())
+    );
 }
 
-/// The grammar recognises the one-argument collection type forms `Set<K>` and `Range<T>`, and
-/// analysis refuses each of them under the clause-owned type-admission refusal (`GNT-39.4`).
+/// The grammar recognises the one-argument collection type forms `Set<K>` and `Range<T>`; analysis
+/// admits each of them in value positions and refuses it under the clause-owned refusal in
+/// signature and declared-type positions (`GNT-39.4`).
 #[test]
 fn set_and_range_type_forms_are_recognised_and_refused_until_admitted() {
     for spelling in ["Set", "Range"] {
