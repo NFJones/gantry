@@ -82,11 +82,12 @@ fn deterministic_prng_surface_is_published() {
     }
 }
 
-/// The Section 2.1 registration row names every clause of the sections this crate publishes.
+/// Every declared clause anchor exists in the specification and the Section 2.1 registration row
+/// reaches each covered section's last clause.
 ///
 /// The row is one line of the specification that lists the anchors of each governed section; a new
-/// clause the row does not reach is registered nowhere, so this lane fails when either the
-/// collection clauses or the deterministic numeric clauses are missing from it.
+/// clause the row does not reach is registered nowhere, and a vocabulary entry with no matching
+/// specification anchor names a clause the specification does not declare. Both classes fail here.
 #[test]
 fn section_2_1_registration_row_covers_the_declared_clauses() {
     let specification = read_text(&workspace_root().join("SPEC.md"));
@@ -109,6 +110,12 @@ fn section_2_1_registration_row_covers_the_declared_clauses() {
             assert!(
                 row.contains(anchor),
                 "the registration row names `{anchor}`"
+            );
+        }
+        for anchor in vocabulary {
+            assert!(
+                specification.contains(&format!("<a id=\"{anchor}\"></a>")),
+                "the specification declares the anchor `{anchor}`"
             );
         }
     }
