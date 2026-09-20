@@ -369,13 +369,17 @@ impl TypeDescriptor {
     /// trusted, so the check stays fail-closed if a token-level constructor is ever added.
     #[must_use]
     pub(crate) fn all_member_slices_decode(&self) -> bool {
-        if self.tokens.len() < 3
-            || !matches!(
-                self.tokens.first(),
-                Some(TypeToken::Open(_) | TypeToken::OpenDeclared(_) | TypeToken::OpenCallable(_))
-            )
-        {
+        if !matches!(
+            self.tokens.first(),
+            Some(TypeToken::Open(_) | TypeToken::OpenDeclared(_) | TypeToken::OpenCallable(_))
+        ) {
             return true;
+        }
+        // An opener shape must carry its closing token and at least one member position; a shorter
+        // or unclosed opener sequence is refused as unreadable rather than trusted, so the
+        // fail-closed guarantee does not depend on every constructor appending `Close`.
+        if self.tokens.len() < 3 || self.tokens.last() != Some(&TypeToken::Close) {
+            return false;
         }
         let mut start = 1_usize;
         let mut depth = 0_usize;
