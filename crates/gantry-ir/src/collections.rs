@@ -13,8 +13,8 @@ use gantry_core::value::LogicalValue;
 
 use crate::types::TypeDescriptor;
 
-/// The declared clauses of `GNT-39.0` through `GNT-39.6`, in specification order.
-pub const COLLECTION_CLAUSES: [&str; 7] = [
+/// The declared clauses of `GNT-39.0` through `GNT-39.7`, in specification order.
+pub const COLLECTION_CLAUSES: [&str; 8] = [
     "GNT-39.0-collection-key-and-order-scope",
     "GNT-39.1-admitted-collection-keys",
     "GNT-39.2-canonical-collection-order-and-duplicate-identity",
@@ -22,6 +22,7 @@ pub const COLLECTION_CLAUSES: [&str; 7] = [
     "GNT-39.4-map-type-form-recognition",
     "GNT-39.5-map-type-identity",
     "GNT-39.6-set-and-range-type-identities",
+    "GNT-39.7-range-step-contract",
 ];
 
 /// One frozen collection-foundation diagnostic of `GNT-39.0`.
@@ -465,6 +466,69 @@ impl RangeTypeIdentity {
             CollectionDiagnosticCode::UnadmittedType,
             format!("`{text}` is not the canonical text of one admitted Range identity"),
         )
+    }
+}
+
+/// The sealed deterministic step contract of one `Range<T>` element type (`GNT-39.7`).
+///
+/// The contract is sealed: this clause declares every element type that admits stepping, and no
+/// package, adapter, or host may define one. Exactly one element type is admitted in this edition —
+/// `Int` — and its step is exactly one value toward the bound, taken with the element type's checked
+/// arithmetic. The contract publishes no traversal, iteration, `for` integration, mutation,
+/// ownership or invalidation, quota or suspension, schema, recovery, durability, boundary encoding,
+/// lowering, machine representation, performance, or family behavior, and admits no `Range` value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RangeStepContract {
+    /// The `Int` element type.
+    Int,
+}
+
+impl RangeStepContract {
+    /// Every admitted element type, in canonical order.
+    pub const ALL: [Self; 1] = [Self::Int];
+
+    /// Returns the canonical element text of this contract.
+    #[must_use]
+    pub fn element_text(self) -> &'static str {
+        match self {
+            Self::Int => "Int",
+        }
+    }
+
+    /// Returns the sealed contract of one element text, or nothing when the type admits none.
+    #[must_use]
+    pub fn sealed(element_text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|contract| contract.element_text() == element_text)
+    }
+
+    /// Returns the checked successor of one element value, or nothing at the element's maximum.
+    #[must_use]
+    pub fn successor(self, value: i64) -> Option<i64> {
+        match self {
+            Self::Int => value.checked_add(1),
+        }
+    }
+
+    /// Returns the checked predecessor of one element value, or nothing at the element's minimum.
+    #[must_use]
+    pub fn predecessor(self, value: i64) -> Option<i64> {
+        match self {
+            Self::Int => value.checked_sub(1),
+        }
+    }
+
+    /// Returns whether a forward step from `value` remains inside the exclusive end bound.
+    #[must_use]
+    pub fn forward_within(self, value: i64, end: Option<i64>) -> bool {
+        end.is_none_or(|end| value < end)
+    }
+
+    /// Returns whether a backward step from `value` remains inside the inclusive start bound.
+    #[must_use]
+    pub fn backward_within(self, value: i64, start: Option<i64>) -> bool {
+        start.is_none_or(|start| value >= start)
     }
 }
 

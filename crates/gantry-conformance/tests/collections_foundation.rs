@@ -17,8 +17,8 @@ use gantry::canonical_key::{
 use gantry::ir::{
     COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
-    CollectionNonClaimName, MapTypeIdentity, RangeTypeIdentity, SetTypeIdentity, TypeDescriptor,
-    canonical_order, check_collection_non_claims,
+    CollectionNonClaimName, MapTypeIdentity, RangeStepContract, RangeTypeIdentity, SetTypeIdentity,
+    TypeDescriptor, canonical_order, check_collection_non_claims,
 };
 use gantry::numeric::{GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -542,6 +542,59 @@ fn set_and_range_type_identities_are_published_and_refused() {
             error.code(),
             CollectionDiagnosticCode::UnadmittedType,
             "`{text}`"
+        );
+    }
+}
+
+/// The range step contract is sealed, exact, and deterministic (`GNT-39.7`).
+#[test]
+fn range_step_contract_is_sealed_and_deterministic() {
+    assert_eq!(RangeStepContract::ALL.len(), 1);
+    assert_eq!(RangeStepContract::ALL[0].element_text(), "Int");
+    assert_eq!(
+        RangeStepContract::sealed("Int"),
+        Some(RangeStepContract::Int)
+    );
+    for element in [
+        "Float",
+        "String",
+        "Bool",
+        "Unit",
+        "List<Int>",
+        "Map<Int,String>",
+        "Set<Int>",
+        "Range<Int>",
+        "int",
+        "Decision",
+    ] {
+        assert_eq!(
+            RangeStepContract::sealed(element),
+            None,
+            "`{element}` admits no sealed step contract"
+        );
+    }
+
+    let contract = RangeStepContract::Int;
+    assert_eq!(contract.successor(0), Some(1));
+    assert_eq!(contract.successor(i64::MAX), None);
+    assert_eq!(contract.predecessor(0), Some(-1));
+    assert_eq!(contract.predecessor(i64::MIN), None);
+
+    // The start bound is inclusive and the end bound exclusive; an absent bound is unbounded.
+    assert!(contract.forward_within(9, Some(10)));
+    assert!(!contract.forward_within(10, Some(10)));
+    assert!(contract.forward_within(i64::MAX, None));
+    assert!(contract.backward_within(0, Some(0)));
+    assert!(!contract.backward_within(-1, Some(0)));
+    assert!(contract.backward_within(i64::MIN, None));
+
+    // Stepping is deterministic: the same value, direction, and bounds produce the same outcome.
+    for value in [-1i64, 0, 1, i64::MAX - 1, i64::MAX] {
+        assert_eq!(contract.successor(value), contract.successor(value));
+        assert_eq!(contract.predecessor(value), contract.predecessor(value));
+        assert_eq!(
+            contract.forward_within(value, Some(value)),
+            contract.forward_within(value, Some(value))
         );
     }
 }

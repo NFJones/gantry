@@ -301,7 +301,7 @@ pub use signature::{
 pub use collections::{
     COLLECTION_CLAUSES, CollectionDiagnosticCode, CollectionError, CollectionKeyPolicy,
     CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion, CollectionNonClaimName,
-    MapTypeIdentity, RangeTypeIdentity, SetTypeIdentity, canonical_order,
+    MapTypeIdentity, RangeStepContract, RangeTypeIdentity, SetTypeIdentity, canonical_order,
     check_collection_non_claims,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records

@@ -1,8 +1,9 @@
 # Collection key contract and canonical collection order
 
-`SPEC.md` Section 39 (`GNT-39.0` .. `GNT-39.5`) fixes the key contract and the one `Map` type
-identity a source collection consumes: the admitted key domain, the canonical order, duplicate-key
-identity, and the identity of the recognised `Map<K, V>` form. The pure model
+`SPEC.md` Section 39 (`GNT-39.0` .. `GNT-39.7`) fixes the key contract and the collection type
+identities a source collection consumes: the admitted key domain, the canonical order, duplicate-key
+identity, the identities of the recognised `Map<K, V>`, `Set<K>`, and `Range<T>` forms, and the sealed
+range step contract. The pure model
 is `crates/gantry-ir/src/collections.rs`, published through `gantry::ir`, and its machine-checked
 evidence is `crates/gantry-conformance/tests/collections_foundation.rs`, one lane per claim. This
 note is documentation: it names what the model declares and what it refuses, and it grants nothing.
@@ -24,6 +25,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `GNT-39.4-map-type-form-recognition` | the three recognised collection type forms, `Map<K, V>`, `Set<K>`, and `Range<T>`, and their `collection-type-unadmitted` refusal |
 | `GNT-39.5-map-type-identity` | the identity of the recognised form: its two argument types in order, the five admitted key types, and the key-domain refusal of every other resolved key argument |
 | `GNT-39.6-set-and-range-type-identities` | the `Set<K>` element identity over the same five admitted key types and the `Range<T>` element identity over any admitted value type, with their canonical texts and refusals |
+| `GNT-39.7-range-step-contract` | the sealed step contract: exactly `Int` steps, by one value toward the bound with checked arithmetic, under an inclusive start bound and an exclusive end bound |
 
 ## What the model decides
 
@@ -79,6 +81,14 @@ separately in `docs/canonical-scalar-keys.md`.
   decoder admits exactly the canonical text of one admitted value type and has no key-domain path,
   so `Range<Decision>` is a legitimate identity while `Range<Missing>` is refused. Both identities
   render as `Set<K>` and `Range<T>` over the canonical text of the argument.
+- `RangeStepContract::sealed` publishes the sealed step contract (`GNT-39.7`): exactly `Int` admits
+  stepping in this edition, `successor` and `predecessor` are the element type's checked steps, and
+  `forward_within` and `backward_within` apply the inclusive start bound and the exclusive end bound,
+  so a step that would leave the bound or the element's value range is exhaustion rather than a
+  refusal, a wrap, or a trap. The contract is sealed: no package, adapter, host, or later declaration
+  may define, extend, override, or infer one, and the clause publishes no traversal, iteration, loop
+  integration, exhaustion reporting, mutation, quota, schema, recovery, durability, lowering, or
+  machine representation, and admits no `Range` type or value.
 
 ## Diagnostics
 
