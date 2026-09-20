@@ -20,7 +20,7 @@ use gantry::ir::{
     CollectionNonClaimName, MapTypeIdentity, RangeStepContract, RangeTypeIdentity, SetTypeIdentity,
     TypeDescriptor, canonical_order, check_collection_non_claims,
 };
-use gantry::numeric::{GantryFloat, GantryInt};
+use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 
 fn workspace_root() -> PathBuf {
@@ -575,21 +575,38 @@ fn range_step_contract_is_sealed_and_deterministic() {
     }
 
     let contract = RangeStepContract::Int;
-    assert_eq!(contract.successor(0), Some(1));
-    assert_eq!(contract.successor(i64::MAX), None);
-    assert_eq!(contract.predecessor(0), Some(-1));
-    assert_eq!(contract.predecessor(i64::MIN), None);
+    let element = |value: i64| {
+        GantryInt::new(value)
+            .unwrap_or_else(|| panic!("`{value}` is inside the canonical Int range"))
+    };
+    assert_eq!(contract.successor(element(0)), Some(element(1)));
+    assert_eq!(
+        contract.successor(element(GANTRY_INT_MAXIMUM - 1)),
+        Some(element(GANTRY_INT_MAXIMUM))
+    );
+    assert_eq!(contract.successor(element(GANTRY_INT_MAXIMUM)), None);
+    assert_eq!(contract.predecessor(element(0)), Some(element(-1)));
+    assert_eq!(
+        contract.predecessor(element(GANTRY_INT_MINIMUM + 1)),
+        Some(element(GANTRY_INT_MINIMUM))
+    );
+    assert_eq!(contract.predecessor(element(GANTRY_INT_MINIMUM)), None);
 
-    // The start bound is inclusive and the end bound exclusive; an absent bound is unbounded.
-    assert!(contract.forward_within(9, Some(10)));
-    assert!(!contract.forward_within(10, Some(10)));
-    assert!(contract.forward_within(i64::MAX, None));
-    assert!(contract.backward_within(0, Some(0)));
-    assert!(!contract.backward_within(-1, Some(0)));
-    assert!(contract.backward_within(i64::MIN, None));
+    // The step from `value` must land inside the bound: the step landing on the exclusive end bound,
+    // or crossing the inclusive start bound, is the step that exhausts the range; an absent bound is
+    // unbounded on that side.
+    assert!(contract.forward_within(element(8), Some(element(10))));
+    assert!(!contract.forward_within(element(9), Some(element(10))));
+    assert!(contract.forward_within(element(0), None));
+    assert!(!contract.forward_within(element(GANTRY_INT_MAXIMUM), None));
+    assert!(contract.backward_within(element(1), Some(element(0))));
+    assert!(!contract.backward_within(element(0), Some(element(0))));
+    assert!(contract.backward_within(element(0), None));
+    assert!(!contract.backward_within(element(GANTRY_INT_MINIMUM), None));
 
     // Stepping is deterministic: the same value, direction, and bounds produce the same outcome.
-    for value in [-1i64, 0, 1, i64::MAX - 1, i64::MAX] {
+    for value in [0i64, 1, GANTRY_INT_MAXIMUM - 1, GANTRY_INT_MAXIMUM] {
+        let value = element(value);
         assert_eq!(contract.successor(value), contract.successor(value));
         assert_eq!(contract.predecessor(value), contract.predecessor(value));
         assert_eq!(

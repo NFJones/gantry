@@ -9,6 +9,7 @@
 use std::cmp::Ordering;
 
 use gantry_core::canonical_key::{CanonicalKey, CanonicalKeyError, CanonicalKeyLimits};
+use gantry_core::numeric::GantryInt;
 use gantry_core::value::LogicalValue;
 
 use crate::types::TypeDescriptor;
@@ -503,32 +504,50 @@ impl RangeStepContract {
             .find(|contract| contract.element_text() == element_text)
     }
 
-    /// Returns the checked successor of one element value, or nothing at the element's maximum.
+    /// Returns the checked successor of one element value in the element's own domain, or nothing
+    /// when the successor would leave the canonical `Int` value range.
     #[must_use]
-    pub fn successor(self, value: i64) -> Option<i64> {
+    pub fn successor(self, value: GantryInt) -> Option<GantryInt> {
         match self {
-            Self::Int => value.checked_add(1),
+            Self::Int => GantryInt::new(value.get().checked_add(1)?),
         }
     }
 
-    /// Returns the checked predecessor of one element value, or nothing at the element's minimum.
+    /// Returns the checked predecessor of one element value in the element's own domain, or nothing
+    /// when the predecessor would leave the canonical `Int` value range.
     #[must_use]
-    pub fn predecessor(self, value: i64) -> Option<i64> {
+    pub fn predecessor(self, value: GantryInt) -> Option<GantryInt> {
         match self {
-            Self::Int => value.checked_sub(1),
+            Self::Int => GantryInt::new(value.get().checked_sub(1)?),
         }
     }
 
-    /// Returns whether a forward step from `value` remains inside the exclusive end bound.
+    /// Returns whether the forward step from `value` lands strictly below the exclusive end bound.
+    ///
+    /// The step is the successor of `value`, so a value whose successor is the end bound, or whose
+    /// successor does not exist, is exhausted rather than inside the bound; an absent bound is
+    /// unbounded on that side.
     #[must_use]
-    pub fn forward_within(self, value: i64, end: Option<i64>) -> bool {
-        end.is_none_or(|end| value < end)
+    pub fn forward_within(self, value: GantryInt, end: Option<GantryInt>) -> bool {
+        match (self.successor(value), end) {
+            (Some(next), Some(end)) => next < end,
+            (Some(_), None) => true,
+            (None, _) => false,
+        }
     }
 
-    /// Returns whether a backward step from `value` remains inside the inclusive start bound.
+    /// Returns whether the backward step from `value` lands at or above the inclusive start bound.
+    ///
+    /// The step is the predecessor of `value`, so a value whose predecessor is the start bound is
+    /// still inside it and a value whose predecessor would cross it, or does not exist, is
+    /// exhausted; an absent bound is unbounded on that side.
     #[must_use]
-    pub fn backward_within(self, value: i64, start: Option<i64>) -> bool {
-        start.is_none_or(|start| value >= start)
+    pub fn backward_within(self, value: GantryInt, start: Option<GantryInt>) -> bool {
+        match (self.predecessor(value), start) {
+            (Some(previous), Some(start)) => previous >= start,
+            (Some(_), None) => true,
+            (None, _) => false,
+        }
     }
 }
 

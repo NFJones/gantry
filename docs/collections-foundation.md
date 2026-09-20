@@ -82,10 +82,11 @@ separately in `docs/canonical-scalar-keys.md`.
   so `Range<Decision>` is a legitimate identity while `Range<Missing>` is refused. Both identities
   render as `Set<K>` and `Range<T>` over the canonical text of the argument.
 - `RangeStepContract::sealed` publishes the sealed step contract (`GNT-39.7`): exactly `Int` admits
-  stepping in this edition, `successor` and `predecessor` are the element type's checked steps, and
-  `forward_within` and `backward_within` apply the inclusive start bound and the exclusive end bound,
-  so a step that would leave the bound or the element's value range is exhaustion rather than a
-  refusal, a wrap, or a trap. The contract is sealed: no package, adapter, host, or later declaration
+  stepping in this edition, `successor` and `predecessor` are the element type's checked steps over
+  the canonical `Int` range, and `forward_within` and `backward_within` report whether the step from
+  the value lands strictly below the exclusive end bound or at or above the inclusive start bound,
+  so the step that lands on the exclusive end bound, crosses the inclusive start bound, or leaves the
+  canonical value range is exhaustion rather than a refusal, a wrap, or a trap. The contract is sealed: no package, adapter, host, or later declaration
   may define, extend, override, or infer one, and the clause publishes no traversal, iteration, loop
   integration, exhaustion reporting, mutation, quota, schema, recovery, durability, lowering, or
   machine representation, and admits no `Range` type or value.
