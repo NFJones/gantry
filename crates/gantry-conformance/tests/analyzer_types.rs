@@ -2656,18 +2656,26 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments()
     // The key-domain refusal does not depend on the value argument: a key argument that denotes
     // another type is refused under the key-domain spelling even when the value argument resolves
     // to no type, and the refusal still names the key argument.
-    for source in [
-        "fn f(x: Map<List<Int>, Missing>) -> Int { 0 }\nfn main() -> Int { 0 }",
-        "fn f<T>(x: Map<List<Int>, T>) -> Int { 0 }\nfn main() -> Int { 0 }",
+    for (source, expected) in [
+        (
+            "fn f(x: Map<List<Int>, Missing>) -> Int { 0 }\nfn main() -> Int { 0 }",
+            &[
+                "unresolved-reference",
+                "unresolved-reference",
+                "collection-invalid-key",
+            ][..],
+        ),
+        (
+            "fn f<T>(x: Map<List<Int>, T>) -> Int { 0 }\nfn main() -> Int { 0 }",
+            &["collection-invalid-key"][..],
+        ),
     ] {
         let refused = analyze(source);
         assert_eq!(refused.status(), AnalysisStatus::Invalid, "{source}");
         let codes = diagnostic_codes(refused.diagnostics());
         assert_eq!(
-            codes.last().copied(),
-            Some("collection-invalid-key"),
-            "{source} refuses the key argument even though the value argument resolves to no \
-             type: {codes:?}"
+            codes, expected,
+            "{source} refuses the key argument even though the value argument resolves to no type"
         );
         assert_eq!(
             refused
