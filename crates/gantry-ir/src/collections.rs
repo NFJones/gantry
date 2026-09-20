@@ -1030,7 +1030,7 @@ impl<'a> CollectionTake<'a> {
         }
     }
 
-    /// Returns the advances this view has not yet consumed, which the content may cut short.
+    /// Returns the advances this view may yet spend, which the content may cut short.
     #[must_use]
     pub const fn remaining(&self) -> u64 {
         self.remaining
@@ -1090,7 +1090,7 @@ impl<'a> CollectionFilter<'a> {
         self.published
     }
 
-    /// Returns the advances this view has not yet consumed, which the content may cut short.
+    /// Returns the advances this view may yet spend, which the content may cut short.
     #[must_use]
     pub const fn remaining(&self) -> u64 {
         self.budget
@@ -1125,14 +1125,78 @@ impl<'a> CollectionEnumerate<'a> {
         if self.budget == 0 {
             return None;
         }
-        let visit = self.cursor.next()?;
-        self.budget -= 1;
-        let index = self.index;
-        self.index = self.index.saturating_add(1);
-        Some((index, visit))
+        match self.cursor.next() {
+            Some(visit) => {
+                self.budget -= 1;
+                let index = self.index;
+                self.index = self.index.saturating_add(1);
+                Some((index, visit))
+            }
+            None => {
+                self.budget = 0;
+                None
+            }
+        }
     }
 
-    /// Returns the advances this view has not yet consumed, which the content may cut short.
+    /// Returns the advances this view may yet spend, which the content may cut short.
+    #[must_use]
+    pub const fn remaining(&self) -> u64 {
+        self.budget
+    }
+}
+
+/// One paired view over two carried values: at most `budget` pairs (`GNT-39.8`).
+///
+/// Each pair spends one step of the budget it is given and publishes one visit from each value at
+/// the same zero-based position, so the view ends when either value is exhausted and a visit
+/// already advanced from the longer value is published nowhere. The view holds its position in both
+/// values rather than restarting and is deliberately not `Clone`.
+#[derive(Debug)]
+pub struct CollectionZip<'a> {
+    left: CollectionCursor<'a>,
+    right: CollectionCursor<'a>,
+    budget: u64,
+    pairs: u64,
+}
+
+impl<'a> CollectionZip<'a> {
+    /// Opens one paired view over two values with the given pair budget.
+    #[must_use]
+    pub const fn new(left: &'a CollectionValue, right: &'a CollectionValue, budget: u64) -> Self {
+        Self {
+            left: CollectionCursor::new(left),
+            right: CollectionCursor::new(right),
+            budget,
+            pairs: 0,
+        }
+    }
+
+    /// Advances both values and publishes the next pair, or none at its budget or exhaustion.
+    pub fn next(&mut self) -> Option<(CollectionVisit<'a>, CollectionVisit<'a>)> {
+        if self.budget == 0 {
+            return None;
+        }
+        match (self.left.next(), self.right.next()) {
+            (Some(left), Some(right)) => {
+                self.budget -= 1;
+                self.pairs = self.pairs.saturating_add(1);
+                Some((left, right))
+            }
+            _ => {
+                self.budget = 0;
+                None
+            }
+        }
+    }
+
+    /// Returns the pairs this view has published.
+    #[must_use]
+    pub const fn pairs(&self) -> u64 {
+        self.pairs
+    }
+
+    /// Returns the advances this view may yet spend, which the content may cut short.
     #[must_use]
     pub const fn remaining(&self) -> u64 {
         self.budget
@@ -1187,6 +1251,12 @@ impl CollectionValue {
     #[must_use]
     pub const fn enumerate(&self, budget: u64) -> CollectionEnumerate<'_> {
         CollectionEnumerate::new(self, budget)
+    }
+
+    /// Opens one paired view of at most `budget` pairs over this value and another (`GNT-39.8`).
+    #[must_use]
+    pub const fn zip<'b>(&'b self, other: &'b CollectionValue, budget: u64) -> CollectionZip<'b> {
+        CollectionZip::new(self, other, budget)
     }
 }
 

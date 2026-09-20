@@ -1322,13 +1322,13 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     assert_eq!(filtered.remaining(), 1);
     assert_eq!(filtered.next(|_| false), None);
     assert_eq!(filtered.remaining(), 0);
-    assert_eq!(filtered.published(), 1, "a refused visit is not published");
+    assert_eq!(filtered.published(), 1, "a declined visit is not published");
     let mut filtered_range = carried_range.filter(4);
     assert_eq!(
         filtered_range
             .next(|visit| matches!(visit, CollectionVisit::Position(value) if *value == bound(2))),
         Some(CollectionVisit::Position(bound(2))),
-        "the refused first position still spends its step"
+        "the declined first position still spends its step"
     );
     assert_eq!(filtered_range.remaining(), 2);
     assert_eq!(filtered_range.published(), 1);
@@ -1359,6 +1359,11 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         Some((1, CollectionVisit::Entry { .. }))
     ));
     assert_eq!(enumerated.next(), None);
+    assert_eq!(
+        enumerated.remaining(),
+        0,
+        "the discovering advance clears the unspent budget"
+    );
     let mut enumerated_range = carried_range.enumerate(1);
     assert_eq!(
         enumerated_range.next(),
@@ -1370,6 +1375,30 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         "the budget bounds the published positions"
     );
     assert_eq!(enumerated_range.remaining(), 0);
+
+    // The paired view (`GNT-39.8`): one visit from each value at the same zero-based position, one
+    // budget step per pair, ending when the shorter side ends.
+    let mut zipped = carried_map.zip(&carried_set, 8);
+    assert!(matches!(
+        zipped.next(),
+        Some((CollectionVisit::Entry { .. }, CollectionVisit::Element(_)))
+    ));
+    assert!(matches!(
+        zipped.next(),
+        Some((CollectionVisit::Entry { .. }, CollectionVisit::Element(_)))
+    ));
+    assert_eq!(zipped.next(), None, "the shorter side ends the pairs");
+    assert_eq!(zipped.pairs(), 2);
+    assert_eq!(zipped.remaining(), 0);
+    let mut zipped_budget = carried_range.zip(&carried_range, 1);
+    assert_eq!(
+        zipped_budget.next(),
+        Some((
+            CollectionVisit::Position(bound(1)),
+            CollectionVisit::Position(bound(1))
+        ))
+    );
+    assert_eq!(zipped_budget.next(), None, "the budget bounds the pairs");
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);
