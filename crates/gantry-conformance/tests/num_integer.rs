@@ -37,6 +37,8 @@ fn checked_integer_algorithm_surface_is_published() {
         CheckedIntegerAlgorithm::ALL.map(CheckedIntegerAlgorithm::wire_name),
         ["add", "subtract", "multiply", "divide", "remainder"]
     );
+    // The failure spellings come from the generated evaluation-code vocabulary rather than copies,
+    // so a renamed code fails this lane instead of drifting apart from the clause.
     for spelling in [
         "add",
         "subtract",
@@ -44,9 +46,9 @@ fn checked_integer_algorithm_surface_is_published() {
         "divide",
         "remainder",
         "negate",
-        "integer-overflow",
-        "integer-division-by-zero",
-        "integer-remainder-by-zero",
+        DeterministicEvaluationCode::IntegerOverflow.wire_name(),
+        DeterministicEvaluationCode::IntegerDivisionByZero.wire_name(),
+        DeterministicEvaluationCode::IntegerRemainderByZero.wire_name(),
     ] {
         assert!(
             specification.contains(spelling),
