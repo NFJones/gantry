@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 
 use gantry_core::canonical_key::{CanonicalKey, CanonicalKeyError, CanonicalKeyLimits};
 use gantry_core::numeric::GantryInt;
-use gantry_core::value::LogicalValue;
+use gantry_core::value::{LogicalValue, ValueError, ValueLimits};
 
 use crate::generated::TypeKind;
 use crate::types::TypeDescriptor;
@@ -1064,7 +1064,7 @@ impl<'a> CollectionFilter<'a> {
     /// Advances until one visit is admitted or the budget is spent, publishing that visit.
     pub fn next(
         &mut self,
-        predicate: impl Fn(&CollectionVisit<'_>) -> bool,
+        mut predicate: impl FnMut(&CollectionVisit<'_>) -> bool,
     ) -> Option<CollectionVisit<'a>> {
         while self.budget > 0 {
             match self.cursor.next() {
@@ -1137,6 +1137,12 @@ impl<'a> CollectionEnumerate<'a> {
                 None
             }
         }
+    }
+
+    /// Returns the visits this view has published.
+    #[must_use]
+    pub const fn published(&self) -> u64 {
+        self.index
     }
 
     /// Returns the advances this view may yet spend, which the content may cut short.
@@ -1227,7 +1233,7 @@ impl<'a> CollectionMap<'a> {
     }
 
     /// Advances the view and publishes the transformed visit, or none at its budget or exhaustion.
-    pub fn next<T>(&mut self, transform: impl Fn(CollectionVisit<'_>) -> T) -> Option<T> {
+    pub fn next<T>(&mut self, mut transform: impl FnMut(CollectionVisit<'_>) -> T) -> Option<T> {
         if self.budget == 0 {
             return None;
         }
@@ -1317,6 +1323,40 @@ impl CollectionValue {
     #[must_use]
     pub const fn map(&self, budget: u64) -> CollectionMap<'_> {
         CollectionMap::new(self, budget)
+    }
+
+    /// Collects the carried value's content into one canonical value list (`GNT-39.8`).
+    ///
+    /// Each advance spends one step of `budget` and projects the visit through the projection
+    /// supplied to that advance, and the published list is built under `limits`, so content that
+    /// exceeds them is refused by the value contract rather than by this clause.
+    pub fn collect(
+        &self,
+        budget: u64,
+        limits: ValueLimits,
+        projection: &mut impl FnMut(CollectionVisit<'_>) -> LogicalValue,
+    ) -> Result<(LogicalValue, CollectionOutcome), ValueError> {
+        let mut cursor = self.cursor();
+        let mut items = Vec::new();
+        let mut steps = 0_u64;
+        while steps < budget {
+            match cursor.next() {
+                Some(visit) => {
+                    steps = steps.saturating_add(1);
+                    items.push(projection(visit));
+                }
+                None => {
+                    return Ok((
+                        LogicalValue::list(items, limits)?,
+                        CollectionOutcome::Completed,
+                    ));
+                }
+            }
+        }
+        Ok((
+            LogicalValue::list(items, limits)?,
+            CollectionOutcome::Stopped,
+        ))
     }
 }
 

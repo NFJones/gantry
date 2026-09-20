@@ -1375,6 +1375,36 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         "the budget bounds the published positions"
     );
     assert_eq!(enumerated_range.remaining(), 0);
+    assert_eq!(enumerated.published(), 2);
+    let mut invocations = 0usize;
+    let mut invoked = carried_map.map(4);
+    assert!(
+        invoked
+            .next(|_| {
+                invocations += 1;
+                1usize
+            })
+            .is_some()
+    );
+    assert!(
+        invoked
+            .next(|_| {
+                invocations += 1;
+                2usize
+            })
+            .is_some()
+    );
+    assert_eq!(
+        invoked.next(|_| {
+            invocations += 1;
+            3usize
+        }),
+        None
+    );
+    assert_eq!(
+        invocations, 2,
+        "the transform is not invoked for an advance that publishes none"
+    );
 
     // The paired view (`GNT-39.8`): one visit from each value at the same zero-based position, one
     // budget step per pair, ending when the shorter side ends.
@@ -1415,6 +1445,27 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     assert_eq!(transformed.next(|_| 3usize), None);
     assert_eq!(transformed.transformed(), 2);
     assert_eq!(transformed.remaining(), 0);
+
+    // The collecting form (`GNT-39.8`): one list value of the projections in content order, one
+    // budget step per advance, with the outcome reported.
+    let (collected, outcome) = carried_map
+        .collect(4, DEFAULT_VALUE_LIMITS, &mut |_| integer(1))
+        .unwrap_or_else(|error| panic!("the collected list is admitted: {error:?}"));
+    assert_eq!(outcome, CollectionOutcome::Completed);
+    assert_eq!(
+        collected,
+        LogicalValue::list(vec![integer(1), integer(1)], DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("the expected list is admitted: {error:?}"))
+    );
+    let (short, outcome) = carried_map
+        .collect(1, DEFAULT_VALUE_LIMITS, &mut |_| integer(2))
+        .unwrap_or_else(|error| panic!("the collected list is admitted: {error:?}"));
+    assert_eq!(outcome, CollectionOutcome::Stopped);
+    assert_eq!(
+        short,
+        LogicalValue::list(vec![integer(2)], DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("the expected list is admitted: {error:?}"))
+    );
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);

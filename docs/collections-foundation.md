@@ -145,8 +145,8 @@ separately in `docs/canonical-scalar-keys.md`.
   for a position the value does not admit. Traversal publishes no source-level iterator value, no
   source iteration protocol, no composable adapter, no ownership or invalidation rule, no suspension,
   and no exhaustion diagnostic; the traversal forms it publishes are the visitor, the cursor, the
-  terminal fold, the bounded view, the filtered view, the enumerated view, the paired view, and the
-  transformed view.
+  terminal fold, the bounded view, the filtered view, the enumerated view, the paired view, the
+  transformed view, and the collecting form.
   `CollectionValue::cursor` opens the one temporary cursor form: it borrows the value it traverses,
   each advance through `CollectionCursor::next` publishes the next visit or none at exhaustion
   (`is_exhausted`), and a `Range` value publishes positions through the same stepwise protocol the
@@ -184,6 +184,12 @@ separately in `docs/canonical-scalar-keys.md`.
   is given and publishes the value the transform supplied to that advance returns for the visit, so
   a later advance may supply a different transform, and it reports its transformed count through
   `CollectionMap::transformed` and the advances it may yet spend through `remaining`.
+  `CollectionValue::collect` is the one collecting form: each advance spends one step of the budget
+  it is given and projects the visit through the projection supplied to that advance, and it
+  publishes one list value of the canonical value contract holding those projections in content
+  order together with `CollectionOutcome::Completed` or `Stopped`. The list is built under the value
+  limits it is given, so content that exceeds them is refused by the value contract rather than by
+  this clause.
   It reports how a visitor-form traversal ended: `CollectionOutcome::Completed` when every entry
   or element that form publishes was visited and `Stopped` when the visitor ended it early, with
   `is_completed` reading that outcome; a `Range` value publishes no visit through that form and
