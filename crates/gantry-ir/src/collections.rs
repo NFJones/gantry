@@ -15,8 +15,8 @@ use gantry_core::value::LogicalValue;
 use crate::generated::TypeKind;
 use crate::types::TypeDescriptor;
 
-/// The declared clauses of `GNT-39.0` through `GNT-39.7`, in specification order.
-pub const COLLECTION_CLAUSES: [&str; 8] = [
+/// The declared clauses of `GNT-39.0` through `GNT-39.8`, in specification order.
+pub const COLLECTION_CLAUSES: [&str; 9] = [
     "GNT-39.0-collection-key-and-order-scope",
     "GNT-39.1-admitted-collection-keys",
     "GNT-39.2-canonical-collection-order-and-duplicate-identity",
@@ -25,6 +25,7 @@ pub const COLLECTION_CLAUSES: [&str; 8] = [
     "GNT-39.5-map-type-identity",
     "GNT-39.6-set-and-range-type-identities",
     "GNT-39.7-range-step-contract",
+    "GNT-39.8-collection-value-model",
 ];
 
 /// One frozen collection-foundation diagnostic of `GNT-39.0`.
@@ -487,6 +488,114 @@ impl SetTypeIdentity {
             CollectionDiagnosticCode::UnadmittedType,
             format!("`{text}` is not the canonical text of one admitted Set identity"),
         )
+    }
+}
+
+/// One `Range<T>` type identity of `GNT-39.6`.
+///
+/// One admitted `Map` value of `GNT-39.8-collection-value-model`.
+///
+/// The value is its finite entries in the canonical collection order of `GNT-39.2`: each entry is
+/// one admitted canonical key of `GNT-39.1-admitted-collection-keys` and the value member that key
+/// resolves to. Admitting a value refuses a repeated key under `collection-duplicate-key`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MapValue {
+    entries: Vec<(CanonicalKey, LogicalValue)>,
+}
+
+impl MapValue {
+    /// Admits one `Map` value from its candidate entries in input order.
+    ///
+    /// Every key is admitted under the key contract of `GNT-39.1-admitted-collection-keys` and a
+    /// repeated key is refused under `collection-duplicate-key` before anything is published; the
+    /// admitted entries are then published in the canonical collection order of `GNT-39.2`.
+    pub fn admit(
+        policy: CollectionKeyPolicy,
+        pairs: &[(LogicalValue, LogicalValue)],
+    ) -> Result<Self, CollectionKeyRefusal> {
+        let keys = pairs.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
+        let admitted = policy.admit_batch(&keys)?;
+        let mut entries = admitted
+            .into_iter()
+            .zip(pairs.iter().map(|(_, value)| value.clone()))
+            .collect::<Vec<_>>();
+        entries.sort_by(|left, right| canonical_order(&left.0, &right.0));
+        Ok(Self { entries })
+    }
+
+    /// Returns the admitted entries in canonical collection order.
+    #[must_use]
+    pub fn entries(&self) -> &[(CanonicalKey, LogicalValue)] {
+        &self.entries
+    }
+
+    /// Returns the value member one admitted key resolves to, or `None`.
+    #[must_use]
+    pub fn get(&self, key: &CanonicalKey) -> Option<&LogicalValue> {
+        self.entries
+            .iter()
+            .find(|(candidate, _)| canonical_order(candidate, key) == Ordering::Equal)
+            .map(|(_, value)| value)
+    }
+
+    /// Returns the number of admitted entries.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Reports whether the value has no admitted entry.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+/// One admitted `Set` value of `GNT-39.8-collection-value-model`.
+///
+/// The value is its finite elements in the canonical collection order of `GNT-39.2`: each element
+/// is one admitted canonical key of `GNT-39.1-admitted-collection-keys`, because a set element is a
+/// collection key. Admitting a value refuses a repeated element under `collection-duplicate-key`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SetValue {
+    elements: Vec<CanonicalKey>,
+}
+
+impl SetValue {
+    /// Admits one `Set` value from its candidate elements in input order.
+    pub fn admit(
+        policy: CollectionKeyPolicy,
+        elements: &[LogicalValue],
+    ) -> Result<Self, CollectionKeyRefusal> {
+        let mut admitted = policy.admit_batch(elements)?;
+        admitted.sort_by(canonical_order);
+        Ok(Self { elements: admitted })
+    }
+
+    /// Returns the admitted elements in canonical collection order.
+    #[must_use]
+    pub fn elements(&self) -> &[CanonicalKey] {
+        &self.elements
+    }
+
+    /// Reports whether one admitted key is an element of the value.
+    #[must_use]
+    pub fn contains(&self, key: &CanonicalKey) -> bool {
+        self.elements
+            .iter()
+            .any(|candidate| canonical_order(candidate, key) == Ordering::Equal)
+    }
+
+    /// Returns the number of admitted elements.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    /// Reports whether the value has no admitted element.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
     }
 }
 

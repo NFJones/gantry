@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "76621104eacb29d9f8808ef02eb94d6df77c71ba16ad0905d7afde14d1d7026e",
+  "specification_sha256": "71c3e7f269d28c457fc845675553fab8c2727ec163f44b24a7eff9c31ab7515e",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15633,
+      "end_line": 15637,
       "rationale": null
     }
   ],
@@ -41461,12 +41461,12 @@
       ]
     },
     {
-      "id": "GNT-40.0-deterministic-numeric-scope",
+      "id": "GNT-39.8-collection-value-model",
       "span_start_line": 15616,
-      "span_end_line": 15622,
-      "anchor_line": 15619,
-      "body_start_line": 15620,
-      "body_end_line": 15622,
+      "span_end_line": 15619,
+      "anchor_line": 15617,
+      "body_start_line": 15618,
+      "body_end_line": 15619,
       "profiles": [
         "analyzer"
       ],
@@ -41477,8 +41477,47 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15620,
-          "end_line": 15622,
+          "start_line": 15618,
+          "end_line": 15619,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_value_models_order_entries_and_refuse_duplicates"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.0-deterministic-numeric-scope",
+      "span_start_line": 15620,
+      "span_end_line": 15626,
+      "anchor_line": 15623,
+      "body_start_line": 15624,
+      "body_end_line": 15626,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15624,
+          "end_line": 15626,
           "profiles": [
             "analyzer"
           ],
@@ -41501,11 +41540,11 @@
     },
     {
       "id": "GNT-40.1-deterministic-prng-identity",
-      "span_start_line": 15623,
-      "span_end_line": 15625,
-      "anchor_line": 15623,
-      "body_start_line": 15624,
-      "body_end_line": 15625,
+      "span_start_line": 15627,
+      "span_end_line": 15629,
+      "anchor_line": 15627,
+      "body_start_line": 15628,
+      "body_end_line": 15629,
       "profiles": [
         "analyzer"
       ],
@@ -41516,8 +41555,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15624,
-          "end_line": 15625,
+          "start_line": 15628,
+          "end_line": 15629,
           "profiles": [
             "analyzer"
           ],
@@ -41541,11 +41580,11 @@
     },
     {
       "id": "GNT-40.2-checked-integer-algorithms",
-      "span_start_line": 15626,
-      "span_end_line": 15630,
-      "anchor_line": 15627,
-      "body_start_line": 15628,
-      "body_end_line": 15630,
+      "span_start_line": 15630,
+      "span_end_line": 15634,
+      "anchor_line": 15631,
+      "body_start_line": 15632,
+      "body_end_line": 15634,
       "profiles": [
         "analyzer"
       ],
@@ -41556,8 +41595,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15628,
-          "end_line": 15630,
+          "start_line": 15632,
+          "end_line": 15634,
           "profiles": [
             "analyzer"
           ],
@@ -41580,11 +41619,11 @@
     },
     {
       "id": "GNT-40.3-numeric-conversions",
-      "span_start_line": 15631,
-      "span_end_line": 15633,
-      "anchor_line": 15631,
-      "body_start_line": 15632,
-      "body_end_line": 15633,
+      "span_start_line": 15635,
+      "span_end_line": 15637,
+      "anchor_line": 15635,
+      "body_start_line": 15636,
+      "body_end_line": 15637,
       "profiles": [
         "analyzer"
       ],
@@ -41595,8 +41634,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15632,
-          "end_line": 15633,
+          "start_line": 15636,
+          "end_line": 15637,
           "profiles": [
             "analyzer"
           ],

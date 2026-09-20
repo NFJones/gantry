@@ -19,8 +19,8 @@ use gantry::ir::generated::TypeKind;
 use gantry::ir::{
     COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
-    CollectionNonClaimName, MapTypeIdentity, RangeStepContract, RangeTypeIdentity, SetTypeIdentity,
-    TypeDescriptor, canonical_order, check_collection_non_claims,
+    CollectionNonClaimName, MapTypeIdentity, MapValue, RangeStepContract, RangeTypeIdentity,
+    SetTypeIdentity, SetValue, TypeDescriptor, canonical_order, check_collection_non_claims,
 };
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -55,7 +55,7 @@ fn string(value: &str) -> LogicalValue {
 }
 
 /// Returns the collection refusal produced by one rejected admission.
-fn refuse(outcome: Result<CanonicalKey, CollectionKeyRefusal>, context: &str) -> CollectionError {
+fn refuse<T>(outcome: Result<T, CollectionKeyRefusal>, context: &str) -> CollectionError {
     match outcome {
         Ok(_) => panic!("{context}: the admission must be refused"),
         Err(
@@ -920,6 +920,58 @@ fn collection_type_kinds_are_admitted_and_the_algebra_owns_their_canonical_text(
         CollectionDiagnosticCode::UnadmittedType.spelling(),
         "collection-type-unadmitted"
     );
+}
+
+/// The `Map` and `Set` value models order their entries and refuse repeated keys (`GNT-39.8`).
+#[test]
+fn collection_value_models_order_entries_and_refuse_duplicates() {
+    let policy = policy();
+    let refused = refuse(
+        MapValue::admit(
+            policy,
+            &[(string("beta"), integer(2)), (string("beta"), integer(3))],
+        ),
+        "a repeated Map key",
+    );
+    assert_eq!(refused.code(), CollectionDiagnosticCode::DuplicateKey);
+
+    let map = MapValue::admit(
+        policy,
+        &[(string("beta"), integer(2)), (integer(1), string("one"))],
+    )
+    .unwrap_or_else(|error| panic!("the declared entries are admitted: {error:?}"));
+    assert_eq!(map.len(), 2);
+    assert!(!map.is_empty());
+    let keys = map
+        .entries()
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    // The canonical collection order places `Int` before `String`.
+    assert_eq!(canonical_order(&keys[0], &keys[1]), Ordering::Less);
+    let one = policy
+        .admit(&integer(1))
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    assert_eq!(map.get(&one), Some(&string("one")));
+    let absent = policy
+        .admit(&string("absent"))
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    assert_eq!(map.get(&absent), None);
+
+    let set = SetValue::admit(policy, &[string("b"), integer(2), string("a")])
+        .unwrap_or_else(|error| panic!("the declared elements are admitted: {error:?}"));
+    assert_eq!(set.len(), 3);
+    assert!(!set.is_empty());
+    let element = policy
+        .admit(&string("a"))
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(set.contains(&element));
+    assert!(!set.contains(&absent));
+    let refused = refuse(
+        SetValue::admit(policy, &[integer(1), integer(1)]),
+        "a repeated Set element",
+    );
+    assert_eq!(refused.code(), CollectionDiagnosticCode::DuplicateKey);
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).
