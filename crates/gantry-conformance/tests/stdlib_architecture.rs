@@ -1896,6 +1896,7 @@ fn reserved_spelling_sources_agree_with_the_published_inventory() {
         .map(|(body, _)| body)
         .unwrap_or_else(|| panic!("the reserved-word classifier is locateable"));
     let classified: Vec<&str> = table.lines().filter_map(quoted_arm_spelling).collect();
+    let classified_spellings = classified.clone();
 
     let lexical_source = fs::read_to_string(
         workspace_root().join("crates/gantry-conformance/tests/frontend_lexical_evidence.rs"),
@@ -1940,6 +1941,23 @@ fn reserved_spelling_sources_agree_with_the_published_inventory() {
             .iter()
             .all(|word| !RESERVED_FOR_EXTENSION_SPELLINGS.contains(word)),
         "the compiler-owned and reserved-for-extension inventories are disjoint"
+    );
+
+    // The specification publishes the same vocabulary in its reserved-word block; a classifier
+    // edit that leaves the normative list behind fails here rather than drifting silently.
+    let specification = fs::read_to_string(workspace_root().join("SPEC.md"))
+        .unwrap_or_else(|error| panic!("the specification is readable: {error}"));
+    let block = specification
+        .split_once("The reserved words are:")
+        .and_then(|(_, rest)| rest.split_once("```text"))
+        .and_then(|(_, rest)| rest.split_once("```"))
+        .map(|(body, _)| body)
+        .unwrap_or_else(|| panic!("the reserved-word block is locateable"));
+    let published_in_specification: Vec<&str> = block.split_whitespace().collect();
+    assert_eq!(
+        sorted_spellings(published_in_specification),
+        sorted_spellings(classified_spellings.clone()),
+        "the specification's reserved-word list is exactly the classified spellings"
     );
 }
 

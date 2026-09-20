@@ -2579,6 +2579,32 @@ fn collection_spellings_are_reserved_before_any_collection_type() {
             diagnostic_codes(annotation.diagnostics()),
             ["unexpected-token"]
         );
+        let expression = syntax(&format!("fn main() -> Int {{ {spelling} }}"));
+        assert_eq!(
+            expression.status(),
+            gantry::frontend::PackageSyntaxStatus::Invalid,
+            "`{spelling}` is reserved in expression position"
+        );
+        let expression_codes = diagnostic_codes(expression.diagnostics());
+        assert!(
+            !expression_codes.is_empty()
+                && expression_codes
+                    .iter()
+                    .all(|code| *code == "unexpected-token"),
+            "`{spelling}` refuses only as an unexpected token in expression position: {expression_codes:?}"
+        );
+        let generic_argument = syntax(&format!(
+            "fn f(xs: List<{spelling}>) -> Int {{ 0 }}\nfn main() -> Int {{ 0 }}"
+        ));
+        assert_eq!(
+            generic_argument.status(),
+            gantry::frontend::PackageSyntaxStatus::Invalid,
+            "`{spelling}` is reserved in generic-argument position"
+        );
+        assert_eq!(
+            diagnostic_codes(generic_argument.diagnostics()),
+            ["unexpected-token"]
+        );
     }
 }
 

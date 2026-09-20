@@ -96,8 +96,8 @@ removing one is an edition change (`GNT-34.4`) with its exact compatibility cons
 
 Three further spellings are reserved for future compatible extension: `Map`, `Set`, and `Range`
 (`GNT-13.2`). The front-end reserved-word table classifies them, no package declares them, no source
-position resolves them, and a source use is refused as an unexpected token; admitting a collection
-type for one of them is a separate, compatibility-relevant decision rather than a silent extension.
+position resolves them, and a source use is refused as an unexpected token, so no package or
+facade path binds them.
 
 ## Evidence
 
