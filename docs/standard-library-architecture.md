@@ -92,9 +92,12 @@ or removing one is a compiler change rather than an edition change.
   `StdPackage`, `StdItem`, `Prelude`, `StdGraph`).
 - Machine-checked conformance: `crates/gantry-conformance/tests/stdlib_architecture.rs`
   (`canonical_pure_hierarchy_declares_each_pure_family_once`).
-- Note-binding lanes: `crates/gantry-conformance/tests/stdlib_architecture.rs`
-  (`standard_library_architecture_note_discloses_the_prelude_resolution_boundary`,
-  `standard_library_architecture_note_separates_compiler_owned_type_words`).
+- Note-binding lanes in `crates/gantry-conformance/tests/stdlib_architecture.rs`:
+  `standard_library_architecture_note_names_every_declared_family_and_prelude_member`,
+  `standard_library_architecture_note_names_every_declared_clause_anchor`,
+  `standard_library_architecture_note_names_every_declared_non_claim`,
+  `standard_library_architecture_note_discloses_the_prelude_resolution_boundary`, and
+  `standard_library_architecture_note_separates_compiler_owned_type_words`.
 - Source boundary of the enumerated members:
   `crates/gantry-conformance/tests/analyzer_types.rs`
   (`edition_prelude_source_boundary_matches_the_enumerated_declaration`) pins the built-in
