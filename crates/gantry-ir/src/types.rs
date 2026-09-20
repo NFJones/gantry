@@ -373,7 +373,10 @@ impl TypeDescriptor {
             self.tokens.first(),
             Some(TypeToken::Open(_) | TypeToken::OpenDeclared(_) | TypeToken::OpenCallable(_))
         ) {
-            return true;
+            // A shape that does not start with an opener carries no member position this crate
+            // builds: a single `Declared(path)` token is the only non-opener shape, so anything
+            // longer is refused as unreadable rather than trusted.
+            return self.tokens.len() < 2;
         }
         // An opener shape must carry its closing token and at least one member position; a shorter
         // or unclosed opener sequence is refused as unreadable rather than trusted, so the
