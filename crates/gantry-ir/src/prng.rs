@@ -101,7 +101,9 @@ impl DeterministicPrng {
     /// The state advances by the increment with wrapping addition, and the output mixes the new
     /// state with two xorshift-multiply rounds and a final shift. Wrapping is part of the algorithm
     /// rather than an overflow mode, so no step refuses, saturates, or depends on a host facility.
-    pub fn next(&mut self) -> u64 {
+    /// The generator is a step contract (`GNT-40.1-deterministic-prng-identity`) that publishes no
+    /// iteration protocol, so the step is a named method rather than an `Iterator` implementation.
+    pub fn next_output(&mut self) -> u64 {
         self.state = self.state.wrapping_add(PRNG_STATE_INCREMENT);
         let mut mixed = self.state;
         mixed = (mixed ^ (mixed >> 30)).wrapping_mul(PRNG_MIX_FIRST);

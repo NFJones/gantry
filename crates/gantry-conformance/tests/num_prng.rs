@@ -127,27 +127,27 @@ fn deterministic_prng_step_is_exact_and_copy_is_intentional() {
     assert_eq!(generator.state(), 0);
     // Reference vectors of the declared algorithm: seed 0 produces these two outputs in order, and
     // the state after the first step is exactly the increment.
-    assert_eq!(generator.next(), 0xE220_A839_7B1D_CDAF);
+    assert_eq!(generator.next_output(), 0xE220_A839_7B1D_CDAF);
     assert_eq!(generator.state(), PRNG_STATE_INCREMENT);
-    assert_eq!(generator.next(), 0x6E78_9E6A_A1B9_65F4);
+    assert_eq!(generator.next_output(), 0x6E78_9E6A_A1B9_65F4);
     assert_eq!(generator.state(), PRNG_STATE_INCREMENT.wrapping_mul(2));
     assert_ne!(
-        DeterministicPrng::seeded(1).next(),
+        DeterministicPrng::seeded(1).next_output(),
         0xE220_A839_7B1D_CDAF,
         "a different seed produces a different first output"
     );
 
     // The state advance wraps by definition rather than refusing or saturating.
     let mut wrapped = DeterministicPrng::seeded(u64::MAX);
-    wrapped.next();
+    wrapped.next_output();
     assert_eq!(wrapped.state(), u64::MAX.wrapping_add(PRNG_STATE_INCREMENT));
 
     // One seed and one number of steps produce identical state and outputs every time.
     let mut first = DeterministicPrng::seeded(7);
     let mut second = DeterministicPrng::seeded(7);
     for step in 0..8 {
-        let left = first.next();
-        let right = second.next();
+        let left = first.next_output();
+        let right = second.next_output();
         assert_eq!(left, right, "step {step} agrees");
         assert_eq!(first.state(), second.state(), "step {step} state agrees");
     }
@@ -156,21 +156,21 @@ fn deterministic_prng_step_is_exact_and_copy_is_intentional() {
     let mut original = DeterministicPrng::seeded(11);
     let mut copy = original;
     assert_eq!(copy.state(), original.state());
-    let original_first = original.next();
-    let copy_first = copy.next();
+    let original_first = original.next_output();
+    let copy_first = copy.next_output();
     assert_eq!(
         original_first, copy_first,
         "the copy starts where it was copied"
     );
     assert_eq!(original.state(), copy.state());
-    let original_second = original.next();
+    let original_second = original.next_output();
     assert_ne!(
         original_second, copy_first,
         "the copy did not advance with the original"
     );
     assert_eq!(
-        DeterministicPrng::seeded(11).next(),
-        DeterministicPrng::seeded(11).next(),
+        DeterministicPrng::seeded(11).next_output(),
+        DeterministicPrng::seeded(11).next_output(),
         "one seed always produces the same first output"
     );
 }
