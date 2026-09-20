@@ -53,6 +53,15 @@ fn checked_integer_algorithm_surface_is_published() {
             "the specification publishes `{spelling}`"
         );
     }
+    // The note records the algorithms it declares, so a new algorithm must appear there too.
+    for algorithm in CheckedIntegerAlgorithm::ALL {
+        assert!(
+            note.contains(algorithm.wire_name()),
+            "the note names `{}`",
+            algorithm.wire_name()
+        );
+    }
+    assert!(note.contains("negate"), "the note names the unary negation");
 }
 
 #[test]

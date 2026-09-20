@@ -71,8 +71,10 @@ impl CheckedIntegerAlgorithm {
     }
 }
 
-/// Negates one canonical `Int` operand, returning the exact result or `integer-overflow` at the
-/// element's minimum (`GNT-40.2`).
+/// Negates one canonical `Int` operand (`GNT-40.2`).
+///
+/// The negation is total over the canonical domain: the domain is symmetric, so the negation of its
+/// minimum is its maximum and the delegated range check cannot fire for any admitted operand.
 pub fn negate(value: GantryInt) -> Result<GantryInt, DeterministicEvaluationCode> {
     value.checked_neg()
 }

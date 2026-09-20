@@ -4,9 +4,9 @@ This note records the `std.num` surface that the model already declares: its can
 identity, its purity within the frozen standard-library dependency graph, the applicability,
 stability, and identity rules that bound it, the scalar clauses whose semantics it must preserve,
 its separation from the capability-backed randomness owned by `std.random`, and what the surface
-does not claim. It records declarations and adds no normative row beyond the one declared generator
-identity and its exact step: no numeric operation, conversion, parsing, formatting, bit operation,
-or work limit, and no package interface is published here.
+does not claim. It records declarations and adds no normative row beyond the declared generator
+identity and its exact step and the declared checked integer algorithms: no conversion,
+parsing, formatting, bit operation, work limit, or package interface is published here.
 
 ## Package identity
 
@@ -83,10 +83,11 @@ deterministic PRNG value.
 The architecture's declared non-claims hold for this family unchanged: `GNT-34.12` and the twelve
 entries of `STDLIB_NON_CLAIMS` state that the standard-library architecture grants no runtime
 behavior, no adapter, no host capability, no durability, and no performance claim. This note claims
-no implemented numeric algorithm beyond the one declared generator identity, no parsing or
-formatting behavior, no work limit, no cancellation safe point, no cross-strategy equivalence
-result, no host math-library independence test, and no package interface or digest beyond the
-declared family identity and the declared generator identity.
+no implemented numeric algorithm beyond the declared generator identity and the declared
+checked integer algorithms, no parsing or formatting behavior, no bit-operation or conversion
+behavior, no work limit, no cancellation safe point, no cross-strategy equivalence result, no
+host math-library independence test, and no package interface or digest beyond the declared
+family, generator, and checked-integer identities.
 
 ## The versioned deterministic generator (`GNT-40.0`, `GNT-40.1`)
 
@@ -120,5 +121,6 @@ preserving `a == (a / b) * b + (a % b)`. No algorithm wraps, saturates, coerces 
 types, widens implicitly, refuses under any other spelling, or depends on a host facility, timing,
 prior calls, or global state. `CheckedIntegerAlgorithm::apply` and `negate` publish these algorithms
 in the model; no float algorithm, bit operation, conversion, parsing, formatting, work limit,
-cancellation safe point, quota, schema, recovery, durability, lowering, or machine representation
-is published with them.
+cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering,
+machine representation, or family behavior is published with them, and no performance, storage
+layout, or physical-representation claim is made.
