@@ -58,10 +58,11 @@ separately in `docs/canonical-scalar-keys.md`.
   grammar.
 - `MapTypeIdentity::admit` publishes the identity of the recognised form (`GNT-39.5`): the key
   argument then the value argument, rendered as the canonical constructed-type text `Map<K,V>` over
-  the canonical text of each argument. `CollectionKeyType::classify` admits exactly the five key
+  the canonical text of each argument. `CollectionKeyType::from_descriptor` admits exactly the five key
   types of `GNT-39.1` — `Unit`, `Bool`, `Int`, `Float`, `String` — and refuses every other resolved
   key argument as `collection-invalid-key`, naming the refused argument (`List<Int>`,
-  `Result<Int,String>`, `Decision`, or a declared type), before the type-admission refusal; an
+  `Result<Int,String>`, `Decision`, or a declared type), before the clause-owned
+  `collection-type-unadmitted` refusal; an
   occurrence whose key argument is admitted is admitted as the identity's constructed value type,
   while an occurrence whose key argument resolves to no type at all (an unresolved name or a type
   parameter), or whose annotation appears in a boundary or signature position, is refused as
@@ -76,8 +77,9 @@ separately in `docs/canonical-scalar-keys.md`.
   collection type at any depth — the member itself, or a collection inside a member of any other
   kind — is unadmitted.
 - `SetTypeIdentity::admit` publishes the `Set<K>` element identity (`GNT-39.6`): a set element is a
-  collection key, so exactly the five key types of `GNT-39.1` are admitted, the same shared
-  `CollectionKeyType::classify` refuses every other element member text as `collection-invalid-key`
+  collection key, so exactly the five key types of `GNT-39.1` are admitted, and the shared key
+  vocabulary — `CollectionKeyType::classify` for a member text and `from_descriptor` for a resolved
+  descriptor — refuses every other element as `collection-invalid-key`
   naming the whole refused argument, applying the key rule first exactly as the `Map` key rule does —
   even when the member text is also non-canonical or carries a member this edition does not admit —
   and any other text that is not the canonical rendering of one identity is refused as
