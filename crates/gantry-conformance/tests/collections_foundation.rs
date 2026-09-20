@@ -1077,6 +1077,10 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         RangeValue::new(Some(bound(4)), Some(bound(1))).forward(bound(-5)),
         Some(bound(-4))
     );
+    // An empty pair is refused by no rule either, and its step is the same result-side rule.
+    let empty_pair = RangeValue::new(Some(bound(2)), Some(bound(2)));
+    assert_eq!(empty_pair.forward(bound(0)), Some(bound(1)));
+    assert_eq!(empty_pair.backward(bound(3)), Some(bound(2)));
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).

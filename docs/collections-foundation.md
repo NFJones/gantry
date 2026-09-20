@@ -123,8 +123,9 @@ separately in `docs/canonical-scalar-keys.md`.
   `forward` and `backward` are the sealed contract's result-side rule followed by the checked step,
   so a step is reported for a source position the value does not admit, and a value whose start
   bound is not less than its end bound admits no position while no rule refuses it. No value model
-  publishes traversal, iteration, mutation, ownership, invalidation, exhaustion reporting, quotas,
-  schemas, recovery, durability, boundary encoding, lowering, or machine representation.
+  publishes traversal, iteration, mutation, ownership, invalidation, an exhaustion diagnostic,
+  quotas, schemas, recovery, durability, boundary encoding, lowering, or machine representation:
+  a step reports exhaustion to its caller only as the absence of a step.
 
 ## Diagnostics
 
