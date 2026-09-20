@@ -7,7 +7,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::ir::{CheckedIntegerAlgorithm, NEGATE_WIRE_NAME, NUM_CLAUSES, negate};
+use gantry::ir::{
+    CheckedIntegerAlgorithm, NEGATE_WIRE_NAME, NUM_CLAUSES, NumericConversion, negate,
+};
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryInt};
 use gantry::portable::DeterministicEvaluationCode;
 
@@ -84,6 +86,19 @@ fn checked_integer_algorithm_surface_is_published() {
         note.contains("`negate`"),
         "the note names the unary negation spelling"
     );
+
+    // The tail branch: `GNT-40.3` is the specification's final clause, so extracting its body
+    // exercises the helper's no-next-anchor path and pins that clause's two spellings as well.
+    let conversions = clause_body(&specification, "GNT-40.3-numeric-conversions");
+    for spelling in [
+        NumericConversion::IntToFloat.wire_name(),
+        NumericConversion::FloatToInt.wire_name(),
+    ] {
+        assert!(
+            conversions.contains(&format!("`{spelling}`")),
+            "the final clause publishes the backticked spelling `{spelling}`"
+        );
+    }
 }
 
 #[test]
