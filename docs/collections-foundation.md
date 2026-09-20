@@ -153,6 +153,11 @@ separately in `docs/canonical-scalar-keys.md`.
   admits one additional or replacement entry, or one element, and publishes one new value, leaving
   the value it was called on unchanged, so a cursor opened over that value keeps traversing exactly
   that value and no invalidation rule is needed.
+  `CollectionValue::fold` is the one terminal form: it visits the same content in the same order with
+  one accumulator and consumes one step of its published budget per visit, so it always terminates
+  even over a `Range` side that publishes no end, and it publishes the accumulator with
+  `CollectionOutcome::Completed` when the content was exhausted or `Stopped` when the folder ended it
+  or the budget was reached.
   It reports how a visitor-form traversal ended: `CollectionOutcome::Completed` when every entry
   or element that form publishes was visited and `Stopped` when the visitor ended it early, with
   `is_completed` reading that outcome; a `Range` value publishes no visit through that form and

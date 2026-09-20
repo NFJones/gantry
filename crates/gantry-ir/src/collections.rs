@@ -653,11 +653,10 @@ impl SetValue {
             return Ok(self.clone());
         }
         let mut elements = self.elements.clone();
-        if let Err(index) =
-            elements.binary_search_by(|existing| canonical_order(existing, &admitted))
-        {
-            elements.insert(index, admitted);
-        }
+        let index = elements
+            .binary_search_by(|existing| canonical_order(existing, &admitted))
+            .unwrap_or_else(|index| index);
+        elements.insert(index, admitted);
         Ok(Self { elements })
     }
 }
@@ -991,6 +990,39 @@ impl<'a> CollectionCursor<'a> {
     #[must_use]
     pub const fn is_exhausted(&self) -> bool {
         self.exhausted
+    }
+}
+
+impl CollectionValue {
+    /// Folds the carried value's content in order and publishes the accumulator and outcome
+    /// (`GNT-39.8`).
+    ///
+    /// Each visit consumes one step of `budget`, so the fold always terminates: it reports
+    /// `Completed` when the content was exhausted and `Stopped` when the folder ended it or the
+    /// budget was reached. A `Range` value's unbounded side therefore cannot make it run forever.
+    pub fn fold<A>(
+        &self,
+        initial: A,
+        budget: u64,
+        folder: &mut impl FnMut(A, CollectionVisit<'_>) -> (A, CollectionTraversal),
+    ) -> (A, CollectionOutcome) {
+        let mut cursor = self.cursor();
+        let mut accumulator = initial;
+        let mut steps = 0_u64;
+        while steps < budget {
+            match cursor.next() {
+                Some(visit) => {
+                    steps = steps.saturating_add(1);
+                    let (next, control) = folder(accumulator, visit);
+                    accumulator = next;
+                    if control == CollectionTraversal::Stop {
+                        return (accumulator, CollectionOutcome::Stopped);
+                    }
+                }
+                None => return (accumulator, CollectionOutcome::Completed),
+            }
+        }
+        (accumulator, CollectionOutcome::Stopped)
     }
 }
 

@@ -1251,6 +1251,29 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         repeated, set,
         "an admitted element publishes an equal value"
     );
+
+    // The terminal fold (`GNT-39.8`): the same content order with one accumulator, always bounded
+    // by its published step budget, reporting how it ended.
+    let (visits, outcome) = carried_map.fold(0usize, 8, &mut |count, _| {
+        (count + 1, CollectionTraversal::Continue)
+    });
+    assert_eq!((visits, outcome), (2, CollectionOutcome::Completed));
+    let (visits, outcome) = carried_map.fold(0usize, 1, &mut |count, _| {
+        (count + 1, CollectionTraversal::Continue)
+    });
+    assert_eq!((visits, outcome), (1, CollectionOutcome::Stopped));
+    let (visits, outcome) = CollectionValue::Range(range).fold(0usize, 8, &mut |count, _| {
+        (count + 1, CollectionTraversal::Continue)
+    });
+    assert_eq!((visits, outcome), (3, CollectionOutcome::Completed));
+    let (visits, outcome) = CollectionValue::Range(range).fold(0usize, 2, &mut |count, _| {
+        (count + 1, CollectionTraversal::Continue)
+    });
+    assert_eq!(
+        (visits, outcome),
+        (2, CollectionOutcome::Stopped),
+        "the budget bounds a value whose end is not published"
+    );
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);

@@ -87,43 +87,43 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "aeef36c9db22d8b91aacdc60e3fa84234ed0b4bc1714b7e7bc7211fae86a8062",
+        "10d74203017a1a07d227d5ec9f72dc299157ba59ba448a8e8acb971a077e5593",
     ),
     (
         "protocol/conformance/async-coordinator-model-v1.json",
-        "e60493e5b78832aafbffa6232dbcac54ded637ee0c013eb661ab005e44ae9e80",
+        "b63028bf6a4842adbb3e419edf85cdf4e3d4ef2e83aa48c4008587b83bfd52de",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "44f6fcbd79585090f840b4ca41437a2a06ca0fc107171f2ba80acd362ac3bb29",
+        "ccc92d5be502ef18abeaec589042af2ffbd26868f117b22875ad61f3733bf676",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
-        "ad8fe8817e0bf0dc72e8a91b36bd7a6ba4e83ddf2cadba2e8434de5f2448da75",
+        "9f160de9c589b86ee9455b411e206d25a8faeef1832167ee68795056409097f2",
     ),
     (
         "protocol/conformance/async-source-lowering-v1.json",
-        "fd7332e0364a373b84fac880969738dea2853f7ffcc4eb295860627b6b735f2c",
+        "9d8692848706684626e8b9332802e81807ed02d8622ced35857ceb1817a580e8",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",
-        "2992067949c9fca1468e0550ea9f3de6ce900f89546fd3e66390c5feea2ea791",
+        "38a5fe6450b7d7daee56598fd32b3522bd3ea8717e1df62367c8343273781db5",
     ),
     (
         "protocol/conformance/executable-task-ir-v1.json",
-        "91377735d0bea03e09dc01981694c1860ca8aed31f29a1af846caa4bef289707",
+        "31db80114c63ebf0894b8d2e3a092f6489a5f2b376218e8c3d0852030d3e73e9",
     ),
     (
         "protocol/conformance/source-join-v1.json",
-        "dd5b6cf019fb259b80a5c473e03cf251c852303a54884c3bdb85a1f8749c0181",
+        "b576be3cb773b2cd71280cc9978591308e3cc498465de53a198f3469e73608e9",
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "c72be245cf075ae081c43c0c073d152fae984f9ac1c7fadf2d7fe9a663a5ab52",
+        "e9c9c334cfd0427e27000c0c989e8fc3bb1c14a22e54763eae127d705e76a8ab",
     ),
     (
         "protocol/conformance/tokio-executor-v1.json",
-        "6d8e8bda659b50e6edf5ea5f84f8565842bc5d6e3fe232687c1d315a38aaf1ec",
+        "dbb106880ed243d6d2fcfc2785834341254c8fdb3f512671f904f23f20a3f208",
     ),
 ];
 
