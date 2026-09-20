@@ -28,11 +28,11 @@
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "fefa76c8379fbde000e0a1f3a7df58172bcd7fbb0fd4c25f2abccaa76e1e526d"
+   "sha256": "6df8547aeba5b2799a28add85c421835f290a2834f0460cb4bbb1020fe8c201f"
   },
   {
    "path": "protocol/conformance/async-execution-gate-v1.json",
-   "sha256": "f037fffc32472fac5db02bcb5eade458aeb238407d4572d4090effe218aa3d22"
+   "sha256": "279ae7db1ef1c0619736932e956aac3e7f148a92ce22f1af73bf3ef4c4b2021a"
   },
   {
    "path": "protocol/goldens/concurrent-refinement-model-v1.json",
@@ -195,7 +195,7 @@
    "artifact": "protocol/conformance/native-source-concurrency-gate-v1.json",
    "commit": "a6915ef212b9e245da00fd383f79bc81f05c3556",
    "issue": "GNT-ASYNC-GATE-200",
-   "sha256": "425e14171875a40f30994e0f94ac7f227b52c5ec2364e895e16c287c1ef4b3e2",
+   "sha256": "c6bdebebf189301d3537a389129c2b44c6cdeab44cddeb2dd7f302993290af62",
    "subject": "Close the native source concurrency evidence gate."
   },
   {

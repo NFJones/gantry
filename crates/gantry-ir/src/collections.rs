@@ -286,12 +286,27 @@ impl CollectionKeyType {
 }
 
 /// Reports whether one descriptor kind is a collection kind of `GNT-39.4` through `GNT-39.7`.
-///
-/// The descriptor algebra carries the three collection kinds as structure, while no collection type
-/// is admitted as a value type in this edition: an identity decoder refuses a collection member as
-/// one of the unadmitted members its clause publishes.
 const fn is_collection_kind(kind: TypeKind) -> bool {
     matches!(kind, TypeKind::Map | TypeKind::Set | TypeKind::Range)
+}
+
+/// Reports whether one descriptor names a collection type kind anywhere inside it.
+///
+/// No collection type is admitted as a value type in this edition
+/// (`GNT-39.4-map-type-form-recognition`), so a member that names one at any depth — the member
+/// itself, or a collection inside a member of any other kind, or inside a declared type's arguments
+/// — is one of the unadmitted members `GNT-39.5` and `GNT-39.6` refuse. The walk reads each
+/// descriptor's own immediate members iteratively, so no nesting depth hides a collection and no
+/// native recursion is used.
+fn contains_collection_kind(descriptor: &TypeDescriptor) -> bool {
+    let mut pending = vec![descriptor.clone()];
+    while let Some(current) = pending.pop() {
+        if is_collection_kind(current.kind()) {
+            return true;
+        }
+        pending.extend(current.immediate_members());
+    }
+    false
 }
 
 /// One admitted `Map<K, V>` type identity of `GNT-39.5`.
@@ -312,10 +327,34 @@ impl MapTypeIdentity {
     /// The key argument is admitted exactly when its canonical descriptor text names one of the
     /// five admitted collection key types; any other key argument is refused under
     /// `collection-invalid-key` naming the refused argument. The value argument is any constructed
-    /// type descriptor and is carried unchanged.
+    /// type descriptor that names no collection type anywhere inside it: no collection type is
+    /// admitted as a value type in this edition, so a value argument carrying one is refused under
+    /// `collection-type-unadmitted`, exactly as the text decoder refuses the same identity text.
     pub fn admit(key: &TypeDescriptor, value: &TypeDescriptor) -> Result<Self, CollectionError> {
-        Ok(Self {
-            key: CollectionKeyType::from_descriptor(key)?,
+        let key = CollectionKeyType::from_descriptor(key)?;
+        Self::admitted(key, value).ok_or_else(|| {
+            CollectionError::new(
+                CollectionDiagnosticCode::UnadmittedType,
+                format!(
+                    "`Map<{},{}>` carries a member this edition does not admit as a value type",
+                    key.canonical_text(),
+                    value.canonical_string()
+                ),
+            )
+        })
+    }
+
+    /// The one construction rule both the argument path and the text decoder apply.
+    ///
+    /// `None` reports a value member that names a collection type this edition does not admit as a
+    /// value type; each caller reports its own refused text, so an admitted identity and a refused
+    /// one are the same decision on both paths.
+    fn admitted(key: CollectionKeyType, value: &TypeDescriptor) -> Option<Self> {
+        if contains_collection_kind(value) {
+            return None;
+        }
+        Some(Self {
+            key,
             value: value.clone(),
         })
     }
@@ -382,10 +421,7 @@ impl MapTypeIdentity {
         let key = CollectionKeyType::classify(key_text)?;
         let value = TypeDescriptor::from_canonical_string(value_text)
             .map_err(|_| Self::not_an_identity(text))?;
-        if is_collection_kind(value.kind()) {
-            return Err(Self::not_an_identity(text));
-        }
-        let identity = Self { key, value };
+        let identity = Self::admitted(key, &value).ok_or_else(|| Self::not_an_identity(text))?;
         if identity.canonical_text() == text {
             Ok(identity)
         } else {
@@ -469,7 +505,8 @@ impl SetTypeIdentity {
 /// One `Range<T>` type identity of `GNT-39.6`.
 ///
 /// The identity is its element descriptor, which is any admitted value type: this clause publishes
-/// the element argument and no stepping contract, so admitting an identity decides no type
+/// the element argument, which names no collection type anywhere inside it, and no stepping
+/// contract, so admitting an identity decides no type
 /// admission and publishes no value, bounds, step, traversal, iteration, mutation, quota, schema,
 /// recovery, durability, boundary encoding, lowering, or machine representation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -479,9 +516,22 @@ pub struct RangeTypeIdentity {
 
 impl RangeTypeIdentity {
     /// Publishes one `Range<T>` type identity over its resolved element descriptor.
-    #[must_use]
-    pub fn new(element: TypeDescriptor) -> Self {
-        Self { element }
+    ///
+    /// The element argument is any constructed type descriptor that names no collection type
+    /// anywhere inside it: no collection type is admitted as a value type in this edition, so an
+    /// element carrying one is refused under `collection-type-unadmitted`, exactly as the text
+    /// decoder refuses the same identity text.
+    pub fn new(element: TypeDescriptor) -> Result<Self, CollectionError> {
+        if contains_collection_kind(&element) {
+            return Err(CollectionError::new(
+                CollectionDiagnosticCode::UnadmittedType,
+                format!(
+                    "`Range<{}>` carries a member this edition does not admit as a value type",
+                    element.canonical_string()
+                ),
+            ));
+        }
+        Ok(Self { element })
     }
 
     /// Returns the element argument descriptor.
@@ -502,9 +552,9 @@ impl RangeTypeIdentity {
     /// that is not the canonical rendering of one identity is refused under
     /// `collection-type-unadmitted`; no stepping, bounds, or iteration rule is decoded or admitted.
     /// No collection type is admitted as a value type in this edition
-    /// (`GNT-39.4-map-type-form-recognition`), so a collection element member is one of the
-    /// unadmitted members this decoder refuses, whether or not the descriptor algebra carries its
-    /// structure.
+    /// (`GNT-39.4-map-type-form-recognition`), so an element member that names a collection type at
+    /// any depth is one of the unadmitted members this decoder refuses through the identity's own
+    /// construction rule.
     pub fn from_canonical_text(text: &str) -> Result<Self, CollectionError> {
         let element = text
             .strip_prefix("Range<")
@@ -512,10 +562,7 @@ impl RangeTypeIdentity {
             .ok_or_else(|| Self::not_an_identity(text))?;
         let element = TypeDescriptor::from_canonical_string(element)
             .map_err(|_| Self::not_an_identity(text))?;
-        if is_collection_kind(element.kind()) {
-            return Err(Self::not_an_identity(text));
-        }
-        let identity = Self { element };
+        let identity = Self::new(element).map_err(|_| Self::not_an_identity(text))?;
         if identity.canonical_text() == text {
             Ok(identity)
         } else {

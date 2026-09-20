@@ -41370,6 +41370,7 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_type_kinds_are_admitted_and_the_algebra_owns_their_canonical_text",
                 "crates/gantry-conformance/tests/collections_foundation.rs#map_type_identity_admits_the_five_key_types_and_refuses_the_rest",
                 "crates/gantry-conformance/tests/analyzer_types.rs#map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments"
               ],
@@ -41410,6 +41411,7 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_type_kinds_are_admitted_and_the_algebra_owns_their_canonical_text",
                 "crates/gantry-conformance/tests/collections_foundation.rs#set_and_range_type_identities_are_published_and_refused",
                 "crates/gantry-conformance/tests/analyzer_types.rs#set_and_range_type_forms_are_recognised_and_refused_until_admitted"
               ],

@@ -91,6 +91,14 @@ fn refusal(outcome: Result<(), CollectionError>, context: &str) -> CollectionErr
     }
 }
 
+/// Returns the refusal produced by one rejected decision of any result type.
+fn rejected<T, E>(outcome: Result<T, E>, context: &str) -> E {
+    match outcome {
+        Ok(_) => panic!("{context}: the decision must be refused"),
+        Err(error) => error,
+    }
+}
+
 /// A collection key is exactly one admitted canonical scalar key (`GNT-39.1`).
 #[test]
 fn collection_keys_admit_exactly_the_canonical_scalar_domain() {
@@ -514,7 +522,8 @@ fn set_and_range_type_identities_are_published_and_refused() {
         TypeDescriptor::option(TypeDescriptor::INT).unwrap_or_else(|error| panic!("{error}")),
         TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::STRING),
     ] {
-        let identity = RangeTypeIdentity::new(element.clone());
+        let identity = RangeTypeIdentity::new(element.clone())
+            .unwrap_or_else(|error| panic!("the element is admitted: {}", error.detail()));
         assert_eq!(identity.element(), &element);
         assert_eq!(
             identity.canonical_text(),
@@ -691,7 +700,8 @@ fn collection_type_kinds_are_admitted_and_the_algebra_owns_their_canonical_text(
     // A range element is any constructed value type, so the element member is not a key and the
     // `GNT-39.7` element domain is not a type-admission rule this descriptor decides.
     let element = TypeDescriptor::list(TypeDescriptor::INT);
-    let range = RangeTypeIdentity::new(element.clone());
+    let range = RangeTypeIdentity::new(element.clone())
+        .unwrap_or_else(|error| panic!("a list element is admitted: {}", error.detail()));
     let range_descriptor = descriptor(&range.canonical_text());
     assert_eq!(range_descriptor.kind(), TypeKind::Range);
     assert_eq!(range_descriptor.canonical_string(), range.canonical_text());
@@ -709,21 +719,49 @@ fn collection_type_kinds_are_admitted_and_the_algebra_owns_their_canonical_text(
     assert!(!map_descriptor.contains_sealed_boundary());
 
     // The `Map` key member and the `Set` element member are the same key domain: the algebra
-    // refuses a member outside it, and so does every text decoder of the three forms.
+    // refuses a member outside it under that rule's own refusal, and the unadmitted-member rule is
+    // a second, distinct refusal.
     assert_eq!(
         TypeDescriptor::map(element.clone(), TypeDescriptor::INT),
-        Err(TypeDescriptorError::InvalidCollectionMember)
+        Err(TypeDescriptorError::InvalidCollectionKey)
     );
     assert_eq!(
         TypeDescriptor::set(element.clone()),
+        Err(TypeDescriptorError::InvalidCollectionKey)
+    );
+    let collection_member = TypeDescriptor::map(TypeDescriptor::INT, TypeDescriptor::STRING)
+        .unwrap_or_else(|error| panic!("Int and String are admitted: {error:?}"));
+    assert_eq!(
+        TypeDescriptor::map(TypeDescriptor::INT, collection_member.clone()),
         Err(TypeDescriptorError::InvalidCollectionMember)
     );
     assert_eq!(
-        TypeDescriptor::from_canonical_string("Map<List<Int>,Int>").unwrap_err(),
+        TypeDescriptor::map(
+            TypeDescriptor::INT,
+            TypeDescriptor::list(collection_member.clone()),
+        ),
+        Err(TypeDescriptorError::InvalidCollectionMember)
+    );
+    assert_eq!(
+        TypeDescriptor::range(collection_member.clone()),
+        Err(TypeDescriptorError::InvalidCollectionMember)
+    );
+    assert_eq!(
+        TypeDescriptor::range(TypeDescriptor::list(collection_member.clone())),
+        Err(TypeDescriptorError::InvalidCollectionMember)
+    );
+    assert_eq!(
+        rejected(
+            TypeDescriptor::from_canonical_string("Map<List<Int>,Int>"),
+            "a collection key member",
+        ),
         TypeDescriptorError::InvalidCanonicalString
     );
     assert_eq!(
-        TypeDescriptor::from_canonical_string("Set<List<Int>>").unwrap_err(),
+        rejected(
+            TypeDescriptor::from_canonical_string("Set<List<Int>>"),
+            "a collection element member",
+        ),
         TypeDescriptorError::InvalidCanonicalString
     );
     for malformed in [
@@ -742,67 +780,111 @@ fn collection_type_kinds_are_admitted_and_the_algebra_owns_their_canonical_text(
         );
     }
 
-    // The identity decoders keep their own clause-owned refusal codes for the same texts, so the
-    // key rule is refused first exactly where `GNT-39.5` and `GNT-39.6` publish that ordering.
-    //
-    // The algebra carries collection structure, including a nested collection member, while no
-    // collection type is admitted as a value type in this edition: every identity decoder refuses
-    // such a member as one of the unadmitted members its clause publishes.
-    let nested =
-        TypeDescriptor::from_canonical_string("Map<Int,Map<Int,String>>").unwrap_or_else(|error| {
-            panic!("the algebra carries nested collection structure: {error:?}")
-        });
-    assert_eq!(nested.kind(), TypeKind::Map);
-    assert_eq!(nested.immediate_members().len(), 2);
-    assert_eq!(nested.immediate_members()[1].kind(), TypeKind::Map);
-    for (text, decoder) in [
+    // Each identity's constructor applies exactly the rule its decoder applies, and no collection
+    // type is admitted as a value type at any depth, so the two public paths of one identity cannot
+    // disagree: a collection member — direct, or hidden inside another member of any kind — is
+    // refused as an unadmitted member by the constructor, by the decoder, and by the algebra.
+    let nested = TypeDescriptor::map(TypeDescriptor::INT, TypeDescriptor::STRING)
+        .unwrap_or_else(|error| panic!("the nested fixture is admitted: {error:?}"));
+    let range_of_int = TypeDescriptor::range(TypeDescriptor::INT)
+        .unwrap_or_else(|error| panic!("Int is an admitted element: {error:?}"));
+    for (text, member) in [
+        ("Map<Int,Map<Int,String>>", nested.clone()),
+        ("Map<Int,Range<Int>>", range_of_int.clone()),
         (
-            "Map<Int,Map<Int,String>>",
-            MapTypeIdentity::from_canonical_text
-                as fn(&str) -> Result<MapTypeIdentity, CollectionError>,
-        ),
-        (
-            "Map<Int,Range<Int>>",
-            MapTypeIdentity::from_canonical_text
-                as fn(&str) -> Result<MapTypeIdentity, CollectionError>,
+            "Map<Int,List<Map<Int,String>>>",
+            TypeDescriptor::list(nested.clone()),
         ),
     ] {
         assert_eq!(
-            decoder(text).unwrap_err().code(),
+            rejected(
+                MapTypeIdentity::from_canonical_text(text),
+                "the identity text"
+            )
+            .code(),
             CollectionDiagnosticCode::UnadmittedType,
             "`{text}`"
         );
-    }
-    assert_eq!(
-        RangeTypeIdentity::from_canonical_text("Range<Map<Int,String>>")
-            .unwrap_err()
+        assert_eq!(
+            rejected(
+                MapTypeIdentity::admit(&TypeDescriptor::INT, &member),
+                "the constructor",
+            )
             .code(),
-        CollectionDiagnosticCode::UnadmittedType
-    );
+            CollectionDiagnosticCode::UnadmittedType,
+            "the constructor agrees with the decoder for `{text}`"
+        );
+        assert_eq!(
+            rejected(
+                TypeDescriptor::from_canonical_string(text),
+                "the descriptor text",
+            ),
+            TypeDescriptorError::InvalidCanonicalString,
+            "the algebra refuses `{text}`"
+        );
+    }
+    for (text, member) in [
+        ("Range<Map<Int,String>>", nested.clone()),
+        (
+            "Range<List<Map<Int,String>>>",
+            TypeDescriptor::list(nested.clone()),
+        ),
+    ] {
+        assert_eq!(
+            rejected(
+                RangeTypeIdentity::from_canonical_text(text),
+                "the identity text",
+            )
+            .code(),
+            CollectionDiagnosticCode::UnadmittedType,
+            "`{text}`"
+        );
+        assert_eq!(
+            rejected(RangeTypeIdentity::new(member.clone()), "the constructor").code(),
+            CollectionDiagnosticCode::UnadmittedType,
+            "the constructor agrees with the decoder for `{text}`"
+        );
+        assert_eq!(
+            rejected(
+                TypeDescriptor::from_canonical_string(text),
+                "the descriptor text",
+            ),
+            TypeDescriptorError::InvalidCanonicalString,
+            "the algebra refuses `{text}`"
+        );
+    }
     // A collection key member is refused by the key rule before that member rule, exactly where the
     // clause publishes the ordering.
     assert_eq!(
-        MapTypeIdentity::from_canonical_text("Map<Map<Int,String>,Int>")
-            .unwrap_err()
-            .code(),
+        rejected(
+            MapTypeIdentity::from_canonical_text("Map<Map<Int,String>,Int>"),
+            "the identity text",
+        )
+        .code(),
         CollectionDiagnosticCode::InvalidKey
     );
     assert_eq!(
-        MapTypeIdentity::from_canonical_text("Map<List<Int>,Int>")
-            .unwrap_err()
-            .code(),
+        rejected(
+            MapTypeIdentity::from_canonical_text("Map<List<Int>,Int>"),
+            "the identity text",
+        )
+        .code(),
         CollectionDiagnosticCode::InvalidKey
     );
     assert_eq!(
-        SetTypeIdentity::from_canonical_text("Set<List<Int>>")
-            .unwrap_err()
-            .code(),
+        rejected(
+            SetTypeIdentity::from_canonical_text("Set<List<Int>>"),
+            "the identity text",
+        )
+        .code(),
         CollectionDiagnosticCode::InvalidKey
     );
     assert_eq!(
-        RangeTypeIdentity::from_canonical_text("Range<Int,Int>")
-            .unwrap_err()
-            .code(),
+        rejected(
+            RangeTypeIdentity::from_canonical_text("Range<Int,Int>"),
+            "the identity text",
+        )
+        .code(),
         CollectionDiagnosticCode::UnadmittedType
     );
 

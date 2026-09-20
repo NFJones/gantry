@@ -70,6 +70,10 @@ separately in `docs/canonical-scalar-keys.md`.
   naming the whole refused member before the general rule (even when the text is also non-canonical
   or carries a member this edition does not admit), and refuses every other non-canonical or
   unadmitted text — including a nested `Map` in value position — as `collection-type-unadmitted`.
+  `MapTypeIdentity::admit` applies that same member rule to resolved arguments, so an admitted
+  identity and a refused one are one decision on both paths, and a value member that names a
+  collection type at any depth — the member itself, or a collection inside a member of any other
+  kind — is unadmitted.
 - `SetTypeIdentity::admit` publishes the `Set<K>` element identity (`GNT-39.6`): a set element is a
   collection key, so exactly the five key types of `GNT-39.1` are admitted, the same shared
   `CollectionKeyType::classify` refuses every other element member text as `collection-invalid-key`
@@ -77,10 +81,22 @@ separately in `docs/canonical-scalar-keys.md`.
   even when the member text is also non-canonical or carries a member this edition does not admit —
   and any other text that is not the canonical rendering of one identity is refused as
   `collection-type-unadmitted`. `RangeTypeIdentity::new` publishes the `Range<T>` element identity
-  over any admitted value type and publishes no stepping, bounds, ordering, or iteration rule; its
-  decoder admits exactly the canonical text of one admitted value type and has no key-domain path,
-  so `Range<Decision>` is a legitimate identity while `Range<Missing>` is refused. Both identities
-  render as `Set<K>` and `Range<T>` over the canonical text of the argument.
+  over any admitted value type that names no collection type anywhere inside it, and publishes no
+  stepping, bounds, ordering, or iteration rule: the constructor applies the identity's one member
+  rule, which its decoder applies too, so a collection element at any depth is refused as
+  `collection-type-unadmitted` on both paths, and the decoder admits exactly the canonical text of
+  one such type and has no key-domain path, so `Range<Decision>` is a legitimate identity while
+  `Range<Missing>` and `Range<Map<Int,String>>` are refused. Both identities render as `Set<K>` and
+  `Range<T>` over the canonical text of the argument.
+- The three collection kinds are published by the closed type-kind vocabulary of the canonical-IR
+  contract: `Map`, `Set`, and `Range` are appended after `Never`, each citing the clause that
+  identifies it (`GNT-39.5`, `GNT-39.6`), and the type algebra constructs, renders, and decodes the
+  three canonical descriptors exactly. `TypeDescriptor::map`, `set`, and `range` apply each
+  identity's own member rule: a key member outside the key domain is refused as
+  `TypeDescriptorError::InvalidCollectionKey`, and an unadmitted collection member as
+  `TypeDescriptorError::InvalidCollectionMember`, so the algebra reports which clause refused.
+  Every collection kind is structural, carrying no independent primitive properties, and none
+  admits a value: the kinds are vocabulary and descriptor algebra only.
 - `RangeStepContract::sealed` publishes the sealed step contract (`GNT-39.7`): exactly `Int` admits
   stepping in this edition, `successor` and `predecessor` are the element type's checked steps over
   the canonical `Int` range, and `forward_within` and `backward_within` report whether the step from

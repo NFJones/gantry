@@ -4,7 +4,9 @@ use std::fmt;
 
 use crate::CanonicalPath;
 use crate::callable::{CallableKind, CallableType};
-use crate::collections::{MapTypeIdentity, SetTypeIdentity};
+use crate::collections::{
+    CollectionDiagnosticCode, CollectionError, MapTypeIdentity, RangeTypeIdentity, SetTypeIdentity,
+};
 use crate::generated::TypeKind;
 
 /// One well-formed Gantry v1 type descriptor.
@@ -163,8 +165,7 @@ impl TypeDescriptor {
     /// construction, projection, iteration, traversal, mutation, quota, schema, recovery,
     /// durability, boundary encoding, lowering, or machine representation.
     pub fn map(key: Self, value: Self) -> Result<Self, TypeDescriptorError> {
-        MapTypeIdentity::admit(&key, &value)
-            .map_err(|_| TypeDescriptorError::InvalidCollectionMember)?;
+        MapTypeIdentity::admit(&key, &value).map_err(collection_refusal)?;
         let contains_sealed_boundary =
             key.contains_sealed_boundary || value.contains_sealed_boundary;
         let mut tokens = vec![TypeToken::Open(TypeKind::Map)];
@@ -185,8 +186,7 @@ impl TypeDescriptor {
     /// states for the `Set<K>` identity, owned by the same key vocabulary and applied here by the
     /// identity that publishes it.
     pub fn set(element: Self) -> Result<Self, TypeDescriptorError> {
-        SetTypeIdentity::admit(&element)
-            .map_err(|_| TypeDescriptorError::InvalidCollectionMember)?;
+        SetTypeIdentity::admit(&element).map_err(collection_refusal)?;
         let contains_sealed_boundary = element.contains_sealed_boundary;
         let mut tokens = vec![TypeToken::Open(TypeKind::Set)];
         tokens.extend(element.into_tokens());
@@ -198,23 +198,26 @@ impl TypeDescriptor {
         })
     }
 
-    /// Constructs `Range<T>` over any constructed element type.
+    /// Constructs `Range<T>` over any constructed element type the identity admits.
     ///
-    /// `GNT-39.6` publishes the element argument and restricts no element domain, so this
-    /// constructor applies no key rule: the sealed step contract of `GNT-39.7` is the clause that
-    /// admits element types for stepping, and admitting one stepping element is not an admission
-    /// this type descriptor decides.
-    #[must_use]
-    pub fn range(element: Self) -> Self {
+    /// `GNT-39.6` publishes the element argument, applies no key rule to it, and admits no
+    /// collection type as a value type, so the element rule is exactly the identity's own rule: the
+    /// element names no collection type anywhere inside it. The sealed step contract of `GNT-39.7`
+    /// is a separate clause that admits element types for stepping, not for this type.
+    pub fn range(element: Self) -> Result<Self, TypeDescriptorError> {
+        let element = RangeTypeIdentity::new(element)
+            .map_err(collection_refusal)?
+            .element()
+            .clone();
         let contains_sealed_boundary = element.contains_sealed_boundary;
         let mut tokens = vec![TypeToken::Open(TypeKind::Range)];
         tokens.extend(element.into_tokens());
         tokens.push(TypeToken::Close);
-        Self {
+        Ok(Self {
             kind: TypeKind::Range,
             tokens,
             contains_sealed_boundary,
-        }
+        })
     }
 
     /// Constructs a fixed tuple with at least two members.
@@ -457,6 +460,20 @@ impl fmt::Display for TypeDescriptor {
     }
 }
 
+/// Maps one collection identity refusal onto the descriptor refusal its own rule published.
+///
+/// The key rule of `GNT-39.1-admitted-collection-keys` and the unadmitted-member rule of
+/// `GNT-39.4` through `GNT-39.6` are distinct clause-owned refusals, so the algebra reports which of
+/// them refused rather than collapsing both into one spelling.
+fn collection_refusal(refusal: CollectionError) -> TypeDescriptorError {
+    match refusal.code() {
+        CollectionDiagnosticCode::InvalidKey => TypeDescriptorError::InvalidCollectionKey,
+        CollectionDiagnosticCode::DuplicateKey
+        | CollectionDiagnosticCode::NonClaimAsGuarantee
+        | CollectionDiagnosticCode::UnadmittedType => TypeDescriptorError::InvalidCollectionMember,
+    }
+}
+
 /// Rejection of an ill-formed constructed type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TypeDescriptorError {
@@ -465,6 +482,9 @@ pub enum TypeDescriptorError {
     /// A tuple has fewer than two members.
     TupleArity,
     /// A `Map` key member or `Set` element member is not an admitted collection key type.
+    InvalidCollectionKey,
+    /// A `Map` value member or `Range` element member names a collection type this edition does not
+    /// admit as a value type.
     InvalidCollectionMember,
     /// Input is not one exact canonical v1 type descriptor.
     InvalidCanonicalString,
@@ -482,7 +502,10 @@ impl fmt::Display for TypeDescriptorError {
         formatter.write_str(match self {
             Self::InvalidOptionMember => "option member is not permitted",
             Self::TupleArity => "tuple requires at least two members",
-            Self::InvalidCollectionMember => "collection member is not an admitted collection key",
+            Self::InvalidCollectionKey => {
+                "collection key member is not an admitted collection key type"
+            }
+            Self::InvalidCollectionMember => "collection member is not an admitted value type",
             Self::InvalidCanonicalString => "type descriptor is not canonical",
             Self::ConstructedTypeDepth { .. } => {
                 "type descriptor exceeds the constructed-type depth limit"
@@ -738,7 +761,7 @@ impl<'a> DescriptorParser<'a> {
                     .into_iter()
                     .next()
                     .ok_or(TypeDescriptorError::InvalidCanonicalString)?,
-            ),
+            )?,
             ContainerKind::Tuple => TypeDescriptor::tuple(frame.members)?,
             ContainerKind::Callable(kind) => {
                 let mut members = frame.members;

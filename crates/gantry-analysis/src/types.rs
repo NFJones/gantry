@@ -1406,6 +1406,7 @@ fn resolve_type_node(
                 }
                 Err(
                     TypeDescriptorError::TupleArity
+                    | TypeDescriptorError::InvalidCollectionKey
                     | TypeDescriptorError::InvalidCollectionMember
                     | TypeDescriptorError::InvalidCanonicalString
                     | TypeDescriptorError::ConstructedTypeDepth { .. },
