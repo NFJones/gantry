@@ -42278,7 +42278,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/collections_foundation.rs#collection_clauses_and_diagnostics_are_published"
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_clauses_and_diagnostics_are_published",
+                "crates/gantry-conformance/tests/collections_foundation.rs#canonical_refusals_pass_through_without_a_new_spelling"
               ],
               "rationale": null
             }
@@ -42319,7 +42320,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/collections_foundation.rs#collection_keys_admit_exactly_the_canonical_scalar_domain"
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_keys_admit_exactly_the_canonical_scalar_domain",
+                "crates/gantry-conformance/tests/collections_foundation.rs#canonical_refusals_pass_through_without_a_new_spelling"
               ],
               "rationale": null
             }
