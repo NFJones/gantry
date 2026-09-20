@@ -103,6 +103,10 @@ or removing one is a compiler change rather than an edition change.
   (`edition_prelude_source_boundary_matches_the_enumerated_declaration`) pins the built-in
   spelling boundary, resolution of every documented compiler-owned type word, and the refused
   standard-package import.
+- Spelling-source coupling: `crates/gantry-conformance/tests/stdlib_architecture.rs`
+  (`reserved_spelling_sources_agree_with_the_published_inventory`) requires the grammar's
+  reserved-word classifier, the lexical vector lane, and the published compiler-owned inventory
+  to agree.
 - Refusals: `std-invalid-package-name`, `std-duplicate-package`,
   `std-invalid-name-classification`, `std-unknown-edge`, `std-dependency-cycle`,
   `std-pure-to-capability-edge`, `std-package-to-adapter-edge`,

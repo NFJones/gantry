@@ -1730,7 +1730,8 @@ const COMPILER_OWNED_TYPE_WORDS: [&str; 17] = [
 /// vocabulary, and `analyzer_types.rs` pins the resolution boundary for the
 /// enumerated members. This lane keeps the note's separation present and requires each documented
 /// spelling to still classify as a reserved word, so a note revision cannot invent or silently
-/// drop one. It cannot detect a newly reserved word that no lane documents.
+/// drop one. Drift in the classifier itself is caught by
+/// `reserved_spelling_sources_agree_with_the_published_inventory` below.
 #[test]
 fn standard_library_architecture_note_separates_compiler_owned_type_words() {
     let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
@@ -1749,4 +1750,87 @@ fn standard_library_architecture_note_separates_compiler_owned_type_words() {
             "`{word}` is still a reserved word"
         );
     }
+}
+
+/// The grammar's reserved-word table, the lexical vector lane, and the published compiler-owned
+/// inventory are three hand-maintained lists of one vocabulary; this lane couples them.
+///
+/// It reads `crates/gantry-frontend/src/token.rs` for the `from_spelling` arms, the lexical lane
+/// `frontend_lexical_evidence.rs` for the vector it asserts, and this file's
+/// `COMPILER_OWNED_TYPE_WORDS`, and requires the classified spellings, the exercised vector, and
+/// the capitalized published subset to agree. The coupling is textual by design — the lists have
+/// drifted before — and it fails loudly when the classifier is reformatted, which is when this
+/// lane must be revisited.
+#[test]
+fn reserved_spelling_sources_agree_with_the_published_inventory() {
+    let classifier_source =
+        fs::read_to_string(workspace_root().join("crates/gantry-frontend/src/token.rs"))
+            .unwrap_or_else(|error| panic!("the front-end token source is readable: {error}"));
+    let table = classifier_source
+        .split_once("pub fn from_spelling")
+        .and_then(|(_, rest)| rest.split_once("pub const fn spelling"))
+        .map(|(body, _)| body)
+        .unwrap_or_else(|| panic!("the reserved-word classifier is locateable"));
+    let classified: Vec<&str> = table.lines().filter_map(quoted_arm_spelling).collect();
+
+    let lexical_source = fs::read_to_string(
+        workspace_root().join("crates/gantry-conformance/tests/frontend_lexical_evidence.rs"),
+    )
+    .unwrap_or_else(|error| panic!("the lexical lane source is readable: {error}"));
+    let vector = lexical_source
+        .split_once("let reserved = [")
+        .and_then(|(_, rest)| rest.split_once("];"))
+        .map(|(body, _)| body)
+        .unwrap_or_else(|| panic!("the lexical reserved vector is locateable"));
+    let exercised: Vec<&str> = vector.lines().filter_map(quoted_entry).collect();
+
+    assert!(
+        classified.len() > 64,
+        "the classifier extraction found {} spellings",
+        classified.len()
+    );
+    assert_eq!(
+        sorted_spellings(exercised),
+        sorted_spellings(classified.clone()),
+        "the lexical vector exercises exactly the classified spellings"
+    );
+    let capitalized: Vec<&str> = classified
+        .into_iter()
+        .filter(|spelling| {
+            spelling
+                .chars()
+                .next()
+                .is_some_and(|first| first.is_ascii_uppercase())
+        })
+        .collect();
+    assert_eq!(
+        sorted_spellings(capitalized),
+        sorted_spellings(COMPILER_OWNED_TYPE_WORDS.to_vec()),
+        "the published inventory is exactly the classifier's capitalized spellings"
+    );
+}
+
+/// Extracts `<spelling>` from a classifier arm written as `"<spelling>" => "<spelling>",`.
+fn quoted_arm_spelling(line: &str) -> Option<&str> {
+    let rest = line.trim().strip_prefix('"')?;
+    let end = rest.find('"')?;
+    let spelling = &rest[..end];
+    let tail = rest[end + 1..].trim_start().strip_prefix("=>")?;
+    let value = tail.trim_start().strip_prefix('"')?;
+    (&value[..value.find('"')?] == spelling).then_some(spelling)
+}
+
+/// Extracts `<spelling>` from a lane array entry written as `"<spelling>",`.
+fn quoted_entry(line: &str) -> Option<&str> {
+    let rest = line.trim().strip_prefix('"')?;
+    Some(&rest[..rest.find('"')?])
+}
+
+/// Sorts spellings and refuses duplicates, so a repeated arm or entry cannot hide drift.
+fn sorted_spellings(mut spellings: Vec<&str>) -> Vec<&str> {
+    spellings.sort_unstable();
+    let mut deduped = spellings.clone();
+    deduped.dedup();
+    assert_eq!(spellings, deduped, "each spelling appears once");
+    spellings
 }
