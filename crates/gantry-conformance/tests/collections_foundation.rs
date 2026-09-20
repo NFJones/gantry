@@ -405,6 +405,29 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_the_rest() {
         "the decoding refusal names the refused key member: {}",
         refused.detail()
     );
+
+    // The key-member rule applies before the general rule, so an input whose key member is not one
+    // of the five is refused under the key-domain spelling even when the text is also non-canonical
+    // or carries a member this edition does not admit, and the refusal names the whole key member.
+    for (text, named) in [
+        ("Map<Decision ,String>", "Decision "),
+        ("Map<Map<Int,String>,Int>", "Map<Int,String>"),
+        ("Map<,String>", ""),
+    ] {
+        let error = MapTypeIdentity::from_canonical_text(text)
+            .err()
+            .unwrap_or_else(|| panic!("`{text}` is not an admitted key member"));
+        assert_eq!(
+            error.code(),
+            CollectionDiagnosticCode::InvalidKey,
+            "`{text}`"
+        );
+        assert!(
+            error.detail().contains(named),
+            "`{text}` names the whole refused key member: {}",
+            error.detail()
+        );
+    }
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).
