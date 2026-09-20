@@ -1285,6 +1285,30 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A workflow call has the wrong number of arguments.",
     },
     DiagnosticCodeDefinition {
+        code: "callable-expression-unadmitted",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A source callable expression is recognised but not admitted by this revision.",
+    },
+    DiagnosticCodeDefinition {
+        code: "callable-invocation-unadmitted",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A call through a callable value is not admitted.",
+    },
+    DiagnosticCodeDefinition {
+        code: "callable-reference-unadmitted",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A name that denotes a declared callable or action is not a value.",
+    },
+    DiagnosticCodeDefinition {
+        code: "callable-type-unadmitted",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A callable type form is recognised but not admitted by this revision.",
+    },
+    DiagnosticCodeDefinition {
         code: "collection-type-unadmitted",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1379,6 +1403,18 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "An implementation method infers effects outside its trait method contract.",
+    },
+    DiagnosticCodeDefinition {
+        code: "error-conversion-refused",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An error conversion is ambiguous, partial, or widens a failure channel.",
+    },
+    DiagnosticCodeDefinition {
+        code: "error-propagation-refused",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A propagation operand has no exactly one declared conversion.",
     },
     DiagnosticCodeDefinition {
         code: "exclusive-reborrow-subplace",
@@ -1717,6 +1753,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A MustConsume place leaves its scope without being consumed.",
     },
     DiagnosticCodeDefinition {
+        code: "never-signature-refused",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A signature position names the uninhabited type.",
+    },
+    DiagnosticCodeDefinition {
         code: "non-value-path",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -1775,6 +1817,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
         meaning: "A package names an item reachable only through a dependency it does not declare.",
+    },
+    DiagnosticCodeDefinition {
+        code: "panic-path-refused",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A panic or assertion operand is not the admitted operand type.",
     },
     DiagnosticCodeDefinition {
         code: "pattern-type-mismatch",
