@@ -7,6 +7,27 @@ and this note is descriptive.
 
 ## Pure hierarchy
 
+### Declared clauses
+
+`STDLIB_CLAUSES` in `crates/gantry-ir/src/stdlib.rs` declares the anchors of `SPEC.md` Section 34,
+in specification order:
+
+| Clause anchor | What it owns |
+| --- | --- |
+| `GNT-34.0-standard-library-package-architecture` | the section scope: one canonical logical hierarchy declared as packages, items, edges, tiers, and applicability |
+| `GNT-34.1-canonical-hierarchy-and-package-names` | the canonical hierarchy and the admitted package and item names |
+| `GNT-34.2-name-classification` | the closed name classes and the classification each name receives |
+| `GNT-34.3-acyclic-internal-dependency-dag` | the acyclic internal dependency DAG and which edges a pure family may declare |
+| `GNT-34.4-edition-prelude-and-explicit-imports` | the closed per-edition prelude and explicit imports; no glob import and no implicit transitive access |
+| `GNT-34.5-facade-and-reexport-identity` | facade and re-export paths preserve the defining package identity |
+| `GNT-34.6-stability-tiers` | stability tiers and the admitted transitions between them |
+| `GNT-34.7-applicability-and-feature-granularity` | target and mode applicability, and feature granularity |
+| `GNT-34.8-defining-identity-and-interface-digest` | defining identity and the interface digest; repository layout is never identity |
+| `GNT-34.9-standard-library-contract-versioning` | contract versions and their compatibility consequences |
+| `GNT-34.10-relocation-and-deprecation` | relocation and deprecation rules |
+| `GNT-34.11-aggregate-manifests-and-publication-inputs` | aggregate manifests and the publication inputs built from them |
+| `GNT-34.12-standard-library-architecture-non-claims` | the frozen non-claims listed below |
+
 The pure families are `std.core` (the foundational root, `StabilityTier::Foundational`)
 and the stable families that build on it: `std.collections`, `std.text`, `std.num`,
 `std.codec`, `std.crypto`, and `std.data`.

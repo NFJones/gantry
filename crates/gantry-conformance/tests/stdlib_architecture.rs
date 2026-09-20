@@ -1639,3 +1639,17 @@ fn standard_library_architecture_note_names_every_declared_family_and_prelude_me
         assert!(note.contains(member), "the note names `{member}`");
     }
 }
+
+/// Every declared Section-34 anchor is published in the architecture note.
+///
+/// The note is descriptive, but the anchors it names are the declared clauses of
+/// `STDLIB_CLAUSES`, so this lane requires each of them to appear: a clause added to the model
+/// cannot leave the note silent about it.
+#[test]
+fn standard_library_architecture_note_names_every_declared_clause_anchor() {
+    let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
+        .unwrap_or_else(|error| panic!("the architecture note is readable: {error}"));
+    for clause in STDLIB_CLAUSES {
+        assert!(note.contains(clause), "the note names `{clause}`");
+    }
+}
