@@ -1204,6 +1204,53 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     let mut inverted_cursor = carried_inverted.cursor();
     assert_eq!(inverted_cursor.next(), None);
     assert!(inverted_cursor.is_exhausted());
+    let carried_open_end = CollectionValue::Range(RangeValue::new(None, Some(bound(4))));
+    let mut open_end_cursor = carried_open_end.cursor();
+    assert!(
+        !open_end_cursor.is_exhausted(),
+        "exhaustion is observed by an advance, not inferred from the value"
+    );
+    assert_eq!(open_end_cursor.next(), None);
+    assert!(open_end_cursor.is_exhausted());
+
+    // Replacement rather than mutation (`GNT-39.8`): a new entry or element publishes a new value,
+    // the original is unchanged, and a cursor opened over it keeps traversing exactly that value.
+    let grown = map
+        .with_entry(policy, &integer(3), string("three"))
+        .unwrap_or_else(|error| panic!("the declared entry is admitted: {error:?}"));
+    assert_eq!(grown.len(), map.len() + 1);
+    assert_eq!(map.len(), 2, "the original value is unchanged");
+    let replaced = map
+        .with_entry(policy, &integer(1), string("ONE"))
+        .unwrap_or_else(|error| panic!("the replacement entry is admitted: {error:?}"));
+    assert_eq!(
+        replaced.len(),
+        map.len(),
+        "a replacement keeps the entry count"
+    );
+    let one_key = policy
+        .admit(&integer(1))
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    assert_eq!(replaced.get(&one_key), Some(&string("ONE")));
+    assert_eq!(map.get(&one_key), Some(&string("one")));
+    let mut untouched = carried_map.cursor();
+    let mut untouched_visits = 0usize;
+    while untouched.next().is_some() {
+        untouched_visits += 1;
+    }
+    assert_eq!(untouched_visits, 2, "a cursor keeps its own value");
+    let grown_set = set
+        .with_element(policy, &string("c"))
+        .unwrap_or_else(|error| panic!("the declared element is admitted: {error:?}"));
+    assert_eq!(grown_set.len(), set.len() + 1);
+    assert_eq!(set.len(), 3, "the original set is unchanged");
+    let repeated = set
+        .with_element(policy, &string("a"))
+        .unwrap_or_else(|error| panic!("the repeated element publishes a value: {error:?}"));
+    assert_eq!(
+        repeated, set,
+        "an admitted element publishes an equal value"
+    );
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);

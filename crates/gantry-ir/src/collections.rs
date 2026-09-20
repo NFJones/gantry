@@ -561,6 +561,26 @@ impl MapValue {
                 .saturating_add(value.metrics().nodes)
         })
     }
+
+    /// Admits one additional or replacement entry and publishes one new value (`GNT-39.8`).
+    ///
+    /// The value this is called on is unchanged and no entry is mutated in place, so a cursor
+    /// opened over it keeps traversing exactly that value. A key already admitted is replaced
+    /// rather than refused, because the entry is not a repeated key in one batch.
+    pub fn with_entry(
+        &self,
+        policy: CollectionKeyPolicy,
+        key: &LogicalValue,
+        value: LogicalValue,
+    ) -> Result<Self, CollectionKeyRefusal> {
+        let admitted = policy.admit(key)?;
+        let mut entries = self.entries.clone();
+        match entries.binary_search_by(|(existing, _)| canonical_order(existing, &admitted)) {
+            Ok(index) => entries[index] = (admitted, value),
+            Err(index) => entries.insert(index, (admitted, value)),
+        }
+        Ok(Self { entries })
+    }
 }
 
 /// One admitted `Set` value of `GNT-39.8-collection-value-model`.
@@ -617,6 +637,28 @@ impl SetValue {
     #[must_use]
     pub fn accounted_nodes(&self) -> u64 {
         1_u64.saturating_add(u64::try_from(self.elements.len()).unwrap_or(u64::MAX))
+    }
+
+    /// Admits one additional element and publishes one new value (`GNT-39.8`).
+    ///
+    /// The value this is called on is unchanged and no element is mutated in place. An element
+    /// already admitted publishes an equal new value rather than a refusal.
+    pub fn with_element(
+        &self,
+        policy: CollectionKeyPolicy,
+        element: &LogicalValue,
+    ) -> Result<Self, CollectionKeyRefusal> {
+        let admitted = policy.admit(element)?;
+        if self.contains(&admitted) {
+            return Ok(self.clone());
+        }
+        let mut elements = self.elements.clone();
+        if let Err(index) =
+            elements.binary_search_by(|existing| canonical_order(existing, &admitted))
+        {
+            elements.insert(index, admitted);
+        }
+        Ok(Self { elements })
     }
 }
 
@@ -838,7 +880,8 @@ impl CollectionValue {
     /// `GNT-39.2`, and a visitor may end the traversal early. A `Range` value is traversed stepwise
     /// through `RangeValue::next_position` and reports no visit here. The traversal reports
     /// `Completed` when every entry or element this form publishes was visited and `Stopped` when
-    /// the visitor ended it early.
+    /// the visitor ended it early. This form never publishes `CollectionVisit::Position`, which
+    /// only a cursor publishes.
     pub fn traverse(
         &self,
         visitor: &mut impl FnMut(CollectionVisit<'_>) -> CollectionTraversal,
@@ -941,7 +984,10 @@ impl<'a> CollectionCursor<'a> {
         }
     }
 
-    /// Reports whether the cursor has published every position it has.
+    /// Reports whether an advance has already published none.
+    ///
+    /// Exhaustion is observed by that advance rather than inferred from the value, so a cursor
+    /// whose content is absent reports `false` until it is advanced once.
     #[must_use]
     pub const fn is_exhausted(&self) -> bool {
         self.exhausted

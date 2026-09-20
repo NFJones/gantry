@@ -298,8 +298,9 @@ pub use secret::{
 pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
 };
-// The Section 39 collection key and canonical order foundation: the key contract a source
-// collection consumes, with no collection type, traversal, or family behavior of its own.
+// The Section 39 collection foundation: the key contract and canonical order, the recognised
+// collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,
+// carriage, and traversal forms, and the one temporary cursor, with no family behavior of its own.
 pub use collections::{
     COLLECTION_CLAUSES, CollectionCursor, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,

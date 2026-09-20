@@ -149,6 +149,10 @@ separately in `docs/canonical-scalar-keys.md`.
   (`is_exhausted`), and a `Range` value publishes positions through the same stepwise protocol the
   visitor form publishes no visit for. The cursor publishes no invalidation rule because the value is
   immutable and the clause publishes no mutation.
+  `MapValue::with_entry` and `SetValue::with_element` publish replacement rather than mutation: each
+  admits one additional or replacement entry, or one element, and publishes one new value, leaving
+  the value it was called on unchanged, so a cursor opened over that value keeps traversing exactly
+  that value and no invalidation rule is needed.
   It reports how a visitor-form traversal ended: `CollectionOutcome::Completed` when every entry
   or element that form publishes was visited and `Stopped` when the visitor ended it early, with
   `is_completed` reading that outcome; a `Range` value publishes no visit through that form and
