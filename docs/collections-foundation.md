@@ -109,8 +109,9 @@ separately in `docs/canonical-scalar-keys.md`.
   so the step that lands on the exclusive end bound, crosses the inclusive start bound, or leaves the
   canonical value range is exhaustion rather than a refusal, a wrap, or a trap. The contract is sealed: no package, adapter, host, or later declaration
   may define, extend, override, or infer one, and the clause publishes no traversal, iteration, loop
-  integration, exhaustion reporting, mutation, quota, schema, recovery, durability, lowering, or
-  machine representation, and admits no `Range` type or value.
+  integration, an exhaustion diagnostic, mutation, quota, schema, recovery, durability, lowering,
+  or machine representation, and admits no `Range` value of its own — the `Range` type identity
+  belongs to `GNT-39.6` and the value model to `GNT-39.8`.
 - `MapValue::admit` and `SetValue::admit` publish the two keyed value models (`GNT-39.8`): a `Map`
   value is its finite entries and a `Set` value its finite elements, every candidate admitted under
   the key contract of `GNT-39.1`, a repeated key refused as `collection-duplicate-key` before
