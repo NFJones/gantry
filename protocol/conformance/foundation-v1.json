@@ -246,7 +246,7 @@
   },
   {
    "path": "protocol/conformance/combined-gate-v1.json",
-   "sha256": "65f1e24b2e40202288e50ad358368abba658f52fdf2a89b60b489233b663c1cb"
+   "sha256": "3350f697816d5b4cb3f00482efc6f19d37b80b70096702c6f3e3d67208357c08"
   },
   {
    "path": "protocol/conformance/concurrent-executor-v1.json",
@@ -278,7 +278,7 @@
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "0c9830adabd3aa21292c89188cc28db41e2f8224a9a1e26c290df7a7314363ee"
+   "sha256": "2dced9b731d3ed2d99e9b836073491a37cecb4c4a77799dd772a5eaecd879a7c"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",

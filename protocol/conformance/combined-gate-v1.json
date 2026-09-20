@@ -34,7 +34,7 @@
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "0c9830adabd3aa21292c89188cc28db41e2f8224a9a1e26c290df7a7314363ee"
+   "sha256": "2dced9b731d3ed2d99e9b836073491a37cecb4c4a77799dd772a5eaecd879a7c"
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",

@@ -20,6 +20,22 @@ use gantry_adapter_tokio::TokioExecutor;
 use serde::Deserialize;
 use tokio::runtime::{Builder, Runtime};
 
+/// Wall-clock bound for handshakes with work the runtime polls on its worker threads.
+///
+/// The migration lane asserts structural facts — which worker initially polls an owned task, that
+/// its resumption runs on a different worker, and that every owned task completes — so this bound
+/// covers only worker scheduling. It is deliberately generous because a parallel conformance
+/// battery can starve a worker past any short deadline, while a genuinely lost wake still fails
+/// the lane (mez issue `7020be12`).
+const SCHEDULER_HANDSHAKE_BOUND: Duration = Duration::from_secs(60);
+
+/// How long a fixture may occupy a runtime worker inside `poll`.
+///
+/// This deliberately exceeds every observation bound in the lane: the fixture stays blocked long
+/// enough for the lane's own assertion to report a genuine stall with a precise message, rather
+/// than freeing the worker early and turning a stall into a worker-identity failure.
+const WORKER_HOLD_BOUND: Duration = Duration::from_secs(120);
+
 const RUNTIME_EVIDENCE: &str = "crates/gantry-conformance/tests/tokio_executor.rs#caller_owned_runtime_matrix_keeps_runnable_work_making_progress";
 const OVERLAP_EVIDENCE: &str = "crates/gantry-conformance/tests/tokio_executor.rs#multithread_runtime_polls_owned_send_tasks_concurrently";
 const MIGRATION_EVIDENCE: &str = "crates/gantry-conformance/tests/tokio_executor.rs#multithread_runtime_preserves_owned_tasks_across_worker_migration";
@@ -132,8 +148,14 @@ impl Future for BlockingPollTask {
         self.entered
             .send(std::thread::current().id())
             .unwrap_or_else(|error| panic!("overlap observation failed: {error}"));
+        // This wait deliberately occupies the runtime worker inside `poll` until the test releases
+        // it, which is what forces later work onto another worker. The hold must outlast the lane's
+        // observation bound: if it expires first, the worker is freed early and the lane fails on
+        // worker identity for scheduling reasons rather than semantics (captured under load at
+        // issue `7020be12`, run 11 of 30: `overlap release failed` on a runtime worker, then
+        // `assert_ne!` on the two blocker workers).
         self.release
-            .recv_timeout(Duration::from_secs(5))
+            .recv_timeout(WORKER_HOLD_BOUND)
             .unwrap_or_else(|error| panic!("overlap release failed: {error}"));
         Poll::Ready(OwnedTaskResult::new())
     }
@@ -358,7 +380,7 @@ fn multithread_runtime_preserves_owned_tasks_across_worker_migration() {
         }))
         .unwrap_or_else(|error| panic!("migration submission failed: {error:?}"));
     let first_worker = migration_receiver
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(SCHEDULER_HANDSHAKE_BOUND)
         .unwrap_or_else(|error| panic!("migration task was not initially polled: {error}"));
 
     let (first_entered_sender, first_entered_receiver) = channel();
@@ -369,6 +391,16 @@ fn multithread_runtime_preserves_owned_tasks_across_worker_migration() {
             release: first_receiver,
         }))
         .unwrap_or_else(|error| panic!("first migration blocker failed: {error:?}"));
+    // Observe the first blocker before submitting the second one. Submitting both while neither is
+    // observed lets a single worker drain both injected tasks into its local queue and then block
+    // inside the first poll, stranding the second until that poll returns: the runtime only
+    // redistributes local work when a worker wakes for another reason, so the lane failed on a
+    // wall-clock bound rather than on migration semantics (reproduced at issue `7020be12` with a
+    // minimal two-worker probe: the stranded blocker was polled only after the first was released,
+    // and a task injected during the stall was never polled at all).
+    let first_blocker_worker = first_entered_receiver
+        .recv_timeout(SCHEDULER_HANDSHAKE_BOUND)
+        .unwrap_or_else(|error| panic!("first migration blocker was not polled: {error}"));
     let (second_entered_sender, second_entered_receiver) = channel();
     let (second_release, second_receiver) = channel();
     let second_blocker = adapter
@@ -377,11 +409,8 @@ fn multithread_runtime_preserves_owned_tasks_across_worker_migration() {
             release: second_receiver,
         }))
         .unwrap_or_else(|error| panic!("second migration blocker failed: {error:?}"));
-    let first_blocker_worker = first_entered_receiver
-        .recv_timeout(Duration::from_secs(5))
-        .unwrap_or_else(|error| panic!("first migration blocker was not polled: {error}"));
     let second_blocker_worker = second_entered_receiver
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(SCHEDULER_HANDSHAKE_BOUND)
         .unwrap_or_else(|error| panic!("second migration blocker was not polled: {error}"));
     assert_ne!(first_blocker_worker, second_blocker_worker);
 
@@ -400,7 +429,7 @@ fn multithread_runtime_preserves_owned_tasks_across_worker_migration() {
         .send(())
         .unwrap_or_else(|error| panic!("other worker release failed: {error}"));
     let second_worker = migration_receiver
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(SCHEDULER_HANDSHAKE_BOUND)
         .unwrap_or_else(|error| panic!("migration task was not resumed: {error}"));
     assert_ne!(first_worker, second_worker);
     release_original_worker

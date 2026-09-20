@@ -56,6 +56,16 @@ use serde::Deserialize;
 #[path = "automatic_durable_root/recovery.rs"]
 mod recovery;
 
+/// Wall-clock bound for the cross-thread handshakes in this lane.
+///
+/// Every wait using this bound synchronizes with work the lane drives on another thread: the
+/// scoped release poller and the concurrent release caller. The properties under test are the
+/// interleavings those threads reach, not how quickly a loaded host schedules them, so the bound
+/// is deliberately generous. Each assertion still fails when a handshake never happens, while a
+/// parallel conformance battery can no longer turn scheduler latency into a failure
+/// (mez issue `7020be12`).
+const RELEASE_HANDSHAKE_BOUND: Duration = Duration::from_secs(60);
+
 const AUTOMATIC_PROGRESS_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#accepted_durable_root_runs_on_the_executor_and_commits_before_observation";
 const COMMIT_FAILURE_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_commit_failure_reports_run_failure_and_preserves_sequence_one";
 const OPERATION_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_operation_cuts_commit_before_dispatch_and_source_consumption";
@@ -440,7 +450,7 @@ impl GatedOwnerReleaseStore {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (pause, timeout) = self
             .completion_pause_changed
-            .wait_timeout_while(pause, Duration::from_secs(1), |pause| !pause.observed)
+            .wait_timeout_while(pause, RELEASE_HANDSHAKE_BOUND, |pause| !pause.observed)
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         assert!(
             pause.observed,
@@ -2822,7 +2832,11 @@ fn durable_owner_release_survives_shutdown_deadline_and_settles_exactly_once() {
                 }
             }
         });
-        let registered_while_host_polling = registration.recv_timeout(Duration::from_millis(100));
+        // The concurrent caller must register while the paused host release future is still being
+        // polled. Waiting for that registration spans only the caller's scheduling;
+        // `allow_release_completion` below still runs after this observation, so the interleaving
+        // the assertion names is preserved.
+        let registered_while_host_polling = registration.recv_timeout(RELEASE_HANDSHAKE_BOUND);
         storage.allow_release_completion();
 
         assert!(matches!(

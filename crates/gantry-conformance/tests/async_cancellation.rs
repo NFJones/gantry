@@ -12,7 +12,7 @@ const OWNER: &str = "GNT-ASYNC-CANCEL-001";
 const ARTIFACTS: [(&str, &str); 4] = [
     (
         "crates/gantry-conformance/tests/automatic_durable_root.rs",
-        "af6eb95d0e7e752f475fbde43b6fb9cea141dbb024b76e0b823b72650ed4810c",
+        "dd4ba9bee216134b7b8d8969b5a8e56c372adf12ac1ee496e96d311062ab06c7",
     ),
     (
         "crates/gantry-conformance/tests/interpreter_ownership.rs",

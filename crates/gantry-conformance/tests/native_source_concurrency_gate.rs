@@ -87,7 +87,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "dd6e8f77b54338fd81c1fe5580bd9ea7ba7f7bb054b6c86deab18af8e77cc242",
+        "41988d570c9668102c7c34e93ef612379853cb51611117122a739a0627194269",
     ),
     (
         "protocol/conformance/async-coordinator-model-v1.json",

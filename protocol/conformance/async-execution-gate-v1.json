@@ -6,7 +6,7 @@
   },
   {
    "path": "protocol/conformance/async-cancellation-v1.json",
-   "sha256": "dd6e8f77b54338fd81c1fe5580bd9ea7ba7f7bb054b6c86deab18af8e77cc242"
+   "sha256": "41988d570c9668102c7c34e93ef612379853cb51611117122a739a0627194269"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
