@@ -796,6 +796,8 @@ pub enum CollectionVisit<'a> {
     },
     /// One admitted `Set` element.
     Element(&'a CanonicalKey),
+    /// One admitted `Range` position, published by the cursor form.
+    Position(GantryInt),
 }
 
 /// Reports whether a traversal continues after a visit (`GNT-39.8`).
@@ -861,6 +863,88 @@ impl CollectionValue {
             Self::Range(_) => {}
         }
         CollectionOutcome::Completed
+    }
+}
+
+impl CollectionValue {
+    /// Opens one temporary cursor over this value (`GNT-39.8`).
+    ///
+    /// The cursor borrows the value it traverses, so it is exactly as long as that reference;
+    /// because this clause publishes no mutation, no invalidation rule is needed.
+    #[must_use]
+    pub const fn cursor(&self) -> CollectionCursor<'_> {
+        CollectionCursor::new(self)
+    }
+}
+
+/// One temporary cursor over a carried collection value (`GNT-39.8`).
+///
+/// Each advance publishes the next visit or none at exhaustion. A `Range` value publishes
+/// positions through the stepwise protocol, in the order the sealed contract of
+/// `GNT-39.7-range-step-contract` returns them.
+#[derive(Clone, Debug)]
+pub struct CollectionCursor<'a> {
+    value: &'a CollectionValue,
+    index: usize,
+    position: Option<GantryInt>,
+    exhausted: bool,
+}
+
+impl<'a> CollectionCursor<'a> {
+    /// Opens one cursor over the given value.
+    #[must_use]
+    pub const fn new(value: &'a CollectionValue) -> Self {
+        Self {
+            value,
+            index: 0,
+            position: None,
+            exhausted: false,
+        }
+    }
+
+    /// Advances the cursor and publishes the next visit, or none at exhaustion.
+    pub fn next(&mut self) -> Option<CollectionVisit<'a>> {
+        if self.exhausted {
+            return None;
+        }
+        match self.value {
+            CollectionValue::Map(value) => match value.entries().get(self.index) {
+                Some((key, member)) => {
+                    self.index += 1;
+                    Some(CollectionVisit::Entry { key, value: member })
+                }
+                None => {
+                    self.exhausted = true;
+                    None
+                }
+            },
+            CollectionValue::Set(value) => match value.elements().get(self.index) {
+                Some(element) => {
+                    self.index += 1;
+                    Some(CollectionVisit::Element(element))
+                }
+                None => {
+                    self.exhausted = true;
+                    None
+                }
+            },
+            CollectionValue::Range(value) => match value.next_position(self.position) {
+                Some(position) => {
+                    self.position = Some(position);
+                    Some(CollectionVisit::Position(position))
+                }
+                None => {
+                    self.exhausted = true;
+                    None
+                }
+            },
+        }
+    }
+
+    /// Reports whether the cursor has published every position it has.
+    #[must_use]
+    pub const fn is_exhausted(&self) -> bool {
+        self.exhausted
     }
 }
 

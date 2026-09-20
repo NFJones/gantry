@@ -1164,6 +1164,46 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         CollectionOutcome::Completed
     );
     assert_eq!(range_visits, 0, "a range value is traversed stepwise");
+
+    // The temporary cursor form (`GNT-39.8`): each advance publishes the next visit, a `Range`
+    // cursor publishes positions through the stepwise protocol, and exhaustion publishes none.
+    let carried_map = CollectionValue::Map(map.clone());
+    let mut cursor = carried_map.cursor();
+    let mut cursor_visits = 0usize;
+    while let Some(visit) = cursor.next() {
+        if let CollectionVisit::Entry { .. } = visit {
+            cursor_visits += 1;
+        }
+    }
+    assert_eq!(cursor_visits, map.entries().len());
+    assert!(cursor.is_exhausted());
+    assert_eq!(cursor.next(), None, "an exhausted cursor stays exhausted");
+    let carried_set = CollectionValue::Set(set.clone());
+    let mut set_cursor = carried_set.cursor();
+    assert!(matches!(
+        set_cursor.next(),
+        Some(CollectionVisit::Element(_))
+    ));
+    let carried_range = CollectionValue::Range(range);
+    let mut range_cursor = carried_range.cursor();
+    assert_eq!(
+        range_cursor.next(),
+        Some(CollectionVisit::Position(bound(1)))
+    );
+    assert_eq!(
+        range_cursor.next(),
+        Some(CollectionVisit::Position(bound(2)))
+    );
+    assert_eq!(
+        range_cursor.next(),
+        Some(CollectionVisit::Position(bound(3)))
+    );
+    assert_eq!(range_cursor.next(), None);
+    assert!(range_cursor.is_exhausted());
+    let carried_inverted = CollectionValue::Range(RangeValue::new(Some(bound(4)), Some(bound(1))));
+    let mut inverted_cursor = carried_inverted.cursor();
+    assert_eq!(inverted_cursor.next(), None);
+    assert!(inverted_cursor.is_exhausted());
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);
@@ -1189,10 +1229,35 @@ fn collection_clauses_and_diagnostics_are_published() {
             "the specification declares `{clause}`"
         );
     }
-    // Each declared non-claim names the verbatim clause fragment it must appear in (`GNT-39.3`).
+    // The section declares exactly the anchors the vocabulary publishes, in that order.
+    assert_eq!(
+        specification.matches("<a id=\"GNT-39.").count(),
+        COLLECTION_CLAUSES.len(),
+        "the section declares one anchor per published clause"
+    );
+    let mut previous = 0usize;
+    for clause in COLLECTION_CLAUSES {
+        let declaration = format!("<a id=\"{clause}\"");
+        let position = specification
+            .find(&declaration)
+            .unwrap_or_else(|| panic!("the specification declares `{clause}`"));
+        assert!(
+            position > previous,
+            "`{clause}` is declared after the clause before it"
+        );
+        previous = position;
+    }
+    // Each declared non-claim names the verbatim fragment of the clause that owns it (`GNT-39.3`).
+    let clause_start = specification
+        .find("<a id=\"GNT-39.3-collection-foundation-non-claims\"")
+        .unwrap_or_else(|| panic!("the non-claim clause is declared"));
+    let clause_end = specification
+        .find("<a id=\"GNT-39.4-map-type-form-recognition\"")
+        .unwrap_or(specification.len());
+    let non_claim_clause = &specification[clause_start..clause_end];
     for name in CollectionNonClaimName::ALL {
         assert!(
-            specification.contains(name.clause_fragment()),
+            non_claim_clause.contains(name.clause_fragment()),
             "`{name:?}` expects its clause fragment `{}`",
             name.clause_fragment()
         );
