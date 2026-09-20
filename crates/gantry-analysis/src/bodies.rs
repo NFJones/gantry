@@ -7171,6 +7171,7 @@ fn infer_expression_inner(
         }
         return Ok(None);
     }
+    let published = diagnostics.len();
     if let Some(value) = infer_member_sequence(
         tree,
         node.children(),
@@ -7183,6 +7184,11 @@ fn infer_expression_inner(
     )? {
         return Ok(Some(value));
     }
+    // A member chain that already refused (`unknown-member`, an unresolved call, a generic
+    // substitution that did not complete) published its precise diagnostic: the chain's value is
+    // never its root binding, so the fallback below must not type the chain as that binding and let
+    // the enclosing operator refuse the same expression a second time.
+    let member_refused = diagnostics.len() > published;
     if let Some(value) = infer_call_sequence(
         tree,
         node.children(),
@@ -7222,7 +7228,8 @@ fn infer_expression_inner(
                 }
             }
             SyntaxForm::Path => {
-                if let Some(name) = direct_identifier(tree, child)?
+                if !member_refused
+                    && let Some(name) = direct_identifier(tree, child)?
                     && let Some(ty) = environment.get(&name).cloned()
                 {
                     // A binding that holds one declared callable is not a runtime value: only
@@ -9524,6 +9531,7 @@ fn infer_operand_sequence(
             }
         }
     }
+    let published = diagnostics.len();
     if let Some(value) = infer_member_sequence(
         tree,
         children,
@@ -9548,6 +9556,11 @@ fn infer_operand_sequence(
     )? {
         return Ok(Some(value));
     }
+    // A member chain that already refused (`unknown-member`, an unresolved call, a generic
+    // substitution that did not complete) published its precise diagnostic: the chain's value is
+    // never its root binding, so the fallback below must not type the chain as that binding and let
+    // the enclosing operator refuse the same expression a second time.
+    let member_refused = diagnostics.len() > published;
     if let Some(value) = infer_call_sequence(
         tree,
         children,
@@ -9633,7 +9646,8 @@ fn infer_operand_sequence(
                 }
             }
             SyntaxForm::Path => {
-                if let Some(name) = direct_identifier(tree, *child)?
+                if !member_refused
+                    && let Some(name) = direct_identifier(tree, *child)?
                     && let Some(value) = environment.get(&name)
                 {
                     record_affine_read(

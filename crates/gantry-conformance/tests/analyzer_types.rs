@@ -1550,6 +1550,46 @@ fn public_qualified_trait_calls_require_complete_inference() {
     );
 }
 
+/// A type-parameterized trait contract beside a receiver's inherent blocks leaves an operand call
+/// without a substituted result type: that call's own refusal stands alone instead of letting the
+/// enclosing operator publish a second, cascading code, and an annotated binding admits the same
+/// call through its expected type.
+#[test]
+fn public_type_parameterized_trait_call_refuses_without_an_operator_cascade() {
+    let program = |body: &str| {
+        format!(
+            "trait T1<X> {{ pure fn t1(self) -> X; }} struct G<T> {{ v: T }} impl<T> G<T> {{ fn b(self) -> Int {{ 1 }} }} impl G<Int> {{ fn a(self) -> Int {{ 2 }} }} impl T1<Int> for G<Int> {{ fn t1(self) -> Int {{ 3 }} }} fn main() -> Int {{ let g: G<Int> = G {{ v: 1 }}; {body} }}"
+        )
+    };
+    // The reported spelling never reaches the trait call the extra implementation declares.
+    let reported = analyze(&program("g.a() + g.b()"));
+    assert_eq!(
+        reported.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        reported.diagnostics()
+    );
+    // A call whose result type its arguments leave open is refused once, by the trait contract.
+    for body in ["g.a() + g.b() + g.t1()", "g.t1() + g.a() + g.b()"] {
+        let refused = analyze(&program(body));
+        assert_eq!(refused.status(), AnalysisStatus::Invalid, "{body}");
+        assert_eq!(
+            diagnostic_codes(refused.diagnostics()),
+            vec!["incomplete-type-inference"],
+            "{body}: {:?}",
+            refused.diagnostics()
+        );
+    }
+    // An annotated binding supplies the expected type the operand spelling lacks.
+    let annotated = analyze(&program("let c: Int = g.t1(); c"));
+    assert_eq!(
+        annotated.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        annotated.diagnostics()
+    );
+}
+
 /// Qualified trait calls must prove the trait declaration's concrete predicates.
 #[test]
 fn public_qualified_trait_calls_enforce_declaration_predicates() {
