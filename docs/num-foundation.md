@@ -4,9 +4,9 @@ This note records the `std.num` surface that the model already declares: its can
 identity, its purity within the frozen standard-library dependency graph, the applicability,
 stability, and identity rules that bound it, the scalar clauses whose semantics it must preserve,
 its separation from the capability-backed randomness owned by `std.random`, and what the surface
-does not claim. It records declarations and adds no normative row beyond the declared generator
-identity and its exact step and the declared checked integer algorithms: no conversion,
-parsing, formatting, bit operation, work limit, or package interface is published here.
+does not claim. It records declarations and adds no normative row beyond the clauses this note
+records, and claims nothing beyond them; every capability those clauses do not publish remains
+unpublished here.
 
 ## Package identity
 
@@ -83,11 +83,11 @@ deterministic PRNG value.
 The architecture's declared non-claims hold for this family unchanged: `GNT-34.12` and the twelve
 entries of `STDLIB_NON_CLAIMS` state that the standard-library architecture grants no runtime
 behavior, no adapter, no host capability, no durability, and no performance claim. This note claims
-no implemented numeric algorithm beyond the declared generator identity and the declared
-checked integer algorithms, no parsing or formatting behavior, no bit-operation or conversion
-behavior, no work limit, no cancellation safe point, no cross-strategy equivalence result, no
-host math-library independence test, and no package interface or digest beyond the declared
-family, generator, and checked-integer identities.
+nothing beyond the clauses it records: no numeric algorithm beyond the declared generator
+identity and the declared checked integer algorithms, no conversion beyond the two declared
+conversions, no parsing or formatting behavior, no bit-operation behavior, no work limit, no
+cancellation safe point, no cross-strategy equivalence result, no host math-library
+independence test, and no package interface or digest beyond the declared identities.
 
 ## The versioned deterministic generator (`GNT-40.0`, `GNT-40.1`)
 
@@ -127,4 +127,4 @@ layout, or physical-representation claim is made.
 
 ## Numeric conversions (`GNT-40.3`)
 
-`GNT-40.3-numeric-conversions` admits exactly two conversions: the exact and total `int-to-float` conversion of one canonical `Int` to its binary64 `Float`, and the `float-to-int` conversion of one finite `Float` that yields exactly one canonical `Int` value only when the operand is integral and inside the canonical `Int` domain and returns nothing otherwise, so a fractional or out-of-domain operand refuses rather than truncating, rounding, saturating, wrapping, or coercing. `int_to_float` and `float_to_int` publish the two conversions in the model; no parsing, formatting, bit operation, float algorithm, work limit, cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine representation, or family behavior is published with them, and no performance, storage-layout, or physical-representation claim is made.
+`GNT-40.3-numeric-conversions` admits exactly two conversions: the exact and total `int-to-float` conversion of one canonical `Int` to its binary64 `Float`, and the `float-to-int` conversion of one finite `Float` that yields exactly one canonical `Int` value only when the operand is integral and inside the canonical `Int` domain and returns nothing otherwise with no failure spelling of its own, because the conversion is partial, so a fractional or out-of-domain operand refuses rather than truncating, rounding, saturating, wrapping, or coercing. `int_to_float` and `float_to_int` publish the two conversions in the model; no parsing, formatting, bit operation, float algorithm, work limit, cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine representation, or family behavior is published with them, and no performance, storage-layout, or physical-representation claim is made.
