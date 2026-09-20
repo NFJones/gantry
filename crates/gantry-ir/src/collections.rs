@@ -1,21 +1,26 @@
-//! The collection key and canonical order foundation of `GNT-39.0` through `GNT-39.3`.
+//! The collection key, canonical order, and `Map` type-identity foundation of `GNT-39.0` through
+//! `GNT-39.5`.
 //!
 //! This module declares the key contract a source collection consumes: admission of the
-//! canonical scalar-key domain, the canonical order, and duplicate-key identity. It defines no
-//! collection type, no traversal, no family behavior, and no storage fact.
+//! canonical scalar-key domain, the canonical order, duplicate-key identity, and the identity of
+//! the one recognised `Map<K, V>` type form. It admits no collection type as a value type, and
+//! defines no traversal, no family behavior, and no storage fact.
 
 use std::cmp::Ordering;
 
 use gantry_core::canonical_key::{CanonicalKey, CanonicalKeyError, CanonicalKeyLimits};
 use gantry_core::value::LogicalValue;
 
-/// The declared clauses of `GNT-39.0` through `GNT-39.4`, in specification order.
-pub const COLLECTION_CLAUSES: [&str; 5] = [
+use crate::types::TypeDescriptor;
+
+/// The declared clauses of `GNT-39.0` through `GNT-39.5`, in specification order.
+pub const COLLECTION_CLAUSES: [&str; 6] = [
     "GNT-39.0-collection-key-and-order-scope",
     "GNT-39.1-admitted-collection-keys",
     "GNT-39.2-canonical-collection-order-and-duplicate-identity",
     "GNT-39.3-collection-foundation-non-claims",
     "GNT-39.4-map-type-form-recognition",
+    "GNT-39.5-map-type-identity",
 ];
 
 /// One frozen collection-foundation diagnostic of `GNT-39.0`.
@@ -181,6 +186,109 @@ impl CollectionKeyPolicy {
 #[must_use]
 pub fn canonical_order(left: &CanonicalKey, right: &CanonicalKey) -> Ordering {
     left.cmp(right)
+}
+
+/// One admitted collection key type of a `Map<K, V>` type identity (`GNT-39.5`).
+///
+/// The five variants are exactly the admitted collection key types of `GNT-39.1`: the scalar key
+/// types whose canonical scalar-key format version 1.0 admits values into a collection key. The
+/// order is the canonical scalar-key order of `GNT-39.2`.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum MapKeyType {
+    /// `Unit`.
+    Unit,
+    /// `Bool`.
+    Bool,
+    /// `Int`.
+    Int,
+    /// `Float`.
+    Float,
+    /// `String`.
+    String,
+}
+
+impl MapKeyType {
+    /// Every admitted key type, in canonical scalar-key order.
+    pub const ALL: [Self; 5] = [Self::Unit, Self::Bool, Self::Int, Self::Float, Self::String];
+
+    /// Returns the canonical type text of this key type.
+    #[must_use]
+    pub fn canonical_text(self) -> &'static str {
+        match self {
+            Self::Unit => "Unit",
+            Self::Bool => "Bool",
+            Self::Int => "Int",
+            Self::Float => "Float",
+            Self::String => "String",
+        }
+    }
+
+    /// Classifies one canonical type text as an admitted collection key type.
+    ///
+    /// An argument of any other type — including `Decision`, `OperationError`, an option, result,
+    /// list, tuple, callable, or declared type, and a type parameter — is refused under
+    /// `collection-invalid-key`, naming the refused argument, rather than coerced, structurally
+    /// encoded, or admitted through ordinary equality.
+    pub fn classify(canonical_text: &str) -> Result<Self, CollectionError> {
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.canonical_text() == canonical_text)
+            .ok_or_else(|| {
+                CollectionError::new(
+                    CollectionDiagnosticCode::InvalidKey,
+                    format!("`{canonical_text}` is not an admitted collection key type"),
+                )
+            })
+    }
+}
+
+/// One admitted `Map<K, V>` type identity of `GNT-39.5`.
+///
+/// The identity is the pair of its resolved argument descriptors: an admitted key type and the
+/// value argument carried unchanged. Admitting an identity decides no type admission, and publishes
+/// no construction, projection, iteration, traversal, mutation, quota, schema, recovery,
+/// durability, boundary encoding, lowering, or machine representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MapTypeIdentity {
+    key: MapKeyType,
+    value: TypeDescriptor,
+}
+
+impl MapTypeIdentity {
+    /// Admits one `Map<K, V>` type identity from its two resolved argument descriptors.
+    ///
+    /// The key argument is admitted exactly when its canonical descriptor text names one of the
+    /// five admitted collection key types; any other key argument is refused under
+    /// `collection-invalid-key` naming the refused argument. The value argument is any constructed
+    /// type descriptor and is carried unchanged.
+    pub fn admit(key: &TypeDescriptor, value: &TypeDescriptor) -> Result<Self, CollectionError> {
+        Ok(Self {
+            key: MapKeyType::classify(&key.canonical_string())?,
+            value: value.clone(),
+        })
+    }
+
+    /// Returns the admitted key type.
+    #[must_use]
+    pub fn key(&self) -> MapKeyType {
+        self.key
+    }
+
+    /// Returns the value argument descriptor.
+    #[must_use]
+    pub fn value(&self) -> &TypeDescriptor {
+        &self.value
+    }
+
+    /// Returns the canonical constructed-type text, for example `Map<Int,String>`.
+    #[must_use]
+    pub fn canonical_text(&self) -> String {
+        format!(
+            "Map<{},{}>",
+            self.key.canonical_text(),
+            self.value.canonical_string()
+        )
+    }
 }
 
 /// One declared non-claim of `GNT-39.3`.

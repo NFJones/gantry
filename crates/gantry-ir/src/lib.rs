@@ -300,8 +300,8 @@ pub use signature::{
 // collection consumes, with no collection type, traversal, or family behavior of its own.
 pub use collections::{
     COLLECTION_CLAUSES, CollectionDiagnosticCode, CollectionError, CollectionKeyPolicy,
-    CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName, canonical_order,
-    check_collection_non_claims,
+    CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName, MapKeyType,
+    MapTypeIdentity, canonical_order, check_collection_non_claims,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade

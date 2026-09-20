@@ -1,7 +1,8 @@
 # Collection key contract and canonical collection order
 
-`SPEC.md` Section 39 (`GNT-39.0` .. `GNT-39.3`) fixes the key contract a source collection
-consumes: the admitted key domain, the canonical order, and duplicate-key identity. The pure model
+`SPEC.md` Section 39 (`GNT-39.0` .. `GNT-39.5`) fixes the key contract and the one `Map` type
+identity a source collection consumes: the admitted key domain, the canonical order, duplicate-key
+identity, and the identity of the recognised `Map<K, V>` form. The pure model
 is `crates/gantry-ir/src/collections.rs`, published through `gantry::ir`, and its machine-checked
 evidence is `crates/gantry-conformance/tests/collections_foundation.rs`, one lane per claim. This
 note is documentation: it names what the model declares and what it refuses, and it grants nothing.
@@ -21,6 +22,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `GNT-39.2-canonical-collection-order-and-duplicate-identity` | the canonical order and identity-based duplicate rejection |
 | `GNT-39.3-collection-foundation-non-claims` | the frozen non-claims listed below |
 | `GNT-39.4-map-type-form-recognition` | the one recognised collection type form, `Map<K, V>`, and its `collection-type-unadmitted` refusal |
+| `GNT-39.5-map-type-identity` | the identity of the recognised form: its two argument types in order, the five admitted key types, and the key-domain refusal of every other resolved key argument |
 
 ## What the model decides
 
@@ -47,15 +49,24 @@ separately in `docs/canonical-scalar-keys.md`.
 - `check_collection_non_claims` refuses an unasserted declared non-claim and a non-claim presented
   as a guarantee, both under `collection-non-claim-as-guarantee`.
 - The grammar recognises exactly one collection type form, `Map<K, V>`, with two value-type
-  arguments (`GNT-39.4`); analysis refuses every occurrence under `collection-type-unadmitted` and
-  builds no descriptor or type expression for it, so no `Map` type identity, value, operation, or
-  lowering exists in this edition and every malformed argument list is refused by the grammar.
+  arguments (`GNT-39.4`); analysis builds no descriptor or type expression for it, so no `Map`
+  value, operation, lowering, or machine representation exists in this edition, and every malformed
+  argument list is refused by the grammar.
+- `MapTypeIdentity::admit` publishes the identity of the recognised form (`GNT-39.5`): the key
+  argument then the value argument, rendered as the canonical constructed-type text `Map<K,V>` over
+  the canonical text of each argument. `MapKeyType::classify` admits exactly the five key types of
+  `GNT-39.1` — `Unit`, `Bool`, `Int`, `Float`, `String` — and refuses every other resolved key
+  argument as `collection-invalid-key`, naming the refused argument (`List<Int>`,
+  `Result<Int,String>`, `Decision`, or a declared type), before the type-admission refusal; an
+  occurrence whose key argument is admitted, and an occurrence whose key argument resolves to no
+  type at all (an unresolved name or a type parameter), is refused as `collection-type-unadmitted`
+  and builds no descriptor.
 
 ## Diagnostics
 
 | Spelling | Owning clause | Condition |
 | --- | --- | --- |
-| `collection-invalid-key` | `GNT-39.1-admitted-collection-keys` | the candidate kind is not an admitted collection key |
+| `collection-invalid-key` | `GNT-39.1-admitted-collection-keys` | the candidate kind, or a recognised `Map` key argument, is not an admitted collection key |
 | `collection-duplicate-key` | `GNT-39.2-canonical-collection-order-and-duplicate-identity` | two admitted keys share one identity in one batch |
 | `collection-non-claim-as-guarantee` | `GNT-39.3-collection-foundation-non-claims` | a declared non-claim is unasserted or presented as a guarantee |
 | `collection-type-unadmitted` | `GNT-39.4-map-type-form-recognition` | a recognised `Map<K, V>` occurrence is refused until the type is admitted |

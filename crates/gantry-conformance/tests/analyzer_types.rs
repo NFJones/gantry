@@ -2600,6 +2600,72 @@ fn map_type_form_is_recognised_and_refused_until_admitted() {
     }
 }
 
+/// The `Map` type identity admits the five collection key types and refuses every other resolved
+/// key argument under the key-domain refusal (`GNT-39.5`).
+#[test]
+fn map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments() {
+    for key in ["Unit", "Bool", "Int", "Float", "String"] {
+        let source =
+            format!("fn f(x: Map<{key}, String>) -> Int {{ 0 }}\nfn main() -> Int {{ 0 }}");
+        let refused = analyze(&source);
+        assert_eq!(refused.status(), AnalysisStatus::Invalid, "{source}");
+        assert_eq!(
+            diagnostic_codes(refused.diagnostics()),
+            ["collection-type-unadmitted"],
+            "{source}"
+        );
+        assert!(refused.executable_program().is_none());
+    }
+
+    for (key, named) in [
+        ("Decision", "Decision"),
+        ("OperationError", "OperationError"),
+        ("Never", "Never"),
+        ("List<Int>", "List<Int>"),
+        ("Option<Int>", "Option<Int>"),
+        ("Result<Int, String>", "Result<Int,String>"),
+        ("Tuple<Int, String>", "Tuple<Int,String>"),
+    ] {
+        let source =
+            format!("fn f(x: Map<{key}, String>) -> Int {{ 0 }}\nfn main() -> Int {{ 0 }}");
+        let refused = analyze(&source);
+        assert_eq!(refused.status(), AnalysisStatus::Invalid, "{source}");
+        assert_eq!(
+            diagnostic_codes(refused.diagnostics()),
+            ["collection-invalid-key"],
+            "{source}"
+        );
+        let detail = format!("{:?}", refused.diagnostics());
+        assert!(
+            detail.contains(&format!("`{named}` is not an admitted collection key type")),
+            "{source} names the refused key argument: {detail}"
+        );
+        assert!(refused.executable_program().is_none());
+    }
+
+    // A key argument the type phase cannot resolve to a type keeps the type-admission refusal: the
+    // unresolved name is refused by name resolution first, and a type parameter reaches no
+    // descriptor at all. Neither builds a descriptor or a type expression.
+    let unresolved = analyze("fn f(x: Map<Missing, String>) -> Int { 0 }\nfn main() -> Int { 0 }");
+    assert_eq!(unresolved.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        diagnostic_codes(unresolved.diagnostics()),
+        [
+            "unresolved-reference",
+            "unresolved-reference",
+            "collection-type-unadmitted"
+        ]
+    );
+    assert!(unresolved.executable_program().is_none());
+    let parameter = analyze("fn f<T>(x: Map<T, String>) -> Int { 0 }\nfn main() -> Int { 0 }");
+    assert_eq!(parameter.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        diagnostic_codes(parameter.diagnostics()),
+        ["collection-type-unadmitted"]
+    );
+    assert!(parameter.executable_program().is_none());
+}
+
 /// The collection spellings are reserved before any collection type is admitted (`GNT-13.2`):
 /// each is refused only as an unexpected token in binding, type, expression, and
 /// generic-argument position, and none resolves.

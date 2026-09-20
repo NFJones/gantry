@@ -1324,6 +1324,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A callable type form is recognised but not admitted by this revision.",
     },
     DiagnosticCodeDefinition {
+        code: "collection-invalid-key",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A candidate kind or key argument is not an admitted collection key.",
+    },
+    DiagnosticCodeDefinition {
         code: "collection-type-unadmitted",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,

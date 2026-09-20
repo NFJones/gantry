@@ -1,9 +1,11 @@
-//! Public-facade conformance for the `GNT-39.0`-`GNT-39.3` collection key and order foundation.
+//! Public-facade conformance for the `GNT-39.0`-`GNT-39.5` collection key, order, and `Map`
+//! type-identity foundation.
 //!
 //! The section declares the key contract a source collection consumes and no collection type,
 //! traversal, or family behavior: these lanes admit and order canonical scalar keys, refuse
-//! ineligible kinds and duplicate identities, and require every declared clause, diagnostic, and
-//! non-claim to be published in the specification and the model.
+//! ineligible kinds and duplicate identities, admit the identity of the one recognised `Map<K, V>`
+//! form, and require every declared clause, diagnostic, and non-claim to be published in the
+//! specification and the model.
 
 use std::cmp::Ordering;
 use std::fs;
@@ -14,8 +16,8 @@ use gantry::canonical_key::{
 };
 use gantry::ir::{
     COLLECTION_CLAUSES, CollectionDiagnosticCode, CollectionError, CollectionKeyPolicy,
-    CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName, canonical_order,
-    check_collection_non_claims,
+    CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName, MapKeyType,
+    MapTypeIdentity, TypeDescriptor, canonical_order, check_collection_non_claims,
 };
 use gantry::numeric::{GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -283,6 +285,65 @@ fn collection_non_claims_are_declared_and_guarded() {
         "{}",
         error.detail()
     );
+}
+
+/// The `Map` type identity admits the five collection key types and refuses every other key
+/// argument under the key-domain refusal (`GNT-39.5`).
+#[test]
+fn map_type_identity_admits_the_five_key_types_and_refuses_the_rest() {
+    assert_eq!(
+        MapKeyType::ALL.map(MapKeyType::canonical_text),
+        ["Unit", "Bool", "Int", "Float", "String"],
+        "the admitted key types are the five of `GNT-39.1` in canonical order"
+    );
+
+    let value = TypeDescriptor::STRING;
+    for key in MapKeyType::ALL {
+        let refused = TypeDescriptor::from_canonical_string(key.canonical_text())
+            .unwrap_or_else(|error| panic!("`{}` decodes: {error}", key.canonical_text()));
+        let identity = MapTypeIdentity::admit(&refused, &value).unwrap_or_else(|error| {
+            panic!(
+                "`{}` is an admitted key type: {}",
+                key.canonical_text(),
+                error.detail()
+            )
+        });
+        assert_eq!(identity.key(), key);
+        assert_eq!(identity.value(), &value);
+        assert_eq!(
+            identity.canonical_text(),
+            format!("Map<{},String>", key.canonical_text()),
+            "the identity is the canonical constructed-type text"
+        );
+    }
+
+    let ineligible = [
+        TypeDescriptor::DECISION,
+        TypeDescriptor::OPERATION_ERROR,
+        TypeDescriptor::NEVER,
+        TypeDescriptor::list(TypeDescriptor::INT),
+        TypeDescriptor::option(TypeDescriptor::INT).unwrap_or_else(|error| panic!("{error}")),
+        TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::STRING),
+        TypeDescriptor::tuple(vec![TypeDescriptor::INT, TypeDescriptor::STRING])
+            .unwrap_or_else(|error| panic!("a two-member tuple: {error}")),
+    ];
+    for key in ineligible {
+        let text = key.canonical_string();
+        let error = MapTypeIdentity::admit(&key, &value)
+            .err()
+            .unwrap_or_else(|| panic!("`{text}` is not an admitted collection key type"));
+        assert_eq!(error.code(), CollectionDiagnosticCode::InvalidKey);
+        assert_eq!(
+            error.code().spelling(),
+            "collection-invalid-key",
+            "the refusal keeps the one registered key-domain spelling"
+        );
+        assert!(
+            error.detail().contains(&text),
+            "the refusal names the refused argument `{text}`: {}",
+            error.detail()
+        );
+    }
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).
