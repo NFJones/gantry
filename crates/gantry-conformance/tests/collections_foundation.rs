@@ -707,6 +707,32 @@ fn collection_type_kinds_are_admitted_and_the_algebra_owns_their_canonical_text(
     assert_eq!(range_descriptor.canonical_string(), range.canonical_text());
     assert_eq!(range_descriptor.immediate_members(), vec![element.clone()]);
 
+    // The public fail-closed predicate the identity rule and the boundary rule share reports
+    // exactly the descriptors that name a collection type anywhere inside them.
+    for descriptor in [&map_descriptor, &set_descriptor, &range_descriptor] {
+        assert!(descriptor.contains_collection_type());
+    }
+    let plain = TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::STRING);
+    assert!(!plain.contains_collection_type());
+    assert!(!TypeDescriptor::list(plain.clone()).contains_collection_type());
+    assert!(!TypeDescriptor::list(element.clone()).contains_collection_type());
+    assert!(
+        TypeDescriptor::list(TypeDescriptor::list(map_descriptor.clone()))
+            .contains_collection_type()
+    );
+    assert!(
+        !TypeDescriptor::callable(CallableKind::Function, vec![plain.clone()], plain.clone())
+            .contains_collection_type()
+    );
+    assert!(
+        TypeDescriptor::callable(
+            CallableKind::Function,
+            vec![map_descriptor.clone()],
+            plain.clone()
+        )
+        .contains_collection_type()
+    );
+
     // Every collection kind is structural: none carries independent primitive properties, and a
     // sealed member is carried through the descriptor exactly as it is for the other kinds.
     for descriptor in [&map_descriptor, &set_descriptor, &range_descriptor] {

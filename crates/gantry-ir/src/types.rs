@@ -406,6 +406,29 @@ impl TypeDescriptor {
         .is_some()
     }
 
+    /// Reports whether this type names a collection type kind anywhere inside it.
+    ///
+    /// The walk reads each descriptor's own immediate members iteratively, so no nesting depth hides
+    /// a collection, and a descriptor whose member slices do not all re-decode is reported as naming
+    /// one: the predicate is fail-closed, so an unreadable slice can never hide a collection member.
+    /// `GNT-39.4-map-type-form-recognition` through `GNT-39.7-range-step-contract` publish the three
+    /// collection kinds; this predicate decides no admission and publishes no behavior of its own.
+    #[must_use]
+    pub fn contains_collection_type(&self) -> bool {
+        let mut pending = vec![self.clone()];
+        while let Some(current) = pending.pop() {
+            if matches!(
+                current.kind(),
+                TypeKind::Map | TypeKind::Set | TypeKind::Range
+            ) || !current.all_member_slices_decode()
+            {
+                return true;
+            }
+            pending.extend(current.immediate_members());
+        }
+        false
+    }
+
     /// Encodes the exact whitespace-free canonical descriptor without native recursion.
     #[must_use]
     pub fn canonical_string(&self) -> String {
