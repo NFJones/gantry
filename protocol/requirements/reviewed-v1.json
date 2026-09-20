@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "b1ee1f9073f788c1edc1964c9f301a3168590461cdf8201d902c5818a6eb2ef7",
+  "specification_sha256": "172027a3b091b68fa2f9a3308903a2058b8b0ee8c1ca0021f50a16b72971b084",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15615,
+      "end_line": 15625,
       "rationale": null
     }
   ],
@@ -41451,6 +41451,85 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/collections_foundation.rs#range_step_contract_is_sealed_and_deterministic"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.0-deterministic-numeric-scope",
+      "span_start_line": 15616,
+      "span_end_line": 15622,
+      "anchor_line": 15619,
+      "body_start_line": 15620,
+      "body_end_line": 15622,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15620,
+          "end_line": 15622,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_prng.rs#deterministic_prng_surface_is_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.1-deterministic-prng-identity",
+      "span_start_line": 15623,
+      "span_end_line": 15625,
+      "anchor_line": 15623,
+      "body_start_line": 15624,
+      "body_end_line": 15625,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15624,
+          "end_line": 15625,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_prng.rs#deterministic_prng_surface_is_published",
+                "crates/gantry-conformance/tests/num_prng.rs#deterministic_prng_step_is_exact_and_copy_is_intentional"
               ],
               "rationale": null
             }

@@ -82,8 +82,27 @@ deterministic PRNG value.
 
 The architecture's declared non-claims hold for this family unchanged: `GNT-34.12` and the twelve
 entries of `STDLIB_NON_CLAIMS` state that the standard-library architecture grants no runtime
-behavior, no adapter, no host capability, no durability, and no performance claim. This note adds
-no normative row, so it claims no implemented algorithm, no PRNG algorithm or version, no parsing or
+behavior, no adapter, no host capability, no durability, and no performance claim. This note claims
+no implemented numeric algorithm beyond the one declared generator identity, no parsing or
 formatting behavior, no work limit, no cancellation safe point, no cross-strategy equivalence
 result, no host math-library independence test, and no package interface or digest beyond the
-declared family identity above.
+declared family identity and the declared generator identity.
+
+## The versioned deterministic generator (`GNT-40.0`, `GNT-40.1`)
+
+`GNT-40.0-deterministic-numeric-scope` publishes the section scope: the deterministic numeric
+foundation of `std.num`, its purity, the separation from the capability-backed `std.random` family,
+and the rule that no other algorithm, version, or user-defined or host-provided generator is
+admitted. `GNT-40.1-deterministic-prng-identity` admits exactly one generator: the algorithm with
+the canonical wire spelling `splitmix64` at version `1`, whose value owns one unsigned 64-bit state
+and whose step advances the state by `0x9E3779B97F4A7C15` with wrapping addition and returns the
+state mixed by two xorshift-multiply rounds (`0xBF58476D1CE4E5B9` at shift 30 and
+`0x94D049BB133111EB` at shift 27) and a final shift of 31. Wrapping is part of the algorithm rather
+than an overflow mode; stepping is deterministic across targets, modes, strategies, and runs; and
+copying a generator copies its state, so a copy advances independently and no two values share,
+alias, or cache state. An unadmitted algorithm or version is refused rather than substituted,
+upgraded, downgraded, or inferred. The clause publishes the identity and the step only: no secure
+randomness, entropy, host facility, global state, streaming, buffering, iteration, quota,
+suspension, schema, recovery, durability, boundary encoding, lowering, machine representation, or
+family behavior, and no statistical-quality, performance, storage-layout, or physical-representation
+claim.

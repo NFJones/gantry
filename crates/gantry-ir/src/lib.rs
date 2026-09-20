@@ -39,6 +39,7 @@ mod operation;
 mod package;
 mod path;
 mod primitive;
+mod prng;
 mod protected;
 pub mod registry;
 mod resource;
@@ -303,6 +304,13 @@ pub use collections::{
     CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion, CollectionNonClaimName,
     MapTypeIdentity, RangeStepContract, RangeTypeIdentity, SetTypeIdentity, canonical_order,
     check_collection_non_claims,
+};
+// The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned
+// deterministic generator identity and its exact step, with no host entropy, global state, secure
+// randomness, streaming, durability, quota, schema, recovery, encoding, or machine representation.
+pub use prng::{
+    DeterministicPrng, NUM_CLAUSES, PRNG_ALGORITHM, PRNG_ALGORITHM_VERSION, PRNG_MIX_FIRST,
+    PRNG_MIX_SECOND, PRNG_STATE_INCREMENT, PrngAlgorithmVersion,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade

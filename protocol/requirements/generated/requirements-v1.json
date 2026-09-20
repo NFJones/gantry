@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "b1ee1f9073f788c1edc1964c9f301a3168590461cdf8201d902c5818a6eb2ef7",
-  "byte_length": 1044966,
-  "line_count": 15615,
+  "specification_sha256": "172027a3b091b68fa2f9a3308903a2058b8b0ee8c1ca0021f50a16b72971b084",
+  "byte_length": 1047683,
+  "line_count": 15625,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15615,
-      "sha256": "be70045ed47073d8469639d3ded98ba170bbdfc5a5122cdbbebcc9e55e40045d",
+      "end_line": 15625,
+      "sha256": "f5359781000c127c6f175cf90efeec9d32dde1a66fe8ab47f45d83c27bc7d60d",
       "rationale": null
     }
   ],
@@ -42574,6 +42574,89 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/collections_foundation.rs#range_step_contract_is_sealed_and_deterministic"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.0-deterministic-numeric-scope",
+      "span_start_line": 15616,
+      "span_end_line": 15622,
+      "span_sha256": "bed4637447a3efe4e81adefcf71c8b9a53c1a3a1523bf135d75c44932999cf8e",
+      "anchor_line": 15619,
+      "body_start_line": 15620,
+      "body_end_line": 15622,
+      "body_sha256": "bf9f8cf57a37e7f892668b68da5a32943abd850d222102611bfa38117382cf99",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15620,
+          "end_line": 15622,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_prng.rs#deterministic_prng_surface_is_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.1-deterministic-prng-identity",
+      "span_start_line": 15623,
+      "span_end_line": 15625,
+      "span_sha256": "eba6e3d9822685c991c035966ec47ef628931ea74e2088380aa0d91bf11e5b50",
+      "anchor_line": 15623,
+      "body_start_line": 15624,
+      "body_end_line": 15625,
+      "body_sha256": "c2849e0d2cbecc722dc1c6e2233914e7788c91facade0ba97a42630a137a5be9",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15624,
+          "end_line": 15625,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_prng.rs#deterministic_prng_surface_is_published",
+                "crates/gantry-conformance/tests/num_prng.rs#deterministic_prng_step_is_exact_and_copy_is_intentional"
               ],
               "rationale": null
             }
