@@ -40,9 +40,10 @@ fn random_capability_note_names_the_declared_family_and_applicability() {
         note.contains(&package),
         "the note must name the declared package {package}"
     );
+    let wire = PackageFamily::Random.wire_name();
     assert!(
-        note.contains(PackageFamily::Random.wire_name()),
-        "the note must name the declared wire spelling"
+        note.contains(&format!("wire spelling `{wire}`")),
+        "the note must introduce the declared wire spelling `{wire}` as such"
     );
     assert!(
         !PackageFamily::Random.is_pure(),
@@ -51,8 +52,8 @@ fn random_capability_note_names_the_declared_family_and_applicability() {
 
     let domain = HostDomainFamily::Randomness.wire_name();
     assert!(
-        note.contains(domain),
-        "the note must name the {domain} host domain"
+        note.contains(&format!("wire spelling `{domain}`")),
+        "the note must introduce the {domain} host domain by its declared wire spelling"
     );
     assert!(HostDomainFamily::Randomness.applies_to(HostTarget::Application));
     assert!(!HostDomainFamily::Randomness.applies_to(HostTarget::Portable));

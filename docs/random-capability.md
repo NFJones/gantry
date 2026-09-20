@@ -22,10 +22,12 @@ refused rather than substituted, deferred, or inferred from the host.
 ## Normative bounds already in force
 
 - `GNT-29.8` declares the randomness error categories `entropy-unavailable`, `invalid-request`, and
-  `unclassified`, and states that those declarations grant neither entropy nor durable access.
-- `GNT-29.15` is the host-contract non-claim: the section promises no runtime adapter, host
-  operation, entropy source, checkpoint, or durable grant, and its model facts must not be presented
-  as such a guarantee.
+  `unclassified`, and states that those declarations grant neither clock access, entropy, secret
+  material, credential authority, nor durable access to a secret.
+- `GNT-29.15` is the host-contract non-claim: the section promises no runtime adapter, host trait,
+  host operation, randomness, secret access, checkpoint, evaluator behavior, durable recovery, or
+  external or durable grant, and its model facts and tests must not be presented as such a
+  guarantee.
 - `GNT-32.3` refuses secure-random draws in constant initializers: a declaration whose initializer
   reaches a secure-random draw must not evaluate.
 
@@ -34,9 +36,9 @@ refused rather than substituted, deferred, or inferred from the host.
 Versioned deterministic PRNG values, their algorithm versions, and their copy and fork semantics
 belong to `std.num` (`docs/reference/general-purpose-refactor.md`); `std.random` is the
 capability-backed counterpart and must not be substituted for it or present deterministic output as
-secure. `GNT-29.8` and `GNT-29.15` grant no entropy source, and the roadmap records that durable
-code must record returned values instead of drawing again on recovery; that recording is a
-requirement awaiting normative interface rows, not behavior this surface ships.
+secure. `GNT-29.8` and `GNT-29.15` grant no randomness, entropy, or secret access, and the roadmap
+records that durable code must record returned values instead of drawing again on recovery; that
+recording is a requirement awaiting normative interface rows, not behavior this surface ships.
 
 ## What this surface does not claim
 
