@@ -64,6 +64,9 @@ The enumeration is a declaration, and name resolution in this tree does not cons
 source lookup admits the compiler's reserved built-in type words, so compiler prelude
 injection is not implemented and a member here neither injects nor withholds a source
 name yet.
+An ordinary standard-package import such as `use std::core::option;` is refused with
+`unresolved-import`, so the model-level `std-unenumerated-prelude-member` refusal is a
+declaration check rather than a source diagnostic.
 
 ## Evidence
 

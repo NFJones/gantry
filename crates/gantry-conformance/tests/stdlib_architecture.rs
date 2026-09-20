@@ -1674,3 +1674,28 @@ fn standard_library_architecture_note_names_every_declared_non_claim() {
         );
     }
 }
+
+/// The architecture note discloses that the enumerated prelude is a declaration, not the source
+/// resolution path of this tree.
+///
+/// The behavior itself is pinned by `analyzer_types.rs`
+/// (`edition_prelude_source_boundary_matches_the_enumerated_declaration`), which requires the
+/// built-in spellings to resolve as reserved words and a standard-package import to refuse with
+/// exactly `unresolved-import`. This lane keeps the note's disclosure of that state present, so a
+/// note revision cannot silently drop it; it deliberately does not scan analyzer sources.
+#[test]
+fn standard_library_architecture_note_discloses_the_prelude_resolution_boundary() {
+    let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
+        .unwrap_or_else(|error| panic!("the architecture note is readable: {error}"));
+    // The note is line-wrapped, so phrases are matched against whitespace-normalized text.
+    let normalized = note.split_whitespace().collect::<Vec<_>>().join(" ");
+    for phrase in [
+        "name resolution in this tree does not consult it",
+        "is refused with `unresolved-import`",
+    ] {
+        assert!(
+            normalized.contains(phrase),
+            "the note discloses the prelude resolution boundary: `{phrase}`"
+        );
+    }
+}
