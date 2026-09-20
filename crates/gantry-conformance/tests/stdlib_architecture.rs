@@ -1699,3 +1699,54 @@ fn standard_library_architecture_note_discloses_the_prelude_resolution_boundary(
         );
     }
 }
+
+/// The capitalized reserved spellings the compiler owns: scalar and foundational type words,
+/// composite type words, their constructor spellings, and the contextual `Self`.
+const COMPILER_OWNED_TYPE_WORDS: [&str; 17] = [
+    "Unit",
+    "Bool",
+    "Int",
+    "Float",
+    "String",
+    "List",
+    "Tuple",
+    "Never",
+    "Decision",
+    "OperationError",
+    "Option",
+    "Result",
+    "Some",
+    "None",
+    "Ok",
+    "Err",
+    "Self",
+];
+
+/// The architecture note separates compiler-owned type words from the declared hierarchy, and the
+/// front end still reserves every spelling the note publishes.
+///
+/// The inventory is the capitalized subset of the grammar's reserved words
+/// (`crates/gantry-frontend/src/token.rs`); `frontend_lexical_evidence.rs` pins the reserved
+/// vocabulary itself, and `analyzer_types.rs` pins the resolution boundary for the enumerated
+/// members. This lane keeps the note's separation present and requires each documented spelling to
+/// still classify as a reserved word, so a note revision cannot invent or silently drop one. It
+/// cannot detect a newly reserved word that no lane documents.
+#[test]
+fn standard_library_architecture_note_separates_compiler_owned_type_words() {
+    let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
+        .unwrap_or_else(|error| panic!("the architecture note is readable: {error}"));
+    // The note is line-wrapped, so spellings are matched against whitespace-normalized text.
+    let normalized = note.split_whitespace().collect::<Vec<_>>().join(" ");
+    for word in COMPILER_OWNED_TYPE_WORDS {
+        assert!(
+            normalized.contains(&format!("`{word}`")),
+            "the note names the compiler-owned spelling `{word}`"
+        );
+        assert_eq!(
+            gantry::frontend::ReservedWord::from_spelling(word)
+                .map(gantry::frontend::ReservedWord::spelling),
+            Some(word),
+            "`{word}` is still a reserved word"
+        );
+    }
+}

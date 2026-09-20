@@ -68,6 +68,23 @@ An ordinary standard-package import such as `use std::core::option;` is refused 
 `unresolved-import`, so the model-level `std-unenumerated-prelude-member` refusal is a
 declaration check rather than a source diagnostic.
 
+## Compiler-owned vocabulary
+
+The enumeration is not the only source of automatic names. The compiler front end reserves the
+following capitalized spellings, and the analyzer resolves them without any package declaration:
+
+- type words: `Unit`, `Bool`, `Int`, `Float`, `String`, `List`, `Tuple`, `Never`, `Decision`,
+  `OperationError`, `Option`, `Result`, where `Never` is additionally refused in signature
+  position with `never-signature-refused`;
+- constructor spellings: `Some`, `None`, `Ok`, `Err`;
+- the contextual type word `Self`.
+
+These spellings are owned by the compiler — the front-end reserved-word table and the analyzer's
+built-in type descriptors — not by any `std` package: the hierarchy above declares no item for
+them, and no package identity, interface digest, or facade path defines them. They are therefore
+a third automatic source beside the declared prelude members and explicit imports, and renaming
+or removing one is a compiler change rather than an edition change.
+
 ## Evidence
 
 - Model and declaration: `crates/gantry-ir/src/stdlib.rs` (`canonical_pure_hierarchy`,
