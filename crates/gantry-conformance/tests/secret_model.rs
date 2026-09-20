@@ -2116,9 +2116,10 @@ fn durable_secret_rebinding_refuses_a_changed_operation_class_tenant_or_fenced_i
 /// The Section-21 surface is documented, and the note is pinned to the model's own tables.
 ///
 /// `docs/secret-model.md` names every declared clause anchor, every registered refusal code,
-/// every staleness spelling, and every excluded claim. This lane reads the note and requires each
-/// declared name to appear, so the documentation cannot drift from the model it describes; the
-/// note is documentation and grants nothing.
+/// every staleness spelling, and every excluded claim. Clause anchors, staleness spellings, and
+/// excluded claims come from the model's own tables; refusal codes are extracted from the model's
+/// reporting table in `crates/gantry-ir/src/secret.rs`, so a refusal added there fails this lane
+/// until the note names its code. The note is documentation and grants nothing.
 #[test]
 fn secret_model_note_names_every_declared_clause_and_non_claim() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -2135,28 +2136,27 @@ fn secret_model_note_names_every_declared_clause_and_non_claim() {
         assert!(note.contains(clause), "the note names `{clause}`");
     }
 
-    let vocabulary = [
-        SecretError::Authority(AuthorityError::EmptyRights),
-        SecretError::TenantMismatch,
-        SecretError::TenantChangeForbidden,
-        SecretError::OperationMismatch,
-        SecretError::ClassChangeForbidden,
-        SecretError::StaleGeneration,
-        SecretError::Fenced(FenceCategory::Revocation),
-        SecretError::TransferNotSucceeding,
-        SecretError::TransferHolderMismatch,
-        SecretError::RebindRequirementMismatch,
-        SecretError::ReinstatementForbidden,
-        SecretError::InadmissibleAuditRecord,
-        SecretError::SerializationForbidden,
-        SecretError::ExtractionForbidden,
-    ];
-    for refusal in vocabulary {
-        assert!(
-            note.contains(refusal.code()),
-            "the note names `{}`",
-            refusal.code()
-        );
+    // The refusal vocabulary is read from the model's reporting table rather than restated here,
+    // so adding a refusal and its code cannot leave the note silently out of date.
+    let model = std::fs::read_to_string(root.join("crates/gantry-ir/src/secret.rs"))
+        .unwrap_or_else(|error| panic!("the secret model is readable: {error}"));
+    let mut codes = BTreeSet::new();
+    let mut rest = model.as_str();
+    while let Some(index) = rest.find("=> \"secret-") {
+        // `=> "` is three characters before the opening quote of the literal.
+        let tail = &rest[index + 3..];
+        assert!(tail.starts_with('"'));
+        let end = tail[1..]
+            .find('"')
+            .map(|offset| offset + 1)
+            .unwrap_or_else(|| panic!("the reporting table has a terminated code literal"));
+        codes.insert(tail[1..end].to_string());
+        rest = &tail[end..];
+    }
+    assert!(codes.contains("secret-authority"));
+    assert!(codes.contains("secret-fenced"));
+    for code in &codes {
+        assert!(note.contains(code.as_str()), "the note names `{code}`");
     }
 
     for reason in SecretStalenessReason::ALL {

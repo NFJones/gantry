@@ -23,9 +23,12 @@ refuses, and it grants nothing.
 
 ## What the model decides
 
-- A reference is an identity, not a value. Its identity is derived under a domain separator, so
-  the same holder, requirement, binding, operation, and tenant always derive the same reference and
-  a differently split pair cannot be confused with it.
+- A reference is an identity, not a value, and it never carries material. Its identity is derived
+  under a domain separator from the holder requirement and binding, the protected class, the
+  tenant, the authority generation, and the optional logical operation. The concrete holder
+  instance is not one of those inputs, and neither is a clock reading, a process identifier, a host
+  path, or material, so equal inputs derive the same identity reproducibly and a differently split
+  pair cannot be confused with it.
 - Authority is explicit: the holder binding names the holder instance, the requirement, and the
   selected implementation binding, and the reference carries the protected class, the logical
   operation it serves, its generation, its rights, and its lease policy.
