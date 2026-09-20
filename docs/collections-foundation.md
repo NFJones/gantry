@@ -1,9 +1,9 @@
 # Collection key contract and canonical collection order
 
-`SPEC.md` Section 39 (`GNT-39.0` .. `GNT-39.7`) fixes the key contract and the collection type
+`SPEC.md` Section 39 (`GNT-39.0` .. `GNT-39.8`) fixes the key contract and the collection type
 identities a source collection consumes: the admitted key domain, the canonical order, duplicate-key
-identity, the identities of the recognised `Map<K, V>`, `Set<K>`, and `Range<T>` forms, and the sealed
-range step contract. The pure model
+identity, the identities of the recognised `Map<K, V>`, `Set<K>`, and `Range<T>` forms, the sealed
+range step contract, and the `Map`, `Set`, and `Range` value model. The pure model
 is `crates/gantry-ir/src/collections.rs`, published through `gantry::ir`, and its machine-checked
 evidence is `crates/gantry-conformance/tests/collections_foundation.rs`, one lane per claim. This
 note is documentation: it names what the model declares and what it refuses, and it grants nothing.
@@ -24,7 +24,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `GNT-39.3-collection-foundation-non-claims` | the frozen non-claims listed below |
 | `GNT-39.4-map-type-form-recognition` | the three recognised collection type forms, `Map<K, V>`, `Set<K>`, and `Range<T>`, admitted as constructed value types, and the positions where their `collection-type-unadmitted` refusal still applies |
 | `GNT-39.5-map-type-identity` | the identity of the recognised form: its two argument types in order, the five admitted key types, and the key-domain refusal of every other resolved key argument |
-| `GNT-39.6-set-and-range-type-identities` | the `Set<K>` element identity over the same five admitted key types and the `Range<T>` element identity over any admitted value type, with their canonical texts and refusals |
+| `GNT-39.6-set-and-range-type-identities` | the `Set<K>` element identity over the same five admitted key types and the `Range<T>` element identity over any admitted value type that names no collection type anywhere inside it, with their canonical texts and refusals |
 | `GNT-39.7-range-step-contract` | the sealed step contract: exactly `Int` steps, by one value toward the bound with checked arithmetic, under an inclusive start bound and an exclusive end bound |
 | `GNT-39.8-collection-value-model` | the admitted `Map` and `Set` values (finite entries or elements over the five admitted key types, in canonical collection order, with repeated keys refused as `collection-duplicate-key`) and the admitted `Range` value (two bound positions under the sealed step contract of `GNT-39.7`) |
 
