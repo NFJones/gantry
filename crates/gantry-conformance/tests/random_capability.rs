@@ -21,13 +21,23 @@ fn read_text(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()))
 }
 
-/// Returns whether some declared clause vocabulary carries an anchor starting with `token`.
+/// Returns whether some declared clause vocabulary carries exactly `token` or an anchor
+/// introduced by `token-`, so a prefix-imprecise citation such as `GNT-29.1` never matches
+/// the declared `GNT-29.10` anchor.
 fn declared_anchor(token: &str) -> bool {
+    let introduced = format!("{token}-");
     STDLIB_CLAUSES
         .iter()
         .chain(HOST_DOMAIN_CLAUSES.iter())
         .chain(CONSTANT_CLAUSES.iter())
-        .any(|anchor| anchor.starts_with(token))
+        .any(|anchor| *anchor == token || anchor.starts_with(&introduced))
+}
+
+/// Returns the note paragraph that names `declaration`.
+fn declaration_paragraph<'a>(note: &'a str, declaration: &str) -> &'a str {
+    note.split("\n\n")
+        .find(|paragraph| paragraph.contains(declaration))
+        .unwrap_or_else(|| panic!("the note must name {declaration}"))
 }
 
 #[test]
@@ -42,8 +52,9 @@ fn random_capability_note_names_the_declared_family_and_applicability() {
     );
     let wire = PackageFamily::Random.wire_name();
     assert!(
-        note.contains(&format!("wire spelling `{wire}`")),
-        "the note must introduce the declared wire spelling `{wire}` as such"
+        declaration_paragraph(&note, "PackageFamily::Random")
+            .contains(&format!("wire spelling `{wire}`")),
+        "the paragraph declaring PackageFamily::Random must introduce the wire spelling `{wire}`"
     );
     assert!(
         !PackageFamily::Random.is_pure(),
@@ -52,8 +63,10 @@ fn random_capability_note_names_the_declared_family_and_applicability() {
 
     let domain = HostDomainFamily::Randomness.wire_name();
     assert!(
-        note.contains(&format!("wire spelling `{domain}`")),
-        "the note must introduce the {domain} host domain by its declared wire spelling"
+        declaration_paragraph(&note, "HostDomainFamily::Randomness")
+            .contains(&format!("wire spelling `{domain}`")),
+        "the paragraph declaring HostDomainFamily::Randomness must introduce the wire spelling \
+         `{domain}`"
     );
     assert!(HostDomainFamily::Randomness.applies_to(HostTarget::Application));
     assert!(!HostDomainFamily::Randomness.applies_to(HostTarget::Portable));

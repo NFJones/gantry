@@ -25,9 +25,11 @@ refused rather than substituted, deferred, or inferred from the host.
   `unclassified`, and states that those declarations grant neither clock access, entropy, secret
   material, credential authority, nor durable access to a secret.
 - `GNT-29.15` is the host-contract non-claim: the section promises no runtime adapter, host trait,
-  host operation, randomness, secret access, checkpoint, evaluator behavior, durable recovery, or
-  external or durable grant, and its model facts and tests must not be presented as such a
-  guarantee.
+  host operation, host allocation, service discovery, terminal behavior, filesystem access,
+  environment access, network transport, TLS validation, HTTP implementation, process launch,
+  sandbox isolation, clock, randomness, secret access, codec implementation, checkpoint, evaluator
+  behavior, durable recovery, or external or durable grant, and its model facts and tests must not
+  be presented as such a guarantee.
 - `GNT-32.3` refuses secure-random draws in constant initializers: a declaration whose initializer
   reaches a secure-random draw must not evaluate.
 
