@@ -1784,10 +1784,11 @@ fn reserved_spelling_sources_agree_with_the_published_inventory() {
         .unwrap_or_else(|| panic!("the lexical reserved vector is locateable"));
     let exercised: Vec<&str> = vector.lines().filter_map(quoted_entry).collect();
 
-    assert!(
-        classified.len() > 64,
-        "the classifier extraction found {} spellings",
-        classified.len()
+    assert_eq!(
+        classified.len(),
+        74,
+        "the classifier tabulates 74 reserved spellings; update this pin, the lexical vector, and \
+         the published inventory together when the table changes"
     );
     assert_eq!(
         sorted_spellings(exercised),
