@@ -50,7 +50,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
-   "sha256": "736071b95e8854ab039f95c2624319a0fdb099660bba204b40c0bf0b7f414b14"
+   "sha256": "c65b4484112b68740f7d5ff897e8458d4ceadb97aba064bbe937dac97d50cf6b"
   },
   {
    "path": "crates/gantry-conformance/tests/frontend_parser_evidence.rs",

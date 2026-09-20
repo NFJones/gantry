@@ -1727,7 +1727,7 @@ const COMPILER_OWNED_TYPE_WORDS: [&str; 17] = [
 ///
 /// The inventory is the capitalized subset of the grammar's reserved words
 /// (`crates/gantry-frontend/src/token.rs`); `frontend_lexical_evidence.rs` pins the reserved
-/// vocabulary only in part, and `analyzer_types.rs` pins the resolution boundary for the
+/// vocabulary, and `analyzer_types.rs` pins the resolution boundary for the
 /// enumerated members. This lane keeps the note's separation present and requires each documented
 /// spelling to still classify as a reserved word, so a note revision cannot invent or silently
 /// drop one. It cannot detect a newly reserved word that no lane documents.
