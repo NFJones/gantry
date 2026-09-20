@@ -11,8 +11,9 @@ describes the landed surface; it is not a plan for a later boundary revision.
 identities. A frame is the eight-byte magic `GNTYKEY\0`, a big-endian major/minor `u16` pair holding
 canonical key format 1.0, a tag byte, and a big-endian `u64` payload length. Decoding rejects a wrong
 magic, an unsupported version, an unknown tag, frame-length and trailing-byte violations, a
-payload-length mismatch, `Bool` keys, noncanonical or out-of-range `Int` payloads, non-finite and
-negative-zero `Float` payloads, invalid UTF-8, and any key above the configured positive byte limit.
+payload-length mismatch, `Bool` payloads that are neither 0 nor 1, noncanonical or out-of-range
+`Int` payloads, non-finite and negative-zero `Float` payloads, invalid UTF-8, and any key above the
+configured positive byte limit.
 Batch decoding checks the declared member count and the aggregate byte budget before it decodes
 anything, decodes members in input order, and reports the index of the first duplicate canonical
 identity. `crates/gantry-conformance/tests/canonical_key.rs` is the public lane for these frames.
