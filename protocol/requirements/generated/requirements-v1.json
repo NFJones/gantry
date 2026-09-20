@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "15bde81c1b477853c094ddf71e8ed0040c648dd5bb40923e4250affdc5fef7c0",
-  "byte_length": 1040809,
+  "specification_sha256": "17f2819da56c250a192dc2e1e74fd277cb0f2bf73472020c83035cbef8179e0b",
+  "byte_length": 1040814,
   "line_count": 15607,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9504,
       "end_line": 15607,
-      "sha256": "7cd2226b5a796051a18a8e5b27b4923aec2baae9460f632c92d572723ef22fb1",
+      "sha256": "e0dbf25a40f01fad04a0b8758fa5bb7fc63dbacd68f1db3e9086cb23f79e5835",
       "rationale": null
     }
   ],
@@ -42418,11 +42418,11 @@
       "id": "GNT-39.4-map-type-form-recognition",
       "span_start_line": 15601,
       "span_end_line": 15604,
-      "span_sha256": "9cb2fd02ccf54f0ef0894fda52890fbb41ab627550ff389c86d0d3ff1a702734",
+      "span_sha256": "c9c4ab392ca0b3c547604466bb019053989d1293386f0901e3fea3800ad53327",
       "anchor_line": 15601,
       "body_start_line": 15602,
       "body_end_line": 15604,
-      "body_sha256": "317586cb12a8d596ca4fbdb2369be490663da192a1e9aa86025d9aef3fcc6fed",
+      "body_sha256": "16acd1bacd24df27cc856f9fd7361b2e1bd7875b822de489763ccd5bb2c8069f",
       "profiles": [
         "analyzer"
       ],
