@@ -337,6 +337,12 @@ fn collection_note_names_every_declared_clause_diagnostic_and_non_claim() {
             "the note names the owning clause of `{}`",
             code.spelling()
         );
+        assert!(
+            note.lines()
+                .any(|line| line.contains(code.spelling()) && line.contains(code.owning_clause())),
+            "the note pairs `{}` with its owning clause on one row",
+            code.spelling()
+        );
     }
     for name in CollectionNonClaimName::ALL {
         assert!(

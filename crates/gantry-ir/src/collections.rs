@@ -212,7 +212,7 @@ impl CollectionNonClaimName {
         match self {
             Self::SourceCollectionType => "no source collection type or collection API",
             Self::RangeIteratorAndDurability => {
-                "no range, iterator, traversal, quota, schema, recovery, or durable behavior"
+                "no range stepping, iterator ownership or invalidation, traversal, mutation, exhaustion, suspension, quotas, schemas, recovery, or durable behavior"
             }
             Self::FamilyBehavior => "no family behavior",
             Self::StorageLayout => "no storage layout or physical representation",

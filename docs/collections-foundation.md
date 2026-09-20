@@ -6,9 +6,10 @@ is `crates/gantry-ir/src/collections.rs`, published through `gantry::ir`, and it
 evidence is `crates/gantry-conformance/tests/collections_foundation.rs`, one lane per claim. This
 note is documentation: it names what the model declares and what it refuses, and it grants nothing.
 
-The section admits no collection type yet. `Map`, `Set`, and `Range`, traversal, iterators, quotas,
-schemas, and durability remain later phases of the owning issue, and the canonical scalar-key
-contract itself is documented separately in `docs/canonical-scalar-keys.md`.
+The section does not define or admit a source collection type, `Map`, `Set`, or `Range` vocabulary,
+or any collection API, and it claims no range stepping, iterator ownership or invalidation,
+traversal, mutation, exhaustion, suspension, quota, schema, recovery, or durable behavior. The
+canonical scalar-key contract it consumes is documented separately in `docs/canonical-scalar-keys.md`.
 
 ## Declared clauses
 
@@ -55,7 +56,7 @@ contract itself is documented separately in `docs/canonical-scalar-keys.md`.
 ## Declared non-claims
 
 - no source collection type or collection API
-- no range, iterator, traversal, quota, schema, recovery, or durable behavior
+- no range stepping, iterator ownership or invalidation, traversal, mutation, exhaustion, suspension, quotas, schemas, recovery, or durable behavior
 - no family behavior
 - no storage layout or physical representation
 - no performance claim
