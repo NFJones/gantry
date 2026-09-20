@@ -358,9 +358,10 @@ fn collection_note_names_every_declared_clause_diagnostic_and_non_claim() {
         .unwrap_or_else(|| panic!("the note publishes a diagnostics section"));
     for code in CollectionDiagnosticCode::ALL {
         assert!(
-            diagnostics_section.contains(code.spelling())
-                && diagnostics_section.contains(code.owning_clause()),
-            "the diagnostics table carries `{}` with its owning clause",
+            diagnostics_section
+                .lines()
+                .any(|line| line.contains(code.spelling()) && line.contains(code.owning_clause())),
+            "the diagnostics table pairs `{}` with its owning clause on one row",
             code.spelling()
         );
     }
