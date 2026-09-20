@@ -20,6 +20,20 @@ fn read_text(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()))
 }
 
+/// Returns the body of one clause: the text between its anchor and the next anchor.
+fn clause_body<'a>(specification: &'a str, anchor: &str) -> &'a str {
+    let declaration = format!("<a id=\"{anchor}\"></a>");
+    let start = specification
+        .find(&declaration)
+        .unwrap_or_else(|| panic!("the specification anchors `{anchor}`"))
+        + declaration.len();
+    let rest = &specification[start..];
+    match rest.find("<a id=") {
+        Some(end) => &rest[..end],
+        None => rest,
+    }
+}
+
 fn element(value: i64) -> GantryInt {
     GantryInt::new(value).unwrap_or_else(|| panic!("`{value}` is inside the canonical Int range"))
 }
@@ -38,8 +52,10 @@ fn checked_integer_algorithm_surface_is_published() {
         ["add", "subtract", "multiply", "divide", "remainder"]
     );
     // Every spelling comes from the model or the generated evaluation-code vocabulary rather than a
-    // copy, and each must appear in the clause backticked, so a renamed algorithm or code — or a
-    // clause that stops publishing one — fails this lane instead of drifting apart.
+    // copy, and each must appear backticked inside the admitting clause's own body, so a renamed
+    // algorithm or code — or a clause that stops publishing one — fails this lane instead of
+    // drifting apart or passing on another clause's text.
+    let clause = clause_body(&specification, "GNT-40.2-checked-integer-algorithms");
     for spelling in [
         CheckedIntegerAlgorithm::Add.wire_name(),
         CheckedIntegerAlgorithm::Subtract.wire_name(),
@@ -52,8 +68,8 @@ fn checked_integer_algorithm_surface_is_published() {
         DeterministicEvaluationCode::IntegerRemainderByZero.wire_name(),
     ] {
         assert!(
-            specification.contains(&format!("`{spelling}`")),
-            "the specification publishes the backticked spelling `{spelling}`"
+            clause.contains(&format!("`{spelling}`")),
+            "the clause publishes the backticked spelling `{spelling}`"
         );
     }
     // The note records the algorithms it declares, so a new algorithm must appear there too.
