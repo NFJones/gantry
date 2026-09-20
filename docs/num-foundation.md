@@ -21,15 +21,23 @@ to.
 `PackageFamily::Num.is_pure()` is true, which places the family in the pure set with `Core`,
 `Collections`, `Text`, `Codec`, `Crypto`, and `Data`. Under `GNT-34.3-acyclic-internal-dependency-dag`
 the pure standard-library dependency graph is acyclic and frozen: the family may depend only on
-permitted pure foundations and may depend on no capability package, no adapter, and no repository
-layout, so no `std.num` result may be produced by host entropy, a host math library, or an ambient
-rounding mode.
+permitted pure foundations and must not depend on a capability-backed family, on a host adapter, or
+on repository layout, so no `std.num` result may be produced by host entropy or a host-provided
+numeric service. The arithmetic and rounding semantics themselves are fixed by the scalar clauses of
+Section 35 and by the scalar values-and-operations clause `GNT-5.15`: operations use binary64
+round-to-nearest, ties-to-even, underflow to a finite subnormal or zero is permitted, negative zero
+is normalized after every operation and input normalization, and fused arithmetic that changes the
+specified intermediate rounding is forbidden.
 
 ## Applicability, stability, and identity
 
 `GNT-34.7-applicability-and-feature-granularity` governs where the family applies and which features
-select it; a pure family is target- and mode-independent wherever its declared features are, and
-this note claims no target-specific variation of any numeric result.
+select it. The canonical pure hierarchy declares `std.num` at stability tier `Stable`, available in
+the `Portable` and `Application` modes, for the `Library` and `Binary` targets, with the single
+dependency `std.core`; `std.crypto` in turn depends on `std.num`, so the numeric family is the
+arithmetic foundation the cryptographic family consumes. A use outside the declared applicability is
+refused rather than inferred from the host, and this note claims no target-specific variation of any
+numeric result.
 `GNT-34.6-stability-tiers` fixes the stability tier of every public item,
 `GNT-34.8-defining-identity-and-interface-digest` fixes its defining package identity and interface
 digest, `GNT-34.9-standard-library-contract-versioning` fixes how the family's contracts version,
@@ -48,20 +56,27 @@ must appear in.
   equality and ordering are logical rather than host-dependent; and
   `GNT-35.11-storage-strategy-equivalence-and-round-trips` requires that every admitted storage
   strategy preserve the same numeric results and round trips.
-- `GNT-35.10-allocation-quotas-and-cancellation` fixes allocation quotas and cancellation, so every
-  input-dependent numeric kernel is bounded and cancellable; and
+- `GNT-35.10-allocation-quotas-and-cancellation` fixes the quota and cancellation boundaries this
+  family's buffers and sealed sequences must respect: quota is charged before octets become live, a
+  request that exceeds the effective quota is refused with no partial growth, quota is released on
+  truncation and split, and cancellation leaves each buffer at an initialized-prefix boundary. The
+  bounded and cancellable behavior of one numeric kernel is not published here: that requirement is
+  roadmap work and belongs to the phase that publishes its rows and safe points. And
   `GNT-35.12-scalar-and-binary-non-claims` fixes the scalar section's non-claims, which this family
   inherits unchanged: no raw memory access, no address-space identity, and no host representation
   as a numeric result.
 
 ## Separation from secure randomness
 
-Versioned deterministic PRNG values, their algorithm versions, and their copy, move, and fork
-semantics belong to `std.num` (`docs/reference/general-purpose-refactor.md`). `std.random` is the
-capability-backed counterpart: `PackageFamily::Random` is not pure, its host-domain family is
-application-only (`GNT-29.10`), and it must not be substituted for a deterministic draw. The
-separation holds in both directions: no `std.num` API may present deterministic output as secure or
-consume host entropy, and no `std.random` API may replace a deterministic PRNG value.
+Versioned deterministic PRNG values belong to `std.num` (`docs/reference/general-purpose-refactor.md`):
+the roadmap declares a specified algorithm and version for them, and it requires copy semantics for a
+seeded generator to be intentional — generator state is threaded or affine rather than implicitly
+duplicated — while move follows the ordinary ownership rules and no fork semantics are declared.
+`std.random` is the capability-backed counterpart: `PackageFamily::Random` is not pure, its
+host-domain family is application-only (`GNT-29.10`), and it must not be substituted for a
+deterministic draw. The separation holds in both directions: no `std.num` API may present
+deterministic output as secure or consume host entropy, and no `std.random` API may replace a
+deterministic PRNG value.
 
 ## Declared non-claims
 

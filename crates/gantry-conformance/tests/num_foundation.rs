@@ -7,9 +7,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::ir::{HOST_DOMAIN_CLAUSES, PackageFamily, SCALAR_CLAUSES, STDLIB_CLAUSES};
+use gantry::ir::{
+    COLLECTION_CLAUSES, CONSTANT_CLAUSES, ERROR_SEMANTICS_CLAUSES, HOST_DOMAIN_CLAUSES,
+    PackageFamily, SCALAR_CLAUSES, STDLIB_CLAUSES, SemanticMode, StabilityTier, TargetKind,
+    canonical_pure_hierarchy,
+};
 
-const REQUIRED_ANCHORS: [&str; 8] = [
+const REQUIRED_ANCHORS: [&str; 9] = [
+    "GNT-5.15",
     "GNT-34.1",
     "GNT-34.3",
     "GNT-34.7",
@@ -38,7 +43,21 @@ fn declared_anchor(token: &str) -> bool {
         .iter()
         .chain(SCALAR_CLAUSES.iter())
         .chain(HOST_DOMAIN_CLAUSES.iter())
+        .chain(CONSTANT_CLAUSES.iter())
+        .chain(ERROR_SEMANTICS_CLAUSES.iter())
+        .chain(COLLECTION_CLAUSES.iter())
         .any(|anchor| *anchor == token || anchor.starts_with(&introduced))
+}
+
+/// Returns every anchor identifier the specification declares.
+fn specification_anchors(specification: &str) -> Vec<&str> {
+    specification
+        .match_indices("<a id=\"")
+        .filter_map(|(index, marker)| {
+            let rest = &specification[index + marker.len()..];
+            rest.find('"').map(|end| &rest[..end])
+        })
+        .collect()
 }
 
 /// Returns every `GNT-` token the note cites, in order of first appearance.
@@ -92,17 +111,57 @@ fn num_note_names_the_declared_family_purity_and_separation() {
         "the note states that it adds no normative row"
     );
 
+    // The declared applicability, tier, dependency, and downstream consumer are model facts.
+    let graph = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy declares: {error}"));
+    let numeric = graph
+        .package(&PackageFamily::Num.package_name())
+        .unwrap_or_else(|| panic!("std.num is declared in the canonical pure hierarchy"));
+    assert_eq!(numeric.tier(), StabilityTier::Stable);
+    assert!(numeric.modes().contains(&SemanticMode::Portable));
+    assert!(numeric.modes().contains(&SemanticMode::Application));
+    assert!(numeric.targets().contains(&TargetKind::Library));
+    assert!(numeric.targets().contains(&TargetKind::Binary));
+    assert_eq!(
+        numeric
+            .dependencies()
+            .iter()
+            .cloned()
+            .collect::<Vec<String>>(),
+        vec!["std.core".to_owned()],
+        "the numeric family depends on `std.core` alone"
+    );
+    let crypto = graph
+        .package(&PackageFamily::Crypto.package_name())
+        .unwrap_or_else(|| panic!("std.crypto is declared in the canonical pure hierarchy"));
+    assert!(
+        crypto
+            .dependencies()
+            .contains(&PackageFamily::Num.package_name()),
+        "`std.crypto` consumes the numeric family"
+    );
+
     for anchor in REQUIRED_ANCHORS {
         assert!(note.contains(anchor), "the note cites `{anchor}`");
+    }
+    let specification = read_text(&workspace_root().join("SPEC.md"));
+    let anchors = specification_anchors(&specification);
+    let spec_exists = |token: &str| {
+        let introduced = format!("{token}-");
+        anchors
+            .iter()
+            .any(|anchor| *anchor == token || anchor.starts_with(&introduced))
+    };
+    for anchor in REQUIRED_ANCHORS {
         assert!(
-            declared_anchor(anchor),
-            "`{anchor}` is declared by the model"
+            declared_anchor(anchor) || spec_exists(anchor),
+            "`{anchor}` is declared by the model or the specification"
         );
     }
     for token in cited_tokens(&note) {
         assert!(
-            declared_anchor(token),
-            "`{token}` is declared by a clause vocabulary"
+            declared_anchor(token) || spec_exists(token),
+            "`{token}` is declared by a clause vocabulary or the specification"
         );
     }
 }
