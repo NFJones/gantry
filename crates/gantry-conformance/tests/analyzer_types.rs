@@ -2563,6 +2563,20 @@ fn map_type_form_is_recognised_and_refused_until_admitted() {
     );
     assert!(refused.executable_program().is_none());
 
+    for nested in [
+        "fn f(xs: List<Map<Int, String>>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "struct S { m: Map<Int, String> }\nfn main() -> Int { 0 }",
+    ] {
+        let refused = analyze(nested);
+        assert_eq!(refused.status(), AnalysisStatus::Invalid, "{nested}");
+        assert_eq!(
+            diagnostic_codes(refused.diagnostics()),
+            ["collection-type-unadmitted"],
+            "{nested}"
+        );
+        assert!(refused.executable_program().is_none());
+    }
+
     for malformed in [
         "fn f(x: Map<Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
         "fn f(x: Map) -> Int { 0 }\nfn main() -> Int { 0 }",

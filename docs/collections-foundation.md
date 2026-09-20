@@ -58,6 +58,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `collection-invalid-key` | `GNT-39.1-admitted-collection-keys` | the candidate kind is not an admitted collection key |
 | `collection-duplicate-key` | `GNT-39.2-canonical-collection-order-and-duplicate-identity` | two admitted keys share one identity in one batch |
 | `collection-non-claim-as-guarantee` | `GNT-39.3-collection-foundation-non-claims` | a declared non-claim is unasserted or presented as a guarantee |
+| `collection-type-unadmitted` | `GNT-39.4-map-type-form-recognition` | a recognised `Map<K, V>` occurrence is refused until the type is admitted |
 
 ## Declared non-claims
 

@@ -186,7 +186,7 @@ pub fn canonical_order(left: &CanonicalKey, right: &CanonicalKey) -> Ordering {
 /// One declared non-claim of `GNT-39.3`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CollectionNonClaimName {
-    /// No source collection type and no collection API.
+    /// No source collection value, operation, or collection API.
     SourceCollectionType,
     /// No range stepping, iterator ownership or invalidation, traversal, mutation, exhaustion,
     /// suspension, quota, schema, recovery, or durable behavior.

@@ -351,6 +351,19 @@ fn collection_note_names_every_declared_clause_diagnostic_and_non_claim() {
             name.as_str()
         );
     }
+    let diagnostics_section = note
+        .split_once("## Diagnostics")
+        .and_then(|(_, rest)| rest.split_once("\n## "))
+        .map(|(body, _)| body)
+        .unwrap_or_else(|| panic!("the note publishes a diagnostics section"));
+    for code in CollectionDiagnosticCode::ALL {
+        assert!(
+            diagnostics_section.contains(code.spelling())
+                && diagnostics_section.contains(code.owning_clause()),
+            "the diagnostics table carries `{}` with its owning clause",
+            code.spelling()
+        );
+    }
     assert!(
         note.contains("GNT-5.15-canonical-scalar-keys"),
         "the note names the consumed canonical scalar-key contract"

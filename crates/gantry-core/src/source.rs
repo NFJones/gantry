@@ -1285,6 +1285,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A workflow call has the wrong number of arguments.",
     },
     DiagnosticCodeDefinition {
+        code: "collection-type-unadmitted",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A recognised Map type form is refused until the collection type is admitted.",
+    },
+    DiagnosticCodeDefinition {
         code: "condition-type",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
