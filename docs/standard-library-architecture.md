@@ -98,10 +98,11 @@ or removing one is a compiler change rather than an edition change.
   `standard_library_architecture_note_names_every_declared_non_claim`,
   `standard_library_architecture_note_discloses_the_prelude_resolution_boundary`, and
   `standard_library_architecture_note_separates_compiler_owned_type_words`.
-- Source boundary of the enumerated members:
+- Source boundary of the prelude and compiler-owned vocabulary:
   `crates/gantry-conformance/tests/analyzer_types.rs`
   (`edition_prelude_source_boundary_matches_the_enumerated_declaration`) pins the built-in
-  spelling boundary and the refused standard-package import.
+  spelling boundary, resolution of every documented compiler-owned type word, and the refused
+  standard-package import.
 - Refusals: `std-invalid-package-name`, `std-duplicate-package`,
   `std-invalid-name-classification`, `std-unknown-edge`, `std-dependency-cycle`,
   `std-pure-to-capability-edge`, `std-package-to-adapter-edge`,

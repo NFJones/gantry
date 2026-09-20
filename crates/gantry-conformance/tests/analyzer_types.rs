@@ -2470,12 +2470,14 @@ fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
     // `Never` is the one documented type word the tree refuses: in signature position for an
     // ordinary callable and at a boundary declaration for the entry point.
     let never_signature = analyze("fn f() -> Never { panic(\"x\"); }\nfn main() -> Int { 0 }");
+    assert_eq!(never_signature.status(), AnalysisStatus::Invalid);
     assert!(
         diagnostic_codes(never_signature.diagnostics()).contains(&"never-signature-refused"),
         "a signature position naming Never is refused: {:?}",
         never_signature.diagnostics()
     );
     let never_boundary = analyze("fn main() -> Never { panic(\"x\"); }");
+    assert_eq!(never_boundary.status(), AnalysisStatus::Invalid);
     assert!(
         diagnostic_codes(never_boundary.diagnostics()).contains(&"never-boundary-refused"),
         "an entry boundary naming Never is refused: {:?}",
