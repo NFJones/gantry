@@ -317,3 +317,36 @@ fn collection_clauses_and_diagnostics_are_published() {
     spellings.dedup();
     assert_eq!(spellings.len(), CollectionDiagnosticCode::ALL.len());
 }
+
+/// The published note names every declared clause, diagnostic, owning clause, and non-claim.
+#[test]
+fn collection_note_names_every_declared_clause_diagnostic_and_non_claim() {
+    let note = fs::read_to_string(workspace_root().join("docs/collections-foundation.md"))
+        .unwrap_or_else(|error| panic!("the collection-foundation note is readable: {error}"));
+    for clause in COLLECTION_CLAUSES {
+        assert!(note.contains(clause), "the note names `{clause}`");
+    }
+    for code in CollectionDiagnosticCode::ALL {
+        assert!(
+            note.contains(code.spelling()),
+            "the note names `{}`",
+            code.spelling()
+        );
+        assert!(
+            note.contains(code.owning_clause()),
+            "the note names the owning clause of `{}`",
+            code.spelling()
+        );
+    }
+    for name in CollectionNonClaimName::ALL {
+        assert!(
+            note.contains(name.as_str()),
+            "the note names the declared non-claim `{}`",
+            name.as_str()
+        );
+    }
+    assert!(
+        note.contains("GNT-5.15-canonical-scalar-keys"),
+        "the note names the consumed canonical scalar-key contract"
+    );
+}

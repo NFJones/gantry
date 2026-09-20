@@ -45,11 +45,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "f334f43a1ee31b643632b98a88497ac1838fc1c031f31d5832bfef690e4c209c"
+   "sha256": "cf33f7ed0690a36cbc45dcfece2eab1a9ba1dabac483e74a4e6e252b2c187e1b"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "528d0939802801587200f4cdadeed4a9a7c654c1f059733267bee6020c3142da"
+   "sha256": "12db78267d9a74a2549d16a17d9d171091d6274c7d2448188b3bd3b6ce9b1eca"
   },
   {
    "path": "protocol/schemas/embedding-contracts-v1.schema.json",

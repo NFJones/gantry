@@ -41170,7 +41170,8 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/collections_foundation.rs#collection_clauses_and_diagnostics_are_published",
-        "crates/gantry-conformance/tests/collections_foundation.rs#canonical_refusals_pass_through_without_a_new_spelling"
+        "crates/gantry-conformance/tests/collections_foundation.rs#canonical_refusals_pass_through_without_a_new_spelling",
+        "crates/gantry-conformance/tests/collections_foundation.rs#collection_note_names_every_declared_clause_diagnostic_and_non_claim"
        ],
        "rationale": null
       }
