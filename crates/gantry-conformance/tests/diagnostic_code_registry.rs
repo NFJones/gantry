@@ -77,19 +77,25 @@ fn analyzer_emitted_codes_are_registered() {
         .collect();
 
     let mut observed = BTreeSet::new();
-    let directory = root.join("crates/gantry-analysis/src");
-    for entry in fs::read_dir(&directory)
-        .unwrap_or_else(|error| panic!("the analyzer source directory is readable: {error}"))
-    {
-        let path = entry
-            .unwrap_or_else(|error| panic!("the analyzer source entry is readable: {error}"))
-            .path();
-        if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
-            continue;
+    let mut pending = vec![root.join("crates/gantry-analysis/src")];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory)
+            .unwrap_or_else(|error| panic!("the analyzer source directory is readable: {error}"))
+        {
+            let path = entry
+                .unwrap_or_else(|error| panic!("the analyzer source entry is readable: {error}"))
+                .path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+                continue;
+            }
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("the analyzer source is readable: {error}"));
+            observed.extend(code_shaped_literals(&source));
         }
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("the analyzer source is readable: {error}"));
-        observed.extend(code_shaped_literals(&source));
     }
 
     for spelling in FIELD_VALUE_SPELLINGS {

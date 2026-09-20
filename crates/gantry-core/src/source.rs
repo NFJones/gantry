@@ -1246,7 +1246,12 @@ pub struct DiagnosticCodeDefinition {
     pub meaning: &'static str,
 }
 
-/// Initial Gantry source-substrate diagnostic code registry.
+/// The source-substrate and analyzer diagnostic vocabulary.
+///
+/// The registry covers the diagnostic codes the source substrate, the frontend, and the analyzer
+/// publish. Refusal spellings owned by other sections — for example the standard-library
+/// architecture, scalar-binary, algebraic-data-type, callable, error, constant, locale,
+/// host-domain, and collection models — are declared by those models and are not mirrored here.
 pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
     DiagnosticCodeDefinition {
         code: "affine-value-reuse",
