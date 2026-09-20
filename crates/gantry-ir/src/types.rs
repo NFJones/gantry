@@ -360,6 +360,48 @@ impl TypeDescriptor {
         members
     }
 
+    /// Reports whether every member slice of this constructed type re-decodes.
+    ///
+    /// [`Self::immediate_members`] skips a slice it cannot decode, so a caller that must not miss a
+    /// member — the collection member rule, for example — checks this first. A descriptor this crate
+    /// builds always re-decodes every slice, because only the constructors and the parser build
+    /// descriptors; a descriptor that cannot be fully read is refused by its caller rather than
+    /// trusted, so the check stays fail-closed if a token-level constructor is ever added.
+    #[must_use]
+    pub(crate) fn all_member_slices_decode(&self) -> bool {
+        if self.tokens.len() < 3
+            || !matches!(
+                self.tokens.first(),
+                Some(TypeToken::Open(_) | TypeToken::OpenDeclared(_) | TypeToken::OpenCallable(_))
+            )
+        {
+            return true;
+        }
+        let mut start = 1_usize;
+        let mut depth = 0_usize;
+        for index in 1..self.tokens.len().saturating_sub(1) {
+            match &self.tokens[index] {
+                TypeToken::Open(_) | TypeToken::OpenDeclared(_) | TypeToken::OpenCallable(_) => {
+                    depth = depth.saturating_add(1);
+                }
+                TypeToken::Close => depth = depth.saturating_sub(1),
+                TypeToken::Comma if depth == 0 => {
+                    if Self::from_token_slice(&self.tokens[start..index]).is_none() {
+                        return false;
+                    }
+                    start = index.saturating_add(1);
+                }
+                _ => {}
+            }
+        }
+        Self::from_token_slice(
+            self.tokens
+                .get(start..self.tokens.len().saturating_sub(1))
+                .unwrap_or_default(),
+        )
+        .is_some()
+    }
+
     /// Encodes the exact whitespace-free canonical descriptor without native recursion.
     #[must_use]
     pub fn canonical_string(&self) -> String {

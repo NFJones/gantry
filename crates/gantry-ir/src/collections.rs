@@ -297,11 +297,13 @@ const fn is_collection_kind(kind: TypeKind) -> bool {
 /// itself, or a collection inside a member of any other kind, or inside a declared type's arguments
 /// — is one of the unadmitted members `GNT-39.5` and `GNT-39.6` refuse. The walk reads each
 /// descriptor's own immediate members iteratively, so no nesting depth hides a collection and no
-/// native recursion is used.
+/// native recursion is used. A descriptor whose member slices do not all re-decode is refused as
+/// though it carried a collection member, because `immediate_members` skips a slice it cannot read:
+/// the rule stays fail-closed instead of letting an unread member escape.
 fn contains_collection_kind(descriptor: &TypeDescriptor) -> bool {
     let mut pending = vec![descriptor.clone()];
     while let Some(current) = pending.pop() {
-        if is_collection_kind(current.kind()) {
+        if is_collection_kind(current.kind()) || !current.all_member_slices_decode() {
             return true;
         }
         pending.extend(current.immediate_members());
