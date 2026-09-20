@@ -83,11 +83,9 @@ deterministic PRNG value.
 The architecture's declared non-claims hold for this family unchanged: `GNT-34.12` and the twelve
 entries of `STDLIB_NON_CLAIMS` state that the standard-library architecture grants no runtime
 behavior, no adapter, no host capability, no durability, and no performance claim. This note claims
-nothing beyond the clauses it records: no numeric algorithm beyond the declared generator
-identity and the declared checked integer algorithms, no conversion beyond the two declared
-conversions, no parsing or formatting behavior, no bit-operation behavior, no work limit, no
-cancellation safe point, no cross-strategy equivalence result, no host math-library
-independence test, and no package interface or digest beyond the declared identities.
+nothing beyond the clauses it records: each recorded clause's own scope sentence fixes exactly
+what that clause publishes, and every capability no recorded clause publishes remains
+unpublished here.
 
 ## The versioned deterministic generator (`GNT-40.0`, `GNT-40.1`)
 
