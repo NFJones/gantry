@@ -818,6 +818,10 @@ pub enum CollectionOutcome {
 
 impl CollectionOutcome {
     /// Reports whether the traversal completed rather than being stopped early.
+    ///
+    /// A `Range` value completes through the visitor form without visiting anything, so this reports
+    /// completion for it while the stepwise traversal reports exhaustion by publishing no next
+    /// position.
     #[must_use]
     pub const fn is_completed(self) -> bool {
         matches!(self, Self::Completed)
@@ -1023,7 +1027,7 @@ pub enum CollectionNonClaimName {
     /// No source collection value, operation, or collection API.
     SourceCollectionType,
     /// No range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic,
-    /// suspension, quota, schema, recovery, or durable behavior.
+    /// suspension, quotas, schemas, recovery, or durable behavior.
     RangeIteratorAndDurability,
     /// No family behavior.
     FamilyBehavior,
@@ -1060,6 +1064,30 @@ impl CollectionNonClaimName {
             Self::StorageLayout => "no storage layout or physical representation",
             Self::Performance => "no performance claim",
             Self::BoundaryEncoding => "no boundary encoding beyond the canonical key frame",
+        }
+    }
+
+    /// Returns the verbatim `GNT-39.3` fragment that carries this non-claim's wording.
+    ///
+    /// A lane asserts each fragment against the specification, so the clause and the declared
+    /// label cannot drift apart. `StorageLayout` and `Performance` share one fragment because the
+    /// clause states them in one list.
+    #[must_use]
+    pub const fn clause_fragment(self) -> &'static str {
+        match self {
+            Self::SourceCollectionType => {
+                "it admits no source collection value, operation, or collection API"
+            }
+            Self::RangeIteratorAndDurability => {
+                "does not define range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior"
+            }
+            Self::FamilyBehavior => "does not claim family behavior",
+            Self::StorageLayout | Self::Performance => {
+                "does not claim family behavior, performance, storage layout, or physical representation"
+            }
+            Self::BoundaryEncoding => {
+                "defines no boundary encoding beyond the canonical key frame it consumes"
+            }
         }
     }
 }

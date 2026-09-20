@@ -1189,6 +1189,14 @@ fn collection_clauses_and_diagnostics_are_published() {
             "the specification declares `{clause}`"
         );
     }
+    // Each declared non-claim names the verbatim clause fragment it must appear in (`GNT-39.3`).
+    for name in CollectionNonClaimName::ALL {
+        assert!(
+            specification.contains(name.clause_fragment()),
+            "`{name:?}` expects its clause fragment `{}`",
+            name.clause_fragment()
+        );
+    }
     assert_eq!(CollectionDiagnosticCode::ALL.len(), 4);
     for code in CollectionDiagnosticCode::ALL {
         assert!(

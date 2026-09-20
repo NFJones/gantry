@@ -10,7 +10,7 @@ note is documentation: it names what the model declares and what it refuses, and
 
 The section admits no source collection value, operation, or collection API and no collection type
 whose form `GNT-39.4-map-type-form-recognition` does not recognise, and it claims no range iteration,
-iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quota, schema,
+iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas,
 recovery, or durable behavior. The canonical scalar-key contract it consumes is documented
 separately in `docs/canonical-scalar-keys.md`.
 
