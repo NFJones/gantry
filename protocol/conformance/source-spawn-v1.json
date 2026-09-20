@@ -1,6 +1,6 @@
 {
  "format": "gantry.source-spawn-evidence/v1",
- "specification_sha256": "0497abf0fd4949f70198696e03573397d70dfd4955db1a589fbf701ef233ac1c",
+ "specification_sha256": "76621104eacb29d9f8808ef02eb94d6df77c71ba16ad0905d7afde14d1d7026e",
  "issue": "GNT-ASYNC-SPAWN-001",
  "source_test": {
   "path": "crates/gantry-conformance/tests/source_spawn.rs",
