@@ -1387,6 +1387,74 @@ mod tests {
         supervisor_with_root_capacity(8)
     }
 
+    /// An unclean drop closes the registry: new submissions are refused and the
+    /// registry stays quiescent.
+    #[test]
+    fn closed_registry_rejects_new_submissions_and_stays_quiescent() {
+        let (supervisor, _executor) = supervisor_with_root_capacity(2);
+        let registration = supervisor.prepare(SupervisedTaskDomain::Root, None);
+        let permit = supervisor
+            .try_reserve(AdmissionClass::RootTask)
+            .unwrap_or_else(|error| panic!("task reservation failed: {error}"))
+            .transfer();
+        supervisor.abort_and_relinquish_all();
+        assert!(supervisor.snapshot().closed);
+        let rejected = supervisor.submit(
+            registration,
+            Box::pin(async { OwnedTaskResult::new() }),
+            permit,
+        );
+        assert!(
+            rejected.is_err(),
+            "a closed registry rejects new submissions"
+        );
+        assert!(supervisor.is_quiescent());
+    }
+
+    /// A submission already in flight when the registry closes lands
+    /// unclean-relinquished and is abort-settled instead of silently admitted.
+    #[test]
+    fn submission_in_flight_when_the_registry_closes_lands_relinquished() {
+        let (supervisor, executor) = supervisor_with_root_capacity(2);
+        executor.gate_spawn();
+        let submitter = TaskSupervisor {
+            inner: Arc::clone(&supervisor.inner),
+        };
+        let registration = supervisor.prepare(SupervisedTaskDomain::Root, None);
+        let permit = supervisor
+            .try_reserve(AdmissionClass::RootTask)
+            .unwrap_or_else(|error| panic!("task reservation failed: {error}"))
+            .transfer();
+        let spawner = std::thread::spawn(move || {
+            submitter.submit(
+                registration,
+                Box::pin(async { OwnedTaskResult::new() }),
+                permit,
+            )
+        });
+        while executor.tasks().is_empty() {
+            std::thread::yield_now();
+        }
+        supervisor.abort_and_relinquish_all();
+        executor.release_spawn();
+        let task = spawner
+            .join()
+            .unwrap_or_else(|_| panic!("the submitting thread must not panic"))
+            .unwrap_or_else(|error| panic!("the in-flight submission must land: {error:?}"));
+        assert!(supervisor.snapshot().closed);
+        assert_eq!(
+            executor.tasks()[0].aborts.load(Ordering::Acquire),
+            1,
+            "the landed entry is abort-requested exactly once"
+        );
+        assert_eq!(
+            task.snapshot().completion,
+            Some(OwnedTaskCompletion::Stopped)
+        );
+        assert_eq!(supervisor.active_count(SupervisedTaskDomain::Root), 0);
+        assert!(supervisor.is_quiescent());
+    }
+
     #[derive(Default)]
     struct CountingWake {
         woken: AtomicBool,
