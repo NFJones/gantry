@@ -1830,6 +1830,10 @@ const COMPILER_OWNED_TYPE_WORDS: [&str; 17] = [
     "Self",
 ];
 
+/// The capitalized spellings reserved for future compatible extension: the collection vocabulary
+/// that no package declares and no source position resolves yet.
+const RESERVED_FOR_EXTENSION_SPELLINGS: [&str; 3] = ["Map", "Range", "Set"];
+
 /// The architecture note separates compiler-owned type words from the declared hierarchy, and the
 /// front end still reserves every spelling the note publishes.
 ///
@@ -1856,6 +1860,18 @@ fn standard_library_architecture_note_separates_compiler_owned_type_words() {
                 .map(gantry::frontend::ReservedWord::spelling),
             Some(word),
             "`{word}` is still a reserved word"
+        );
+    }
+    for word in RESERVED_FOR_EXTENSION_SPELLINGS {
+        assert!(
+            normalized.contains(&format!("`{word}`")),
+            "the note names the reserved-for-extension spelling `{word}`"
+        );
+        assert_eq!(
+            gantry::frontend::ReservedWord::from_spelling(word)
+                .map(gantry::frontend::ReservedWord::spelling),
+            Some(word),
+            "`{word}` is reserved"
         );
     }
 }
@@ -1894,8 +1910,8 @@ fn reserved_spelling_sources_agree_with_the_published_inventory() {
 
     assert_eq!(
         classified.len(),
-        74,
-        "the classifier tabulates 74 reserved spellings; update this pin, the lexical vector, and \
+        77,
+        "the classifier tabulates 77 reserved spellings; update this pin, the lexical vector, and \
          the published inventory together when the table changes"
     );
     assert_eq!(
@@ -1912,10 +1928,18 @@ fn reserved_spelling_sources_agree_with_the_published_inventory() {
                 .is_some_and(|first| first.is_ascii_uppercase())
         })
         .collect();
+    let mut published = COMPILER_OWNED_TYPE_WORDS.to_vec();
+    published.extend(RESERVED_FOR_EXTENSION_SPELLINGS);
     assert_eq!(
         sorted_spellings(capitalized),
-        sorted_spellings(COMPILER_OWNED_TYPE_WORDS.to_vec()),
+        sorted_spellings(published),
         "the published inventory is exactly the classifier's capitalized spellings"
+    );
+    assert!(
+        COMPILER_OWNED_TYPE_WORDS
+            .iter()
+            .all(|word| !RESERVED_FOR_EXTENSION_SPELLINGS.contains(word)),
+        "the compiler-owned and reserved-for-extension inventories are disjoint"
     );
 }
 

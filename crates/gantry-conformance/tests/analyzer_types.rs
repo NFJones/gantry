@@ -2543,6 +2543,45 @@ fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
     );
 }
 
+/// The collection spellings are reserved before any collection type is admitted (`GNT-13.2`):
+/// each is refused as an unexpected token in binding and type position, and none resolves.
+#[test]
+fn collection_spellings_are_reserved_before_any_collection_type() {
+    for spelling in ["Map", "Range", "Set"] {
+        assert_eq!(
+            gantry::frontend::ReservedWord::from_spelling(spelling)
+                .map(gantry::frontend::ReservedWord::spelling),
+            Some(spelling),
+            "`{spelling}` is a reserved word"
+        );
+        let binding = syntax(&format!(
+            "fn main() -> Int {{ let {spelling}: Int = 1; {spelling} }}"
+        ));
+        let codes = diagnostic_codes(binding.diagnostics());
+        assert_eq!(
+            binding.status(),
+            gantry::frontend::PackageSyntaxStatus::Invalid,
+            "`{spelling}` is reserved in binding position"
+        );
+        assert!(
+            !codes.is_empty() && codes.iter().all(|code| *code == "unexpected-token"),
+            "`{spelling}` refuses only as an unexpected token: {codes:?}"
+        );
+        let annotation = syntax(&format!(
+            "fn f(x: {spelling}) -> Int {{ 0 }}\nfn main() -> Int {{ 0 }}"
+        ));
+        assert_eq!(
+            annotation.status(),
+            gantry::frontend::PackageSyntaxStatus::Invalid,
+            "`{spelling}` is reserved in type position"
+        );
+        assert_eq!(
+            diagnostic_codes(annotation.diagnostics()),
+            ["unexpected-token"]
+        );
+    }
+}
+
 /// The automatic source names are derived from the enumerated edition prelude (`GNT-34.4`):
 /// with the canonical edition every declared spelling resolves, and with a prelude that omits
 /// a member that member's spellings are refused as unresolved references with no published

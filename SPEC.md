@@ -7567,10 +7567,10 @@ discard
 effects    else       enum       Err         false        Float       fn          fork        if
 for        idempotent in          impl        inline       join        joinall      let
 limit
-Int        List       loop        match         mod         mut         new         Never
+Int        List       loop        Map         match         mod         mut         new         Never
 non_idempotent None    null       Ok           OperationError Option
-panic      prompt     pure       read_only   Result       return      retry_limit self
-Self       session    Some       spawn       String       struct      super       trait
+panic      prompt     pure       Range       read_only   Result       return      retry_limit self
+Self       session    Set        Some       spawn       String       struct      super       trait
 true       Tuple      unbounded  Unit       until       use          using       when
 where      while      with
 ```
@@ -7578,6 +7578,9 @@ where      while      with
 `as` is reserved for future compatible extension even though v1 has no alias
 form for `use`. `true` and `false` are `Bool` literals. `null` remains reserved
 because absence is written as typed `None` rather than as a source null value.
+`Map`, `Set`, and `Range` are reserved for future compatible extension even
+though v1 has no collection type: a source use of one is refused as an unexpected
+token.
 Reserved type and constructor names are case-sensitive. Lexing uses maximal
 munch for the fixed multi-character terminals `::`, `->`, `=>`, `==`, `!=`,
 `<=`, `>=`, `&&`, `||`, `+=`, `-=`, `*=`, `/=`, and `%=`; trivia MUST NOT
