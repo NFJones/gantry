@@ -24,8 +24,9 @@ use gantry::ir::{
     RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, TypeDescriptor, canonical_order,
     check_collection_non_claims,
 };
+use gantry::ir::{PackageFamily, canonical_pure_hierarchy};
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
-use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
+use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValueLimits};
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1449,7 +1450,7 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     // The collecting form (`GNT-39.8`): one list value of the projections in content order, one
     // budget step per advance, with the outcome reported.
     let (collected, outcome) = carried_map
-        .collect(4, DEFAULT_VALUE_LIMITS, &mut |_| integer(1))
+        .collect(4, DEFAULT_VALUE_LIMITS, |_| integer(1))
         .unwrap_or_else(|error| panic!("the collected list is admitted: {error:?}"));
     assert_eq!(outcome, CollectionOutcome::Completed);
     assert_eq!(
@@ -1458,13 +1459,32 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
             .unwrap_or_else(|error| panic!("the expected list is admitted: {error:?}"))
     );
     let (short, outcome) = carried_map
-        .collect(1, DEFAULT_VALUE_LIMITS, &mut |_| integer(2))
+        .collect(1, DEFAULT_VALUE_LIMITS, |_| integer(2))
         .unwrap_or_else(|error| panic!("the collected list is admitted: {error:?}"));
     assert_eq!(outcome, CollectionOutcome::Stopped);
     assert_eq!(
         short,
         LogicalValue::list(vec![integer(2)], DEFAULT_VALUE_LIMITS)
             .unwrap_or_else(|error| panic!("the expected list is admitted: {error:?}"))
+    );
+    // The list is admitted once the traversal ends, so an over-limit list is refused by the value
+    // contract after the projection has run for every advance the budget allows.
+    let tight = ValueLimits::new(256, 1_048_576, 1_048_576, 1)
+        .unwrap_or_else(|| panic!("the declared limits are positive"));
+    let mut projections = 0usize;
+    let refused = carried_map
+        .collect(4, tight, |_| {
+            projections += 1;
+            integer(1)
+        })
+        .err();
+    assert!(
+        refused.is_some(),
+        "the value contract refuses the over-limit list"
+    );
+    assert_eq!(
+        projections, 2,
+        "the projection runs for every advance the budget allows"
     );
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
@@ -1481,6 +1501,44 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).
+#[test]
+fn collection_family_declares_its_package_surface() {
+    let note = fs::read_to_string(workspace_root().join("docs/collections-foundation.md"))
+        .unwrap_or_else(|error| panic!("the collection note is readable: {error}"));
+    let graph = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy is declared: {error:?}"));
+    let family = PackageFamily::Collections;
+    assert_eq!(family.package_name(), "std.collections");
+    assert_eq!(family.wire_name(), "collections");
+    assert!(family.is_pure(), "`std.collections` is a pure family");
+    let package = graph
+        .package(&family.package_name())
+        .unwrap_or_else(|| panic!("the hierarchy declares `std.collections`"));
+    assert_eq!(package.name(), family.package_name());
+    let dependencies = package.dependencies();
+    assert_eq!(
+        dependencies.len(),
+        1,
+        "`std.collections` has one dependency"
+    );
+    assert!(
+        dependencies.contains(&PackageFamily::Core.package_name()),
+        "`std.collections` depends only on `std.core`"
+    );
+    for required in [
+        "std.collections",
+        "collections",
+        "std.core",
+        "stable",
+        "GNT-GP-COLL-001",
+        "GNT-34.1",
+        "GNT-34.6",
+        "GNT-34.8",
+    ] {
+        assert!(note.contains(required), "the note names `{required}`");
+    }
+}
+
 #[test]
 fn collection_clauses_and_diagnostics_are_published() {
     let specification = fs::read_to_string(workspace_root().join("SPEC.md"))

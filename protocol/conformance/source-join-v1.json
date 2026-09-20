@@ -1,6 +1,6 @@
 {
  "format": "gantry.source-join-evidence/v1",
- "specification_sha256": "7da3fb9eb59734c8390a30b7f239ce68087ffaa459c958399cbd0126ada56cfd",
+ "specification_sha256": "4f439da2fe6d51364acb1f7b584b86bb829cdbd9ae2b129823c501076c61e781",
  "issue": "GNT-ASYNC-JOIN-001",
  "artifacts": [
   {

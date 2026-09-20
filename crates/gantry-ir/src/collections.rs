@@ -1334,7 +1334,7 @@ impl CollectionValue {
         &self,
         budget: u64,
         limits: ValueLimits,
-        projection: &mut impl FnMut(CollectionVisit<'_>) -> LogicalValue,
+        mut projection: impl FnMut(CollectionVisit<'_>) -> LogicalValue,
     ) -> Result<(LogicalValue, CollectionOutcome), ValueError> {
         let mut cursor = self.cursor();
         let mut items = Vec::new();
