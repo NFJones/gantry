@@ -9,8 +9,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    DeterministicPrng, NUM_CLAUSES, PRNG_ALGORITHM, PRNG_ALGORITHM_VERSION, PRNG_MIX_FIRST,
-    PRNG_MIX_SECOND, PRNG_STATE_INCREMENT, PrngAlgorithmVersion,
+    CONSTANT_CLAUSES, DeterministicPrng, ERROR_SEMANTICS_CLAUSES, HOST_DOMAIN_CLAUSES, NUM_CLAUSES,
+    PRNG_ALGORITHM, PRNG_ALGORITHM_VERSION, PRNG_MIX_FIRST, PRNG_MIX_SECOND, PRNG_STATE_INCREMENT,
+    PrngAlgorithmVersion, SCALAR_CLAUSES, STDLIB_CLAUSES,
 };
 
 const REQUIRED_ANCHORS: [&str; 2] = [
@@ -96,6 +97,11 @@ fn section_2_1_registration_row_covers_the_declared_clauses() {
     for vocabulary in [
         gantry::ir::COLLECTION_CLAUSES.as_slice(),
         NUM_CLAUSES.as_slice(),
+        STDLIB_CLAUSES.as_slice(),
+        SCALAR_CLAUSES.as_slice(),
+        HOST_DOMAIN_CLAUSES.as_slice(),
+        CONSTANT_CLAUSES.as_slice(),
+        ERROR_SEMANTICS_CLAUSES.as_slice(),
     ] {
         for anchor in [vocabulary[0], vocabulary[vocabulary.len() - 1]] {
             assert!(

@@ -4,9 +4,9 @@ This note records the `std.num` surface that the model already declares: its can
 identity, its purity within the frozen standard-library dependency graph, the applicability,
 stability, and identity rules that bound it, the scalar clauses whose semantics it must preserve,
 its separation from the capability-backed randomness owned by `std.random`, and what the surface
-does not claim. It records declarations and adds no normative row beyond the one declared generator identity and its exact step: no numeric operation, conversion, parsing, formatting, or bit-operation
-PRNG version, no parsing or formatting row, no work limit, and no package interface is published
-here.
+does not claim. It records declarations and adds no normative row beyond the one declared generator
+identity and its exact step: no numeric operation, conversion, parsing, formatting, bit operation,
+or work limit, and no package interface is published here.
 
 ## Package identity
 
