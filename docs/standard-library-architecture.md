@@ -74,8 +74,9 @@ The enumeration is not the only source of automatic names. The compiler front en
 following capitalized spellings, and the analyzer resolves them without any package declaration:
 
 - type words: `Unit`, `Bool`, `Int`, `Float`, `String`, `List`, `Tuple`, `Never`, `Decision`,
-  `OperationError`, `Option`, `Result`, where `Never` is additionally refused in signature
-  position with `never-signature-refused`;
+  `OperationError`, `Option`, `Result`, where `Never` is additionally refused at entry and
+  action boundary declarations with `never-boundary-refused` and in signature positions with
+  `never-signature-refused`;
 - constructor spellings: `Some`, `None`, `Ok`, `Err`;
 - the contextual type word `Self`.
 
@@ -91,6 +92,9 @@ or removing one is a compiler change rather than an edition change.
   `StdPackage`, `StdItem`, `Prelude`, `StdGraph`).
 - Machine-checked conformance: `crates/gantry-conformance/tests/stdlib_architecture.rs`
   (`canonical_pure_hierarchy_declares_each_pure_family_once`).
+- Note-binding lanes: `crates/gantry-conformance/tests/stdlib_architecture.rs`
+  (`standard_library_architecture_note_discloses_the_prelude_resolution_boundary`,
+  `standard_library_architecture_note_separates_compiler_owned_type_words`).
 - Source boundary of the enumerated members:
   `crates/gantry-conformance/tests/analyzer_types.rs`
   (`edition_prelude_source_boundary_matches_the_enumerated_declaration`) pins the built-in
