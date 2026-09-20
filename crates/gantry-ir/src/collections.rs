@@ -807,37 +807,56 @@ pub enum CollectionTraversal {
     Stop,
 }
 
+/// Reports how a visitor-form traversal ended (`GNT-39.8`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollectionOutcome {
+    /// Every entry or element the visitor form publishes was visited.
+    Completed,
+    /// The visitor ended the traversal before its content was exhausted.
+    Stopped,
+}
+
+impl CollectionOutcome {
+    /// Reports whether the traversal completed rather than being stopped early.
+    #[must_use]
+    pub const fn is_completed(self) -> bool {
+        matches!(self, Self::Completed)
+    }
+}
+
 impl CollectionValue {
     /// Traverses the carried value in its admitted content order (`GNT-39.8`).
     ///
     /// A `Map` value is traversed through its admitted entries and a `Set` value through its
     /// admitted elements, each visited exactly once in the canonical collection order of
     /// `GNT-39.2`, and a visitor may end the traversal early. A `Range` value is traversed stepwise
-    /// through `RangeValue::next_position` and reports no visit here.
+    /// through `RangeValue::next_position` and reports no visit here. The traversal reports
+    /// `Completed` when every entry or element this form publishes was visited and `Stopped` when
+    /// the visitor ended it early.
     pub fn traverse(
         &self,
         visitor: &mut impl FnMut(CollectionVisit<'_>) -> CollectionTraversal,
-    ) -> CollectionTraversal {
+    ) -> CollectionOutcome {
         match self {
             Self::Map(value) => {
                 for (key, member) in value.entries() {
                     if visitor(CollectionVisit::Entry { key, value: member })
                         == CollectionTraversal::Stop
                     {
-                        return CollectionTraversal::Stop;
+                        return CollectionOutcome::Stopped;
                     }
                 }
             }
             Self::Set(value) => {
                 for element in value.elements() {
                     if visitor(CollectionVisit::Element(element)) == CollectionTraversal::Stop {
-                        return CollectionTraversal::Stop;
+                        return CollectionOutcome::Stopped;
                     }
                 }
             }
             Self::Range(_) => {}
         }
-        CollectionTraversal::Continue
+        CollectionOutcome::Completed
     }
 }
 
@@ -1003,8 +1022,8 @@ impl RangeStepContract {
 pub enum CollectionNonClaimName {
     /// No source collection value, operation, or collection API.
     SourceCollectionType,
-    /// No range traversal or iteration, iterator ownership or invalidation, mutation, exhaustion
-    /// reporting, suspension, quota, schema, recovery, or durable behavior.
+    /// No range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic,
+    /// suspension, quota, schema, recovery, or durable behavior.
     RangeIteratorAndDurability,
     /// No family behavior.
     FamilyBehavior,
@@ -1035,7 +1054,7 @@ impl CollectionNonClaimName {
                 "no source collection value, operation, or collection API"
             }
             Self::RangeIteratorAndDurability => {
-                "no range traversal or iteration, iterator ownership or invalidation, mutation, exhaustion reporting, suspension, quotas, schemas, recovery, or durable behavior"
+                "no range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior"
             }
             Self::FamilyBehavior => "no family behavior",
             Self::StorageLayout => "no storage layout or physical representation",

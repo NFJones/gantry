@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "13ae909d967405f8b49cd5888c8d270d96ce6ca1d318cdf05d4bfce3f2c67000",
-  "byte_length": 1056141,
+  "specification_sha256": "89520fbcf05ca5534e844954975b3d34a3c2d3ffd6ed10e42cb492390a80b8fe",
+  "byte_length": 1056740,
   "line_count": 15637,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9504,
       "end_line": 15637,
-      "sha256": "82874d2c6a5fa51109e38dc07f2f2e6cfee70b605ba0d805510df703706f2ad3",
+      "sha256": "6053afc1b2af137ec02243e28607c7f346cf341d7e8136d5f4da4d587195b4f0",
       "rationale": null
     }
   ],
@@ -42377,11 +42377,11 @@
       "id": "GNT-39.3-collection-foundation-non-claims",
       "span_start_line": 15597,
       "span_end_line": 15600,
-      "span_sha256": "ece1731864a4afbb16b5de73992ca4878130dfd928c418ec863988e49b0d52fc",
+      "span_sha256": "a3493ebd79f930f08347934d395a15ecfa765e086d9a6bb7cb8ab9db47218b3d",
       "anchor_line": 15597,
       "body_start_line": 15598,
       "body_end_line": 15600,
-      "body_sha256": "e5b74a8bc748e35af0380fd0bf2668cde7731b81125a3c79161e833ebc70b33d",
+      "body_sha256": "7d60167f85c896ba2d56721ce49dcaac41d9c37133afb8b002abad7d80c1b67e",
       "profiles": [
         "analyzer"
       ],
@@ -42546,11 +42546,11 @@
       "id": "GNT-39.7-range-step-contract",
       "span_start_line": 15613,
       "span_end_line": 15615,
-      "span_sha256": "d2a863d882cee2d0da605099b79f0e03f556b8816bc949cb48b647e5c54b5de1",
+      "span_sha256": "1b035b1bc24cc46536fb63f65abf77f4c0958528f746ca44d3f3ad060eb36ac4",
       "anchor_line": 15613,
       "body_start_line": 15614,
       "body_end_line": 15615,
-      "body_sha256": "6e81cfc861071e49ead5a87099fc1ca2799d00a07f756f56d91546a096116f83",
+      "body_sha256": "a23aec1d16b208670d87f6c0685d057ab16233afd0e7a04ac706db7ed74f8152",
       "profiles": [
         "analyzer"
       ],
@@ -42587,11 +42587,11 @@
       "id": "GNT-39.8-collection-value-model",
       "span_start_line": 15616,
       "span_end_line": 15619,
-      "span_sha256": "ee2ff501b75b3141a6021c2ad50286b451500fd0e5b3a0f058b96aa6005d371c",
+      "span_sha256": "fed7c350fea60e81972ab23648716c5572f0f9525f5df7a226ca8a08a1d9a3d1",
       "anchor_line": 15617,
       "body_start_line": 15618,
       "body_end_line": 15619,
-      "body_sha256": "851c3aee0cff61d6e21b704f5c5c57920ebba8cefd4c74c39a521f98d40b0cd6",
+      "body_sha256": "84e935b2e146be4576d4c8f0cdc12e86b8c67efa890f0718d1298b3cf8caefa3",
       "profiles": [
         "analyzer"
       ],

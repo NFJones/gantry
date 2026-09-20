@@ -9,9 +9,9 @@ evidence is `crates/gantry-conformance/tests/collections_foundation.rs`, one lan
 note is documentation: it names what the model declares and what it refuses, and it grants nothing.
 
 The section admits no source collection value, operation, or collection API and no collection type
-whose form `GNT-39.4-map-type-form-recognition` does not recognise, and it claims no range traversal
-or iteration, iterator ownership or invalidation, mutation, exhaustion reporting, suspension, quota,
-schema, recovery, or durable behavior. The canonical scalar-key contract it consumes is documented
+whose form `GNT-39.4-map-type-form-recognition` does not recognise, and it claims no range iteration,
+iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quota, schema,
+recovery, or durable behavior. The canonical scalar-key contract it consumes is documented
 separately in `docs/canonical-scalar-keys.md`.
 
 ## Declared clauses
@@ -144,6 +144,11 @@ separately in `docs/canonical-scalar-keys.md`.
   for a position the value does not admit. Traversal publishes no iterator value, no source
   iteration protocol, no adapter, no ownership or invalidation rule, no suspension, and no
   exhaustion diagnostic.
+  It reports how a visitor-form traversal ended: `CollectionOutcome::Completed` when every entry
+  or element that form publishes was visited and `Stopped` when the visitor ended it early, with
+  `is_completed` reading that outcome; a `Range` value publishes no visit through that form and
+  reports completion with none, and its stepwise traversal reports exhaustion by publishing no
+  next position.
 
 ## Diagnostics
 
@@ -157,7 +162,7 @@ separately in `docs/canonical-scalar-keys.md`.
 ## Declared non-claims
 
 - no source collection value, operation, or collection API
-- no range traversal or iteration, iterator ownership or invalidation, mutation, exhaustion reporting, suspension, quotas, schemas, recovery, or durable behavior
+- no range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior
 - no family behavior
 - no storage layout or physical representation
 - no performance claim

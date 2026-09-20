@@ -19,9 +19,10 @@ use gantry::ir::generated::TypeKind;
 use gantry::ir::{
     COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
-    CollectionNonClaimName, CollectionTraversal, CollectionValue, CollectionValueKind,
-    CollectionVisit, MapTypeIdentity, MapValue, RangeStepContract, RangeTypeIdentity, RangeValue,
-    SetTypeIdentity, SetValue, TypeDescriptor, canonical_order, check_collection_non_claims,
+    CollectionNonClaimName, CollectionOutcome, CollectionTraversal, CollectionValue,
+    CollectionValueKind, CollectionVisit, MapTypeIdentity, MapValue, RangeStepContract,
+    RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, TypeDescriptor, canonical_order,
+    check_collection_non_claims,
 };
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -1138,7 +1139,8 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         }
         CollectionTraversal::Continue
     });
-    assert_eq!(outcome, CollectionTraversal::Continue);
+    assert_eq!(outcome, CollectionOutcome::Completed);
+    assert!(outcome.is_completed());
     assert_eq!(entries.len(), map.entries().len());
     assert_eq!(entries[0].0, map.entries()[0].0);
     assert_eq!(entries[0].1, map.entries()[0].1);
@@ -1147,7 +1149,8 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         visited += 1;
         CollectionTraversal::Stop
     });
-    assert_eq!(stopped, CollectionTraversal::Stop);
+    assert_eq!(stopped, CollectionOutcome::Stopped);
+    assert!(!stopped.is_completed());
     assert_eq!(
         visited, 1,
         "the visitor ends the traversal at its first visit"
@@ -1158,7 +1161,7 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
             range_visits += 1;
             CollectionTraversal::Continue
         }),
-        CollectionTraversal::Continue
+        CollectionOutcome::Completed
     );
     assert_eq!(range_visits, 0, "a range value is traversed stepwise");
     assert_eq!(range.next_position(None), Some(bound(1)));
