@@ -1056,7 +1056,13 @@ impl<'a> Machine<'a> {
             });
             self.expected("constructed type within configured depth limit")
         })?;
-        if self.at_word("Option") || self.at_word("List") {
+        if self.at_word("Option")
+            || self.at_word("List")
+            || self.at_word("Set")
+            || self.at_word("Range")
+        {
+            // The one-argument type heads share this production; the analyzer distinguishes them by
+            // the head word it reads, and `GNT-39.4` fixes which of them are recognised at all.
             self.consume_current()?;
             self.expect_punctuation(Punctuation::Less)?;
             self.tasks

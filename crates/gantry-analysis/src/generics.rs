@@ -2718,9 +2718,9 @@ fn resolve_generic_type_node(
         }
         Some("Self") => TypeExpression::self_type(self_binder_depth(id, context)?, u64::MAX)
             .map_err(|_| AnalysisError::Invariant)?,
-        Some("Map") => {
-            // `GNT-39.4` owns the refusal: the type phase publishes
-            // `collection-type-unadmitted` and builds no descriptor for the form, so no type
+        Some("Map") | Some("Set") | Some("Range") => {
+            // `GNT-39.4` owns the refusal: the type phase publishes `collection-type-unadmitted`
+            // and builds no descriptor for any recognised collection type form, so no type
             // expression is built here either.
             return Ok(None);
         }

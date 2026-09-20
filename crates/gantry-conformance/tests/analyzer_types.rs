@@ -2581,8 +2581,8 @@ fn map_type_form_is_recognised_and_refused_until_admitted() {
         "fn f(x: Map<Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
         "fn f(x: Map) -> Int { 0 }\nfn main() -> Int { 0 }",
         "fn f(x: Map<Int, String, Bool>) -> Int { 0 }\nfn main() -> Int { 0 }",
-        "fn f(x: Set<Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
-        "fn f(x: Range<Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Set<Int, Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Range<Int, Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
     ] {
         let phase = syntax(malformed);
         assert_eq!(
@@ -2711,6 +2711,78 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments()
         ["collection-type-unadmitted"]
     );
     assert!(parameter.executable_program().is_none());
+}
+
+/// The grammar recognises the one-argument collection type forms `Set<K>` and `Range<T>`, and
+/// analysis refuses each of them under the clause-owned type-admission refusal (`GNT-39.4`).
+#[test]
+fn set_and_range_type_forms_are_recognised_and_refused_until_admitted() {
+    for spelling in ["Set", "Range"] {
+        let source = format!("fn f(x: {spelling}<Int>) -> Int {{ 0 }}\nfn main() -> Int {{ 0 }}");
+        let recognised = syntax(&source);
+        assert_eq!(
+            recognised.status(),
+            gantry::frontend::PackageSyntaxStatus::Valid,
+            "the {spelling} type form is recognised by the grammar: {:?}",
+            recognised.diagnostics()
+        );
+        let refused = analyze(&source);
+        assert_eq!(refused.status(), AnalysisStatus::Invalid, "{source}");
+        assert_eq!(
+            diagnostic_codes(refused.diagnostics()),
+            ["collection-type-unadmitted"],
+            "{source}"
+        );
+        assert_eq!(
+            refused
+                .diagnostics()
+                .iter()
+                .find(|diagnostic| diagnostic.code.as_str() == "collection-type-unadmitted")
+                .and_then(|diagnostic| diagnostic.fields.get("type"))
+                .map(|value| value.as_ref()),
+            Some(spelling),
+            "{source} names the refused form"
+        );
+        assert!(refused.executable_program().is_none());
+    }
+
+    for nested in [
+        "fn f(xs: List<Set<Int>>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Option<Range<Int>>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "struct S { s: Set<Int> }\nfn main() -> Int { 0 }",
+        "struct S { r: Range<Int> }\nfn main() -> Int { 0 }",
+    ] {
+        let refused = analyze(nested);
+        assert_eq!(refused.status(), AnalysisStatus::Invalid, "{nested}");
+        assert_eq!(
+            diagnostic_codes(refused.diagnostics()),
+            ["collection-type-unadmitted"],
+            "{nested}"
+        );
+        assert!(refused.executable_program().is_none());
+    }
+
+    for malformed in [
+        "fn f(x: Set) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Set<Int, Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Set<>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Range) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Range<Int, Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
+    ] {
+        let phase = syntax(malformed);
+        assert_eq!(
+            phase.status(),
+            gantry::frontend::PackageSyntaxStatus::Invalid,
+            "{malformed} is refused by the grammar"
+        );
+        assert!(
+            diagnostic_codes(phase.diagnostics())
+                .iter()
+                .all(|code| *code == "unexpected-token"),
+            "{malformed} refuses only as an unexpected token: {:?}",
+            diagnostic_codes(phase.diagnostics())
+        );
+    }
 }
 
 /// The collection spellings are reserved before any collection type is admitted (`GNT-13.2`):

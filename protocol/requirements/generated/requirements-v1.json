@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "1b94f7cf4a688bacd23fb84a4f94d5bbf9d2f795229158b8538f95372ab409eb",
-  "byte_length": 1040647,
+  "specification_sha256": "15bde81c1b477853c094ddf71e8ed0040c648dd5bb40923e4250affdc5fef7c0",
+  "byte_length": 1040809,
   "line_count": 15607,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9504,
       "end_line": 15607,
-      "sha256": "79ef993d079b6195c68b70d6b7025e9111ac51f21589e85ae9e14c10495361e6",
+      "sha256": "7cd2226b5a796051a18a8e5b27b4923aec2baae9460f632c92d572723ef22fb1",
       "rationale": null
     }
   ],
@@ -42377,11 +42377,11 @@
       "id": "GNT-39.3-collection-foundation-non-claims",
       "span_start_line": 15597,
       "span_end_line": 15600,
-      "span_sha256": "922281221f6c34b9188a154ff593ac72de0501e11eb588224df9670342b454c2",
+      "span_sha256": "d3c70c138a7b9a9c35284315466bb69aacdd551f28136a183502edc5c9ced264",
       "anchor_line": 15597,
       "body_start_line": 15598,
       "body_end_line": 15600,
-      "body_sha256": "d0d06a16698bbe98313b998725f0f1b437ee3b065e3c573b84648df0cd7a4638",
+      "body_sha256": "ca4a3447af851a1cfef30ffaee70f897c96eb3fbe646ab5dab6f7445adff0908",
       "profiles": [
         "analyzer"
       ],
@@ -42418,11 +42418,11 @@
       "id": "GNT-39.4-map-type-form-recognition",
       "span_start_line": 15601,
       "span_end_line": 15604,
-      "span_sha256": "b202d3dcee2c62875b7c73a3925dd5d9ac9c14477f5308d3c9ed84862f29db8a",
+      "span_sha256": "9cb2fd02ccf54f0ef0894fda52890fbb41ab627550ff389c86d0d3ff1a702734",
       "anchor_line": 15601,
       "body_start_line": 15602,
       "body_end_line": 15604,
-      "body_sha256": "a30803051613d85a9f686224f278612e387858a5951fe28dabbabd93776e7b2e",
+      "body_sha256": "317586cb12a8d596ca4fbdb2369be490663da192a1e9aa86025d9aef3fcc6fed",
       "profiles": [
         "analyzer"
       ],
@@ -42447,7 +42447,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/analyzer_types.rs#map_type_form_is_recognised_and_refused_until_admitted"
+                "crates/gantry-conformance/tests/analyzer_types.rs#map_type_form_is_recognised_and_refused_until_admitted",
+                "crates/gantry-conformance/tests/analyzer_types.rs#set_and_range_type_forms_are_recognised_and_refused_until_admitted"
               ],
               "rationale": null
             }

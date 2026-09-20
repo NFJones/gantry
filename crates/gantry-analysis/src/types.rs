@@ -1464,6 +1464,18 @@ fn resolve_type_node(
             }
             None
         }
+        Some(spelling @ ("Set" | "Range")) => {
+            // `GNT-39.4` recognises the one-argument collection type forms `Set<K>` and `Range<T>`
+            // and analysis refuses them under the same clause-owned code until the type is
+            // admitted; no descriptor and no type expression is built for them either.
+            diagnostics.push(type_diagnostic(
+                "collection-type-unadmitted",
+                &format!("a {spelling} type is not admitted in this edition"),
+                node.span().clone(),
+                [("type", spelling)],
+            )?);
+            None
+        }
         Some("Self") => None,
         Some(_) => return Err(AnalysisError::Invariant),
         None => {

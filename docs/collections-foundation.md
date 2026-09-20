@@ -21,7 +21,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `GNT-39.1-admitted-collection-keys` | the admitted key domain and the refusal that names the refused kind |
 | `GNT-39.2-canonical-collection-order-and-duplicate-identity` | the canonical order and identity-based duplicate rejection |
 | `GNT-39.3-collection-foundation-non-claims` | the frozen non-claims listed below |
-| `GNT-39.4-map-type-form-recognition` | the one recognised collection type form, `Map<K, V>`, and its `collection-type-unadmitted` refusal |
+| `GNT-39.4-map-type-form-recognition` | the three recognised collection type forms, `Map<K, V>`, `Set<K>`, and `Range<T>`, and their `collection-type-unadmitted` refusal |
 | `GNT-39.5-map-type-identity` | the identity of the recognised form: its two argument types in order, the five admitted key types, and the key-domain refusal of every other resolved key argument |
 
 ## What the model decides
@@ -48,10 +48,11 @@ separately in `docs/canonical-scalar-keys.md`.
   every identity is unique.
 - `check_collection_non_claims` refuses an unasserted declared non-claim and a non-claim presented
   as a guarantee, both under `collection-non-claim-as-guarantee`.
-- The grammar recognises exactly one collection type form, `Map<K, V>`, with two value-type
-  arguments (`GNT-39.4`); analysis builds no descriptor or type expression for it, so no `Map`
-  value, operation, lowering, or machine representation exists in this edition, and every malformed
-  argument list is refused by the grammar.
+- The grammar recognises exactly three collection type forms (`GNT-39.4`): `Map<K, V>` with two
+  value-type arguments, and `Set<K>` and `Range<T>` with one each; analysis builds no descriptor
+  or type expression for any of them, so no collection value, operation, lowering, or machine
+  representation exists in this edition, and every malformed argument list is refused by the
+  grammar.
 - `MapTypeIdentity::admit` publishes the identity of the recognised form (`GNT-39.5`): the key
   argument then the value argument, rendered as the canonical constructed-type text `Map<K,V>` over
   the canonical text of each argument. `MapKeyType::classify` admits exactly the five key types of
@@ -75,7 +76,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `collection-invalid-key` | `GNT-39.1-admitted-collection-keys` | the candidate kind, or a recognised `Map` key argument, is not an admitted collection key |
 | `collection-duplicate-key` | `GNT-39.2-canonical-collection-order-and-duplicate-identity` | two admitted keys share one identity in one batch |
 | `collection-non-claim-as-guarantee` | `GNT-39.3-collection-foundation-non-claims` | a declared non-claim is unasserted or presented as a guarantee |
-| `collection-type-unadmitted` | `GNT-39.4-map-type-form-recognition` | a recognised `Map<K, V>` occurrence is refused until the type is admitted |
+| `collection-type-unadmitted` | `GNT-39.4-map-type-form-recognition` | a recognised collection type form is refused until the type is admitted |
 
 ## Declared non-claims
 
