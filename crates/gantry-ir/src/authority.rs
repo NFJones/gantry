@@ -26,6 +26,8 @@
 //!   5a is [`AuthorityRequirementId`];
 //! * the selected implementation binding of `GNT-3-T-AUTHORITY-CLOSURE` is
 //!   [`AuthorityBindingId`];
+//! * the conservative executable closure of `GNT-3-T-AUTHORITY-CLOSURE` over
+//!   those bindings is [`CapabilityAuthorityClosure`];
 //! * the concrete runtime instance is [`AuthorityInstanceId`] and
 //!   [`AuthorityInstance`].
 //!
@@ -276,6 +278,81 @@ impl AuthorityBindingId {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.text
+    }
+}
+
+/// One conservative executable authority closure of one analyzed artifact.
+///
+/// `GNT-3-T-AUTHORITY-CLOSURE` requires the least set of capability-binding
+/// instances over the exact operation sites reachable from retained roots. This
+/// value holds exactly the bindings its caller proved reachable: instances are
+/// deduplicated by binding identity and ordered canonically by that same
+/// identity, so two closures over the same reachable sites are equal whatever
+/// the declaration or traversal order. Least-ness is the caller's obligation;
+/// this type never adds an instance the caller did not supply, so a declaration
+/// the caller did not prove reachable cannot enter the closure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapabilityAuthorityClosure {
+    instances: Vec<AuthorityBindingId>,
+}
+
+impl CapabilityAuthorityClosure {
+    /// The largest number of supplied instances one construction admits.
+    ///
+    /// The bound is this module's declared resource limit, not a normative
+    /// language constant: a larger input is refused with
+    /// [`AuthorityError::ClosureExceedsMaximum`] instead of being truncated, so
+    /// one closure construction is bounded in time and memory by this constant.
+    /// The bound is measured over the supplied instances before deduplication,
+    /// so duplicates count toward it.
+    pub const MAXIMUM_INSTANCES: usize = 4096;
+
+    /// Builds the closure over the supplied reachable capability bindings.
+    ///
+    /// Instances are deduplicated by binding identity and ordered canonically by
+    /// that identity.
+    pub fn new(
+        instances: impl IntoIterator<Item = AuthorityBindingId>,
+    ) -> Result<Self, AuthorityError> {
+        let mut collected = Vec::new();
+        for instance in instances {
+            collected.push(instance);
+            if collected.len() > Self::MAXIMUM_INSTANCES {
+                return Err(AuthorityError::ClosureExceedsMaximum {
+                    observed: collected.len(),
+                    maximum: Self::MAXIMUM_INSTANCES,
+                });
+            }
+        }
+        collected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        collected.dedup_by(|left, right| left.as_str() == right.as_str());
+        Ok(Self {
+            instances: collected,
+        })
+    }
+
+    /// Returns the closure's bindings in canonical identity order.
+    #[must_use]
+    pub fn instances(&self) -> &[AuthorityBindingId] {
+        &self.instances
+    }
+
+    /// Returns whether the closure contains one exact binding identity.
+    #[must_use]
+    pub fn contains(&self, binding: &AuthorityBindingId) -> bool {
+        self.instances.iter().any(|instance| instance == binding)
+    }
+
+    /// Returns the number of distinct bindings in the closure.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.instances.len()
+    }
+
+    /// Returns whether the closure holds no binding.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.instances.is_empty()
     }
 }
 
@@ -1399,6 +1476,13 @@ pub enum AuthorityError {
     AncestorFenced(FenceCategory),
     /// The compared instances do not satisfy the same capability requirement.
     IncomparableRequirements,
+    /// The supplied closure input exceeds [`CapabilityAuthorityClosure::MAXIMUM_INSTANCES`].
+    ClosureExceedsMaximum {
+        /// The number of supplied instances when the bound was crossed.
+        observed: usize,
+        /// The declared bound.
+        maximum: usize,
+    },
 }
 
 impl AuthorityError {
@@ -1419,6 +1503,7 @@ impl AuthorityError {
             Self::Fenced(_) => "authority-fenced",
             Self::AncestorFenced(_) => "authority-ancestor-fenced",
             Self::IncomparableRequirements => "authority-incomparable-requirements",
+            Self::ClosureExceedsMaximum { .. } => "authority-closure-exceeds-maximum",
         }
     }
 }
@@ -1439,6 +1524,11 @@ impl fmt::Display for AuthorityError {
             Self::Fenced(category) | Self::AncestorFenced(category) => {
                 write!(formatter, "{}: {}", self.code(), category.wire_name())
             }
+            Self::ClosureExceedsMaximum { observed, maximum } => write!(
+                formatter,
+                "{}: {observed} supplied instances exceed the declared maximum of {maximum}",
+                self.code()
+            ),
             _ => formatter.write_str(self.code()),
         }
     }
@@ -1492,10 +1582,15 @@ pub(crate) fn digest_fields(domain: &str, fields: &[&[u8]]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::{
-        AUTHORITY_RIGHT_ORDER, AdmissionRequest, AuthorityError, AuthorityFence,
-        AuthorityGeneration, AuthorityRight, FenceCategory, FenceState, RightsSet,
+        AUTHORITY_RIGHT_ORDER, AdmissionRequest, AuthorityBindingId, AuthorityError,
+        AuthorityFence, AuthorityGeneration, AuthorityRequirementId, AuthorityRight,
+        CapabilityAuthorityClosure, FenceCategory, FenceState, RightsSet,
     };
     use crate::generated::RecoveryClass;
+    use crate::{
+        CanonicalImplementationIdentity, CanonicalPath, CanonicalSignature, TypeDescriptor,
+        TypeExpression,
+    };
 
     #[test]
     fn rights_sets_iterate_in_reporting_order_encode_membership_and_compare_by_subset() {
@@ -1589,5 +1684,191 @@ mod tests {
             AuthorityError::GenerationExhausted.code(),
             "authority-generation-exhausted"
         );
+    }
+
+    /// Returns the canonical workflow path of one declared fixture item.
+    fn fixture_path(name: &str) -> CanonicalPath {
+        match CanonicalPath::new(&format!("crate::authority::{name}")) {
+            Ok(path) => path,
+            Err(error) => panic!("the fixture path {name} is canonical: {error:?}"),
+        }
+    }
+
+    /// Returns one public capability requirement of one declared fixture path.
+    fn fixture_requirement(name: &str) -> AuthorityRequirementId {
+        let path = fixture_path(name);
+        let signature = CanonicalSignature::function(&path, &[], &TypeDescriptor::INT);
+        match AuthorityRequirementId::new(&path, &signature, "fixture", RecoveryClass::Idempotent) {
+            Ok(requirement) => requirement,
+            Err(error) => panic!("the fixture requirement {name} is valid: {error:?}"),
+        }
+    }
+
+    /// Returns one inherent implementation identity over the declared receiver.
+    fn fixture_implementation(descriptor: &TypeDescriptor) -> CanonicalImplementationIdentity {
+        match TypeExpression::closed(descriptor, 8) {
+            Ok(receiver) => CanonicalImplementationIdentity::inherent(&receiver),
+            Err(error) => panic!("the fixture receiver is within depth 8: {error:?}"),
+        }
+    }
+
+    /// Returns one binding of the declared requirement and receiver.
+    fn fixture_binding(
+        requirement: &AuthorityRequirementId,
+        descriptor: &TypeDescriptor,
+    ) -> AuthorityBindingId {
+        AuthorityBindingId::new(requirement, &fixture_implementation(descriptor))
+    }
+
+    /// The closure is equal under any supplied order and orders by identity.
+    #[test]
+    fn capability_authority_closure_orders_bindings_canonically() {
+        let first = fixture_requirement("order_first");
+        let second = fixture_requirement("order_second");
+        let alpha = fixture_binding(&first, &TypeDescriptor::INT);
+        let beta = fixture_binding(&first, &TypeDescriptor::STRING);
+        let gamma = fixture_binding(&second, &TypeDescriptor::INT);
+        let forward = CapabilityAuthorityClosure::new([alpha.clone(), beta.clone(), gamma.clone()])
+            .unwrap_or_else(|error| panic!("the declared closure is within the bound: {error}"));
+        let reversed =
+            CapabilityAuthorityClosure::new([gamma.clone(), beta.clone(), alpha.clone()])
+                .unwrap_or_else(|error| {
+                    panic!("the declared closure is within the bound: {error}")
+                });
+        assert_eq!(
+            forward, reversed,
+            "the closure is a set keyed by binding identity, not an input order"
+        );
+        assert_eq!(forward.len(), 3);
+        assert!(!forward.is_empty());
+        assert!(
+            forward
+                .instances()
+                .windows(2)
+                .all(|pair| pair[0].as_str() < pair[1].as_str()),
+            "instances are ordered by their canonical identity spelling"
+        );
+        let mut expected: Vec<&str> = vec![alpha.as_str(), beta.as_str(), gamma.as_str()];
+        expected.sort_unstable();
+        assert_eq!(
+            forward
+                .instances()
+                .iter()
+                .map(AuthorityBindingId::as_str)
+                .collect::<Vec<&str>>(),
+            expected
+        );
+    }
+
+    /// Binding identity covers requirement and implementation; duplicates collapse.
+    #[test]
+    fn capability_authority_closure_deduplicates_by_binding_identity() {
+        let first = fixture_requirement("dedup_first");
+        let second = fixture_requirement("dedup_second");
+        let int = fixture_binding(&first, &TypeDescriptor::INT);
+        let duplicate = fixture_binding(&first, &TypeDescriptor::INT);
+        let other_implementation = fixture_binding(&first, &TypeDescriptor::STRING);
+        let other_requirement = fixture_binding(&second, &TypeDescriptor::INT);
+        assert_eq!(
+            int, duplicate,
+            "one requirement and one implementation derive one identity"
+        );
+        assert_ne!(
+            int, other_implementation,
+            "the selected implementation is part of the binding identity"
+        );
+        assert_ne!(
+            int, other_requirement,
+            "the capability requirement is part of the binding identity"
+        );
+        let closure = CapabilityAuthorityClosure::new([
+            int.clone(),
+            duplicate,
+            other_implementation.clone(),
+            other_requirement.clone(),
+            int.clone(),
+        ])
+        .unwrap_or_else(|error| panic!("the declared closure is within the bound: {error}"));
+        assert_eq!(closure.len(), 3, "duplicates collapse to one instance each");
+        assert_eq!(
+            closure
+                .instances()
+                .iter()
+                .filter(|instance| *instance == &int)
+                .count(),
+            1
+        );
+        assert!(closure.contains(&int));
+        assert!(closure.contains(&other_implementation));
+        assert!(closure.contains(&other_requirement));
+        assert!(!closure.contains(&fixture_binding(&second, &TypeDescriptor::STRING)));
+    }
+
+    /// The declared bound is positive, inclusive, and refuses one more instance.
+    #[test]
+    fn capability_authority_closure_bound_is_inclusive_and_refuses_one_more() {
+        const {
+            assert!(
+                CapabilityAuthorityClosure::MAXIMUM_INSTANCES > 0,
+                "the declared bound is positive"
+            );
+        }
+        let at_bound = (0..CapabilityAuthorityClosure::MAXIMUM_INSTANCES)
+            .map(|index| {
+                fixture_binding(
+                    &fixture_requirement(&format!("bound_{index}")),
+                    &TypeDescriptor::INT,
+                )
+            })
+            .collect::<Vec<AuthorityBindingId>>();
+        let closure = CapabilityAuthorityClosure::new(at_bound)
+            .unwrap_or_else(|error| panic!("exactly the declared maximum is admitted: {error}"));
+        assert_eq!(closure.len(), CapabilityAuthorityClosure::MAXIMUM_INSTANCES);
+        let over = (0..=CapabilityAuthorityClosure::MAXIMUM_INSTANCES)
+            .map(|index| {
+                fixture_binding(
+                    &fixture_requirement(&format!("bound_{index}")),
+                    &TypeDescriptor::INT,
+                )
+            })
+            .collect::<Vec<AuthorityBindingId>>();
+        assert_eq!(
+            CapabilityAuthorityClosure::new(over),
+            Err(AuthorityError::ClosureExceedsMaximum {
+                observed: CapabilityAuthorityClosure::MAXIMUM_INSTANCES + 1,
+                maximum: CapabilityAuthorityClosure::MAXIMUM_INSTANCES,
+            })
+        );
+        assert_eq!(
+            AuthorityError::ClosureExceedsMaximum {
+                observed: 2,
+                maximum: 1,
+            }
+            .code(),
+            "authority-closure-exceeds-maximum"
+        );
+    }
+
+    /// Only supplied reachable bindings enter the closure.
+    #[test]
+    fn capability_authority_closure_holds_only_supplied_reachable_bindings() {
+        let reachable = fixture_binding(&fixture_requirement("reachable"), &TypeDescriptor::INT);
+        let unreachable =
+            fixture_binding(&fixture_requirement("unreachable"), &TypeDescriptor::INT);
+        let closure = CapabilityAuthorityClosure::new([reachable.clone()])
+            .unwrap_or_else(|error| panic!("the declared closure is within the bound: {error}"));
+        assert_eq!(closure.instances(), std::slice::from_ref(&reachable));
+        assert_eq!(closure.len(), 1);
+        assert!(closure.contains(&reachable));
+        assert!(
+            !closure.contains(&unreachable),
+            "a declaration the caller did not prove reachable never enters the closure"
+        );
+        let empty = CapabilityAuthorityClosure::new(Vec::new())
+            .unwrap_or_else(|error| panic!("the empty closure is within the bound: {error}"));
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+        assert!(empty.instances().is_empty());
+        assert!(!empty.contains(&reachable));
     }
 }
