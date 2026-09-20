@@ -61,6 +61,11 @@ separately in `docs/canonical-scalar-keys.md`.
   occurrence whose key argument is admitted, and an occurrence whose key argument resolves to no
   type at all (an unresolved name or a type parameter), is refused as `collection-type-unadmitted`
   and builds no descriptor.
+  The same canonical text is exact in both directions: `MapTypeIdentity::from_canonical_text`
+  admits exactly the five key member texts and canonical constructed-type value texts, refuses a
+  key member of any other type as `collection-invalid-key` naming it, and refuses every other
+  non-canonical or unadmitted text (including a nested `Map` member) as
+  `collection-type-unadmitted`.
 
 ## Diagnostics
 

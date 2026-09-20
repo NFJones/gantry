@@ -289,6 +289,58 @@ impl MapTypeIdentity {
             self.value.canonical_string()
         )
     }
+
+    /// Decodes one exact canonical `Map<K,V>` identity text.
+    ///
+    /// The text must be the canonical rendering of the identity: `Map<` then the key member text,
+    /// one comma, the value member text, and `>`. A key member text that is not one of the five
+    /// admitted key types is refused under `collection-invalid-key`, naming the refused member, so
+    /// decoding admits no key the key domain refuses; any other text that is not the canonical
+    /// rendering of one identity is refused under `collection-type-unadmitted`, so decoding admits
+    /// no member kind this edition does not admit and no non-canonical spelling. Decoding publishes
+    /// the identity and nothing more: no descriptor kind, type admission, value, construction,
+    /// projection, iteration, traversal, lowering, or machine representation.
+    pub fn from_canonical_text(text: &str) -> Result<Self, CollectionError> {
+        let inner = text
+            .strip_prefix("Map<")
+            .and_then(|rest| rest.strip_suffix('>'))
+            .ok_or_else(|| Self::not_an_identity(text))?;
+        let mut depth = 0u64;
+        let mut separator = None;
+        for (index, character) in inner.char_indices() {
+            match character {
+                '<' => depth += 1,
+                '>' => {
+                    depth = depth
+                        .checked_sub(1)
+                        .ok_or_else(|| Self::not_an_identity(text))?;
+                }
+                ',' if depth == 0 => {
+                    separator = Some(index);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let separator = separator.ok_or_else(|| Self::not_an_identity(text))?;
+        let (key_text, value_text) = (&inner[..separator], &inner[separator + 1..]);
+        let key = MapKeyType::classify(key_text)?;
+        let value = TypeDescriptor::from_canonical_string(value_text)
+            .map_err(|_| Self::not_an_identity(text))?;
+        let identity = Self { key, value };
+        if identity.canonical_text() == text {
+            Ok(identity)
+        } else {
+            Err(Self::not_an_identity(text))
+        }
+    }
+
+    fn not_an_identity(text: &str) -> CollectionError {
+        CollectionError::new(
+            CollectionDiagnosticCode::UnadmittedType,
+            format!("`{text}` is not the canonical text of one admitted Map identity"),
+        )
+    }
 }
 
 /// One declared non-claim of `GNT-39.3`.

@@ -351,6 +351,60 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_the_rest() {
             error.detail()
         );
     }
+
+    // The identity's canonical text is exact in both directions: every admitted key type decodes,
+    // and the decoded identity re-renders byte-identically, including nested member descriptors.
+    for (text, key) in [
+        ("Map<Unit,String>", MapKeyType::Unit),
+        ("Map<Bool,List<Int>>", MapKeyType::Bool),
+        ("Map<Int,Result<Int,String>>", MapKeyType::Int),
+        ("Map<Float,Option<Int>>", MapKeyType::Float),
+        ("Map<String,Tuple<Int,String>>", MapKeyType::String),
+    ] {
+        let identity = MapTypeIdentity::from_canonical_text(text)
+            .unwrap_or_else(|error| panic!("`{text}` decodes: {}", error.detail()));
+        assert_eq!(identity.key(), key);
+        assert_eq!(identity.canonical_text(), text);
+        assert_eq!(
+            MapTypeIdentity::from_canonical_text(&identity.canonical_text()).unwrap_or_else(
+                |error| panic!("the rendered identity decodes: {}", error.detail())
+            ),
+            identity,
+            "the canonical text round-trips"
+        );
+    }
+
+    // Decoding admits no key the key domain refuses and no non-canonical or unadmitted member.
+    for (text, code) in [
+        ("Map<Decision,String>", CollectionDiagnosticCode::InvalidKey),
+        ("Map<Int>", CollectionDiagnosticCode::UnadmittedType),
+        (
+            "Map<Int,String,Int>",
+            CollectionDiagnosticCode::UnadmittedType,
+        ),
+        ("Map<Int,>", CollectionDiagnosticCode::UnadmittedType),
+        ("map<Int,String>", CollectionDiagnosticCode::UnadmittedType),
+        ("Map<Int,Missing>", CollectionDiagnosticCode::UnadmittedType),
+        (
+            "Map<Int,Map<Int,String>>",
+            CollectionDiagnosticCode::UnadmittedType,
+        ),
+        ("List<Int>", CollectionDiagnosticCode::UnadmittedType),
+        ("Map<Int,String> ", CollectionDiagnosticCode::UnadmittedType),
+    ] {
+        let error = MapTypeIdentity::from_canonical_text(text)
+            .err()
+            .unwrap_or_else(|| panic!("`{text}` is not the canonical text of one identity"));
+        assert_eq!(error.code(), code, "`{text}`: {}", error.detail());
+    }
+    let refused = MapTypeIdentity::from_canonical_text("Map<Decision,String>")
+        .err()
+        .unwrap_or_else(|| panic!("a refused key member"));
+    assert!(
+        refused.detail().contains("Decision"),
+        "the decoding refusal names the refused key member: {}",
+        refused.detail()
+    );
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).

@@ -98,23 +98,23 @@
   },
   {
    "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "1923c12755f04e082bde9d891babc994a45afc056a4bae1187265230c4f01110"
+   "sha256": "ff86793388fc9d90989ded70adefede98400bf0b72ee41228bcecbe1c5e9cf8c"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "20b1da8c4b0f475ab396200fb218b921e652d89ab21f8d7028d97cefe839fc09"
+   "sha256": "8311002cef40365251b10356fefaddcc6f85ea815b02105b2c6a303724069a35"
   },
   {
    "path": "protocol/conformance/analyzer-validity-v1.json",
-   "sha256": "4e81e1405c3083c45174b366c2d00dcfd5aef4cf055af8661e16994a96317bf6"
+   "sha256": "d34ab763f9efbd44f17b92dd63b076119aa65f7e12faafdf458c9325d89ab329"
   },
   {
    "path": "protocol/conformance/generics-traits-frontend-v1.json",
-   "sha256": "e8c0c5918c2f8ec3cff4c582f07daca7a044a8ca10f7c01c61e963701deebff2"
+   "sha256": "7dd9daa5f489258fa3bb7807e2f3010291326f3f6a71adb72b4645e8e8be4f4b"
   },
   {
    "path": "protocol/conformance/generics-traits-ir-v1.json",
-   "sha256": "f1a74da9856d566d3d3ea950186617066d064b51cd597abd1ace84fd9a346cc7"
+   "sha256": "80f304dd0eb6ee0e5ca739fd57d99631a27eafc10e13614ccee96beee51fc195"
   },
   {
    "path": "protocol/goldens/analyzer-validity-model-v1.json",
@@ -122,15 +122,15 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "48280fbb9f164fa31f08a2f20cc6cc8383379b67122d23e43b9f2a786c713e13"
+   "sha256": "d561160ca7ba789224f0d08e7fdc7aae3a39984df232ad201686d977a17e1326"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "369f559c88e1d1757549c39ee98a06bd7bab137311dd5f0a5f9b0540a3c85785"
+   "sha256": "978ce59b8cd1fb06d2ff108276f1db1f2c6298d226430064134ac8838963bd7a"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
-   "sha256": "2738aa93e126957820416258094b7cd9cbf666bafd3faa48ef322eb389452519"
+   "sha256": "1f8038ecf017d14f2732ea4c63ef41abf7e17cd3f0f229f641f4f5893a14a44a"
   },
   {
    "path": "protocol/schemas/canonical-ir-v1.schema.json",
@@ -211,7 +211,7 @@
  "section14_excerpt_count": 51,
  "specification": {
   "path": "SPEC.md",
-  "sha256": "440c99e4744ed7d1a18d3814cd71f60333bb1595a00e2d3e93f58aec5d729ab3"
+  "sha256": "f5e54f6ad42466ed4d5b7a4da6e49e6e87abb0004794a447f70f5b0a8133f538"
  },
  "status": "verified",
  "validation_commands": [
