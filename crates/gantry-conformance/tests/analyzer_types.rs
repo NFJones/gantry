@@ -2640,6 +2640,45 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments()
             detail.contains(&format!("`{named}` is not an admitted collection key type")),
             "{source} names the refused key argument: {detail}"
         );
+        assert_eq!(
+            refused
+                .diagnostics()
+                .iter()
+                .find(|diagnostic| diagnostic.code.as_str() == "collection-invalid-key")
+                .and_then(|diagnostic| diagnostic.fields.get("key"))
+                .map(|value| value.as_ref()),
+            Some(named),
+            "{source} carries the refused argument in the structured `key` field"
+        );
+        assert!(refused.executable_program().is_none());
+    }
+
+    // The key-domain refusal does not depend on the value argument: a key argument that denotes
+    // another type is refused under the key-domain spelling even when the value argument resolves
+    // to no type, and the refusal still names the key argument.
+    for source in [
+        "fn f(x: Map<List<Int>, Missing>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f<T>(x: Map<List<Int>, T>) -> Int { 0 }\nfn main() -> Int { 0 }",
+    ] {
+        let refused = analyze(source);
+        assert_eq!(refused.status(), AnalysisStatus::Invalid, "{source}");
+        let codes = diagnostic_codes(refused.diagnostics());
+        assert_eq!(
+            codes.last().copied(),
+            Some("collection-invalid-key"),
+            "{source} refuses the key argument even though the value argument resolves to no \
+             type: {codes:?}"
+        );
+        assert_eq!(
+            refused
+                .diagnostics()
+                .iter()
+                .find(|diagnostic| diagnostic.code.as_str() == "collection-invalid-key")
+                .and_then(|diagnostic| diagnostic.fields.get("key"))
+                .map(|value| value.as_ref()),
+            Some("List<Int>"),
+            "{source} names the refused key argument"
+        );
         assert!(refused.executable_program().is_none());
     }
 

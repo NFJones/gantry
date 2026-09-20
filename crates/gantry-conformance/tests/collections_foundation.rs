@@ -15,9 +15,9 @@ use gantry::canonical_key::{
     CanonicalKey, CanonicalKeyError, CanonicalKeyLimits, DEFAULT_CANONICAL_KEY_LIMITS,
 };
 use gantry::ir::{
-    COLLECTION_CLAUSES, CollectionDiagnosticCode, CollectionError, CollectionKeyPolicy,
-    CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName, MapKeyType,
-    MapTypeIdentity, TypeDescriptor, canonical_order, check_collection_non_claims,
+    COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
+    CollectionKeyPolicy, CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName,
+    MapKeyType, MapTypeIdentity, TypeDescriptor, canonical_order, check_collection_non_claims,
 };
 use gantry::numeric::{GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -326,6 +326,13 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_the_rest() {
         TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::STRING),
         TypeDescriptor::tuple(vec![TypeDescriptor::INT, TypeDescriptor::STRING])
             .unwrap_or_else(|error| panic!("a two-member tuple: {error}")),
+        TypeDescriptor::callable(
+            CallableKind::Function,
+            vec![TypeDescriptor::INT],
+            TypeDescriptor::INT,
+        ),
+        TypeDescriptor::from_canonical_string("crate::example::Token")
+            .unwrap_or_else(|error| panic!("a declared descriptor decodes: {error}")),
     ];
     for key in ineligible {
         let text = key.canonical_string();

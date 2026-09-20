@@ -22,10 +22,9 @@ use gantry_ir::generated::TypeKind;
 use gantry_ir::{
     ArtifactLimits, CallableKind, CanonicalCallableIdentity, CanonicalSignature, ClosedCallable,
     ClosedOperationSite, ClosedTaskSite, ConcreteEffect, ConcreteIdentity, ConcreteSourceMapEntry,
-    ExecutableProjection, GenericAnalysisFacts, GenericTemplate, ImplementationHead,
-    MapTypeIdentity, ResolvedCall, SourceOriginSet, StaticSiteId, StructuralPosition,
-    TraitContract, TypeDescriptor, TypeDescriptorError, TypeExpression, WorkflowFacts,
-    WorkflowParameter,
+    ExecutableProjection, GenericAnalysisFacts, GenericTemplate, ImplementationHead, MapKeyType,
+    ResolvedCall, SourceOriginSet, StaticSiteId, StructuralPosition, TraitContract, TypeDescriptor,
+    TypeDescriptorError, TypeExpression, WorkflowFacts, WorkflowParameter,
 };
 
 use crate::automatic::AutomaticNames;
@@ -1439,25 +1438,23 @@ fn resolve_type_node(
         }
         Some("Map") => {
             // `GNT-39.4` refuses the form as a type and `GNT-39.5` owns the key argument's
-            // identity: an occurrence whose key argument is not an admitted collection key type is
-            // refused under `collection-invalid-key` before the type-admission refusal, naming the
-            // refused argument, and an occurrence whose key argument is admitted keeps the
+            // identity: the key argument is classified from its own resolved descriptor, so a key
+            // argument that denotes another type is refused under `collection-invalid-key`, naming
+            // the refused argument, even when the value argument resolves to no type; an admitted
+            // key argument, and a key argument that resolves to no type at all, keeps the
             // type-admission refusal. Neither path builds a descriptor or a type expression.
-            match members.as_deref() {
-                Some([key, value]) => match MapTypeIdentity::admit(key, value) {
-                    Ok(_) => diagnostics.push(type_diagnostic(
-                        "collection-type-unadmitted",
-                        "a Map type is not admitted in this edition",
-                        node.span().clone(),
-                        [("type", "Map")],
-                    )?),
-                    Err(refusal) => diagnostics.push(type_diagnostic(
-                        "collection-invalid-key",
-                        refusal.detail(),
-                        node.span().clone(),
-                        [("key", key.canonical_string())],
-                    )?),
-                },
+            let key_text = type_member_nodes(tree, id)?
+                .into_iter()
+                .next()
+                .and_then(|member| resolved.get(&member))
+                .map(|fact| fact.descriptor.canonical_string());
+            match key_text.as_ref().map(|text| MapKeyType::classify(text)) {
+                Some(Err(refusal)) => diagnostics.push(type_diagnostic(
+                    "collection-invalid-key",
+                    refusal.detail(),
+                    node.span().clone(),
+                    [("key", key_text.clone().unwrap_or_default())],
+                )?),
                 _ => diagnostics.push(type_diagnostic(
                     "collection-type-unadmitted",
                     "a Map type is not admitted in this edition",
