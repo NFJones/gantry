@@ -2762,6 +2762,64 @@ fn set_and_range_type_forms_are_recognised_and_refused_until_admitted() {
         assert!(refused.executable_program().is_none());
     }
 
+    // `GNT-39.6` owns the `Set` element identity: an element that denotes another type is refused
+    // under the key-domain spelling naming the refused argument, while a `Range` element is any
+    // admitted value type and keeps the type-admission refusal.
+    for (source, expected, named) in [
+        (
+            "fn f(x: Set<Decision>) -> Int { 0 }\nfn main() -> Int { 0 }",
+            ["collection-invalid-key"].as_slice(),
+            Some("Decision"),
+        ),
+        (
+            "fn f(x: Set<List<Int>>) -> Int { 0 }\nfn main() -> Int { 0 }",
+            ["collection-invalid-key"].as_slice(),
+            Some("List<Int>"),
+        ),
+        (
+            "fn f(x: Range<Decision>) -> Int { 0 }\nfn main() -> Int { 0 }",
+            ["collection-type-unadmitted"].as_slice(),
+            None,
+        ),
+        (
+            "fn f<T>(x: Set<T>) -> Int { 0 }\nfn main() -> Int { 0 }",
+            ["collection-type-unadmitted"].as_slice(),
+            None,
+        ),
+    ] {
+        let refused = analyze(source);
+        assert_eq!(refused.status(), AnalysisStatus::Invalid, "{source}");
+        assert_eq!(
+            diagnostic_codes(refused.diagnostics()),
+            expected,
+            "{source}"
+        );
+        if let Some(named) = named {
+            assert_eq!(
+                refused
+                    .diagnostics()
+                    .iter()
+                    .find(|diagnostic| diagnostic.code.as_str() == "collection-invalid-key")
+                    .and_then(|diagnostic| diagnostic.fields.get("element"))
+                    .map(|value| value.as_ref()),
+                Some(named),
+                "{source} names the refused element in the structured field"
+            );
+        }
+        assert!(refused.executable_program().is_none());
+    }
+    let unresolved = analyze("fn f(x: Set<Missing>) -> Int { 0 }\nfn main() -> Int { 0 }");
+    assert_eq!(unresolved.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        diagnostic_codes(unresolved.diagnostics()),
+        [
+            "unresolved-reference",
+            "unresolved-reference",
+            "collection-type-unadmitted"
+        ]
+    );
+    assert!(unresolved.executable_program().is_none());
+
     for malformed in [
         "fn f(x: Set) -> Int { 0 }\nfn main() -> Int { 0 }",
         "fn f(x: Set<Int, Int>) -> Int { 0 }\nfn main() -> Int { 0 }",

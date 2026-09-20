@@ -23,6 +23,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `GNT-39.3-collection-foundation-non-claims` | the frozen non-claims listed below |
 | `GNT-39.4-map-type-form-recognition` | the three recognised collection type forms, `Map<K, V>`, `Set<K>`, and `Range<T>`, and their `collection-type-unadmitted` refusal |
 | `GNT-39.5-map-type-identity` | the identity of the recognised form: its two argument types in order, the five admitted key types, and the key-domain refusal of every other resolved key argument |
+| `GNT-39.6-set-and-range-type-identities` | the `Set<K>` element identity over the same five admitted key types and the `Range<T>` element identity over any admitted value type, with their canonical texts and refusals |
 
 ## What the model decides
 
@@ -55,25 +56,32 @@ separately in `docs/canonical-scalar-keys.md`.
   grammar.
 - `MapTypeIdentity::admit` publishes the identity of the recognised form (`GNT-39.5`): the key
   argument then the value argument, rendered as the canonical constructed-type text `Map<K,V>` over
-  the canonical text of each argument. `MapKeyType::classify` admits exactly the five key types of
-  `GNT-39.1` — `Unit`, `Bool`, `Int`, `Float`, `String` — and refuses every other resolved key
-  argument as `collection-invalid-key`, naming the refused argument (`List<Int>`,
+  the canonical text of each argument. `CollectionKeyType::classify` admits exactly the five key
+  types of `GNT-39.1` — `Unit`, `Bool`, `Int`, `Float`, `String` — and refuses every other resolved
+  key argument as `collection-invalid-key`, naming the refused argument (`List<Int>`,
   `Result<Int,String>`, `Decision`, or a declared type), before the type-admission refusal; an
   occurrence whose key argument is admitted, and an occurrence whose key argument resolves to no
   type at all (an unresolved name or a type parameter), is refused as `collection-type-unadmitted`
-  and builds no descriptor.
-  The same canonical text is exact in both directions: `MapTypeIdentity::from_canonical_text`
-  admits exactly the five key member texts and the canonical text of one admitted value type,
-  refuses a key member of any other type as `collection-invalid-key` naming the whole refused
-  member before the general rule (even when the text is also non-canonical or carries a member this
-  edition does not admit), and refuses every other non-canonical or unadmitted text — including a
-  nested `Map` in value position — as `collection-type-unadmitted`.
+  and builds no descriptor. The same canonical text is exact in both directions:
+  `MapTypeIdentity::from_canonical_text` admits exactly the five key member texts and the canonical
+  text of one admitted value type, refuses a key member of any other type as `collection-invalid-key`
+  naming the whole refused member before the general rule (even when the text is also non-canonical
+  or carries a member this edition does not admit), and refuses every other non-canonical or
+  unadmitted text — including a nested `Map` in value position — as `collection-type-unadmitted`.
+- `SetTypeIdentity::admit` publishes the `Set<K>` element identity (`GNT-39.6`): a set element is a
+  collection key, so exactly the five key types of `GNT-39.1` are admitted, the same shared
+  `CollectionKeyType::classify` refuses every other decoded element as `collection-invalid-key`
+  naming the whole refused argument, and a text that is not the canonical text of one admitted value
+  type is not an identity at all. `RangeTypeIdentity::new` publishes the `Range<T>` element identity
+  over any admitted value type and publishes no stepping, bounds, ordering, or iteration rule; both
+  identities render as `Set<K>` and `Range<T>` over the canonical text of the argument and both
+  decode exactly on the same terms as the `Map` identity.
 
 ## Diagnostics
 
 | Spelling | Owning clause | Condition |
 | --- | --- | --- |
-| `collection-invalid-key` | `GNT-39.1-admitted-collection-keys` | the candidate kind, or a recognised `Map` key argument, is not an admitted collection key |
+| `collection-invalid-key` | `GNT-39.1-admitted-collection-keys` | the candidate kind, or a recognised `Map` key or `Set` element argument, is not an admitted collection key |
 | `collection-duplicate-key` | `GNT-39.2-canonical-collection-order-and-duplicate-identity` | two admitted keys share one identity in one batch |
 | `collection-non-claim-as-guarantee` | `GNT-39.3-collection-foundation-non-claims` | a declared non-claim is unasserted or presented as a guarantee |
 | `collection-type-unadmitted` | `GNT-39.4-map-type-form-recognition` | a recognised collection type form is refused until the type is admitted |

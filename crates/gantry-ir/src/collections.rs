@@ -13,14 +13,15 @@ use gantry_core::value::LogicalValue;
 
 use crate::types::TypeDescriptor;
 
-/// The declared clauses of `GNT-39.0` through `GNT-39.5`, in specification order.
-pub const COLLECTION_CLAUSES: [&str; 6] = [
+/// The declared clauses of `GNT-39.0` through `GNT-39.6`, in specification order.
+pub const COLLECTION_CLAUSES: [&str; 7] = [
     "GNT-39.0-collection-key-and-order-scope",
     "GNT-39.1-admitted-collection-keys",
     "GNT-39.2-canonical-collection-order-and-duplicate-identity",
     "GNT-39.3-collection-foundation-non-claims",
     "GNT-39.4-map-type-form-recognition",
     "GNT-39.5-map-type-identity",
+    "GNT-39.6-set-and-range-type-identities",
 ];
 
 /// One frozen collection-foundation diagnostic of `GNT-39.0`.
@@ -188,13 +189,14 @@ pub fn canonical_order(left: &CanonicalKey, right: &CanonicalKey) -> Ordering {
     left.cmp(right)
 }
 
-/// One admitted collection key type of a `Map<K, V>` type identity (`GNT-39.5`).
+/// One admitted collection key type of a `Map<K, V>` or `Set<K>` type identity (`GNT-39.5`,
+/// `GNT-39.6`).
 ///
 /// The five variants are exactly the admitted collection key types of `GNT-39.1`: the scalar key
 /// types whose canonical scalar-key format version 1.0 admits values into a collection key. The
 /// order is the canonical scalar-key order of `GNT-39.2`.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum MapKeyType {
+pub enum CollectionKeyType {
     /// `Unit`.
     Unit,
     /// `Bool`.
@@ -207,7 +209,7 @@ pub enum MapKeyType {
     String,
 }
 
-impl MapKeyType {
+impl CollectionKeyType {
     /// Every admitted key type, in canonical scalar-key order.
     pub const ALL: [Self; 5] = [Self::Unit, Self::Bool, Self::Int, Self::Float, Self::String];
 
@@ -250,7 +252,7 @@ impl MapKeyType {
 /// durability, boundary encoding, lowering, or machine representation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MapTypeIdentity {
-    key: MapKeyType,
+    key: CollectionKeyType,
     value: TypeDescriptor,
 }
 
@@ -263,14 +265,14 @@ impl MapTypeIdentity {
     /// type descriptor and is carried unchanged.
     pub fn admit(key: &TypeDescriptor, value: &TypeDescriptor) -> Result<Self, CollectionError> {
         Ok(Self {
-            key: MapKeyType::classify(&key.canonical_string())?,
+            key: CollectionKeyType::classify(&key.canonical_string())?,
             value: value.clone(),
         })
     }
 
     /// Returns the admitted key type.
     #[must_use]
-    pub fn key(&self) -> MapKeyType {
+    pub fn key(&self) -> CollectionKeyType {
         self.key
     }
 
@@ -324,7 +326,7 @@ impl MapTypeIdentity {
         }
         let separator = separator.ok_or_else(|| Self::not_an_identity(text))?;
         let (key_text, value_text) = (&inner[..separator], &inner[separator + 1..]);
-        let key = MapKeyType::classify(key_text)?;
+        let key = CollectionKeyType::classify(key_text)?;
         let value = TypeDescriptor::from_canonical_string(value_text)
             .map_err(|_| Self::not_an_identity(text))?;
         let identity = Self { key, value };
@@ -339,6 +341,132 @@ impl MapTypeIdentity {
         CollectionError::new(
             CollectionDiagnosticCode::UnadmittedType,
             format!("`{text}` is not the canonical text of one admitted Map identity"),
+        )
+    }
+}
+
+/// One admitted `Set<K>` type identity of `GNT-39.6`.
+///
+/// The identity is its admitted element key type, which is exactly one admitted collection key type
+/// of `GNT-39.1` because a set element is a collection key. Admitting an identity decides no type
+/// admission, and publishes no value, construction, traversal, mutation, quota, schema, recovery,
+/// durability, boundary encoding, lowering, or machine representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SetTypeIdentity {
+    element: CollectionKeyType,
+}
+
+impl SetTypeIdentity {
+    /// Admits one `Set<K>` type identity from its resolved argument descriptor.
+    ///
+    /// The element argument is admitted exactly when its canonical descriptor text names one of the
+    /// five admitted collection key types; any other element argument is refused under
+    /// `collection-invalid-key` naming the refused argument.
+    pub fn admit(element: &TypeDescriptor) -> Result<Self, CollectionError> {
+        Ok(Self {
+            element: CollectionKeyType::classify(&element.canonical_string())?,
+        })
+    }
+
+    /// Returns the admitted element key type.
+    #[must_use]
+    pub fn element(&self) -> CollectionKeyType {
+        self.element
+    }
+
+    /// Returns the canonical constructed-type text, for example `Set<Int>`.
+    #[must_use]
+    pub fn canonical_text(&self) -> String {
+        format!("Set<{}>", self.element.canonical_text())
+    }
+
+    /// Decodes one exact canonical `Set<K>` identity text.
+    ///
+    /// The element member text must name one of the five admitted key types (refused under
+    /// `collection-invalid-key` naming it otherwise), and any input that is not the canonical
+    /// rendering of one identity — including a nested or unadmitted member — is refused under
+    /// `collection-type-unadmitted`.
+    pub fn from_canonical_text(text: &str) -> Result<Self, CollectionError> {
+        let element_text = text
+            .strip_prefix("Set<")
+            .and_then(|rest| rest.strip_suffix('>'))
+            .ok_or_else(|| Self::not_an_identity(text))?;
+        // A text that is not the canonical text of one admitted value type is not an identity at
+        // all; only a decoded element that is not an admitted key type is a key-domain refusal.
+        TypeDescriptor::from_canonical_string(element_text)
+            .map_err(|_| Self::not_an_identity(text))?;
+        let identity = Self {
+            element: CollectionKeyType::classify(element_text)?,
+        };
+        if identity.canonical_text() == text {
+            Ok(identity)
+        } else {
+            Err(Self::not_an_identity(text))
+        }
+    }
+
+    fn not_an_identity(text: &str) -> CollectionError {
+        CollectionError::new(
+            CollectionDiagnosticCode::UnadmittedType,
+            format!("`{text}` is not the canonical text of one admitted Set identity"),
+        )
+    }
+}
+
+/// One `Range<T>` type identity of `GNT-39.6`.
+///
+/// The identity is its element descriptor, which is any admitted value type: this clause publishes
+/// the element argument and no stepping contract, so admitting an identity decides no type
+/// admission and publishes no value, bounds, step, traversal, iteration, mutation, quota, schema,
+/// recovery, durability, boundary encoding, lowering, or machine representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RangeTypeIdentity {
+    element: TypeDescriptor,
+}
+
+impl RangeTypeIdentity {
+    /// Publishes one `Range<T>` type identity over its resolved element descriptor.
+    #[must_use]
+    pub fn new(element: TypeDescriptor) -> Self {
+        Self { element }
+    }
+
+    /// Returns the element argument descriptor.
+    #[must_use]
+    pub fn element(&self) -> &TypeDescriptor {
+        &self.element
+    }
+
+    /// Returns the canonical constructed-type text, for example `Range<Int>`.
+    #[must_use]
+    pub fn canonical_text(&self) -> String {
+        format!("Range<{}>", self.element.canonical_string())
+    }
+
+    /// Decodes one exact canonical `Range<T>` identity text.
+    ///
+    /// The element member text must be the canonical text of one admitted value type, and any input
+    /// that is not the canonical rendering of one identity is refused under
+    /// `collection-type-unadmitted`; no stepping, bounds, or iteration rule is decoded or admitted.
+    pub fn from_canonical_text(text: &str) -> Result<Self, CollectionError> {
+        let element = text
+            .strip_prefix("Range<")
+            .and_then(|rest| rest.strip_suffix('>'))
+            .ok_or_else(|| Self::not_an_identity(text))?;
+        let element = TypeDescriptor::from_canonical_string(element)
+            .map_err(|_| Self::not_an_identity(text))?;
+        let identity = Self { element };
+        if identity.canonical_text() == text {
+            Ok(identity)
+        } else {
+            Err(Self::not_an_identity(text))
+        }
+    }
+
+    fn not_an_identity(text: &str) -> CollectionError {
+        CollectionError::new(
+            CollectionDiagnosticCode::UnadmittedType,
+            format!("`{text}` is not the canonical text of one admitted Range identity"),
         )
     }
 }

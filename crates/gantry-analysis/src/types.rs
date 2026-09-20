@@ -21,10 +21,11 @@ use gantry_frontend::{
 use gantry_ir::generated::TypeKind;
 use gantry_ir::{
     ArtifactLimits, CallableKind, CanonicalCallableIdentity, CanonicalSignature, ClosedCallable,
-    ClosedOperationSite, ClosedTaskSite, ConcreteEffect, ConcreteIdentity, ConcreteSourceMapEntry,
-    ExecutableProjection, GenericAnalysisFacts, GenericTemplate, ImplementationHead, MapKeyType,
-    ResolvedCall, SourceOriginSet, StaticSiteId, StructuralPosition, TraitContract, TypeDescriptor,
-    TypeDescriptorError, TypeExpression, WorkflowFacts, WorkflowParameter,
+    ClosedOperationSite, ClosedTaskSite, CollectionKeyType, ConcreteEffect, ConcreteIdentity,
+    ConcreteSourceMapEntry, ExecutableProjection, GenericAnalysisFacts, GenericTemplate,
+    ImplementationHead, ResolvedCall, SourceOriginSet, StaticSiteId, StructuralPosition,
+    TraitContract, TypeDescriptor, TypeDescriptorError, TypeExpression, WorkflowFacts,
+    WorkflowParameter,
 };
 
 use crate::automatic::AutomaticNames;
@@ -1448,7 +1449,10 @@ fn resolve_type_node(
                 .next()
                 .and_then(|member| resolved.get(&member))
                 .map(|fact| fact.descriptor.canonical_string());
-            match key_text.as_ref().map(|text| MapKeyType::classify(text)) {
+            match key_text
+                .as_ref()
+                .map(|text| CollectionKeyType::classify(text))
+            {
                 Some(Err(refusal)) => diagnostics.push(type_diagnostic(
                     "collection-invalid-key",
                     refusal.detail(),
@@ -1464,15 +1468,45 @@ fn resolve_type_node(
             }
             None
         }
-        Some(spelling @ ("Set" | "Range")) => {
-            // `GNT-39.4` recognises the one-argument collection type forms `Set<K>` and `Range<T>`
-            // and analysis refuses them under the same clause-owned code until the type is
-            // admitted; no descriptor and no type expression is built for them either.
+        Some("Set") => {
+            // `GNT-39.4` recognises the form and `GNT-39.6` owns the element argument's identity:
+            // the element is classified from its own resolved descriptor, so a `Set` element that
+            // denotes another type is refused under `collection-invalid-key`, naming the refused
+            // argument, even when no descriptor is built; an admitted element keeps the
+            // type-admission refusal.
+            let element_text = type_member_nodes(tree, id)?
+                .into_iter()
+                .next()
+                .and_then(|member| resolved.get(&member))
+                .map(|fact| fact.descriptor.canonical_string());
+            match element_text
+                .as_ref()
+                .map(|text| CollectionKeyType::classify(text))
+            {
+                Some(Err(refusal)) => diagnostics.push(type_diagnostic(
+                    "collection-invalid-key",
+                    refusal.detail(),
+                    node.span().clone(),
+                    [("element", element_text.clone().unwrap_or_default())],
+                )?),
+                _ => diagnostics.push(type_diagnostic(
+                    "collection-type-unadmitted",
+                    "a Set type is not admitted in this edition",
+                    node.span().clone(),
+                    [("type", "Set")],
+                )?),
+            }
+            None
+        }
+        Some("Range") => {
+            // `GNT-39.4` recognises the form and `GNT-39.6` publishes its element identity over any
+            // admitted value type, so analysis keeps the type-admission refusal and builds no
+            // descriptor or type expression for it.
             diagnostics.push(type_diagnostic(
                 "collection-type-unadmitted",
-                &format!("a {spelling} type is not admitted in this edition"),
+                "a Range type is not admitted in this edition",
                 node.span().clone(),
-                [("type", spelling)],
+                [("type", "Range")],
             )?);
             None
         }

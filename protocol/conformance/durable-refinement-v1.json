@@ -1,6 +1,6 @@
 {
  "format": "gantry.durable-refinement-evidence/v1",
- "specification_sha256": "17f2819da56c250a192dc2e1e74fd277cb0f2bf73472020c83035cbef8179e0b",
+ "specification_sha256": "adad3df7d0683d708c0332b98bcfd24afc4f31ab642150efb95cc1b9aaf53cb1",
  "issue": "GNT-DUR-006",
  "profile": "durable-runtime",
  "argument": "docs/durable-runtime-refinement.md",

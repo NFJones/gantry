@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "17f2819da56c250a192dc2e1e74fd277cb0f2bf73472020c83035cbef8179e0b",
-  "byte_length": 1040814,
-  "line_count": 15607,
+  "specification_sha256": "adad3df7d0683d708c0332b98bcfd24afc4f31ab642150efb95cc1b9aaf53cb1",
+  "byte_length": 1042718,
+  "line_count": 15611,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15607,
-      "sha256": "e0dbf25a40f01fad04a0b8758fa5bb7fc63dbacd68f1db3e9086cb23f79e5835",
+      "end_line": 15611,
+      "sha256": "86f057854583e0e7f4cb45f87dc7c0c3843ac589f7259ca627382afdb3efa533",
       "rationale": null
     }
   ],
@@ -42377,11 +42377,11 @@
       "id": "GNT-39.3-collection-foundation-non-claims",
       "span_start_line": 15597,
       "span_end_line": 15600,
-      "span_sha256": "d3c70c138a7b9a9c35284315466bb69aacdd551f28136a183502edc5c9ced264",
+      "span_sha256": "2eb9684503819487fbe578e44cca50683ff05e4b676af2be9ceec11b4ff47bd3",
       "anchor_line": 15597,
       "body_start_line": 15598,
       "body_end_line": 15600,
-      "body_sha256": "ca4a3447af851a1cfef30ffaee70f897c96eb3fbe646ab5dab6f7445adff0908",
+      "body_sha256": "b7ebb11250db185a5f69b059c47669f0bd3cde482b8a7a85ab4aeff1bbf0a750",
       "profiles": [
         "analyzer"
       ],
@@ -42459,12 +42459,12 @@
     {
       "id": "GNT-39.5-map-type-identity",
       "span_start_line": 15605,
-      "span_end_line": 15607,
-      "span_sha256": "dc8aed3100772608f2417e640f491d532e7f9cd05daece3a89c12b3048375c98",
+      "span_end_line": 15608,
+      "span_sha256": "330dd0c04da4c67e8932c0dfffbe583b0fd698abef9a82c7737da43899efe668",
       "anchor_line": 15605,
       "body_start_line": 15606,
-      "body_end_line": 15607,
-      "body_sha256": "04968dce1645c0159cc5750b1de00846bde775daf889d5d3949b6749df772a5f",
+      "body_end_line": 15608,
+      "body_sha256": "26a3d31212e356f96f4e7edd9038646a77ec07247fb2d9442b3ba3620bd49590",
       "profiles": [
         "analyzer"
       ],
@@ -42476,7 +42476,7 @@
         {
           "key": "clause-001",
           "start_line": 15606,
-          "end_line": 15607,
+          "end_line": 15608,
           "profiles": [
             "analyzer"
           ],
@@ -42491,6 +42491,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/collections_foundation.rs#map_type_identity_admits_the_five_key_types_and_refuses_the_rest",
                 "crates/gantry-conformance/tests/analyzer_types.rs#map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-39.6-set-and-range-type-identities",
+      "span_start_line": 15609,
+      "span_end_line": 15611,
+      "span_sha256": "3908e633d522b15a5b5628d94b5b46db44cb49aab0d73659b8edac6b5dcf21a7",
+      "anchor_line": 15609,
+      "body_start_line": 15610,
+      "body_end_line": 15611,
+      "body_sha256": "ed0c1586fbe6dea6aa3c2c0604e7eb2df15e467e4d5ca40a8b6a413e304d17df",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15610,
+          "end_line": 15611,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/collections_foundation.rs#set_and_range_type_identities_are_published_and_refused",
+                "crates/gantry-conformance/tests/analyzer_types.rs#set_and_range_type_forms_are_recognised_and_refused_until_admitted"
               ],
               "rationale": null
             }

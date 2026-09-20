@@ -16,8 +16,9 @@ use gantry::canonical_key::{
 };
 use gantry::ir::{
     COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
-    CollectionKeyPolicy, CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName,
-    MapKeyType, MapTypeIdentity, TypeDescriptor, canonical_order, check_collection_non_claims,
+    CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
+    CollectionNonClaimName, MapTypeIdentity, RangeTypeIdentity, SetTypeIdentity, TypeDescriptor,
+    canonical_order, check_collection_non_claims,
 };
 use gantry::numeric::{GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -292,13 +293,13 @@ fn collection_non_claims_are_declared_and_guarded() {
 #[test]
 fn map_type_identity_admits_the_five_key_types_and_refuses_the_rest() {
     assert_eq!(
-        MapKeyType::ALL.map(MapKeyType::canonical_text),
+        CollectionKeyType::ALL.map(CollectionKeyType::canonical_text),
         ["Unit", "Bool", "Int", "Float", "String"],
         "the admitted key types are the five of `GNT-39.1` in canonical order"
     );
 
     let value = TypeDescriptor::STRING;
-    for key in MapKeyType::ALL {
+    for key in CollectionKeyType::ALL {
         let refused = TypeDescriptor::from_canonical_string(key.canonical_text())
             .unwrap_or_else(|error| panic!("`{}` decodes: {error}", key.canonical_text()));
         let identity = MapTypeIdentity::admit(&refused, &value).unwrap_or_else(|error| {
@@ -355,11 +356,11 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_the_rest() {
     // The identity's canonical text is exact in both directions: every admitted key type decodes,
     // and the decoded identity re-renders byte-identically, including nested member descriptors.
     for (text, key) in [
-        ("Map<Unit,String>", MapKeyType::Unit),
-        ("Map<Bool,List<Int>>", MapKeyType::Bool),
-        ("Map<Int,Result<Int,String>>", MapKeyType::Int),
-        ("Map<Float,Option<Int>>", MapKeyType::Float),
-        ("Map<String,Tuple<Int,String>>", MapKeyType::String),
+        ("Map<Unit,String>", CollectionKeyType::Unit),
+        ("Map<Bool,List<Int>>", CollectionKeyType::Bool),
+        ("Map<Int,Result<Int,String>>", CollectionKeyType::Int),
+        ("Map<Float,Option<Int>>", CollectionKeyType::Float),
+        ("Map<String,Tuple<Int,String>>", CollectionKeyType::String),
     ] {
         let identity = MapTypeIdentity::from_canonical_text(text)
             .unwrap_or_else(|error| panic!("`{text}` decodes: {}", error.detail()));
@@ -426,6 +427,119 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_the_rest() {
             error.detail(),
             format!("`{named}` is not an admitted collection key type"),
             "`{text}` names the whole refused key member"
+        );
+    }
+}
+
+/// The `Set<K>` and `Range<T>` identities are published, admitted exactly on their element rules,
+/// and exact in both directions (`GNT-39.6`).
+#[test]
+fn set_and_range_type_identities_are_published_and_refused() {
+    // A `Set<K>` element is a collection key, so exactly the five admitted key types are admitted.
+    for key in CollectionKeyType::ALL {
+        let element = TypeDescriptor::from_canonical_string(key.canonical_text())
+            .unwrap_or_else(|error| panic!("`{}` decodes: {error}", key.canonical_text()));
+        let identity = SetTypeIdentity::admit(&element).unwrap_or_else(|error| {
+            panic!(
+                "`{}` is an admitted set element: {}",
+                key.canonical_text(),
+                error.detail()
+            )
+        });
+        assert_eq!(identity.element(), key);
+        assert_eq!(
+            identity.canonical_text(),
+            format!("Set<{}>", key.canonical_text())
+        );
+        assert_eq!(
+            SetTypeIdentity::from_canonical_text(&identity.canonical_text()).unwrap_or_else(
+                |error| panic!("the rendered identity decodes: {}", error.detail())
+            ),
+            identity,
+            "the canonical text round-trips"
+        );
+    }
+    for element in [
+        TypeDescriptor::DECISION,
+        TypeDescriptor::OPERATION_ERROR,
+        TypeDescriptor::NEVER,
+        TypeDescriptor::list(TypeDescriptor::INT),
+        TypeDescriptor::option(TypeDescriptor::INT).unwrap_or_else(|error| panic!("{error}")),
+        TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::STRING),
+        TypeDescriptor::tuple(vec![TypeDescriptor::INT, TypeDescriptor::STRING])
+            .unwrap_or_else(|error| panic!("a two-member tuple: {error}")),
+        TypeDescriptor::callable(
+            CallableKind::Function,
+            vec![TypeDescriptor::INT],
+            TypeDescriptor::INT,
+        ),
+        TypeDescriptor::from_canonical_string("crate::example::Token")
+            .unwrap_or_else(|error| panic!("a declared descriptor decodes: {error}")),
+    ] {
+        let text = element.canonical_string();
+        let error = SetTypeIdentity::admit(&element)
+            .err()
+            .unwrap_or_else(|| panic!("`{text}` is not an admitted set element"));
+        assert_eq!(error.code(), CollectionDiagnosticCode::InvalidKey);
+        assert_eq!(
+            error.detail(),
+            format!("`{text}` is not an admitted collection key type"),
+            "the set-element refusal names the whole refused argument"
+        );
+    }
+    for (text, code) in [
+        ("Set<Decision>", CollectionDiagnosticCode::InvalidKey),
+        ("Set<List<Int>>", CollectionDiagnosticCode::InvalidKey),
+        ("Set<Int", CollectionDiagnosticCode::UnadmittedType),
+        ("set<Int>", CollectionDiagnosticCode::UnadmittedType),
+        ("Set<Int,Int>", CollectionDiagnosticCode::UnadmittedType),
+        ("Set<Int> ", CollectionDiagnosticCode::UnadmittedType),
+        ("Map<Int,String>", CollectionDiagnosticCode::UnadmittedType),
+    ] {
+        let error = SetTypeIdentity::from_canonical_text(text)
+            .err()
+            .unwrap_or_else(|| panic!("`{text}` is not the canonical text of one Set identity"));
+        assert_eq!(error.code(), code, "`{text}`: {}", error.detail());
+    }
+
+    // A `Range<T>` element is any admitted value type, and the identity publishes no step rule.
+    for element in [
+        TypeDescriptor::INT,
+        TypeDescriptor::STRING,
+        TypeDescriptor::list(TypeDescriptor::INT),
+        TypeDescriptor::option(TypeDescriptor::INT).unwrap_or_else(|error| panic!("{error}")),
+        TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::STRING),
+    ] {
+        let identity = RangeTypeIdentity::new(element.clone());
+        assert_eq!(identity.element(), &element);
+        assert_eq!(
+            identity.canonical_text(),
+            format!("Range<{}>", element.canonical_string())
+        );
+        assert_eq!(
+            RangeTypeIdentity::from_canonical_text(&identity.canonical_text()).unwrap_or_else(
+                |error| panic!("the rendered identity decodes: {}", error.detail())
+            ),
+            identity,
+            "the canonical text round-trips"
+        );
+    }
+    for text in [
+        "Range<Int",
+        "range<Int>",
+        "Range<Int,Int>",
+        "Range<Missing>",
+        "Range<Map<Int,String>>",
+        "List<Int>",
+        "Range<Int> ",
+    ] {
+        let error = RangeTypeIdentity::from_canonical_text(text)
+            .err()
+            .unwrap_or_else(|| panic!("`{text}` is not the canonical text of one Range identity"));
+        assert_eq!(
+            error.code(),
+            CollectionDiagnosticCode::UnadmittedType,
+            "`{text}`"
         );
     }
 }
