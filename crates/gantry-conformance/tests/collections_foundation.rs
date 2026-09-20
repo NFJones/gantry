@@ -1019,6 +1019,64 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     let unbounded = RangeValue::new(None, None);
     assert_eq!(unbounded.forward(bound(GANTRY_INT_MAXIMUM)), None);
     assert_eq!(unbounded.backward(bound(GANTRY_INT_MINIMUM)), None);
+
+    // An absent bound is unbounded on that side, so a step there is permissive unless the step
+    // itself does not exist, and exhaustion by bound is a different reason from domain exhaustion.
+    assert_eq!(
+        RangeValue::new(Some(start), None).forward(bound(3)),
+        Some(bound(4))
+    );
+    assert_eq!(
+        RangeValue::new(None, Some(end)).backward(bound(3)),
+        Some(bound(2))
+    );
+    assert_eq!(
+        unbounded.forward(bound(GANTRY_INT_MAXIMUM - 1)),
+        Some(bound(GANTRY_INT_MAXIMUM))
+    );
+    let bounded = RangeValue::new(
+        Some(bound(GANTRY_INT_MINIMUM)),
+        Some(bound(GANTRY_INT_MAXIMUM)),
+    );
+    assert!(bounded.admits(bound(GANTRY_INT_MINIMUM)));
+    assert!(bounded.admits(bound(GANTRY_INT_MAXIMUM - 1)));
+    assert!(!bounded.admits(bound(GANTRY_INT_MAXIMUM)));
+    assert_eq!(bounded.forward(bound(GANTRY_INT_MAXIMUM - 1)), None);
+    assert_eq!(bounded.backward(bound(GANTRY_INT_MINIMUM)), None);
+
+    // The step rule is result-side rather than the bound rule (`GNT-39.8`): `forward` and `backward`
+    // report a step for a source position the value does not admit, and neither wraps.
+    assert_eq!(range.forward(bound(0)), Some(bound(1)));
+    assert_eq!(range.backward(end), Some(bound(3)));
+    assert_eq!(
+        range.forward(bound(GANTRY_INT_MINIMUM)),
+        Some(bound(GANTRY_INT_MINIMUM + 1))
+    );
+
+    // An inverted or empty bound pair admits no position and is refused by no rule: `new` is total.
+    for (pair_start, pair_end) in [(4i64, 1i64), (2, 2)] {
+        let pair = RangeValue::new(Some(bound(pair_start)), Some(bound(pair_end)));
+        assert_eq!(pair.start(), Some(bound(pair_start)));
+        assert_eq!(pair.end(), Some(bound(pair_end)));
+        for value in [
+            GANTRY_INT_MINIMUM,
+            0,
+            1,
+            3,
+            pair_start,
+            pair_end,
+            GANTRY_INT_MAXIMUM,
+        ] {
+            assert!(
+                !pair.admits(bound(value)),
+                "`{value}` is outside the `[{pair_start},{pair_end})` pair"
+            );
+        }
+    }
+    assert_eq!(
+        RangeValue::new(Some(bound(4)), Some(bound(1))).forward(bound(-5)),
+        Some(bound(-4))
+    );
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).

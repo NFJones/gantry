@@ -111,6 +111,20 @@ separately in `docs/canonical-scalar-keys.md`.
   may define, extend, override, or infer one, and the clause publishes no traversal, iteration, loop
   integration, exhaustion reporting, mutation, quota, schema, recovery, durability, lowering, or
   machine representation, and admits no `Range` type or value.
+- `MapValue::admit` and `SetValue::admit` publish the two keyed value models (`GNT-39.8`): a `Map`
+  value is its finite entries and a `Set` value its finite elements, every candidate admitted under
+  the key contract of `GNT-39.1`, a repeated key refused as `collection-duplicate-key` before
+  anything is published, and the admitted entries or elements published in the canonical collection
+  order of `GNT-39.2`, so a value's observable content is that order, two values with equal entries
+  are one value whatever order their candidates arrived in, and an empty value is admitted rather
+  than special-cased. `RangeValue::new` publishes the `Range` value over its two bound positions and
+  is total over `Option<GantryInt>`: `start` and `end` report the bounds, `admits` is the bound rule
+  — at or above the inclusive start bound and strictly below the exclusive end bound — while
+  `forward` and `backward` are the sealed contract's result-side rule followed by the checked step,
+  so a step is reported for a source position the value does not admit, and a value whose start
+  bound is not less than its end bound admits no position while no rule refuses it. No value model
+  publishes traversal, iteration, mutation, ownership, invalidation, exhaustion reporting, quotas,
+  schemas, recovery, durability, boundary encoding, lowering, or machine representation.
 
 ## Diagnostics
 
