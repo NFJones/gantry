@@ -10,7 +10,7 @@
   },
   {
    "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "2795d720f3b400cdfa8e75fb13ecda150cedcf4519e52ca1580ba8ba92c5fd32"
+   "sha256": "d55493f038261f5267dc188c351b35aa87c1905e6ed777c1e9e758f4b4c8564a"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
@@ -62,7 +62,7 @@
   },
   {
    "path": "protocol/goldens/ir-contracts-v1.canonical.json",
-   "sha256": "dfbd758ab241bdeec3cbbd3be15d599462cf0b120f605d5e03c29337748131f3"
+   "sha256": "5f8bef75997d68e673e0b3abe328cf90ed93fad8b40fb8abcb38e914b33546f0"
   },
   {
    "path": "protocol/goldens/profiles-v1.canonical.json",

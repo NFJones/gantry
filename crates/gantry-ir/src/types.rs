@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::CanonicalPath;
 use crate::callable::{CallableKind, CallableType};
+use crate::collections::{MapTypeIdentity, SetTypeIdentity};
 use crate::generated::TypeKind;
 
 /// One well-formed Gantry v1 type descriptor.
@@ -148,6 +149,69 @@ impl TypeDescriptor {
         tokens.push(TypeToken::Close);
         Self {
             kind: TypeKind::List,
+            tokens,
+            contains_sealed_boundary,
+        }
+    }
+
+    /// Constructs `Map<K,V>` from one admitted collection key type and any value type.
+    ///
+    /// The key rule is owned by `GNT-39.1` and `GNT-39.5`: the key member is admitted exactly when
+    /// it is one of the five admitted collection key types, so this descriptor names no key the
+    /// key domain refuses. The value member is carried unchanged, and `GNT-39.5` admits no value
+    /// member rule. Building one descriptor decides no type admission and publishes no value,
+    /// construction, projection, iteration, traversal, mutation, quota, schema, recovery,
+    /// durability, boundary encoding, lowering, or machine representation.
+    pub fn map(key: Self, value: Self) -> Result<Self, TypeDescriptorError> {
+        MapTypeIdentity::admit(&key, &value)
+            .map_err(|_| TypeDescriptorError::InvalidCollectionMember)?;
+        let contains_sealed_boundary =
+            key.contains_sealed_boundary || value.contains_sealed_boundary;
+        let mut tokens = vec![TypeToken::Open(TypeKind::Map)];
+        tokens.extend(key.into_tokens());
+        tokens.push(TypeToken::Comma);
+        tokens.extend(value.into_tokens());
+        tokens.push(TypeToken::Close);
+        Ok(Self {
+            kind: TypeKind::Map,
+            tokens,
+            contains_sealed_boundary,
+        })
+    }
+
+    /// Constructs `Set<K>` from one admitted collection key type.
+    ///
+    /// A set element is a collection key, so the element rule is the same key rule `GNT-39.6`
+    /// states for the `Set<K>` identity, owned by the same key vocabulary and applied here by the
+    /// identity that publishes it.
+    pub fn set(element: Self) -> Result<Self, TypeDescriptorError> {
+        SetTypeIdentity::admit(&element)
+            .map_err(|_| TypeDescriptorError::InvalidCollectionMember)?;
+        let contains_sealed_boundary = element.contains_sealed_boundary;
+        let mut tokens = vec![TypeToken::Open(TypeKind::Set)];
+        tokens.extend(element.into_tokens());
+        tokens.push(TypeToken::Close);
+        Ok(Self {
+            kind: TypeKind::Set,
+            tokens,
+            contains_sealed_boundary,
+        })
+    }
+
+    /// Constructs `Range<T>` over any constructed element type.
+    ///
+    /// `GNT-39.6` publishes the element argument and restricts no element domain, so this
+    /// constructor applies no key rule: the sealed step contract of `GNT-39.7` is the clause that
+    /// admits element types for stepping, and admitting one stepping element is not an admission
+    /// this type descriptor decides.
+    #[must_use]
+    pub fn range(element: Self) -> Self {
+        let contains_sealed_boundary = element.contains_sealed_boundary;
+        let mut tokens = vec![TypeToken::Open(TypeKind::Range)];
+        tokens.extend(element.into_tokens());
+        tokens.push(TypeToken::Close);
+        Self {
+            kind: TypeKind::Range,
             tokens,
             contains_sealed_boundary,
         }
@@ -400,6 +464,8 @@ pub enum TypeDescriptorError {
     InvalidOptionMember,
     /// A tuple has fewer than two members.
     TupleArity,
+    /// A `Map` key member or `Set` element member is not an admitted collection key type.
+    InvalidCollectionMember,
     /// Input is not one exact canonical v1 type descriptor.
     InvalidCanonicalString,
     /// A decoded descriptor exceeds the configured constructed-type depth.
@@ -416,6 +482,7 @@ impl fmt::Display for TypeDescriptorError {
         formatter.write_str(match self {
             Self::InvalidOptionMember => "option member is not permitted",
             Self::TupleArity => "tuple requires at least two members",
+            Self::InvalidCollectionMember => "collection member is not an admitted collection key",
             Self::InvalidCanonicalString => "type descriptor is not canonical",
             Self::ConstructedTypeDepth { .. } => {
                 "type descriptor exceeds the constructed-type depth limit"
@@ -431,6 +498,9 @@ enum ContainerKind {
     Option,
     Result,
     List,
+    Map,
+    Set,
+    Range,
     Tuple,
     Callable(CallableKind),
     Declared(CanonicalPath),
@@ -479,7 +549,10 @@ impl<'a> DescriptorParser<'a> {
             };
             frame.members.push(value);
             match &frame.kind {
-                ContainerKind::Option | ContainerKind::List => {
+                ContainerKind::Option
+                | ContainerKind::List
+                | ContainerKind::Set
+                | ContainerKind::Range => {
                     if frame.members.len() != 1 || delimiter != Some(b'>') {
                         return Err(TypeDescriptorError::InvalidCanonicalString);
                     }
@@ -487,6 +560,14 @@ impl<'a> DescriptorParser<'a> {
                     self.close_frame()?;
                 }
                 ContainerKind::Result => match (frame.members.len(), delimiter) {
+                    (1, Some(b',')) => self.cursor += 1,
+                    (2, Some(b'>')) => {
+                        self.cursor += 1;
+                        self.close_frame()?;
+                    }
+                    _ => return Err(TypeDescriptorError::InvalidCanonicalString),
+                },
+                ContainerKind::Map => match (frame.members.len(), delimiter) {
                     (1, Some(b',')) => self.cursor += 1,
                     (2, Some(b'>')) => {
                         self.cursor += 1;
@@ -545,6 +626,9 @@ impl<'a> DescriptorParser<'a> {
             ("Option<", ContainerKind::Option),
             ("Result<", ContainerKind::Result),
             ("List<", ContainerKind::List),
+            ("Map<", ContainerKind::Map),
+            ("Set<", ContainerKind::Set),
+            ("Range<", ContainerKind::Range),
             ("Tuple<", ContainerKind::Tuple),
         ] {
             if self.source[self.cursor..].starts_with(prefix) {
@@ -625,6 +709,30 @@ impl<'a> DescriptorParser<'a> {
                 TypeDescriptor::result(ok, error)
             }
             ContainerKind::List => TypeDescriptor::list(
+                frame
+                    .members
+                    .into_iter()
+                    .next()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?,
+            ),
+            ContainerKind::Map => {
+                let mut members = frame.members.into_iter();
+                let key = members
+                    .next()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+                let value = members
+                    .next()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+                TypeDescriptor::map(key, value)?
+            }
+            ContainerKind::Set => TypeDescriptor::set(
+                frame
+                    .members
+                    .into_iter()
+                    .next()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?,
+            )?,
+            ContainerKind::Range => TypeDescriptor::range(
                 frame
                     .members
                     .into_iter()

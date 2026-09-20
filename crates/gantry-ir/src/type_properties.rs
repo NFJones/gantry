@@ -294,6 +294,9 @@ impl PrimitiveTypeProperties {
             | TypeKind::Option
             | TypeKind::Result
             | TypeKind::List
+            | TypeKind::Map
+            | TypeKind::Set
+            | TypeKind::Range
             | TypeKind::Tuple
             | TypeKind::Callable => None,
         }

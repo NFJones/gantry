@@ -2538,9 +2538,17 @@ fn stored_member_node(
                 .ok_or(AnalysisError::Invariant)?;
             Ok(StoredMemberNode::Primitive(properties))
         }
-        TypeKind::Option | TypeKind::Result | TypeKind::List | TypeKind::Tuple => {
-            Ok(StoredMemberNode::Members(descriptor.immediate_members()))
-        }
+        // A collection kind is a constructed type whose stored members would be its immediate
+        // members, exactly as a list or tuple is; `GNT-39.4` still refuses every collection source
+        // type form, and no collection value exists, so this arm classifies a descriptor no
+        // admitted source position produces.
+        TypeKind::Option
+        | TypeKind::Result
+        | TypeKind::List
+        | TypeKind::Map
+        | TypeKind::Set
+        | TypeKind::Range
+        | TypeKind::Tuple => Ok(StoredMemberNode::Members(descriptor.immediate_members())),
         TypeKind::Callable => {
             // A callable type stores nothing of its parameter or result types:
             // those positions name closed types that a callable value never

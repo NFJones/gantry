@@ -14,7 +14,7 @@
   },
   {
    "path": "crates/gantry-analysis/src/generics.rs",
-   "sha256": "e7bf0b7bf2a48ef13b421566aa17560d2c0036664aab3c13da1058514b1aae22"
+   "sha256": "faf3c61cf18c1e92ef3df91b79fb2f063b16aea3496438fcccf7d52e7b375d45"
   },
   {
    "path": "crates/gantry-analysis/src/lowering.rs",
@@ -22,11 +22,11 @@
   },
   {
    "path": "crates/gantry-analysis/src/schemas.rs",
-   "sha256": "ec61b661eed18581079b876f433f73d17e5f75e0df0633d677e18379c823d71d"
+   "sha256": "5271e3e42dc54975edb2e3099df64ac9443995f87cb09773651463e333caed9b"
   },
   {
    "path": "crates/gantry-analysis/src/types.rs",
-   "sha256": "cfd138f242951df3e771502ae3017e6e153203f7ddb7bfbc6c25a604477499eb"
+   "sha256": "626dd820117bb85379f371fc78c8d5905c689e2870d15c6b706269c589cb85ca"
   },
   {
    "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
@@ -78,7 +78,7 @@
   },
   {
    "path": "crates/gantry-ir/src/type_properties.rs",
-   "sha256": "794d43c8c7ed82790a3046f75b32349be3cd03e451ce61564c91d08af1d707ec"
+   "sha256": "ee5689a6ea9a6e12b1a939e792dbc87e6d7aa7d753aa79545492db8e1b70d7a5"
   },
   {
    "path": "crates/gantry/src/lib.rs",
@@ -98,7 +98,7 @@
   },
   {
    "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "2795d720f3b400cdfa8e75fb13ecda150cedcf4519e52ca1580ba8ba92c5fd32"
+   "sha256": "d55493f038261f5267dc188c351b35aa87c1905e6ed777c1e9e758f4b4c8564a"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",

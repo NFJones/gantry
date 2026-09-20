@@ -621,6 +621,27 @@
    ],
    "rust": "Never",
    "wire": "Never"
+  },
+  {
+   "requirements": [
+    "GNT-39.5-map-type-identity"
+   ],
+   "rust": "Map",
+   "wire": "Map"
+  },
+  {
+   "requirements": [
+    "GNT-39.6-set-and-range-type-identities"
+   ],
+   "rust": "Set",
+   "wire": "Set"
+  },
+  {
+   "requirements": [
+    "GNT-39.6-set-and-range-type-identities"
+   ],
+   "rust": "Range",
+   "wire": "Range"
   }
  ]
 }

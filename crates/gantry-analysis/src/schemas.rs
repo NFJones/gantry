@@ -772,6 +772,14 @@ fn schema_fragment(
                 // fragment remains an analysis invariant.
                 return Err(SchemaAnalysisError::Invariant);
             }
+            TypeKind::Map | TypeKind::Set | TypeKind::Range => {
+                // The collection clauses publish no boundary schema (`GNT-39.3`, `GNT-39.5`,
+                // `GNT-39.6`), and this fragment is built only for types a boundary admits.
+                // `GNT-39.4` refuses every collection source type form, so no admitted source
+                // position reaches here: a collection type arriving at a boundary fragment
+                // remains an analysis invariant.
+                return Err(SchemaAnalysisError::Invariant);
+            }
             TypeKind::Never => {
                 // An uninhabited type admits no value, so its schema is the false schema:
                 // a fragment exists yet matches nothing (`GNT-38.3-divergence-and-never`).

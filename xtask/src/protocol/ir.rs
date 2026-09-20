@@ -205,6 +205,9 @@ fn validate(root: &Path, catalog: &IrCatalog) -> Result<(), String> {
             "OperationError",
             "Callable",
             "Never",
+            "Map",
+            "Set",
+            "Range",
         ],
     )?;
 

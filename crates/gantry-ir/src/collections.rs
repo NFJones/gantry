@@ -12,6 +12,7 @@ use gantry_core::canonical_key::{CanonicalKey, CanonicalKeyError, CanonicalKeyLi
 use gantry_core::numeric::GantryInt;
 use gantry_core::value::LogicalValue;
 
+use crate::generated::TypeKind;
 use crate::types::TypeDescriptor;
 
 /// The declared clauses of `GNT-39.0` through `GNT-39.7`, in specification order.
@@ -244,6 +245,53 @@ impl CollectionKeyType {
                 )
             })
     }
+
+    /// Classifies one resolved descriptor as an admitted collection key type by its own kind.
+    ///
+    /// Classification reads the descriptor's closed type kind rather than comparing canonical
+    /// text, so a descriptor whose kind is one of the five admitted keys is admitted and every
+    /// other kind — a `Decision`, `OperationError`, `Never`, option, result, list, tuple, callable,
+    /// `Map`, `Set`, `Range`, or declared type — is refused under `collection-invalid-key`, naming
+    /// the refused argument. The refusal is the only outcome for an admitted-key text that denotes
+    /// another type, so no argument is coerced, structurally encoded, or admitted through ordinary
+    /// equality.
+    pub fn from_descriptor(descriptor: &TypeDescriptor) -> Result<Self, CollectionError> {
+        match descriptor.kind() {
+            TypeKind::Unit => Ok(Self::Unit),
+            TypeKind::Bool => Ok(Self::Bool),
+            TypeKind::Int => Ok(Self::Int),
+            TypeKind::Float => Ok(Self::Float),
+            TypeKind::String => Ok(Self::String),
+            TypeKind::Declared
+            | TypeKind::Option
+            | TypeKind::Result
+            | TypeKind::List
+            | TypeKind::Map
+            | TypeKind::Set
+            | TypeKind::Range
+            | TypeKind::Tuple
+            | TypeKind::Decision
+            | TypeKind::OperationError
+            | TypeKind::Callable
+            | TypeKind::Never => Err(Self::refuse(&descriptor.canonical_string())),
+        }
+    }
+
+    fn refuse(canonical_text: &str) -> CollectionError {
+        CollectionError::new(
+            CollectionDiagnosticCode::InvalidKey,
+            format!("`{canonical_text}` is not an admitted collection key type"),
+        )
+    }
+}
+
+/// Reports whether one descriptor kind is a collection kind of `GNT-39.4` through `GNT-39.7`.
+///
+/// The descriptor algebra carries the three collection kinds as structure, while no collection type
+/// is admitted as a value type in this edition: an identity decoder refuses a collection member as
+/// one of the unadmitted members its clause publishes.
+const fn is_collection_kind(kind: TypeKind) -> bool {
+    matches!(kind, TypeKind::Map | TypeKind::Set | TypeKind::Range)
 }
 
 /// One admitted `Map<K, V>` type identity of `GNT-39.5`.
@@ -267,7 +315,7 @@ impl MapTypeIdentity {
     /// type descriptor and is carried unchanged.
     pub fn admit(key: &TypeDescriptor, value: &TypeDescriptor) -> Result<Self, CollectionError> {
         Ok(Self {
-            key: CollectionKeyType::classify(&key.canonical_string())?,
+            key: CollectionKeyType::from_descriptor(key)?,
             value: value.clone(),
         })
     }
@@ -301,8 +349,11 @@ impl MapTypeIdentity {
     /// admitted key types is refused under `collection-invalid-key`, naming the refused member, so
     /// decoding admits no key the key domain refuses; any other text that is not the canonical
     /// rendering of one identity is refused under `collection-type-unadmitted`, so decoding admits
-    /// no member kind this edition does not admit and no non-canonical spelling. Decoding publishes
-    /// the identity and nothing more: no descriptor kind, type admission, value, construction,
+    /// no member kind this edition does not admit and no non-canonical spelling. No collection type
+    /// is admitted as a value type in this edition (`GNT-39.4-map-type-form-recognition`), so a
+    /// collection value member — a nested `Map`, `Set`, or `Range` — is one of the unadmitted
+    /// members this decoder refuses, whether or not the descriptor algebra carries its structure.
+    /// Decoding publishes the identity and nothing more: no descriptor kind, type admission, value, construction,
     /// projection, iteration, traversal, lowering, or machine representation.
     pub fn from_canonical_text(text: &str) -> Result<Self, CollectionError> {
         let inner = text
@@ -331,6 +382,9 @@ impl MapTypeIdentity {
         let key = CollectionKeyType::classify(key_text)?;
         let value = TypeDescriptor::from_canonical_string(value_text)
             .map_err(|_| Self::not_an_identity(text))?;
+        if is_collection_kind(value.kind()) {
+            return Err(Self::not_an_identity(text));
+        }
         let identity = Self { key, value };
         if identity.canonical_text() == text {
             Ok(identity)
@@ -366,7 +420,7 @@ impl SetTypeIdentity {
     /// `collection-invalid-key` naming the refused argument.
     pub fn admit(element: &TypeDescriptor) -> Result<Self, CollectionError> {
         Ok(Self {
-            element: CollectionKeyType::classify(&element.canonical_string())?,
+            element: CollectionKeyType::from_descriptor(element)?,
         })
     }
 
@@ -447,6 +501,10 @@ impl RangeTypeIdentity {
     /// The element member text must be the canonical text of one admitted value type, and any input
     /// that is not the canonical rendering of one identity is refused under
     /// `collection-type-unadmitted`; no stepping, bounds, or iteration rule is decoded or admitted.
+    /// No collection type is admitted as a value type in this edition
+    /// (`GNT-39.4-map-type-form-recognition`), so a collection element member is one of the
+    /// unadmitted members this decoder refuses, whether or not the descriptor algebra carries its
+    /// structure.
     pub fn from_canonical_text(text: &str) -> Result<Self, CollectionError> {
         let element = text
             .strip_prefix("Range<")
@@ -454,6 +512,9 @@ impl RangeTypeIdentity {
             .ok_or_else(|| Self::not_an_identity(text))?;
         let element = TypeDescriptor::from_canonical_string(element)
             .map_err(|_| Self::not_an_identity(text))?;
+        if is_collection_kind(element.kind()) {
+            return Err(Self::not_an_identity(text));
+        }
         let identity = Self { element };
         if identity.canonical_text() == text {
             Ok(identity)

@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 use gantry::canonical_key::{
     CanonicalKey, CanonicalKeyError, CanonicalKeyLimits, DEFAULT_CANONICAL_KEY_LIMITS,
 };
+use gantry::ir::TypeDescriptorError;
+use gantry::ir::generated::TypeKind;
 use gantry::ir::{
     COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
@@ -614,6 +616,202 @@ fn range_step_contract_is_sealed_and_deterministic() {
             contract.forward_within(value, Some(value))
         );
     }
+}
+
+/// Decodes one collection identity text as a canonical type descriptor.
+fn descriptor(text: &str) -> TypeDescriptor {
+    TypeDescriptor::from_canonical_string(text)
+        .unwrap_or_else(|error| panic!("`{text}` is one canonical type descriptor: {error:?}"))
+}
+
+/// The three collection type kinds are admitted to the closed type-kind vocabularies and the
+/// general type algebra owns their canonical text (`GNT-39.5`, `GNT-39.6`).
+///
+/// The admission is vocabulary and descriptor algebra: the canonical-IR contract publishes the
+/// three kinds, each owned by the clause that identifies it, and the algebra renders and decodes
+/// the identity texts exactly under the key rule the identities own. No source form, value,
+/// construction, projection, traversal, iteration, quota, schema, recovery, durability, lowering,
+/// or machine representation is admitted, and `GNT-39.4` keeps the type-admission refusal.
+#[test]
+fn collection_type_kinds_are_admitted_and_the_algebra_owns_their_canonical_text() {
+    assert_eq!(TypeKind::Map.wire_name(), "Map");
+    assert_eq!(TypeKind::Set.wire_name(), "Set");
+    assert_eq!(TypeKind::Range.wire_name(), "Range");
+
+    // The closed canonical-IR kind vocabulary appends exactly these three collection kinds to the
+    // published v1 order, and each cites the clause that identifies it.
+    let catalog =
+        fs::read_to_string(workspace_root().join("protocol/catalogs/ir-contracts-v1.json"))
+            .unwrap_or_else(|error| panic!("the IR contracts catalog is readable: {error}"));
+    let catalog: serde_json::Value = serde_json::from_str(&catalog)
+        .unwrap_or_else(|error| panic!("the IR contracts catalog is one JSON document: {error}"));
+    let kinds = catalog["type_kinds"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the IR contracts catalog lists type kinds"));
+    for (kind, owner) in [
+        (TypeKind::Range, "GNT-39.6-set-and-range-type-identities"),
+        (TypeKind::Set, "GNT-39.6-set-and-range-type-identities"),
+        (TypeKind::Map, "GNT-39.5-map-type-identity"),
+    ] {
+        let entry = kinds
+            .iter()
+            .rev()
+            .find(|entry| entry["wire"].as_str() == Some(kind.wire_name()))
+            .unwrap_or_else(|| panic!("the catalog declares the {} kind", kind.wire_name()));
+        assert_eq!(entry["rust"].as_str(), Some(kind.wire_name()));
+        assert_eq!(entry["requirements"].as_array().map(Vec::len), Some(1));
+        let cited = entry["requirements"][0].as_str().unwrap_or_default();
+        assert_eq!(cited, owner);
+        assert!(COLLECTION_CLAUSES.contains(&owner));
+    }
+
+    // The identity text each clause publishes is one canonical descriptor of that kind, the
+    // descriptor re-renders to exactly the identity text, and its members are the identity's own
+    // members in order.
+    let map = MapTypeIdentity::admit(&TypeDescriptor::INT, &TypeDescriptor::STRING)
+        .unwrap_or_else(|error| panic!("Int is an admitted collection key: {error:?}"));
+    let map_descriptor = descriptor(&map.canonical_text());
+    assert_eq!(map_descriptor.kind(), TypeKind::Map);
+    assert_eq!(map_descriptor.canonical_string(), map.canonical_text());
+    assert_eq!(
+        map_descriptor.immediate_members(),
+        vec![TypeDescriptor::INT, TypeDescriptor::STRING]
+    );
+
+    let set = SetTypeIdentity::admit(&TypeDescriptor::BOOL)
+        .unwrap_or_else(|error| panic!("Bool is an admitted collection key: {error:?}"));
+    let set_descriptor = descriptor(&set.canonical_text());
+    assert_eq!(set_descriptor.kind(), TypeKind::Set);
+    assert_eq!(set_descriptor.canonical_string(), set.canonical_text());
+    assert_eq!(
+        set_descriptor.immediate_members(),
+        vec![TypeDescriptor::BOOL]
+    );
+
+    // A range element is any constructed value type, so the element member is not a key and the
+    // `GNT-39.7` element domain is not a type-admission rule this descriptor decides.
+    let element = TypeDescriptor::list(TypeDescriptor::INT);
+    let range = RangeTypeIdentity::new(element.clone());
+    let range_descriptor = descriptor(&range.canonical_text());
+    assert_eq!(range_descriptor.kind(), TypeKind::Range);
+    assert_eq!(range_descriptor.canonical_string(), range.canonical_text());
+    assert_eq!(range_descriptor.immediate_members(), vec![element.clone()]);
+
+    // Every collection kind is structural: none carries independent primitive properties, and a
+    // sealed member is carried through the descriptor exactly as it is for the other kinds.
+    for descriptor in [&map_descriptor, &set_descriptor, &range_descriptor] {
+        assert!(descriptor.primitive_properties().is_none());
+    }
+    let sealed = TypeDescriptor::map(TypeDescriptor::INT, TypeDescriptor::DECISION)
+        .unwrap_or_else(|error| panic!("the value member is unrestricted: {error:?}"));
+    assert_eq!(sealed.canonical_string(), "Map<Int,Decision>");
+    assert!(sealed.contains_sealed_boundary());
+    assert!(!map_descriptor.contains_sealed_boundary());
+
+    // The `Map` key member and the `Set` element member are the same key domain: the algebra
+    // refuses a member outside it, and so does every text decoder of the three forms.
+    assert_eq!(
+        TypeDescriptor::map(element.clone(), TypeDescriptor::INT),
+        Err(TypeDescriptorError::InvalidCollectionMember)
+    );
+    assert_eq!(
+        TypeDescriptor::set(element.clone()),
+        Err(TypeDescriptorError::InvalidCollectionMember)
+    );
+    assert_eq!(
+        TypeDescriptor::from_canonical_string("Map<List<Int>,Int>").unwrap_err(),
+        TypeDescriptorError::InvalidCanonicalString
+    );
+    assert_eq!(
+        TypeDescriptor::from_canonical_string("Set<List<Int>>").unwrap_err(),
+        TypeDescriptorError::InvalidCanonicalString
+    );
+    for malformed in [
+        "Map<Int>",
+        "Map<Int,Bool,Int>",
+        "Map<Int,>",
+        "Map<>",
+        "Set<Int,Bool>",
+        "Set<>",
+        "Range<Int,Int>",
+        "Range<>",
+    ] {
+        assert!(
+            TypeDescriptor::from_canonical_string(malformed).is_err(),
+            "`{malformed}` is not one canonical collection descriptor"
+        );
+    }
+
+    // The identity decoders keep their own clause-owned refusal codes for the same texts, so the
+    // key rule is refused first exactly where `GNT-39.5` and `GNT-39.6` publish that ordering.
+    //
+    // The algebra carries collection structure, including a nested collection member, while no
+    // collection type is admitted as a value type in this edition: every identity decoder refuses
+    // such a member as one of the unadmitted members its clause publishes.
+    let nested =
+        TypeDescriptor::from_canonical_string("Map<Int,Map<Int,String>>").unwrap_or_else(|error| {
+            panic!("the algebra carries nested collection structure: {error:?}")
+        });
+    assert_eq!(nested.kind(), TypeKind::Map);
+    assert_eq!(nested.immediate_members().len(), 2);
+    assert_eq!(nested.immediate_members()[1].kind(), TypeKind::Map);
+    for (text, decoder) in [
+        (
+            "Map<Int,Map<Int,String>>",
+            MapTypeIdentity::from_canonical_text
+                as fn(&str) -> Result<MapTypeIdentity, CollectionError>,
+        ),
+        (
+            "Map<Int,Range<Int>>",
+            MapTypeIdentity::from_canonical_text
+                as fn(&str) -> Result<MapTypeIdentity, CollectionError>,
+        ),
+    ] {
+        assert_eq!(
+            decoder(text).unwrap_err().code(),
+            CollectionDiagnosticCode::UnadmittedType,
+            "`{text}`"
+        );
+    }
+    assert_eq!(
+        RangeTypeIdentity::from_canonical_text("Range<Map<Int,String>>")
+            .unwrap_err()
+            .code(),
+        CollectionDiagnosticCode::UnadmittedType
+    );
+    // A collection key member is refused by the key rule before that member rule, exactly where the
+    // clause publishes the ordering.
+    assert_eq!(
+        MapTypeIdentity::from_canonical_text("Map<Map<Int,String>,Int>")
+            .unwrap_err()
+            .code(),
+        CollectionDiagnosticCode::InvalidKey
+    );
+    assert_eq!(
+        MapTypeIdentity::from_canonical_text("Map<List<Int>,Int>")
+            .unwrap_err()
+            .code(),
+        CollectionDiagnosticCode::InvalidKey
+    );
+    assert_eq!(
+        SetTypeIdentity::from_canonical_text("Set<List<Int>>")
+            .unwrap_err()
+            .code(),
+        CollectionDiagnosticCode::InvalidKey
+    );
+    assert_eq!(
+        RangeTypeIdentity::from_canonical_text("Range<Int,Int>")
+            .unwrap_err()
+            .code(),
+        CollectionDiagnosticCode::UnadmittedType
+    );
+
+    // No source form is admitted: the type-admission refusal of `GNT-39.4` stays clause-owned and
+    // registered while the descriptors are nameable and decodable.
+    assert_eq!(
+        CollectionDiagnosticCode::UnadmittedType.spelling(),
+        "collection-type-unadmitted"
+    );
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).

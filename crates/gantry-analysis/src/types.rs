@@ -1406,6 +1406,7 @@ fn resolve_type_node(
                 }
                 Err(
                     TypeDescriptorError::TupleArity
+                    | TypeDescriptorError::InvalidCollectionMember
                     | TypeDescriptorError::InvalidCanonicalString
                     | TypeDescriptorError::ConstructedTypeDepth { .. },
                 ) => return Err(AnalysisError::Invariant),
@@ -1444,20 +1445,26 @@ fn resolve_type_node(
             // the refused argument, even when the value argument resolves to no type; an admitted
             // key argument, and a key argument that resolves to no type at all, keeps the
             // type-admission refusal. Neither path builds a descriptor or a type expression.
-            let key_text = type_member_nodes(tree, id)?
+            let key_descriptor = type_member_nodes(tree, id)?
                 .into_iter()
                 .next()
                 .and_then(|member| resolved.get(&member))
-                .map(|fact| fact.descriptor.canonical_string());
-            match key_text
+                .map(|fact| fact.descriptor.clone());
+            match key_descriptor
                 .as_ref()
-                .map(|text| CollectionKeyType::classify(text))
+                .map(CollectionKeyType::from_descriptor)
             {
                 Some(Err(refusal)) => diagnostics.push(type_diagnostic(
                     "collection-invalid-key",
                     refusal.detail(),
                     node.span().clone(),
-                    [("key", key_text.clone().unwrap_or_default())],
+                    [(
+                        "key",
+                        key_descriptor
+                            .as_ref()
+                            .map(TypeDescriptor::canonical_string)
+                            .unwrap_or_default(),
+                    )],
                 )?),
                 _ => diagnostics.push(type_diagnostic(
                     "collection-type-unadmitted",
@@ -1474,20 +1481,26 @@ fn resolve_type_node(
             // denotes another type is refused under `collection-invalid-key`, naming the refused
             // argument, even when no descriptor is built; an admitted element keeps the
             // type-admission refusal.
-            let element_text = type_member_nodes(tree, id)?
+            let element_descriptor = type_member_nodes(tree, id)?
                 .into_iter()
                 .next()
                 .and_then(|member| resolved.get(&member))
-                .map(|fact| fact.descriptor.canonical_string());
-            match element_text
+                .map(|fact| fact.descriptor.clone());
+            match element_descriptor
                 .as_ref()
-                .map(|text| CollectionKeyType::classify(text))
+                .map(CollectionKeyType::from_descriptor)
             {
                 Some(Err(refusal)) => diagnostics.push(type_diagnostic(
                     "collection-invalid-key",
                     refusal.detail(),
                     node.span().clone(),
-                    [("element", element_text.clone().unwrap_or_default())],
+                    [(
+                        "element",
+                        element_descriptor
+                            .as_ref()
+                            .map(TypeDescriptor::canonical_string)
+                            .unwrap_or_default(),
+                    )],
                 )?),
                 _ => diagnostics.push(type_diagnostic(
                     "collection-type-unadmitted",

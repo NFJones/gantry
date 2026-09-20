@@ -367,6 +367,12 @@ pub enum TypeKind {
     Callable,
     /// The `Never` value.
     Never,
+    /// The `Map` value.
+    Map,
+    /// The `Set` value.
+    Set,
+    /// The `Range` value.
+    Range,
 }
 
 impl TypeKind {
@@ -388,6 +394,9 @@ impl TypeKind {
             Self::OperationError => "OperationError",
             Self::Callable => "Callable",
             Self::Never => "Never",
+            Self::Map => "Map",
+            Self::Set => "Set",
+            Self::Range => "Range",
         }
     }
 }
