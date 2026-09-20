@@ -1105,6 +1105,7 @@ mod tests {
         fail_abort: AtomicBool,
         pending_abort: AtomicBool,
         gate_spawn: AtomicBool,
+        fail_spawn: AtomicBool,
         spawn_release: (Mutex<bool>, std::sync::Condvar),
     }
 
@@ -1115,6 +1116,10 @@ mod tests {
 
         fn gate_spawn(&self) {
             self.gate_spawn.store(true, Ordering::Release);
+        }
+
+        fn fail_spawn(&self) {
+            self.fail_spawn.store(true, Ordering::Release);
         }
 
         fn release_spawn(&self) {
@@ -1156,6 +1161,9 @@ mod tests {
                         .wait(released)
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
                 }
+            }
+            if self.fail_spawn.load(Ordering::Acquire) {
+                return Err(executor_failure());
             }
             Ok(Box::new(RecordedTask { state }))
         }
@@ -1453,6 +1461,69 @@ mod tests {
         );
         assert_eq!(supervisor.active_count(SupervisedTaskDomain::Root), 0);
         assert!(supervisor.is_quiescent());
+    }
+
+    /// A submission whose spawn fails releases its reservation, retains no entry, and
+    /// wakes a quiescence waiter registered while it was still in flight.
+    #[test]
+    fn failed_submission_wakes_a_registered_quiescence_waiter() {
+        let (supervisor, executor) = supervisor_with_root_capacity(1);
+        executor.gate_spawn();
+        executor.fail_spawn();
+        let submitter = TaskSupervisor {
+            inner: Arc::clone(&supervisor.inner),
+        };
+        let registration = supervisor.prepare(SupervisedTaskDomain::Shutdown, None);
+        let permit = supervisor
+            .try_reserve_control_plane()
+            .unwrap_or_else(|error| panic!("control-plane reservation failed: {error}"))
+            .transfer();
+        let spawner = std::thread::spawn(move || {
+            submitter.submit(
+                registration,
+                Box::pin(async { OwnedTaskResult::new() }),
+                permit,
+            )
+        });
+        while executor.tasks().is_empty() {
+            std::thread::yield_now();
+        }
+        assert!(
+            !lock(&supervisor.inner.state).submitting.is_empty(),
+            "the gated spawn runs while the submission still holds its id"
+        );
+        let wake = Arc::new(CountingWake::default());
+        let waker = Waker::from(Arc::clone(&wake));
+        let mut context = Context::from_waker(&waker);
+        assert!(
+            supervisor
+                .poll_shutdown_quiescence(&mut context)
+                .is_pending()
+        );
+        assert!(
+            !wake.woken(),
+            "the in-flight submission keeps quiescence false"
+        );
+        executor.release_spawn();
+        let result = spawner
+            .join()
+            .unwrap_or_else(|_| panic!("the submitting thread must not panic"));
+        assert!(
+            result.is_err(),
+            "a failed spawn surfaces as a submission error"
+        );
+        for _ in 0..1_000 {
+            if wake.woken() {
+                break;
+            }
+            std::thread::yield_now();
+        }
+        assert!(
+            wake.woken(),
+            "the failed submission must wake the parked quiescence waiter"
+        );
+        assert!(supervisor.is_quiescent());
+        assert!(supervisor.poll_shutdown_quiescence(&mut context).is_ready());
     }
 
     #[derive(Default)]
