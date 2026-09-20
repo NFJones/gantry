@@ -5,17 +5,17 @@
 //! load a package, nor generate, link, or publish anything, and no physical repository
 //! layout fact enters any identity they check.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FacadeReexport, FeatureSelection, NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude,
-    Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance,
-    SemanticMode, StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation, StdGraph,
-    StdItem, StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
-    StdlibNonClaimAssertion, TargetKind, canonical_pure_hierarchy, check_layout_identity,
-    check_stdlib_non_claims, require_applicable,
+    CANONICAL_PRELUDE_MEMBERS, FacadeReexport, FeatureSelection, NameClass, PRELUDE_BINDINGS,
+    PackageFamily, Prelude, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
+    SelectedInstance, SemanticMode, StabilityTier, StabilityTransition, StdContractVersion,
+    StdDeprecation, StdGraph, StdItem, StdName, StdPackage, StdlibDiagnosticCode, StdlibError,
+    StdlibNonClaim, StdlibNonClaimAssertion, TargetKind, canonical_pure_hierarchy,
+    check_layout_identity, check_stdlib_non_claims, require_applicable,
 };
 
 const CORE: &str = "std.core";
@@ -394,16 +394,41 @@ fn prelude_is_enumerated_and_wildcards_are_refused() {
 }
 
 /// Every enumerated prelude member owns a declared, closed set of automatic source spellings
-/// (`GNT-34.4`): the canonical prelude is the declared one, each binding names a declared item
-/// of `std.core`, a member outside the correspondence enumerates no source name and is
-/// refused, and dropping a member drops exactly that member's spellings.
+/// (`GNT-34.4`): the declared canonical member set is valid under that closure in both
+/// directions, the canonical prelude is the declared one, each binding names a declared item of
+/// `std.core`, the published inventory partitions into exactly six prelude-owned and eleven
+/// compiler-owned spellings, a member outside the correspondence enumerates no source name and
+/// is refused, and dropping a member drops exactly that member's spellings.
 #[test]
 fn prelude_members_own_their_declared_automatic_spellings() {
+    // The declared canonical member set is valid under the same closure the model enforces: a
+    // coordinated edit that adds a member without a binding fails here instead of silently
+    // enumerating a member that injects no source name.
+    let declared_members = Prelude::new("2026", &CANONICAL_PRELUDE_MEMBERS)
+        .unwrap_or_else(|error| panic!("the canonical members are declared: {error}"));
+
     let declared = prelude();
+    assert_eq!(
+        declared_members, declared,
+        "the canonical prelude enumerates exactly the declared canonical members"
+    );
     assert_eq!(
         declared,
         Prelude::canonical(),
         "the canonical prelude is the declared prelude"
+    );
+    let bound = PRELUDE_BINDINGS
+        .iter()
+        .map(|binding| binding.member())
+        .collect::<BTreeSet<&str>>();
+    assert_eq!(
+        declared
+            .members()
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<&str>>(),
+        bound,
+        "every enumerated member is bound and every bound member is enumerated"
     );
     assert_eq!(
         declared
@@ -411,6 +436,24 @@ fn prelude_members_own_their_declared_automatic_spellings() {
             .into_iter()
             .collect::<Vec<&str>>(),
         ["Err", "None", "Ok", "Option", "Result", "Some"]
+    );
+
+    // The note publishes the split as six prelude-owned and eleven compiler-owned spellings.
+    let prelude_owned = PRELUDE_BINDINGS
+        .iter()
+        .flat_map(|binding| binding.spellings().iter().copied())
+        .collect::<BTreeSet<&str>>();
+    let compiler_owned = COMPILER_OWNED_TYPE_WORDS
+        .iter()
+        .copied()
+        .filter(|word| !prelude_owned.contains(word))
+        .collect::<BTreeSet<&str>>();
+    assert_eq!(prelude_owned.len(), 6, "six prelude-owned spellings");
+    assert_eq!(compiler_owned.len(), 11, "eleven compiler-owned spellings");
+    assert_eq!(
+        prelude_owned.len() + compiler_owned.len(),
+        COMPILER_OWNED_TYPE_WORDS.len(),
+        "the published inventory partitions into the prelude-owned and compiler-owned sets"
     );
 
     let graph = canonical_pure_hierarchy()
