@@ -2381,6 +2381,110 @@ fn projected_receiver_calls_are_refused_precisely() {
     }
 }
 
+/// The edition prelude's enumerated library members are in scope without imports, and names
+/// outside the enumeration are not (`GNT-34.4`): every enumerated member resolves automatically
+/// and publishes an executable program, while an undeclared spelling, an explicit standard
+/// import, a binding that would shadow a prelude item, and a declaration that would collide
+/// with one are refused. The compiler-owned primitive types are outside this enumeration.
+#[test]
+fn edition_prelude_members_resolve_without_imports_and_outside_names_do_not() {
+    use gantry::ir::canonical_pure_hierarchy;
+
+    let graph = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical hierarchy is valid: {error}"));
+    let prelude = graph.prelude();
+    assert_eq!(prelude.edition(), "2026");
+
+    // One measured spelling per enumerated member; a new member without a probe fails here.
+    let probes = [
+        (
+            "std.core.option",
+            "fn main() -> Int { let x: Option<Int> = Some(7); match x { Some(v) => v, None => 0 } }",
+        ),
+        (
+            "std.core.result",
+            "fn main() -> Int { let r: Result<Int, Int> = Ok(7); match r { Ok(v) => v, Err(e) => 0 } }",
+        ),
+    ];
+    let probed: Vec<&str> = probes.iter().map(|(member, _)| *member).collect();
+    assert_eq!(
+        prelude
+            .members()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<&str>>(),
+        probed,
+        "the lane probes exactly the enumerated edition prelude"
+    );
+    for (member, source) in probes {
+        assert!(
+            prelude.admit(member).is_ok(),
+            "the enumerated member {member} is admitted"
+        );
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(
+            package.executable_program().is_some(),
+            "a package using only enumerated prelude members builds without a host capability package: {source}"
+        );
+    }
+
+    let undeclared = analyze("fn main() -> Int { let x: Option<Int> = none; 0 }");
+    assert_eq!(undeclared.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        diagnostic_codes(undeclared.diagnostics()),
+        ["unresolved-reference"]
+    );
+    assert!(undeclared.executable_program().is_none());
+
+    let imported = analyze("use std::core::option;\nfn main() -> Int { 0 }");
+    assert_eq!(imported.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        diagnostic_codes(imported.diagnostics()),
+        ["unresolved-import"]
+    );
+    assert!(imported.executable_program().is_none());
+
+    let admitted_shadow = syntax("fn main() -> Int { let Zzz: Int = 1; Zzz }");
+    assert!(
+        admitted_shadow.status() == gantry::frontend::PackageSyntaxStatus::Valid,
+        "{:?}",
+        admitted_shadow.diagnostics()
+    );
+    let shadowed = syntax("fn main() -> Int { let Option: Int = 1; Option }");
+    assert_eq!(
+        shadowed.status(),
+        gantry::frontend::PackageSyntaxStatus::Invalid,
+        "a binding may not shadow an enumerated prelude item"
+    );
+    assert_eq!(
+        diagnostic_codes(shadowed.diagnostics()),
+        ["unexpected-token", "unexpected-token"]
+    );
+
+    let admitted_collision = syntax("struct Zzz { v: Int }\nfn main() -> Int { 0 }");
+    assert!(
+        admitted_collision.status() == gantry::frontend::PackageSyntaxStatus::Valid,
+        "{:?}",
+        admitted_collision.diagnostics()
+    );
+    let collided = syntax("struct Option { v: Int }\nfn main() -> Int { 0 }");
+    assert_eq!(
+        collided.status(),
+        gantry::frontend::PackageSyntaxStatus::Invalid,
+        "a declaration may not collide with an enumerated prelude item"
+    );
+    assert_eq!(
+        diagnostic_codes(collided.diagnostics()),
+        ["unexpected-token"]
+    );
+}
+
 fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let root = TempDirectory::new();
     root.write(source);
