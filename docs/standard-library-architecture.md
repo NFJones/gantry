@@ -14,8 +14,8 @@ in specification order:
 
 | Clause anchor | What it owns |
 | --- | --- |
-| `GNT-34.0-standard-library-package-architecture` | the section scope: one canonical logical hierarchy declared as packages, items, edges, tiers, and applicability |
-| `GNT-34.1-canonical-hierarchy-and-package-names` | the canonical hierarchy and the admitted package and item names |
+| `GNT-34.0-standard-library-package-architecture` | the section scope: an analyzer-only declaration model for the canonical logical hierarchy, its internal dependency DAG, its edition prelude, facade identity, stability tiers, applicability, and contract versioning |
+| `GNT-34.1-canonical-hierarchy-and-package-names` | the canonical hierarchy — the exact pure and capability-backed logical families — and package-name syntax with its malformed, non-rooted, and duplicate refusals |
 | `GNT-34.2-name-classification` | the closed name classes and the classification each name receives |
 | `GNT-34.3-acyclic-internal-dependency-dag` | the acyclic internal dependency DAG and which edges a pure family may declare |
 | `GNT-34.4-edition-prelude-and-explicit-imports` | the closed per-edition prelude and explicit imports; no glob import and no implicit transitive access |
@@ -26,7 +26,7 @@ in specification order:
 | `GNT-34.9-standard-library-contract-versioning` | contract versions and their compatibility consequences |
 | `GNT-34.10-relocation-and-deprecation` | relocation and deprecation rules |
 | `GNT-34.11-aggregate-manifests-and-publication-inputs` | aggregate manifests and the publication inputs built from them |
-| `GNT-34.12-standard-library-architecture-non-claims` | the frozen non-claims listed below |
+| `GNT-34.12-standard-library-architecture-non-claims` | the frozen non-claims, listed below |
 
 The pure families are `std.core` (the foundational root, `StabilityTier::Foundational`)
 and the stable families that build on it: `std.collections`, `std.text`, `std.num`,
@@ -77,7 +77,25 @@ wildcard import is refused.
 
 ## Non-claims
 
-The declaration resolves, downloads, loads, generates, links, and publishes nothing; it
-introduces no family behavior, no package downloader, no generator, and no publication
-mechanism. Family APIs and capability-backed packages remain the responsibility of the
-issues that own them.
+The declaration is a claim about architecture only. Its declared non-claims are:
+
+- No adapter presence: the model declares packages and claims nothing about the existence of any
+  adapter.
+- No capability or provider existence: declaring a capability package promises no implementation.
+- No documentation rendering: documentation generation and publication are downstream owners.
+- No durable execution: durability contracts remain owned by other sections.
+- No family behavior: this section declares architecture and implements none of the families it
+  names.
+- No permanently frozen prelude: the prelude is closed per edition and may change with an edition
+  transition.
+- No host behavior: nothing about host services, adapters, or platform behavior is promised.
+- No layout as identity: repository layout, crate names, file names, build arrangement, and paths
+  are never source identity.
+- No package acquisition or registry trust: acquisition, resolution, and trust are owned by other
+  issues.
+- No parser, formatter, linker, or tooling behavior: this section defines architecture only.
+- No performance or cost promise: semantic cost and performance remain owned by other sections.
+- No release policy: publication, qualification, and claims are owned by release issues.
+
+The declaration resolves, downloads, loads, generates, links, and publishes nothing, and model
+facts and tests must never be presented as those guarantees.

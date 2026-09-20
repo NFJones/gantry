@@ -1653,3 +1653,24 @@ fn standard_library_architecture_note_names_every_declared_clause_anchor() {
         assert!(note.contains(clause), "the note names `{clause}`");
     }
 }
+
+/// Every declared non-claim is published in the architecture note.
+///
+/// The non-claim vocabulary is read from `STDLIB_NON_CLAIMS` itself — each entry's label up to its
+/// first colon — so a non-claim added to the model fails this lane until the note names it, which
+/// is what the previous, incomplete summary lacked.
+#[test]
+fn standard_library_architecture_note_names_every_declared_non_claim() {
+    let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
+        .unwrap_or_else(|error| panic!("the architecture note is readable: {error}"));
+    for declared in STDLIB_NON_CLAIMS {
+        let label = declared
+            .split(':')
+            .next()
+            .unwrap_or_else(|| panic!("the declared non-claim has a label"));
+        assert!(
+            note.contains(label),
+            "the note names the declared non-claim `{label}`"
+        );
+    }
+}
