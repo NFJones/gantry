@@ -1,6 +1,6 @@
 {
  "format": "gantry.concurrent-lifecycle-evidence/v1",
- "specification_sha256": "ee234890d4e365e5420c18063a36a621ff2fe54654eb20937966df346c82a578",
+ "specification_sha256": "5694484eee620616a946efe5f4cf7caa243ca3d9ab3bee5d5b97089b83c07b69",
  "issue": "GNT-CON-003",
  "capabilities": [
   {

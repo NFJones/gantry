@@ -1436,6 +1436,15 @@ fn resolve_type_node(
             };
             TypeDescriptor::tuple(members).ok()
         }
+        Some("Map") => {
+            diagnostics.push(type_diagnostic(
+                "collection-type-unadmitted",
+                "a Map type is not admitted in this edition",
+                node.span().clone(),
+                [("type", "Map")],
+            )?);
+            None
+        }
         Some("Self") => None,
         Some(_) => return Err(AnalysisError::Invariant),
         None => {

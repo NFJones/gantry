@@ -2718,6 +2718,12 @@ fn resolve_generic_type_node(
         }
         Some("Self") => TypeExpression::self_type(self_binder_depth(id, context)?, u64::MAX)
             .map_err(|_| AnalysisError::Invariant)?,
+        Some("Map") => {
+            // `GNT-39.4` owns the refusal: the type phase publishes
+            // `collection-type-unadmitted` and builds no descriptor for the form, so no type
+            // expression is built here either.
+            return Ok(None);
+        }
         Some(_) => return Err(AnalysisError::Invariant),
         None => {
             if let Some(callable) = direct_child(context.tree, id, SyntaxForm::CallableType) {

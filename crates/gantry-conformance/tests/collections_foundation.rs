@@ -296,7 +296,7 @@ fn collection_clauses_and_diagnostics_are_published() {
             "the specification declares `{clause}`"
         );
     }
-    assert_eq!(CollectionDiagnosticCode::ALL.len(), 3);
+    assert_eq!(CollectionDiagnosticCode::ALL.len(), 4);
     for code in CollectionDiagnosticCode::ALL {
         assert!(
             specification.contains(code.spelling()),

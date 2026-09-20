@@ -2543,6 +2543,49 @@ fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
     );
 }
 
+/// The grammar recognises `Map<K, V>` and analysis refuses it until the type is admitted
+/// (`GNT-39.4`).
+#[test]
+fn map_type_form_is_recognised_and_refused_until_admitted() {
+    let source = "fn f(x: Map<Int, String>) -> Int { 0 }\nfn main() -> Int { 0 }";
+    let recognised = syntax(source);
+    assert_eq!(
+        recognised.status(),
+        gantry::frontend::PackageSyntaxStatus::Valid,
+        "the Map type form is recognised by the grammar: {:?}",
+        recognised.diagnostics()
+    );
+    let refused = analyze(source);
+    assert_eq!(refused.status(), AnalysisStatus::Invalid);
+    assert_eq!(
+        diagnostic_codes(refused.diagnostics()),
+        ["collection-type-unadmitted"]
+    );
+    assert!(refused.executable_program().is_none());
+
+    for malformed in [
+        "fn f(x: Map<Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Map) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Map<Int, String, Bool>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Set<Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(x: Range<Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
+    ] {
+        let phase = syntax(malformed);
+        assert_eq!(
+            phase.status(),
+            gantry::frontend::PackageSyntaxStatus::Invalid,
+            "{malformed} is refused by the grammar"
+        );
+        assert!(
+            diagnostic_codes(phase.diagnostics())
+                .iter()
+                .all(|code| *code == "unexpected-token"),
+            "{malformed} refuses only as an unexpected token: {:?}",
+            diagnostic_codes(phase.diagnostics())
+        );
+    }
+}
+
 /// The collection spellings are reserved before any collection type is admitted (`GNT-13.2`):
 /// each is refused only as an unexpected token in binding, type, expression, and
 /// generic-argument position, and none resolves.

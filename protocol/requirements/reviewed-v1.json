@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "ee234890d4e365e5420c18063a36a621ff2fe54654eb20937966df346c82a578",
+ "specification_sha256": "5694484eee620616a946efe5f4cf7caa243ca3d9ab3bee5d5b97089b83c07b69",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9504,
-   "end_line": 15599,
+   "end_line": 15603,
    "rationale": null
   }
  ],
@@ -41263,10 +41263,10 @@
   {
    "id": "GNT-39.3-collection-foundation-non-claims",
    "span_start_line": 15597,
-   "span_end_line": 15599,
+   "span_end_line": 15600,
    "anchor_line": 15597,
    "body_start_line": 15598,
-   "body_end_line": 15599,
+   "body_end_line": 15600,
    "profiles": [
     "analyzer"
    ],
@@ -41278,7 +41278,7 @@
     {
      "key": "clause-001",
      "start_line": 15598,
-     "end_line": 15599,
+     "end_line": 15600,
      "profiles": [
       "analyzer"
      ],
@@ -41292,6 +41292,45 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/collections_foundation.rs#collection_non_claims_are_declared_and_guarded"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-39.4-map-type-form-recognition",
+   "span_start_line": 15601,
+   "span_end_line": 15603,
+   "anchor_line": 15601,
+   "body_start_line": 15602,
+   "body_end_line": 15603,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15602,
+     "end_line": 15603,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/analyzer_types.rs#map_type_form_is_recognised_and_refused_until_admitted"
        ],
        "rationale": null
       }

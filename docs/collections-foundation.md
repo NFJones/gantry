@@ -6,10 +6,11 @@ is `crates/gantry-ir/src/collections.rs`, published through `gantry::ir`, and it
 evidence is `crates/gantry-conformance/tests/collections_foundation.rs`, one lane per claim. This
 note is documentation: it names what the model declares and what it refuses, and it grants nothing.
 
-The section does not define or admit a source collection type, `Map`, `Set`, or `Range` vocabulary,
-or any collection API, and it claims no range stepping, iterator ownership or invalidation,
-traversal, mutation, exhaustion, suspension, quota, schema, recovery, or durable behavior. The
-canonical scalar-key contract it consumes is documented separately in `docs/canonical-scalar-keys.md`.
+The section admits no source collection value, operation, or collection API and no collection type
+whose form `GNT-39.4-map-type-form-recognition` does not recognise, and it claims no range stepping,
+iterator ownership or invalidation, traversal, mutation, exhaustion, suspension, quota, schema,
+recovery, or durable behavior. The canonical scalar-key contract it consumes is documented
+separately in `docs/canonical-scalar-keys.md`.
 
 ## Declared clauses
 
@@ -19,6 +20,7 @@ canonical scalar-key contract it consumes is documented separately in `docs/cano
 | `GNT-39.1-admitted-collection-keys` | the admitted key domain and the refusal that names the refused kind |
 | `GNT-39.2-canonical-collection-order-and-duplicate-identity` | the canonical order and identity-based duplicate rejection |
 | `GNT-39.3-collection-foundation-non-claims` | the frozen non-claims listed below |
+| `GNT-39.4-map-type-form-recognition` | the one recognised collection type form, `Map<K, V>`, and its `collection-type-unadmitted` refusal |
 
 ## What the model decides
 
@@ -44,6 +46,10 @@ canonical scalar-key contract it consumes is documented separately in `docs/cano
   every identity is unique.
 - `check_collection_non_claims` refuses an unasserted declared non-claim and a non-claim presented
   as a guarantee, both under `collection-non-claim-as-guarantee`.
+- The grammar recognises exactly one collection type form, `Map<K, V>`, with two value-type
+  arguments (`GNT-39.4`); analysis refuses every occurrence under `collection-type-unadmitted` and
+  builds no descriptor or type expression for it, so no `Map` type identity, value, operation, or
+  lowering exists in this edition and every malformed argument list is refused by the grammar.
 
 ## Diagnostics
 
@@ -55,7 +61,7 @@ canonical scalar-key contract it consumes is documented separately in `docs/cano
 
 ## Declared non-claims
 
-- no source collection type or collection API
+- no source collection value, operation, or collection API
 - no range stepping, iterator ownership or invalidation, traversal, mutation, exhaustion, suspension, quotas, schemas, recovery, or durable behavior
 - no family behavior
 - no storage layout or physical representation

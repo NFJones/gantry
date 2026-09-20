@@ -1062,7 +1062,9 @@ impl<'a> Machine<'a> {
             self.tasks
                 .push(Task::ExpectPunctuation(Punctuation::Greater));
             self.tasks.push(Task::ValueType { depth: child_depth });
-        } else if self.at_word("Result") {
+        } else if self.at_word("Result") || self.at_word("Map") {
+            // Both two-argument type heads share this production; the analyzer distinguishes
+            // them by the head word it reads.
             self.consume_current()?;
             self.expect_punctuation(Punctuation::Less)?;
             self.tasks

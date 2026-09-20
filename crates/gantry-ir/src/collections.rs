@@ -9,12 +9,13 @@ use std::cmp::Ordering;
 use gantry_core::canonical_key::{CanonicalKey, CanonicalKeyError, CanonicalKeyLimits};
 use gantry_core::value::LogicalValue;
 
-/// The declared clauses of `GNT-39.0` through `GNT-39.3`, in specification order.
-pub const COLLECTION_CLAUSES: [&str; 4] = [
+/// The declared clauses of `GNT-39.0` through `GNT-39.4`, in specification order.
+pub const COLLECTION_CLAUSES: [&str; 5] = [
     "GNT-39.0-collection-key-and-order-scope",
     "GNT-39.1-admitted-collection-keys",
     "GNT-39.2-canonical-collection-order-and-duplicate-identity",
     "GNT-39.3-collection-foundation-non-claims",
+    "GNT-39.4-map-type-form-recognition",
 ];
 
 /// One frozen collection-foundation diagnostic of `GNT-39.0`.
@@ -26,14 +27,17 @@ pub enum CollectionDiagnosticCode {
     DuplicateKey,
     /// `GNT-39.3`: a declared non-claim is presented as a guarantee it does not make.
     NonClaimAsGuarantee,
+    /// `GNT-39.4`: a recognised `Map<K, V>` occurrence is not admitted as a type.
+    UnadmittedType,
 }
 
 impl CollectionDiagnosticCode {
     /// Every declared diagnostic, in declaration order.
-    pub const ALL: [Self; 3] = [
+    pub const ALL: [Self; 4] = [
         Self::InvalidKey,
         Self::DuplicateKey,
         Self::NonClaimAsGuarantee,
+        Self::UnadmittedType,
     ];
 
     /// Returns the registered refusal spelling.
@@ -43,6 +47,7 @@ impl CollectionDiagnosticCode {
             Self::InvalidKey => "collection-invalid-key",
             Self::DuplicateKey => "collection-duplicate-key",
             Self::NonClaimAsGuarantee => "collection-non-claim-as-guarantee",
+            Self::UnadmittedType => "collection-type-unadmitted",
         }
     }
 
@@ -53,6 +58,7 @@ impl CollectionDiagnosticCode {
             Self::InvalidKey => "GNT-39.1-admitted-collection-keys",
             Self::DuplicateKey => "GNT-39.2-canonical-collection-order-and-duplicate-identity",
             Self::NonClaimAsGuarantee => "GNT-39.3-collection-foundation-non-claims",
+            Self::UnadmittedType => "GNT-39.4-map-type-form-recognition",
         }
     }
 }
@@ -210,7 +216,9 @@ impl CollectionNonClaimName {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::SourceCollectionType => "no source collection type or collection API",
+            Self::SourceCollectionType => {
+                "no source collection value, operation, or collection API"
+            }
             Self::RangeIteratorAndDurability => {
                 "no range stepping, iterator ownership or invalidation, traversal, mutation, exhaustion, suspension, quotas, schemas, recovery, or durable behavior"
             }

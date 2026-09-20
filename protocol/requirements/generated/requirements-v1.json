@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "ee234890d4e365e5420c18063a36a621ff2fe54654eb20937966df346c82a578",
-  "byte_length": 1036920,
-  "line_count": 15599,
+  "specification_sha256": "5694484eee620616a946efe5f4cf7caa243ca3d9ab3bee5d5b97089b83c07b69",
+  "byte_length": 1038139,
+  "line_count": 15603,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "adcd0bce3f83d9db2477d397338ba88eaee3f8df8dc68cfd0b7fd346ee9b78d7",
+      "sha256": "fb2111e4723b9c8b4f23c28bb94289878b4a2767b6f7aa1d2b7c0d8c78b01c71",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15599,
-      "sha256": "cd4a4775352b3c4519a1a30dbda8ef704d7152a18bb64e1702c945448db0c84b",
+      "end_line": 15603,
+      "sha256": "536c15b6162f230cc9bba6262aa6e915b3347f7c29235c052849bc7f02d12104",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "fce2f2b87649c3e58ac89fe224070635e8852f3934a9abba3b4f2e855bc6c324",
+      "span_sha256": "f2b2f5bb77c8020e934bbbf1bbdc1cddaba3a271b161ab7653f19c306fa45365",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "93777effae1ea74f05aeba13395cd6fec4f3f5a2da9c6a831937c627c32c30ec",
+      "body_sha256": "260c3438c09dbd9be302bb9d663eb5929b9afaf860511ec31f0ba74ca3b9ea4d",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42250,11 +42250,11 @@
       "id": "GNT-39.0-collection-key-and-order-scope",
       "span_start_line": 15582,
       "span_end_line": 15588,
-      "span_sha256": "51cab66252edcc66bd8292b5ad1b3d398025337ac3c2e030a0c59d5808688622",
+      "span_sha256": "ec5159620003b14bfa09ae47a0c41e9af9df673ef36070a4264352e04f3652e2",
       "anchor_line": 15585,
       "body_start_line": 15586,
       "body_end_line": 15588,
-      "body_sha256": "2a8cba3606916cce324a09318a137377089dadc5708f4bacbd3ef60aee5abcf7",
+      "body_sha256": "969b8e59cfab88cae89c12854ddc8573dcb63fc14afefd575b1a4822253457c8",
       "profiles": [
         "analyzer"
       ],
@@ -42376,12 +42376,12 @@
     {
       "id": "GNT-39.3-collection-foundation-non-claims",
       "span_start_line": 15597,
-      "span_end_line": 15599,
-      "span_sha256": "2b7844ff887b8419bf6fd1a820273ca5ae7346bb35da382903e5c2a22d14a7ca",
+      "span_end_line": 15600,
+      "span_sha256": "2ea681b527ae4d69df5041229f37180f43758c60e66b37184c131ffc2f86ca0f",
       "anchor_line": 15597,
       "body_start_line": 15598,
-      "body_end_line": 15599,
-      "body_sha256": "8511bf214979b48545599919a36947a9213c22a9954c68355a59a0defe2866c8",
+      "body_end_line": 15600,
+      "body_sha256": "8cbd303e752bac8b9763c3452139af0c853075c5683a54d9ba0557029cac5be4",
       "profiles": [
         "analyzer"
       ],
@@ -42393,7 +42393,7 @@
         {
           "key": "clause-001",
           "start_line": 15598,
-          "end_line": 15599,
+          "end_line": 15600,
           "profiles": [
             "analyzer"
           ],
@@ -42407,6 +42407,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/collections_foundation.rs#collection_non_claims_are_declared_and_guarded"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-39.4-map-type-form-recognition",
+      "span_start_line": 15601,
+      "span_end_line": 15603,
+      "span_sha256": "34f7f0456a4d0b1b3f8f0395218348552cb985457e1b1b8c3367dfbcf435a116",
+      "anchor_line": 15601,
+      "body_start_line": 15602,
+      "body_end_line": 15603,
+      "body_sha256": "27a64cf04914b52cd013e1704397939dfb971760f2701f6c86a00bc332255e21",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15602,
+          "end_line": 15603,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#map_type_form_is_recognised_and_refused_until_admitted"
               ],
               "rationale": null
             }
