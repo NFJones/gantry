@@ -1399,6 +1399,22 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         ))
     );
     assert_eq!(zipped_budget.next(), None, "the budget bounds the pairs");
+
+    // The transformed view (`GNT-39.8`): one step per advance, the transform supplied to that
+    // advance, and the transformed count and remainder reported.
+    let mut transformed = carried_map.map(4);
+    assert_eq!(transformed.next(|_| 1usize), Some(1));
+    assert_eq!(
+        transformed.next(|visit| match visit {
+            CollectionVisit::Entry { .. } => 2,
+            CollectionVisit::Element(_) => 9,
+            CollectionVisit::Position(_) => 9,
+        }),
+        Some(2)
+    );
+    assert_eq!(transformed.next(|_| 3usize), None);
+    assert_eq!(transformed.transformed(), 2);
+    assert_eq!(transformed.remaining(), 0);
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);

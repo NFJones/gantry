@@ -300,14 +300,16 @@ pub use signature::{
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,
-// carriage, and traversal forms, and the one temporary cursor, with no family behavior of its own.
+// carriage, replacement, and traversal forms, and the one temporary cursor, with no family
+// behavior of its own.
 pub use collections::{
     COLLECTION_CLAUSES, CollectionCursor, CollectionDiagnosticCode, CollectionEnumerate,
     CollectionError, CollectionFilter, CollectionKeyPolicy, CollectionKeyRefusal,
-    CollectionKeyType, CollectionNonClaimAssertion, CollectionNonClaimName, CollectionOutcome,
-    CollectionTake, CollectionTraversal, CollectionValue, CollectionValueKind, CollectionVisit,
-    CollectionZip, MapTypeIdentity, MapValue, RangeStepContract, RangeTypeIdentity, RangeValue,
-    SetTypeIdentity, SetValue, canonical_order, check_collection_non_claims,
+    CollectionKeyType, CollectionMap, CollectionNonClaimAssertion, CollectionNonClaimName,
+    CollectionOutcome, CollectionTake, CollectionTraversal, CollectionValue, CollectionValueKind,
+    CollectionVisit, CollectionZip, MapTypeIdentity, MapValue, RangeStepContract,
+    RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, canonical_order,
+    check_collection_non_claims,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned
 // deterministic generator identity and its exact step, with no host entropy, global state, secure

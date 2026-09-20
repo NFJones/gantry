@@ -1203,6 +1203,60 @@ impl<'a> CollectionZip<'a> {
     }
 }
 
+/// One transformed view over a cursor: at most `budget` advances (`GNT-39.8`).
+///
+/// Each advance spends one step of the budget it is given and publishes the value the transform
+/// supplied to that advance returns for the visit, so a later advance may supply a different
+/// transform. The view holds its position rather than restarting and is deliberately not `Clone`.
+#[derive(Debug)]
+pub struct CollectionMap<'a> {
+    cursor: CollectionCursor<'a>,
+    budget: u64,
+    transformed: u64,
+}
+
+impl<'a> CollectionMap<'a> {
+    /// Opens one transformed view over the given value with the given step budget.
+    #[must_use]
+    pub const fn new(value: &'a CollectionValue, budget: u64) -> Self {
+        Self {
+            cursor: CollectionCursor::new(value),
+            budget,
+            transformed: 0,
+        }
+    }
+
+    /// Advances the view and publishes the transformed visit, or none at its budget or exhaustion.
+    pub fn next<T>(&mut self, transform: impl Fn(CollectionVisit<'_>) -> T) -> Option<T> {
+        if self.budget == 0 {
+            return None;
+        }
+        match self.cursor.next() {
+            Some(visit) => {
+                self.budget -= 1;
+                self.transformed = self.transformed.saturating_add(1);
+                Some(transform(visit))
+            }
+            None => {
+                self.budget = 0;
+                None
+            }
+        }
+    }
+
+    /// Returns the visits this view has transformed.
+    #[must_use]
+    pub const fn transformed(&self) -> u64 {
+        self.transformed
+    }
+
+    /// Returns the advances this view may yet spend, which the content may cut short.
+    #[must_use]
+    pub const fn remaining(&self) -> u64 {
+        self.budget
+    }
+}
+
 impl CollectionValue {
     /// Folds the carried value's content in order and publishes the accumulator and outcome
     /// (`GNT-39.8`).
@@ -1257,6 +1311,12 @@ impl CollectionValue {
     #[must_use]
     pub const fn zip<'b>(&'b self, other: &'b CollectionValue, budget: u64) -> CollectionZip<'b> {
         CollectionZip::new(self, other, budget)
+    }
+
+    /// Opens one transformed view of at most `budget` advances over this value (`GNT-39.8`).
+    #[must_use]
+    pub const fn map(&self, budget: u64) -> CollectionMap<'_> {
+        CollectionMap::new(self, budget)
     }
 }
 

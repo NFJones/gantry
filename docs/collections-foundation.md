@@ -27,7 +27,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `GNT-39.5-map-type-identity` | the identity of the recognised form: its two argument types in order, the five admitted key types, and the key-domain refusal of every other resolved key argument |
 | `GNT-39.6-set-and-range-type-identities` | the `Set<K>` element identity over the same five admitted key types and the `Range<T>` element identity over any admitted value type that names no collection type anywhere inside it, with their canonical texts and refusals |
 | `GNT-39.7-range-step-contract` | the sealed step contract: exactly `Int` steps, by one value toward the bound with checked arithmetic, under an inclusive start bound and an exclusive end bound |
-| `GNT-39.8-collection-value-model` | the admitted `Map` and `Set` values (finite entries or elements over the five admitted key types, in canonical collection order, with repeated keys refused as `collection-duplicate-key`) and the admitted `Range` value (two bound positions under the sealed step contract of `GNT-39.7`), with their node accounting, carriage, replacement, and the six traversal forms |
+| `GNT-39.8-collection-value-model` | the admitted `Map` and `Set` values (finite entries or elements over the five admitted key types, in canonical collection order, with repeated keys refused as `collection-duplicate-key`) and the admitted `Range` value (two bound positions under the sealed step contract of `GNT-39.7`), with their node accounting, carriage, replacement, and traversal forms |
 
 ## What the model decides
 
@@ -145,7 +145,8 @@ separately in `docs/canonical-scalar-keys.md`.
   for a position the value does not admit. Traversal publishes no source-level iterator value, no
   source iteration protocol, no composable adapter, no ownership or invalidation rule, no suspension,
   and no exhaustion diagnostic; the traversal forms it publishes are the visitor, the cursor, the
-  terminal fold, the bounded view, the filtered view, the enumerated view, and the paired view.
+  terminal fold, the bounded view, the filtered view, the enumerated view, the paired view, and the
+  transformed view.
   `CollectionValue::cursor` opens the one temporary cursor form: it borrows the value it traverses,
   each advance through `CollectionCursor::next` publishes the next visit or none at exhaustion
   (`is_exhausted`), and a `Range` value publishes positions through the same stepwise protocol the
@@ -177,7 +178,12 @@ separately in `docs/canonical-scalar-keys.md`.
   and publishes one visit from each value at the same zero-based position, so it ends when either
   value is exhausted and a visit already advanced from the longer value is published nowhere, and it
   reports its pairs through `CollectionZip::pairs` and the advances it may yet spend through
-  `remaining`.
+  `remaining`, clearing them when an advance discovers that either value is
+  exhausted.
+  `CollectionValue::map` is the one transformed view: each advance spends one step of the budget it
+  is given and publishes the value the transform supplied to that advance returns for the visit, so
+  a later advance may supply a different transform, and it reports its transformed count through
+  `CollectionMap::transformed` and the advances it may yet spend through `remaining`.
   It reports how a visitor-form traversal ended: `CollectionOutcome::Completed` when every entry
   or element that form publishes was visited and `Stopped` when the visitor ended it early, with
   `is_completed` reading that outcome; a `Range` value publishes no visit through that form and
