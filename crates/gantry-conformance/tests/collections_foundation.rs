@@ -19,9 +19,9 @@ use gantry::ir::generated::TypeKind;
 use gantry::ir::{
     COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
-    CollectionNonClaimName, MapTypeIdentity, MapValue, RangeStepContract, RangeTypeIdentity,
-    RangeValue, SetTypeIdentity, SetValue, TypeDescriptor, canonical_order,
-    check_collection_non_claims,
+    CollectionNonClaimName, CollectionValue, CollectionValueKind, MapTypeIdentity, MapValue,
+    RangeStepContract, RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, TypeDescriptor,
+    canonical_order, check_collection_non_claims,
 };
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -1093,6 +1093,40 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     assert_eq!(unbounded.accounted_nodes(), 1);
     assert_eq!(bounded.accounted_nodes(), 3);
     assert_eq!(empty_pair.accounted_nodes(), 3);
+
+    // The carriage of `GNT-39.8`: three recognised kinds with one owning clause, and the model
+    // itself carried, so the kind and the accounting of the carried value are the model's own.
+    assert_eq!(CollectionValueKind::ALL.len(), 3);
+    let mut spellings = Vec::new();
+    for kind in CollectionValueKind::ALL {
+        assert_eq!(kind.owning_clause(), "GNT-39.8-collection-value-model");
+        spellings.push(kind.spelling());
+    }
+    assert_eq!(spellings, ["Map", "Set", "Range"]);
+    assert_eq!(
+        CollectionValue::Map(map.clone()).kind(),
+        CollectionValueKind::Map
+    );
+    assert_eq!(
+        CollectionValue::Set(set.clone()).kind(),
+        CollectionValueKind::Set
+    );
+    assert_eq!(
+        CollectionValue::Range(range).kind(),
+        CollectionValueKind::Range
+    );
+    assert_eq!(CollectionValue::Map(empty.clone()).accounted_nodes(), 1);
+    assert_eq!(CollectionValue::Range(unbounded).accounted_nodes(), 1);
+
+    // The two load-bearing halves of the accounting rule: an entry whose value is itself an
+    // aggregate contributes that value's own nodes, and an absent bound contributes nothing.
+    let nested = LogicalValue::list(vec![integer(1), integer(2)], DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|error| panic!("the declared list is admitted: {error:?}"));
+    let nested_map = MapValue::admit(policy, &[(integer(1), nested)])
+        .unwrap_or_else(|error| panic!("the declared entry is admitted: {error:?}"));
+    assert_eq!(nested_map.accounted_nodes(), 5);
+    assert_eq!(RangeValue::new(Some(bound(1)), None).accounted_nodes(), 2);
+    assert_eq!(RangeValue::new(None, Some(bound(4))).accounted_nodes(), 2);
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).

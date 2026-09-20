@@ -129,9 +129,13 @@ separately in `docs/canonical-scalar-keys.md`.
   a step reports exhaustion to its caller only as the absence of a step.
   The value-layer accounting of the model (`GNT-39.8`): the value is one aggregate node, a `Map`
   entry is one node for its admitted key plus the nodes of the value that key resolves to, a `Set`
-  element is one node, and a bound position is one node — all charged against the carrying layer's
+  element is one node, and a bound position is one node — all accounted against the carrying layer's
   own node and nesting budgets, which refuse over-budget content under that layer's resource-limit
   refusal; this section publishes no per-collection bound and no charge.
+  The carriage of the model (`GNT-39.8`): a collection value is carried by the canonical-IR
+  contract as the value model itself, `CollectionValue` carrying one `Map`, `Set`, or `Range` value
+  under its kind (`CollectionValueKind`), with no second representation and no physical layout, and
+  this edition admits no collection value as a member of a value-layer aggregate.
 
 ## Diagnostics
 

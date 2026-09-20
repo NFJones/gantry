@@ -694,6 +694,76 @@ impl RangeValue {
     }
 }
 
+/// One recognised collection value kind of `GNT-39.8-collection-value-model`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum CollectionValueKind {
+    /// One admitted `Map` value.
+    Map,
+    /// One admitted `Set` value.
+    Set,
+    /// One admitted `Range` value.
+    Range,
+}
+
+impl CollectionValueKind {
+    /// Every recognised kind, in canonical kind order.
+    pub const ALL: [Self; 3] = [Self::Map, Self::Set, Self::Range];
+
+    /// Returns the canonical kind spelling.
+    #[must_use]
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::Map => "Map",
+            Self::Set => "Set",
+            Self::Range => "Range",
+        }
+    }
+
+    /// Returns the clause that publishes the kind's value model.
+    #[must_use]
+    pub const fn owning_clause(self) -> &'static str {
+        "GNT-39.8-collection-value-model"
+    }
+}
+
+/// One carried collection value of `GNT-39.8-collection-value-model`.
+///
+/// The machine representation of a collection value is the value model itself: this sum carries one
+/// admitted `Map`, `Set`, or `Range` value under the model that publishes it, publishes no second
+/// representation and no physical layout, and admits no collection value as a member of a
+/// value-layer aggregate in this edition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CollectionValue {
+    /// One admitted `Map` value.
+    Map(MapValue),
+    /// One admitted `Set` value.
+    Set(SetValue),
+    /// One admitted `Range` value.
+    Range(RangeValue),
+}
+
+impl CollectionValue {
+    /// Returns the recognised kind of the carried value.
+    #[must_use]
+    pub const fn kind(&self) -> CollectionValueKind {
+        match self {
+            Self::Map(_) => CollectionValueKind::Map,
+            Self::Set(_) => CollectionValueKind::Set,
+            Self::Range(_) => CollectionValueKind::Range,
+        }
+    }
+
+    /// Returns the value-layer nodes the carried value's content contributes (`GNT-39.8`).
+    #[must_use]
+    pub fn accounted_nodes(&self) -> u64 {
+        match self {
+            Self::Map(value) => value.accounted_nodes(),
+            Self::Set(value) => value.accounted_nodes(),
+            Self::Range(value) => value.accounted_nodes(),
+        }
+    }
+}
+
 /// One `Range<T>` type identity of `GNT-39.6`.
 ///
 /// The identity is its element descriptor, which is any admitted value type: this clause publishes
