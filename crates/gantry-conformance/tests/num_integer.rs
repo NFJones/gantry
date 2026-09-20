@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::ir::{CheckedIntegerAlgorithm, NUM_CLAUSES, negate};
+use gantry::ir::{CheckedIntegerAlgorithm, NEGATE_WIRE_NAME, NUM_CLAUSES, negate};
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryInt};
 use gantry::portable::DeterministicEvaluationCode;
 
@@ -37,22 +37,23 @@ fn checked_integer_algorithm_surface_is_published() {
         CheckedIntegerAlgorithm::ALL.map(CheckedIntegerAlgorithm::wire_name),
         ["add", "subtract", "multiply", "divide", "remainder"]
     );
-    // The failure spellings come from the generated evaluation-code vocabulary rather than copies,
-    // so a renamed code fails this lane instead of drifting apart from the clause.
+    // Every spelling comes from the model or the generated evaluation-code vocabulary rather than a
+    // copy, and each must appear in the clause backticked, so a renamed algorithm or code — or a
+    // clause that stops publishing one — fails this lane instead of drifting apart.
     for spelling in [
-        "add",
-        "subtract",
-        "multiply",
-        "divide",
-        "remainder",
-        "negate",
+        CheckedIntegerAlgorithm::Add.wire_name(),
+        CheckedIntegerAlgorithm::Subtract.wire_name(),
+        CheckedIntegerAlgorithm::Multiply.wire_name(),
+        CheckedIntegerAlgorithm::Divide.wire_name(),
+        CheckedIntegerAlgorithm::Remainder.wire_name(),
+        NEGATE_WIRE_NAME,
         DeterministicEvaluationCode::IntegerOverflow.wire_name(),
         DeterministicEvaluationCode::IntegerDivisionByZero.wire_name(),
         DeterministicEvaluationCode::IntegerRemainderByZero.wire_name(),
     ] {
         assert!(
-            specification.contains(spelling),
-            "the specification publishes `{spelling}`"
+            specification.contains(&format!("`{spelling}`")),
+            "the specification publishes the backticked spelling `{spelling}`"
         );
     }
     // The note records the algorithms it declares, so a new algorithm must appear there too.

@@ -79,6 +79,9 @@ pub fn negate(value: GantryInt) -> Result<GantryInt, DeterministicEvaluationCode
     value.checked_neg()
 }
 
+/// The canonical wire spelling of the unary negation of `GNT-40.2`.
+pub const NEGATE_WIRE_NAME: &str = "negate";
+
 /// One admitted numeric conversion of `GNT-40.3`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NumericConversion {
