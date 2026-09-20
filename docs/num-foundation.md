@@ -32,8 +32,8 @@ specified intermediate rounding is forbidden.
 ## Applicability, stability, and identity
 
 `GNT-34.7-applicability-and-feature-granularity` governs where the family applies and which features
-select it. The canonical pure hierarchy declares `std.num` at stability tier `Stable`, available in
-the `Portable` and `Application` modes, for the `Library` and `Binary` targets, with the single
+select it. The canonical pure hierarchy declares `std.num` at stability tier `stable`, available in
+the `portable` and `application` modes, for the `library` and `binary` targets, with the single
 dependency `std.core`; `std.crypto` in turn depends on `std.num`, so the numeric family is the
 arithmetic foundation the cryptographic family consumes. A use outside the declared applicability is
 refused rather than inferred from the host, and this note claims no target-specific variation of any

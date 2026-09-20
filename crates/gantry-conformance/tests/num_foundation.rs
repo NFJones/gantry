@@ -4,6 +4,7 @@
 //! separation from the capability-backed `std.random` family, the clauses whose semantics it must
 //! preserve, and only specification anchors that the model's clause vocabularies declare.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -118,10 +119,16 @@ fn num_note_names_the_declared_family_purity_and_separation() {
         .package(&PackageFamily::Num.package_name())
         .unwrap_or_else(|| panic!("std.num is declared in the canonical pure hierarchy"));
     assert_eq!(numeric.tier(), StabilityTier::Stable);
-    assert!(numeric.modes().contains(&SemanticMode::Portable));
-    assert!(numeric.modes().contains(&SemanticMode::Application));
-    assert!(numeric.targets().contains(&TargetKind::Library));
-    assert!(numeric.targets().contains(&TargetKind::Binary));
+    assert_eq!(
+        numeric.modes(),
+        &BTreeSet::from([SemanticMode::Portable, SemanticMode::Application]),
+        "the numeric family declares exactly the portable and application modes"
+    );
+    assert_eq!(
+        numeric.targets(),
+        &BTreeSet::from([TargetKind::Library, TargetKind::Binary]),
+        "the numeric family declares exactly the library and binary targets"
+    );
     assert_eq!(
         numeric
             .dependencies()
@@ -140,6 +147,27 @@ fn num_note_names_the_declared_family_purity_and_separation() {
             .contains(&PackageFamily::Num.package_name()),
         "`std.crypto` consumes the numeric family"
     );
+
+    // The note publishes every declared fact, in the model's own spellings, in the applicability
+    // paragraph itself.
+    let applicability = note
+        .split("\n\n")
+        .find(|paragraph| paragraph.contains("GNT-34.7-applicability-and-feature-granularity"))
+        .unwrap_or_else(|| panic!("the note cites the applicability clause"));
+    for spelling in [
+        numeric.tier().wire_name(),
+        SemanticMode::Portable.wire_name(),
+        SemanticMode::Application.wire_name(),
+        TargetKind::Library.wire_name(),
+        TargetKind::Binary.wire_name(),
+        "std.core",
+        &PackageFamily::Crypto.package_name(),
+    ] {
+        assert!(
+            applicability.contains(spelling),
+            "the applicability paragraph publishes `{spelling}`"
+        );
+    }
 
     for anchor in REQUIRED_ANCHORS {
         assert!(note.contains(anchor), "the note cites `{anchor}`");
