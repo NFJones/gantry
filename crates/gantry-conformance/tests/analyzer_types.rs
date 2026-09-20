@@ -2381,13 +2381,17 @@ fn projected_receiver_calls_are_refused_precisely() {
     }
 }
 
-/// The edition prelude's enumerated library members are in scope without imports, and names
-/// outside the enumeration are not (`GNT-34.4`): every enumerated member resolves automatically
-/// and publishes an executable program, while an undeclared spelling, an explicit standard
-/// import, a binding that would shadow a prelude item, and a declaration that would collide
-/// with one are refused. The compiler-owned primitive types are outside this enumeration.
+/// The source-visible boundary around the edition prelude declaration (`GNT-34.4`): the
+/// built-in spellings resolve without imports and publish executable programs, an ordinary
+/// unbound name resolves nothing, no standard-package import resolves in this edition, and the
+/// built-in type words are reserved in binding and declaration position. The enumerated prelude
+/// is a `gantry-ir` declaration for this clause (`crates/gantry-ir/src/stdlib.rs`); name
+/// resolution resolves these words as reserved built-ins
+/// (`crates/gantry-frontend/src/token.rs`, `crates/gantry-analysis/src/types.rs`) and never
+/// consults the enumeration, so the declaration-to-probe correspondence below is asserted
+/// separately from the source behavior it accompanies.
 #[test]
-fn edition_prelude_members_resolve_without_imports_and_outside_names_do_not() {
+fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
     use gantry::ir::canonical_pure_hierarchy;
 
     let graph = canonical_pure_hierarchy()
@@ -2414,13 +2418,9 @@ fn edition_prelude_members_resolve_without_imports_and_outside_names_do_not() {
             .map(String::as_str)
             .collect::<Vec<&str>>(),
         probed,
-        "the lane probes exactly the enumerated edition prelude"
+        "the lane probes exactly the enumerated edition prelude declaration"
     );
     for (member, source) in probes {
-        assert!(
-            prelude.admit(member).is_ok(),
-            "the enumerated member {member} is admitted"
-        );
         let package = analyze(source);
         assert_eq!(
             package.status(),
@@ -2430,10 +2430,12 @@ fn edition_prelude_members_resolve_without_imports_and_outside_names_do_not() {
         );
         assert!(
             package.executable_program().is_some(),
-            "a package using only enumerated prelude members builds without a host capability package: {source}"
+            "the built-in spelling of {member} builds without a host capability package: {source}"
         );
     }
 
+    // Nothing introduces an arbitrary lowercase spelling: `none` is not a built-in word, so it
+    // is an ordinary unbound name rather than a prelude member.
     let undeclared = analyze("fn main() -> Int { let x: Option<Int> = none; 0 }");
     assert_eq!(undeclared.status(), AnalysisStatus::Invalid);
     assert_eq!(
@@ -2442,6 +2444,8 @@ fn edition_prelude_members_resolve_without_imports_and_outside_names_do_not() {
     );
     assert!(undeclared.executable_program().is_none());
 
+    // No standard-package import resolves in this edition, so the enumeration is not reachable
+    // by an explicit import either.
     let imported = analyze("use std::core::option;\nfn main() -> Int { 0 }");
     assert_eq!(imported.status(), AnalysisStatus::Invalid);
     assert_eq!(
@@ -2450,37 +2454,39 @@ fn edition_prelude_members_resolve_without_imports_and_outside_names_do_not() {
     );
     assert!(imported.executable_program().is_none());
 
-    let admitted_shadow = syntax("fn main() -> Int { let Zzz: Int = 1; Zzz }");
+    // The built-in type words are reserved source words: `Zzz` is the ordinary-identifier
+    // control in both positions.
+    let ordinary_binding = syntax("fn main() -> Int { let Zzz: Int = 1; Zzz }");
     assert!(
-        admitted_shadow.status() == gantry::frontend::PackageSyntaxStatus::Valid,
+        ordinary_binding.status() == gantry::frontend::PackageSyntaxStatus::Valid,
         "{:?}",
-        admitted_shadow.diagnostics()
+        ordinary_binding.diagnostics()
     );
-    let shadowed = syntax("fn main() -> Int { let Option: Int = 1; Option }");
+    let reserved_binding = syntax("fn main() -> Int { let Option: Int = 1; Option }");
     assert_eq!(
-        shadowed.status(),
+        reserved_binding.status(),
         gantry::frontend::PackageSyntaxStatus::Invalid,
-        "a binding may not shadow an enumerated prelude item"
+        "the built-in type word Option is reserved in binding position"
     );
     assert_eq!(
-        diagnostic_codes(shadowed.diagnostics()),
+        diagnostic_codes(reserved_binding.diagnostics()),
         ["unexpected-token", "unexpected-token"]
     );
 
-    let admitted_collision = syntax("struct Zzz { v: Int }\nfn main() -> Int { 0 }");
+    let ordinary_declaration = syntax("struct Zzz { v: Int }\nfn main() -> Int { 0 }");
     assert!(
-        admitted_collision.status() == gantry::frontend::PackageSyntaxStatus::Valid,
+        ordinary_declaration.status() == gantry::frontend::PackageSyntaxStatus::Valid,
         "{:?}",
-        admitted_collision.diagnostics()
+        ordinary_declaration.diagnostics()
     );
-    let collided = syntax("struct Option { v: Int }\nfn main() -> Int { 0 }");
+    let reserved_declaration = syntax("struct Option { v: Int }\nfn main() -> Int { 0 }");
     assert_eq!(
-        collided.status(),
+        reserved_declaration.status(),
         gantry::frontend::PackageSyntaxStatus::Invalid,
-        "a declaration may not collide with an enumerated prelude item"
+        "the built-in type word Option is reserved in declaration position"
     );
     assert_eq!(
-        diagnostic_codes(collided.diagnostics()),
+        diagnostic_codes(reserved_declaration.diagnostics()),
         ["unexpected-token"]
     );
 }
