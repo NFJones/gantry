@@ -136,6 +136,14 @@ separately in `docs/canonical-scalar-keys.md`.
   contract as the value model itself, `CollectionValue` carrying one `Map`, `Set`, or `Range` value
   under its kind (`CollectionValueKind`), with no second representation and no physical layout, and
   this edition admits no collection value as a member of a value-layer aggregate.
+  The traversal of the model (`GNT-39.8`): a carried value is traversable through `traverse` in its
+  admitted content order — each admitted entry or element visited exactly once in the canonical
+  collection order of `GNT-39.2`, with a visitor able to end the traversal — and a `Range` value is
+  traversed stepwise through `RangeValue::next_position`, beginning at the inclusive start bound
+  when it is present, publishing no first position for an absent start bound and no next position
+  for a position the value does not admit. Traversal publishes no iterator value, no source
+  iteration protocol, no adapter, no ownership or invalidation rule, no suspension, and no
+  exhaustion diagnostic.
 
 ## Diagnostics
 

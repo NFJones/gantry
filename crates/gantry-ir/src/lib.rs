@@ -303,9 +303,9 @@ pub use signature::{
 pub use collections::{
     COLLECTION_CLAUSES, CollectionDiagnosticCode, CollectionError, CollectionKeyPolicy,
     CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion, CollectionNonClaimName,
-    CollectionValue, CollectionValueKind, MapTypeIdentity, MapValue, RangeStepContract,
-    RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, canonical_order,
-    check_collection_non_claims,
+    CollectionTraversal, CollectionValue, CollectionValueKind, CollectionVisit, MapTypeIdentity,
+    MapValue, RangeStepContract, RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue,
+    canonical_order, check_collection_non_claims,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned
 // deterministic generator identity and its exact step, with no host entropy, global state, secure

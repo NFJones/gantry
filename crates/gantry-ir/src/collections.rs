@@ -692,6 +692,25 @@ impl RangeValue {
             .saturating_add(if self.start.is_some() { 1 } else { 0 })
             .saturating_add(if self.end.is_some() { 1 } else { 0 })
     }
+
+    /// Returns the position that follows `after` in this value's stepwise traversal (`GNT-39.8`).
+    ///
+    /// A traversal that supplies no position begins at the inclusive start bound when that bound is
+    /// present; an absent start bound publishes no first position, a position the value does not
+    /// admit publishes no next position, and a pair that admits no position traverses to none.
+    #[must_use]
+    pub fn next_position(self, after: Option<GantryInt>) -> Option<GantryInt> {
+        match after {
+            None => self.start.filter(|start| self.admits(*start)),
+            Some(position) => {
+                if self.admits(position) {
+                    self.forward(position)
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }
 
 /// One recognised collection value kind of `GNT-39.8-collection-value-model`.
@@ -762,6 +781,63 @@ impl CollectionValue {
             Self::Set(value) => value.accounted_nodes(),
             Self::Range(value) => value.accounted_nodes(),
         }
+    }
+}
+
+/// One visit a traversal reports for a carried collection value (`GNT-39.8`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollectionVisit<'a> {
+    /// One admitted `Map` entry: its canonical key and the value that key resolves to.
+    Entry {
+        /// The admitted canonical key of the entry.
+        key: &'a CanonicalKey,
+        /// The value that key resolves to.
+        value: &'a LogicalValue,
+    },
+    /// One admitted `Set` element.
+    Element(&'a CanonicalKey),
+}
+
+/// Reports whether a traversal continues after a visit (`GNT-39.8`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollectionTraversal {
+    /// The visitor has not ended the traversal.
+    Continue,
+    /// The visitor ended the traversal before the content was exhausted.
+    Stop,
+}
+
+impl CollectionValue {
+    /// Traverses the carried value in its admitted content order (`GNT-39.8`).
+    ///
+    /// A `Map` value is traversed through its admitted entries and a `Set` value through its
+    /// admitted elements, each visited exactly once in the canonical collection order of
+    /// `GNT-39.2`, and a visitor may end the traversal early. A `Range` value is traversed stepwise
+    /// through `RangeValue::next_position` and reports no visit here.
+    pub fn traverse(
+        &self,
+        visitor: &mut impl FnMut(CollectionVisit<'_>) -> CollectionTraversal,
+    ) -> CollectionTraversal {
+        match self {
+            Self::Map(value) => {
+                for (key, member) in value.entries() {
+                    if visitor(CollectionVisit::Entry { key, value: member })
+                        == CollectionTraversal::Stop
+                    {
+                        return CollectionTraversal::Stop;
+                    }
+                }
+            }
+            Self::Set(value) => {
+                for element in value.elements() {
+                    if visitor(CollectionVisit::Element(element)) == CollectionTraversal::Stop {
+                        return CollectionTraversal::Stop;
+                    }
+                }
+            }
+            Self::Range(_) => {}
+        }
+        CollectionTraversal::Continue
     }
 }
 

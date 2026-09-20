@@ -19,9 +19,9 @@ use gantry::ir::generated::TypeKind;
 use gantry::ir::{
     COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
-    CollectionNonClaimName, CollectionValue, CollectionValueKind, MapTypeIdentity, MapValue,
-    RangeStepContract, RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, TypeDescriptor,
-    canonical_order, check_collection_non_claims,
+    CollectionNonClaimName, CollectionTraversal, CollectionValue, CollectionValueKind,
+    CollectionVisit, MapTypeIdentity, MapValue, RangeStepContract, RangeTypeIdentity, RangeValue,
+    SetTypeIdentity, SetValue, TypeDescriptor, canonical_order, check_collection_non_claims,
 };
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -1128,6 +1128,51 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     assert_eq!(nested_map.accounted_nodes(), 5);
     assert_eq!(RangeValue::new(Some(bound(1)), None).accounted_nodes(), 2);
     assert_eq!(RangeValue::new(None, Some(bound(4))).accounted_nodes(), 2);
+
+    // Traversal of the carried value (`GNT-39.8`): the admitted content order, each entry or
+    // element exactly once, a visitor that may end it, and stepwise range positions.
+    let mut entries = Vec::new();
+    let outcome = CollectionValue::Map(map.clone()).traverse(&mut |visit| {
+        if let CollectionVisit::Entry { key, value } = visit {
+            entries.push((key.clone(), value.clone()));
+        }
+        CollectionTraversal::Continue
+    });
+    assert_eq!(outcome, CollectionTraversal::Continue);
+    assert_eq!(entries.len(), map.entries().len());
+    assert_eq!(entries[0].0, map.entries()[0].0);
+    assert_eq!(entries[0].1, map.entries()[0].1);
+    let mut visited = 0usize;
+    let stopped = CollectionValue::Set(set.clone()).traverse(&mut |_| {
+        visited += 1;
+        CollectionTraversal::Stop
+    });
+    assert_eq!(stopped, CollectionTraversal::Stop);
+    assert_eq!(
+        visited, 1,
+        "the visitor ends the traversal at its first visit"
+    );
+    let mut range_visits = 0usize;
+    assert_eq!(
+        CollectionValue::Range(range).traverse(&mut |_| {
+            range_visits += 1;
+            CollectionTraversal::Continue
+        }),
+        CollectionTraversal::Continue
+    );
+    assert_eq!(range_visits, 0, "a range value is traversed stepwise");
+    assert_eq!(range.next_position(None), Some(bound(1)));
+    assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
+    assert_eq!(range.next_position(Some(bound(3))), None);
+    assert_eq!(range.next_position(Some(bound(0))), None);
+    assert_eq!(
+        RangeValue::new(None, Some(bound(4))).next_position(None),
+        None
+    );
+    assert_eq!(
+        RangeValue::new(Some(bound(4)), Some(bound(1))).next_position(None),
+        None
+    );
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).
