@@ -1,6 +1,6 @@
 {
  "specification": "SPEC.md",
- "specification_sha256": "c0d80f9ae62414cfbd191b9b50cb2c1c9bb53d7c16a3d6f7f33026727b08292f",
+ "specification_sha256": "f972ecd53702fb89cfd08eb06eaf796994610ad30028ad7c58c5107ceea20088",
  "regions": [
   {
    "kind": "excluded",
@@ -35,7 +35,7 @@
   {
    "kind": "normative",
    "start_line": 9501,
-   "end_line": 15578,
+   "end_line": 15596,
    "rationale": null
   }
  ],
@@ -41131,6 +41131,163 @@
        "state": "covered",
        "evidence": [
         "crates/gantry-conformance/tests/error_semantics.rs#section_38_anchors_and_nonclaims_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-39.0-collection-key-and-order-scope",
+   "span_start_line": 15579,
+   "span_end_line": 15585,
+   "anchor_line": 15582,
+   "body_start_line": 15583,
+   "body_end_line": 15585,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15583,
+     "end_line": 15585,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/collections_foundation.rs#collection_clauses_and_diagnostics_are_published"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-39.1-admitted-collection-keys",
+   "span_start_line": 15586,
+   "span_end_line": 15589,
+   "anchor_line": 15586,
+   "body_start_line": 15587,
+   "body_end_line": 15589,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15587,
+     "end_line": 15589,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/collections_foundation.rs#collection_keys_admit_exactly_the_canonical_scalar_domain"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+   "span_start_line": 15590,
+   "span_end_line": 15593,
+   "anchor_line": 15590,
+   "body_start_line": 15591,
+   "body_end_line": 15593,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15591,
+     "end_line": 15593,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/collections_foundation.rs#collection_order_follows_the_canonical_scalar_key_order",
+        "crates/gantry-conformance/tests/collections_foundation.rs#duplicate_identity_refuses_with_the_first_and_first_repeated_indices"
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GNT-39.3-collection-foundation-non-claims",
+   "span_start_line": 15594,
+   "span_end_line": 15596,
+   "anchor_line": 15594,
+   "body_start_line": 15595,
+   "body_end_line": 15596,
+   "profiles": [
+    "analyzer"
+   ],
+   "roles": [
+    "harness",
+    "implementation"
+   ],
+   "clauses": [
+    {
+     "key": "clause-001",
+     "start_line": 15595,
+     "end_line": 15596,
+     "profiles": [
+      "analyzer"
+     ],
+     "roles": [
+      "harness",
+      "implementation"
+     ],
+     "profile_reviews": [
+      {
+       "profile": "analyzer",
+       "state": "covered",
+       "evidence": [
+        "crates/gantry-conformance/tests/collections_foundation.rs#collection_non_claims_are_declared_and_guarded"
        ],
        "rationale": null
       }

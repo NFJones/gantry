@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "c0d80f9ae62414cfbd191b9b50cb2c1c9bb53d7c16a3d6f7f33026727b08292f",
-  "byte_length": 1032423,
-  "line_count": 15578,
+  "specification_sha256": "f972ecd53702fb89cfd08eb06eaf796994610ad30028ad7c58c5107ceea20088",
+  "byte_length": 1036321,
+  "line_count": 15596,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9501,
-      "end_line": 15578,
-      "sha256": "7c4af437ddb8d842fece1787b5bf559e762eaf84c3ac99fa941747499f3218cf",
+      "end_line": 15596,
+      "sha256": "de135734c81bde0d097b7e6ded16309660ec2ed444b40f2d14c87eefc0513709",
       "rationale": null
     }
   ],
@@ -42238,6 +42238,171 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/error_semantics.rs#section_38_anchors_and_nonclaims_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-39.0-collection-key-and-order-scope",
+      "span_start_line": 15579,
+      "span_end_line": 15585,
+      "span_sha256": "17b37fab6eee175715151fc3c19066708e38ddbf50fdf2405679b61540fefb5e",
+      "anchor_line": 15582,
+      "body_start_line": 15583,
+      "body_end_line": 15585,
+      "body_sha256": "1cd26b8763cefec4e9af10f35098721a9951bad5de3b750fa6d532c7fd50d88b",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15583,
+          "end_line": 15585,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_clauses_and_diagnostics_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-39.1-admitted-collection-keys",
+      "span_start_line": 15586,
+      "span_end_line": 15589,
+      "span_sha256": "3bebce92a59e0d07588c50dd7e9345f4479d460b80e6bd5f217ef9302ffc4a55",
+      "anchor_line": 15586,
+      "body_start_line": 15587,
+      "body_end_line": 15589,
+      "body_sha256": "56001e6a2c16e357b4c9d9878f26944678dbbae2b5073271c52e5fe954c6b324",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15587,
+          "end_line": 15589,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_keys_admit_exactly_the_canonical_scalar_domain"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+      "span_start_line": 15590,
+      "span_end_line": 15593,
+      "span_sha256": "508ef8323497f9aabe675a7ddccf927d65a28841ec2e25f828e918b88ccc0c3a",
+      "anchor_line": 15590,
+      "body_start_line": 15591,
+      "body_end_line": 15593,
+      "body_sha256": "426fe24616c2f8052be81b2b1c05c6ac8f536e14c271f89e3a04f44d1c8e7091",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15591,
+          "end_line": 15593,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_order_follows_the_canonical_scalar_key_order",
+                "crates/gantry-conformance/tests/collections_foundation.rs#duplicate_identity_refuses_with_the_first_and_first_repeated_indices"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-39.3-collection-foundation-non-claims",
+      "span_start_line": 15594,
+      "span_end_line": 15596,
+      "span_sha256": "e62e106799f32f29b2d70df02887d0b806735642d96f993cbdf1a0c413d66466",
+      "anchor_line": 15594,
+      "body_start_line": 15595,
+      "body_end_line": 15596,
+      "body_sha256": "aca27492651673f9be4f94707bcc8eb8e26b07b31f07382af8ac1572a86da2bc",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15595,
+          "end_line": 15596,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/collections_foundation.rs#collection_non_claims_are_declared_and_guarded"
               ],
               "rationale": null
             }

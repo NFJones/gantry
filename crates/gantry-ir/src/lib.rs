@@ -20,6 +20,7 @@ mod authority;
 mod callable;
 mod callable_identity;
 mod canonical;
+mod collections;
 mod constant;
 mod effects;
 pub mod error_semantics;
@@ -294,6 +295,13 @@ pub use secret::{
 };
 pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
+};
+// The Section 39 collection key and canonical order foundation: the key contract a source
+// collection consumes, with no collection type, traversal, or family behavior of its own.
+pub use collections::{
+    COLLECTION_CLAUSES, CollectionDiagnosticCode, CollectionError, CollectionKeyPolicy,
+    CollectionKeyRefusal, CollectionNonClaimAssertion, CollectionNonClaimName, canonical_order,
+    check_collection_non_claims,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade
