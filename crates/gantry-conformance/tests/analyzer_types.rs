@@ -2544,7 +2544,8 @@ fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
 }
 
 /// The collection spellings are reserved before any collection type is admitted (`GNT-13.2`):
-/// each is refused as an unexpected token in binding and type position, and none resolves.
+/// each is refused only as an unexpected token in binding, type, expression, and
+/// generic-argument position, and none resolves.
 #[test]
 fn collection_spellings_are_reserved_before_any_collection_type() {
     for spelling in ["Map", "Range", "Set"] {
