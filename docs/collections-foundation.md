@@ -145,7 +145,7 @@ separately in `docs/canonical-scalar-keys.md`.
   for a position the value does not admit. Traversal publishes no source-level iterator value, no
   source iteration protocol, no composable adapter, no ownership or invalidation rule, no suspension,
   and no exhaustion diagnostic; the traversal forms it publishes are the visitor, the cursor, the
-  terminal fold, and the bounded view.
+  terminal fold, the bounded view, the filtered view, and the enumerated view.
   `CollectionValue::cursor` opens the one temporary cursor form: it borrows the value it traverses,
   each advance through `CollectionCursor::next` publishes the next visit or none at exhaustion
   (`is_exhausted`), and a `Range` value publishes positions through the same stepwise protocol the
@@ -165,10 +165,15 @@ separately in `docs/canonical-scalar-keys.md`.
   its position rather than restarting (so the view is not `Clone`), and publishes no visit at all at
   a budget of zero.
   `CollectionValue::filter` is the one filtered view: each advance spends one step of the budget it
-  is given and publishes only a visit its predicate admits (so a refused visit still spends its
-  step), publishes none once the budget is spent or the content is exhausted, and reports its
-  published count through `CollectionFilter::published` and its remaining advances through
+  is given and publishes only a visit the predicate supplied to that advance admits (so a visit the
+  predicate declines still spends its step, and a later advance may supply a different predicate),
+  publishes none once the budget is spent or the content is exhausted, and reports its published
+  count through `CollectionFilter::published` and the advances it has not yet consumed through
   `remaining`, holding its position rather than restarting.
+  `CollectionValue::enumerate` is the one enumerated view: each advance spends one step of the
+  budget it is given and publishes the visit with its zero-based position in the same content order,
+  so the first advance publishes position zero, and `remaining` reports the advances not yet
+  consumed.
   It reports how a visitor-form traversal ended: `CollectionOutcome::Completed` when every entry
   or element that form publishes was visited and `Stopped` when the visitor ended it early, with
   `is_completed` reading that outcome; a `Range` value publishes no visit through that form and

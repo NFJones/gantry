@@ -1039,9 +1039,10 @@ impl<'a> CollectionTake<'a> {
 
 /// One filtered view over a cursor: at most `budget` advances (`GNT-39.8`).
 ///
-/// Each advance spends one step of the budget it is given and publishes only a visit the caller's
-/// predicate admits, so a refused visit still spends its step. The view holds its position rather
-/// than restarting and is deliberately not `Clone`.
+/// Each advance spends one step of the budget it is given and publishes only a visit the predicate
+/// supplied to that advance admits, so a visit the predicate declines still spends its step, and a
+/// later advance may supply a different predicate. The view holds its position rather than
+/// restarting and is deliberately not `Clone`.
 #[derive(Debug)]
 pub struct CollectionFilter<'a> {
     cursor: CollectionCursor<'a>,
@@ -1066,11 +1067,18 @@ impl<'a> CollectionFilter<'a> {
         predicate: impl Fn(&CollectionVisit<'_>) -> bool,
     ) -> Option<CollectionVisit<'a>> {
         while self.budget > 0 {
-            let visit = self.cursor.next()?;
-            self.budget -= 1;
-            if predicate(&visit) {
-                self.published = self.published.saturating_add(1);
-                return Some(visit);
+            match self.cursor.next() {
+                Some(visit) => {
+                    self.budget -= 1;
+                    if predicate(&visit) {
+                        self.published = self.published.saturating_add(1);
+                        return Some(visit);
+                    }
+                }
+                None => {
+                    self.budget = 0;
+                    return None;
+                }
             }
         }
         None
@@ -1082,7 +1090,49 @@ impl<'a> CollectionFilter<'a> {
         self.published
     }
 
-    /// Returns the advances this view may still spend.
+    /// Returns the advances this view has not yet consumed, which the content may cut short.
+    #[must_use]
+    pub const fn remaining(&self) -> u64 {
+        self.budget
+    }
+}
+
+/// One enumerated view over a cursor: at most `budget` advances (`GNT-39.8`).
+///
+/// Each advance spends one step of the budget it is given and publishes the visit with its
+/// zero-based position in the same content order, so the first advance publishes position zero.
+/// The view holds its position rather than restarting and is deliberately not `Clone`.
+#[derive(Debug)]
+pub struct CollectionEnumerate<'a> {
+    cursor: CollectionCursor<'a>,
+    budget: u64,
+    index: u64,
+}
+
+impl<'a> CollectionEnumerate<'a> {
+    /// Opens one enumerated view over the given value with the given step budget.
+    #[must_use]
+    pub const fn new(value: &'a CollectionValue, budget: u64) -> Self {
+        Self {
+            cursor: CollectionCursor::new(value),
+            budget,
+            index: 0,
+        }
+    }
+
+    /// Advances the view and publishes the next visit with its zero-based position.
+    pub fn next(&mut self) -> Option<(u64, CollectionVisit<'a>)> {
+        if self.budget == 0 {
+            return None;
+        }
+        let visit = self.cursor.next()?;
+        self.budget -= 1;
+        let index = self.index;
+        self.index = self.index.saturating_add(1);
+        Some((index, visit))
+    }
+
+    /// Returns the advances this view has not yet consumed, which the content may cut short.
     #[must_use]
     pub const fn remaining(&self) -> u64 {
         self.budget
@@ -1131,6 +1181,12 @@ impl CollectionValue {
     #[must_use]
     pub const fn filter(&self, budget: u64) -> CollectionFilter<'_> {
         CollectionFilter::new(self, budget)
+    }
+
+    /// Opens one enumerated view of at most `budget` advances over this value (`GNT-39.8`).
+    #[must_use]
+    pub const fn enumerate(&self, budget: u64) -> CollectionEnumerate<'_> {
+        CollectionEnumerate::new(self, budget)
     }
 }
 

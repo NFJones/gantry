@@ -1332,6 +1332,44 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     );
     assert_eq!(filtered_range.remaining(), 2);
     assert_eq!(filtered_range.published(), 1);
+    let mut filtered_exhaustion = carried_range.filter(8);
+    for position in [1_i64, 2, 3] {
+        assert_eq!(
+            filtered_exhaustion.next(|_| true),
+            Some(CollectionVisit::Position(bound(position)))
+        );
+    }
+    assert_eq!(filtered_exhaustion.next(|_| true), None);
+    assert_eq!(
+        filtered_exhaustion.remaining(),
+        0,
+        "the discovering advance clears the unspent budget"
+    );
+    assert_eq!(filtered_exhaustion.published(), 3);
+
+    // The enumerated view (`GNT-39.8`): each visit published with its zero-based position, one
+    // budget step per advance.
+    let mut enumerated = carried_map.enumerate(4);
+    assert!(matches!(
+        enumerated.next(),
+        Some((0, CollectionVisit::Entry { .. }))
+    ));
+    assert!(matches!(
+        enumerated.next(),
+        Some((1, CollectionVisit::Entry { .. }))
+    ));
+    assert_eq!(enumerated.next(), None);
+    let mut enumerated_range = carried_range.enumerate(1);
+    assert_eq!(
+        enumerated_range.next(),
+        Some((0, CollectionVisit::Position(bound(1))))
+    );
+    assert_eq!(
+        enumerated_range.next(),
+        None,
+        "the budget bounds the published positions"
+    );
+    assert_eq!(enumerated_range.remaining(), 0);
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);
