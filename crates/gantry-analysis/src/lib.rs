@@ -7,6 +7,7 @@
 //! produces canonical IR, concrete schemas, and a closed executable projection
 //! without performing integration or runtime work.
 
+mod automatic;
 mod bodies;
 mod capabilities;
 mod effects;
@@ -19,6 +20,7 @@ mod security;
 mod symbols;
 mod types;
 
+pub use automatic::AutomaticNames;
 pub use capabilities::{TypeCapabilities, TypeCapabilityQueryError};
 pub use model::{
     AgentName, AnalysisError, AnalysisStatus, DeclaredEnumVariant, DeclaredStructField,
@@ -29,5 +31,6 @@ pub use model::{
 pub use symbols::analyze_package_structure;
 pub use types::{
     analyze_package_types, analyze_package_types_with_artifact_limits,
-    analyze_package_types_with_limits, analyze_package_types_with_limits_and_mode,
+    analyze_package_types_with_automatic_names, analyze_package_types_with_limits,
+    analyze_package_types_with_limits_and_mode,
 };

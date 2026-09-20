@@ -60,38 +60,52 @@ foundational `std.core` items `std.core::option` and `std.core::result`; adding 
 a member is an edition change with exact compatibility consequences, and an implicit
 wildcard import is refused.
 
-The enumeration is a declaration, and name resolution in this tree does not consult it:
-source lookup admits the compiler's reserved built-in type words, so compiler prelude
-injection is not implemented and a member here neither injects nor withholds a source
-name yet.
+Each enumerated member owns a declared, closed set of automatic source spellings: `std.core::option`
+owns `Option`, `Some`, and `None`, and `std.core::result` owns `Result`, `Ok`, and `Err`
+(`PRELUDE_BINDINGS` in `crates/gantry-ir/src/stdlib.rs`). The analyzer's name resolution consults
+the enumerated members, so those spellings resolve without an import exactly while their member is
+enumerated, and a declared spelling whose member is not enumerated is refused with
+`unresolved-reference` (`crates/gantry-analysis/src/automatic.rs`). Declaring a prelude member that
+owns no automatic source name is refused with `std-unenumerated-prelude-member`, so the automatic
+set stays closed over the enumeration.
+
 An ordinary standard-package import such as `use std::core::option;` is refused with
-`unresolved-import`, so the model-level `std-unenumerated-prelude-member` refusal is a
-declaration check rather than a source diagnostic.
+`unresolved-import`: `GNT-4.6` excludes package resolution from v1, so the enumeration is not
+reachable through an explicit import either.
 
 ## Compiler-owned vocabulary
 
 The enumeration is not the only source of automatic names. The compiler front end reserves the
-following capitalized spellings, and the analyzer resolves them without any package declaration:
+following capitalized spellings; the analyzer derives the prelude-owned ones from the enumeration
+and resolves the compiler-owned ones without any package declaration:
 
-- type words: `Unit`, `Bool`, `Int`, `Float`, `String`, `List`, `Tuple`, `Never`, `Decision`,
-  `OperationError`, `Option`, `Result`, where `Never` is additionally refused at entry and
-  action boundary declarations with `never-boundary-refused` and in signature positions with
+- compiler-owned type words: `Unit`, `Bool`, `Int`, `Float`, `String`, `List`, `Tuple`, `Never`,
+  `Decision`, `OperationError`, where `Never` is additionally refused at entry and action boundary
+  declarations with `never-boundary-refused` and in signature positions with
   `never-signature-refused`;
-- constructor spellings: `Some`, `None`, `Ok`, `Err`;
+- the prelude-owned type words `Option` and `Result` and constructor spellings `Some`, `None`,
+  `Ok`, and `Err`, which the enumeration injects and withholds as described above;
 - the contextual type word `Self`.
 
-These spellings are owned by the compiler — the front-end reserved-word table and the analyzer's
-built-in type descriptors — not by any `std` package: the hierarchy above declares no item for
-them, and no package identity, interface digest, or facade path defines them. They are therefore
-a third automatic source beside the declared prelude members and explicit imports, and renaming
-or removing one is a compiler change rather than an edition change.
+The compiler owns the spelling of all of them — the front-end reserved-word table and the analyzer's
+built-in type descriptors — but binding ownership is split. The eleven compiler-owned spellings are
+owned by no `std` package: the hierarchy declares no item for them, and no package identity,
+interface digest, or facade path defines them, so renaming or removing one is a compiler change.
+The six prelude-owned spellings are bound by the enumerated `std.core` items, so renaming or
+removing one is an edition change (`GNT-34.4`) with its exact compatibility consequences.
 
 ## Evidence
 
 - Model and declaration: `crates/gantry-ir/src/stdlib.rs` (`canonical_pure_hierarchy`,
-  `StdPackage`, `StdItem`, `Prelude`, `StdGraph`).
+  `StdPackage`, `StdItem`, `Prelude`, `PreludeBinding`, `PRELUDE_BINDINGS`, `StdGraph`).
 - Machine-checked conformance: `crates/gantry-conformance/tests/stdlib_architecture.rs`
   (`canonical_pure_hierarchy_declares_each_pure_family_once`).
+- Automatic-name derivation: `crates/gantry-conformance/tests/analyzer_types.rs`
+  (`automatic_source_names_are_derived_from_the_enumerated_prelude`) proves that the canonical
+  edition resolves every declared spelling and that a reduced prelude refuses exactly the omitted
+  member's spellings; `crates/gantry-conformance/tests/stdlib_architecture.rs`
+  (`prelude_members_own_their_declared_automatic_spellings`) pins the closed correspondence and the
+  refusal of a member that enumerates no source name.
 - Note-binding lanes in `crates/gantry-conformance/tests/stdlib_architecture.rs`:
   `standard_library_architecture_note_names_every_declared_family_and_prelude_member`,
   `standard_library_architecture_note_names_every_declared_clause_anchor`,
@@ -100,9 +114,10 @@ or removing one is a compiler change rather than an edition change.
   `standard_library_architecture_note_separates_compiler_owned_type_words`.
 - Source boundary of the prelude and compiler-owned vocabulary:
   `crates/gantry-conformance/tests/analyzer_types.rs`
-  (`edition_prelude_source_boundary_matches_the_enumerated_declaration`) pins the built-in
-  spelling boundary, resolution of every documented compiler-owned type word, and the refused
-  standard-package import.
+  (`edition_prelude_source_boundary_matches_the_enumerated_declaration`,
+  `automatic_source_names_are_derived_from_the_enumerated_prelude`) pins the built-in spelling
+  boundary, resolution of every documented compiler-owned type word, the refused standard-package
+  import, and the derivation of the automatic names from the enumeration.
 - Spelling-source coupling: `crates/gantry-conformance/tests/stdlib_architecture.rs`
   (`reserved_spelling_sources_agree_with_the_published_inventory`) requires the grammar's
   reserved-word classifier, the lexical vector lane, and the published compiler-owned inventory

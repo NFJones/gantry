@@ -27,6 +27,7 @@ use gantry_ir::{
     TypeDescriptorError, TypeExpression, WorkflowFacts, WorkflowParameter,
 };
 
+use crate::automatic::AutomaticNames;
 use crate::bodies::{BodyAnalysis, EffectNode, InstantiationKey, check_package_bodies};
 use crate::effects::analyze_workflow_facts;
 use crate::executable::lower_executable_program;
@@ -67,13 +68,35 @@ pub fn analyze_package_types(phase: &CompletedSyntaxPhase) -> Result<TypedPackag
     analyze_package_types_with_artifact_limits(phase, ArtifactLimits::MAXIMUM)
 }
 
+/// Resolves and validates package declaration types under the supplied automatic
+/// edition-prelude names (`GNT-34.4`): a declared automatic spelling resolves only while the
+/// supplied set makes it available, and an unavailable one is refused.
+pub fn analyze_package_types_with_automatic_names(
+    phase: &CompletedSyntaxPhase,
+    automatic_names: &AutomaticNames,
+) -> Result<TypedPackage, AnalysisError> {
+    analyze_package_types_with_policy(
+        phase,
+        ArtifactLimits::MAXIMUM,
+        None,
+        SemanticMode::Portable,
+        automatic_names,
+    )
+}
+
 /// Resolves and validates a package while enforcing the supplied analyzer
 /// artifact limits during generated-schema construction.
 pub fn analyze_package_types_with_artifact_limits(
     phase: &CompletedSyntaxPhase,
     artifact_limits: ArtifactLimits,
 ) -> Result<TypedPackage, AnalysisError> {
-    analyze_package_types_with_policy(phase, artifact_limits, None, SemanticMode::Portable)
+    analyze_package_types_with_policy(
+        phase,
+        artifact_limits,
+        None,
+        SemanticMode::Portable,
+        &AutomaticNames::canonical(),
+    )
 }
 
 /// Resolves and validates a package under one complete frontend activity policy.
@@ -95,6 +118,7 @@ pub fn analyze_package_types_with_limits_and_mode(
         ArtifactLimits::from(limits),
         Some(limits),
         semantic_mode,
+        &AutomaticNames::canonical(),
     )
 }
 
@@ -103,10 +127,16 @@ fn analyze_package_types_with_policy(
     artifact_limits: ArtifactLimits,
     frontend_limits: Option<FrontendLimits>,
     semantic_mode: SemanticMode,
+    automatic_names: &AutomaticNames,
 ) -> Result<TypedPackage, AnalysisError> {
     let structure = analyze_package_structure(phase)?;
     let mut diagnostics = structure.diagnostics().to_vec();
     let mut type_diagnostics = Vec::new();
+    check_automatic_names(
+        phase.parsed_sources(),
+        automatic_names,
+        &mut type_diagnostics,
+    )?;
     let mut facts = Vec::new();
     let mut facts_by_source = Vec::new();
     let type_binders = collect_type_binders(phase.parsed_sources(), &mut type_diagnostics)?;
@@ -2110,6 +2140,34 @@ fn direct_identifier_span(
             SyntaxForm::Token(TokenKind::Identifier(_)) => Some(child.span().clone()),
             _ => None,
         }))
+}
+
+/// Refuses every source use of a declared automatic spelling the selected edition prelude
+/// does not enumerate (`GNT-34.4`). The compiler owns these spellings, so an unavailable one
+/// is not an ordinary unbound identifier: it is refused before any later stage resolves it.
+fn check_automatic_names(
+    sources: &[ParsedSource],
+    automatic_names: &AutomaticNames,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    for source in sources {
+        for node in source.tree().nodes() {
+            let SyntaxForm::Token(TokenKind::ReservedWord(word)) = node.form() else {
+                continue;
+            };
+            let spelling = word.spelling();
+            if !AutomaticNames::is_declared(spelling) || automatic_names.is_available(spelling) {
+                continue;
+            }
+            diagnostics.push(name_resolution_diagnostic(
+                "unresolved-reference",
+                "the edition prelude does not enumerate this automatic name",
+                node.span().clone(),
+                [("identifier", spelling)],
+            )?);
+        }
+    }
+    Ok(())
 }
 
 /// Refuses every `where` predicate that names a type no declaration provides.

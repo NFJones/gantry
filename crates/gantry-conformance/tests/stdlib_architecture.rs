@@ -10,10 +10,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FacadeReexport, FeatureSelection, NameClass, PackageFamily, Prelude, Relocation,
-    STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance, SemanticMode,
-    StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation, StdGraph, StdItem,
-    StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
+    FacadeReexport, FeatureSelection, NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude,
+    Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance,
+    SemanticMode, StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation, StdGraph,
+    StdItem, StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
     StdlibNonClaimAssertion, TargetKind, canonical_pure_hierarchy, check_layout_identity,
     check_stdlib_non_claims, require_applicable,
 };
@@ -390,6 +390,69 @@ fn prelude_is_enumerated_and_wildcards_are_refused() {
         )
         .code(),
         StdlibDiagnosticCode::InvalidPackageName
+    );
+}
+
+/// Every enumerated prelude member owns a declared, closed set of automatic source spellings
+/// (`GNT-34.4`): the canonical prelude is the declared one, each binding names a declared item
+/// of `std.core`, a member outside the correspondence enumerates no source name and is
+/// refused, and dropping a member drops exactly that member's spellings.
+#[test]
+fn prelude_members_own_their_declared_automatic_spellings() {
+    let declared = prelude();
+    assert_eq!(
+        declared,
+        Prelude::canonical(),
+        "the canonical prelude is the declared prelude"
+    );
+    assert_eq!(
+        declared
+            .automatic_spellings()
+            .into_iter()
+            .collect::<Vec<&str>>(),
+        ["Err", "None", "Ok", "Option", "Result", "Some"]
+    );
+
+    let graph = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical hierarchy is valid: {error}"));
+    let core = graph
+        .package(CORE)
+        .unwrap_or_else(|| panic!("the canonical hierarchy declares `{CORE}`"));
+    for binding in PRELUDE_BINDINGS {
+        assert!(
+            declared.members().contains(binding.member()),
+            "`{}` is an enumerated member",
+            binding.member()
+        );
+        assert!(
+            core.item(binding.member()).is_some(),
+            "`{}` is a declared item of `{CORE}`",
+            binding.member()
+        );
+        assert!(
+            !binding.spellings().is_empty(),
+            "`{}` owns at least one automatic spelling",
+            binding.member()
+        );
+    }
+
+    assert_eq!(
+        refuse(
+            Prelude::new("2026", &["std.core::text"]),
+            "a member that enumerates no automatic source name"
+        )
+        .code(),
+        StdlibDiagnosticCode::UnenumeratedPreludeMember
+    );
+
+    let result_only = Prelude::new("2026", &["std.core::result"])
+        .unwrap_or_else(|error| panic!("the reduced prelude is valid: {error}"));
+    assert_eq!(
+        result_only
+            .automatic_spellings()
+            .into_iter()
+            .collect::<Vec<&str>>(),
+        ["Err", "Ok", "Result"]
     );
 }
 
@@ -1675,14 +1738,15 @@ fn standard_library_architecture_note_names_every_declared_non_claim() {
     }
 }
 
-/// The architecture note discloses that the enumerated prelude is a declaration, not the source
-/// resolution path of this tree.
+/// The architecture note discloses how the enumerated prelude reaches source resolution.
 ///
 /// The behavior itself is pinned by `analyzer_types.rs`
-/// (`edition_prelude_source_boundary_matches_the_enumerated_declaration`), which requires the
-/// built-in spellings to resolve as reserved words and a standard-package import to refuse with
-/// exactly `unresolved-import`. This lane keeps the note's disclosure of that state present, so a
-/// note revision cannot silently drop it; it deliberately does not scan analyzer sources.
+/// (`edition_prelude_source_boundary_matches_the_enumerated_declaration`,
+/// `automatic_source_names_are_derived_from_the_enumerated_prelude`), which requires the
+/// prelude-owned spellings to resolve only while their member is enumerated, an unavailable one to
+/// refuse with `unresolved-reference`, and a standard-package import to refuse with exactly
+/// `unresolved-import`. This lane keeps the note's disclosure of that state present, so a note
+/// revision cannot silently drop it; it deliberately does not scan analyzer sources.
 #[test]
 fn standard_library_architecture_note_discloses_the_prelude_resolution_boundary() {
     let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
@@ -1690,7 +1754,8 @@ fn standard_library_architecture_note_discloses_the_prelude_resolution_boundary(
     // The note is line-wrapped, so phrases are matched against whitespace-normalized text.
     let normalized = note.split_whitespace().collect::<Vec<_>>().join(" ");
     for phrase in [
-        "name resolution in this tree does not consult it",
+        "name resolution consults the enumerated members",
+        "is refused with `unresolved-reference`",
         "is refused with `unresolved-import`",
     ] {
         assert!(

@@ -300,8 +300,9 @@ pub use signature::{
 // identity, stability tiers, applicability, and the aggregate manifest without any
 // physical repository layout entering an identity.
 pub use stdlib::{
-    FacadeReexport, FeatureSelection, MAX_STD_NAME_BYTES, MAX_STD_PACKAGES, NameClass,
-    PackageFamily, Prelude, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
+    CANONICAL_PRELUDE_EDITION, CANONICAL_PRELUDE_MEMBERS, FacadeReexport, FeatureSelection,
+    MAX_STD_NAME_BYTES, MAX_STD_PACKAGES, NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude,
+    PreludeBinding, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
     SelectedInstance, StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation,
     StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest, StdManifestEntry,
     StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,

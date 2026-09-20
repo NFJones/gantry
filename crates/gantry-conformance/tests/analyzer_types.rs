@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use gantry::analysis::{
-    AnalysisError, AnalysisStatus, analyze_package_types, analyze_package_types_with_limits,
+    AnalysisError, AnalysisStatus, AutomaticNames, analyze_package_types,
+    analyze_package_types_with_automatic_names, analyze_package_types_with_limits,
 };
 use gantry::frontend::validate_package_syntax;
 use gantry::ir::{AggregateKind, InstructionKind, Primitive, Projection};
@@ -2387,9 +2388,10 @@ fn projected_receiver_calls_are_refused_precisely() {
 /// built-in type words are reserved in binding and declaration position. The enumerated prelude
 /// is a `gantry-ir` declaration for this clause (`crates/gantry-ir/src/stdlib.rs`); name
 /// resolution resolves these words as reserved built-ins
-/// (`crates/gantry-frontend/src/token.rs`, `crates/gantry-analysis/src/types.rs`) and never
-/// consults the enumeration, so the declaration-to-probe correspondence below is asserted
-/// separately from the source behavior it accompanies.
+/// (`crates/gantry-frontend/src/token.rs`, `crates/gantry-analysis/src/types.rs`) and consults
+/// the enumeration for every declared automatic spelling
+/// (`crates/gantry-analysis/src/automatic.rs`), so the declaration-to-probe correspondence
+/// below is both asserted and enforced.
 #[test]
 fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
     use gantry::ir::canonical_pure_hierarchy;
@@ -2541,12 +2543,94 @@ fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
     );
 }
 
+/// The automatic source names are derived from the enumerated edition prelude (`GNT-34.4`):
+/// with the canonical edition every declared spelling resolves, and with a prelude that omits
+/// a member that member's spellings are refused as unresolved references with no published
+/// program while the enumerated member's spellings still resolve.
+#[test]
+fn automatic_source_names_are_derived_from_the_enumerated_prelude() {
+    use gantry::ir::{Prelude, canonical_pure_hierarchy};
+
+    let graph = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical hierarchy is valid: {error}"));
+    let canonical = AutomaticNames::from_prelude(graph.prelude());
+    assert_eq!(
+        canonical.available().iter().copied().collect::<Vec<&str>>(),
+        ["Err", "None", "Ok", "Option", "Result", "Some"],
+        "the canonical edition makes every declared automatic spelling available"
+    );
+
+    let option_source =
+        "fn main() -> Int { let x: Option<Int> = Some(7); match x { Some(v) => v, None => 0 } }";
+    let result_source =
+        "fn main() -> Int { let r: Result<Int, Int> = Ok(7); match r { Ok(v) => v, Err(e) => 0 } }";
+
+    let without_option = Prelude::new("2026", &["std.core::result"])
+        .unwrap_or_else(|error| panic!("the reduced prelude is valid: {error}"));
+    let result_only = AutomaticNames::from_prelude(&without_option);
+    let refused = analyze_with_names(option_source, &result_only);
+    assert_eq!(
+        refused.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        refused.diagnostics()
+    );
+    assert_eq!(
+        diagnostic_codes(refused.diagnostics()),
+        ["unresolved-reference"; 4],
+        "every use of a spelling the prelude does not enumerate is refused"
+    );
+    assert!(refused.executable_program().is_none());
+    let admitted = analyze_with_names(result_source, &result_only);
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
+
+    let without_result = Prelude::new("2026", &["std.core::option"])
+        .unwrap_or_else(|error| panic!("the reduced prelude is valid: {error}"));
+    let option_only = AutomaticNames::from_prelude(&without_result);
+    let refused = analyze_with_names(result_source, &option_only);
+    assert_eq!(
+        refused.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        refused.diagnostics()
+    );
+    assert_eq!(
+        diagnostic_codes(refused.diagnostics()),
+        ["unresolved-reference"; 4]
+    );
+    assert!(refused.executable_program().is_none());
+    let admitted = analyze_with_names(option_source, &option_only);
+    assert_eq!(
+        admitted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        admitted.diagnostics()
+    );
+}
+
 fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let root = TempDirectory::new();
     root.write(source);
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("type analysis failed: {error:?} in source: {source}"))
+}
+
+fn analyze_with_names(
+    source: &str,
+    automatic_names: &AutomaticNames,
+) -> gantry::analysis::TypedPackage {
+    let root = TempDirectory::new();
+    root.write(source);
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    analyze_package_types_with_automatic_names(&syntax, automatic_names)
         .unwrap_or_else(|error| panic!("type analysis failed: {error:?} in source: {source}"))
 }
 

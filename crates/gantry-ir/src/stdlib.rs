@@ -877,6 +877,49 @@ impl StdName {
     }
 }
 
+/// One enumerated edition-prelude member and the automatic source spellings it owns
+/// (`GNT-34.4-edition-prelude-and-explicit-imports`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreludeBinding {
+    member: &'static str,
+    spellings: &'static [&'static str],
+}
+
+impl PreludeBinding {
+    /// Returns the canonical member path this binding enumerates.
+    #[must_use]
+    pub fn member(&self) -> &'static str {
+        self.member
+    }
+
+    /// Returns the automatic source spellings the member owns.
+    #[must_use]
+    pub fn spellings(&self) -> &'static [&'static str] {
+        self.spellings
+    }
+}
+
+/// The edition the canonical hierarchy declares (`GNT-34.4`).
+pub const CANONICAL_PRELUDE_EDITION: &str = "2026";
+
+/// The canonical edition's enumerated prelude members (`GNT-34.4`).
+pub const CANONICAL_PRELUDE_MEMBERS: [&str; 2] = ["std.core::option", "std.core::result"];
+
+/// The closed correspondence between enumerated edition-prelude members and the automatic
+/// source names they make available (`GNT-34.4`). A member outside this correspondence
+/// enumerates no source name, so declaring such a member is refused; the compiler-owned type
+/// words that are not prelude members stay compiler-owned.
+pub const PRELUDE_BINDINGS: [PreludeBinding; 2] = [
+    PreludeBinding {
+        member: "std.core.option",
+        spellings: &["Option", "Some", "None"],
+    },
+    PreludeBinding {
+        member: "std.core.result",
+        spellings: &["Result", "Ok", "Err"],
+    },
+];
+
 /// One closed edition prelude of `GNT-34.4-edition-prelude-and-explicit-imports`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Prelude {
@@ -908,12 +951,47 @@ impl Prelude {
                 ));
             }
             validate_std_name(member)?;
-            declared.insert(canonical_std_path(member));
+            let canonical = canonical_std_path(member);
+            if !PRELUDE_BINDINGS
+                .iter()
+                .any(|binding| binding.member == canonical.as_str())
+            {
+                return Err(StdlibError::new(
+                    StdlibDiagnosticCode::UnenumeratedPreludeMember,
+                    format!("`{member}` enumerates no automatic source name"),
+                ));
+            }
+            declared.insert(canonical);
         }
         Ok(Self {
             edition: edition.to_owned(),
             members: declared,
         })
+    }
+
+    /// Returns the canonical edition's declared prelude (`GNT-34.4`); this is the prelude
+    /// `canonical_pure_hierarchy` declares.
+    #[must_use]
+    pub fn canonical() -> Self {
+        Self {
+            edition: CANONICAL_PRELUDE_EDITION.to_owned(),
+            members: CANONICAL_PRELUDE_MEMBERS
+                .iter()
+                .map(|member| canonical_std_path(member))
+                .collect(),
+        }
+    }
+
+    /// Returns every automatic source spelling this prelude makes available (`GNT-34.4`): the
+    /// union of the declared spellings of its enumerated members. Declaring a member outside
+    /// the closed correspondence is refused, so this set is total.
+    #[must_use]
+    pub fn automatic_spellings(&self) -> BTreeSet<&'static str> {
+        PRELUDE_BINDINGS
+            .iter()
+            .filter(|binding| self.members.contains(binding.member))
+            .flat_map(|binding| binding.spellings.iter().copied())
+            .collect()
     }
 
     /// Returns the declared edition.
@@ -1635,10 +1713,7 @@ impl StdManifest {
 /// foundational items of `std.core`, so they are declared here because that clause fixes the exact
 /// set.
 pub fn canonical_pure_hierarchy() -> Result<StdGraph, StdlibError> {
-    let mut graph = StdGraph::new(Prelude::new(
-        "2026",
-        &["std.core::option", "std.core::result"],
-    )?);
+    let mut graph = StdGraph::new(Prelude::canonical());
     let core = PackageFamily::Core.package_name();
     let collections = PackageFamily::Collections.package_name();
     let text = PackageFamily::Text.package_name();
@@ -1704,7 +1779,7 @@ pub fn canonical_pure_hierarchy() -> Result<StdGraph, StdlibError> {
         .clone();
     let modes = core_package.modes().iter().copied().collect::<Vec<_>>();
     let targets = core_package.targets().iter().copied().collect::<Vec<_>>();
-    for member in ["std.core::option", "std.core::result"] {
+    for member in CANONICAL_PRELUDE_MEMBERS {
         graph.declare_item(StdItem::new(
             member,
             NameClass::Module,
