@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "4598349a28e68f3b23caa32116e1d1cc28e13003467b302bd257b25e3134e3bf",
-  "byte_length": 1044952,
+  "specification_sha256": "b1ee1f9073f788c1edc1964c9f301a3168590461cdf8201d902c5818a6eb2ef7",
+  "byte_length": 1044966,
   "line_count": 15615,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9504,
       "end_line": 15615,
-      "sha256": "2871f66f71c18a5e7e3c14ce0a1a7029e0034c5f28805fd77f05148f25ca81a1",
+      "sha256": "be70045ed47073d8469639d3ded98ba170bbdfc5a5122cdbbebcc9e55e40045d",
       "rationale": null
     }
   ],
@@ -42544,11 +42544,11 @@
       "id": "GNT-39.7-range-step-contract",
       "span_start_line": 15613,
       "span_end_line": 15615,
-      "span_sha256": "608d8c6c41b5f6908302324cc5bf8211686874802e8d3c014b4c37bdd9199253",
+      "span_sha256": "9b6a415b5a328e1f74f1fe16ecf7baf29a8dacd9c782db53ce5b4446b0c67e0f",
       "anchor_line": 15613,
       "body_start_line": 15614,
       "body_end_line": 15615,
-      "body_sha256": "b11c5fdb468cf29016868bf49f7e01f8820ef1cdf9a6a73271e1a8fbfa1fa0b2",
+      "body_sha256": "135162ab97ae4f1dc61552d53aef57c23a05855db55ee6e118f682c5bc347b19",
       "profiles": [
         "analyzer"
       ],
