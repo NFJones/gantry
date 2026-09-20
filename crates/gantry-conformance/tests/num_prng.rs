@@ -79,6 +79,33 @@ fn deterministic_prng_surface_is_published() {
     }
 }
 
+/// The Section 2.1 registration row names every clause of the sections this crate publishes.
+///
+/// The row is one line of the specification that lists the anchors of each governed section; a new
+/// clause the row does not reach is registered nowhere, so this lane fails when either the
+/// collection clauses or the deterministic numeric clauses are missing from it.
+#[test]
+fn section_2_1_registration_row_covers_the_declared_clauses() {
+    let specification = read_text(&workspace_root().join("SPEC.md"));
+    let row = specification
+        .lines()
+        .find(|line| line.contains("GNT-39.0-collection-key-and-order-scope"))
+        .unwrap_or_else(|| panic!("the registration row names the collection section"));
+    // The row lists each section as a range of anchors, so requiring its first and last anchor
+    // proves the range reaches the clause the section currently ends at.
+    for vocabulary in [
+        gantry::ir::COLLECTION_CLAUSES.as_slice(),
+        NUM_CLAUSES.as_slice(),
+    ] {
+        for anchor in [vocabulary[0], vocabulary[vocabulary.len() - 1]] {
+            assert!(
+                row.contains(anchor),
+                "the registration row names `{anchor}`"
+            );
+        }
+    }
+}
+
 #[test]
 fn deterministic_prng_step_is_exact_and_copy_is_intentional() {
     let mut generator = DeterministicPrng::seeded(0);
