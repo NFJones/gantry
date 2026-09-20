@@ -210,7 +210,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/value_kernel.rs",
-   "sha256": "9924b888de070bf8922ef91062d1ba724878b1c48ed8d677f5eeb735172c6874"
+   "sha256": "5d168a073abc4d9b9761b0181b0a0e4232c1440495df75e8896bfcb14f348007"
   },
   {
    "path": "crates/gantry/src/lib.rs",

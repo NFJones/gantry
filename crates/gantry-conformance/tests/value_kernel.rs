@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::canonical_json::CanonicalJson;
+use gantry::canonical_key::{CANONICAL_KEY_FORMAT_MAJOR, CANONICAL_KEY_FORMAT_MINOR};
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GantryFloat, GantryInt};
 use gantry::portable::DeterministicEvaluationCode;
 use gantry::schema::SchemaValidator;
@@ -353,4 +354,69 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> T {
         fs::read(path).unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()));
     serde_json::from_slice(&bytes)
         .unwrap_or_else(|error| panic!("could not decode {}: {error}", path.display()))
+}
+
+fn read_text(path: &Path) -> String {
+    fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()))
+}
+
+/// The external-value note must stay bound to the boundary artifacts it describes.
+#[test]
+fn external_value_note_names_the_landed_boundaries_and_non_claims() {
+    let root = workspace_root();
+    let note = read_text(&root.join("docs/external-values-and-recovery.md"));
+
+    for needle in [
+        "crates/gantry-core/src/canonical_key.rs",
+        "crates/gantry-conformance/tests/canonical_key.rs",
+        "crates/gantry-conformance/tests/value_kernel.rs",
+        "crates/gantry-analysis/src/types.rs",
+        "crates/gantry-analysis/src/bodies.rs",
+        "crates/gantry-analysis/src/generics.rs",
+        "crates/gantry-ir/src/package.rs",
+        "crates/gantry-ir/src/registry.rs",
+        "crates/gantry-ir/src/identifier.rs",
+        "crates/gantry-runtime/src/recovery.rs",
+        "GNTYKEY",
+        "canonical_json",
+        "StrictJsonDocument",
+        "UTF-16",
+        "SPEC.md",
+    ] {
+        assert!(
+            note.contains(needle),
+            "the external-value note must name {needle}"
+        );
+    }
+
+    let version =
+        format!("canonical key format {CANONICAL_KEY_FORMAT_MAJOR}.{CANONICAL_KEY_FORMAT_MINOR}");
+    assert!(
+        note.contains(&version),
+        "the note must state the current canonical key format: {version}"
+    );
+
+    let analyzer = ["types", "bodies", "generics"]
+        .map(|name| read_text(&root.join(format!("crates/gantry-analysis/src/{name}.rs"))))
+        .join("\n");
+    assert!(
+        analyzer.contains("\"invalid-option-type\""),
+        "the analyzer must still emit the pinned Option diagnostic"
+    );
+    assert!(
+        note.contains("`invalid-option-type`"),
+        "the note must name the diagnostic that refuses the excluded Option shapes"
+    );
+
+    let roadmap = read_text(&root.join("docs/reference/general-purpose-refactor.md"));
+    let boundary_rule = "meaning or bytes of an existing v1 entry";
+    assert!(
+        roadmap.contains(boundary_rule),
+        "the roadmap must still record the v1 boundary rule"
+    );
+    assert!(
+        note.contains(boundary_rule),
+        "the note must restate the v1 boundary rule it depends on"
+    );
 }
