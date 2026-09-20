@@ -71,6 +71,24 @@ const REFERENCE_DOMAIN: &str = "gantry.secret-reference/v1";
 /// the rule that owns the record.
 pub const SECRET_OWNING_CLAUSE: &str = "GNT-21.6-secret-redaction-and-protected-audit";
 
+/// The declared clause anchors of `SPEC.md` Section 21, in specification order.
+///
+/// Each anchor owns exactly one kind of decision, every refusal of this module names
+/// the one anchor that decides it, and [`SECRET_OWNING_CLAUSE`] is the anchor that owns
+/// the audit record of a reference.
+pub const SECRET_CLAUSES: [&str; 10] = [
+    "GNT-21.0-secrets-and-credentials",
+    "GNT-21.1-unreadable-secret-references",
+    "GNT-21.2-secret-authority-binding",
+    "GNT-21.3-secret-lifetime-transfer-and-attenuation",
+    "GNT-21.4-secret-generation-fencing",
+    "GNT-21.5-secret-expiry-and-revocation-races",
+    "GNT-21.6-secret-redaction-and-protected-audit",
+    "GNT-21.7-secret-tenant-isolation",
+    "GNT-21.8-durable-secret-revalidation",
+    "GNT-21.9-secret-non-claims",
+];
+
 /// Returns one length-prefixed encoding of a declared identity field.
 ///
 /// Length prefixes keep distinct field sequences distinct, so a tenant and an

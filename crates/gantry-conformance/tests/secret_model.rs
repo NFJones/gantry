@@ -22,7 +22,7 @@ use gantry::ir::{
     AuthorityRequirementId, AuthorityRight, CanonicalImplementationIdentity, CanonicalPath,
     CanonicalSignature, DeclaredName, DurableOperationCut, DurableSecretReference, EffectCertainty,
     ExternalOutcome, FenceCategory, FencePoint, FenceReason, FenceState, LogicalOperationId,
-    OperationCancellation, ProtectedDataClass, RightsSet, SECRET_NON_CLAIM_ORDER,
+    OperationCancellation, ProtectedDataClass, RightsSet, SECRET_CLAUSES, SECRET_NON_CLAIM_ORDER,
     SECRET_NON_CLAIMS, SECRET_OWNING_CLAUSE, SecretAuditAccess, SecretAuditEvidence,
     SecretAuditOutcome, SecretDurableCut, SecretError, SecretHolderBindingId, SecretNonClaimName,
     SecretReference, SecretReferenceId, SecretResumeClass, SecretRevalidation,
@@ -2111,4 +2111,66 @@ fn durable_secret_rebinding_refuses_a_changed_operation_class_tenant_or_fenced_i
         durable.rebind(replanted_successor).err(),
         Some(SecretError::RebindRequirementMismatch)
     );
+}
+
+/// The Section-21 surface is documented, and the note is pinned to the model's own tables.
+///
+/// `docs/secret-model.md` names every declared clause anchor, every registered refusal code,
+/// every staleness spelling, and every excluded claim. This lane reads the note and requires each
+/// declared name to appear, so the documentation cannot drift from the model it describes; the
+/// note is documentation and grants nothing.
+#[test]
+fn secret_model_note_names_every_declared_clause_and_non_claim() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .unwrap_or_else(|| unreachable!("conformance crate is nested below the workspace"))
+        .to_path_buf();
+    let note = std::fs::read_to_string(root.join("docs/secret-model.md"))
+        .unwrap_or_else(|error| panic!("the secret note is readable: {error}"));
+
+    assert_eq!(SECRET_CLAUSES.len(), 10);
+    assert!(SECRET_CLAUSES.contains(&SECRET_OWNING_CLAUSE));
+    for clause in SECRET_CLAUSES {
+        assert!(note.contains(clause), "the note names `{clause}`");
+    }
+
+    let vocabulary = [
+        SecretError::Authority(AuthorityError::EmptyRights),
+        SecretError::TenantMismatch,
+        SecretError::TenantChangeForbidden,
+        SecretError::OperationMismatch,
+        SecretError::ClassChangeForbidden,
+        SecretError::StaleGeneration,
+        SecretError::Fenced(FenceCategory::Revocation),
+        SecretError::TransferNotSucceeding,
+        SecretError::TransferHolderMismatch,
+        SecretError::RebindRequirementMismatch,
+        SecretError::ReinstatementForbidden,
+        SecretError::InadmissibleAuditRecord,
+        SecretError::SerializationForbidden,
+        SecretError::ExtractionForbidden,
+    ];
+    for refusal in vocabulary {
+        assert!(
+            note.contains(refusal.code()),
+            "the note names `{}`",
+            refusal.code()
+        );
+    }
+
+    for reason in SecretStalenessReason::ALL {
+        assert!(
+            note.contains(reason.wire_name()),
+            "the note names `{}`",
+            reason.wire_name()
+        );
+    }
+    for claim in SECRET_NON_CLAIMS {
+        assert!(
+            note.contains(claim.name().wire_name()),
+            "the note names `{}`",
+            claim.name().wire_name()
+        );
+    }
 }

@@ -286,11 +286,11 @@ pub use resource::{
 };
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
 pub use secret::{
-    DurableSecretReference, SECRET_NON_CLAIM_ORDER, SECRET_NON_CLAIMS, SECRET_OWNING_CLAUSE,
-    SecretAuditAccess, SecretAuditEvidence, SecretAuditOutcome, SecretAuditView, SecretDurableCut,
-    SecretError, SecretHolderBindingId, SecretNonClaim, SecretNonClaimName, SecretReference,
-    SecretReferenceId, SecretResumeClass, SecretRevalidation, SecretStalenessReason,
-    revalidate_secret,
+    DurableSecretReference, SECRET_CLAUSES, SECRET_NON_CLAIM_ORDER, SECRET_NON_CLAIMS,
+    SECRET_OWNING_CLAUSE, SecretAuditAccess, SecretAuditEvidence, SecretAuditOutcome,
+    SecretAuditView, SecretDurableCut, SecretError, SecretHolderBindingId, SecretNonClaim,
+    SecretNonClaimName, SecretReference, SecretReferenceId, SecretResumeClass, SecretRevalidation,
+    SecretStalenessReason, revalidate_secret,
 };
 pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
