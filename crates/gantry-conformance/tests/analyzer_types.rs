@@ -2434,6 +2434,54 @@ fn edition_prelude_source_boundary_matches_the_enumerated_declaration() {
         );
     }
 
+    // Every remaining compiler-owned type word the standard-library note documents resolves in
+    // type position without a package declaration; Option and Result are covered above, and the
+    // invented name is the closure control.
+    let compiler_owned = [
+        "fn main() -> Unit { () }",
+        "fn main() -> Bool { true }",
+        "fn main() -> Int { 1 }",
+        "fn main() -> Float { 1.0 }",
+        "fn main() -> String { \"a\" }",
+        "fn f(xs: List<Int>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(t: Tuple<Int, String>) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(d: Decision) -> Int { 0 }\nfn main() -> Int { 0 }",
+        "fn f(e: OperationError) -> Int { 0 }\nfn main() -> Int { 0 }",
+    ];
+    for source in compiler_owned {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            package.diagnostics()
+        );
+    }
+    let invented = analyze("fn f(w: Widget) -> Int { 0 }\nfn main() -> Int { 0 }");
+    let invented_codes = diagnostic_codes(invented.diagnostics());
+    assert!(
+        !invented_codes.is_empty()
+            && invented_codes
+                .iter()
+                .all(|code| *code == "unresolved-reference"),
+        "the invented name is refused only as an unresolved reference: {invented_codes:?}"
+    );
+
+    // `Never` is the one documented type word the tree refuses: in signature position for an
+    // ordinary callable and at a boundary declaration for the entry point.
+    let never_signature = analyze("fn f() -> Never { panic(\"x\"); }\nfn main() -> Int { 0 }");
+    assert!(
+        diagnostic_codes(never_signature.diagnostics()).contains(&"never-signature-refused"),
+        "a signature position naming Never is refused: {:?}",
+        never_signature.diagnostics()
+    );
+    let never_boundary = analyze("fn main() -> Never { panic(\"x\"); }");
+    assert!(
+        diagnostic_codes(never_boundary.diagnostics()).contains(&"never-boundary-refused"),
+        "an entry boundary naming Never is refused: {:?}",
+        never_boundary.diagnostics()
+    );
+
     // Nothing introduces an arbitrary lowercase spelling: `none` is not a built-in word, so it
     // is an ordinary unbound name rather than a prelude member.
     let undeclared = analyze("fn main() -> Int { let x: Option<Int> = none; 0 }");
