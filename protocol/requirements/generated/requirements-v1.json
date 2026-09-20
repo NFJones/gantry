@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "4300999e90441df522713198f2e00dfa8330cd69752df69479e3ee5292697ca0",
-  "byte_length": 1049385,
-  "line_count": 15629,
+  "specification_sha256": "ce21ffbb17f3134cb44a2d64d5cf0c5b92aa5a55984da00d69172a5a573f2699",
+  "byte_length": 1050737,
+  "line_count": 15633,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "35418f97edc6c0f64a5a0e9aa1d356c19ebaea94b02e789c310457540ed94045",
+      "sha256": "3cfb966ea8885586ca887b5cb36803e3276a47e589e622d2e149abd11a9b24b8",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15629,
-      "sha256": "03d6d0630096a0006efeb22729fd6fe0652b4cd87a3f6f045c9abebc17b45476",
+      "end_line": 15633,
+      "sha256": "ff55435a59c6768f69abceb92f77d237f83a2128d927d1a328025a19e6fa1b66",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "7a36efd7bca90121d4caf24e37f469419689e2a4ee1a670228f50ea914f3b0e0",
+      "span_sha256": "405642638b5a86d2f1a012514dba2306ac3df159a06d3b5fb2fe907b25c093d2",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "afc85656c67dd420ceabd0569e3de230c122044250d5ed1d31d17fa8da1c014f",
+      "body_sha256": "61df873a344ce3f59c0d8daaebd196fff92017a78bd702c89785db4730bfbd95",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42667,12 +42667,12 @@
     {
       "id": "GNT-40.2-checked-integer-algorithms",
       "span_start_line": 15626,
-      "span_end_line": 15629,
-      "span_sha256": "a8a10f6b5a7191cd1a931044829f1caea79fdd581a9206ee4533cef3084505de",
+      "span_end_line": 15630,
+      "span_sha256": "8fe6ff6ef56d6622cec51e3deb0b499ab1f93faaefd5f1b146e005560c8cbbb3",
       "anchor_line": 15627,
       "body_start_line": 15628,
-      "body_end_line": 15629,
-      "body_sha256": "0e4cf0ad25acfaa3785362ed0323a4dc50f39e6553018b69a244954b12ff2702",
+      "body_end_line": 15630,
+      "body_sha256": "4ab475c20860e6e04f495628003022bc02d25f1edfba75d2b208bf6f5a3b75f1",
       "profiles": [
         "analyzer"
       ],
@@ -42684,7 +42684,7 @@
         {
           "key": "clause-001",
           "start_line": 15628,
-          "end_line": 15629,
+          "end_line": 15630,
           "profiles": [
             "analyzer"
           ],
@@ -42698,6 +42698,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_integer.rs#checked_integer_algorithms_are_exact_and_refuse_only_declared_failures"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.3-numeric-conversions",
+      "span_start_line": 15631,
+      "span_end_line": 15633,
+      "span_sha256": "1c54049a31b856f60d7c40a94e905a262913afaf0aa6162b21953ea0c825ed94",
+      "anchor_line": 15631,
+      "body_start_line": 15632,
+      "body_end_line": 15633,
+      "body_sha256": "022d16acefc490a2173d0e2f01a251ddd44d018d04d18ee5b946bd1f081554b1",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15632,
+          "end_line": 15633,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_conversion.rs#numeric_conversions_are_exact_and_refuse_outside_the_domain"
               ],
               "rationale": null
             }

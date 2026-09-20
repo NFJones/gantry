@@ -8,11 +8,12 @@
 //! randomness is the capability-backed `std.random` surface and must never be substituted for this
 //! generator or presented as one.
 
-/// The declared clauses of `GNT-40.0` through `GNT-40.2`, in specification order.
-pub const NUM_CLAUSES: [&str; 3] = [
+/// The declared clauses of `GNT-40.0` through `GNT-40.3`, in specification order.
+pub const NUM_CLAUSES: [&str; 4] = [
     "GNT-40.0-deterministic-numeric-scope",
     "GNT-40.1-deterministic-prng-identity",
     "GNT-40.2-checked-integer-algorithms",
+    "GNT-40.3-numeric-conversions",
 ];
 
 /// The canonical wire spelling of the one admitted generator algorithm.

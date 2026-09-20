@@ -316,7 +316,7 @@ pub use prng::{
 // The Section 40 checked-integer algorithms are declaration-only primitives: exact canonical values
 // or exactly one declared deterministic failure, with no wrapping, saturation, coercion, implicit
 // widening, or host dependence.
-pub use numeric::{CheckedIntegerAlgorithm, negate};
+pub use numeric::{CheckedIntegerAlgorithm, NumericConversion, float_to_int, int_to_float, negate};
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade
 // identity, stability tiers, applicability, and the aggregate manifest without any

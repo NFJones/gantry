@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "4300999e90441df522713198f2e00dfa8330cd69752df69479e3ee5292697ca0",
+  "specification_sha256": "ce21ffbb17f3134cb44a2d64d5cf0c5b92aa5a55984da00d69172a5a573f2699",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15629,
+      "end_line": 15633,
       "rationale": null
     }
   ],
@@ -41540,10 +41540,10 @@
     {
       "id": "GNT-40.2-checked-integer-algorithms",
       "span_start_line": 15626,
-      "span_end_line": 15629,
+      "span_end_line": 15630,
       "anchor_line": 15627,
       "body_start_line": 15628,
-      "body_end_line": 15629,
+      "body_end_line": 15630,
       "profiles": [
         "analyzer"
       ],
@@ -41555,7 +41555,7 @@
         {
           "key": "clause-001",
           "start_line": 15628,
-          "end_line": 15629,
+          "end_line": 15630,
           "profiles": [
             "analyzer"
           ],
@@ -41569,6 +41569,45 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_integer.rs#checked_integer_algorithms_are_exact_and_refuse_only_declared_failures"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.3-numeric-conversions",
+      "span_start_line": 15631,
+      "span_end_line": 15633,
+      "anchor_line": 15631,
+      "body_start_line": 15632,
+      "body_end_line": 15633,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15632,
+          "end_line": 15633,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_conversion.rs#numeric_conversions_are_exact_and_refuse_outside_the_domain"
               ],
               "rationale": null
             }

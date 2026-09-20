@@ -124,3 +124,7 @@ in the model; no float algorithm, bit operation, conversion, parsing, formatting
 cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering,
 machine representation, or family behavior is published with them, and no performance, storage
 layout, or physical-representation claim is made.
+
+## Numeric conversions (`GNT-40.3`)
+
+`GNT-40.3-numeric-conversions` admits exactly two conversions: the exact and total `int-to-float` conversion of one canonical `Int` to its binary64 `Float`, and the `float-to-int` conversion of one finite `Float` that yields exactly one canonical `Int` value only when the operand is integral and inside the canonical `Int` domain and returns nothing otherwise, so a fractional or out-of-domain operand refuses rather than truncating, rounding, saturating, wrapping, or coercing. `int_to_float` and `float_to_int` publish the two conversions in the model; no parsing, formatting, bit operation, float algorithm, work limit, cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine representation, or family behavior is published with them, and no performance, storage-layout, or physical-representation claim is made.
