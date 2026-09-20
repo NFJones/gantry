@@ -1532,6 +1532,12 @@ fn resolve_type_node(
                 return Ok(None);
             }
             let Some(members) = members else {
+                diagnostics.push(type_diagnostic(
+                    "collection-type-unadmitted",
+                    "a Map type whose value argument resolves to no type is not admitted",
+                    node.span().clone(),
+                    [("type", "Map")],
+                )?);
                 return Ok(None);
             };
             let value = members.into_iter().nth(1).ok_or(AnalysisError::Invariant)?;

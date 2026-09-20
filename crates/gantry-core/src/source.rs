@@ -1333,7 +1333,7 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         code: "collection-type-unadmitted",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
-        meaning: "A recognised Map type form is refused until the collection type is admitted.",
+        meaning: "A recognised collection type form is refused where this edition does not admit it: an argument that resolves to no type, a boundary or signature annotation, or a member the owning identity refuses.",
     },
     DiagnosticCodeDefinition {
         code: "condition-type",

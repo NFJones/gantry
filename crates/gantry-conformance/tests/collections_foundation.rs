@@ -972,6 +972,28 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         "a repeated Set element",
     );
     assert_eq!(refused.code(), CollectionDiagnosticCode::DuplicateKey);
+
+    // Equal entries are one value whatever order the candidates arrive in, the canonical order is
+    // the value's own order, and an empty value is admitted rather than special-cased.
+    let shuffled = MapValue::admit(
+        policy,
+        &[(integer(1), string("one")), (string("beta"), integer(2))],
+    )
+    .unwrap_or_else(|error| panic!("the declared entries are admitted: {error:?}"));
+    assert_eq!(shuffled, map);
+    assert_eq!(shuffled.entries(), map.entries());
+    let elements = set.elements();
+    assert_eq!(elements.len(), 3);
+    for pair in elements.windows(2) {
+        assert_eq!(canonical_order(&pair[0], &pair[1]), Ordering::Less);
+    }
+    let empty = MapValue::admit(policy, &[]).unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(empty.is_empty());
+    assert_eq!(empty.len(), 0);
+    assert_eq!(empty.get(&one), None);
+    let empty_set = SetValue::admit(policy, &[]).unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(empty_set.is_empty());
+    assert_eq!(empty_set.elements().len(), 0);
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).

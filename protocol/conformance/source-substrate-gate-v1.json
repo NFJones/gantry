@@ -14,7 +14,7 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "8cc947de0d6db8559ecdc5165756f7420c23a753e4406063361b867f1800fcaf"
+   "sha256": "aeabc2899e81acfeeb2aa308578d26fa38170bc4b7a5160cb89f79e764c473d4"
   },
   {
    "path": "protocol/schemas/source-substrate-v1.schema.json",
@@ -34,7 +34,7 @@
    "id": "diagnostic-presentation",
    "kind": "golden",
    "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
-   "revision": "71c3e7f269d28c457fc845675553fab8c2727ec163f44b24a7eff9c31ab7515e",
+   "revision": "7d032d32b4125c9c571fd50245e45975cb46bf43c90b8412b815c51eee8a3795",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -42,7 +42,7 @@
    "id": "requirement-ledger",
    "kind": "requirement",
    "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
-   "revision": "71c3e7f269d28c457fc845675553fab8c2727ec163f44b24a7eff9c31ab7515e",
+   "revision": "7d032d32b4125c9c571fd50245e45975cb46bf43c90b8412b815c51eee8a3795",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -50,7 +50,7 @@
    "id": "source-provider",
    "kind": "public-api",
    "path": "crates/gantry-conformance/tests/source_provider.rs",
-   "revision": "71c3e7f269d28c457fc845675553fab8c2727ec163f44b24a7eff9c31ab7515e",
+   "revision": "7d032d32b4125c9c571fd50245e45975cb46bf43c90b8412b815c51eee8a3795",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -58,7 +58,7 @@
    "id": "source-substrate",
    "kind": "fixture",
    "path": "crates/gantry-conformance/tests/source_substrate.rs",
-   "revision": "71c3e7f269d28c457fc845675553fab8c2727ec163f44b24a7eff9c31ab7515e",
+   "revision": "7d032d32b4125c9c571fd50245e45975cb46bf43c90b8412b815c51eee8a3795",
    "state": "verified",
    "visibility": "public-facade"
   }
@@ -84,7 +84,7 @@
  ],
  "specification": {
   "path": "SPEC.md",
-  "sha256": "71c3e7f269d28c457fc845675553fab8c2727ec163f44b24a7eff9c31ab7515e"
+  "sha256": "7d032d32b4125c9c571fd50245e45975cb46bf43c90b8412b815c51eee8a3795"
  },
  "status": "verified",
  "validation_commands": [

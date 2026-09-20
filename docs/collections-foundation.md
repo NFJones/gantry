@@ -65,9 +65,10 @@ separately in `docs/canonical-scalar-keys.md`.
   `Result<Int,String>`, `Decision`, or a declared type), before the clause-owned
   `collection-type-unadmitted` refusal; an
   occurrence whose key argument is admitted is admitted as the identity's constructed value type,
-  while an occurrence whose key argument resolves to no type at all (an unresolved name or a type
-  parameter), or whose annotation appears in a boundary or signature position, is refused as
-  `collection-type-unadmitted` and builds no descriptor. The same canonical text is exact in both directions:
+  while an occurrence whose key argument or value argument resolves to no type at all (an unresolved
+  name or a type parameter), whose annotation appears in a boundary or signature position, or whose
+  value member names a collection type the identity refuses, is refused as
+  `collection-type-unadmitted` and publishes no fact or descriptor. The same canonical text is exact in both directions:
   `MapTypeIdentity::from_canonical_text` admits exactly the five key member texts and the canonical
   text of one admitted value type, refuses a key member of any other type as `collection-invalid-key`
   naming the whole refused member before the general rule (even when the text is also non-canonical
@@ -118,7 +119,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `collection-invalid-key` | `GNT-39.1-admitted-collection-keys` | the candidate kind, or a recognised `Map` key or `Set` element argument, is not an admitted collection key |
 | `collection-duplicate-key` | `GNT-39.2-canonical-collection-order-and-duplicate-identity` | two admitted keys share one identity in one batch |
 | `collection-non-claim-as-guarantee` | `GNT-39.3-collection-foundation-non-claims` | a declared non-claim is unasserted or presented as a guarantee |
-| `collection-type-unadmitted` | `GNT-39.4-map-type-form-recognition` | a recognised collection type form's argument resolves to no type, or its annotation is a boundary or signature position |
+| `collection-type-unadmitted` | `GNT-39.4-map-type-form-recognition` | a recognised collection type form's argument resolves to no type, its annotation is a boundary or signature position, or its value member names a collection type the owning identity refuses |
 
 ## Declared non-claims
 

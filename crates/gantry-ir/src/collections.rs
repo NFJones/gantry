@@ -491,8 +491,6 @@ impl SetTypeIdentity {
     }
 }
 
-/// One `Range<T>` type identity of `GNT-39.6`.
-///
 /// One admitted `Map` value of `GNT-39.8-collection-value-model`.
 ///
 /// The value is its finite entries in the canonical collection order of `GNT-39.2`: each entry is

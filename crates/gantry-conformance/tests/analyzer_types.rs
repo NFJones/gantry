@@ -2726,6 +2726,15 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments()
         "a value position admits the form: {:?}",
         diagnostic_codes(analyze(local).diagnostics())
     );
+
+    // An unresolved value argument keeps the clause-owned refusal, exactly as an unresolved key or
+    // element argument does.
+    let unresolved_value = analyze("fn main() -> Int { let m: Map<Int, Missing> = 0; 0 }");
+    assert!(
+        diagnostic_codes(unresolved_value.diagnostics()).contains(&"collection-type-unadmitted"),
+        "an unresolved value argument is refused: {:?}",
+        diagnostic_codes(unresolved_value.diagnostics())
+    );
 }
 
 /// The grammar recognises the one-argument collection type forms `Set<K>` and `Range<T>`; analysis
