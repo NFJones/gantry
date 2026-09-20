@@ -1099,7 +1099,7 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     assert_eq!(CollectionValueKind::ALL.len(), 3);
     let mut spellings = Vec::new();
     for kind in CollectionValueKind::ALL {
-        assert_eq!(kind.owning_clause(), "GNT-39.8-collection-value-model");
+        assert_eq!(kind.value_model_clause(), "GNT-39.8-collection-value-model");
         spellings.push(kind.spelling());
     }
     assert_eq!(spellings, ["Map", "Set", "Range"]);
@@ -1116,6 +1116,7 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
         CollectionValueKind::Range
     );
     assert_eq!(CollectionValue::Map(empty.clone()).accounted_nodes(), 1);
+    assert_eq!(CollectionValue::Set(empty_set.clone()).accounted_nodes(), 1);
     assert_eq!(CollectionValue::Range(unbounded).accounted_nodes(), 1);
 
     // The two load-bearing halves of the accounting rule: an entry whose value is itself an

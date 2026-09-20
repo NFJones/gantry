@@ -9,9 +9,9 @@ evidence is `crates/gantry-conformance/tests/collections_foundation.rs`, one lan
 note is documentation: it names what the model declares and what it refuses, and it grants nothing.
 
 The section admits no source collection value, operation, or collection API and no collection type
-whose form `GNT-39.4-map-type-form-recognition` does not recognise, and it claims no range stepping,
-iterator ownership or invalidation, traversal, mutation, exhaustion, suspension, quota, schema,
-recovery, or durable behavior. The canonical scalar-key contract it consumes is documented
+whose form `GNT-39.4-map-type-form-recognition` does not recognise, and it claims no range traversal
+or iteration, iterator ownership or invalidation, mutation, exhaustion reporting, suspension, quota,
+schema, recovery, or durable behavior. The canonical scalar-key contract it consumes is documented
 separately in `docs/canonical-scalar-keys.md`.
 
 ## Declared clauses
@@ -149,7 +149,7 @@ separately in `docs/canonical-scalar-keys.md`.
 ## Declared non-claims
 
 - no source collection value, operation, or collection API
-- no range stepping, iterator ownership or invalidation, traversal, mutation, exhaustion, suspension, quotas, schemas, recovery, or durable behavior
+- no range traversal or iteration, iterator ownership or invalidation, mutation, exhaustion reporting, suspension, quotas, schemas, recovery, or durable behavior
 - no family behavior
 - no storage layout or physical representation
 - no performance claim

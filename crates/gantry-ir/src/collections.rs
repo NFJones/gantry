@@ -706,7 +706,7 @@ pub enum CollectionValueKind {
 }
 
 impl CollectionValueKind {
-    /// Every recognised kind, in canonical kind order.
+    /// Every recognised kind, in the order the section introduces the forms.
     pub const ALL: [Self; 3] = [Self::Map, Self::Set, Self::Range];
 
     /// Returns the canonical kind spelling.
@@ -719,9 +719,10 @@ impl CollectionValueKind {
         }
     }
 
-    /// Returns the clause that publishes the kind's value model.
+    /// Returns the clause that publishes the kind's value model (the type identity is published by
+    /// the identity clause the kind's form belongs to).
     #[must_use]
-    pub const fn owning_clause(self) -> &'static str {
+    pub const fn value_model_clause(self) -> &'static str {
         "GNT-39.8-collection-value-model"
     }
 }
@@ -926,8 +927,8 @@ impl RangeStepContract {
 pub enum CollectionNonClaimName {
     /// No source collection value, operation, or collection API.
     SourceCollectionType,
-    /// No range stepping, iterator ownership or invalidation, traversal, mutation, exhaustion,
-    /// suspension, quota, schema, recovery, or durable behavior.
+    /// No range traversal or iteration, iterator ownership or invalidation, mutation, exhaustion
+    /// reporting, suspension, quota, schema, recovery, or durable behavior.
     RangeIteratorAndDurability,
     /// No family behavior.
     FamilyBehavior,
@@ -958,7 +959,7 @@ impl CollectionNonClaimName {
                 "no source collection value, operation, or collection API"
             }
             Self::RangeIteratorAndDurability => {
-                "no range stepping, iterator ownership or invalidation, traversal, mutation, exhaustion, suspension, quotas, schemas, recovery, or durable behavior"
+                "no range traversal or iteration, iterator ownership or invalidation, mutation, exhaustion reporting, suspension, quotas, schemas, recovery, or durable behavior"
             }
             Self::FamilyBehavior => "no family behavior",
             Self::StorageLayout => "no storage layout or physical representation",
