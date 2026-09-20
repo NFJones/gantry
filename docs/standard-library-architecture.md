@@ -60,12 +60,21 @@ foundational `std.core` items `std.core::option` and `std.core::result`; adding 
 a member is an edition change with exact compatibility consequences, and an implicit
 wildcard import is refused.
 
+The enumeration is a declaration, and name resolution in this tree does not consult it:
+source lookup admits the compiler's reserved built-in type words, so compiler prelude
+injection is not implemented and a member here neither injects nor withholds a source
+name yet.
+
 ## Evidence
 
 - Model and declaration: `crates/gantry-ir/src/stdlib.rs` (`canonical_pure_hierarchy`,
   `StdPackage`, `StdItem`, `Prelude`, `StdGraph`).
 - Machine-checked conformance: `crates/gantry-conformance/tests/stdlib_architecture.rs`
   (`canonical_pure_hierarchy_declares_each_pure_family_once`).
+- Source boundary of the enumerated members:
+  `crates/gantry-conformance/tests/analyzer_types.rs`
+  (`edition_prelude_source_boundary_matches_the_enumerated_declaration`) pins the built-in
+  spelling boundary and the refused standard-package import.
 - Refusals: `std-invalid-package-name`, `std-duplicate-package`,
   `std-invalid-name-classification`, `std-unknown-edge`, `std-dependency-cycle`,
   `std-pure-to-capability-edge`, `std-package-to-adapter-edge`,
