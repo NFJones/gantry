@@ -106,3 +106,19 @@ randomness, entropy, host facility, global state, streaming, buffering, iteratio
 suspension, schema, recovery, durability, boundary encoding, lowering, machine representation, or
 family behavior, and no statistical-quality, performance, storage-layout, or physical-representation
 claim.
+
+## Checked integer algorithms (`GNT-40.2`)
+
+`GNT-40.2-checked-integer-algorithms` admits exactly five binary checked integer algorithms — `add`,
+`subtract`, `multiply`, `divide`, and `remainder` — over the canonical `Int` domain, and exactly one
+unary algorithm, `negate`. Every algorithm returns exactly one canonical `Int` value or exactly one
+declared failure: a result outside the canonical domain is refused under `integer-overflow`, a
+division by zero under `integer-division-by-zero`, and a remainder by zero under
+`integer-remainder-by-zero`, each the deterministic evaluation code of the same name rather than a
+new diagnostic. Division truncates toward zero and the remainder carries the dividend's sign,
+preserving `a == (a / b) * b + (a % b)`. No algorithm wraps, saturates, coerces across numeric
+types, widens implicitly, refuses under any other spelling, or depends on a host facility, timing,
+prior calls, or global state. `CheckedIntegerAlgorithm::apply` and `negate` publish these algorithms
+in the model; no float algorithm, bit operation, conversion, parsing, formatting, work limit,
+cancellation safe point, quota, schema, recovery, durability, lowering, or machine representation
+is published with them.

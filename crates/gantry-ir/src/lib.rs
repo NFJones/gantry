@@ -35,6 +35,7 @@ mod lifecycle;
 mod locale;
 mod manifest;
 mod metadata;
+mod numeric;
 mod operation;
 mod package;
 mod path;
@@ -312,6 +313,10 @@ pub use prng::{
     DeterministicPrng, NUM_CLAUSES, PRNG_ALGORITHM, PRNG_ALGORITHM_VERSION, PRNG_MIX_FIRST,
     PRNG_MIX_SECOND, PRNG_STATE_INCREMENT, PrngAlgorithmVersion,
 };
+// The Section 40 checked-integer algorithms are declaration-only primitives: exact canonical values
+// or exactly one declared deterministic failure, with no wrapping, saturation, coercion, implicit
+// widening, or host dependence.
+pub use numeric::{CheckedIntegerAlgorithm, negate};
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade
 // identity, stability tiers, applicability, and the aggregate manifest without any

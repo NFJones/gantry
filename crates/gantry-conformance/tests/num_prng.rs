@@ -14,9 +14,10 @@ use gantry::ir::{
     PrngAlgorithmVersion, SCALAR_CLAUSES, STDLIB_CLAUSES,
 };
 
-const REQUIRED_ANCHORS: [&str; 2] = [
+const REQUIRED_ANCHORS: [&str; 3] = [
     "GNT-40.0-deterministic-numeric-scope",
     "GNT-40.1-deterministic-prng-identity",
+    "GNT-40.2-checked-integer-algorithms",
 ];
 
 fn workspace_root() -> PathBuf {
