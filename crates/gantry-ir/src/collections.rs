@@ -383,18 +383,15 @@ impl SetTypeIdentity {
     /// Decodes one exact canonical `Set<K>` identity text.
     ///
     /// The element member text must name one of the five admitted key types (refused under
-    /// `collection-invalid-key` naming it otherwise), and any input that is not the canonical
-    /// rendering of one identity — including a nested or unadmitted member — is refused under
-    /// `collection-type-unadmitted`.
+    /// `collection-invalid-key` naming the whole refused member, even when the text is also
+    /// non-canonical or carries a member this edition does not admit), and any other input that is
+    /// not the canonical rendering of one identity is refused under `collection-type-unadmitted`.
+    /// The key rule applies first, exactly as it does for a `Map` key member.
     pub fn from_canonical_text(text: &str) -> Result<Self, CollectionError> {
         let element_text = text
             .strip_prefix("Set<")
             .and_then(|rest| rest.strip_suffix('>'))
             .ok_or_else(|| Self::not_an_identity(text))?;
-        // A text that is not the canonical text of one admitted value type is not an identity at
-        // all; only a decoded element that is not an admitted key type is a key-domain refusal.
-        TypeDescriptor::from_canonical_string(element_text)
-            .map_err(|_| Self::not_an_identity(text))?;
         let identity = Self {
             element: CollectionKeyType::classify(element_text)?,
         };

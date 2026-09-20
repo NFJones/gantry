@@ -70,12 +70,15 @@ separately in `docs/canonical-scalar-keys.md`.
   unadmitted text — including a nested `Map` in value position — as `collection-type-unadmitted`.
 - `SetTypeIdentity::admit` publishes the `Set<K>` element identity (`GNT-39.6`): a set element is a
   collection key, so exactly the five key types of `GNT-39.1` are admitted, the same shared
-  `CollectionKeyType::classify` refuses every other decoded element as `collection-invalid-key`
-  naming the whole refused argument, and a text that is not the canonical text of one admitted value
-  type is not an identity at all. `RangeTypeIdentity::new` publishes the `Range<T>` element identity
-  over any admitted value type and publishes no stepping, bounds, ordering, or iteration rule; both
-  identities render as `Set<K>` and `Range<T>` over the canonical text of the argument and both
-  decode exactly on the same terms as the `Map` identity.
+  `CollectionKeyType::classify` refuses every other element member text as `collection-invalid-key`
+  naming the whole refused argument, applying the key rule first exactly as the `Map` key rule does —
+  even when the member text is also non-canonical or carries a member this edition does not admit —
+  and any other text that is not the canonical rendering of one identity is refused as
+  `collection-type-unadmitted`. `RangeTypeIdentity::new` publishes the `Range<T>` element identity
+  over any admitted value type and publishes no stepping, bounds, ordering, or iteration rule; its
+  decoder admits exactly the canonical text of one admitted value type and has no key-domain path,
+  so `Range<Decision>` is a legitimate identity while `Range<Missing>` is refused. Both identities
+  render as `Set<K>` and `Range<T>` over the canonical text of the argument.
 
 ## Diagnostics
 

@@ -490,9 +490,11 @@ fn set_and_range_type_identities_are_published_and_refused() {
     for (text, code) in [
         ("Set<Decision>", CollectionDiagnosticCode::InvalidKey),
         ("Set<List<Int>>", CollectionDiagnosticCode::InvalidKey),
+        ("Set<Decision >", CollectionDiagnosticCode::InvalidKey),
+        ("Set<Map<Int,String>>", CollectionDiagnosticCode::InvalidKey),
+        ("Set<Int,Int>", CollectionDiagnosticCode::InvalidKey),
         ("Set<Int", CollectionDiagnosticCode::UnadmittedType),
         ("set<Int>", CollectionDiagnosticCode::UnadmittedType),
-        ("Set<Int,Int>", CollectionDiagnosticCode::UnadmittedType),
         ("Set<Int> ", CollectionDiagnosticCode::UnadmittedType),
         ("Map<Int,String>", CollectionDiagnosticCode::UnadmittedType),
     ] {
