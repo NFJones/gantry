@@ -127,6 +127,11 @@ separately in `docs/canonical-scalar-keys.md`.
   publishes traversal, iteration, mutation, ownership, invalidation, an exhaustion diagnostic,
   quotas, schemas, recovery, durability, boundary encoding, lowering, or machine representation:
   a step reports exhaustion to its caller only as the absence of a step.
+  The value-layer accounting of the model (`GNT-39.8`): the value is one aggregate node, a `Map`
+  entry is one node for its admitted key plus the nodes of the value that key resolves to, a `Set`
+  element is one node, and a bound position is one node — all charged against the carrying layer's
+  own node and nesting budgets, which refuse over-budget content under that layer's resource-limit
+  refusal; this section publishes no per-collection bound and no charge.
 
 ## Diagnostics
 

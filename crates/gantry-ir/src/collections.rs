@@ -547,6 +547,20 @@ impl MapValue {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    /// Returns the value-layer nodes this value's content contributes (`GNT-39.8`).
+    ///
+    /// The value is one aggregate node and each entry adds one node for its admitted key plus the
+    /// nodes of the value that key resolves to, read from the value layer's own metrics. The count
+    /// saturates rather than wrapping.
+    #[must_use]
+    pub fn accounted_nodes(&self) -> u64 {
+        self.entries.iter().fold(1_u64, |total, (_, value)| {
+            total
+                .saturating_add(1)
+                .saturating_add(value.metrics().nodes)
+        })
+    }
 }
 
 /// One admitted `Set` value of `GNT-39.8-collection-value-model`.
@@ -594,6 +608,15 @@ impl SetValue {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
+    }
+
+    /// Returns the value-layer nodes this value's content contributes (`GNT-39.8`).
+    ///
+    /// The value is one aggregate node and each element is one admitted canonical key, so the count
+    /// is one plus the number of elements. The count saturates rather than wrapping.
+    #[must_use]
+    pub fn accounted_nodes(&self) -> u64 {
+        1_u64.saturating_add(u64::try_from(self.elements.len()).unwrap_or(u64::MAX))
     }
 }
 
@@ -657,6 +680,17 @@ impl RangeValue {
         } else {
             None
         }
+    }
+
+    /// Returns the value-layer nodes this value's content contributes (`GNT-39.8`).
+    ///
+    /// The value is one aggregate node and each present bound position is one node, so an unbounded
+    /// side contributes nothing.
+    #[must_use]
+    pub const fn accounted_nodes(self) -> u64 {
+        1_u64
+            .saturating_add(if self.start.is_some() { 1 } else { 0 })
+            .saturating_add(if self.end.is_some() { 1 } else { 0 })
     }
 }
 

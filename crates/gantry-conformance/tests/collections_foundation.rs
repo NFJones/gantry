@@ -1081,6 +1081,18 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     let empty_pair = RangeValue::new(Some(bound(2)), Some(bound(2)));
     assert_eq!(empty_pair.forward(bound(0)), Some(bound(1)));
     assert_eq!(empty_pair.backward(bound(3)), Some(bound(2)));
+
+    // The value-layer accounting of `GNT-39.8`: the value is one aggregate node, an entry is its
+    // admitted key plus the nodes of its value, an element is one node, and a bound position is one
+    // node, so `Map` content counts through the value layer's own metrics.
+    assert_eq!(empty.accounted_nodes(), 1);
+    assert_eq!(empty_set.accounted_nodes(), 1);
+    assert_eq!(map.accounted_nodes(), 5);
+    assert_eq!(set.accounted_nodes(), 4);
+    assert_eq!(range.accounted_nodes(), 3);
+    assert_eq!(unbounded.accounted_nodes(), 1);
+    assert_eq!(bounded.accounted_nodes(), 3);
+    assert_eq!(empty_pair.accounted_nodes(), 3);
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).
