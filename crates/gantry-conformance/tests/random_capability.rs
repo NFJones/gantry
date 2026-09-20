@@ -40,6 +40,20 @@ fn declaration_paragraph<'a>(note: &'a str, declaration: &str) -> &'a str {
         .unwrap_or_else(|| panic!("the note must name {declaration}"))
 }
 
+/// Returns whether the bare `token` is a section prefix of some declared anchor, so a
+/// section citation names a section that publishes at least one declared clause.
+fn declared_section(token: &str) -> bool {
+    let dotted = format!("{token}.");
+    let hyphenated = format!("{token}-");
+    STDLIB_CLAUSES
+        .iter()
+        .chain(HOST_DOMAIN_CLAUSES.iter())
+        .chain(CONSTANT_CLAUSES.iter())
+        .any(|anchor| {
+            *anchor == token || anchor.starts_with(&dotted) || anchor.starts_with(&hyphenated)
+        })
+}
+
 #[test]
 fn random_capability_note_names_the_declared_family_and_applicability() {
     let root = workspace_root();
@@ -101,6 +115,11 @@ fn random_capability_note_names_the_declared_family_and_applicability() {
                 "the note cites {token}, which no clause vocabulary declares"
             );
             cited += 1;
+        } else {
+            assert!(
+                declared_section(token),
+                "the note cites {token}, which introduces no declared clause"
+            );
         }
         remaining = &rest[end..];
     }
