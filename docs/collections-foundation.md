@@ -9,9 +9,10 @@ evidence is `crates/gantry-conformance/tests/collections_foundation.rs`, one lan
 note is documentation: it names what the model declares and what it refuses, and it grants nothing.
 
 The section admits no source collection value, operation, or collection API and no collection type
-whose form `GNT-39.4-map-type-form-recognition` does not recognise, and it claims no range iteration,
-iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas,
-recovery, or durable behavior. The canonical scalar-key contract it consumes is documented
+whose form `GNT-39.4-map-type-form-recognition` does not recognise, and it claims no range iteration
+protocol, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension,
+quotas, schemas, recovery, or durable behavior. The canonical scalar-key contract it consumes is
+documented
 separately in `docs/canonical-scalar-keys.md`.
 
 ## Declared clauses
@@ -142,8 +143,8 @@ separately in `docs/canonical-scalar-keys.md`.
   traversed stepwise through `RangeValue::next_position`, beginning at the inclusive start bound
   when it is present, publishing no first position for an absent start bound and no next position
   for a position the value does not admit. Traversal publishes no source-level iterator value, no
-  iteration protocol, no composable adapter, no ownership or invalidation rule, no suspension, and
-  no exhaustion diagnostic; the traversal forms it publishes are the visitor, the cursor, the
+  source iteration protocol, no composable adapter, no ownership or invalidation rule, no suspension,
+  and no exhaustion diagnostic; the traversal forms it publishes are the visitor, the cursor, the
   terminal fold, and the bounded view.
   `CollectionValue::cursor` opens the one temporary cursor form: it borrows the value it traverses,
   each advance through `CollectionCursor::next` publishes the next visit or none at exhaustion
@@ -163,6 +164,11 @@ separately in `docs/canonical-scalar-keys.md`.
   the same order, reports through `CollectionTake::remaining` how many it may still publish, holds
   its position rather than restarting (so the view is not `Clone`), and publishes no visit at all at
   a budget of zero.
+  `CollectionValue::filter` is the one filtered view: each advance spends one step of the budget it
+  is given and publishes only a visit its predicate admits (so a refused visit still spends its
+  step), publishes none once the budget is spent or the content is exhausted, and reports its
+  published count through `CollectionFilter::published` and its remaining advances through
+  `remaining`, holding its position rather than restarting.
   It reports how a visitor-form traversal ended: `CollectionOutcome::Completed` when every entry
   or element that form publishes was visited and `Stopped` when the visitor ended it early, with
   `is_completed` reading that outcome; a `Range` value publishes no visit through that form and
@@ -181,7 +187,7 @@ separately in `docs/canonical-scalar-keys.md`.
 ## Declared non-claims
 
 - no source collection value, operation, or collection API
-- no range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior
+- no range iteration protocol, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior
 - no family behavior
 - no storage layout or physical representation
 - no performance claim

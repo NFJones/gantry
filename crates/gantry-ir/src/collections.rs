@@ -1030,10 +1030,62 @@ impl<'a> CollectionTake<'a> {
         }
     }
 
-    /// Returns the visits this view may still publish.
+    /// Returns the advances this view has not yet consumed, which the content may cut short.
     #[must_use]
     pub const fn remaining(&self) -> u64 {
         self.remaining
+    }
+}
+
+/// One filtered view over a cursor: at most `budget` advances (`GNT-39.8`).
+///
+/// Each advance spends one step of the budget it is given and publishes only a visit the caller's
+/// predicate admits, so a refused visit still spends its step. The view holds its position rather
+/// than restarting and is deliberately not `Clone`.
+#[derive(Debug)]
+pub struct CollectionFilter<'a> {
+    cursor: CollectionCursor<'a>,
+    budget: u64,
+    published: u64,
+}
+
+impl<'a> CollectionFilter<'a> {
+    /// Opens one filtered view over the given value with the given step budget.
+    #[must_use]
+    pub const fn new(value: &'a CollectionValue, budget: u64) -> Self {
+        Self {
+            cursor: CollectionCursor::new(value),
+            budget,
+            published: 0,
+        }
+    }
+
+    /// Advances until one visit is admitted or the budget is spent, publishing that visit.
+    pub fn next(
+        &mut self,
+        predicate: impl Fn(&CollectionVisit<'_>) -> bool,
+    ) -> Option<CollectionVisit<'a>> {
+        while self.budget > 0 {
+            let visit = self.cursor.next()?;
+            self.budget -= 1;
+            if predicate(&visit) {
+                self.published = self.published.saturating_add(1);
+                return Some(visit);
+            }
+        }
+        None
+    }
+
+    /// Returns the visits this view has published.
+    #[must_use]
+    pub const fn published(&self) -> u64 {
+        self.published
+    }
+
+    /// Returns the advances this view may still spend.
+    #[must_use]
+    pub const fn remaining(&self) -> u64 {
+        self.budget
     }
 }
 
@@ -1073,6 +1125,12 @@ impl CollectionValue {
     #[must_use]
     pub const fn take(&self, budget: u64) -> CollectionTake<'_> {
         CollectionTake::new(self, budget)
+    }
+
+    /// Opens one filtered view of at most `budget` advances over this value (`GNT-39.8`).
+    #[must_use]
+    pub const fn filter(&self, budget: u64) -> CollectionFilter<'_> {
+        CollectionFilter::new(self, budget)
     }
 }
 
@@ -1238,8 +1296,8 @@ impl RangeStepContract {
 pub enum CollectionNonClaimName {
     /// No source collection value, operation, or collection API.
     SourceCollectionType,
-    /// No range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic,
-    /// suspension, quotas, schemas, recovery, or durable behavior.
+    /// No range iteration protocol, iterator ownership or invalidation, mutation, an exhaustion
+    /// diagnostic, suspension, quotas, schemas, recovery, or durable behavior.
     RangeIteratorAndDurability,
     /// No family behavior.
     FamilyBehavior,
@@ -1270,7 +1328,7 @@ impl CollectionNonClaimName {
                 "no source collection value, operation, or collection API"
             }
             Self::RangeIteratorAndDurability => {
-                "no range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior"
+                "no range iteration protocol, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior"
             }
             Self::FamilyBehavior => "no family behavior",
             Self::StorageLayout => "no storage layout or physical representation",
@@ -1291,7 +1349,7 @@ impl CollectionNonClaimName {
                 "it admits no source collection value, operation, or collection API"
             }
             Self::RangeIteratorAndDurability => {
-                "does not define range iteration, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior"
+                "does not define a range iteration protocol, iterator ownership or invalidation, mutation, an exhaustion diagnostic, suspension, quotas, schemas, recovery, or durable behavior"
             }
             Self::FamilyBehavior => "does not claim family behavior",
             Self::StorageLayout | Self::Performance => {

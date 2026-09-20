@@ -1310,6 +1310,28 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     );
     let mut take_none = carried_map.take(0);
     assert_eq!(take_none.next(), None);
+
+    // The filtered view (`GNT-39.8`): one step per advance, only admitted visits published, and
+    // none once the budget is spent.
+    let mut filtered = carried_map.filter(2);
+    assert!(matches!(
+        filtered.next(|_| true),
+        Some(CollectionVisit::Entry { .. })
+    ));
+    assert_eq!(filtered.published(), 1);
+    assert_eq!(filtered.remaining(), 1);
+    assert_eq!(filtered.next(|_| false), None);
+    assert_eq!(filtered.remaining(), 0);
+    assert_eq!(filtered.published(), 1, "a refused visit is not published");
+    let mut filtered_range = carried_range.filter(4);
+    assert_eq!(
+        filtered_range
+            .next(|visit| matches!(visit, CollectionVisit::Position(value) if *value == bound(2))),
+        Some(CollectionVisit::Position(bound(2))),
+        "the refused first position still spends its step"
+    );
+    assert_eq!(filtered_range.remaining(), 2);
+    assert_eq!(filtered_range.published(), 1);
     assert_eq!(range.next_position(None), Some(bound(1)));
     assert_eq!(range.next_position(Some(bound(1))), Some(bound(2)));
     assert_eq!(range.next_position(Some(bound(3))), None);
