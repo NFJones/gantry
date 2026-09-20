@@ -952,6 +952,23 @@ fn resolve_source_types(
                 )?);
                 continue;
             }
+            // `GNT-39.4-map-type-form-recognition`: the recognised collection forms are admitted as
+            // constructed value types in value positions, while this edition publishes no boundary
+            // schema and no value for them, so an annotation a generated boundary schema would
+            // render refuses instead of publishing a fact -- exactly as a boundary `Never` position
+            // does.
+            if descriptor.contains_collection_type()
+                && let Some((code, message)) =
+                    collection_occurrence_refusal(source.tree(), id, &parents, entry)?
+            {
+                diagnostics.push(type_diagnostic(
+                    code,
+                    message,
+                    node.span().clone(),
+                    [("type", descriptor.kind().wire_name().to_owned())],
+                )?);
+                continue;
+            }
             resolved.insert(
                 id,
                 TypeFact {
@@ -1004,6 +1021,50 @@ fn never_occurrence_refusal(
         | SyntaxForm::TraitMethodDeclaration => Ok(Some((
             "never-signature-refused",
             "a signature position names the uninhabited type",
+        ))),
+        _ => Ok(None),
+    }
+}
+
+/// The resolved descriptor of the implementation a `Self` annotation belongs to.
+fn collection_occurrence_refusal(
+    tree: &SyntaxTree,
+    id: NodeId,
+    parents: &BTreeMap<NodeId, NodeId>,
+    entry: Option<&Symbol>,
+) -> Result<Option<(&'static str, &'static str)>, AnalysisError> {
+    let Some(parent) = parents.get(&id).copied() else {
+        return Ok(None);
+    };
+    let parent_node = tree.node(parent).ok_or(AnalysisError::Invariant)?;
+    let declaration = if matches!(parent_node.form(), SyntaxForm::Parameter) {
+        parents.get(&parent).copied()
+    } else {
+        Some(parent)
+    };
+    let Some(declaration) = declaration.and_then(|declaration| tree.node(declaration)) else {
+        return Ok(None);
+    };
+    match declaration.form() {
+        SyntaxForm::ActionDeclaration
+        | SyntaxForm::StructField
+        | SyntaxForm::EnumVariant
+        | SyntaxForm::StructDeclaration
+        | SyntaxForm::EnumDeclaration => Ok(Some((
+            "collection-type-unadmitted",
+            "a boundary position names a collection type",
+        ))),
+        SyntaxForm::FunctionDeclaration if is_entry_declaration(tree, declaration, entry)? => {
+            Ok(Some((
+                "collection-type-unadmitted",
+                "a boundary position names a collection type",
+            )))
+        }
+        SyntaxForm::FunctionDeclaration
+        | SyntaxForm::MethodDeclaration
+        | SyntaxForm::TraitMethodDeclaration => Ok(Some((
+            "collection-type-unadmitted",
+            "a signature position names a collection type",
         ))),
         _ => Ok(None),
     }
@@ -1440,89 +1501,114 @@ fn resolve_type_node(
             TypeDescriptor::tuple(members).ok()
         }
         Some("Map") => {
-            // `GNT-39.4` refuses the form as a type and `GNT-39.5` owns the key argument's
-            // identity: the key argument is classified from its own resolved descriptor, so a key
-            // argument that denotes another type is refused under `collection-invalid-key`, naming
-            // the refused argument, even when the value argument resolves to no type; an admitted
-            // key argument, and a key argument that resolves to no type at all, keeps the
-            // type-admission refusal. Neither path builds a descriptor or a type expression.
-            let key_descriptor = type_member_nodes(tree, id)?
+            // `GNT-39.4` admits the form and `GNT-39.5` owns the key rule: the descriptor is built
+            // by the identity, so the key rule, the member rule, and the canonical text keep one
+            // owner. An occurrence whose key argument the type phase resolves to no type at all
+            // keeps the clause-owned type-admission refusal, a key argument that denotes another
+            // type is refused by the key rule itself, and an unadmitted member is refused by the
+            // identity's own member rule.
+            let key = type_member_nodes(tree, id)?
                 .into_iter()
                 .next()
                 .and_then(|member| resolved.get(&member))
                 .map(|fact| fact.descriptor.clone());
-            match key_descriptor
-                .as_ref()
-                .map(CollectionKeyType::from_descriptor)
-            {
-                Some(Err(refusal)) => diagnostics.push(type_diagnostic(
-                    "collection-invalid-key",
-                    refusal.detail(),
-                    node.span().clone(),
-                    [(
-                        "key",
-                        key_descriptor
-                            .as_ref()
-                            .map(TypeDescriptor::canonical_string)
-                            .unwrap_or_default(),
-                    )],
-                )?),
-                _ => diagnostics.push(type_diagnostic(
+            let Some(key) = key else {
+                diagnostics.push(type_diagnostic(
                     "collection-type-unadmitted",
-                    "a Map type is not admitted in this edition",
+                    "a Map type whose key argument resolves to no type is not admitted",
                     node.span().clone(),
                     [("type", "Map")],
-                )?),
+                )?);
+                return Ok(None);
+            };
+            let key_text = key.canonical_string();
+            if let Err(refusal) = CollectionKeyType::from_descriptor(&key) {
+                diagnostics.push(type_diagnostic(
+                    "collection-invalid-key",
+                    refusal.detail(),
+                    node.span().clone(),
+                    [("key", key_text)],
+                )?);
+                return Ok(None);
             }
-            None
+            let Some(members) = members else {
+                return Ok(None);
+            };
+            let value = members.into_iter().nth(1).ok_or(AnalysisError::Invariant)?;
+            match TypeDescriptor::map(key, value) {
+                Ok(descriptor) => Some(descriptor),
+                Err(_) => {
+                    diagnostics.push(type_diagnostic(
+                        "collection-type-unadmitted",
+                        "a Map value member names a collection type this edition does not admit",
+                        node.span().clone(),
+                        [("type", "Map")],
+                    )?);
+                    None
+                }
+            }
         }
         Some("Set") => {
-            // `GNT-39.4` recognises the form and `GNT-39.6` owns the element argument's identity:
-            // the element is classified from its own resolved descriptor, so a `Set` element that
-            // denotes another type is refused under `collection-invalid-key`, naming the refused
-            // argument, even when no descriptor is built; an admitted element keeps the
-            // type-admission refusal.
-            let element_descriptor = type_member_nodes(tree, id)?
+            // `GNT-39.6` owns the `Set` element rule, which is the shared key rule: the element is
+            // classified from its own resolved descriptor, an element that denotes another type is
+            // refused by the key rule itself, and an element the type phase resolves to no type at
+            // all keeps the clause-owned type-admission refusal.
+            let element = type_member_nodes(tree, id)?
                 .into_iter()
                 .next()
                 .and_then(|member| resolved.get(&member))
                 .map(|fact| fact.descriptor.clone());
-            match element_descriptor
-                .as_ref()
-                .map(CollectionKeyType::from_descriptor)
-            {
-                Some(Err(refusal)) => diagnostics.push(type_diagnostic(
+            let Some(element) = element else {
+                diagnostics.push(type_diagnostic(
+                    "collection-type-unadmitted",
+                    "a Set type whose element argument resolves to no type is not admitted",
+                    node.span().clone(),
+                    [("type", "Set")],
+                )?);
+                return Ok(None);
+            };
+            if let Err(refusal) = CollectionKeyType::from_descriptor(&element) {
+                diagnostics.push(type_diagnostic(
                     "collection-invalid-key",
                     refusal.detail(),
                     node.span().clone(),
-                    [(
-                        "element",
-                        element_descriptor
-                            .as_ref()
-                            .map(TypeDescriptor::canonical_string)
-                            .unwrap_or_default(),
-                    )],
-                )?),
-                _ => diagnostics.push(type_diagnostic(
-                    "collection-type-unadmitted",
-                    "a Set type is not admitted in this edition",
-                    node.span().clone(),
-                    [("type", "Set")],
-                )?),
+                    [("element", element.canonical_string())],
+                )?);
+                return Ok(None);
             }
-            None
+            TypeDescriptor::set(element).ok()
         }
         Some("Range") => {
-            // `GNT-39.4` recognises the form and `GNT-39.6` publishes its element identity over any
-            // admitted value type, so analysis keeps the type-admission refusal and builds no
-            // descriptor or type expression for it.
-            diagnostics.push(type_diagnostic(
-                "collection-type-unadmitted",
-                "a Range type is not admitted in this edition",
-                node.span().clone(),
-                [("type", "Range")],
-            )?);
-            None
+            // `GNT-39.6` publishes the `Range` element identity over any admitted value type, so the
+            // element is carried unchanged; an element the type phase resolves to no type at all
+            // keeps the clause-owned type-admission refusal, and an element naming a collection
+            // type this edition does not admit is refused by the identity's own member rule.
+            let element = type_member_nodes(tree, id)?
+                .into_iter()
+                .next()
+                .and_then(|member| resolved.get(&member))
+                .map(|fact| fact.descriptor.clone());
+            let Some(element) = element else {
+                diagnostics.push(type_diagnostic(
+                    "collection-type-unadmitted",
+                    "a Range type whose element argument resolves to no type is not admitted",
+                    node.span().clone(),
+                    [("type", "Range")],
+                )?);
+                return Ok(None);
+            };
+            match TypeDescriptor::range(element) {
+                Ok(descriptor) => Some(descriptor),
+                Err(_) => {
+                    diagnostics.push(type_diagnostic(
+                        "collection-type-unadmitted",
+                        "a Range element member names a collection type this edition does not admit",
+                        node.span().clone(),
+                        [("type", "Range")],
+                    )?);
+                    None
+                }
+            }
         }
         Some("Self") => None,
         Some(_) => return Err(AnalysisError::Invariant),
