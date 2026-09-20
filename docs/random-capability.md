@@ -34,13 +34,15 @@ refused rather than substituted, deferred, or inferred from the host.
 Versioned deterministic PRNG values, their algorithm versions, and their copy and fork semantics
 belong to `std.num` (`docs/reference/general-purpose-refactor.md`); `std.random` is the
 capability-backed counterpart and must not be substituted for it or present deterministic output as
-secure. Secure randomness is a host capability, so durable code records the returned values instead
-of drawing again on recovery.
+secure. `GNT-29.8` and `GNT-29.15` grant no entropy source, and the roadmap records that durable
+code must record returned values instead of drawing again on recovery; that recording is a
+requirement awaiting normative interface rows, not behavior this surface ships.
 
 ## What this surface does not claim
 
 - It declares no draw API, no request or byte bound, no adapter failure mapping, no cancellation or
-  concurrency rule, and no accepted-draw settlement; those need normative interface rows before an
-  implementation may claim them.
-- It grants no entropy, no host adapter, no portable or durable applicability, and no durable
-  eligibility for drawn values.
+  concurrency rule, no accepted-draw settlement, and no durable-recording rule; those need normative
+  interface rows before an implementation may claim them.
+- It grants no entropy, no host adapter, and no portable or durable applicability for randomness
+  itself. Whether a drawn value may enter durable state is undecided until the draw result type and
+  the durable interface are normative.
