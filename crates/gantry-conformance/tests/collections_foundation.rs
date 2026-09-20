@@ -20,7 +20,8 @@ use gantry::ir::{
     COLLECTION_CLAUSES, CallableKind, CollectionDiagnosticCode, CollectionError,
     CollectionKeyPolicy, CollectionKeyRefusal, CollectionKeyType, CollectionNonClaimAssertion,
     CollectionNonClaimName, MapTypeIdentity, MapValue, RangeStepContract, RangeTypeIdentity,
-    SetTypeIdentity, SetValue, TypeDescriptor, canonical_order, check_collection_non_claims,
+    RangeValue, SetTypeIdentity, SetValue, TypeDescriptor, canonical_order,
+    check_collection_non_claims,
 };
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
@@ -994,6 +995,30 @@ fn collection_value_models_order_entries_and_refuse_duplicates() {
     let empty_set = SetValue::admit(policy, &[]).unwrap_or_else(|error| panic!("{error:?}"));
     assert!(empty_set.is_empty());
     assert_eq!(empty_set.elements().len(), 0);
+
+    // The `Range` value carries its two bound positions under the sealed step contract: the start
+    // bound is inclusive, the end bound exclusive, and a step that would leave the bound is
+    // exhaustion rather than a refusal or a wrap.
+    let bound = |value: i64| {
+        GantryInt::new(value).unwrap_or_else(|| panic!("`{value}` is an admitted Int"))
+    };
+    let start = bound(1);
+    let end = bound(4);
+    let range = RangeValue::new(Some(start), Some(end));
+    assert_eq!(range.start(), Some(start));
+    assert_eq!(range.end(), Some(end));
+    assert!(range.admits(start));
+    assert!(range.admits(bound(3)));
+    assert!(!range.admits(end));
+    assert!(!range.admits(bound(0)));
+    assert_eq!(range.forward(start), Some(bound(2)));
+    assert_eq!(range.forward(bound(3)), None);
+    assert_eq!(range.forward(end), None);
+    assert_eq!(range.backward(bound(2)), Some(bound(1)));
+    assert_eq!(range.backward(start), None);
+    let unbounded = RangeValue::new(None, None);
+    assert_eq!(unbounded.forward(bound(GANTRY_INT_MAXIMUM)), None);
+    assert_eq!(unbounded.backward(bound(GANTRY_INT_MINIMUM)), None);
 }
 
 /// Every declared clause, diagnostic, and owning clause is published (`GNT-39.0`).

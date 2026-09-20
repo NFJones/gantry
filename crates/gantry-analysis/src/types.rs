@@ -1540,6 +1540,9 @@ fn resolve_type_node(
                 )?);
                 return Ok(None);
             };
+            // The grammar enforces the two-argument arity of this form (`GNT-39.4`), so a member
+            // list that resolved for a `Map` annotation always holds both arguments: a short list
+            // would be an internal inconsistency rather than a source-program refusal.
             let value = members.into_iter().nth(1).ok_or(AnalysisError::Invariant)?;
             match TypeDescriptor::map(key, value) {
                 Ok(descriptor) => Some(descriptor),

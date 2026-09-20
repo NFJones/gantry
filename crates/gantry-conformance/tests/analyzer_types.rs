@@ -2730,10 +2730,23 @@ fn map_type_identity_admits_the_five_key_types_and_refuses_other_key_arguments()
     // An unresolved value argument keeps the clause-owned refusal, exactly as an unresolved key or
     // element argument does.
     let unresolved_value = analyze("fn main() -> Int { let m: Map<Int, Missing> = 0; 0 }");
-    assert!(
-        diagnostic_codes(unresolved_value.diagnostics()).contains(&"collection-type-unadmitted"),
-        "an unresolved value argument is refused: {:?}",
-        diagnostic_codes(unresolved_value.diagnostics())
+    assert_eq!(
+        diagnostic_codes(unresolved_value.diagnostics()),
+        [
+            "unresolved-reference",
+            "unresolved-reference",
+            "collection-type-unadmitted"
+        ]
+    );
+    assert_eq!(
+        unresolved_value
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "collection-type-unadmitted")
+            .and_then(|diagnostic| diagnostic.fields.get("type"))
+            .map(|value| value.as_ref()),
+        Some("Map"),
+        "the refusal names the form"
     );
 }
 

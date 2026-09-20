@@ -1,6 +1,6 @@
 {
  "format": "gantry.concurrent-executor-evidence/v1",
- "specification_sha256": "7d032d32b4125c9c571fd50245e45975cb46bf43c90b8412b815c51eee8a3795",
+ "specification_sha256": "e9a418bcd32042308c5aedf46da2b3c6db6c5cd15ba48b231bea99b68d5309ec",
  "issue": "GNT-CON-004",
  "model": "protocol/goldens/concurrent-executor-model-v1.json",
  "model_evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic",

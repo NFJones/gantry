@@ -26,7 +26,7 @@ separately in `docs/canonical-scalar-keys.md`.
 | `GNT-39.5-map-type-identity` | the identity of the recognised form: its two argument types in order, the five admitted key types, and the key-domain refusal of every other resolved key argument |
 | `GNT-39.6-set-and-range-type-identities` | the `Set<K>` element identity over the same five admitted key types and the `Range<T>` element identity over any admitted value type, with their canonical texts and refusals |
 | `GNT-39.7-range-step-contract` | the sealed step contract: exactly `Int` steps, by one value toward the bound with checked arithmetic, under an inclusive start bound and an exclusive end bound |
-| `GNT-39.8-collection-value-model` | the admitted `Map` and `Set` values: finite entries or elements over the five admitted key types, in canonical collection order, with repeated keys refused as `collection-duplicate-key` |
+| `GNT-39.8-collection-value-model` | the admitted `Map` and `Set` values (finite entries or elements over the five admitted key types, in canonical collection order, with repeated keys refused as `collection-duplicate-key`) and the admitted `Range` value (two bound positions under the sealed step contract of `GNT-39.7`) |
 
 ## What the model decides
 

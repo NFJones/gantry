@@ -597,6 +597,69 @@ impl SetValue {
     }
 }
 
+/// One admitted `Range` value of `GNT-39.8-collection-value-model`.
+///
+/// The value is its two bound positions over one admitted element type, ordered by the canonical
+/// collection order of `GNT-39.2`: the start bound is inclusive, the end bound is exclusive, and an
+/// unbounded side has no bound value there. The admissible step is exactly the sealed step contract
+/// of `GNT-39.7-range-step-contract`, so a step whose result would leave its bound or the element's
+/// canonical value range is exhaustion rather than a refusal, and this model publishes no traversal,
+/// iteration, mutation, ownership, invalidation, or exhaustion reporting.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RangeValue {
+    start: Option<GantryInt>,
+    end: Option<GantryInt>,
+}
+
+impl RangeValue {
+    /// Publishes one `Range` value over its two bound positions.
+    #[must_use]
+    pub const fn new(start: Option<GantryInt>, end: Option<GantryInt>) -> Self {
+        Self { start, end }
+    }
+
+    /// Returns the inclusive start bound, or `None` for an unbounded start.
+    #[must_use]
+    pub const fn start(self) -> Option<GantryInt> {
+        self.start
+    }
+
+    /// Returns the exclusive end bound, or `None` for an unbounded end.
+    #[must_use]
+    pub const fn end(self) -> Option<GantryInt> {
+        self.end
+    }
+
+    /// Reports whether one position is admitted: at or above the inclusive start bound and strictly
+    /// below the exclusive end bound.
+    #[must_use]
+    pub fn admits(self, value: GantryInt) -> bool {
+        self.start.is_none_or(|start| value >= start) && self.end.is_none_or(|end| value < end)
+    }
+
+    /// Returns the next admitted forward step, or `None` when the step is exhaustion.
+    #[must_use]
+    pub fn forward(self, value: GantryInt) -> Option<GantryInt> {
+        let contract = RangeStepContract::Int;
+        if contract.forward_within(value, self.end) {
+            contract.successor(value)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the next admitted backward step, or `None` when the step is exhaustion.
+    #[must_use]
+    pub fn backward(self, value: GantryInt) -> Option<GantryInt> {
+        let contract = RangeStepContract::Int;
+        if contract.backward_within(value, self.start) {
+            contract.predecessor(value)
+        } else {
+            None
+        }
+    }
+}
+
 /// One `Range<T>` type identity of `GNT-39.6`.
 ///
 /// The identity is its element descriptor, which is any admitted value type: this clause publishes
