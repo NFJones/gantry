@@ -1251,7 +1251,11 @@ pub struct DiagnosticCodeDefinition {
 /// The registry covers the diagnostic codes the source substrate, the frontend, and the analyzer
 /// publish. Refusal spellings owned by other sections — for example the standard-library
 /// architecture, scalar-binary, algebraic-data-type, callable, error, constant, locale,
-/// host-domain, and collection models — are declared by those models and are not mirrored here.
+/// host-domain, and collection models — are declared by those models and are not mirrored here,
+/// and neither are three adjacent frontend vocabularies: the operational categories
+/// (`frontend-resource-limit`, `package-source-failure`, `internal`), the package-syntax verdicts
+/// (`syntax-valid`, `syntax-invalid`), and the generated resource-limit outcome spellings
+/// (`FrontendResourceCode`, such as `package-source-byte-limit` and `source-token-limit`).
 pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
     DiagnosticCodeDefinition {
         code: "affine-value-reuse",
