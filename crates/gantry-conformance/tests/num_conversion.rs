@@ -64,7 +64,7 @@ fn numeric_conversion_surface_is_published() {
         let published = if spelling.starts_with('`') {
             note.contains(spelling)
         } else {
-            specification.contains(spelling)
+            clause_body(&specification, anchor).contains(spelling)
         };
         assert!(published, "the clause and note publish `{spelling}`");
     }
