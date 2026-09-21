@@ -319,8 +319,8 @@ pub use prng::{
     PRNG_MIX_SECOND, PRNG_STATE_INCREMENT, PrngAlgorithmVersion,
 };
 // The Section 40 checked-integer algorithms are declaration-only primitives: exact canonical values
-// or exactly one declared deterministic failure, with no wrapping, saturation, coercion, implicit
-// widening, or host dependence.
+// or exactly one declared deterministic failure, with no wrapping, saturation, masking, coercion,
+// implicit widening, or host dependence.
 pub use numeric::{
     BinaryBitOperation, CheckedIntegerAlgorithm, NEGATE_WIRE_NAME, NumericConversion,
     UnaryBitOperation, float_to_int, int_to_float, negate,

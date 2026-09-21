@@ -1,6 +1,6 @@
 {
  "format": "gantry.concurrent-handle-ownership-evidence/v1",
- "specification_sha256": "a400f05d7076b09febf3a2ccbf36ad30bb45fe47ae8fb813a811f4bbf3f7af6b",
+ "specification_sha256": "04b1a42a636a7c5067179e778d889141031de2aef659e8fafaf08b163d8b1301",
  "issue": "GNT-CON-002",
  "entries": [
   {

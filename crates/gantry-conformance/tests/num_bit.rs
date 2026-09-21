@@ -1,9 +1,9 @@
 //! Conformance for the integer bit operations of `GNT-40.4`.
 //!
-//! The lane requires the specification and the note to publish the clause and the model to be exact
-//! and total: every admitted operation publishes exactly one canonical `Int` value for every
-//! canonical operand, no operation refuses, and none depends on a host facility, ambient width,
-//! timing, prior calls, or global state.
+//! The lane requires the specification and the note to publish the clause and the model to be exact:
+//! every admitted operation publishes exactly one canonical `Int` value when its exact result lies
+//! inside the canonical domain and refuses under `integer-overflow` when it does not, the two counts
+//! are total, and nothing depends on a host facility, timing, prior calls, or global state.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -175,6 +175,34 @@ fn integer_bit_operations_are_exact_and_refuse_out_of_domain() {
             Err(code) => assert_eq!(code, DeterministicEvaluationCode::IntegerOverflow),
         }
     }
+    let mut associative_triples = 0usize;
+    for first in operands {
+        for second in operands {
+            for third in operands {
+                for operation in [BinaryBitOperation::And, BinaryBitOperation::Or] {
+                    let grouped_left = operation
+                        .apply(element(first), element(second))
+                        .and_then(|partial| operation.apply(partial, element(third)));
+                    let grouped_right = operation
+                        .apply(element(second), element(third))
+                        .and_then(|partial| operation.apply(element(first), partial));
+                    if let (Ok(left_value), Ok(right_value)) = (&grouped_left, &grouped_right) {
+                        assert_eq!(
+                            left_value,
+                            right_value,
+                            "`{}` is associative wherever both groupings publish",
+                            operation.wire_name()
+                        );
+                        associative_triples += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        associative_triples > 0,
+        "the operand set publishes at least one associative triple"
+    );
     assert_eq!(
         UnaryBitOperation::LeadingZeros.apply(element(0)),
         Ok(element(64))
