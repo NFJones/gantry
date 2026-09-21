@@ -171,11 +171,15 @@ fn integer_bit_operations_are_exact_and_refuse_out_of_domain() {
             Err(code) => assert_eq!(code, DeterministicEvaluationCode::IntegerOverflow),
         }
     }
-    let mut associative_triples = 0usize;
+    let mut associative_triples = [0usize; 2];
+    let mut and_grouping_differentials = 0usize;
     for first in operands {
         for second in operands {
             for third in operands {
-                for operation in [BinaryBitOperation::And, BinaryBitOperation::Or] {
+                for (index, operation) in [BinaryBitOperation::And, BinaryBitOperation::Or]
+                    .into_iter()
+                    .enumerate()
+                {
                     let grouped_left = operation
                         .apply(element(first), element(second))
                         .and_then(|partial| operation.apply(partial, element(third)));
@@ -189,15 +193,23 @@ fn integer_bit_operations_are_exact_and_refuse_out_of_domain() {
                             "`{}` is associative wherever both groupings publish",
                             operation.wire_name()
                         );
-                        associative_triples += 1;
+                        associative_triples[index] += 1;
+                    } else if operation == BinaryBitOperation::And
+                        && grouped_left.is_ok() != grouped_right.is_ok()
+                    {
+                        and_grouping_differentials += 1;
                     }
                 }
             }
         }
     }
     assert!(
-        associative_triples > 0,
-        "the operand set publishes at least one associative triple"
+        associative_triples[0] > 0 && associative_triples[1] > 0,
+        "each binary bit operation publishes at least one associative triple"
+    );
+    assert!(
+        and_grouping_differentials > 0,
+        "`and` has a grouping-differential triple, which is why its associative claim is conditional"
     );
     assert_eq!(
         UnaryBitOperation::LeadingZeros.apply(element(0)),

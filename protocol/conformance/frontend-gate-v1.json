@@ -2,23 +2,23 @@
  "artifacts": [
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "91a6c67f881327923564e3856045a3f56549de47cfb366510a68170a630a8dff"
+   "sha256": "8d0b17111ac22f44f41e7c89405d94a404064374460268f382946903ea10291c"
   },
   {
    "path": "protocol/conformance/frontend-lexical-v1.json",
-   "sha256": "b2e3ac58d7ae096345495de4514a58e9c5cdefbc6ee3d8f27f7ba51c3db20a22"
+   "sha256": "b9a18966f25728a3ad4f8f6e03156174ea0c327b53802b270bf64e40f4ec67c4"
   },
   {
    "path": "protocol/conformance/frontend-package-v1.json",
-   "sha256": "c58d0ba81a68b469d7cfb622b0209cba9ef621a4a1c104f5e0e9c1241b722656"
+   "sha256": "2119e017d9f05ca1b2185e135c4aa3150aaa439956c4003303b4937879c42aed"
   },
   {
    "path": "protocol/conformance/frontend-parser-v1.json",
-   "sha256": "9c39d651aef0cc5f4747ab11bfafd52331c04af6321d5b0786cd77d644cb15a3"
+   "sha256": "da5eb38a79e58aa10d14c0b46fa4625465f13a69a1e70afd41b04a4f751149b3"
   },
   {
    "path": "protocol/conformance/source-substrate-gate-v1.json",
-   "sha256": "6c595e5ca7ed5f67bc3454a47ce78f475e4c9d7ce5fe7910ed7e1fc458553266"
+   "sha256": "2160e789923ab147a4aa3f8c9ce756b77786fb4ae8ac85b6ec3e7dd347abc723"
   },
   {
    "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -34,7 +34,7 @@
   },
   {
    "path": "protocol/goldens/profiles-v1.canonical.json",
-   "sha256": "786857bb3f4190633034471de38ec821a430b8dc4998342aa7ec4a28d476949d"
+   "sha256": "046e6824333e3807292dde91c24e6571932bbbbe186e4ecf499982657f6e0354"
   },
   {
    "path": "protocol/goldens/source-substrate-vectors-v1.json",
@@ -42,15 +42,15 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "d4c5f2d9234cb316e560f0d1c27770a25a649ff29de38088aa8a7ef37b37b092"
+   "sha256": "eb31a7a1ae11c91bec3ea876245dd89f27dfcbf70e396ea410836a0dabd520cd"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "3eaf87c3acd38fa053292bf1c5590f19cd9679f1857649381c87f5222922914a"
+   "sha256": "f064bf668a8e9a8d5755f6ea6c770b739ff5533ee3ad3f22109a0afbe96510fe"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
-   "sha256": "4fe5634844ce3e005715f8d0f13a2b9a7fd17dbd543f2b9bb7309586e50c8f8a"
+   "sha256": "47977a92764cd71994ba88b2244aaf46fb8671f81e267d7a33de847b209cac8e"
   },
   {
    "path": "protocol/schemas/activity-observation-v1.schema.json",
@@ -141,7 +141,7 @@
  "section14_excerpt_count": 51,
  "specification": {
   "path": "SPEC.md",
-  "sha256": "0a6b183d0358c60bc7c45d430332225aac50eb3d17c8f799a44b84f28a085988"
+  "sha256": "374e5040738a9c736bee19bf80b6a51412c5a2baf2da0b9f2447caf2eb8e619b"
  },
  "status": "verified",
  "validation_commands": [
