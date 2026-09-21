@@ -4,7 +4,7 @@ This note documents the pure text foundation `SPEC.md` Section 41 publishes: the
 value, its admission from octets, its scalar count and canonical octets, its scalar-boundary
 slicing, its two canonical normalization forms, its two full default case mappings over the pinned
 Unicode 16.0.0 data, its forward scalar traversal, its canonical scalar comparison, its canonical
-grapheme clusters, and an explicitly bounded text builder, over the scalar and octet contracts of
+grapheme clusters, its bounded text matching, and an explicitly bounded text builder, over the scalar and octet contracts of
 Section 35. It is documentation: it grants nothing, and where it and the specification differ the
 specification decides.
 
@@ -12,7 +12,7 @@ specification decides.
 
 | Clause | What it publishes |
 | --- | --- |
-| `GNT-41.0-text-foundation-scope` | the section scope, its purity, its model (`crates/gantry-ir/src/text.rs`) and evidence (`crates/gantry-conformance/tests/text_foundation.rs`, `crates/gantry-conformance/tests/text_normalization.rs`, `crates/gantry-conformance/tests/text_case_mapping.rs`, `crates/gantry-conformance/tests/text_builders.rs`, `crates/gantry-conformance/tests/text_traversal.rs`, `crates/gantry-conformance/tests/text_comparison.rs`, `crates/gantry-conformance/tests/text_graphemes.rs`) paths, and its two frozen diagnostics |
+| `GNT-41.0-text-foundation-scope` | the section scope, its purity, its model (`crates/gantry-ir/src/text.rs`) and evidence (`crates/gantry-conformance/tests/text_foundation.rs`, `crates/gantry-conformance/tests/text_normalization.rs`, `crates/gantry-conformance/tests/text_case_mapping.rs`, `crates/gantry-conformance/tests/text_builders.rs`, `crates/gantry-conformance/tests/text_traversal.rs`, `crates/gantry-conformance/tests/text_comparison.rs`, `crates/gantry-conformance/tests/text_graphemes.rs`, `crates/gantry-conformance/tests/text_matching.rs`) paths, and its five frozen diagnostics |
 | `GNT-41.1-canonical-text-values` | the canonical text value as a finite scalar sequence, exact UTF-8 admission, the scalar count and canonical octets, scalar-boundary slicing, and value immutability |
 | `GNT-41.2-canonical-text-normalization` | the two canonical normalization forms of a text value over the pinned Unicode 16.0.0 data: Normalization Form D (`nfd`) and Normalization Form C (`nfc`), totality, idempotence, non-mutation, and the boundary that admission never normalizes |
 | `GNT-41.3-canonical-text-case-mapping` | the two locale-independent full default case mappings of a text value over the pinned Unicode 16.0.0 data: the lowercase mapping (`lower`) and the uppercase mapping (`upper`), totality, per-scalar sequence order, and the boundary that a mapping is neither a case fold nor an identity |
@@ -20,6 +20,7 @@ specification decides.
 | `GNT-41.5-canonical-text-traversal` | forward scalar traversal: a cursor that publishes a value's scalars one at a time in sequence order with a remaining count, never publishes a partial scalar, never modifies the value, and holds no identity |
 | `GNT-41.6-canonical-text-comparison` | the canonical three-way comparison of two text values that their identity already decides, published as `less`, `equal`, or `greater`: `equal` exactly when the values are equal, otherwise the first differing scalar decides, a proper prefix orders first, and the comparison is total, antisymmetric, transitive, case-sensitive, and never normalizes |
 | `GNT-41.7-canonical-grapheme-clusters` | forward extended grapheme cluster segmentation over the pinned `Grapheme_Cluster_Break`, `Extended_Pictographic`, and `Indic_Conjunct_Break` data: a cursor that publishes each cluster as a text value in sequence order with a remaining count, an exact partition of the value's scalar sequence, no partial or empty cluster, and segmentation that never normalizes or case-maps the value it segments |
+| `GNT-41.8-bounded-text-matching` | bounded pattern matching over admitted patterns: `Pattern::admit` under a caller-declared step budget, `is_match`, and the leftmost-longest `find_first` span as a `TextRange` (`start`, `end`, `is_empty`, `slice`), with exact admission and bound refusals (`text-pattern-syntax`, `text-pattern-bound`), atomic refusal when a match exhausts its budget (`text-match-budget`), and matching that never normalizes or case-maps |
 
 ## Registered diagnostics
 
@@ -27,6 +28,9 @@ specification decides.
 | --- | --- | --- |
 | `text-invalid-utf8` | `GNT-41.1-canonical-text-values` | an octet sequence is not well-formed UTF-8; the refusal names the zero-based octet index at which well-formed decoding fails |
 | `text-builder-bound` | `GNT-41.4-canonical-text-builders` | appending one text value would push the builder past its declared octet bound; the refusal names the appended and accumulated octet counts and the bound, and the builder is unchanged |
+| `text-pattern-syntax` | `GNT-41.8-bounded-text-matching` | a pattern construct is not admitted by the declared pattern syntax; the refusal names the scalar position at which admission failed |
+| `text-pattern-bound` | `GNT-41.8-bounded-text-matching` | a pattern exceeds a declared pattern bound or the declared step budget is zero; the refusal names the bound |
+| `text-match-budget` | `GNT-41.8-bounded-text-matching` | a match spent more steps than the declared step budget; no span, partial span, or prefix state is published |
 
 ## Model surface (`crates/gantry-ir/src/text.rs`)
 
@@ -42,7 +46,7 @@ canonical forms of `GNT-41.2-canonical-text-normalization`. `TextValue::map_case
 `GNT-41.4-canonical-text-builders`. `TextValue::scalars` and `TextScalars` (`next_scalar`,
 `remaining`) publish exactly the forward cursor of `GNT-41.5-canonical-text-traversal`.
 `TextValue::compare` and `TextOrdering` (`less`, `equal`, `greater`) publish exactly the canonical
-comparison of `GNT-41.6-canonical-text-comparison`. `TextValue::graphemes` and `TextGraphemes` (`next_cluster`, `remaining`) publish exactly the forward extended grapheme cluster cursor of `GNT-41.7-canonical-grapheme-clusters`, whose clusters are decided by `gantry_core::unicode` `grapheme_cluster_boundaries` over the pinned data. `TEXT_CLAUSES` names the eight declared clause
+comparison of `GNT-41.6-canonical-text-comparison`. `TextValue::graphemes` and `TextGraphemes` (`next_cluster`, `remaining`) publish exactly the forward extended grapheme cluster cursor of `GNT-41.7-canonical-grapheme-clusters`, whose clusters are decided by `gantry_core::unicode` `grapheme_cluster_boundaries` over the pinned data. `Pattern::admit`, `Pattern::steps`, `Pattern::is_match`, `Pattern::find_first`, `TextRange` (`start`, `end`, `is_empty`, `slice`), and the declared bounds `PATTERN_SCALAR_BOUND`, `PATTERN_REPEAT_BOUND`, and `PATTERN_INSTRUCTION_BOUND` publish exactly the bounded matching of `GNT-41.8-bounded-text-matching`. `TEXT_CLAUSES` names the nine declared clause
 anchors in specification order.
 
 ## Declared non-claims
@@ -72,4 +76,4 @@ cursor identity, comparison, ordering, serialization, or durability is published
 published only by `GNT-41.6-canonical-text-comparison`, and only as the canonical scalar
 comparison: no locale-aware collation or ordering, no comparison that consults a locale, a catalog,
 or host collation data, no case-insensitive or fold-based comparison, no comparison that normalizes
-its operands first, and no collation or sort keys are published. Grapheme clusters are published only by `GNT-41.7-canonical-grapheme-clusters`, and only as forward extended grapheme cluster segmentation: no cluster identity beyond the text-value identity, no word, sentence, or line segmentation, no tailoring, dictionary, or locale-aware segmentation, no normalization or case mapping before segmentation, and no work limit or cancellation safe point is published.
+its operands first, and no collation or sort keys are published. Grapheme clusters are published only by `GNT-41.7-canonical-grapheme-clusters`, and only as forward extended grapheme cluster segmentation: no cluster identity beyond the text-value identity, no word, sentence, or line segmentation, no tailoring, dictionary, or locale-aware segmentation, no normalization or case mapping before segmentation, and no work limit or cancellation safe point is published. Bounded matching is published only by `GNT-41.8-bounded-text-matching`, and only as matching over the declared pattern syntax: no host regular-expression semantics, no capture groups, captures, backreferences, or replacement template, no anchors or lookaround, no case-insensitive, locale-aware, or Unicode-property matching, no matching that normalizes or case-maps first, no streaming, incremental, or resumable match, no cancellation safe point or suspension, no work, memory, or time limit beyond the declared step budget, and no resource accounting, quota, or release rule is published.

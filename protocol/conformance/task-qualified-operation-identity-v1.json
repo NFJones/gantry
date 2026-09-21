@@ -1,6 +1,6 @@
 {
  "format": "gantry.task-qualified-operation-identity-evidence/v1",
- "specification_sha256": "3bf6127bb61efa5fe3b00de08d5ca823b7647694ddb1412d0d2d110606b3eb4b",
+ "specification_sha256": "97ec5b288bc3a8ea9c166c0925e7b4c149f092e15de051eb67eb43d242e62226",
  "issue": "GNT-ASYNC-ID-001",
  "capabilities": [
   {

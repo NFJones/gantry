@@ -1,18 +1,20 @@
 //! The pure text foundation of `GNT-41.0-text-foundation-scope`,
 //! `GNT-41.1-canonical-text-values`, `GNT-41.2-canonical-text-normalization`,
 //! `GNT-41.3-canonical-text-case-mapping`, `GNT-41.4-canonical-text-builders`,
-//! `GNT-41.5-canonical-text-traversal`, `GNT-41.6-canonical-text-comparison`, and
-//! `GNT-41.7-canonical-grapheme-clusters`: canonical text values as finite sequences of Unicode
-//! scalar values over the Section 35 scalar and octet contracts, their exact admission from octets,
-//! their scalar count and canonical UTF-8 octets, their scalar-boundary slicing, their two
-//! canonical normalization forms, their two full default case mappings over the pinned Unicode
-//! 16.0.0 data, an explicitly bounded builder that publishes one text value, a forward cursor that
-//! publishes the scalars of a value one at a time, the canonical three-way comparison their
-//! identity already decides, and a forward cursor that publishes their extended grapheme clusters.
+//! `GNT-41.5-canonical-text-traversal`, `GNT-41.6-canonical-text-comparison`,
+//! `GNT-41.7-canonical-grapheme-clusters`, and `GNT-41.8-bounded-text-matching`: canonical text
+//! values as finite sequences of Unicode scalar values over the Section 35 scalar and octet
+//! contracts, their exact admission from octets, their scalar count and canonical UTF-8 octets,
+//! their scalar-boundary slicing, their two canonical normalization forms, their two full default
+//! case mappings over the pinned Unicode 16.0.0 data, an explicitly bounded builder that publishes
+//! one text value, a forward cursor that publishes the scalars of a value one at a time, the
+//! canonical three-way comparison their identity already decides, a forward cursor that publishes
+//! their extended grapheme clusters, and an explicitly bounded matcher over admitted patterns.
 //!
 //! The model is pure: it consumes no host locale, host encoding, ambient text facility, timing, or
 //! global mutable state, and it declares no word, sentence, or line segmentation, no case folding,
-//! no formatting, parsing, or interpolation, no regular expression, no locale value or catalog, no
+//! no formatting, parsing, or interpolation beyond the declared pattern syntax, no host
+//! regular-expression semantics, captures, or backtracking, no locale value or catalog, no
 //! compatibility normalization form, and no boundary schema, recovery, or durable behavior.
 
 use std::cmp::Ordering;
@@ -25,8 +27,8 @@ use gantry_core::unicode::{
 use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
-/// (`GNT-41.0` through `GNT-41.7`).
-pub const TEXT_CLAUSES: [&str; 8] = [
+/// (`GNT-41.0` through `GNT-41.8`).
+pub const TEXT_CLAUSES: [&str; 9] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -35,6 +37,7 @@ pub const TEXT_CLAUSES: [&str; 8] = [
     "GNT-41.5-canonical-text-traversal",
     "GNT-41.6-canonical-text-comparison",
     "GNT-41.7-canonical-grapheme-clusters",
+    "GNT-41.8-bounded-text-matching",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -44,11 +47,23 @@ pub enum TextDiagnosticCode {
     InvalidUtf8,
     /// `GNT-41.4`: appending to a builder would exceed its declared octet bound.
     BuilderBound,
+    /// `GNT-41.8`: a pattern is not well formed under the declared pattern syntax.
+    PatternSyntax,
+    /// `GNT-41.8`: a pattern exceeds a declared pattern bound.
+    PatternBound,
+    /// `GNT-41.8`: a match exhausted the caller-declared step budget.
+    MatchBudget,
 }
 
 impl TextDiagnosticCode {
     /// Every declared diagnostic, in declaration order.
-    pub const ALL: [Self; 2] = [Self::InvalidUtf8, Self::BuilderBound];
+    pub const ALL: [Self; 5] = [
+        Self::InvalidUtf8,
+        Self::BuilderBound,
+        Self::PatternSyntax,
+        Self::PatternBound,
+        Self::MatchBudget,
+    ];
 
     /// Returns the registered refusal spelling.
     #[must_use]
@@ -56,6 +71,9 @@ impl TextDiagnosticCode {
         match self {
             Self::InvalidUtf8 => "text-invalid-utf8",
             Self::BuilderBound => "text-builder-bound",
+            Self::PatternSyntax => "text-pattern-syntax",
+            Self::PatternBound => "text-pattern-bound",
+            Self::MatchBudget => "text-match-budget",
         }
     }
 
@@ -65,6 +83,9 @@ impl TextDiagnosticCode {
         match self {
             Self::InvalidUtf8 => "GNT-41.1-canonical-text-values",
             Self::BuilderBound => "GNT-41.4-canonical-text-builders",
+            Self::PatternSyntax => "GNT-41.8-bounded-text-matching",
+            Self::PatternBound => "GNT-41.8-bounded-text-matching",
+            Self::MatchBudget => "GNT-41.8-bounded-text-matching",
         }
     }
 }
@@ -486,5 +507,578 @@ impl TextValue {
         offsets.extend(self.text.char_indices().map(|(offset, _)| offset));
         offsets.push(self.text.len());
         offsets
+    }
+}
+
+/// The declared maximum number of scalar values an admitted pattern may hold
+/// (`GNT-41.8-bounded-text-matching`).
+pub const PATTERN_SCALAR_BOUND: usize = 4096;
+
+/// The declared maximum number of instructions an admitted pattern's program may hold
+/// (`GNT-41.8-bounded-text-matching`).
+pub const PATTERN_INSTRUCTION_BOUND: usize = 16_384;
+
+/// The declared maximum repetition count a bounded repetition may state
+/// (`GNT-41.8-bounded-text-matching`).
+pub const PATTERN_REPEAT_BOUND: u32 = 255;
+
+/// One published scalar match span of `GNT-41.8-bounded-text-matching`: a half-open range of scalar
+/// positions whose start is inclusive and whose end is exclusive.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TextRange {
+    start: usize,
+    end: usize,
+}
+
+impl TextRange {
+    /// Returns the inclusive scalar position at which the span starts.
+    #[must_use]
+    pub fn start(self) -> usize {
+        self.start
+    }
+
+    /// Returns the exclusive scalar position at which the span ends.
+    #[must_use]
+    pub fn end(self) -> usize {
+        self.end
+    }
+
+    /// Returns whether the span holds no scalar.
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        self.start == self.end
+    }
+
+    /// Publishes the spanned scalars as a text value of `GNT-41.1-canonical-text-values`, or
+    /// nothing when the span is not a scalar-boundary range of `value`.
+    #[must_use]
+    pub fn slice(self, value: &TextValue) -> Option<TextValue> {
+        value.slice_scalars(self.start, self.end)
+    }
+}
+
+/// One admitted bounded pattern of `GNT-41.8-bounded-text-matching`.
+///
+/// A pattern holds a compiled program over a finite state machine and the caller-declared step
+/// budget its matches may spend, so matching is decided by the pattern and the text alone and never
+/// consults a locale, a host regular-expression engine, or global mutable state.
+#[derive(Clone, Debug)]
+pub struct Pattern {
+    program: Vec<Instruction>,
+    steps: u32,
+}
+
+#[derive(Clone, Debug)]
+enum Instruction {
+    Scalar(char),
+    AnyScalar,
+    Class {
+        ranges: Vec<(char, char)>,
+        negated: bool,
+    },
+    Split(usize, usize),
+    Jump(usize),
+    Match,
+}
+
+#[derive(Clone, Debug)]
+enum Node {
+    Empty,
+    Atom(Instruction),
+    Concat(Vec<Node>),
+    Alternate(Vec<Node>),
+    Repeat {
+        node: Box<Node>,
+        min: u32,
+        max: Option<u32>,
+    },
+}
+
+impl Pattern {
+    /// Admits one pattern of `GNT-41.8-bounded-text-matching` under a caller-declared step budget.
+    ///
+    /// A pattern is admitted exactly when it is well formed under the declared pattern syntax and
+    /// within every declared pattern bound and the declared budget is not zero; an ill-formed
+    /// construct is refused under `text-pattern-syntax` naming the scalar position at which
+    /// admission failed, and a pattern beyond a declared bound or a zero budget is refused under
+    /// `text-pattern-bound`. Admission compiles the pattern once and never matches it.
+    pub fn admit(pattern: &TextValue, steps: u32) -> Result<Self, TextError> {
+        if steps == 0 {
+            return Err(TextError::new(
+                TextDiagnosticCode::PatternBound,
+                "the declared step budget is zero",
+            ));
+        }
+        let count = pattern.scalar_count();
+        if count > PATTERN_SCALAR_BOUND {
+            return Err(TextError::new(
+                TextDiagnosticCode::PatternBound,
+                format!(
+                    "the pattern holds {count} scalars, beyond the declared bound {PATTERN_SCALAR_BOUND}"
+                ),
+            ));
+        }
+        let mut parser = PatternParser {
+            scalars: pattern.text.chars().collect(),
+            index: 0,
+        };
+        let node = parser.parse_alternation()?;
+        if parser.index != parser.scalars.len() {
+            return Err(parser.syntax_error(parser.index, "unmatched closing construct"));
+        }
+        let mut program = Vec::new();
+        compile_node(&node, &mut program);
+        program.push(Instruction::Match);
+        if program.len() > PATTERN_INSTRUCTION_BOUND {
+            return Err(TextError::new(
+                TextDiagnosticCode::PatternBound,
+                format!(
+                    "the compiled program holds {} instructions, beyond the declared bound {PATTERN_INSTRUCTION_BOUND}",
+                    program.len()
+                ),
+            ));
+        }
+        Ok(Self { program, steps })
+    }
+
+    /// Returns the caller-declared step budget of the pattern.
+    #[must_use]
+    pub fn steps(&self) -> u32 {
+        self.steps
+    }
+
+    /// Returns whether some scalar span of `text` matches the pattern
+    /// (`GNT-41.8-bounded-text-matching`).
+    pub fn is_match(&self, text: &TextValue) -> Result<bool, TextError> {
+        Ok(self.find_first(text)?.is_some())
+    }
+
+    /// Publishes the leftmost-longest match span of `text`, or nothing when no span matches
+    /// (`GNT-41.8-bounded-text-matching`).
+    ///
+    /// The span is the one whose start is the smallest scalar position at which any match begins
+    /// and, among the matches at that position, whose end is the largest; a match that spends more
+    /// steps than the declared budget is refused under `text-match-budget` rather than published
+    /// partially, so every call either publishes one exact span or one refusal.
+    pub fn find_first(&self, text: &TextValue) -> Result<Option<TextRange>, TextError> {
+        let scalars: Vec<char> = text.text.chars().collect();
+        let mut simulator = Simulator::new(self.program.len(), self.steps);
+        for start in 0..=scalars.len() {
+            if let Some(end) = self.match_from(&scalars, start, &mut simulator)? {
+                return Ok(Some(TextRange { start, end }));
+            }
+        }
+        Ok(None)
+    }
+
+    fn match_from(
+        &self,
+        scalars: &[char],
+        start: usize,
+        simulator: &mut Simulator,
+    ) -> Result<Option<usize>, TextError> {
+        let mut current = Vec::new();
+        simulator.generation()?;
+        simulator.closure(&self.program, &mut current, 0)?;
+        let mut best = match_position(&self.program, &current, start);
+        let mut position = start;
+        while position < scalars.len() && !current.is_empty() {
+            let mut next = Vec::new();
+            simulator.generation()?;
+            for state in &current {
+                let advances = match &self.program[*state] {
+                    Instruction::Scalar(scalar) => *scalar == scalars[position],
+                    Instruction::AnyScalar => true,
+                    Instruction::Class { ranges, negated } => {
+                        let inside = ranges.iter().any(|(low, high)| {
+                            scalars[position] >= *low && scalars[position] <= *high
+                        });
+                        inside != *negated
+                    }
+                    Instruction::Split(_, _) | Instruction::Jump(_) | Instruction::Match => false,
+                };
+                if advances {
+                    simulator.closure(&self.program, &mut next, *state + 1)?;
+                }
+            }
+            position += 1;
+            current = next;
+            if let Some(end) = match_position(&self.program, &current, position) {
+                best = Some(end);
+            }
+        }
+        Ok(best)
+    }
+}
+
+fn match_position(program: &[Instruction], states: &[usize], position: usize) -> Option<usize> {
+    states
+        .iter()
+        .any(|state| matches!(program[*state], Instruction::Match))
+        .then_some(position)
+}
+
+struct Simulator {
+    stamps: Vec<u32>,
+    generation: u32,
+    budget: u32,
+}
+
+impl Simulator {
+    fn new(states: usize, budget: u32) -> Self {
+        Self {
+            stamps: vec![0; states],
+            generation: 0,
+            budget,
+        }
+    }
+
+    fn generation(&mut self) -> Result<(), TextError> {
+        self.generation = self.generation.wrapping_add(1);
+        if self.generation == 0 {
+            self.stamps.fill(0);
+            self.generation = 1;
+        }
+        Ok(())
+    }
+
+    fn closure(
+        &mut self,
+        program: &[Instruction],
+        list: &mut Vec<usize>,
+        start: usize,
+    ) -> Result<(), TextError> {
+        let mut stack = vec![start];
+        while let Some(state) = stack.pop() {
+            if self.stamps[state] == self.generation {
+                continue;
+            }
+            self.stamps[state] = self.generation;
+            self.budget = self.budget.checked_sub(1).ok_or_else(|| {
+                TextError::new(
+                    TextDiagnosticCode::MatchBudget,
+                    "the match exhausted its declared step budget",
+                )
+            })?;
+            match &program[state] {
+                Instruction::Jump(target) => stack.push(*target),
+                Instruction::Split(first, second) => {
+                    stack.push(*first);
+                    stack.push(*second);
+                }
+                Instruction::Scalar(_) | Instruction::AnyScalar | Instruction::Class { .. } => {
+                    list.push(state);
+                }
+                Instruction::Match => list.push(state),
+            }
+        }
+        Ok(())
+    }
+}
+
+struct PatternParser {
+    scalars: Vec<char>,
+    index: usize,
+}
+
+impl PatternParser {
+    fn syntax_error(&self, index: usize, detail: &str) -> TextError {
+        TextError::new(
+            TextDiagnosticCode::PatternSyntax,
+            format!("scalar position {index} is not admitted: {detail}"),
+        )
+    }
+
+    fn bound_error(&self, index: usize, detail: &str) -> TextError {
+        TextError::new(
+            TextDiagnosticCode::PatternBound,
+            format!("scalar position {index} exceeds a declared bound: {detail}"),
+        )
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.scalars.get(self.index).copied()
+    }
+
+    fn parse_alternation(&mut self) -> Result<Node, TextError> {
+        let mut branches = vec![self.parse_concat()?];
+        while self.peek() == Some('|') {
+            self.index += 1;
+            branches.push(self.parse_concat()?);
+        }
+        if branches.len() == 1 {
+            Ok(branches.pop().unwrap_or(Node::Empty))
+        } else {
+            Ok(Node::Alternate(branches))
+        }
+    }
+
+    fn parse_concat(&mut self) -> Result<Node, TextError> {
+        let mut items = Vec::new();
+        while let Some(scalar) = self.peek() {
+            if scalar == '|' || scalar == ')' {
+                break;
+            }
+            items.push(self.parse_repeat()?);
+        }
+        if items.is_empty() {
+            Ok(Node::Empty)
+        } else if items.len() == 1 {
+            Ok(items.pop().unwrap_or(Node::Empty))
+        } else {
+            Ok(Node::Concat(items))
+        }
+    }
+
+    fn parse_repeat(&mut self) -> Result<Node, TextError> {
+        let atom = self.parse_atom()?;
+        let (min, max) = match self.peek() {
+            Some('*') => {
+                self.index += 1;
+                (0, None)
+            }
+            Some('+') => {
+                self.index += 1;
+                (1, None)
+            }
+            Some('?') => {
+                self.index += 1;
+                (0, Some(1))
+            }
+            Some('{') => self.parse_bounded_repeat()?,
+            _ => return Ok(atom),
+        };
+        Ok(Node::Repeat {
+            node: Box::new(atom),
+            min,
+            max,
+        })
+    }
+
+    fn parse_bounded_repeat(&mut self) -> Result<(u32, Option<u32>), TextError> {
+        let open = self.index;
+        self.index += 1;
+        let min = self.parse_repeat_count(open)?;
+        let max = if self.peek() == Some(',') {
+            self.index += 1;
+            if self.peek() == Some('}') {
+                None
+            } else {
+                Some(self.parse_repeat_count(open)?)
+            }
+        } else {
+            Some(min)
+        };
+        if self.peek() != Some('}') {
+            return Err(self.syntax_error(self.index, "a bounded repetition needs a closing brace"));
+        }
+        self.index += 1;
+        if let Some(maximum) = max {
+            if maximum < min {
+                return Err(self.syntax_error(
+                    open,
+                    "a bounded repetition needs a maximum no smaller than its minimum",
+                ));
+            }
+            if maximum > PATTERN_REPEAT_BOUND {
+                return Err(self.bound_error(
+                    open,
+                    &format!("a repetition of {maximum} exceeds the declared bound {PATTERN_REPEAT_BOUND}"),
+                ));
+            }
+        }
+        if min > PATTERN_REPEAT_BOUND {
+            return Err(self.bound_error(
+                open,
+                &format!("a repetition of {min} exceeds the declared bound {PATTERN_REPEAT_BOUND}"),
+            ));
+        }
+        Ok((min, max))
+    }
+
+    fn parse_repeat_count(&mut self, open: usize) -> Result<u32, TextError> {
+        let start = self.index;
+        let mut value: u32 = 0;
+        while let Some(scalar) = self.peek() {
+            let Some(digit) = scalar.to_digit(10) else {
+                break;
+            };
+            value = value
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
+                .unwrap_or(u32::MAX);
+            self.index += 1;
+        }
+        if start == self.index {
+            return Err(self.syntax_error(open, "a bounded repetition needs a decimal count"));
+        }
+        Ok(value)
+    }
+
+    fn parse_atom(&mut self) -> Result<Node, TextError> {
+        let Some(scalar) = self.peek() else {
+            return Err(self.syntax_error(self.index, "the pattern ends where an atom is required"));
+        };
+        match scalar {
+            '(' => {
+                self.index += 1;
+                let node = self.parse_alternation()?;
+                if self.peek() != Some(')') {
+                    return Err(
+                        self.syntax_error(self.index, "an open group needs a closing parenthesis")
+                    );
+                }
+                self.index += 1;
+                Ok(node)
+            }
+            '[' => self.parse_class(),
+            '.' => {
+                self.index += 1;
+                Ok(Node::Atom(Instruction::AnyScalar))
+            }
+            '\\' => {
+                let start = self.index;
+                self.index += 1;
+                let Some(escaped) = self.peek() else {
+                    return Err(self.syntax_error(start, "an escape needs an escaped scalar"));
+                };
+                if !matches!(
+                    escaped,
+                    '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '|' | '\\' | '{' | '}'
+                ) {
+                    return Err(
+                        self.syntax_error(start, "only a pattern metacharacter may be escaped")
+                    );
+                }
+                self.index += 1;
+                Ok(Node::Atom(Instruction::Scalar(escaped)))
+            }
+            '*' | '+' | '?' | '{' => {
+                Err(self.syntax_error(self.index, "a quantifier needs a preceding atom"))
+            }
+            ')' => Err(self.syntax_error(self.index, "an unmatched closing parenthesis")),
+            _ => {
+                self.index += 1;
+                Ok(Node::Atom(Instruction::Scalar(scalar)))
+            }
+        }
+    }
+
+    fn parse_class(&mut self) -> Result<Node, TextError> {
+        let open = self.index;
+        self.index += 1;
+        let negated = self.peek() == Some('^');
+        if negated {
+            self.index += 1;
+        }
+        let mut ranges = Vec::new();
+        while let Some(scalar) = self.peek() {
+            if scalar == ']' {
+                break;
+            }
+            let low = self.parse_class_scalar(open)?;
+            if self.peek() == Some('-') && self.scalars.get(self.index + 1).copied() != Some(']') {
+                self.index += 1;
+                let high = self.parse_class_scalar(open)?;
+                if high < low {
+                    return Err(self.syntax_error(open, "a class range needs an ascending order"));
+                }
+                ranges.push((low, high));
+            } else {
+                ranges.push((low, low));
+            }
+        }
+        if self.peek() != Some(']') {
+            return Err(self.syntax_error(open, "an open class needs a closing bracket"));
+        }
+        self.index += 1;
+        if ranges.is_empty() {
+            return Err(self.syntax_error(open, "a class needs at least one scalar"));
+        }
+        Ok(Node::Atom(Instruction::Class { ranges, negated }))
+    }
+
+    fn parse_class_scalar(&mut self, open: usize) -> Result<char, TextError> {
+        let Some(scalar) = self.peek() else {
+            return Err(self.syntax_error(open, "an open class needs a closing bracket"));
+        };
+        if scalar == '\\' {
+            self.index += 1;
+            let Some(escaped) = self.peek() else {
+                return Err(self.syntax_error(open, "an escape needs an escaped scalar"));
+            };
+            if !matches!(escaped, ']' | '-' | '\\' | '^') {
+                return Err(self.syntax_error(
+                    self.index - 1,
+                    "only a class metacharacter may be escaped in a class",
+                ));
+            }
+            self.index += 1;
+            return Ok(escaped);
+        }
+        self.index += 1;
+        Ok(scalar)
+    }
+}
+
+fn compile_node(node: &Node, program: &mut Vec<Instruction>) {
+    match node {
+        Node::Empty => {}
+        Node::Atom(instruction) => program.push(instruction.clone()),
+        Node::Concat(items) => {
+            for item in items {
+                compile_node(item, program);
+            }
+        }
+        Node::Alternate(branches) => {
+            let mut jumps = Vec::new();
+            for (index, branch) in branches.iter().enumerate() {
+                if index + 1 == branches.len() {
+                    compile_node(branch, program);
+                } else {
+                    let split = program.len();
+                    program.push(Instruction::Split(0, 0));
+                    let body = program.len();
+                    compile_node(branch, program);
+                    let jump = program.len();
+                    program.push(Instruction::Jump(0));
+                    jumps.push(jump);
+                    program[split] = Instruction::Split(body, jump + 1);
+                }
+            }
+            let after = program.len();
+            for jump in jumps {
+                program[jump] = Instruction::Jump(after);
+            }
+        }
+        Node::Repeat { node, min, max } => {
+            for _ in 0..*min {
+                compile_node(node, program);
+            }
+            match max {
+                None => {
+                    let split = program.len();
+                    program.push(Instruction::Split(0, 0));
+                    let body = program.len();
+                    compile_node(node, program);
+                    program.push(Instruction::Jump(split));
+                    let after = program.len();
+                    program[split] = Instruction::Split(body, after);
+                }
+                Some(maximum) => {
+                    let mut splits = Vec::new();
+                    for _ in *min..*maximum {
+                        let split = program.len();
+                        program.push(Instruction::Split(0, 0));
+                        splits.push(split);
+                        compile_node(node, program);
+                    }
+                    let after = program.len();
+                    for split in splits {
+                        program[split] = Instruction::Split(split + 1, after);
+                    }
+                }
+            }
+        }
     }
 }

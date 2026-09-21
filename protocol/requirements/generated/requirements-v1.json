@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "3bf6127bb61efa5fe3b00de08d5ca823b7647694ddb1412d0d2d110606b3eb4b",
-  "byte_length": 1093398,
-  "line_count": 15687,
+  "specification_sha256": "97ec5b288bc3a8ea9c166c0925e7b4c149f092e15de051eb67eb43d242e62226",
+  "byte_length": 1098046,
+  "line_count": 15691,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15687,
-      "sha256": "a00c39296f690c8399fd4b7895bfd5ef0d057842438e3ae19cd363c1d4f08975",
+      "end_line": 15691,
+      "sha256": "23db0f43fe5ac2a610db82c13ea1fb64ec89a6a3dafea282415b2847d6af68a3",
       "rationale": null
     }
   ],
@@ -42957,11 +42957,11 @@
       "id": "GNT-41.0-text-foundation-scope",
       "span_start_line": 15654,
       "span_end_line": 15660,
-      "span_sha256": "6a55cb20de9e5a5c4b6b693efbb582335496b72558315818cb6bceccfdc3b188",
+      "span_sha256": "12f1240b9fdbb0dc35facb321c6e0b0ee39b41792cd08c76f0595db6b3d039f3",
       "anchor_line": 15657,
       "body_start_line": 15658,
       "body_end_line": 15660,
-      "body_sha256": "e1a4e1d421baad025fe88c3c348ffcc88aaabd5b2038c52362ef57d1cda9014c",
+      "body_sha256": "c956404dd954e83743e006f73ae7a9ef4c0a5edb6f67f149893fdea9059a00df",
       "profiles": [
         "analyzer"
       ],
@@ -43248,12 +43248,12 @@
     {
       "id": "GNT-41.7-canonical-grapheme-clusters",
       "span_start_line": 15685,
-      "span_end_line": 15687,
-      "span_sha256": "564b44e237f249c17055b2d7990e6aaea9330a80c0e77900c7764bb6f957669b",
+      "span_end_line": 15688,
+      "span_sha256": "913dca8f608b745ab0cadcd21abce0eb91d2bfc9a537a8cadf0890755929d051",
       "anchor_line": 15685,
       "body_start_line": 15686,
-      "body_end_line": 15687,
-      "body_sha256": "34b02178fc03ec265b92d5aab1dc34ccf81b076a91ef93f889529b511a0d96af",
+      "body_end_line": 15688,
+      "body_sha256": "b55a56ad0ed4ecc5b644daf7ecf81100d9e11b40825cf59e02310666506fb9b2",
       "profiles": [
         "analyzer"
       ],
@@ -43265,7 +43265,7 @@
         {
           "key": "clause-001",
           "start_line": 15686,
-          "end_line": 15687,
+          "end_line": 15688,
           "profiles": [
             "analyzer"
           ],
@@ -43280,6 +43280,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_graphemes.rs#grapheme_clause_publishes_the_forward_cluster_cursor",
                 "crates/gantry-conformance/tests/text_graphemes.rs#grapheme_clusters_match_the_pinned_unicode_vectors"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.8-bounded-text-matching",
+      "span_start_line": 15689,
+      "span_end_line": 15691,
+      "span_sha256": "25c3c34d1b5e804fe56836536fe3a809a0fb3ee8fbe268f72bfefa94b5e6634c",
+      "anchor_line": 15689,
+      "body_start_line": 15690,
+      "body_end_line": 15691,
+      "body_sha256": "1b2ce07dcdf2889f1e2d9f44f6282a7b88420133316a8ccebf9656219dd35c20",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15690,
+          "end_line": 15691,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_matching.rs#matching_clause_publishes_the_bounded_pattern_surface",
+                "crates/gantry-conformance/tests/text_matching.rs#matching_refuses_a_budget_exhausting_match"
               ],
               "rationale": null
             }

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{TEXT_CLAUSES, TextBuilder, TextDiagnosticCode, TextValue};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 8] = [
+const EXPECTED_CLAUSES: [&str; 9] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -16,6 +16,7 @@ const EXPECTED_CLAUSES: [&str; 8] = [
     "GNT-41.5-canonical-text-traversal",
     "GNT-41.6-canonical-text-comparison",
     "GNT-41.7-canonical-grapheme-clusters",
+    "GNT-41.8-bounded-text-matching",
 ];
 const BUILDER_CLAUSE: &str = "GNT-41.4-canonical-text-builders";
 
@@ -25,7 +26,13 @@ fn builder_clause_publishes_the_bounded_builder() {
     assert_eq!(TEXT_CLAUSES, EXPECTED_CLAUSES);
     assert_eq!(
         TextDiagnosticCode::ALL.map(TextDiagnosticCode::spelling),
-        ["text-invalid-utf8", "text-builder-bound"]
+        [
+            "text-invalid-utf8",
+            "text-builder-bound",
+            "text-pattern-syntax",
+            "text-pattern-bound",
+            "text-match-budget",
+        ]
     );
     let body = clause_body(&specification, BUILDER_CLAUSE);
     for declaration in [
