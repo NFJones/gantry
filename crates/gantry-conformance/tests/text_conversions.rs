@@ -210,6 +210,45 @@ fn read_workspace_file(relative: &str) -> String {
 }
 
 #[test]
+fn admissions_refuse_the_first_condition_the_sequence_meets() {
+    // A bound crossed inside the decodable prefix precedes the malformed octet that ends it.
+    let mut crossed = vec![b'a'; TEXT_VALUE_SCALAR_BOUND + 1];
+    crossed.push(0x80);
+    let error = TextValue::from_octets(&crossed)
+        .err()
+        .unwrap_or_else(|| panic!("a sequence over the bound and then malformed is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::ValueBound);
+    assert_eq!(
+        error.detail(),
+        format!(
+            "the admitted value would hold {} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}",
+            TEXT_VALUE_SCALAR_BOUND + 1
+        )
+    );
+    // A malformed octet before the bound is reached keeps its own refusal.
+    let mut early = vec![b'a'; 4];
+    early.push(0x80);
+    let error = TextValue::from_octets(&early)
+        .err()
+        .unwrap_or_else(|| panic!("a malformed sequence inside the bound is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::InvalidUtf8);
+    // Both remaining admissions admit exactly the declared bound.
+    let at_bound_octets = vec![0x41_u8; TEXT_VALUE_SCALAR_BOUND];
+    assert!(
+        TextValue::from_lossless_octets(&at_bound_octets).is_ok(),
+        "the lossless admission admits exactly the declared bound"
+    );
+    let at_bound_units = vec![0x0061_u16; TEXT_VALUE_SCALAR_BOUND];
+    assert_eq!(
+        TextValue::from_utf16_code_units(&at_bound_units)
+            .map(|value| value.scalar_count())
+            .ok(),
+        Some(TEXT_VALUE_SCALAR_BOUND),
+        "the UTF-16 admission admits exactly the declared bound"
+    );
+}
+
+#[test]
 fn utf16_admission_counts_the_value_while_it_decodes() {
     let at_bound = vec![0x0061_u16; TEXT_VALUE_SCALAR_BOUND];
     let value = TextValue::from_utf16_code_units(&at_bound)

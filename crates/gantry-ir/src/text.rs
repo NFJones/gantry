@@ -377,13 +377,24 @@ impl TextValue {
                     text: decoded.to_owned(),
                 })
             }
-            Err(error) => Err(TextError::new(
-                TextDiagnosticCode::InvalidUtf8,
-                format!(
-                    "octet {} does not begin a well-formed UTF-8 scalar sequence",
-                    error.valid_up_to()
-                ),
-            )),
+            Err(error) => {
+                // The first condition the sequence meets decides the refusal: a bound crossed
+                // inside the decodable prefix precedes the malformed octet that ends it.
+                let valid = &octets[..error.valid_up_to()];
+                let prefix = std::str::from_utf8(valid)
+                    .map(|text| text.chars().count())
+                    .unwrap_or(0);
+                if prefix > TEXT_VALUE_SCALAR_BOUND {
+                    return Err(Self::value_bound_refusal(prefix));
+                }
+                Err(TextError::new(
+                    TextDiagnosticCode::InvalidUtf8,
+                    format!(
+                        "octet {} does not begin a well-formed UTF-8 scalar sequence",
+                        error.valid_up_to()
+                    ),
+                ))
+            }
         }
     }
 
@@ -453,16 +464,17 @@ impl TextValue {
                 }
                 let value =
                     0x1_0000 + ((u32::from(unit) - 0xD800) << 10) + (u32::from(low) - 0xDC00);
-                text.push(char::from_u32(value).ok_or_else(|| {
+                let scalar = char::from_u32(value).ok_or_else(|| {
                     TextError::new(
                         TextDiagnosticCode::InvalidUtf16,
                         format!("code unit {index} does not encode a scalar value"),
                     )
-                })?);
-                scalars += 1;
-                if scalars > TEXT_VALUE_SCALAR_BOUND {
-                    return Err(Self::value_bound_refusal(scalars));
+                })?;
+                if scalars + 1 > TEXT_VALUE_SCALAR_BOUND {
+                    return Err(Self::value_bound_refusal(scalars + 1));
                 }
+                text.push(scalar);
+                scalars += 1;
                 index += 2;
             } else if (0xDC00..0xE000).contains(&unit) {
                 return Err(TextError::new(
@@ -470,16 +482,17 @@ impl TextValue {
                     format!("code unit {index} is a low surrogate with no high surrogate"),
                 ));
             } else {
-                text.push(char::from_u32(u32::from(unit)).ok_or_else(|| {
+                let scalar = char::from_u32(u32::from(unit)).ok_or_else(|| {
                     TextError::new(
                         TextDiagnosticCode::InvalidUtf16,
                         format!("code unit {index} does not encode a scalar value"),
                     )
-                })?);
-                scalars += 1;
-                if scalars > TEXT_VALUE_SCALAR_BOUND {
-                    return Err(Self::value_bound_refusal(scalars));
+                })?;
+                if scalars + 1 > TEXT_VALUE_SCALAR_BOUND {
+                    return Err(Self::value_bound_refusal(scalars + 1));
                 }
+                text.push(scalar);
+                scalars += 1;
                 index += 1;
             }
         }
