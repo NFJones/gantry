@@ -99,6 +99,20 @@ fn text_values_admit_exactly_well_formed_utf8() {
 
 #[test]
 fn text_slicing_publishes_only_scalars_the_value_holds() {
+    // An empty value holds no scalar, so no range with a positive end may publish anything, while
+    // the empty range at position zero still publishes the empty value.
+    let empty = TextValue::empty();
+    assert_eq!(rendered(&slice(&empty, 0, 0)), "");
+    assert!(
+        empty.slice_scalars(0, 1).is_none(),
+        "a range whose end exceeds the empty value's scalar count publishes nothing"
+    );
+    assert!(
+        empty.slice_scalars(1, 1).is_none(),
+        "a range beyond the empty value publishes nothing"
+    );
+    assert_eq!(empty.scalar_at(0), None);
+
     let value = admitted("a\u{e9}\u{1f600}b".as_bytes());
     assert_eq!(value.scalar_count(), 4);
     assert_eq!(rendered(&slice(&value, 0, 0)), "");

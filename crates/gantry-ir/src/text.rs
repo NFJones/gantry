@@ -183,13 +183,11 @@ impl TextValue {
     }
 
     /// Returns every scalar boundary of the value: the octet offset of each scalar and the end of
-    /// the value, from zero through the octet length.
+    /// the value, so a value holding no scalar exposes exactly one boundary at zero and no range
+    /// with a positive end is a boundary pair.
     fn boundaries(&self) -> Vec<usize> {
         let mut offsets = Vec::with_capacity(self.scalar_count() + 1);
-        offsets.push(0);
-        for (offset, _) in self.text.char_indices().skip(1) {
-            offsets.push(offset);
-        }
+        offsets.extend(self.text.char_indices().map(|(offset, _)| offset));
         offsets.push(self.text.len());
         offsets
     }
