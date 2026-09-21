@@ -6,13 +6,16 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     CharValue, PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND, PATTERN_SCALAR_BOUND,
-    PackageFamily, StabilityTier, TEXT_CLAUSES, TextDiagnosticCode, TextValue,
-    canonical_pure_hierarchy,
+    PackageFamily, StabilityTier, TEXT_CLAUSES, TEXT_VALUE_SCALAR_BOUND, TextDiagnosticCode,
+    TextValue, canonical_pure_hierarchy,
 };
+
+/// The declared admission bound clause of `GNT-41.10`.
+const LIMITS_CLAUSE: &str = "GNT-41.10-canonical-text-admission-bound";
 
 /// The text surface this slice publishes, written out independently of the model and the note: the
 /// clause anchors in specification order and the registered refusal spellings in declaration order.
-const EXPECTED_CLAUSES: [&str; 10] = [
+const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -23,13 +26,15 @@ const EXPECTED_CLAUSES: [&str; 10] = [
     "GNT-41.7-canonical-grapheme-clusters",
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
+    "GNT-41.10-canonical-text-admission-bound",
 ];
-const EXPECTED_DIAGNOSTICS: [&str; 6] = [
+const EXPECTED_DIAGNOSTICS: [&str; 7] = [
     "text-invalid-utf8",
     "text-builder-bound",
     "text-pattern-syntax",
     "text-pattern-bound",
     "text-match-budget",
+    "text-value-bound",
     "text-invalid-utf16",
 ];
 
@@ -400,7 +405,8 @@ fn text_slicing_publishes_only_scalars_the_value_holds() {
 fn text_identity_is_the_scalar_sequence() {
     let from_octets = admitted("a\u{e9}".as_bytes());
     let scalars = [scalar("a"), scalar("\u{e9}")];
-    let from_scalars = TextValue::from_scalars(&scalars);
+    let from_scalars = TextValue::from_scalars(&scalars)
+        .unwrap_or_else(|error| panic!("the scalar sequence is admitted: {error}"));
     assert_eq!(from_scalars, from_octets);
     assert_eq!(
         from_scalars.canonical_octets(),
@@ -409,7 +415,11 @@ fn text_identity_is_the_scalar_sequence() {
     assert!(admitted(b"a") < admitted(b"b"));
     assert!(admitted(b"b") < admitted("\u{e9}".as_bytes()));
     assert!(admitted("\u{e9}".as_bytes()) < admitted("\u{1f600}".as_bytes()));
-    assert_eq!(TextValue::empty(), TextValue::from_scalars(&[]));
+    assert_eq!(
+        TextValue::empty(),
+        TextValue::from_scalars(&[])
+            .unwrap_or_else(|error| panic!("the empty scalar sequence is admitted: {error}"))
+    );
 }
 
 #[test]
@@ -448,6 +458,46 @@ fn slice(value: &TextValue, start: usize, end: usize) -> TextValue {
     value
         .slice_scalars(start, end)
         .unwrap_or_else(|| panic!("`{start}..{end}` is a scalar-boundary slice"))
+}
+
+#[test]
+fn admissions_enforce_the_declared_admission_bound() {
+    let specification = read_workspace_file("SPEC.md");
+    assert!(specification.contains(LIMITS_CLAUSE));
+    assert_eq!(TEXT_VALUE_SCALAR_BOUND, 65_536);
+    assert_eq!(
+        TEXT_CLAUSES.len(),
+        11,
+        "the section declares eleven clauses"
+    );
+    assert!(TEXT_CLAUSES.contains(&LIMITS_CLAUSE));
+    let detail = |observed: usize| {
+        format!(
+            "the admitted value would hold {observed} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}"
+        )
+    };
+    let at_bound = vec![b'a'; TEXT_VALUE_SCALAR_BOUND];
+    let value = TextValue::from_octets(&at_bound)
+        .unwrap_or_else(|error| panic!("the sequence at the bound is admitted: {error}"));
+    assert_eq!(value.scalar_count(), TEXT_VALUE_SCALAR_BOUND);
+    let mut beyond = at_bound;
+    beyond.push(b'a');
+    let error = TextValue::from_octets(&beyond)
+        .err()
+        .unwrap_or_else(|| panic!("a sequence beyond the bound is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::ValueBound);
+    assert_eq!(error.detail(), detail(TEXT_VALUE_SCALAR_BOUND + 1));
+    let scalars = vec![scalar("a"); TEXT_VALUE_SCALAR_BOUND + 1];
+    let error = TextValue::from_scalars(&scalars)
+        .err()
+        .unwrap_or_else(|| panic!("a scalar sequence beyond the bound is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::ValueBound);
+    assert_eq!(error.detail(), detail(TEXT_VALUE_SCALAR_BOUND + 1));
+    let error = TextValue::from_lossless_octets(&beyond)
+        .err()
+        .unwrap_or_else(|| panic!("a lossless octet sequence beyond the bound is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::ValueBound);
+    assert_eq!(error.detail(), detail(TEXT_VALUE_SCALAR_BOUND + 1));
 }
 
 fn scalar(text: &str) -> CharValue {

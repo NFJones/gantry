@@ -4,10 +4,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::ir::{TEXT_CLAUSES, TextDiagnosticCode, TextError, TextValue};
+use gantry::ir::{TEXT_CLAUSES, TEXT_VALUE_SCALAR_BOUND, TextDiagnosticCode, TextError, TextValue};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 10] = [
+const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -18,6 +18,7 @@ const EXPECTED_CLAUSES: [&str; 10] = [
     "GNT-41.7-canonical-grapheme-clusters",
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
+    "GNT-41.10-canonical-text-admission-bound",
 ];
 const CONVERSION_CLAUSE: &str = "GNT-41.9-canonical-text-conversions";
 
@@ -107,17 +108,26 @@ fn conversions_refuse_unpaired_utf16_surrogates() {
 #[test]
 fn conversions_map_octets_losslessly() {
     let octets = [0x00_u8, 0x41, 0x7F, 0x80, 0xC3, 0xFF];
-    let value = TextValue::from_lossless_octets(&octets);
+    let value = TextValue::from_lossless_octets(&octets)
+        .unwrap_or_else(|error| panic!("the octet sequence is admitted: {error}"));
     assert_eq!(value.scalar_count(), octets.len());
     assert_eq!(value.lossless_octets(), Some(octets.to_vec()));
     assert_eq!(
-        TextValue::from_lossless_octets(&octets).lossless_octets(),
+        TextValue::from_lossless_octets(&octets)
+            .unwrap_or_else(|error| panic!("the octet sequence is admitted: {error}"))
+            .lossless_octets(),
         Some(octets.to_vec()),
         "the mapping round-trips deterministically"
     );
-    assert_eq!(TextValue::from_lossless_octets(&[]), TextValue::empty());
     assert_eq!(
-        TextValue::from_lossless_octets(&[0xE9]).lossless_octets(),
+        TextValue::from_lossless_octets(&[])
+            .unwrap_or_else(|error| panic!("the empty octet sequence is admitted: {error}")),
+        TextValue::empty()
+    );
+    assert_eq!(
+        TextValue::from_lossless_octets(&[0xE9])
+            .unwrap_or_else(|error| panic!("the octet sequence is admitted: {error}"))
+            .lossless_octets(),
         Some(vec![0xE9])
     );
     assert_eq!(admitted(b"ab").lossless_octets(), Some(b"ab".to_vec()));
@@ -144,10 +154,13 @@ fn conversions_are_observation_only_and_deterministic() {
         .unwrap_or_else(|error| panic!("the canonical form is admitted: {error}"));
     assert_eq!(restored, value);
     assert_eq!(restored.canonical_octets(), recorded.as_slice());
-    let from_octets = TextValue::from_lossless_octets(recorded.as_slice());
+    let from_octets = TextValue::from_lossless_octets(recorded.as_slice())
+        .unwrap_or_else(|error| panic!("the octet sequence is admitted: {error}"));
     assert_eq!(
         from_octets.canonical_octets(),
-        TextValue::from_lossless_octets(recorded.as_slice()).canonical_octets()
+        TextValue::from_lossless_octets(recorded.as_slice())
+            .unwrap_or_else(|error| panic!("the octet sequence is admitted: {error}"))
+            .canonical_octets()
     );
     assert_eq!(value.canonical_octets(), recorded.as_slice());
 }
@@ -194,4 +207,28 @@ fn read_workspace_file(relative: &str) -> String {
         .join(relative);
     fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("`{}` is readable: {error}", path.display()))
+}
+
+#[test]
+fn utf16_admission_counts_the_value_while_it_decodes() {
+    let at_bound = vec![0x0061_u16; TEXT_VALUE_SCALAR_BOUND];
+    let value = TextValue::from_utf16_code_units(&at_bound)
+        .unwrap_or_else(|error| panic!("the sequence at the bound is admitted: {error}"));
+    assert_eq!(value.scalar_count(), TEXT_VALUE_SCALAR_BOUND);
+    let mut beyond = at_bound;
+    beyond.push(0x0061);
+    let error = TextValue::from_utf16_code_units(&beyond)
+        .err()
+        .unwrap_or_else(|| panic!("a code-unit sequence beyond the bound is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::ValueBound);
+    let mut earlier_fault = vec![0x0061_u16; 4];
+    earlier_fault.push(0xD800);
+    let error = TextValue::from_utf16_code_units(&earlier_fault)
+        .err()
+        .unwrap_or_else(|| panic!("a lone surrogate is refused"));
+    assert_eq!(
+        error.code(),
+        TextDiagnosticCode::InvalidUtf16,
+        "the first condition the sequence meets decides the refusal"
+    );
 }
