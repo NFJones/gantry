@@ -35923,7 +35923,7 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/resource_accounting.rs#charges_are_atomic_and_require_the_current_owner_witness",
-                "crates/gantry-conformance/tests/value_storage_model.rs#value_storage_note_names_the_declared_strategies_and_contracts"
+                "crates/gantry-conformance/tests/value_storage_model.rs#value_storage_note_states_the_declared_equivalence_contract"
               ],
               "rationale": null
             }
@@ -39880,8 +39880,8 @@
               "evidence": [
                 "crates/gantry-conformance/tests/scalar_foundation.rs#storage_strategies_agree_on_octets_charges_and_refusals",
                 "crates/gantry-conformance/tests/scalar_foundation.rs#external_encodings_round_trip_and_refuse_wrong_widths",
-                "crates/gantry-conformance/tests/value_storage_model.rs#value_storage_note_names_the_declared_strategies_and_contracts",
-                "crates/gantry-conformance/tests/value_storage_model.rs#storage_strategies_agree_on_semantic_state_and_differ_only_in_physical_work"
+                "crates/gantry-conformance/tests/value_storage_model.rs#value_storage_note_states_the_declared_equivalence_contract",
+                "crates/gantry-conformance/tests/value_storage_model.rs#storage_strategies_agree_on_octets_charges_and_refusals_for_one_operation_sequence"
               ],
               "rationale": null
             }
