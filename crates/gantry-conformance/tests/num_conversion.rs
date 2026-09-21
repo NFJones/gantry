@@ -131,9 +131,10 @@ fn numeric_conversions_clause_body_exercises_the_final_clause_tail() {
     let specification = read_text(&workspace_root().join("SPEC.md"));
     let clause = clause_body(&specification, "GNT-40.3-numeric-conversions");
 
-    assert!(
-        !clause.contains("<a id="),
-        "the final clause has no next anchor"
+    assert_eq!(
+        NUM_CLAUSES.last(),
+        Some(&"GNT-40.3-numeric-conversions"),
+        "the conversions clause is the specification's final clause"
     );
     assert!(
         specification.trim_end().ends_with(clause.trim_end()),

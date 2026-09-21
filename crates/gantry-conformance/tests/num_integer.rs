@@ -20,7 +20,8 @@ fn read_text(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()))
 }
 
-/// Returns the body of one clause: the text between its anchor and the next anchor.
+/// Returns the body of one clause: the text between its anchor and the next anchor, or to the end
+/// of the specification when the clause is the final one.
 fn clause_body<'a>(specification: &'a str, anchor: &str) -> &'a str {
     let declaration = format!("<a id=\"{anchor}\"></a>");
     let start = specification
