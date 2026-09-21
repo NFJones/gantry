@@ -5,6 +5,10 @@
 //! canonical scalar-key domain, the canonical order, duplicate-key identity, and the identity of
 //! the one recognised `Map<K, V>` type form. It admits no collection type as a value type, and
 //! defines no traversal, no family behavior, and no storage fact.
+//!
+//! It also declares the family's published item surface of `GNT-34.6` and `GNT-34.8`: one module
+//! item per admitted collection kind, declared into the canonical pure hierarchy by
+//! `declare_collections_surface`.
 
 use std::cmp::Ordering;
 
@@ -13,6 +17,9 @@ use gantry_core::numeric::GantryInt;
 use gantry_core::value::{LogicalValue, ValueError, ValueLimits};
 
 use crate::generated::TypeKind;
+use crate::stdlib::{
+    NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
+};
 use crate::types::TypeDescriptor;
 
 /// The declared clauses of `GNT-39.0` through `GNT-39.8`, in specification order.
@@ -944,6 +951,9 @@ impl<'a> CollectionCursor<'a> {
     }
 
     /// Advances the cursor and publishes the next visit, or none at exhaustion.
+    // This is the model's bounded advance rather than the `Iterator` protocol: `GNT-39.8` publishes
+    // no source iteration protocol and no adapter over this form, so the declared name stays.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<CollectionVisit<'a>> {
         if self.exhausted {
             return None;
@@ -1014,6 +1024,9 @@ impl<'a> CollectionTake<'a> {
     }
 
     /// Advances the view and publishes the next visit, or none at its budget or exhaustion.
+    // This is the model's bounded advance rather than the `Iterator` protocol: `GNT-39.8` publishes
+    // no source iteration protocol and no adapter over this form, so the declared name stays.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<CollectionVisit<'a>> {
         if self.remaining == 0 {
             return None;
@@ -1121,6 +1134,9 @@ impl<'a> CollectionEnumerate<'a> {
     }
 
     /// Advances the view and publishes the next visit with its zero-based position.
+    // This is the model's bounded advance rather than the `Iterator` protocol: `GNT-39.8` publishes
+    // no source iteration protocol and no adapter over this form, so the declared name stays.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<(u64, CollectionVisit<'a>)> {
         if self.budget == 0 {
             return None;
@@ -1179,6 +1195,9 @@ impl<'a> CollectionZip<'a> {
     }
 
     /// Advances both values and publishes the next pair, or none at its budget or exhaustion.
+    // This is the model's bounded advance rather than the `Iterator` protocol: `GNT-39.8` publishes
+    // no source iteration protocol and no adapter over this form, so the declared name stays.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<(CollectionVisit<'a>, CollectionVisit<'a>)> {
         if self.budget == 0 {
             return None;
@@ -1620,4 +1639,113 @@ pub fn check_collection_non_claims(
         }
     }
     Ok(())
+}
+
+/// One declared public item of `std.collections` (`GNT-34.6-stability-tiers`,
+/// `GNT-34.8-defining-identity-and-interface-digest`).
+///
+/// The family declares one item per admitted collection kind: the canonical lowercase logical path
+/// of that kind, classified as a module because a module belongs to exactly one package
+/// (`GNT-34.2-name-classification`), at the stable tier the family publishes. `clauses` records the
+/// section clauses the item publishes, in specification order, so an item's declared surface cannot
+/// drift from the clauses that justify it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CollectionItemRow {
+    /// The admitted kind this item declares the module of.
+    pub kind: CollectionValueKind,
+    /// The canonical logical item name (`GNT-34.1-canonical-hierarchy-and-package-names`).
+    pub name: &'static str,
+    /// The declared name classification of `GNT-34.2-name-classification`.
+    pub class: NameClass,
+    /// The declared stability tier of `GNT-34.6-stability-tiers`.
+    pub tier: StabilityTier,
+    /// The section clauses this item publishes, in specification order.
+    pub clauses: &'static [&'static str],
+}
+
+/// The declared public items of `std.collections`, one module per admitted collection kind.
+///
+/// Each name is the lowercase logical spelling of the model's own kind spelling
+/// (`CollectionValueKind::spelling`), because a canonical logical `std` name is a lowercase dotted
+/// path, so the declared rows are derived from the kind vocabulary rather than restated beside it.
+pub const COLLECTION_ITEMS: [CollectionItemRow; 3] = [
+    CollectionItemRow {
+        kind: CollectionValueKind::Map,
+        name: "std.collections::map",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        clauses: &[
+            "GNT-39.1-admitted-collection-keys",
+            "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+            "GNT-39.4-map-type-form-recognition",
+            "GNT-39.5-map-type-identity",
+            "GNT-39.8-collection-value-model",
+        ],
+    },
+    CollectionItemRow {
+        kind: CollectionValueKind::Set,
+        name: "std.collections::set",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        clauses: &[
+            "GNT-39.1-admitted-collection-keys",
+            "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+            "GNT-39.6-set-and-range-type-identities",
+            "GNT-39.8-collection-value-model",
+        ],
+    },
+    CollectionItemRow {
+        kind: CollectionValueKind::Range,
+        name: "std.collections::range",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        clauses: &[
+            "GNT-39.6-set-and-range-type-identities",
+            "GNT-39.7-range-step-contract",
+            "GNT-39.8-collection-value-model",
+        ],
+    },
+];
+
+/// Declares the published item surface of `std.collections` over one standard-library graph
+/// (`GNT-34.6-stability-tiers`, `GNT-34.8-defining-identity-and-interface-digest`).
+///
+/// The owning package must already be declared, and each item takes that package's declared modes
+/// and targets, so an item is never applicable outside its own package's applicability
+/// (`GNT-34.7-applicability-and-feature-granularity`). A second declaration of one item is refused
+/// by the graph rather than merged.
+pub fn declare_collections_surface(graph: &mut StdGraph) -> Result<(), StdlibError> {
+    let owner = PackageFamily::Collections.package_name();
+    let (modes, targets) = {
+        let package = graph.package(&owner).ok_or_else(|| {
+            StdlibError::new(
+                StdlibDiagnosticCode::UnknownEdge,
+                format!("`{owner}` is not declared, so its item surface cannot be declared"),
+            )
+        })?;
+        (
+            package.modes().iter().copied().collect::<Vec<_>>(),
+            package.targets().iter().copied().collect::<Vec<_>>(),
+        )
+    };
+    for row in COLLECTION_ITEMS {
+        graph.declare_item(StdItem::new(
+            row.name, row.class, row.tier, &modes, &targets,
+        )?)?;
+    }
+    Ok(())
+}
+
+/// Returns the canonical pure hierarchy with the published item surface of `std.collections`
+/// declared (`GNT-34.6-stability-tiers`, `GNT-34.8-defining-identity-and-interface-digest`).
+///
+/// The family owns this declaration (`GNT-GP-COLL-001`), so the aggregate constructor
+/// `canonical_pure_hierarchy` carries packages, applicability, and edges only while this constructor
+/// adds the family's reviewed item rows — and with them the package interface digest of `GNT-34.8`
+/// over those items. Composing both in one call keeps a consumer of the family surface from reading
+/// the package without its published name level.
+pub fn canonical_collections_hierarchy() -> Result<StdGraph, StdlibError> {
+    let mut graph = crate::stdlib::canonical_pure_hierarchy()?;
+    declare_collections_surface(&mut graph)?;
+    Ok(graph)
 }

@@ -24,7 +24,11 @@ use gantry::ir::{
     RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, TypeDescriptor, canonical_order,
     check_collection_non_claims,
 };
-use gantry::ir::{PackageFamily, StabilityTier, StdlibNonClaim, canonical_pure_hierarchy};
+use gantry::ir::{
+    COLLECTION_ITEMS, NameClass, PackageFamily, Prelude, StabilityTier, StdGraph, StdItem,
+    StdPackage, StdlibDiagnosticCode, StdlibNonClaim, canonical_collections_hierarchy,
+    canonical_pure_hierarchy, declare_collections_surface,
+};
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValueLimits};
 
@@ -1597,13 +1601,143 @@ fn collection_family_declares_its_package_surface() {
         "std.collections",
         "collections",
         "std.core",
-        "stable",
         "GNT-GP-COLL-001",
         "GNT-34.1",
         "GNT-34.6",
         "GNT-34.8",
     ] {
         assert!(note.contains(required), "the note names `{required}`");
+    }
+}
+
+/// The family publishes its own item surface (`GNT-34.2`, `GNT-34.6`, `GNT-34.8`): one module item
+/// per admitted collection kind, each at the family's stable tier, with the package interface
+/// digest covering those declared facts, and the note pairing every item with the clauses it
+/// publishes.
+#[test]
+fn collection_package_publishes_one_module_item_per_admitted_kind() {
+    // The aggregate constructor declares no family item; the family owns its declaration
+    // (`GNT-GP-COLL-001`), and the family constructor composes the two.
+    let aggregate = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy is declared: {error:?}"));
+    assert_eq!(
+        aggregate
+            .package(&PackageFamily::Collections.package_name())
+            .unwrap_or_else(|| panic!("the hierarchy declares `std.collections`"))
+            .items()
+            .len(),
+        0,
+        "the aggregate constructor declares no family item"
+    );
+    let graph = canonical_collections_hierarchy()
+        .unwrap_or_else(|error| panic!("the family hierarchy is declared: {error:?}"));
+    let package = graph
+        .package(&PackageFamily::Collections.package_name())
+        .unwrap_or_else(|| panic!("the hierarchy declares `std.collections`"));
+    let mut expected = CollectionValueKind::ALL
+        .iter()
+        .map(|kind| format!("std.collections.{}", kind.spelling().to_ascii_lowercase()))
+        .collect::<Vec<_>>();
+    expected.sort_unstable();
+    assert_eq!(
+        package.items().keys().cloned().collect::<Vec<_>>(),
+        expected,
+        "the family declares exactly one module item per admitted kind"
+    );
+    let modes = package.modes().iter().copied().collect::<Vec<_>>();
+    let targets = package.targets().iter().copied().collect::<Vec<_>>();
+    for row in COLLECTION_ITEMS {
+        assert_eq!(
+            row.name,
+            format!(
+                "std.collections::{}",
+                row.kind.spelling().to_ascii_lowercase()
+            ),
+            "the item name is the lowercase logical path of its kind"
+        );
+        let item = package
+            .item(row.name)
+            .unwrap_or_else(|| panic!("`{}` is declared", row.name));
+        assert_eq!(row.class, NameClass::Module);
+        assert_eq!(row.tier, StabilityTier::Stable);
+        assert_eq!(item.class(), row.class, "`{}` is a module", row.name);
+        assert_eq!(item.tier(), row.tier, "`{}` is stable", row.name);
+        assert!(!row.clauses.is_empty(), "`{}` names its clauses", row.name);
+        for clause in row.clauses {
+            assert!(
+                COLLECTION_CLAUSES.contains(clause),
+                "`{}` publishes the declared clause `{clause}`",
+                row.name
+            );
+        }
+    }
+    // The interface digest covers the declared item facts: a package with one item at another tier
+    // is another identity, and a second tier for one item is refused.
+    let mut alternative = StdPackage::new(
+        PackageFamily::Collections,
+        NameClass::Package,
+        StabilityTier::Stable,
+        &modes,
+        &targets,
+        &[PackageFamily::Core.package_name().as_str()],
+        &[],
+    )
+    .unwrap_or_else(|error| panic!("the alternative package declares: {error:?}"));
+    alternative
+        .declare_item(
+            StdItem::new(
+                "std.collections::map",
+                NameClass::Module,
+                StabilityTier::Experimental,
+                &modes,
+                &targets,
+            )
+            .unwrap_or_else(|error| panic!("the alternative item declares: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("the alternative item is declared: {error:?}"));
+    assert_ne!(
+        alternative.identity(),
+        package.identity(),
+        "the interface digest covers the declared item tiers"
+    );
+    let mut duplicate = package.clone();
+    let refusal = rejected(
+        duplicate.declare_item(
+            StdItem::new(
+                "std.collections::map",
+                NameClass::Module,
+                StabilityTier::Experimental,
+                &modes,
+                &targets,
+            )
+            .unwrap_or_else(|error| panic!("the second-tier item declares: {error:?}")),
+        ),
+        "a second tier for one item is refused",
+    );
+    assert_eq!(
+        refusal.code(),
+        StdlibDiagnosticCode::InvalidStabilityTransition
+    );
+    // The declaration requires its owning package.
+    let mut undeclared = StdGraph::new(Prelude::canonical());
+    let refusal = rejected(
+        declare_collections_surface(&mut undeclared),
+        "a graph without the family refuses the item declaration",
+    );
+    assert_eq!(refusal.code(), StdlibDiagnosticCode::UnknownEdge);
+    // The note publishes the surface it documents.
+    let note = fs::read_to_string(workspace_root().join("docs/collections-foundation.md"))
+        .unwrap_or_else(|error| panic!("the collection note is readable: {error}"));
+    for row in COLLECTION_ITEMS {
+        assert!(note.contains(row.name), "the note names `{}`", row.name);
+        for clause in row.clauses {
+            assert!(
+                note.lines()
+                    .any(|line| line.contains(row.name) && line.contains(clause)),
+                "the note pairs `{}` with `{clause}` on one row",
+                row.name
+            );
+        }
     }
 }
 

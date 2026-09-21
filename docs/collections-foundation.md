@@ -212,6 +212,27 @@ package (`CapabilityAndProviderExistence`), no repository path as source identit
 (`LayoutAsIdentity`), and no family behavior of its own (`FamilyBehavior`); this note is
 documentation and grants nothing.
 
+## Declared item surface
+
+The family declares its published name level itself (`GNT-34.2`, `GNT-34.6`, `GNT-34.8`), one
+module item per admitted collection kind, through `CollectionItemRow`, `COLLECTION_ITEMS`, and
+`declare_collections_surface`, which `canonical_collections_hierarchy()` composes over the
+aggregate `canonical_pure_hierarchy()`:
+
+| Item | Class | Tier | Clauses published |
+| --- | --- | --- | --- |
+| `std.collections::map` | module | stable | `GNT-39.1-admitted-collection-keys`, `GNT-39.2-canonical-collection-order-and-duplicate-identity`, `GNT-39.4-map-type-form-recognition`, `GNT-39.5-map-type-identity`, `GNT-39.8-collection-value-model` |
+| `std.collections::set` | module | stable | `GNT-39.1-admitted-collection-keys`, `GNT-39.2-canonical-collection-order-and-duplicate-identity`, `GNT-39.6-set-and-range-type-identities`, `GNT-39.8-collection-value-model` |
+| `std.collections::range` | module | stable | `GNT-39.6-set-and-range-type-identities`, `GNT-39.7-range-step-contract`, `GNT-39.8-collection-value-model` |
+
+Each item name is the lowercase logical spelling of the model's own kind spelling
+(`CollectionValueKind::spelling`), because a canonical logical `std` name is a lowercase dotted
+path. Each row declares exactly one class and one tier, each item takes its owning package's
+declared modes and targets, and the package interface digest covers those declared names, classes,
+tiers, and applicability, so a changed row is a different interface identity. The rows are the
+family's own declaration and grant no source operation, source API, behavior, storage fact, or
+permission the section does not publish.
+
 ## Diagnostics
 
 | Spelling | Owning clause | Condition |

@@ -304,13 +304,14 @@ pub use signature::{
 // carriage, replacement, and traversal forms, and the one temporary cursor, with no family
 // behavior of its own.
 pub use collections::{
-    COLLECTION_CLAUSES, CollectionCursor, CollectionDiagnosticCode, CollectionEnumerate,
-    CollectionError, CollectionFilter, CollectionKeyPolicy, CollectionKeyRefusal,
-    CollectionKeyType, CollectionMap, CollectionNonClaimAssertion, CollectionNonClaimName,
-    CollectionOutcome, CollectionTake, CollectionTraversal, CollectionValue, CollectionValueKind,
-    CollectionVisit, CollectionZip, MapTypeIdentity, MapValue, RangeStepContract,
-    RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, canonical_order,
-    check_collection_non_claims,
+    COLLECTION_CLAUSES, COLLECTION_ITEMS, CollectionCursor, CollectionDiagnosticCode,
+    CollectionEnumerate, CollectionError, CollectionFilter, CollectionItemRow, CollectionKeyPolicy,
+    CollectionKeyRefusal, CollectionKeyType, CollectionMap, CollectionNonClaimAssertion,
+    CollectionNonClaimName, CollectionOutcome, CollectionTake, CollectionTraversal,
+    CollectionValue, CollectionValueKind, CollectionVisit, CollectionZip, MapTypeIdentity,
+    MapValue, RangeStepContract, RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue,
+    canonical_collections_hierarchy, canonical_order, check_collection_non_claims,
+    declare_collections_surface,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned
 // deterministic generator identity and its exact step, with no host entropy, global state, secure
