@@ -7,6 +7,7 @@
 
 use std::cmp::Ordering;
 use std::fmt;
+use std::sync::Arc;
 
 /// A declared fixed width in bits.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -930,7 +931,7 @@ impl StorageStrategy {
         }
     }
 
-    /// Nonsemantic physical work: copying octets on a write after aliasing.
+    /// Nonsemantic physical work: copying octets for one write operation.
     #[must_use]
     pub const fn write_work(self, octets: usize) -> usize {
         match self {
@@ -944,7 +945,7 @@ impl StorageStrategy {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ByteBufferValue {
     strategy: StorageStrategy,
-    octets: Vec<u8>,
+    octets: Arc<Vec<u8>>,
     quota: ScalarQuota,
     aliased: bool,
     physical_work: usize,
@@ -953,10 +954,10 @@ pub struct ByteBufferValue {
 impl ByteBufferValue {
     /// Empty buffer charged against a declared quota.
     #[must_use]
-    pub const fn new(strategy: StorageStrategy, quota: ScalarQuota) -> Self {
+    pub fn new(strategy: StorageStrategy, quota: ScalarQuota) -> Self {
         Self {
             strategy,
-            octets: Vec::new(),
+            octets: Arc::new(Vec::new()),
             quota,
             aliased: false,
             physical_work: 0,
@@ -972,7 +973,7 @@ impl ByteBufferValue {
         quota.reserve(octets.len())?;
         Ok(Self {
             strategy,
-            octets,
+            octets: Arc::new(octets),
             quota,
             aliased: false,
             physical_work: 0,
@@ -1031,7 +1032,7 @@ impl ByteBufferValue {
         self.exclusive()?;
         self.quota.reserve(1)?;
         self.physical_work += self.strategy.write_work(self.octets.len());
-        self.octets.push(octet);
+        Arc::make_mut(&mut self.octets).push(octet);
         Ok(())
     }
 
@@ -1040,7 +1041,7 @@ impl ByteBufferValue {
         self.exclusive()?;
         self.quota.reserve(octets.len())?;
         self.physical_work += self.strategy.write_work(self.octets.len());
-        self.octets.extend_from_slice(octets);
+        Arc::make_mut(&mut self.octets).extend_from_slice(octets);
         Ok(())
     }
 
@@ -1057,7 +1058,7 @@ impl ByteBufferValue {
             ));
         }
         let released = self.octets.len() - length;
-        self.octets.truncate(length);
+        Arc::make_mut(&mut self.octets).truncate(length);
         self.quota.release(released);
         Ok(())
     }
@@ -1078,12 +1079,14 @@ impl ByteBufferValue {
         }
         let ceiling = self.quota.max_octets();
         let excess = self.quota.used_octets().saturating_sub(self.octets.len());
-        let tail = self.octets.split_off(at);
-        self.quota = ScalarQuota::charged(ceiling, self.octets.len() + excess)?;
+        let mut head = self.octets.as_ref().clone();
+        let tail = head.split_off(at);
+        self.quota = ScalarQuota::charged(ceiling, head.len() + excess)?;
+        self.octets = Arc::new(head);
         let tail_quota = ScalarQuota::charged(ceiling, tail.len())?;
         Ok(Self {
             strategy: self.strategy,
-            octets: tail,
+            octets: Arc::new(tail),
             quota: tail_quota,
             aliased: false,
             physical_work: 0,
@@ -1093,7 +1096,8 @@ impl ByteBufferValue {
     /// Consuming freeze into an immutable value; aliased buffers are refused.
     pub fn freeze(self) -> Result<BytesValue, ScalarError> {
         self.exclusive()?;
-        Ok(BytesValue::from_octets(self.octets))
+        let octets = Arc::try_unwrap(self.octets).unwrap_or_else(|shared| (*shared).clone());
+        Ok(BytesValue::from_octets(octets))
     }
 
     /// Deep copy that is independent of this buffer.
@@ -1101,7 +1105,10 @@ impl ByteBufferValue {
     pub fn independent_copy(&self) -> Self {
         Self {
             strategy: self.strategy,
-            octets: self.octets.clone(),
+            octets: match self.strategy {
+                StorageStrategy::EagerCopy => Arc::new(self.octets.as_ref().clone()),
+                StorageStrategy::CopyOnWrite | StorageStrategy::Reuse => Arc::clone(&self.octets),
+            },
             quota: self.quota,
             aliased: false,
             physical_work: self.physical_work + self.strategy.duplication_work(self.octets.len()),
@@ -1114,7 +1121,10 @@ impl ByteBufferValue {
         self.aliased = true;
         Self {
             strategy: self.strategy,
-            octets: self.octets.clone(),
+            octets: match self.strategy {
+                StorageStrategy::EagerCopy => Arc::new(self.octets.as_ref().clone()),
+                StorageStrategy::CopyOnWrite | StorageStrategy::Reuse => Arc::clone(&self.octets),
+            },
             quota: self.quota,
             aliased: true,
             physical_work: self.physical_work + self.strategy.duplication_work(self.octets.len()),
