@@ -12,6 +12,15 @@ use gantry::ir::{CapabilityAuthorityClosure, RequirementResolution};
 /// The published note guarded by this lane.
 const AUTHORITY_NOTE: &str = include_str!("../../../docs/authority-closure.md");
 
+/// Returns the note with every whitespace run collapsed to one space, so a
+/// phrase that a wrap splits in the file can still be asserted as one phrase.
+fn flattened_note() -> String {
+    AUTHORITY_NOTE
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[test]
 fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
     for anchor in [
@@ -48,7 +57,8 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
             "the authority note names the clause member {member}"
         );
     }
-    for ceiling in [
+    let flattened = flattened_note();
+    let ceilings = [
         (
             "CapabilityAuthorityClosure::MAXIMUM_INSTANCES",
             CapabilityAuthorityClosure::MAXIMUM_INSTANCES,
@@ -61,17 +71,12 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
             "RequirementResolution::MAXIMUM_REQUIREMENTS",
             RequirementResolution::MAXIMUM_REQUIREMENTS,
         ),
-    ] {
+    ];
+    for (constant, value) in ceilings {
+        let declared = format!("{constant}` ({value})");
         assert!(
-            AUTHORITY_NOTE.contains(ceiling.0),
-            "the authority note names the declaring constant {}",
-            ceiling.0
-        );
-        assert!(
-            AUTHORITY_NOTE.contains(&format!("{}` (each 4096)", ceiling.0))
-                || AUTHORITY_NOTE.contains(&ceiling.1.to_string()),
-            "the authority note states a value for {}",
-            ceiling.0
+            flattened.contains(&declared),
+            "the authority note declares {constant} as {value} in one phrase"
         );
     }
     assert!(

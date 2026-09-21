@@ -13,8 +13,9 @@ are out of scope for this note.
 
 The clause's closure is the least set of capability requirement instances — a
 public capability requirement together with the selected implementation binding
-that satisfies it — plus the agent, model-exposed tool, handler, and operation
-requirement slots that contains the declared requirement of every exact
+that satisfies it — plus the agent, tool, handler, and operation requirement
+slots — including the agent, model-exposed tool, handler, and operation slots
+attached to those sites — that contains the declared requirement of every exact
 operation site reachable from every retained root, and it also contains every
 retained concrete public or durable schema root, every retained instantiation
 key, and every callable row bound invocable from those roots. Inside the
@@ -39,17 +40,19 @@ exactly:
 - instances are deduplicated by binding identity and ordered canonically by
   that identity's spelling, so two closures over the same supplied entries are
   equal whatever the declaration or traversal order. The clause orders closure
-  contents canonically by requirement identity; the model's binding-identity
-  order is a deterministic refinement of that requirement, and the model has no
-  canonical byte encoding of its own beyond its members' length-prefixed
-  spellings.
+  contents canonically by requirement identity. The model's key is the
+  length-prefixed binding-identity spelling, whose parts place the requirement
+  identity's length before its text, so the model groups one requirement's
+  bindings together without reproducing the clause's requirement-identity
+  order; the model has no canonical byte encoding of its own beyond its
+  members' spellings.
 - least-ness is the caller's obligation: the value never adds an instance or a
   slot the caller did not supply, so a declaration the caller did not prove
   reachable cannot enter the closure.
 - construction is bounded: the supplied instance and slot counts are measured
-  before deduplication against the declared ceilings named
-  `CapabilityAuthorityClosure::MAXIMUM_INSTANCES` and
-  `CapabilityAuthorityClosure::MAXIMUM_SLOTS` (each 4096), and a larger input is
+  before deduplication against the declared ceilings
+  `CapabilityAuthorityClosure::MAXIMUM_INSTANCES` (4096) and
+  `CapabilityAuthorityClosure::MAXIMUM_SLOTS` (4096), and a larger input is
   refused with the registered code `authority-closure-exceeds-maximum` rather
   than truncated.
 
