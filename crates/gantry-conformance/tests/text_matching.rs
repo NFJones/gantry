@@ -130,13 +130,13 @@ fn matching_admits_and_refuses_patterns_exactly() {
         .err()
         .unwrap_or_else(|| panic!("a step budget beyond the declared maximum is refused"));
     assert_eq!(error.code(), TextDiagnosticCode::PatternBound);
-    assert!(
-        error
-            .detail()
-            .contains(&(PATTERN_STEP_BOUND + 1).to_string())
-            && error.detail().contains(&PATTERN_STEP_BOUND.to_string()),
-        "the refusal names the observed budget and the declared maximum: {}",
-        error.detail()
+    assert_eq!(
+        error.detail(),
+        format!(
+            "the declared step budget {} is beyond the declared maximum budget {PATTERN_STEP_BOUND}",
+            PATTERN_STEP_BOUND + 1
+        ),
+        "the refusal names the observed budget and the declared maximum"
     );
     // A bounded repetition over a bounded repetition stays refused without being expanded.
     let nested = format!(

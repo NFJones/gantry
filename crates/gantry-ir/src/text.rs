@@ -711,7 +711,7 @@ impl Pattern {
             return Err(TextError::new(
                 TextDiagnosticCode::PatternBound,
                 format!(
-                    "the declared step budget {steps} is beyond the declared maximum budget                      {PATTERN_STEP_BOUND}"
+                    "the declared step budget {steps} is beyond the declared maximum budget {PATTERN_STEP_BOUND}"
                 ),
             ));
         }
