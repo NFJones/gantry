@@ -721,16 +721,20 @@ impl CharValue {
 }
 
 /// An immutable octet sequence.
+///
+/// The value is immutable, so every duplicate shares its storage rather than copying it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BytesValue {
-    octets: Vec<u8>,
+    octets: Arc<Vec<u8>>,
 }
 
 impl BytesValue {
     /// Seals an octet sequence as an immutable value.
     #[must_use]
     pub fn from_octets(octets: Vec<u8>) -> Self {
-        Self { octets }
+        Self {
+            octets: Arc::new(octets),
+        }
     }
 
     /// Parses canonical lowercase hexadecimal text of even length, including the empty sequence.
@@ -754,7 +758,9 @@ impl BytesValue {
             octets.push((high << 4) | low);
             index += 2;
         }
-        let value = Self { octets };
+        let value = Self {
+            octets: Arc::new(octets),
+        };
         if value.to_canonical_text() != text {
             return Err(ScalarError::new(
                 ScalarDiagnosticCode::NoncanonicalEncoding,
@@ -768,7 +774,7 @@ impl BytesValue {
     #[must_use]
     pub fn to_canonical_text(&self) -> String {
         let mut text = String::with_capacity(self.octets.len() * 2);
-        for octet in &self.octets {
+        for octet in self.octets.iter() {
             text.push(char::from_digit(u32::from(octet >> 4), 16).unwrap_or('0'));
             text.push(char::from_digit(u32::from(octet & 0x0f), 16).unwrap_or('0'));
         }
@@ -799,7 +805,7 @@ impl BytesValue {
 
     /// Decodes the sequence as canonical UTF-8 text; invalid sequences are refused.
     pub fn decode_utf8(&self) -> Result<String, ScalarError> {
-        String::from_utf8(self.octets.clone()).map_err(|_| {
+        String::from_utf8((*self.octets).clone()).map_err(|_| {
             ScalarError::new(
                 ScalarDiagnosticCode::NoncanonicalEncoding,
                 "octets are not well-formed UTF-8",
@@ -1299,5 +1305,31 @@ mod buffer_storage_tests {
             assert_eq!(value.octets(), &[1, 2, 9]);
             assert_eq!(tail.octets(), &[3, 4, 8]);
         }
+    }
+}
+
+#[cfg(test)]
+mod byte_value_storage_tests {
+    use super::*;
+
+    #[test]
+    fn duplicates_share_the_sealed_storage() {
+        let value = BytesValue::from_octets(vec![1, 2, 3, 4]);
+        let duplicate = value.clone();
+        assert!(Arc::ptr_eq(&value.octets, &duplicate.octets));
+        assert_eq!(value.as_octets(), duplicate.as_octets());
+    }
+
+    #[test]
+    fn every_reading_path_is_unchanged() {
+        let value = BytesValue::from_octets(vec![0x00, 0xff, 0x10]);
+        assert_eq!(value.len(), 3);
+        assert!(!value.is_empty());
+        assert_eq!(value.octet(1), Ok(0xff));
+        assert_eq!(value.to_canonical_text(), "00ff10");
+        let reparsed = BytesValue::parse_canonical_text("00ff10")
+            .unwrap_or_else(|error| panic!("the canonical text parses: {error}"));
+        assert_eq!(reparsed.as_octets(), value.as_octets());
+        assert!(Arc::ptr_eq(&reparsed.octets, &value.octets) == false);
     }
 }
