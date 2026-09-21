@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "5725d1c6141805ed930b21d947180fd5fc43c24a79b48943da34bbac3dc10df8",
-  "byte_length": 1086595,
-  "line_count": 15679,
+  "specification_sha256": "9a59e66f16f030388175aaedff741b1ea7594abfc559be7c625d545f9aaaf4d3",
+  "byte_length": 1089276,
+  "line_count": 15683,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15679,
-      "sha256": "c55ab1836152b3c49bccf157c03b76e6d526d4d153215e165d579a32fec54537",
+      "end_line": 15683,
+      "sha256": "f2e43b7722fa0b124d34ddc685b3845061e0478806a8eb8ccdce4471d5d4012f",
       "rationale": null
     }
   ],
@@ -42957,11 +42957,11 @@
       "id": "GNT-41.0-text-foundation-scope",
       "span_start_line": 15654,
       "span_end_line": 15660,
-      "span_sha256": "ecdb19f215c6b1642e94356722b79b8c25cef6a79f4962572636d089041a1f72",
+      "span_sha256": "34164022819ad87c2bbc2603fab14c7539f399d9c54134f641ded1c922341fbd",
       "anchor_line": 15657,
       "body_start_line": 15658,
       "body_end_line": 15660,
-      "body_sha256": "b148be56da873cf044afea41a20eeaa3312d1ee087a336d053623aeb8c0a7bd1",
+      "body_sha256": "1648a722e401fb892a48cfba29f146f1f794819a8034e6874a1faa21fe209ee3",
       "profiles": [
         "analyzer"
       ],
@@ -43164,12 +43164,12 @@
     {
       "id": "GNT-41.5-canonical-text-traversal",
       "span_start_line": 15677,
-      "span_end_line": 15679,
-      "span_sha256": "28be4df4b07b7d03afd81b7352e66fd12b9d37b68a4b8a38df6387bf7ae14c61",
+      "span_end_line": 15680,
+      "span_sha256": "ca3826ac017e95f154574080753527be5375eb430fd2e4ee383a81802370b456",
       "anchor_line": 15677,
       "body_start_line": 15678,
-      "body_end_line": 15679,
-      "body_sha256": "6d6713934180c4423cc74137e00a327352c6b1e11afea5e89b90dc77d80dcee1",
+      "body_end_line": 15680,
+      "body_sha256": "675ce1f5dfe8703e782e4447296d6becf4b6c88463e75c091e038ebc2a76e8cf",
       "profiles": [
         "analyzer"
       ],
@@ -43181,7 +43181,7 @@
         {
           "key": "clause-001",
           "start_line": 15678,
-          "end_line": 15679,
+          "end_line": 15680,
           "profiles": [
             "analyzer"
           ],
@@ -43196,6 +43196,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_traversal.rs#traversal_clause_publishes_the_forward_cursor",
                 "crates/gantry-conformance/tests/text_traversal.rs#traversal_publishes_exactly_the_scalar_sequence"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.6-canonical-text-comparison",
+      "span_start_line": 15681,
+      "span_end_line": 15683,
+      "span_sha256": "b8e7a6b9c7b4c839f2ee3e05713f36effbc9e619f707363ea0f01b7631ec2de7",
+      "anchor_line": 15681,
+      "body_start_line": 15682,
+      "body_end_line": 15683,
+      "body_sha256": "b4406a429594a85f57b99141557c19d9120344806f9fac336e5682c8ab96962d",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15682,
+          "end_line": 15683,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_comparison.rs#comparison_clause_publishes_the_three_results",
+                "crates/gantry-conformance/tests/text_comparison.rs#comparison_orders_by_scalar_sequence"
               ],
               "rationale": null
             }

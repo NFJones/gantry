@@ -3,20 +3,22 @@
 This note documents the pure text foundation `SPEC.md` Section 41 publishes: the canonical text
 value, its admission from octets, its scalar count and canonical octets, its scalar-boundary
 slicing, its two canonical normalization forms, its two full default case mappings over the pinned
-Unicode 16.0.0 data, its forward scalar traversal, and an explicitly bounded text builder, over the
-scalar and octet contracts of Section 35. It is documentation: it grants nothing, and where it and
-the specification differ the specification decides.
+Unicode 16.0.0 data, its forward scalar traversal, its canonical scalar comparison, and an
+explicitly bounded text builder, over the scalar and octet contracts of Section 35. It is
+documentation: it grants nothing, and where it and the specification differ the specification
+decides.
 
 ## Declared clauses
 
 | Clause | What it publishes |
 | --- | --- |
-| `GNT-41.0-text-foundation-scope` | the section scope, its purity, its model (`crates/gantry-ir/src/text.rs`) and evidence (`crates/gantry-conformance/tests/text_foundation.rs`, `crates/gantry-conformance/tests/text_normalization.rs`, `crates/gantry-conformance/tests/text_case_mapping.rs`, `crates/gantry-conformance/tests/text_builders.rs`, `crates/gantry-conformance/tests/text_traversal.rs`) paths, and its two frozen diagnostics |
+| `GNT-41.0-text-foundation-scope` | the section scope, its purity, its model (`crates/gantry-ir/src/text.rs`) and evidence (`crates/gantry-conformance/tests/text_foundation.rs`, `crates/gantry-conformance/tests/text_normalization.rs`, `crates/gantry-conformance/tests/text_case_mapping.rs`, `crates/gantry-conformance/tests/text_builders.rs`, `crates/gantry-conformance/tests/text_traversal.rs`, `crates/gantry-conformance/tests/text_comparison.rs`) paths, and its two frozen diagnostics |
 | `GNT-41.1-canonical-text-values` | the canonical text value as a finite scalar sequence, exact UTF-8 admission, the scalar count and canonical octets, scalar-boundary slicing, and value immutability |
 | `GNT-41.2-canonical-text-normalization` | the two canonical normalization forms of a text value over the pinned Unicode 16.0.0 data: Normalization Form D (`nfd`) and Normalization Form C (`nfc`), totality, idempotence, non-mutation, and the boundary that admission never normalizes |
 | `GNT-41.3-canonical-text-case-mapping` | the two locale-independent full default case mappings of a text value over the pinned Unicode 16.0.0 data: the lowercase mapping (`lower`) and the uppercase mapping (`upper`), totality, per-scalar sequence order, and the boundary that a mapping is neither a case fold nor an identity |
 | `GNT-41.4-canonical-text-builders` | the explicitly bounded text builder: a caller-declared octet bound, ordered and atomic appends refused under `text-builder-bound` without changing the builder, the accumulated sequence as the exact concatenation in append order, and a `build` that publishes one immutable value independent of later appends |
 | `GNT-41.5-canonical-text-traversal` | forward scalar traversal: a cursor that publishes a value's scalars one at a time in sequence order with a remaining count, never publishes a partial scalar, never modifies the value, and holds no identity |
+| `GNT-41.6-canonical-text-comparison` | the canonical three-way comparison of two text values that their identity already decides, published as `less`, `equal`, or `greater`: `equal` exactly when the values are equal, otherwise the first differing scalar decides, a proper prefix orders first, and the comparison is total, antisymmetric, transitive, case-sensitive, and never normalizes |
 
 ## Registered diagnostics
 
@@ -38,7 +40,9 @@ canonical forms of `GNT-41.2-canonical-text-normalization`. `TextValue::map_case
 `is_empty`, `append`, `build`) publishes exactly the bounded builder of
 `GNT-41.4-canonical-text-builders`. `TextValue::scalars` and `TextScalars` (`next_scalar`,
 `remaining`) publish exactly the forward cursor of `GNT-41.5-canonical-text-traversal`.
-`TEXT_CLAUSES` names the six declared clause anchors in specification order.
+`TextValue::compare` and `TextOrdering` (`less`, `equal`, `greater`) publish exactly the canonical
+comparison of `GNT-41.6-canonical-text-comparison`. `TEXT_CLAUSES` names the seven declared clause
+anchors in specification order.
 
 ## Declared non-claims
 
@@ -63,4 +67,8 @@ publication is published, and the declared octet bound is a semantic limit of th
 state rather than a quota, a resource-accounting contract, a work limit, or a cancellation safe
 point. Traversal is published only by `GNT-41.5-canonical-text-traversal`, and only as forward
 scalar traversal: no grapheme-cluster segmentation, no backward or random-access traversal, and no
-cursor identity, comparison, ordering, serialization, or durability is published.
+cursor identity, comparison, ordering, serialization, or durability is published. Comparison is
+published only by `GNT-41.6-canonical-text-comparison`, and only as the canonical scalar
+comparison: no locale-aware collation or ordering, no comparison that consults a locale, a catalog,
+or host collation data, no case-insensitive or fold-based comparison, no comparison that normalizes
+its operands first, and no collation or sort keys are published.

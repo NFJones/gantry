@@ -1,18 +1,20 @@
 //! The pure text foundation of `GNT-41.0-text-foundation-scope`,
 //! `GNT-41.1-canonical-text-values`, `GNT-41.2-canonical-text-normalization`,
-//! `GNT-41.3-canonical-text-case-mapping`, `GNT-41.4-canonical-text-builders`, and
-//! `GNT-41.5-canonical-text-traversal`: canonical text values as finite sequences of Unicode scalar
-//! values over the Section 35 scalar and octet contracts, their exact admission from octets, their
-//! scalar count and canonical UTF-8 octets, their scalar-boundary slicing, their two canonical
-//! normalization forms, their two full default case mappings over the pinned Unicode 16.0.0 data,
-//! an explicitly bounded builder that publishes one text value, and a forward cursor that publishes
-//! the scalars of a value one at a time.
+//! `GNT-41.3-canonical-text-case-mapping`, `GNT-41.4-canonical-text-builders`,
+//! `GNT-41.5-canonical-text-traversal`, and `GNT-41.6-canonical-text-comparison`: canonical text
+//! values as finite sequences of Unicode scalar values over the Section 35 scalar and octet
+//! contracts, their exact admission from octets, their scalar count and canonical UTF-8 octets,
+//! their scalar-boundary slicing, their two canonical normalization forms, their two full default
+//! case mappings over the pinned Unicode 16.0.0 data, an explicitly bounded builder that publishes
+//! one text value, a forward cursor that publishes the scalars of a value one at a time, and the
+//! canonical three-way comparison their identity already decides.
 //!
 //! The model is pure: it consumes no host locale, host encoding, ambient text facility, timing, or
 //! global mutable state, and it declares no grapheme-cluster segmentation, no case folding, no
 //! formatting, parsing, or interpolation, no regular expression, no locale value or catalog, no
 //! compatibility normalization form, and no boundary schema, recovery, or durable behavior.
 
+use std::cmp::Ordering;
 use std::fmt;
 
 use gantry_core::unicode::{normalize_nfc, normalize_nfd, to_full_lowercase, to_full_uppercase};
@@ -20,14 +22,15 @@ use gantry_core::unicode::{normalize_nfc, normalize_nfd, to_full_lowercase, to_f
 use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
-/// (`GNT-41.0`, `GNT-41.1`, `GNT-41.2`, `GNT-41.3`, `GNT-41.4`, `GNT-41.5`).
-pub const TEXT_CLAUSES: [&str; 6] = [
+/// (`GNT-41.0` through `GNT-41.6`).
+pub const TEXT_CLAUSES: [&str; 7] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
     "GNT-41.3-canonical-text-case-mapping",
     "GNT-41.4-canonical-text-builders",
     "GNT-41.5-canonical-text-traversal",
+    "GNT-41.6-canonical-text-comparison",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -104,6 +107,32 @@ impl CaseMapping {
         match self {
             Self::Lower => "lower",
             Self::Upper => "upper",
+        }
+    }
+}
+
+/// One published canonical comparison result of `GNT-41.6-canonical-text-comparison`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TextOrdering {
+    /// The first value's scalar sequence orders before the second's.
+    Less,
+    /// The two scalar sequences are equal.
+    Equal,
+    /// The first value's scalar sequence orders after the second's.
+    Greater,
+}
+
+impl TextOrdering {
+    /// Every declared result, in declaration order.
+    pub const ALL: [Self; 3] = [Self::Less, Self::Equal, Self::Greater];
+
+    /// Returns the registered spelling of the result.
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
+        match self {
+            Self::Less => "less",
+            Self::Equal => "equal",
+            Self::Greater => "greater",
         }
     }
 }
@@ -379,6 +408,21 @@ impl TextValue {
         TextScalars {
             text: &self.text,
             remaining: self.scalar_count(),
+        }
+    }
+
+    /// Publishes the canonical three-way comparison of the value with another value
+    /// (`GNT-41.6-canonical-text-comparison`).
+    ///
+    /// The result is decided by the two scalar sequences: `equal` exactly when the values are
+    /// equal, and otherwise by the first differing scalar, so a proper prefix orders before the
+    /// value it prefixes. Comparison never normalizes, case-maps, or modifies its operands.
+    #[must_use]
+    pub fn compare(&self, other: &TextValue) -> TextOrdering {
+        match self.text.cmp(&other.text) {
+            Ordering::Less => TextOrdering::Less,
+            Ordering::Equal => TextOrdering::Equal,
+            Ordering::Greater => TextOrdering::Greater,
         }
     }
 
