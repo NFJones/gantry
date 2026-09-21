@@ -23,15 +23,14 @@ fn flattened_note() -> String {
 
 #[test]
 fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
+    let flattened = flattened_note();
+    let note = flattened.as_str();
     for anchor in [
         "GNT-3-T-AUTHORITY-CLOSURE",
         "GNT-7.2-authority-rebinding",
         "GNT-3-T-AUTHORITY-ADMISSION",
     ] {
-        assert!(
-            AUTHORITY_NOTE.contains(anchor),
-            "the authority note names {anchor}"
-        );
+        assert!(note.contains(anchor), "the authority note names {anchor}");
     }
     for code in [
         "authority-closure-exceeds-maximum",
@@ -41,7 +40,7 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
         "authority-resolution-exceeds-maximum",
     ] {
         assert!(
-            AUTHORITY_NOTE.contains(code),
+            note.contains(code),
             "the authority note names the registered code {code}"
         );
     }
@@ -53,11 +52,10 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
         "not representable",
     ] {
         assert!(
-            AUTHORITY_NOTE.contains(member),
+            note.contains(member),
             "the authority note names the clause member {member}"
         );
     }
-    let flattened = flattened_note();
     let ceilings = [
         (
             "CapabilityAuthorityClosure::MAXIMUM_INSTANCES",
@@ -80,7 +78,7 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
         );
     }
     assert!(
-        AUTHORITY_NOTE.contains("It grants nothing"),
+        note.contains("It grants nothing"),
         "the authority note carries its non-claim"
     );
 }

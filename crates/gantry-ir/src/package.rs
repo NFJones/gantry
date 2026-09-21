@@ -4766,6 +4766,11 @@ mod tests {
         assert_eq!(pinned.len(), 2);
         assert!(pinned.contains(&&first_pin));
         assert!(pinned.contains(&&second_pin));
+        let pinned_identities: Vec<&PackageIdentity> =
+            forward.pins().iter().map(DependencyPin::identity).collect();
+        assert_eq!(pinned_identities.len(), 2);
+        assert!(pinned_identities.contains(&&first));
+        assert!(pinned_identities.contains(&&second));
         let other_package = dependency_identity(TargetKind::Benchmark, None);
         let other = DependencyFingerprint::derive(
             other_package,

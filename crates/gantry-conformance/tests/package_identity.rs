@@ -42,10 +42,22 @@ const MODEL_SOURCE: &str = include_str!("../../gantry-ir/src/package.rs");
 /// The published package-model note guarded by this lane.
 const PACKAGE_MODEL_NOTE: &str = include_str!("../../../docs/package-model.md");
 
+/// Returns the note with every whitespace run collapsed to one space, so a
+/// phrase that a wrap splits in the file can still be asserted as one phrase.
+/// The registered-code rows are asserted against the raw note, because a row
+/// wrapped across lines would no longer render as one table row.
+fn flattened_package_note() -> String {
+    PACKAGE_MODEL_NOTE
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The package model publishes every registered code, its registered meaning,
 /// its owning clause, every declared clause anchor, and its non-claims.
 #[test]
 fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
+    let flattened = flattened_package_note();
     for clause in [
         "GNT-16.0",
         "GNT-16.1-package-identity",
@@ -59,7 +71,7 @@ fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
         "GNT-16.9-resolution-order-independence",
     ] {
         assert!(
-            PACKAGE_MODEL_NOTE.contains(clause),
+            flattened.contains(clause),
             "the package-model note names {clause}"
         );
     }
@@ -77,20 +89,19 @@ fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
         );
     }
     assert!(
-        PACKAGE_MODEL_NOTE.contains("MUST NOT be reported under another condition's code"),
+        flattened.contains("MUST NOT be reported under another condition's code"),
         "the note carries the code-less reporting rule"
     );
     assert!(
-        PACKAGE_MODEL_NOTE.contains("This model grants nothing."),
+        flattened.contains("This model grants nothing."),
         "the note carries its non-claim"
     );
     assert!(
-        PACKAGE_MODEL_NOTE.contains("capability ceiling")
-            && PACKAGE_MODEL_NOTE.contains("undefined property"),
+        flattened.contains("capability ceiling") && flattened.contains("undefined property"),
         "the note names the remaining code-less condition families"
     );
     assert!(
-        PACKAGE_MODEL_NOTE.contains("`not-applicable` under a v1 profile"),
+        flattened.contains("`not-applicable` under a v1 profile"),
         "the note states the v1 not-applicable status of the section"
     );
 }
