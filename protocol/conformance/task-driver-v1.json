@@ -1,6 +1,6 @@
 {
  "format": "gantry.task-driver-evidence/v1",
- "specification_sha256": "0fce5ee13435315426e8b51ab05b4f95278e61260bf673988c8b1b63c169d0d6",
+ "specification_sha256": "3bb4d8369990ad53c2040179491179dd6117f3b5c3d36bed3aee533bb684ed5f",
  "issue": "GNT-ASYNC-DRIVER-001",
  "requirements": [
   {

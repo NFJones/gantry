@@ -99,6 +99,44 @@ fn case_mapping_is_total_and_noninvasive() {
     );
 }
 
+#[test]
+fn case_mapping_never_reduces_the_scalar_count() {
+    // The pinned data publishes one or more scalars per mapped scalar, so the clause's count rule is
+    // non-decreasing. The scan covers the basic multilingual plane and the astral blocks that carry
+    // case mappings, plus a mixed value.
+    let ranges = [
+        (0x0000_u32, 0xFFFF_u32),
+        (0x10400, 0x104FF),
+        (0x1D400, 0x1D7FF),
+        (0x1E900, 0x1E95F),
+        (0x1F130, 0x1F149),
+    ];
+    for (start, end) in ranges {
+        for code in start..=end {
+            let Some(character) = char::from_u32(code) else {
+                continue;
+            };
+            let text = character.to_string();
+            let value = admitted(text.as_bytes());
+            for mapping in CaseMapping::ALL {
+                assert!(
+                    value.map_case(mapping).scalar_count() >= value.scalar_count(),
+                    "the `{}` mapping of U+{code:04X} never reduces the scalar count",
+                    mapping.spelling()
+                );
+            }
+        }
+    }
+    let mixed = admitted("\u{df}Gantry\u{130}".as_bytes());
+    for mapping in CaseMapping::ALL {
+        assert!(
+            mixed.map_case(mapping).scalar_count() >= mixed.scalar_count(),
+            "the `{}` mapping never reduces the scalar count of a value",
+            mapping.spelling()
+        );
+    }
+}
+
 fn admitted(octets: &[u8]) -> TextValue {
     TextValue::from_octets(octets)
         .unwrap_or_else(|error| panic!("`{octets:?}` is admitted: {error}"))
