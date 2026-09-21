@@ -615,6 +615,11 @@ pub const PATTERN_INSTRUCTION_BOUND: usize = 16_384;
 /// (`GNT-41.8-bounded-text-matching`).
 pub const PATTERN_REPEAT_BOUND: u32 = 255;
 
+/// The declared maximum step budget a pattern may be admitted with
+/// (`GNT-41.8-bounded-text-matching`): every admitted pattern's matching work is bounded by
+/// one declared maximum as well as by its own budget.
+pub const PATTERN_STEP_BOUND: u32 = 524_288;
+
 /// One published scalar match span of `GNT-41.8-bounded-text-matching`: a half-open range of scalar
 /// positions whose start is inclusive and whose end is exclusive.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -700,6 +705,14 @@ impl Pattern {
             return Err(TextError::new(
                 TextDiagnosticCode::PatternBound,
                 "the declared step budget is zero",
+            ));
+        }
+        if steps > PATTERN_STEP_BOUND {
+            return Err(TextError::new(
+                TextDiagnosticCode::PatternBound,
+                format!(
+                    "the declared step budget {steps} is beyond the declared maximum budget                      {PATTERN_STEP_BOUND}"
+                ),
             ));
         }
         let count = pattern.scalar_count();

@@ -323,8 +323,8 @@ pub use collections::{
 // backtracking, host regular-expression semantics, or locale.
 pub use text::{
     CaseMapping, NormalizationForm, PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND,
-    PATTERN_SCALAR_BOUND, Pattern, TEXT_CLAUSES, TextBuilder, TextDiagnosticCode, TextError,
-    TextGraphemes, TextOrdering, TextRange, TextScalars, TextValue,
+    PATTERN_SCALAR_BOUND, PATTERN_STEP_BOUND, Pattern, TEXT_CLAUSES, TextBuilder,
+    TextDiagnosticCode, TextError, TextGraphemes, TextOrdering, TextRange, TextScalars, TextValue,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned
 // deterministic generator identity and its exact step, with no host entropy, global state, secure

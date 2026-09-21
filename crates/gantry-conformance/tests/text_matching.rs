@@ -5,8 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND, PATTERN_SCALAR_BOUND, Pattern, TEXT_CLAUSES,
-    TextDiagnosticCode, TextError, TextValue,
+    PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND, PATTERN_SCALAR_BOUND, PATTERN_STEP_BOUND,
+    Pattern, TEXT_CLAUSES, TextDiagnosticCode, TextError, TextValue,
 };
 
 /// The declared clauses of Section 41, written out independently of the model.
@@ -37,6 +37,7 @@ fn matching_clause_publishes_the_bounded_pattern_surface() {
         "`PATTERN_SCALAR_BOUND` bounds the scalars a pattern may hold",
         "`PATTERN_REPEAT_BOUND` bounds the count a bounded repetition may state",
         "`PATTERN_INSTRUCTION_BOUND` bounds the compiled program",
+        "`PATTERN_STEP_BOUND` bounds the declared step budget a pattern may be admitted with",
     ] {
         assert!(
             body.contains(declaration),
@@ -115,6 +116,28 @@ fn matching_admits_and_refuses_patterns_exactly() {
         "the declared bounds are published exactly"
     );
     assert!(PATTERN_INSTRUCTION_BOUND > PATTERN_REPEAT_BOUND as usize);
+    assert!(
+        PATTERN_STEP_BOUND > PATTERN_INSTRUCTION_BOUND as u32,
+        "the declared maximum step budget exceeds the declared program bound"
+    );
+    let maximum = Pattern::admit(&admitted(b"a"), PATTERN_STEP_BOUND);
+    assert!(
+        maximum.is_ok(),
+        "the declared maximum step budget is admitted"
+    );
+    let beyond = Pattern::admit(&admitted(b"a"), PATTERN_STEP_BOUND + 1);
+    let error = beyond
+        .err()
+        .unwrap_or_else(|| panic!("a step budget beyond the declared maximum is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::PatternBound);
+    assert!(
+        error
+            .detail()
+            .contains(&(PATTERN_STEP_BOUND + 1).to_string())
+            && error.detail().contains(&PATTERN_STEP_BOUND.to_string()),
+        "the refusal names the observed budget and the declared maximum: {}",
+        error.detail()
+    );
     // A bounded repetition over a bounded repetition stays refused without being expanded.
     let nested = format!(
         "(a{{{}}}){{{}}}",
