@@ -447,6 +447,23 @@ pub enum PackageError {
         /// The axis whose sub-reports are incomplete.
         axis: CompatibilityAxis,
     },
+    /// A resolved dependency carries no pinned interface digest.
+    UnpinnedDependency {
+        /// The dependency that resolved without a pin.
+        dependency: PackageIdentity,
+    },
+    /// One dependency identity carries two distinct pinned interface digests.
+    ConflictingDependencyPin {
+        /// The dependency with conflicting pins.
+        dependency: PackageIdentity,
+    },
+    /// The supplied dependency count exceeds the fingerprint's declared bound.
+    ExceedsMaximumDependencies {
+        /// The number of supplied dependencies when the bound was crossed.
+        observed: usize,
+        /// The declared bound.
+        maximum: usize,
+    },
 }
 
 impl PackageError {
@@ -486,7 +503,10 @@ impl PackageError {
             | Self::RequirementExceedsCeiling { .. }
             | Self::UncheckedAxisReportedAsCompatible { .. }
             | Self::NotCheckedAxisMarkedChecked { .. }
-            | Self::IncompleteCompatibilityReport { .. } => None,
+            | Self::IncompleteCompatibilityReport { .. }
+            | Self::UnpinnedDependency { .. }
+            | Self::ConflictingDependencyPin { .. }
+            | Self::ExceedsMaximumDependencies { .. } => None,
         }
     }
 
@@ -494,6 +514,9 @@ impl PackageError {
     #[must_use]
     pub const fn clause(&self) -> &'static str {
         match self {
+            Self::UnpinnedDependency { .. }
+            | Self::ConflictingDependencyPin { .. }
+            | Self::ExceedsMaximumDependencies { .. } => "GNT-16.9-resolution-order-independence",
             Self::AliasCollision { .. }
             | Self::AliasUnresolved { .. }
             | Self::TransitiveUndeclared { .. }
@@ -571,6 +594,20 @@ impl fmt::Display for PackageError {
                 formatter,
                 "target kind `{kind}` is invalid ({})",
                 condition.wire_name()
+            ),
+            Self::UnpinnedDependency { dependency } => write!(
+                formatter,
+                "dependency {} resolved without a pinned interface",
+                dependency.as_str()
+            ),
+            Self::ConflictingDependencyPin { dependency } => write!(
+                formatter,
+                "dependency {} carries two distinct interface pins",
+                dependency.as_str()
+            ),
+            Self::ExceedsMaximumDependencies { observed, maximum } => write!(
+                formatter,
+                "{observed} supplied dependencies exceed the declared maximum of {maximum}"
             ),
             Self::InvalidAlias { spelling } => {
                 write!(formatter, "`{spelling}` is not a legal dependency alias")
@@ -1392,55 +1429,57 @@ impl DependencyFingerprint {
     ///
     /// The bound is measured over the supplied pairs before deduplication, so
     /// duplicates count toward it, and a larger input is refused with
-    /// [`DependencyFingerprintError::ExceedsMaximumDependencies`] instead of
+    /// [`PackageError::ExceedsMaximumDependencies`] instead of
     /// being truncated.
     pub const MAXIMUM_DEPENDENCIES: usize = 4096;
 
     /// Derives one fingerprint from a resolved package and its dependencies.
     ///
     /// A dependency whose interface digest is absent resolved without a pin and
-    /// is refused with [`DependencyFingerprintError::UnpinnedDependency`]; one
+    /// is refused with [`PackageError::UnpinnedDependency`]; one
     /// dependency identity carrying two distinct pins is refused with
-    /// [`DependencyFingerprintError::ConflictingDependencyPin`]. Identical
+    /// [`PackageError::ConflictingDependencyPin`]. Identical
     /// repeats collapse.
     ///
     /// # Errors
     ///
     /// Returns the two refusals above, plus
-    /// [`DependencyFingerprintError::ExceedsMaximumDependencies`] when the
-    /// supplied dependencies exceed [`Self::MAXIMUM_DEPENDENCIES`].
+    /// [`PackageError::ExceedsMaximumDependencies`] when the supplied
+    /// dependencies exceed [`Self::MAXIMUM_DEPENDENCIES`].
     pub fn derive(
         package: PackageIdentity,
         dependencies: impl IntoIterator<Item = (PackageIdentity, Option<InterfaceDigest>)>,
-    ) -> Result<Self, DependencyFingerprintError> {
+    ) -> Result<Self, PackageError> {
         let mut supplied = Vec::new();
         for pair in dependencies {
             supplied.push(pair);
             if supplied.len() > Self::MAXIMUM_DEPENDENCIES {
-                return Err(DependencyFingerprintError::ExceedsMaximumDependencies {
+                return Err(PackageError::ExceedsMaximumDependencies {
                     observed: supplied.len(),
                     maximum: Self::MAXIMUM_DEPENDENCIES,
                 });
             }
         }
+        supplied.sort_by(|left, right| left.0.as_str().cmp(&right.0.as_str()));
         let mut pins = Vec::with_capacity(supplied.len());
         for (identity, interface) in supplied {
-            let interface =
-                interface.ok_or_else(|| DependencyFingerprintError::UnpinnedDependency {
-                    dependency: identity.clone(),
-                })?;
+            let interface = interface.ok_or_else(|| PackageError::UnpinnedDependency {
+                dependency: identity.clone(),
+            })?;
             pins.push(DependencyPin {
                 identity,
                 interface,
             });
         }
-        pins.sort_by(|left, right| left.identity.as_str().cmp(&right.identity.as_str()));
+        // Supplied pairs are already in canonical identity order, so a missing
+        // pin refuses the canonically smallest unpinned dependency whatever the
+        // caller's order, as this module's diagnostic ordering requires.
         let mut deduped: Vec<DependencyPin> = Vec::with_capacity(pins.len());
         for pin in pins {
             match deduped.last() {
                 Some(last) if last.identity == pin.identity => {
                     if last.interface != pin.interface {
-                        return Err(DependencyFingerprintError::ConflictingDependencyPin {
+                        return Err(PackageError::ConflictingDependencyPin {
                             dependency: pin.identity,
                         });
                     }
@@ -1525,57 +1564,6 @@ fn encode_dependency_fingerprint(package: &PackageIdentity, pins: &[DependencyPi
     }
     text.into_bytes()
 }
-
-/// One rejected dependency-fingerprint condition.
-///
-/// These conditions have no published diagnostic code and no verified owning
-/// clause, so they are deliberately not [`PackageError`] variants: every variant
-/// of that enum declares its owning clause through `clause()`. The module rule
-/// that a condition MUST NOT be reported under another condition's code is met
-/// by these refusals carrying no code at all.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DependencyFingerprintError {
-    /// A resolved dependency carries no pinned interface digest.
-    UnpinnedDependency {
-        /// The dependency that resolved without a pin.
-        dependency: PackageIdentity,
-    },
-    /// One dependency identity carries two distinct pinned interface digests.
-    ConflictingDependencyPin {
-        /// The dependency with conflicting pins.
-        dependency: PackageIdentity,
-    },
-    /// The supplied dependency count exceeds the fingerprint's declared bound.
-    ExceedsMaximumDependencies {
-        /// The number of supplied dependencies when the bound was crossed.
-        observed: usize,
-        /// The declared bound.
-        maximum: usize,
-    },
-}
-
-impl std::fmt::Display for DependencyFingerprintError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnpinnedDependency { dependency } => write!(
-                formatter,
-                "dependency-fingerprint-unpinned: {}",
-                dependency.as_str()
-            ),
-            Self::ConflictingDependencyPin { dependency } => write!(
-                formatter,
-                "dependency-fingerprint-conflict: {}",
-                dependency.as_str()
-            ),
-            Self::ExceedsMaximumDependencies { observed, maximum } => write!(
-                formatter,
-                "dependency-fingerprint-exceeds-maximum: {observed} supplied dependencies exceed the declared maximum of {maximum}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for DependencyFingerprintError {}
 
 impl PartialOrd for PackageIdentity {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -4725,8 +4713,8 @@ fn encode_item(output: &mut String, item: &InterfaceItem) {
 mod tests {
     use super::{
         CanonicalIrDigest, CanonicalPath, CollisionCondition, DependencyFingerprint,
-        DependencyFingerprintError, GeneratorInputs, IDENTITY_DOMAIN, InterfaceDigest,
-        PackageIdentity, PackageIdentityInputs, PackageName, PackageSourceIdentity, PackageVersion,
+        GeneratorInputs, IDENTITY_DOMAIN, InterfaceDigest, PackageError, PackageIdentity,
+        PackageIdentityInputs, PackageName, PackageSourceIdentity, PackageVersion,
         SelectedFeatureSet, SourceManifestDigest, TargetFactSet, TargetFacts, TargetKind,
         collision_condition, digest_fields, push_json_string, synthesize_alias,
     };
@@ -4788,13 +4776,13 @@ mod tests {
             .unwrap_or_else(|| panic!("an open dependency is refused"));
         assert!(matches!(
             &error,
-            DependencyFingerprintError::UnpinnedDependency { dependency }
+            PackageError::UnpinnedDependency { dependency }
                 if dependency == &open
         ));
         assert!(
             error
                 .to_string()
-                .contains("dependency-fingerprint-unpinned")
+                .contains("resolved without a pinned interface")
         );
         let conflicting = dependency_identity(TargetKind::Benchmark, None);
         let error = DependencyFingerprint::derive(
@@ -4814,13 +4802,13 @@ mod tests {
         .unwrap_or_else(|| panic!("two pins for one dependency are refused"));
         assert!(matches!(
             &error,
-            DependencyFingerprintError::ConflictingDependencyPin { dependency }
+            PackageError::ConflictingDependencyPin { dependency }
                 if dependency == &conflicting
         ));
         assert!(
             error
                 .to_string()
-                .contains("dependency-fingerprint-conflict")
+                .contains("carries two distinct interface pins")
         );
     }
 
@@ -4850,14 +4838,14 @@ mod tests {
         .unwrap_or_else(|| panic!("one dependency past the bound is refused"));
         assert!(matches!(
             &error,
-            DependencyFingerprintError::ExceedsMaximumDependencies { observed, maximum }
+            PackageError::ExceedsMaximumDependencies { observed, maximum }
                 if *maximum == DependencyFingerprint::MAXIMUM_DEPENDENCIES
                     && *observed == DependencyFingerprint::MAXIMUM_DEPENDENCIES + 1
         ));
         assert_eq!(
             error.to_string(),
             format!(
-                "dependency-fingerprint-exceeds-maximum: {} supplied dependencies exceed the declared maximum of {}",
+                "{} supplied dependencies exceed the declared maximum of {}",
                 DependencyFingerprint::MAXIMUM_DEPENDENCIES + 1,
                 DependencyFingerprint::MAXIMUM_DEPENDENCIES
             )
