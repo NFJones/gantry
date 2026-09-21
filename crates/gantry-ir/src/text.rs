@@ -626,18 +626,27 @@ impl Pattern {
         if parser.index != parser.scalars.len() {
             return Err(parser.syntax_error(parser.index, "unmatched closing construct"));
         }
-        let mut program = Vec::new();
-        compile_node(&node, &mut program);
-        program.push(Instruction::Match);
-        if program.len() > PATTERN_INSTRUCTION_BOUND {
+        let projected = projected_instructions(&node)
+            .and_then(|count| count.checked_add(1))
+            .ok_or_else(|| {
+                TextError::new(
+                    TextDiagnosticCode::PatternBound,
+                    format!(
+                        "the compiled program would exceed the declared bound {PATTERN_INSTRUCTION_BOUND}"
+                    ),
+                )
+            })?;
+        if projected > PATTERN_INSTRUCTION_BOUND {
             return Err(TextError::new(
                 TextDiagnosticCode::PatternBound,
                 format!(
-                    "the compiled program holds {} instructions, beyond the declared bound {PATTERN_INSTRUCTION_BOUND}",
-                    program.len()
+                    "the compiled program would hold {projected} instructions, beyond the declared bound {PATTERN_INSTRUCTION_BOUND}"
                 ),
             ));
         }
+        let mut program = Vec::new();
+        compile_node(&node, &mut program);
+        program.push(Instruction::Match);
         Ok(Self { program, steps })
     }
 
@@ -944,7 +953,19 @@ impl PatternParser {
                 };
                 if !matches!(
                     escaped,
-                    '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '|' | '\\' | '{' | '}'
+                    '.' | '*'
+                        | '+'
+                        | '?'
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | '|'
+                        | '\\'
+                        | '{'
+                        | '}'
+                        | '^'
+                        | '$'
                 ) {
                     return Err(
                         self.syntax_error(start, "only a pattern metacharacter may be escaped")
@@ -956,6 +977,10 @@ impl PatternParser {
             '*' | '+' | '?' | '{' => {
                 Err(self.syntax_error(self.index, "a quantifier needs a preceding atom"))
             }
+            '^' | '$' => Err(self.syntax_error(
+                self.index,
+                "an anchor is not admitted by the declared pattern syntax",
+            )),
             ')' => Err(self.syntax_error(self.index, "an unmatched closing parenthesis")),
             _ => {
                 self.index += 1;
@@ -1078,6 +1103,43 @@ fn compile_node(node: &Node, program: &mut Vec<Instruction>) {
                         program[split] = Instruction::Split(split + 1, after);
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Returns the exact number of instructions compiling `node` emits, or nothing when that count
+/// overflows; the count is computed without compiling, so admission can refuse an over-bound
+/// pattern before any expansion happens.
+fn projected_instructions(node: &Node) -> Option<usize> {
+    match node {
+        Node::Empty => Some(0),
+        Node::Atom(_) => Some(1),
+        Node::Concat(items) => {
+            let mut total = 0_usize;
+            for item in items {
+                total = total.checked_add(projected_instructions(item)?)?;
+            }
+            Some(total)
+        }
+        Node::Alternate(branches) => {
+            let mut total = 0_usize;
+            for branch in branches {
+                total = total.checked_add(projected_instructions(branch)?)?;
+            }
+            total.checked_add(2 * branches.len().saturating_sub(1))
+        }
+        Node::Repeat { node, min, max } => {
+            let inner = projected_instructions(node)?;
+            let minimum = *min as usize;
+            match max {
+                None => {
+                    let copies = minimum.checked_add(1)?;
+                    inner.checked_mul(copies)?.checked_add(3)
+                }
+                Some(maximum) => inner
+                    .checked_mul(*maximum as usize)?
+                    .checked_add((*maximum as usize).saturating_sub(minimum)),
             }
         }
     }

@@ -72,7 +72,7 @@ fn matching_clause_publishes_the_bounded_pattern_surface() {
 #[test]
 fn matching_admits_and_refuses_patterns_exactly() {
     for pattern in [
-        "(", "a)", "*a", "[a", "[]", "[z-a]", "a{3,2}", "\\d", "a{,2}",
+        "(", "a)", "*a", "[a", "[]", "[z-a]", "a{3,2}", "\\d", "a{,2}", "^", "$", "a$",
     ] {
         let error = refusal(
             Pattern::admit(&admitted(pattern.as_bytes()), 64),
@@ -113,6 +113,20 @@ fn matching_admits_and_refuses_patterns_exactly() {
         "the declared bounds are published exactly"
     );
     assert!(PATTERN_INSTRUCTION_BOUND > PATTERN_REPEAT_BOUND as usize);
+    // A bounded repetition over a bounded repetition stays refused without being expanded.
+    let nested = format!(
+        "(a{{{}}}){{{}}}",
+        PATTERN_REPEAT_BOUND, PATTERN_REPEAT_BOUND
+    );
+    refusal(
+        Pattern::admit(&admitted(nested.as_bytes()), 64),
+        TextDiagnosticCode::PatternBound,
+    );
+    let deeper = format!("((a{{{0}}}){{{0}}}){{{0}}}", PATTERN_REPEAT_BOUND);
+    refusal(
+        Pattern::admit(&admitted(deeper.as_bytes()), 64),
+        TextDiagnosticCode::PatternBound,
+    );
 }
 
 #[test]
@@ -132,6 +146,7 @@ fn matching_decides_literals_classes_and_quantifiers() {
         ("a{2,}", "aaa", Some((0, 3))),
         ("a?", "b", Some((0, 0))),
         ("\\*", "*", Some((0, 1))),
+        ("\\^", "^", Some((0, 1))),
         ("é+", "xéé", Some((1, 3))),
         ("z", "aaa", None),
     ];

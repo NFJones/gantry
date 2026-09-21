@@ -1,6 +1,6 @@
 {
  "format": "gantry.async-admission-evidence/v1",
- "specification_sha256": "97ec5b288bc3a8ea9c166c0925e7b4c149f092e15de051eb67eb43d242e62226",
+ "specification_sha256": "903cf9b4a3bee40b0e7df2ec0d1a0c2063e71a22b71b56d2d6dfcb253e201459",
  "issue": "GNT-ASYNC-ADMIT-001",
  "capabilities": [
   {
