@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "2c16648ed1eb69c8e0dc163776783a393460ed5df5b9869fcd181fa61f675087",
+  "specification_sha256": "0fce5ee13435315426e8b51ab05b4f95278e61260bf673988c8b1b63c169d0d6",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15667,
+      "end_line": 15671,
       "rationale": null
     }
   ],
@@ -41893,10 +41893,10 @@
     {
       "id": "GNT-41.2-canonical-text-normalization",
       "span_start_line": 15665,
-      "span_end_line": 15667,
+      "span_end_line": 15668,
       "anchor_line": 15665,
       "body_start_line": 15666,
-      "body_end_line": 15667,
+      "body_end_line": 15668,
       "profiles": [
         "analyzer"
       ],
@@ -41908,7 +41908,7 @@
         {
           "key": "clause-001",
           "start_line": 15666,
-          "end_line": 15667,
+          "end_line": 15668,
           "profiles": [
             "analyzer"
           ],
@@ -41923,6 +41923,46 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_normalization.rs#normalization_clause_publishes_the_two_canonical_forms",
                 "crates/gantry-conformance/tests/text_normalization.rs#normalization_matches_the_pinned_unicode_data"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.3-canonical-text-case-mapping",
+      "span_start_line": 15669,
+      "span_end_line": 15671,
+      "anchor_line": 15669,
+      "body_start_line": 15670,
+      "body_end_line": 15671,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15670,
+          "end_line": 15671,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_case_mapping.rs#case_clause_publishes_the_two_full_default_mappings",
+                "crates/gantry-conformance/tests/text_case_mapping.rs#case_mapping_matches_the_pinned_unicode_data"
               ],
               "rationale": null
             }

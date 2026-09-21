@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "2c16648ed1eb69c8e0dc163776783a393460ed5df5b9869fcd181fa61f675087",
-  "byte_length": 1077379,
-  "line_count": 15667,
+  "specification_sha256": "0fce5ee13435315426e8b51ab05b4f95278e61260bf673988c8b1b63c169d0d6",
+  "byte_length": 1080647,
+  "line_count": 15671,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15667,
-      "sha256": "0a07b92fe61098799b248ef7cde1bd2606b2183077ed6ac8b6a7206820fedabc",
+      "end_line": 15671,
+      "sha256": "01d8f23254e67830d231cfd841a407ccd1f0c029a7b6ab57a088b4c6e5796ca3",
       "rationale": null
     }
   ],
@@ -42957,11 +42957,11 @@
       "id": "GNT-41.0-text-foundation-scope",
       "span_start_line": 15654,
       "span_end_line": 15660,
-      "span_sha256": "a4c83b2fb100b3ba8e705f7320b4062f447f6df0d9e8efb32da3743b738286f8",
+      "span_sha256": "45913585cd7315fe1b11a048b8323dc61c7bb2899ef09059be05621d51f12ca4",
       "anchor_line": 15657,
       "body_start_line": 15658,
       "body_end_line": 15660,
-      "body_sha256": "30e89a2c2cdb8914fe039e1887fdac71bc8364a8d14494ef6013e92b06c9c9af",
+      "body_sha256": "19b013706b8f4fb8411b22bedc8f4671e72e36017fe7a33eb95c8b226f53ca20",
       "profiles": [
         "analyzer"
       ],
@@ -43038,12 +43038,12 @@
     {
       "id": "GNT-41.2-canonical-text-normalization",
       "span_start_line": 15665,
-      "span_end_line": 15667,
-      "span_sha256": "b528b59f6328100436c891b5390fcd4cc6d30772527d81717ad0f2247d81ad34",
+      "span_end_line": 15668,
+      "span_sha256": "bead40eb60ebef3ad0710b7a46ff30f1a73079decab50ec5b159e9dc1d8efc4d",
       "anchor_line": 15665,
       "body_start_line": 15666,
-      "body_end_line": 15667,
-      "body_sha256": "2c167ea4f5770bd83f06ed90fdf3ca8bb75013fa845a6e4b74a0abe97a8970b9",
+      "body_end_line": 15668,
+      "body_sha256": "50fc7938613440ee01dba69c7b85f9318d985a26740c70826bb07ff0e21526ab",
       "profiles": [
         "analyzer"
       ],
@@ -43055,7 +43055,7 @@
         {
           "key": "clause-001",
           "start_line": 15666,
-          "end_line": 15667,
+          "end_line": 15668,
           "profiles": [
             "analyzer"
           ],
@@ -43070,6 +43070,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_normalization.rs#normalization_clause_publishes_the_two_canonical_forms",
                 "crates/gantry-conformance/tests/text_normalization.rs#normalization_matches_the_pinned_unicode_data"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.3-canonical-text-case-mapping",
+      "span_start_line": 15669,
+      "span_end_line": 15671,
+      "span_sha256": "560116704413bd1ef5e5582cccbbcb8b24e66aa0ff0a30071b5c2f90aec8227f",
+      "anchor_line": 15669,
+      "body_start_line": 15670,
+      "body_end_line": 15671,
+      "body_sha256": "6e7ba03c1b14545b4dd38ee064aabc0f12bf997240274a721ac2e6ed96a06351",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15670,
+          "end_line": 15671,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_case_mapping.rs#case_clause_publishes_the_two_full_default_mappings",
+                "crates/gantry-conformance/tests/text_case_mapping.rs#case_mapping_matches_the_pinned_unicode_data"
               ],
               "rationale": null
             }

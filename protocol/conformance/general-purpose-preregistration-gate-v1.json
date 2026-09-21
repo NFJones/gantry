@@ -10,11 +10,11 @@
   },
   {
    "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-   "sha256": "b14cf3b8ad1d430e3e602d14bf1052c606a804ed0e30870e78b1f6d9dbf05f6c"
+   "sha256": "229e0617dd97722354a5887de39271f8a289a03ef3519540e3d11948df7da123"
   },
   {
    "path": "protocol/goldens/general-purpose-preregistration-v1.canonical.json",
-   "sha256": "f3c957079b367208069e351763d8ee6b4c7bd1010c3d5afae659a98691b91c3d"
+   "sha256": "523154cf6ea9bbafb35ad0f35f08372d4a77fa551e7d21bdc808ff3b7c44a789"
   },
   {
    "path": "protocol/schemas/general-purpose-preregistration-v1.schema.json",
@@ -53,7 +53,7 @@
  "prerequisites": [],
  "specification": {
   "path": "SPEC.md",
-  "sha256": "2c16648ed1eb69c8e0dc163776783a393460ed5df5b9869fcd181fa61f675087"
+  "sha256": "0fce5ee13435315426e8b51ab05b4f95278e61260bf673988c8b1b63c169d0d6"
  },
  "status": "verified",
  "validation_commands": [

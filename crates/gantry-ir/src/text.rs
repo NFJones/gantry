@@ -1,28 +1,30 @@
 //! The pure text foundation of `GNT-41.0-text-foundation-scope`,
-//! `GNT-41.1-canonical-text-values`, and `GNT-41.2-canonical-text-normalization`: canonical text
-//! values as finite sequences of Unicode scalar values over the Section 35 scalar and octet
-//! contracts, their exact admission from octets, their scalar count and canonical UTF-8 octets,
-//! their scalar-boundary slicing, and their two canonical normalization forms over the pinned
-//! Unicode 16.0.0 data.
+//! `GNT-41.1-canonical-text-values`, `GNT-41.2-canonical-text-normalization`, and
+//! `GNT-41.3-canonical-text-case-mapping`: canonical text values as finite sequences of Unicode
+//! scalar values over the Section 35 scalar and octet contracts, their exact admission from octets,
+//! their scalar count and canonical UTF-8 octets, their scalar-boundary slicing, their two
+//! canonical normalization forms, and their two full default case mappings over the pinned Unicode
+//! 16.0.0 data.
 //!
 //! The model is pure: it consumes no host locale, host encoding, ambient text facility, timing, or
-//! global mutable state, and it declares no grapheme-cluster segmentation, no case mapping or
-//! folding, no builder, no formatting, parsing, or interpolation, no regular expression, no locale
-//! value or catalog, no compatibility normalization form, and no boundary schema, recovery, or
-//! durable behavior.
+//! global mutable state, and it declares no grapheme-cluster segmentation, no case folding, no
+//! builder, no formatting, parsing, or interpolation, no regular expression, no locale value or
+//! catalog, no compatibility normalization form, and no boundary schema, recovery, or durable
+//! behavior.
 
 use std::fmt;
 
-use gantry_core::unicode::{normalize_nfc, normalize_nfd};
+use gantry_core::unicode::{normalize_nfc, normalize_nfd, to_full_lowercase, to_full_uppercase};
 
 use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
-/// (`GNT-41.0`, `GNT-41.1`, `GNT-41.2`).
-pub const TEXT_CLAUSES: [&str; 3] = [
+/// (`GNT-41.0`, `GNT-41.1`, `GNT-41.2`, `GNT-41.3`).
+pub const TEXT_CLAUSES: [&str; 4] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
+    "GNT-41.3-canonical-text-case-mapping",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -72,6 +74,29 @@ impl NormalizationForm {
         match self {
             Self::Nfd => "nfd",
             Self::Nfc => "nfc",
+        }
+    }
+}
+
+/// One published full default case mapping of `GNT-41.3-canonical-text-case-mapping`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CaseMapping {
+    /// The lowercase mapping, spelled `lower`.
+    Lower,
+    /// The uppercase mapping, spelled `upper`.
+    Upper,
+}
+
+impl CaseMapping {
+    /// Every declared mapping, in declaration order.
+    pub const ALL: [Self; 2] = [Self::Lower, Self::Upper];
+
+    /// Returns the registered spelling of the mapping.
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
+        match self {
+            Self::Lower => "lower",
+            Self::Upper => "upper",
         }
     }
 }
@@ -222,6 +247,21 @@ impl TextValue {
         let text = match form {
             NormalizationForm::Nfd => normalize_nfd(&self.text),
             NormalizationForm::Nfc => normalize_nfc(&self.text),
+        };
+        Self { text }
+    }
+
+    /// Publishes the named full default case mapping of the value
+    /// (`GNT-41.3-canonical-text-case-mapping`).
+    ///
+    /// The mapping is total and deterministic over the pinned Unicode 16.0.0 data, locale-neutral,
+    /// and applied to each scalar in sequence order, so the result may hold a different number of
+    /// scalars than the value it was mapped from; the value it was given is never modified.
+    #[must_use]
+    pub fn map_case(&self, mapping: CaseMapping) -> Self {
+        let text = match mapping {
+            CaseMapping::Lower => to_full_lowercase(&self.text),
+            CaseMapping::Upper => to_full_uppercase(&self.text),
         };
         Self { text }
     }
