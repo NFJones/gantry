@@ -1,13 +1,15 @@
-//! The pure text foundation of `GNT-41.0-text-foundation-scope` and
-//! `GNT-41.1-canonical-text-values`: canonical text values as finite sequences of Unicode scalar
-//! values over the Section 35 scalar and octet contracts, their exact admission from octets, their
-//! scalar count and canonical UTF-8 octets, and scalar-boundary slicing.
+//! The pure text foundation of `GNT-41.0-text-foundation-scope`,
+//! `GNT-41.1-canonical-text-values`, and `GNT-41.2-canonical-text-normalization`: canonical text
+//! values as finite sequences of Unicode scalar values over the Section 35 scalar and octet
+//! contracts, their exact admission from octets, their scalar count and canonical UTF-8 octets,
+//! their scalar-boundary slicing, and their two canonical normalization forms over the pinned
+//! Unicode 16.0.0 data.
 //!
 //! The model is pure: it consumes no host locale, host encoding, ambient text facility, timing, or
-//! global mutable state, and it declares no grapheme-cluster segmentation, no normalization, no
-//! case mapping or folding, no builder, no formatting, parsing, or interpolation, no regular
-//! expression, no locale value or catalog, no Unicode data version, and no boundary schema,
-//! recovery, or durable behavior.
+//! global mutable state, and it declares no grapheme-cluster segmentation, no case mapping or
+//! folding, no builder, no formatting, parsing, or interpolation, no regular expression, no locale
+//! value or catalog, no compatibility normalization form, and no boundary schema, recovery, or
+//! durable behavior.
 
 use std::fmt;
 
