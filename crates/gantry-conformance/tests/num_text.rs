@@ -52,16 +52,15 @@ fn canonical_numeric_text_surface_is_published() {
     let note = read_text(&workspace_root().join("docs/num-foundation.md"));
 
     let anchor = "GNT-40.6-canonical-numeric-text";
-    assert_eq!(
-        NUM_CLAUSES.last(),
-        Some(&anchor),
-        "the numeric-text clause is the specification's final clause"
+    assert!(
+        NUM_CLAUSES.contains(&anchor),
+        "the numeric-text clause is declared by the numeric clause vocabulary"
     );
     assert!(note.contains(anchor), "the note names `{anchor}`");
     let clause = clause_body(&specification, anchor);
     assert!(
-        specification.trim_end().ends_with(clause.trim_end()),
-        "the final clause body runs to the end of the specification"
+        !specification.trim_end().ends_with(clause.trim_end()),
+        "the numeric-text clause is no longer the specification's final clause"
     );
     for surface in [
         "`format_canonical_int`",

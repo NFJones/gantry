@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "251b6eac825a1772d3d6941589d46bc50f6d210bf1220d8b6192183d601e77c4",
-  "byte_length": 1066529,
-  "line_count": 15649,
+  "specification_sha256": "4fc810d778ac775e42f13e82714b8b82ded4776471179ed3f9d9fbee2f7ec0ac",
+  "byte_length": 1069125,
+  "line_count": 15653,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "2ed00323619ea34728cfa1860350137d73472dc9dbb514db439ec3163b518483",
+      "sha256": "55b2af2a5e20f9e57bec0743460efe4e35115f2500ade23c53f8c2d69266c31b",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15649,
-      "sha256": "7264d1b7e9d6c8c39d2fb8e61b30337a54eec5b7ebe6191043b4f4989457f694",
+      "end_line": 15653,
+      "sha256": "6d8391363dbe1166cae45f856d6f604412c357c8a89681cf11c273f08609317f",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "4ffca18db5247089d8e8bc368e89405877cbe70260ef60488bc53f06dfa3cb63",
+      "span_sha256": "ed03a88efd0ac22a6001da4eb920a7416026a2f0e38067310017f4f4d92bb386",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "bbac0dba22d1aa3b045eeade123dd89d273b69733b7fecfb26fcdceb06490912",
+      "body_sha256": "1a543509d478439be9c005be3133fccf68d3a01854be9f4d0c53399cc2d50313",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42711,11 +42711,11 @@
       "id": "GNT-40.2-checked-integer-algorithms",
       "span_start_line": 15630,
       "span_end_line": 15634,
-      "span_sha256": "9c0e20ca92c7a5dd53573c33af2eec271a17f7c2e335ad70b62b5bee09310aca",
+      "span_sha256": "20ec28ea14ea92b1f9919124ad99c10a2d4f11a19b53e02e1cefb6b318088c43",
       "anchor_line": 15631,
       "body_start_line": 15632,
       "body_end_line": 15634,
-      "body_sha256": "a842f2b3a9cf52c2374347c4638e65b2d1f74b0e9713ed5d18d49a91748cedd9",
+      "body_sha256": "a223957b0c6e87a9d01aec2f331d8bf3d6af34bf8ab9a574a3d69d14740e8a1f",
       "profiles": [
         "analyzer"
       ],
@@ -42905,6 +42905,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_text.rs#canonical_numeric_text_round_trips_exactly"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.7-canonical-integer-overflow-modes",
+      "span_start_line": 15650,
+      "span_end_line": 15653,
+      "span_sha256": "3b4c62b84efd4f0f64ddd338b3ff5dc46557591a533b560270d8898b30faac61",
+      "anchor_line": 15651,
+      "body_start_line": 15652,
+      "body_end_line": 15653,
+      "body_sha256": "d8461ec15fd037e7a63d72f837f1691089aea83269ba86d7849182877eae9534",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15652,
+          "end_line": 15653,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_modes.rs#canonical_modes_are_exact_in_every_mode"
               ],
               "rationale": null
             }

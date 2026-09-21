@@ -321,11 +321,12 @@ pub use prng::{
 // The Section 40 numeric algorithms are declaration-only primitives: the checked integer and bit
 // operations publish exact canonical values or exactly one declared deterministic failure, and the
 // finite-float algorithms publish exact canonical values only, and the canonical numeric text
-// helpers publish exactly the canonical spelling of a value, with no wrapping, saturation, masking,
+// helpers publish exactly the canonical spelling of a value. The canonical integer overflow modes
+// apply the declared modes to the algorithms without any implicit wrapping or saturation, masking,
 // coercion, implicit widening, ambient rounding, locale formatting, or host dependence.
 pub use numeric::{
     BinaryBitOperation, BinaryFloatAlgorithm, CheckedIntegerAlgorithm, NEGATE_WIRE_NAME,
-    NumericConversion, UnaryBitOperation, UnaryFloatAlgorithm, float_to_int,
+    NumericConversion, UnaryBitOperation, UnaryFloatAlgorithm, apply_in_mode, float_to_int,
     format_canonical_float, format_canonical_int, int_to_float, negate, parse_canonical_float,
     parse_canonical_int,
 };

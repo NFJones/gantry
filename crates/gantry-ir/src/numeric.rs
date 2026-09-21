@@ -1,4 +1,4 @@
-//! The admitted deterministic numeric algorithms of `GNT-40.2` through `GNT-40.6`.
+//! The admitted deterministic numeric algorithms of `GNT-40.2` through `GNT-40.7`.
 //!
 //! Every operation is pure and exact: it consumes canonical operands and publishes exactly one
 //! canonical value, exactly one declared deterministic failure, or nothing where the clause
@@ -6,12 +6,13 @@
 //! implicitly, coerces across numeric types, or consults a host facility, an ambient rounding mode,
 //! timing, prior calls, or global state. This module publishes the checked integer algorithms and
 //! the unary negation (`GNT-40.2`), the two numeric conversions (`GNT-40.3`), the checked bit
-//! operations (`GNT-40.4`), the finite-float algorithms (`GNT-40.5`), and the canonical numeric
-//! text helpers (`GNT-40.6`) only: it publishes no source-literal grammar, work limit, cancellation
-//! safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine
-//! representation, or family behavior.
+//! operations (`GNT-40.4`), the finite-float algorithms (`GNT-40.5`), the canonical numeric text
+//! helpers (`GNT-40.6`), and the canonical integer overflow modes (`GNT-40.7`) only: it publishes
+//! no source-literal grammar, work limit, cancellation safe point, quota, schema, recovery,
+//! durability, boundary encoding, lowering, machine representation, or family behavior.
 
-use gantry_core::numeric::{GantryFloat, GantryInt};
+use crate::scalar::OverflowMode;
+use gantry_core::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry_core::portable::DeterministicEvaluationCode;
 
 /// One admitted binary checked integer algorithm of `GNT-40.2`.
@@ -116,6 +117,58 @@ pub fn format_canonical_float(value: GantryFloat) -> String {
 pub fn parse_canonical_float(text: &str) -> Option<GantryFloat> {
     let value = GantryFloat::new(text.parse::<f64>().ok()?)?;
     (format_canonical_float(value) == text).then_some(value)
+}
+
+/// Applies one checked integer algorithm of `GNT-40.2` in one declared overflow mode (`GNT-40.7`).
+///
+/// The modes are the explicit modes of `GNT-35.3-checked-arithmetic-and-overflow-modes` applied to
+/// the canonical `Int` domain: `Refuse` delegates to the algorithm's own exact rule, `Saturating`
+/// publishes the exact mathematical result or the domain's nearer bound, and `Wrapping` publishes the
+/// canonical value whose distance above the domain minimum is the exact result's distance above
+/// that minimum reduced modulo the domain's span. Because the domain is a declared range inside a
+/// 64-bit representation, neither total mode uses the declared-width behaviour a fixed-width scalar
+/// gets, and no declared-width fallback is consulted. A zero divisor refuses under
+/// `integer-division-by-zero` or `integer-remainder-by-zero` in every mode, and no mode depends on a
+/// host facility, an ambient rounding mode, timing, prior calls, or global state.
+pub fn apply_in_mode(
+    mode: OverflowMode,
+    algorithm: CheckedIntegerAlgorithm,
+    left: GantryInt,
+    right: GantryInt,
+) -> Result<GantryInt, DeterministicEvaluationCode> {
+    if mode == OverflowMode::Refuse {
+        return algorithm.apply(left, right);
+    }
+    let dividend = i128::from(left.get());
+    let divisor = i128::from(right.get());
+    let exact = match algorithm {
+        CheckedIntegerAlgorithm::Add => dividend + divisor,
+        CheckedIntegerAlgorithm::Subtract => dividend - divisor,
+        CheckedIntegerAlgorithm::Multiply => dividend * divisor,
+        CheckedIntegerAlgorithm::Divide => {
+            if divisor == 0 {
+                return Err(DeterministicEvaluationCode::IntegerDivisionByZero);
+            }
+            dividend / divisor
+        }
+        CheckedIntegerAlgorithm::Remainder => {
+            if divisor == 0 {
+                return Err(DeterministicEvaluationCode::IntegerRemainderByZero);
+            }
+            dividend % divisor
+        }
+    };
+    let minimum = i128::from(GANTRY_INT_MINIMUM);
+    let maximum = i128::from(GANTRY_INT_MAXIMUM);
+    let published = match mode {
+        OverflowMode::Saturating => exact.clamp(minimum, maximum),
+        OverflowMode::Wrapping => minimum + (exact - minimum).rem_euclid(maximum - minimum + 1),
+        OverflowMode::Refuse => unreachable!("refuse delegates to the algorithm"),
+    };
+    let value = i64::try_from(published)
+        .unwrap_or_else(|_| unreachable!("a mode publishes inside the canonical domain"));
+    Ok(GantryInt::new(value)
+        .unwrap_or_else(|| unreachable!("a mode publishes inside the canonical domain")))
 }
 
 /// Negates one canonical `Int` operand (`GNT-40.2`).
