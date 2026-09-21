@@ -13,7 +13,7 @@ reads no host path.
 
 | Clause | What the model decides |
 | --- | --- |
-| `GNT-16.0` | The section's scope: manifest, interface, instance, alias, visibility, re-export, target-kind, and compatibility vocabulary, and nothing outside it. |
+| `GNT-16.0` | The section's scope: the closed vocabulary of package identity and resolution order, manifests, interfaces, instances, aliases, visibility, re-exports, target kinds, and compatibility axes; a term outside that vocabulary is admitted by no clause of this section. |
 | `GNT-16.1-package-identity` | The canonical identity of one resolved package, computed over exactly these inputs and no others: resolved package name, exact version, canonical source-identity digest, selected features, target facts, public-interface digest, and declared generator inputs. |
 | `GNT-16.2-package-instances` | One resolved package at one exact version with one selected feature solution: distinct instance identities are distinct nominal universes even when their items are structurally identical, and an item of one instance is not interchangeable with a structurally identical item of another without an explicit source conversion. |
 | `GNT-16.3-dependency-aliases` | Alias declarations, their namespaces, collision relations, and the refusal of an unresolved or duplicated alias. |
