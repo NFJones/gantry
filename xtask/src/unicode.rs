@@ -27,6 +27,8 @@ const DATA_FILES: &[&str] = &[
     "ucd/Scripts.txt",
     "ucd/SpecialCasing.txt",
     "ucd/UnicodeData.txt",
+    "ucd/auxiliary/GraphemeBreakProperty.txt",
+    "ucd/emoji/emoji-data.txt",
 ];
 
 const ALL_FILES: &[&str] = &[
@@ -48,6 +50,29 @@ const ALL_FILES: &[&str] = &[
     "ucd/Scripts.txt",
     "ucd/SpecialCasing.txt",
     "ucd/UnicodeData.txt",
+    "ucd/auxiliary/GraphemeBreakProperty.txt",
+    "ucd/emoji/emoji-data.txt",
+];
+
+/// The declared `Grapheme_Cluster_Break` values, in generated table order.
+///
+/// Index zero is the implicit default the property file never lists; every other entry is a
+/// spelling the pinned file must use, and an unknown spelling is refused by the parser.
+const GRAPHEME_BREAK_VALUES: &[&str] = &[
+    "Other",
+    "CR",
+    "LF",
+    "Control",
+    "Extend",
+    "ZWJ",
+    "Regional_Indicator",
+    "Prepend",
+    "SpacingMark",
+    "L",
+    "V",
+    "T",
+    "LV",
+    "LVT",
 ];
 
 #[derive(Clone, Debug)]
@@ -72,6 +97,8 @@ struct UnicodeTables {
     script_ranges: Vec<(u32, u32, u16)>,
     script_extensions: Vec<(u32, u32, Vec<u16>)>,
     confusables: Vec<(u32, Vec<u32>)>,
+    grapheme_break: Vec<(u32, u32, u8)>,
+    extended_pictographic: Vec<(u32, u32)>,
 }
 
 /// Generates the checked-in Unicode 16 runtime tables.
@@ -208,6 +235,14 @@ fn verify_versions(root: &Path) -> Result<(), String> {
             return Err(format!("{relative} does not identify version 16.0.0"));
         }
     }
+    let grapheme = read_text(&root.join("ucd/auxiliary/GraphemeBreakProperty.txt"))?;
+    if !grapheme.contains("# GraphemeBreakProperty-16.0.0.txt") {
+        return Err("GraphemeBreakProperty does not identify version 16.0.0".to_owned());
+    }
+    let emoji = read_text(&root.join("ucd/emoji/emoji-data.txt"))?;
+    if !emoji.contains("# Used with Emoji Version 16.0") {
+        return Err("emoji-data does not identify version 16.0".to_owned());
+    }
     Ok(())
 }
 
@@ -225,6 +260,8 @@ fn load_tables(root: &Path) -> Result<UnicodeTables, String> {
         })
         .collect::<BTreeMap<_, _>>();
     let unicode_data = parse_unicode_data(&read_text(&root.join("ucd/UnicodeData.txt"))?)?;
+    let grapheme = read_text(&root.join("ucd/auxiliary/GraphemeBreakProperty.txt"))?;
+    let emoji = read_text(&root.join("ucd/emoji/emoji-data.txt"))?;
     let exclusions = parse_property(
         &read_text(&root.join("ucd/DerivedNormalizationProps.txt"))?,
         "Full_Composition_Exclusion",
@@ -265,6 +302,8 @@ fn load_tables(root: &Path) -> Result<UnicodeTables, String> {
             &script_index,
         )?,
         confusables: parse_confusables(&read_text(&root.join("security/confusables.txt"))?)?,
+        grapheme_break: parse_grapheme_break(&grapheme)?,
+        extended_pictographic: parse_property(&emoji, "Extended_Pictographic")?,
     })
 }
 
@@ -373,6 +412,44 @@ fn parse_property(text: &str, name: &str) -> Result<Vec<(u32, u32)>, String> {
         }
     }
     merge_ranges(ranges)
+}
+
+fn parse_grapheme_break(text: &str) -> Result<Vec<(u32, u32, u8)>, String> {
+    let mut ranges = Vec::new();
+    for line in data_lines(text) {
+        let Some((range, class_and_more)) = line.split_once(';') else {
+            return Err(format!("malformed grapheme-break row {line:?}"));
+        };
+        let class = class_and_more
+            .split(';')
+            .next()
+            .map(str::trim)
+            .unwrap_or_default();
+        let index = GRAPHEME_BREAK_VALUES
+            .iter()
+            .position(|value| *value == class)
+            .ok_or_else(|| format!("undeclared grapheme-break value {class:?}"))?;
+        if index == 0 {
+            return Err(format!(
+                "grapheme-break value {class:?} is the implicit default and must not be listed"
+            ));
+        }
+        let (start, end) = parse_range(range.trim())?;
+        ranges.push((start, end, index as u8));
+    }
+    ranges.sort_unstable();
+    let mut prior_end: Option<u32> = None;
+    for (start, end, _) in &ranges {
+        if let Some(prior) = prior_end
+            && *start <= prior
+        {
+            return Err(format!(
+                "grapheme-break ranges overlap at or before 0x{start:X}"
+            ));
+        }
+        prior_end = Some(*end);
+    }
+    Ok(ranges)
 }
 
 fn parse_script_aliases(text: &str) -> Result<Vec<(String, String)>, String> {
@@ -580,7 +657,22 @@ pub const UNICODE_VERSION: (u8, u8, u8) = (16, 0, 0);\n",
     render_script_ranges(&mut output, "SCRIPT_RANGES", &tables.script_ranges);
     render_script_extensions(&mut output, &tables.script_extensions);
     render_mappings(&mut output, "CONFUSABLES", &tables.confusables);
+    render_value_ranges(&mut output, "GRAPHEME_BREAK", &tables.grapheme_break);
+    render_strings(&mut output, "GRAPHEME_BREAK_VALUES", GRAPHEME_BREAK_VALUES);
+    render_ranges(
+        &mut output,
+        "EXTENDED_PICTOGRAPHIC",
+        &tables.extended_pictographic,
+    );
     Ok(output)
+}
+
+fn render_strings(output: &mut String, name: &str, values: &[&str]) {
+    output.push_str(&format!("\npub(crate) const {name}: &[&str] = &[\n"));
+    for value in values {
+        output.push_str(&format!("    \"{value}\",\n"));
+    }
+    output.push_str("];\n");
 }
 
 fn render_ranges(output: &mut String, name: &str, values: &[(u32, u32)]) {

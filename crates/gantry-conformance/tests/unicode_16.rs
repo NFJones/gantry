@@ -4,10 +4,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::unicode::{
-    UNICODE_VERSION, confusable_skeleton, is_identifier_recommended,
-    is_identifier_security_excluded, is_nfc, is_white_space, is_xid_continue, is_xid_start,
-    normalize_nfc, normalize_nfd, push_full_lowercase, push_full_uppercase, script,
-    script_extensions, to_full_lowercase, to_full_uppercase,
+    UNICODE_VERSION, confusable_skeleton, grapheme_break, is_extended_pictographic,
+    is_identifier_recommended, is_identifier_security_excluded, is_nfc, is_white_space,
+    is_xid_continue, is_xid_start, normalize_nfc, normalize_nfd, push_full_lowercase,
+    push_full_uppercase, script, script_extensions, to_full_lowercase, to_full_uppercase,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -47,9 +47,103 @@ fn vendored_unicode_inputs_match_the_reviewed_manifest() {
         assert_eq!(digest, expected, "hash mismatch for {relative}");
         checked += 1;
     }
-    assert_eq!(checked, 15);
+    assert_eq!(checked, 17);
     assert!(read_text(&root.join("ucd/ReadMe.txt")).contains("Version 16.0.0"));
     assert!(read_text(&root.join("security/confusables.txt")).contains("# Version: 16.0.0"));
+}
+
+#[test]
+fn grapheme_break_values_match_the_pinned_property_file() {
+    let text = read_text(&unicode_root().join("ucd/auxiliary/GraphemeBreakProperty.txt"));
+    let mut expected = vec!["Other"; 0x11_0000];
+    let mut listed: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        let row = line.split('#').next().unwrap_or_default().trim();
+        if row.is_empty() {
+            continue;
+        }
+        let pair = row.split_once(';');
+        assert!(pair.is_some(), "malformed grapheme-break row {row:?}");
+        let (range, class) = pair.unwrap_or_else(|| unreachable!("checked above"));
+        let class = class.trim();
+        let (start, end) = pinned_range(range.trim());
+        for code in start..=end {
+            expected[code as usize] = class;
+        }
+        if !listed.contains(&class) {
+            listed.push(class);
+        }
+    }
+    assert!(
+        !listed.is_empty(),
+        "the pinned file lists grapheme-break values"
+    );
+    let mut observed: Vec<&str> = Vec::new();
+    for code in 0..=0x10_FFFF_u32 {
+        let Some(value) = char::from_u32(code) else {
+            continue;
+        };
+        let spelling = grapheme_break(value).spelling();
+        assert_eq!(
+            spelling, expected[code as usize],
+            "grapheme-break value of U+{code:04X}"
+        );
+        if !observed.contains(&spelling) {
+            observed.push(spelling);
+        }
+    }
+    for class in listed {
+        assert!(
+            observed.contains(&class),
+            "the pinned value {class} is reachable through the lookup"
+        );
+    }
+}
+
+#[test]
+fn extended_pictographic_matches_the_pinned_emoji_data() {
+    let text = read_text(&unicode_root().join("ucd/emoji/emoji-data.txt"));
+    let mut expected = vec![false; 0x11_0000];
+    let mut rows = 0_usize;
+    for line in text.lines() {
+        let row = line.split('#').next().unwrap_or_default().trim();
+        if row.is_empty() {
+            continue;
+        }
+        let pair = row.split_once(';');
+        assert!(pair.is_some(), "malformed emoji row {row:?}");
+        let (range, property) = pair.unwrap_or_else(|| unreachable!("checked above"));
+        if property.trim() != "Extended_Pictographic" {
+            continue;
+        }
+        let (start, end) = pinned_range(range.trim());
+        for code in start..=end {
+            expected[code as usize] = true;
+        }
+        rows += 1;
+    }
+    assert!(
+        rows > 0,
+        "the pinned emoji data lists Extended_Pictographic"
+    );
+    let mut assigned = 0_usize;
+    for code in 0..=0x10_FFFF_u32 {
+        let Some(value) = char::from_u32(code) else {
+            continue;
+        };
+        assert_eq!(
+            is_extended_pictographic(value),
+            expected[code as usize],
+            "Extended_Pictographic of U+{code:04X}"
+        );
+        if expected[code as usize] {
+            assigned += 1;
+        }
+    }
+    assert!(
+        assigned > 0,
+        "the pinned ranges assign at least one code point"
+    );
 }
 
 #[test]
@@ -156,6 +250,21 @@ fn decode_code_points(value: &str) -> String {
                 .unwrap_or_else(|| unreachable!("normalization fixture contains scalars"))
         })
         .collect()
+}
+
+fn pinned_range(value: &str) -> (u32, u32) {
+    match value.split_once("..") {
+        Some((start, end)) => (pinned_code(start), pinned_code(end)),
+        None => {
+            let code = pinned_code(value);
+            (code, code)
+        }
+    }
+}
+
+fn pinned_code(value: &str) -> u32 {
+    u32::from_str_radix(value, 16)
+        .unwrap_or_else(|error| panic!("`{value}` is a hexadecimal code point: {error}"))
 }
 
 fn unicode_root() -> PathBuf {

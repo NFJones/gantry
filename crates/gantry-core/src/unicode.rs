@@ -58,6 +58,97 @@ pub fn is_white_space(value: char) -> bool {
     in_ranges(value, WHITE_SPACE)
 }
 
+/// One Unicode 16 `Grapheme_Cluster_Break` value from the pinned data.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GraphemeBreak {
+    /// The implicit default every unlisted code point has.
+    Other,
+    /// Carriage return.
+    Cr,
+    /// Line feed.
+    Lf,
+    /// A control code point other than carriage return and line feed.
+    Control,
+    /// A grapheme-extending code point, including combining marks and variation selectors.
+    Extend,
+    /// Zero width joiner.
+    Zwj,
+    /// A regional indicator symbol.
+    RegionalIndicator,
+    /// A code point that attaches to a following code point.
+    Prepend,
+    /// A spacing combining mark.
+    SpacingMark,
+    /// A Hangul leading consonant.
+    L,
+    /// A Hangul vowel.
+    V,
+    /// A Hangul trailing consonant.
+    T,
+    /// A precomposed Hangul syllable without a trailing consonant.
+    Lv,
+    /// A precomposed Hangul syllable with a trailing consonant.
+    Lvt,
+}
+
+impl GraphemeBreak {
+    /// Returns the pinned Unicode 16 property-value spelling.
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
+        GRAPHEME_BREAK_VALUES[usize::from(Self::index(self))]
+    }
+
+    fn index(value: Self) -> u8 {
+        match value {
+            Self::Other => 0,
+            Self::Cr => 1,
+            Self::Lf => 2,
+            Self::Control => 3,
+            Self::Extend => 4,
+            Self::Zwj => 5,
+            Self::RegionalIndicator => 6,
+            Self::Prepend => 7,
+            Self::SpacingMark => 8,
+            Self::L => 9,
+            Self::V => 10,
+            Self::T => 11,
+            Self::Lv => 12,
+            Self::Lvt => 13,
+        }
+    }
+
+    fn from_index(index: u8) -> Self {
+        match index {
+            1 => Self::Cr,
+            2 => Self::Lf,
+            3 => Self::Control,
+            4 => Self::Extend,
+            5 => Self::Zwj,
+            6 => Self::RegionalIndicator,
+            7 => Self::Prepend,
+            8 => Self::SpacingMark,
+            9 => Self::L,
+            10 => Self::V,
+            11 => Self::T,
+            12 => Self::Lv,
+            13 => Self::Lvt,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// Returns the pinned Unicode 16 `Grapheme_Cluster_Break` value of `value`.
+#[must_use]
+pub fn grapheme_break(value: char) -> GraphemeBreak {
+    GraphemeBreak::from_index(value_range_u8(value as u32, GRAPHEME_BREAK).unwrap_or(0))
+}
+
+/// Returns whether Unicode 16 assigns `value` `Extended_Pictographic`.
+#[must_use]
+pub fn is_extended_pictographic(value: char) -> bool {
+    in_ranges(value, EXTENDED_PICTOGRAPHIC)
+}
+
 /// Returns whether `value` is excluded by Gantry's identifier-security rule.
 #[must_use]
 pub fn is_identifier_security_excluded(value: char) -> bool {
@@ -214,6 +305,21 @@ fn in_ranges(value: char, ranges: &[(u32, u32)]) -> bool {
             }
         })
         .is_ok()
+}
+
+fn value_range_u8(code: u32, ranges: &[(u32, u32, u8)]) -> Option<u8> {
+    ranges
+        .binary_search_by(|(start, end, _)| {
+            if code < *start {
+                std::cmp::Ordering::Greater
+            } else if code > *end {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .ok()
+        .map(|index| ranges[index].2)
 }
 
 fn range_value(code: u32, ranges: &[(u32, u32, u16)]) -> Option<u16> {

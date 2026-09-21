@@ -150,7 +150,7 @@
   },
   {
    "path": "crates/gantry-core/src/generated/unicode.rs",
-   "sha256": "6fe2e889ee0d69300c79f8b447f48c11986c5f7fd7cd0398b9bc2aea9b529d73"
+   "sha256": "d2bf6939019a9675d98586d3fd0a88efa6427796a1b78cfde9eca1e7fee0e552"
   },
   {
    "path": "crates/gantry-host/src/generated/embedding.rs",
@@ -534,11 +534,11 @@
   },
   {
    "path": "third_party/unicode/16.0.0/SHA256SUMS",
-   "sha256": "3dc603236fa7284bd645ac67af79a16f4acdc55e2a3818aabcaa2db97abf9330"
+   "sha256": "1a85e67efbe8ad1b2bdbdf11351305f39767e7b5b187839ae3f331ed938494d6"
   },
   {
    "path": "third_party/unicode/16.0.0/SOURCES",
-   "sha256": "e620ec3be390adfa24c76af8d8172f3638d7eaec5ced2da8d8b815cbc8ef193b"
+   "sha256": "df9f4b50e7b62aa7539c772c58c11ca96a99f499b6446708e0d865e1448ab869"
   }
  ],
  "claim": {
