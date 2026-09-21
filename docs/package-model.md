@@ -1,26 +1,33 @@
 # Package identity, interfaces, and compatibility
 
-This note describes the machine-checked package model in
-`crates/gantry-ir/src/package.rs`. That model is `GNT-16.0` through
+This note describes the package model in `crates/gantry-ir/src/package.rs` and
+its machine-checked evidence in
+`crates/gantry-conformance/tests/package_identity.rs`. The specification is
+normative; the crate models `GNT-16.0` through
 `GNT-16.9-resolution-order-independence`, refining the landed
 `GNT-11.6-package-source-manifest` and `GNT-11.6-compatibility-classes`
-relations. It is the model the specification makes normative: it is not a
-registry client, not a package loader, and it reads no host path.
+relations. The model is not a registry client, not a package loader, and it
+reads no host path.
 
 ## Declared clauses
 
 | Clause | What the model decides |
 | --- | --- |
 | `GNT-16.0` | The section's scope: manifest, interface, instance, alias, visibility, re-export, target-kind, and compatibility vocabulary, and nothing outside it. |
-| `GNT-16.1-package-identity` | The canonical identity of one complete input record: name, version, source digests, selected features, declared target facts, selection record, interface digest, and generator inputs. |
-| `GNT-16.2-package-instances` | One resolved instance of a package identity, bound to the interface digest it was resolved against. |
+| `GNT-16.1-package-identity` | The canonical identity of one resolved package, computed over exactly these inputs and no others: resolved package name, exact version, canonical source-identity digest, selected features, target facts, public-interface digest, and declared generator inputs. |
+| `GNT-16.2-package-instances` | One resolved package at one exact version with one selected feature solution: distinct instance identities are distinct nominal universes even when their items are structurally identical, and an item of one instance is not interchangeable with a structurally identical item of another without an explicit source conversion. |
 | `GNT-16.3-dependency-aliases` | Alias declarations, their namespaces, collision relations, and the refusal of an unresolved or duplicated alias. |
 | `GNT-16.4-visibility` | Which recorded items a frozen interface makes nameable, and the refusal of a name it does not export. |
 | `GNT-16.5-reexports` | Re-export chains that must terminate in one defining exported item, with defining package identity preserved. |
 | `GNT-16.6-target-kinds` | The closed target-kind vocabulary, its per-kind entry rules, and capability requirement ceilings. |
 | `GNT-16.7-public-interface-manifest` | The frozen public interface manifest, its member record, and its interface digest. |
 | `GNT-16.8-compatibility-axes` | The five compatibility axes and their per-axis verdicts, including the refusal to report an unchecked axis as compatible. |
-| `GNT-16.9-resolution-order-independence` | Resolution is identical under every permutation; instances deduplicate to one identity; an interface whose identity does not match its pinned dependency artifact is refused; and one distinct universe of dependencies yields one fingerprint. |
+| `GNT-16.9-resolution-order-independence` | Four rules: resolution never varies with discovery, enumeration, graph-path, or response order; distinct resolved versions and feature-distinct instances are distinct nominal universes whose items are not interchangeable; identical package instances deduplicate to exactly one identity; and a stale interface whose identity does not match its pinned dependency artifact MUST NOT link. The model additionally derives one dependency fingerprint per distinct resolved dependency set; that fingerprint is the model's own value and not a term of the clause. |
+
+The four rules of `GNT-16.9-resolution-order-independence`, and every other
+clause of Section 16, are `not-applicable` under a v1 profile, where no package
+is resolved, loaded, or linked as a dependency of another package. This note
+publishes the model without asserting that any run exercises it.
 
 ## Registered diagnostic codes
 
@@ -39,15 +46,22 @@ message; a meaning changes only with the clause that owns it.
 
 ## Conditions without a published code
 
-The model decides conditions that the specification publishes no code for:
-an unpinned export, an invalid or duplicated alias, a dependency cycle, an
-unknown instance, unsupported identity or interface versions, malformed
-digests, malformed or duplicated declarations, omitted or undeclared or
-duplicated interface members, item content that its recorded kind does not
-admit, unqualified names that are neither local nor explicitly imported or that
-are both at once, compatibility reports that omit or overclaim an axis, and the
-dependency-fingerprint refusals of an unpinned dependency, a conflicting pin,
-and the declared dependency-count ceiling.
+The model decides conditions that the specification publishes no code for. They
+include:
+
+- an unpinned export;
+- an invalid or duplicated alias;
+- a dependency cycle, or an unknown instance;
+- an unsupported identity or interface version, or a malformed digest;
+- a malformed or duplicated declaration, an omitted, undeclared, or duplicated
+  interface member, or item content that its recorded kind does not admit;
+- an unqualified name that is neither local nor explicitly imported, or that is
+  both at once;
+- a resolved requirement that exceeds a declared capability ceiling;
+- an identity record carrying an undefined property;
+- a compatibility report that omits or overclaims an axis;
+- a dependency-fingerprint refusal: an unpinned dependency, a conflicting pin,
+  or the declared dependency-count ceiling.
 
 Each such condition is a `PackageError` variant whose `code()` is `None`, and
 it carries the clause that owns it through `clause()`. A condition with no
@@ -60,4 +74,7 @@ member, no alias spelling, and no identity input; it does not read a host path,
 contact a registry, or run package source; and it does not present interface
 compatibility as behavioural substitutability. The resolution-order clause
 states sameness under permutation, not that any replacement preserves
-behaviour.
+behaviour. The model holds no package-wide state created by linking a package,
+because package state is created by explicit execution; and a `Debug` or
+`Display` rendering of these types is presentation only and is never a protocol
+identity.

@@ -64,19 +64,15 @@ fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
         );
     }
     for code in PackageDiagnosticCode::ALL {
-        assert!(
-            PACKAGE_MODEL_NOTE.contains(code.as_str()),
-            "the package-model note names {}",
-            code.as_str()
+        let row = format!(
+            "| `{}` | {} | `{}` |",
+            code.as_str(),
+            code.meaning(),
+            code.clause()
         );
         assert!(
-            PACKAGE_MODEL_NOTE.contains(code.meaning()),
-            "the package-model note carries the registered meaning of {}",
-            code.as_str()
-        );
-        assert!(
-            PACKAGE_MODEL_NOTE.contains(code.clause()),
-            "the package-model note names the owning clause of {}",
+            PACKAGE_MODEL_NOTE.contains(&row),
+            "the package-model note carries the registered row of {}",
             code.as_str()
         );
     }
@@ -87,6 +83,15 @@ fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
     assert!(
         PACKAGE_MODEL_NOTE.contains("This model grants nothing."),
         "the note carries its non-claim"
+    );
+    assert!(
+        PACKAGE_MODEL_NOTE.contains("capability ceiling")
+            && PACKAGE_MODEL_NOTE.contains("undefined property"),
+        "the note names the remaining code-less condition families"
+    );
+    assert!(
+        PACKAGE_MODEL_NOTE.contains("`not-applicable` under a v1 profile"),
+        "the note states the v1 not-applicable status of the section"
     );
 }
 
