@@ -1343,6 +1343,240 @@ impl PartialEq for PackageIdentity {
 
 impl Eq for PackageIdentity {}
 
+/// Domain separator for canonical dependency fingerprints.
+const DEPENDENCY_FINGERPRINT_DOMAIN: &str = "gantry.package-dependency-fingerprint/v1";
+
+/// One pinned dependency entry of a [`DependencyFingerprint`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DependencyPin {
+    identity: PackageIdentity,
+    interface: InterfaceDigest,
+}
+
+impl DependencyPin {
+    /// Returns the resolved dependency package identity.
+    #[must_use]
+    pub const fn identity(&self) -> &PackageIdentity {
+        &self.identity
+    }
+
+    /// Returns the interface digest this resolution pinned for the dependency.
+    #[must_use]
+    pub const fn interface(&self) -> &InterfaceDigest {
+        &self.interface
+    }
+}
+
+/// One canonical fingerprint of a package instance and its pinned dependencies.
+///
+/// The fingerprint composes the resolved package identity digest with the pinned
+/// interface digest of every dependency it resolved, so two resolutions whose
+/// dependency sets differ in any identity or pin cannot share a fingerprint, and
+/// two resolutions over the same set share one whatever the declaration order.
+///
+/// Dependency identity is the resolved package identity alone: an alias is local
+/// source spelling and is never an input, so reaching one dependency under two
+/// different aliases in two declaring packages yields the same fingerprint, and
+/// renaming an alias changes no fingerprint. A dependency that resolved without a
+/// pinned interface digest is refused rather than fingerprinted, so an open
+/// dependency cannot be reported as a resolved one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DependencyFingerprint {
+    package: PackageIdentity,
+    pins: Vec<DependencyPin>,
+    digest: [u8; 32],
+}
+
+impl DependencyFingerprint {
+    /// The largest number of supplied dependencies one derivation admits.
+    ///
+    /// The bound is measured over the supplied pairs before deduplication, so
+    /// duplicates count toward it, and a larger input is refused with
+    /// [`DependencyFingerprintError::ExceedsMaximumDependencies`] instead of
+    /// being truncated.
+    pub const MAXIMUM_DEPENDENCIES: usize = 4096;
+
+    /// Derives one fingerprint from a resolved package and its dependencies.
+    ///
+    /// A dependency whose interface digest is absent resolved without a pin and
+    /// is refused with [`DependencyFingerprintError::UnpinnedDependency`]; one
+    /// dependency identity carrying two distinct pins is refused with
+    /// [`DependencyFingerprintError::ConflictingDependencyPin`]. Identical
+    /// repeats collapse.
+    ///
+    /// # Errors
+    ///
+    /// Returns the two refusals above, plus
+    /// [`DependencyFingerprintError::ExceedsMaximumDependencies`] when the
+    /// supplied dependencies exceed [`Self::MAXIMUM_DEPENDENCIES`].
+    pub fn derive(
+        package: PackageIdentity,
+        dependencies: impl IntoIterator<Item = (PackageIdentity, Option<InterfaceDigest>)>,
+    ) -> Result<Self, DependencyFingerprintError> {
+        let mut supplied = Vec::new();
+        for pair in dependencies {
+            supplied.push(pair);
+            if supplied.len() > Self::MAXIMUM_DEPENDENCIES {
+                return Err(DependencyFingerprintError::ExceedsMaximumDependencies {
+                    observed: supplied.len(),
+                    maximum: Self::MAXIMUM_DEPENDENCIES,
+                });
+            }
+        }
+        let mut pins = Vec::with_capacity(supplied.len());
+        for (identity, interface) in supplied {
+            let interface =
+                interface.ok_or_else(|| DependencyFingerprintError::UnpinnedDependency {
+                    dependency: identity.clone(),
+                })?;
+            pins.push(DependencyPin {
+                identity,
+                interface,
+            });
+        }
+        pins.sort_by(|left, right| left.identity.as_str().cmp(&right.identity.as_str()));
+        let mut deduped: Vec<DependencyPin> = Vec::with_capacity(pins.len());
+        for pin in pins {
+            match deduped.last() {
+                Some(last) if last.identity == pin.identity => {
+                    if last.interface != pin.interface {
+                        return Err(DependencyFingerprintError::ConflictingDependencyPin {
+                            dependency: pin.identity,
+                        });
+                    }
+                }
+                _ => deduped.push(pin),
+            }
+        }
+        let canonical = encode_dependency_fingerprint(&package, &deduped);
+        let digest = digest_fields(DEPENDENCY_FINGERPRINT_DOMAIN, &[&canonical]);
+        Ok(Self {
+            package,
+            pins: deduped,
+            digest,
+        })
+    }
+
+    /// Returns the fingerprinted package identity.
+    #[must_use]
+    pub const fn package(&self) -> &PackageIdentity {
+        &self.package
+    }
+
+    /// Returns the pinned dependencies in canonical identity order.
+    #[must_use]
+    pub fn pins(&self) -> &[DependencyPin] {
+        &self.pins
+    }
+
+    /// Returns the number of distinct pinned dependencies.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.pins.len()
+    }
+
+    /// Returns whether the package resolved no dependency.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.pins.is_empty()
+    }
+
+    /// Returns the pin of one dependency identity, when it is pinned.
+    #[must_use]
+    pub fn pin_for(&self, dependency: &PackageIdentity) -> Option<&InterfaceDigest> {
+        self.pins
+            .iter()
+            .find(|pin| &pin.identity == dependency)
+            .map(|pin| &pin.interface)
+    }
+
+    /// Returns the fingerprint digest.
+    #[must_use]
+    pub const fn digest(&self) -> [u8; 32] {
+        self.digest
+    }
+
+    /// Returns the lowercase hexadecimal fingerprint digest.
+    #[must_use]
+    pub fn digest_hex(&self) -> String {
+        encode_hex(&self.digest)
+    }
+
+    /// Returns the exact portable fingerprint spelling.
+    #[must_use]
+    pub fn as_str(&self) -> String {
+        format!("dependency-fingerprint:{}", self.digest_hex())
+    }
+}
+
+/// Encodes the canonical fingerprint material.
+///
+/// Every field is a fixed-length hexadecimal digest or a separator, so the
+/// encoding is unambiguous without length prefixes.
+fn encode_dependency_fingerprint(package: &PackageIdentity, pins: &[DependencyPin]) -> Vec<u8> {
+    let mut text = String::new();
+    text.push_str(&package.digest_hex());
+    text.push('\n');
+    for pin in pins {
+        text.push_str(&pin.identity.digest_hex());
+        text.push(':');
+        text.push_str(pin.interface.as_str());
+        text.push('\n');
+    }
+    text.into_bytes()
+}
+
+/// One rejected dependency-fingerprint condition.
+///
+/// These conditions have no published diagnostic code and no verified owning
+/// clause, so they are deliberately not [`PackageError`] variants: every variant
+/// of that enum declares its owning clause through `clause()`. The module rule
+/// that a condition MUST NOT be reported under another condition's code is met
+/// by these refusals carrying no code at all.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DependencyFingerprintError {
+    /// A resolved dependency carries no pinned interface digest.
+    UnpinnedDependency {
+        /// The dependency that resolved without a pin.
+        dependency: PackageIdentity,
+    },
+    /// One dependency identity carries two distinct pinned interface digests.
+    ConflictingDependencyPin {
+        /// The dependency with conflicting pins.
+        dependency: PackageIdentity,
+    },
+    /// The supplied dependency count exceeds the fingerprint's declared bound.
+    ExceedsMaximumDependencies {
+        /// The number of supplied dependencies when the bound was crossed.
+        observed: usize,
+        /// The declared bound.
+        maximum: usize,
+    },
+}
+
+impl std::fmt::Display for DependencyFingerprintError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnpinnedDependency { dependency } => write!(
+                formatter,
+                "dependency-fingerprint-unpinned: {}",
+                dependency.as_str()
+            ),
+            Self::ConflictingDependencyPin { dependency } => write!(
+                formatter,
+                "dependency-fingerprint-conflict: {}",
+                dependency.as_str()
+            ),
+            Self::ExceedsMaximumDependencies { observed, maximum } => write!(
+                formatter,
+                "dependency-fingerprint-exceeds-maximum: {observed} supplied dependencies exceed the declared maximum of {maximum}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DependencyFingerprintError {}
+
 impl PartialOrd for PackageIdentity {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -4490,13 +4724,145 @@ fn encode_item(output: &mut String, item: &InterfaceItem) {
 #[cfg(test)]
 mod tests {
     use super::{
-        CanonicalIrDigest, CanonicalPath, CollisionCondition, GeneratorInputs, IDENTITY_DOMAIN,
-        InterfaceDigest, PackageIdentity, PackageIdentityInputs, PackageName,
-        PackageSourceIdentity, PackageVersion, SelectedFeatureSet, SourceManifestDigest,
-        TargetFactSet, TargetFacts, TargetKind, collision_condition, digest_fields,
-        push_json_string, synthesize_alias,
+        CanonicalIrDigest, CanonicalPath, CollisionCondition, DependencyFingerprint,
+        DependencyFingerprintError, GeneratorInputs, IDENTITY_DOMAIN, InterfaceDigest,
+        PackageIdentity, PackageIdentityInputs, PackageName, PackageSourceIdentity, PackageVersion,
+        SelectedFeatureSet, SourceManifestDigest, TargetFactSet, TargetFacts, TargetKind,
+        collision_condition, digest_fields, push_json_string, synthesize_alias,
     };
     use crate::target::{FeatureSolutionDigest, TargetDescriptorDigest, TargetFactsRecord};
+
+    /// Returns one dependency identity over one declared target fact.
+    fn dependency_identity(kind: TargetKind, entry: Option<&str>) -> PackageIdentity {
+        identity_with_targets(&[fact(kind, entry)])
+    }
+
+    #[test]
+    fn dependency_fingerprint_is_order_independent_and_alias_free() {
+        let package = dependency_identity(TargetKind::Library, None);
+        let first = dependency_identity(TargetKind::Binary, Some("crate::main"));
+        let second = dependency_identity(TargetKind::Example, Some("crate::demo"));
+        let first_pin = InterfaceDigest::from_digest(fixture("dep-first"));
+        let second_pin = InterfaceDigest::from_digest(fixture("dep-second"));
+        let forward = DependencyFingerprint::derive(
+            package.clone(),
+            [
+                (first.clone(), Some(first_pin.clone())),
+                (second.clone(), Some(second_pin.clone())),
+            ],
+        )
+        .unwrap_or_else(|error| panic!("the declared dependencies are pinned: {error}"));
+        let reversed = DependencyFingerprint::derive(
+            package.clone(),
+            [
+                (second.clone(), Some(second_pin.clone())),
+                (first.clone(), Some(first_pin.clone())),
+                (first.clone(), Some(first_pin.clone())),
+            ],
+        )
+        .unwrap_or_else(|error| panic!("the declared dependencies are pinned: {error}"));
+        assert_eq!(forward, reversed, "order and repeats change nothing");
+        assert_eq!(forward.len(), 2, "identical repeats collapse");
+        assert_eq!(forward.package(), &package);
+        assert_eq!(forward.pin_for(&first), Some(&first_pin));
+        assert_eq!(forward.pin_for(&second), Some(&second_pin));
+        assert!(!forward.is_empty());
+        assert!(forward.as_str().starts_with("dependency-fingerprint:"));
+        assert_eq!(forward.digest_hex(), forward.digest_hex());
+        let empty = DependencyFingerprint::derive(package, [])
+            .unwrap_or_else(|error| panic!("an empty dependency set is pinned: {error}"));
+        assert!(empty.is_empty());
+        assert_ne!(
+            empty.as_str(),
+            forward.as_str(),
+            "a dependency set is part of the fingerprint"
+        );
+    }
+
+    #[test]
+    fn dependency_fingerprint_refuses_open_and_conflicting_dependencies() {
+        let package = dependency_identity(TargetKind::Library, None);
+        let open = dependency_identity(TargetKind::Test, None);
+        let error = DependencyFingerprint::derive(package.clone(), [(open.clone(), None)])
+            .err()
+            .unwrap_or_else(|| panic!("an open dependency is refused"));
+        assert!(matches!(
+            &error,
+            DependencyFingerprintError::UnpinnedDependency { dependency }
+                if dependency == &open
+        ));
+        assert!(
+            error
+                .to_string()
+                .contains("dependency-fingerprint-unpinned")
+        );
+        let conflicting = dependency_identity(TargetKind::Benchmark, None);
+        let error = DependencyFingerprint::derive(
+            package,
+            [
+                (
+                    conflicting.clone(),
+                    Some(InterfaceDigest::from_digest(fixture("pin-one"))),
+                ),
+                (
+                    conflicting.clone(),
+                    Some(InterfaceDigest::from_digest(fixture("pin-two"))),
+                ),
+            ],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("two pins for one dependency are refused"));
+        assert!(matches!(
+            &error,
+            DependencyFingerprintError::ConflictingDependencyPin { dependency }
+                if dependency == &conflicting
+        ));
+        assert!(
+            error
+                .to_string()
+                .contains("dependency-fingerprint-conflict")
+        );
+    }
+
+    #[test]
+    fn dependency_fingerprint_bound_is_pre_dedup_and_refuses_one_more() {
+        let package = dependency_identity(TargetKind::Library, None);
+        let dependency = dependency_identity(TargetKind::Binary, Some("crate::main"));
+        let pin = InterfaceDigest::from_digest(fixture("bound-pin"));
+        let at_bound = DependencyFingerprint::derive(
+            package.clone(),
+            vec![
+                (dependency.clone(), Some(pin.clone()));
+                DependencyFingerprint::MAXIMUM_DEPENDENCIES
+            ],
+        )
+        .unwrap_or_else(|error| panic!("the declared bound is inclusive: {error}"));
+        assert_eq!(
+            at_bound.len(),
+            1,
+            "duplicate dependencies collapse after the bound check"
+        );
+        let error = DependencyFingerprint::derive(
+            package,
+            vec![(dependency, Some(pin)); DependencyFingerprint::MAXIMUM_DEPENDENCIES + 1],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("one dependency past the bound is refused"));
+        assert!(matches!(
+            &error,
+            DependencyFingerprintError::ExceedsMaximumDependencies { observed, maximum }
+                if *maximum == DependencyFingerprint::MAXIMUM_DEPENDENCIES
+                    && *observed == DependencyFingerprint::MAXIMUM_DEPENDENCIES + 1
+        ));
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "dependency-fingerprint-exceeds-maximum: {} supplied dependencies exceed the declared maximum of {}",
+                DependencyFingerprint::MAXIMUM_DEPENDENCIES + 1,
+                DependencyFingerprint::MAXIMUM_DEPENDENCIES
+            )
+        );
+    }
 
     /// Returns one deterministic fixture digest.
     fn fixture(seed: &str) -> [u8; 32] {
