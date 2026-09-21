@@ -20,14 +20,17 @@
 //! text is explicit and stable; Rust `Debug` and `Display` renderings of other
 //! crates are never protocol identities.
 //!
-//! The three identity layers of the specification stay distinct here:
+//! The identity layers of the specification stay distinct here:
 //!
 //! * the public capability requirement of `GNT-6.5-abstract-requirements` item
 //!   5a is [`AuthorityRequirementId`];
 //! * the selected implementation binding of `GNT-3-T-AUTHORITY-CLOSURE` is
 //!   [`AuthorityBindingId`];
 //! * the conservative executable closure of `GNT-3-T-AUTHORITY-CLOSURE` over
-//!   those bindings is [`CapabilityAuthorityClosure`];
+//!   those bindings and their site-qualified requirement slots is
+//!   [`CapabilityAuthorityClosure`];
+//! * one site-qualified requirement slot of that closure is
+//!   [`SiteRequirementSlotId`];
 //! * the concrete runtime instance is [`AuthorityInstanceId`] and
 //!   [`AuthorityInstance`].
 //!
@@ -292,7 +295,11 @@ impl AuthorityBindingId {
 /// identity, so two closures over the same reachable sites are equal whatever
 /// the declaration or traversal order. Least-ness is the caller's obligation;
 /// this type never adds an instance the caller did not supply, so a declaration
-/// the caller did not prove reachable cannot enter the closure.
+/// the caller did not prove reachable cannot enter the closure. The same
+/// discipline governs requirement slots: the value holds exactly the
+/// site-qualified slots its caller supplied, deduplicated and canonically
+/// ordered by slot identity, and it never derives or adds one. [`Self::len`] and
+/// [`Self::is_empty`] report the binding count only.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityAuthorityClosure {
     instances: Vec<AuthorityBindingId>,
@@ -336,9 +343,12 @@ impl CapabilityAuthorityClosure {
     /// Builds the closure over the supplied bindings and requirement slots.
     ///
     /// `GNT-3-T-AUTHORITY-CLOSURE` requires the closure to contain the declared
-    /// requirement of every exact operation site, including the agent-,
-    /// model-exposed-, handler-, and operation-slots attached to those sites.
-    /// Each supplied [`SiteRequirementSlotId`] is one such site-qualified slot.
+    /// requirement of every exact operation site, including the slots attached
+    /// to those sites. Each supplied [`SiteRequirementSlotId`] is one such
+    /// site-qualified slot. This identity spells the closed tool-slot kinds of
+    /// `GNT-25.6-tool-slots-and-tool-set-revisions`; the agent-, model-exposed-,
+    /// and operation-slot flavors the clause also names are not representable
+    /// here, so a caller holding one of those cannot supply it yet.
     ///
     /// Instances are deduplicated by binding identity and ordered canonically by
     /// that identity; slots are deduplicated by slot identity and ordered
@@ -456,7 +466,7 @@ impl SiteRequirementSlotId {
             encode_text(site.workflow().as_str()),
             encode_text(&position),
             encode_text(slot.as_str()),
-            kind.wire_name()
+            encode_text(kind.wire_name())
         );
         Self {
             site,
@@ -2158,6 +2168,79 @@ mod tests {
             "search",
             crate::agent::ToolSlotKind::ProviderTool,
         )));
+    }
+
+    fn fixture_site_route(components: &[u64]) -> crate::facts::StaticSiteId {
+        crate::facts::StaticSiteId::new(
+            CanonicalPath::new("crate::alpha")
+                .unwrap_or_else(|error| panic!("the fixture path is canonical: {error}")),
+            crate::facts::StructuralPosition::new(components.to_vec())
+                .unwrap_or_else(|error| panic!("the fixture position is nonempty: {error}")),
+        )
+    }
+
+    fn fixture_route_slot(components: &[u64]) -> SiteRequirementSlotId {
+        SiteRequirementSlotId::new(
+            fixture_site_route(components),
+            fixture_slot("fixture", "search"),
+            crate::agent::ToolSlotKind::Composite,
+        )
+    }
+
+    #[test]
+    fn capability_authority_closure_holds_instances_and_slots_together() {
+        let reachable = fixture_binding(&fixture_requirement("reachable"), &TypeDescriptor::INT);
+        let slot = fixture_requirement_slot(
+            "alpha",
+            0,
+            "search",
+            crate::agent::ToolSlotKind::ProviderTool,
+        );
+        let closure = CapabilityAuthorityClosure::with_slots([reachable.clone()], [slot.clone()])
+            .unwrap_or_else(|error| panic!("the mixed closure is within the bound: {error}"));
+        assert_eq!(closure.len(), 1, "len counts bindings only");
+        assert!(!closure.is_empty());
+        assert_eq!(closure.slots().len(), 1);
+        assert!(closure.contains(&reachable));
+        assert!(closure.contains_slot(&slot));
+    }
+
+    #[test]
+    fn capability_authority_closure_spells_multi_component_positions_unambiguously() {
+        let first = fixture_route_slot(&[1, 23]);
+        let second = fixture_route_slot(&[12, 3]);
+        let third = fixture_route_slot(&[1, 2, 3]);
+        assert_ne!(
+            first, second,
+            "one component boundary cannot be confused with another"
+        );
+        assert_ne!(first, third, "two components cannot be confused with three");
+        assert_ne!(second, third);
+        assert_ne!(
+            first.as_str(),
+            second.as_str(),
+            "the component separator keeps the routes distinct"
+        );
+        assert_eq!(
+            first.site().position().components(),
+            &[1, 23],
+            "the full route is retained"
+        );
+    }
+
+    #[test]
+    fn site_requirement_slot_identity_pins_the_exact_spelling() {
+        let slot =
+            fixture_requirement_slot("alpha", 2, "search", crate::agent::ToolSlotKind::Composite);
+        let expected = format!(
+            "site-slot:12:crate::alpha:1:2:74:{}:9:composite",
+            slot.slot().as_str()
+        );
+        assert_eq!(
+            slot.as_str(),
+            expected,
+            "the portable spelling is stable, length-prefixed, and kind-qualified"
+        );
     }
 
     #[test]
