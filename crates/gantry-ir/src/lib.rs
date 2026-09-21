@@ -316,12 +316,12 @@ pub use collections::{
 };
 // The Section 41 text foundation: canonical text values as finite scalar sequences with exact
 // UTF-8 admission, a scalar count, canonical octets, scalar-boundary slicing, the two canonical
-// normalization forms, the two full default case mappings over the pinned Unicode 16.0.0 data, and
-// a bounded builder, declaring no grapheme segmentation, case folding, formatting, parsing, regex,
-// or locale.
+// normalization forms, the two full default case mappings over the pinned Unicode 16.0.0 data, a
+// bounded builder, and a forward scalar cursor, declaring no grapheme segmentation, case folding,
+// formatting, parsing, regex, or locale.
 pub use text::{
     CaseMapping, NormalizationForm, TEXT_CLAUSES, TextBuilder, TextDiagnosticCode, TextError,
-    TextValue,
+    TextScalars, TextValue,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned
 // deterministic generator identity and its exact step, with no host entropy, global state, secure

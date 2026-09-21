@@ -8,12 +8,13 @@ use gantry::ir::{CharValue, TEXT_CLAUSES, TextDiagnosticCode, TextValue};
 
 /// The text surface this slice publishes, written out independently of the model and the note: the
 /// clause anchors in specification order and the registered refusal spellings in declaration order.
-const EXPECTED_CLAUSES: [&str; 5] = [
+const EXPECTED_CLAUSES: [&str; 6] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
     "GNT-41.3-canonical-text-case-mapping",
     "GNT-41.4-canonical-text-builders",
+    "GNT-41.5-canonical-text-traversal",
 ];
 const EXPECTED_DIAGNOSTICS: [&str; 2] = ["text-invalid-utf8", "text-builder-bound"];
 

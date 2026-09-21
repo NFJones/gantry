@@ -7,12 +7,13 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{CaseMapping, TEXT_CLAUSES, TextValue};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 5] = [
+const EXPECTED_CLAUSES: [&str; 6] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
     "GNT-41.3-canonical-text-case-mapping",
     "GNT-41.4-canonical-text-builders",
+    "GNT-41.5-canonical-text-traversal",
 ];
 const CASE_CLAUSE: &str = "GNT-41.3-canonical-text-case-mapping";
 

@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "4520f605737ad953e5735d733f45104e4f09d2b332c433f4f1acf38e49c1ef81",
-  "byte_length": 1083841,
-  "line_count": 15675,
+  "specification_sha256": "5725d1c6141805ed930b21d947180fd5fc43c24a79b48943da34bbac3dc10df8",
+  "byte_length": 1086595,
+  "line_count": 15679,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15675,
-      "sha256": "3791cb0b37578e629d70b5288e7446d65329e6fea67cf51b445573bb4d4e9f3d",
+      "end_line": 15679,
+      "sha256": "c55ab1836152b3c49bccf157c03b76e6d526d4d153215e165d579a32fec54537",
       "rationale": null
     }
   ],
@@ -42957,11 +42957,11 @@
       "id": "GNT-41.0-text-foundation-scope",
       "span_start_line": 15654,
       "span_end_line": 15660,
-      "span_sha256": "d6d706d34c3dbad0a551b1241219dbd1d1f409c2a26c886853fdeadb09a3ce21",
+      "span_sha256": "ecdb19f215c6b1642e94356722b79b8c25cef6a79f4962572636d089041a1f72",
       "anchor_line": 15657,
       "body_start_line": 15658,
       "body_end_line": 15660,
-      "body_sha256": "d758f23c0ff58a90bc652bd9f89b3fed28b09a4aa74fd34c296182482cd87f6c",
+      "body_sha256": "b148be56da873cf044afea41a20eeaa3312d1ee087a336d053623aeb8c0a7bd1",
       "profiles": [
         "analyzer"
       ],
@@ -43122,12 +43122,12 @@
     {
       "id": "GNT-41.4-canonical-text-builders",
       "span_start_line": 15673,
-      "span_end_line": 15675,
-      "span_sha256": "996e35472c34368a9e585d5f7b9826406a3d6de3e424085042cccdaa62edf04c",
+      "span_end_line": 15676,
+      "span_sha256": "187a0a728b3f61201b025a8027a3e5705736d5d2f05036fff27478dfe5df4995",
       "anchor_line": 15673,
       "body_start_line": 15674,
-      "body_end_line": 15675,
-      "body_sha256": "8e108e75f21d51e1936a5a511b709156f8c7f633273f458018764a8199c2b816",
+      "body_end_line": 15676,
+      "body_sha256": "625b82647c69fc3c72d7f7a45ad680ec56f6b7431de7068176c1ac3872b49763",
       "profiles": [
         "analyzer"
       ],
@@ -43139,7 +43139,7 @@
         {
           "key": "clause-001",
           "start_line": 15674,
-          "end_line": 15675,
+          "end_line": 15676,
           "profiles": [
             "analyzer"
           ],
@@ -43154,6 +43154,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_builders.rs#builder_clause_publishes_the_bounded_builder",
                 "crates/gantry-conformance/tests/text_builders.rs#builder_refuses_at_the_declared_bound_atomically"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.5-canonical-text-traversal",
+      "span_start_line": 15677,
+      "span_end_line": 15679,
+      "span_sha256": "28be4df4b07b7d03afd81b7352e66fd12b9d37b68a4b8a38df6387bf7ae14c61",
+      "anchor_line": 15677,
+      "body_start_line": 15678,
+      "body_end_line": 15679,
+      "body_sha256": "6d6713934180c4423cc74137e00a327352c6b1e11afea5e89b90dc77d80dcee1",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15678,
+          "end_line": 15679,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_traversal.rs#traversal_clause_publishes_the_forward_cursor",
+                "crates/gantry-conformance/tests/text_traversal.rs#traversal_publishes_exactly_the_scalar_sequence"
               ],
               "rationale": null
             }

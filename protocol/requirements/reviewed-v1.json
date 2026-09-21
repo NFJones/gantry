@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "4520f605737ad953e5735d733f45104e4f09d2b332c433f4f1acf38e49c1ef81",
+  "specification_sha256": "5725d1c6141805ed930b21d947180fd5fc43c24a79b48943da34bbac3dc10df8",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15675,
+      "end_line": 15679,
       "rationale": null
     }
   ],
@@ -41973,10 +41973,10 @@
     {
       "id": "GNT-41.4-canonical-text-builders",
       "span_start_line": 15673,
-      "span_end_line": 15675,
+      "span_end_line": 15676,
       "anchor_line": 15673,
       "body_start_line": 15674,
-      "body_end_line": 15675,
+      "body_end_line": 15676,
       "profiles": [
         "analyzer"
       ],
@@ -41988,7 +41988,7 @@
         {
           "key": "clause-001",
           "start_line": 15674,
-          "end_line": 15675,
+          "end_line": 15676,
           "profiles": [
             "analyzer"
           ],
@@ -42003,6 +42003,46 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_builders.rs#builder_clause_publishes_the_bounded_builder",
                 "crates/gantry-conformance/tests/text_builders.rs#builder_refuses_at_the_declared_bound_atomically"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.5-canonical-text-traversal",
+      "span_start_line": 15677,
+      "span_end_line": 15679,
+      "anchor_line": 15677,
+      "body_start_line": 15678,
+      "body_end_line": 15679,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15678,
+          "end_line": 15679,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_traversal.rs#traversal_clause_publishes_the_forward_cursor",
+                "crates/gantry-conformance/tests/text_traversal.rs#traversal_publishes_exactly_the_scalar_sequence"
               ],
               "rationale": null
             }

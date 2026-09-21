@@ -1,11 +1,12 @@
 //! The pure text foundation of `GNT-41.0-text-foundation-scope`,
 //! `GNT-41.1-canonical-text-values`, `GNT-41.2-canonical-text-normalization`,
-//! `GNT-41.3-canonical-text-case-mapping`, and `GNT-41.4-canonical-text-builders`: canonical text
-//! values as finite sequences of Unicode scalar values over the Section 35 scalar and octet
-//! contracts, their exact admission from octets, their scalar count and canonical UTF-8 octets,
-//! their scalar-boundary slicing, their two canonical normalization forms, their two full default
-//! case mappings over the pinned Unicode 16.0.0 data, and an explicitly bounded builder that
-//! publishes one text value.
+//! `GNT-41.3-canonical-text-case-mapping`, `GNT-41.4-canonical-text-builders`, and
+//! `GNT-41.5-canonical-text-traversal`: canonical text values as finite sequences of Unicode scalar
+//! values over the Section 35 scalar and octet contracts, their exact admission from octets, their
+//! scalar count and canonical UTF-8 octets, their scalar-boundary slicing, their two canonical
+//! normalization forms, their two full default case mappings over the pinned Unicode 16.0.0 data,
+//! an explicitly bounded builder that publishes one text value, and a forward cursor that publishes
+//! the scalars of a value one at a time.
 //!
 //! The model is pure: it consumes no host locale, host encoding, ambient text facility, timing, or
 //! global mutable state, and it declares no grapheme-cluster segmentation, no case folding, no
@@ -19,13 +20,14 @@ use gantry_core::unicode::{normalize_nfc, normalize_nfd, to_full_lowercase, to_f
 use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
-/// (`GNT-41.0`, `GNT-41.1`, `GNT-41.2`, `GNT-41.3`, `GNT-41.4`).
-pub const TEXT_CLAUSES: [&str; 5] = [
+/// (`GNT-41.0`, `GNT-41.1`, `GNT-41.2`, `GNT-41.3`, `GNT-41.4`, `GNT-41.5`).
+pub const TEXT_CLAUSES: [&str; 6] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
     "GNT-41.3-canonical-text-case-mapping",
     "GNT-41.4-canonical-text-builders",
+    "GNT-41.5-canonical-text-traversal",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -170,6 +172,35 @@ impl TextBuilder {
         TextValue {
             text: self.text.clone(),
         }
+    }
+}
+
+/// One published forward scalar cursor of `GNT-41.5-canonical-text-traversal`.
+///
+/// A cursor publishes the scalars of the text value it traverses one at a time in sequence order,
+/// never modifies that value, and holds no identity: it is not a text value, it is never serialized,
+/// and no cursor position or progress is durable or recoverable.
+#[derive(Clone, Debug)]
+pub struct TextScalars<'a> {
+    text: &'a str,
+    remaining: usize,
+}
+
+impl TextScalars<'_> {
+    /// Returns the number of scalars the cursor has not yet published.
+    #[must_use]
+    pub fn remaining(&self) -> usize {
+        self.remaining
+    }
+
+    /// Publishes the next scalar in sequence order, or none when every scalar has been published.
+    pub fn next_scalar(&mut self) -> Option<CharValue> {
+        let mut characters = self.text.chars();
+        let character = characters.next()?;
+        let scalar = CharValue::new(u32::from(character)).ok();
+        self.text = characters.as_str();
+        self.remaining -= 1;
+        scalar
     }
 }
 
@@ -336,6 +367,19 @@ impl TextValue {
             CaseMapping::Upper => to_full_uppercase(&self.text),
         };
         Self { text }
+    }
+
+    /// Publishes a forward scalar cursor over the value
+    /// (`GNT-41.5-canonical-text-traversal`).
+    ///
+    /// The cursor publishes the value's scalars one at a time in sequence order and never modifies
+    /// the value; `remaining` starts at the value's scalar count.
+    #[must_use]
+    pub fn scalars(&self) -> TextScalars<'_> {
+        TextScalars {
+            text: &self.text,
+            remaining: self.scalar_count(),
+        }
     }
 
     /// Returns every scalar boundary of the value: the octet offset of each scalar and the end of
