@@ -510,8 +510,10 @@ impl TextValue {
 
     /// Publishes one text value from an octet sequence under the declared lossless octet-text
     /// mapping (`GNT-41.9-canonical-text-conversions`): every octet maps to the scalar value with
-    /// the same numeric value, so the conversion is total, admits every octet sequence, and keeps
-    /// every octet it was given.
+    /// the same numeric value, so the conversion is total over the sequences the declared
+    /// admission bound of `GNT-41.10-canonical-text-admission-bound` admits and keeps every octet
+    /// it was given. A longer sequence is refused under `text-value-bound` before any part of the
+    /// value is constructed.
     pub fn from_lossless_octets(octets: &[u8]) -> Result<Self, TextError> {
         if octets.len() > TEXT_VALUE_SCALAR_BOUND {
             return Err(Self::value_bound_refusal(octets.len()));
