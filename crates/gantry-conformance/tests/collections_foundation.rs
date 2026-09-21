@@ -24,7 +24,7 @@ use gantry::ir::{
     RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, TypeDescriptor, canonical_order,
     check_collection_non_claims,
 };
-use gantry::ir::{PackageFamily, StabilityTier, canonical_pure_hierarchy};
+use gantry::ir::{PackageFamily, StabilityTier, StdlibNonClaim, canonical_pure_hierarchy};
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValueLimits};
 
@@ -1531,16 +1531,43 @@ fn collection_family_declares_its_package_surface() {
         note.contains(package.tier().wire_name()),
         "the note names the tier the hierarchy declares"
     );
-    for dependent in [PackageFamily::Text, PackageFamily::Codec] {
+    for (dependent, edges) in [
+        (
+            PackageFamily::Text,
+            &[PackageFamily::Core, PackageFamily::Collections][..],
+        ),
+        (
+            PackageFamily::Codec,
+            &[
+                PackageFamily::Core,
+                PackageFamily::Collections,
+                PackageFamily::Text,
+            ][..],
+        ),
+    ] {
         let dependent_package = graph
             .package(&dependent.package_name())
             .unwrap_or_else(|| panic!("the hierarchy declares the dependent family"));
+        for edge in edges {
+            assert!(
+                dependent_package
+                    .dependencies()
+                    .contains(&edge.package_name()),
+                "`{}` depends on `{}`",
+                dependent.package_name(),
+                edge.package_name()
+            );
+        }
+    }
+    for variant in [
+        StdlibNonClaim::AdapterPresence,
+        StdlibNonClaim::CapabilityAndProviderExistence,
+        StdlibNonClaim::LayoutAsIdentity,
+        StdlibNonClaim::FamilyBehavior,
+    ] {
         assert!(
-            dependent_package
-                .dependencies()
-                .contains(&family.package_name()),
-            "`{}` depends on `std.collections`",
-            dependent.package_name()
+            note.contains(&format!("{variant:?}")),
+            "the note names the declared non-claim `{variant:?}`"
         );
     }
     for required in [

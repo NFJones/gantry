@@ -186,7 +186,7 @@ separately in `docs/canonical-scalar-keys.md`.
   `CollectionMap::transformed` and the advances it may yet spend through `remaining`.
   `CollectionValue::collect` is the one collecting form: each advance spends one step of the budget
   it is given and projects the visit through the projection supplied to that advance, no projection
-  being invoked for an advance that finds no visit to publish, and it publishes one list value of the canonical
+  being invoked for an advance that discovers the content is exhausted, and it publishes one list value of the canonical
   value contract holding those projections in content order together with
   `CollectionOutcome::Completed` or `Stopped`. The list is admitted under the value limits it is
   given once the traversal ends, so the projection runs for every advance that spends a step of the budget and
@@ -201,14 +201,15 @@ separately in `docs/canonical-scalar-keys.md`.
 
 `std.collections` is one family of the canonical pure standard-library hierarchy (`GNT-34.1`):
 `PackageFamily::Collections`, package name `std.collections`, wire spelling `collections`, pure, and
-at the stable tier. Its only dependency is `std.core`, as `canonical_pure_hierarchy()` declares;
-`std.text` depends on it and `std.codec` depends on both `std.core` and `std.text`, so the family
-sits on the pure DAG's first level above the core family. The API surface of the family is owned by
-`GNT-GP-COLL-001`, while `GNT-34.6` and `GNT-34.8` give every
-public item its own tier and defining identity, so this section's clauses name the collection model
-while the family constructor carries identities, applicability, and edges only. Among the non-claims
-`check_stdlib_non_claims` freezes, the family-surface ones apply here: no capability package, no
-adapter, no repository path as source identity, and no family behavior of its own; this note is
+at the stable tier. Its only dependency is `std.core`, as `canonical_pure_hierarchy()` declares, so
+the family sits on the pure DAG's first level above the core family; `std.text` depends on it, and
+`std.codec` depends on both `std.core` and `std.text`. The API surface of the family is owned by
+`GNT-GP-COLL-001`, while `GNT-34.6` and `GNT-34.8` give every public item its own tier and defining
+identity, so this section's clauses name the collection model while the family constructor carries
+identities, applicability, and edges only. Of the non-claims `check_stdlib_non_claims` freezes,
+these apply here and each names a declared variant: no adapter (`AdapterPresence`), no capability
+package (`CapabilityAndProviderExistence`), no repository path as source identity
+(`LayoutAsIdentity`), and no family behavior of its own (`FamilyBehavior`); this note is
 documentation and grants nothing.
 
 ## Diagnostics
