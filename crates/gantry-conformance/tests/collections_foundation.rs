@@ -1533,12 +1533,16 @@ fn collection_family_declares_its_package_surface() {
             paragraph.contains("is one family of the canonical pure standard-library hierarchy")
         })
         .unwrap_or_else(|| panic!("the note carries the family paragraph"));
+    let flat_family = family_paragraph
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     assert!(
-        family_paragraph.contains(&format!("at the {} tier", package.tier().wire_name())),
+        flat_family.contains(&format!("at the {} tier", package.tier().wire_name())),
         "the family paragraph names the tier the hierarchy declares"
     );
     assert!(
-        family.is_pure() && family_paragraph.contains("pure,"),
+        family.is_pure() && flat_family.contains("pure,"),
         "the family paragraph names the purity the hierarchy declares"
     );
     for (dependent, edges) in [
@@ -1569,7 +1573,6 @@ fn collection_family_declares_its_package_surface() {
             );
         }
     }
-    let flattened = note.split_whitespace().collect::<Vec<_>>().join(" ");
     for (claim, variant) in [
         ("no adapter", StdlibNonClaim::AdapterPresence),
         (
@@ -1586,7 +1589,7 @@ fn collection_family_declares_its_package_surface() {
         ),
     ] {
         assert!(
-            flattened.contains(&format!("{claim} (`{variant:?}`)")),
+            flat_family.contains(&format!("{claim} (`{variant:?}`)")),
             "the note pairs `{claim}` with the declared non-claim `{variant:?}`"
         );
     }
