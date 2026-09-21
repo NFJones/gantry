@@ -322,8 +322,8 @@ pub use prng::{
 // or exactly one declared deterministic failure, with no wrapping, saturation, coercion, implicit
 // widening, or host dependence.
 pub use numeric::{
-    CheckedIntegerAlgorithm, NEGATE_WIRE_NAME, NumericConversion, float_to_int, int_to_float,
-    negate,
+    BinaryBitOperation, CheckedIntegerAlgorithm, NEGATE_WIRE_NAME, NumericConversion,
+    UnaryBitOperation, float_to_int, int_to_float, negate,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade

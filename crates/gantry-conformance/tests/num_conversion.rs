@@ -122,31 +122,3 @@ fn numeric_conversions_are_exact_and_refuse_outside_the_domain() {
         Some(integer(GANTRY_INT_MINIMUM))
     );
 }
-
-/// `GNT-40.3` is the specification's final clause, so extracting its body takes `clause_body`'s
-/// no-next-anchor path: the body must run to the end of the specification and publish both
-/// conversion spellings, which is the tail branch this lane owns.
-#[test]
-fn numeric_conversions_clause_body_exercises_the_final_clause_tail() {
-    let specification = read_text(&workspace_root().join("SPEC.md"));
-    let clause = clause_body(&specification, "GNT-40.3-numeric-conversions");
-
-    assert_eq!(
-        NUM_CLAUSES.last(),
-        Some(&"GNT-40.3-numeric-conversions"),
-        "the conversions clause is the specification's final clause"
-    );
-    assert!(
-        specification.trim_end().ends_with(clause.trim_end()),
-        "the final clause body runs to the end of the specification"
-    );
-    for spelling in [
-        NumericConversion::IntToFloat.wire_name(),
-        NumericConversion::FloatToInt.wire_name(),
-    ] {
-        assert!(
-            clause.contains(&format!("`{spelling}`")),
-            "the final clause publishes the backticked spelling `{spelling}`"
-        );
-    }
-}

@@ -1,11 +1,14 @@
-//! The admitted deterministic integer algorithms of `GNT-40.2`.
+//! The admitted deterministic numeric algorithms of `GNT-40.2` through `GNT-40.4`.
 //!
-//! Every algorithm is pure: it consumes canonical `Int` operands and returns exactly one canonical
-//! `Int` value or exactly one declared deterministic failure. Nothing here wraps, saturates, widens
+//! Every operation is pure and exact: it consumes canonical operands and publishes exactly one
+//! canonical value, exactly one declared deterministic failure, or nothing where the clause
+//! declares a partial form. Nothing here wraps, saturates, masks a result into range, widens
 //! implicitly, coerces across numeric types, or consults a host facility, timing, prior calls, or
-//! global state. This module publishes no float algorithm, bit operation, conversion, parsing,
-//! formatting, work limit, cancellation safe point, quota, schema, recovery, durability, boundary
-//! encoding, lowering, machine representation, or family behavior.
+//! global state. This module publishes the checked integer algorithms and the unary negation
+//! (`GNT-40.2`), the two numeric conversions (`GNT-40.3`), and the checked bit operations
+//! (`GNT-40.4`) only: it publishes no float algorithm, parsing, formatting, work limit,
+//! cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering,
+//! machine representation, or family behavior.
 
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::DeterministicEvaluationCode;
@@ -81,6 +84,97 @@ pub fn negate(value: GantryInt) -> Result<GantryInt, DeterministicEvaluationCode
 
 /// The canonical wire spelling of the unary negation of `GNT-40.2`.
 pub const NEGATE_WIRE_NAME: &str = "negate";
+
+/// One admitted binary bit operation of `GNT-40.4`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BinaryBitOperation {
+    /// Bitwise conjunction of the two operands.
+    And,
+    /// Bitwise disjunction of the two operands.
+    Or,
+    /// Bitwise exclusive disjunction of the two operands.
+    Xor,
+}
+
+impl BinaryBitOperation {
+    /// Every admitted binary bit operation, in declaration order.
+    pub const ALL: [Self; 3] = [Self::And, Self::Or, Self::Xor];
+
+    /// Returns the canonical wire spelling of this operation.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::And => "and",
+            Self::Or => "or",
+            Self::Xor => "xor",
+        }
+    }
+
+    /// Applies the operation to exactly two canonical operands (`GNT-40.4`).
+    ///
+    /// The combination is exact over the two's-complement representation: it publishes exactly one
+    /// canonical `Int` value when that exact result lies inside the canonical domain and refuses
+    /// under `integer-overflow` when it does not. No result wraps, saturates, or is masked into
+    /// range, and nothing here coerces, widens implicitly, refuses under any other code, or depends
+    /// on a host facility, ambient width, timing, prior calls, or global state.
+    #[must_use]
+    pub fn apply(
+        self,
+        left: GantryInt,
+        right: GantryInt,
+    ) -> Result<GantryInt, DeterministicEvaluationCode> {
+        let value = match self {
+            Self::And => left.get() & right.get(),
+            Self::Or => left.get() | right.get(),
+            Self::Xor => left.get() ^ right.get(),
+        };
+        GantryInt::new(value).ok_or(DeterministicEvaluationCode::IntegerOverflow)
+    }
+}
+
+/// One admitted unary bit operation of `GNT-40.4`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnaryBitOperation {
+    /// Bitwise complement of the operand.
+    Not,
+    /// Count of the unset high-order bits of the operand's representation.
+    LeadingZeros,
+    /// Count of the unset low-order bits of the operand's representation.
+    TrailingZeros,
+}
+
+impl UnaryBitOperation {
+    /// Every admitted unary bit operation, in declaration order.
+    pub const ALL: [Self; 3] = [Self::Not, Self::LeadingZeros, Self::TrailingZeros];
+
+    /// Returns the canonical wire spelling of this operation.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Not => "not",
+            Self::LeadingZeros => "leading-zeros",
+            Self::TrailingZeros => "trailing-zeros",
+        }
+    }
+
+    /// Applies the operation to exactly one canonical operand (`GNT-40.4`).
+    ///
+    /// The complement is exact and publishes exactly one canonical `Int` value when its result lies
+    /// inside the canonical domain, refusing under `integer-overflow` when it does not; each count
+    /// is total because it publishes a canonical `Int` value of at most 64. Nothing here wraps,
+    /// saturates, or is masked into range, and nothing coerces, widens implicitly, refuses under any
+    /// other code, or depends on a host facility, ambient width, timing, prior calls, or global
+    /// state.
+    #[must_use]
+    pub fn apply(self, value: GantryInt) -> Result<GantryInt, DeterministicEvaluationCode> {
+        let result = match self {
+            Self::Not => !value.get(),
+            Self::LeadingZeros => i64::from(value.get().leading_zeros()),
+            Self::TrailingZeros => i64::from(value.get().trailing_zeros()),
+        };
+        GantryInt::new(result).ok_or(DeterministicEvaluationCode::IntegerOverflow)
+    }
+}
 
 /// One admitted numeric conversion of `GNT-40.3`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

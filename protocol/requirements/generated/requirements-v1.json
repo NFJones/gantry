@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "d67c7496ed2e7e646ffea7ec61fbd40b85c2a104cedd6deb07e4add8e9e37817",
-  "byte_length": 1061482,
-  "line_count": 15637,
+  "specification_sha256": "a400f05d7076b09febf3a2ccbf36ad30bb45fe47ae8fb813a811f4bbf3f7af6b",
+  "byte_length": 1062963,
+  "line_count": 15641,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "504b6897139570b90d952c89d3bee25a37abe95e47b0f6194b6b4362958df556",
+      "sha256": "412787b058c7544ee3db3d6d3cec9d9fe0a0f551d6533bc92156cc4129322bed",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15637,
-      "sha256": "3ad7fb33e09b8fbbab0fd696e7144faf2681b957c4b09fbc3b0f21407348fcfe",
+      "end_line": 15641,
+      "sha256": "fbecc6ba4c8f4dbb5c7c7264d614695d41b80e7ea7e9b0fa3e70758c7820b27b",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "1f8fe8517845b3f82d55a827a26801269e616730a33902e3cff4420b922383b7",
+      "span_sha256": "b952c88322d71770e9859faf398158fa7e52bd735cb251c02a6bae61d24f5e91",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "8cacdda08859a104ea09d799f6edea9a933e6c793e416c7d8fc75414275347fb",
+      "body_sha256": "0688ab98e20b017ae719a38358e2f9546d335ae261c92f19aeecae4de9f5cf7b",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42782,6 +42782,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_conversion.rs#numeric_conversions_are_exact_and_refuse_outside_the_domain"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.4-integer-bit-operations",
+      "span_start_line": 15638,
+      "span_end_line": 15641,
+      "span_sha256": "10b000a0e3075d28052079a217e6a6b394a1fdea13ca55731233c9e27e1a6218",
+      "anchor_line": 15639,
+      "body_start_line": 15640,
+      "body_end_line": 15641,
+      "body_sha256": "a072aa55654bf0fdedc76b0e82fa879deb2410c51b85e7e6d2bfdd6dfa05f191",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15640,
+          "end_line": 15641,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_bit.rs#integer_bit_operations_are_exact_and_refuse_out_of_domain"
               ],
               "rationale": null
             }
