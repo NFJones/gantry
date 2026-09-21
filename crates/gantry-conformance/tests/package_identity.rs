@@ -39,6 +39,57 @@ use sha2::{Digest, Sha256};
 /// The model source guarded by the resolution-order test.
 const MODEL_SOURCE: &str = include_str!("../../gantry-ir/src/package.rs");
 
+/// The published package-model note guarded by this lane.
+const PACKAGE_MODEL_NOTE: &str = include_str!("../../../docs/package-model.md");
+
+/// The package model publishes every registered code, its registered meaning,
+/// its owning clause, every declared clause anchor, and its non-claims.
+#[test]
+fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
+    for clause in [
+        "GNT-16.0",
+        "GNT-16.1-package-identity",
+        "GNT-16.2-package-instances",
+        "GNT-16.3-dependency-aliases",
+        "GNT-16.4-visibility",
+        "GNT-16.5-reexports",
+        "GNT-16.6-target-kinds",
+        "GNT-16.7-public-interface-manifest",
+        "GNT-16.8-compatibility-axes",
+        "GNT-16.9-resolution-order-independence",
+    ] {
+        assert!(
+            PACKAGE_MODEL_NOTE.contains(clause),
+            "the package-model note names {clause}"
+        );
+    }
+    for code in PackageDiagnosticCode::ALL {
+        assert!(
+            PACKAGE_MODEL_NOTE.contains(code.as_str()),
+            "the package-model note names {}",
+            code.as_str()
+        );
+        assert!(
+            PACKAGE_MODEL_NOTE.contains(code.meaning()),
+            "the package-model note carries the registered meaning of {}",
+            code.as_str()
+        );
+        assert!(
+            PACKAGE_MODEL_NOTE.contains(code.clause()),
+            "the package-model note names the owning clause of {}",
+            code.as_str()
+        );
+    }
+    assert!(
+        PACKAGE_MODEL_NOTE.contains("MUST NOT be reported under another condition's code"),
+        "the note carries the code-less reporting rule"
+    );
+    assert!(
+        PACKAGE_MODEL_NOTE.contains("This model grants nothing."),
+        "the note carries its non-claim"
+    );
+}
+
 /// Returns one deterministic lowercase hexadecimal fixture digest.
 fn hex(seed: &str) -> String {
     format!("{:x}", Sha256::digest(seed.as_bytes()))
