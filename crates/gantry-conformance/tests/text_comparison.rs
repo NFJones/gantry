@@ -31,6 +31,7 @@ fn comparison_clause_publishes_the_three_results() {
         "`compare` publishes `less`, `equal`, or `greater`",
         "it publishes `equal` exactly when the two values are equal",
         "a proper prefix of a longer sequence is `less` than that longer sequence",
+        "a comparison only observes the two scalar sequences it compares and never modifies",
     ] {
         assert!(
             body.contains(declaration),

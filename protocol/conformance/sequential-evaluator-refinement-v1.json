@@ -1,6 +1,6 @@
 {
  "format": "gantry.sequential-evaluator-refinement-evidence/v1",
- "specification_sha256": "9a59e66f16f030388175aaedff741b1ea7594abfc559be7c625d545f9aaaf4d3",
+ "specification_sha256": "900e6ad608b1bf44d5b3a1b5d69676d47c126e0acae753d946708ab88fdff2f6",
  "issue": "GNT-RUN-002",
  "profiles": [
   "embedding",
