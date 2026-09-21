@@ -1135,7 +1135,7 @@ fn projected_instructions(node: &Node) -> Option<usize> {
             match max {
                 None => {
                     let copies = minimum.checked_add(1)?;
-                    inner.checked_mul(copies)?.checked_add(3)
+                    inner.checked_mul(copies)?.checked_add(2)
                 }
                 Some(maximum) => inner
                     .checked_mul(*maximum as usize)?

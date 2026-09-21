@@ -127,6 +127,18 @@ fn matching_admits_and_refuses_patterns_exactly() {
         Pattern::admit(&admitted(deeper.as_bytes()), 64),
         TextDiagnosticCode::PatternBound,
     );
+    // A program exactly at the declared instruction bound is admitted, and one instruction over
+    // it is refused: `(a{255}){64}` holds 16,320 instructions, 60 literals and `a*` hold 63, and
+    // the final match instruction holds one.
+    let at_bound = format!("(a{{{}}}){{64}}{}a*", PATTERN_REPEAT_BOUND, "a".repeat(60));
+    let admitted_at_bound = Pattern::admit(&admitted(at_bound.as_bytes()), 64)
+        .unwrap_or_else(|error| panic!("a program exactly at the bound is admitted: {error}"));
+    assert_eq!(admitted_at_bound.steps(), 64);
+    let over_bound = format!("(a{{{}}}){{64}}{}a*", PATTERN_REPEAT_BOUND, "a".repeat(61));
+    refusal(
+        Pattern::admit(&admitted(over_bound.as_bytes()), 64),
+        TextDiagnosticCode::PatternBound,
+    );
 }
 
 #[test]
