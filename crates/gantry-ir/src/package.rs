@@ -4773,7 +4773,8 @@ mod tests {
         assert!(pinned_identities.contains(&&second));
         // Guards the lookup rather than the pair values: `pin_for` must resolve a
         // pin's own identity to that pin's interface. The pair values themselves
-        // are pinned by the `pin_for` assertions and the digest inequality above.
+        // are pinned by the `pin_for` assertions above and the digest inequality
+        // below.
         for pin in forward.pins() {
             assert_eq!(
                 forward.pin_for(pin.identity()),
