@@ -501,6 +501,302 @@ impl SiteRequirementSlotId {
     }
 }
 
+/// One requirement of a [`RequirementResolution`] and the single binding that
+/// satisfies it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedRequirement {
+    requirement: AuthorityRequirementId,
+    binding: AuthorityBindingId,
+}
+
+impl ResolvedRequirement {
+    /// Returns the declared public capability requirement.
+    #[must_use]
+    pub const fn requirement(&self) -> &AuthorityRequirementId {
+        &self.requirement
+    }
+
+    /// Returns the single selected implementation binding of that requirement.
+    #[must_use]
+    pub const fn binding(&self) -> &AuthorityBindingId {
+        &self.binding
+    }
+}
+
+/// The preflight resolution of one executable authority closure
+/// (`GNT-7.2` item 2 and `GNT-7.2-authority-rebinding`).
+///
+/// `GNT-7.2` requires the integration, before a new execution or resume begins,
+/// to resolve every declared requirement of the executable authority closure and
+/// to reject conflicting or ambiguous registrations during preflight; an
+/// unresolved requirement is a start or resume-start failure even when no
+/// reachable path is expected to use it. `GNT-7.2-authority-rebinding` requires
+/// resume to re-establish every requirement of that closure and to fail when any
+/// requirement cannot be rebound, without widening the closure.
+///
+/// This type establishes exactly that scope and nothing more. It is not a
+/// per-call authorization and confers no dispatch right, which is the explicit
+/// rule of `GNT-3-T-AUTHORITY-ADMISSION`. It carries no instance, no rights set,
+/// and no lease: a right widening, a generation reset, or a lineage change is an
+/// authority-compatibility change under `GNT-11.6-authority-instance-compatibility`
+/// and is compared by [`InstanceComparison`] over instances, which resume must
+/// not restore. Entries are exactly the caller's declared requirements that the
+/// supplied closure satisfies, deduplicated and ordered canonically by
+/// requirement identity; a requirement the caller did not declare, and a
+/// declaration the closure does not satisfy, never yields an entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RequirementResolution {
+    entries: Vec<ResolvedRequirement>,
+}
+
+impl RequirementResolution {
+    /// The largest number of supplied requirements one construction admits.
+    ///
+    /// The bound is measured over the supplied declarations before
+    /// deduplication, so duplicates count toward it, and a larger input is
+    /// refused with [`PreflightResolutionError::ExceedsMaximumRequirements`]
+    /// instead of being truncated.
+    pub const MAXIMUM_REQUIREMENTS: usize = 4096;
+
+    /// Resolves every declared requirement against one executable closure.
+    ///
+    /// Each declared requirement must be satisfied by exactly one binding in the
+    /// closure. A declared requirement the closure does not satisfy is refused
+    /// with [`PreflightResolutionError::UnresolvedRequirement`], and two distinct
+    /// bindings for one declared requirement are refused with
+    /// [`PreflightResolutionError::AmbiguousRequirement`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PreflightResolutionError::ExceedsMaximumRequirements`] when the
+    /// supplied declarations exceed [`Self::MAXIMUM_REQUIREMENTS`], and the two
+    /// resolution refusals above for an unsatisfied or ambiguous requirement.
+    pub fn resolve(
+        closure: &CapabilityAuthorityClosure,
+        declared: impl IntoIterator<Item = AuthorityRequirementId>,
+    ) -> Result<Self, PreflightResolutionError> {
+        let mut candidates = Vec::new();
+        for requirement in declared {
+            candidates.push(requirement);
+            if candidates.len() > Self::MAXIMUM_REQUIREMENTS {
+                return Err(PreflightResolutionError::ExceedsMaximumRequirements {
+                    observed: candidates.len(),
+                    maximum: Self::MAXIMUM_REQUIREMENTS,
+                });
+            }
+        }
+        candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        candidates.dedup_by(|left, right| left.as_str() == right.as_str());
+        let mut entries = Vec::with_capacity(candidates.len());
+        for requirement in candidates {
+            let binding = Self::single_binding(closure, &requirement)?;
+            entries.push(ResolvedRequirement {
+                requirement,
+                binding,
+            });
+        }
+        Ok(Self { entries })
+    }
+
+    /// Returns the closure's single binding for one requirement, or the refusal.
+    fn single_binding(
+        closure: &CapabilityAuthorityClosure,
+        requirement: &AuthorityRequirementId,
+    ) -> Result<AuthorityBindingId, PreflightResolutionError> {
+        let mut found: Option<AuthorityBindingId> = None;
+        for instance in closure.instances() {
+            if instance.requirement() != requirement {
+                continue;
+            }
+            match &found {
+                None => found = Some(instance.clone()),
+                Some(binding) if binding == instance => {}
+                Some(_) => {
+                    return Err(PreflightResolutionError::AmbiguousRequirement {
+                        requirement: requirement.clone(),
+                    });
+                }
+            }
+        }
+        found.ok_or_else(|| PreflightResolutionError::UnresolvedRequirement {
+            requirement: requirement.clone(),
+        })
+    }
+
+    /// Re-establishes the same requirement scope through replacement bindings.
+    ///
+    /// Every resolved requirement must be rebound, so a requirement with no
+    /// replacement is refused with
+    /// [`PreflightResolutionError::UnresolvedRequirement`]; two distinct
+    /// replacement bindings for one requirement are refused with
+    /// [`PreflightResolutionError::AmbiguousRequirement`]; and a replacement for
+    /// a requirement this resolution does not carry is refused with
+    /// [`PreflightResolutionError::RebindingWidensClosure`], so rebinding can
+    /// neither widen nor narrow the resolved scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns the three refusals above, plus
+    /// [`PreflightResolutionError::ExceedsMaximumRequirements`] when the supplied
+    /// replacements exceed [`Self::MAXIMUM_REQUIREMENTS`].
+    pub fn rebind(
+        &self,
+        replacements: impl IntoIterator<Item = (AuthorityRequirementId, AuthorityBindingId)>,
+    ) -> Result<Self, PreflightResolutionError> {
+        let mut supplied: Vec<(AuthorityRequirementId, AuthorityBindingId)> = Vec::new();
+        for pair in replacements {
+            supplied.push(pair);
+            if supplied.len() > Self::MAXIMUM_REQUIREMENTS {
+                return Err(PreflightResolutionError::ExceedsMaximumRequirements {
+                    observed: supplied.len(),
+                    maximum: Self::MAXIMUM_REQUIREMENTS,
+                });
+            }
+        }
+        supplied.sort_by(|left, right| left.0.as_str().cmp(right.0.as_str()));
+        let mut entries = Vec::new();
+        let mut index = 0;
+        while index < supplied.len() {
+            let requirement = supplied[index].0.clone();
+            let mut chosen: Option<AuthorityBindingId> = None;
+            while index < supplied.len() && supplied[index].0 == requirement {
+                let candidate = &supplied[index].1;
+                match &chosen {
+                    None => chosen = Some(candidate.clone()),
+                    Some(binding) if binding == candidate => {}
+                    Some(_) => {
+                        return Err(PreflightResolutionError::AmbiguousRequirement { requirement });
+                    }
+                }
+                index += 1;
+            }
+            let Some(resolved) = self.entry_for(&requirement) else {
+                return Err(PreflightResolutionError::RebindingWidensClosure { requirement });
+            };
+            let Some(binding) = chosen else {
+                return Err(PreflightResolutionError::UnresolvedRequirement { requirement });
+            };
+            entries.push(ResolvedRequirement {
+                requirement: resolved.requirement.clone(),
+                binding,
+            });
+        }
+        for entry in &self.entries {
+            if !entries
+                .iter()
+                .any(|candidate| candidate.requirement == entry.requirement)
+            {
+                return Err(PreflightResolutionError::UnresolvedRequirement {
+                    requirement: entry.requirement.clone(),
+                });
+            }
+        }
+        entries.sort_by(|left, right| left.requirement.as_str().cmp(right.requirement.as_str()));
+        Ok(Self { entries })
+    }
+
+    /// Returns the resolved requirements in canonical requirement order.
+    #[must_use]
+    pub fn entries(&self) -> &[ResolvedRequirement] {
+        &self.entries
+    }
+
+    /// Returns the number of resolved requirements.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Returns whether the resolution carries no requirement.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Returns whether one requirement is resolved in this scope.
+    #[must_use]
+    pub fn contains(&self, requirement: &AuthorityRequirementId) -> bool {
+        self.entry_for(requirement).is_some()
+    }
+
+    /// Returns the binding that satisfies one requirement, when it is resolved.
+    #[must_use]
+    pub fn binding_for(&self, requirement: &AuthorityRequirementId) -> Option<&AuthorityBindingId> {
+        self.entry_for(requirement).map(|entry| &entry.binding)
+    }
+
+    /// Returns the entry of one requirement, when it is resolved.
+    fn entry_for(&self, requirement: &AuthorityRequirementId) -> Option<&ResolvedRequirement> {
+        self.entries
+            .iter()
+            .find(|entry| &entry.requirement == requirement)
+    }
+}
+
+/// Failure of one preflight requirement resolution (`GNT-7.2`).
+///
+/// This vocabulary is separate from [`AuthorityError`] because a resolution
+/// refusal names the requirement it concerns, which that value-typed refusal
+/// cannot carry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreflightResolutionError {
+    /// A declared requirement is not satisfied by the closure, or a resolved
+    /// requirement has no replacement binding during rebinding.
+    UnresolvedRequirement {
+        /// The unsatisfied requirement.
+        requirement: AuthorityRequirementId,
+    },
+    /// One requirement carries two distinct binding registrations.
+    AmbiguousRequirement {
+        /// The ambiguously registered requirement.
+        requirement: AuthorityRequirementId,
+    },
+    /// A replacement names a requirement the resolved scope does not carry.
+    RebindingWidensClosure {
+        /// The requirement outside the resolved scope.
+        requirement: AuthorityRequirementId,
+    },
+    /// The supplied declarations exceed the resolution's declared bound.
+    ExceedsMaximumRequirements {
+        /// The number of supplied requirements when the bound was crossed.
+        observed: usize,
+        /// The declared bound.
+        maximum: usize,
+    },
+}
+
+impl PreflightResolutionError {
+    /// Returns the registered diagnostic code of this failure.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::UnresolvedRequirement { .. } => "authority-unresolved-requirement",
+            Self::AmbiguousRequirement { .. } => "authority-ambiguous-requirement",
+            Self::RebindingWidensClosure { .. } => "authority-rebinding-widens-closure",
+            Self::ExceedsMaximumRequirements { .. } => "authority-resolution-exceeds-maximum",
+        }
+    }
+}
+
+impl fmt::Display for PreflightResolutionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnresolvedRequirement { requirement }
+            | Self::AmbiguousRequirement { requirement }
+            | Self::RebindingWidensClosure { requirement } => {
+                write!(formatter, "{}: {}", self.code(), requirement.as_str())
+            }
+            Self::ExceedsMaximumRequirements { observed, maximum } => write!(
+                formatter,
+                "{}: {observed} supplied requirements exceed the declared maximum of {maximum}",
+                self.code()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PreflightResolutionError {}
+
 /// One canonical concrete capability-instance identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AuthorityInstanceId(Arc<str>);
@@ -1729,7 +2025,8 @@ mod tests {
     use super::{
         AUTHORITY_RIGHT_ORDER, AdmissionRequest, AuthorityBindingId, AuthorityError,
         AuthorityFence, AuthorityGeneration, AuthorityRequirementId, AuthorityRight,
-        CapabilityAuthorityClosure, FenceCategory, FenceState, RightsSet, SiteRequirementSlotId,
+        CapabilityAuthorityClosure, FenceCategory, FenceState, PreflightResolutionError,
+        RequirementResolution, RightsSet, SiteRequirementSlotId,
     };
     use crate::generated::RecoveryClass;
     use crate::{
@@ -1837,6 +2134,150 @@ mod tests {
             Ok(path) => path,
             Err(error) => panic!("the fixture path {name} is canonical: {error:?}"),
         }
+    }
+
+    #[test]
+    fn requirement_resolution_resolves_each_declared_requirement_and_never_widens_it() {
+        let declared = fixture_requirement("resolution_declared");
+        let resolved_binding = fixture_binding(&declared, &TypeDescriptor::INT);
+        let undeclared = fixture_requirement("resolution_undeclared");
+        let undeclared_binding = fixture_binding(&undeclared, &TypeDescriptor::STRING);
+        let closure =
+            CapabilityAuthorityClosure::new([resolved_binding.clone(), undeclared_binding])
+                .unwrap_or_else(|error| {
+                    panic!("the declared closure is within the bound: {error}")
+                });
+        let resolution = RequirementResolution::resolve(&closure, [declared.clone()])
+            .unwrap_or_else(|error| panic!("the declared requirement is satisfied: {error}"));
+        assert_eq!(resolution.len(), 1);
+        assert!(!resolution.is_empty());
+        assert!(resolution.contains(&declared));
+        assert_eq!(resolution.binding_for(&declared), Some(&resolved_binding));
+        assert!(
+            !resolution.contains(&undeclared),
+            "a requirement the caller did not declare never enters the resolution"
+        );
+        let unsatisfied = fixture_requirement("resolution_unsatisfied");
+        let error = RequirementResolution::resolve(&closure, [unsatisfied.clone()])
+            .err()
+            .unwrap_or_else(|| panic!("an unsatisfied declaration is refused"));
+        assert!(matches!(
+            &error,
+            PreflightResolutionError::UnresolvedRequirement { requirement }
+                if requirement == &unsatisfied
+        ));
+        assert_eq!(error.code(), "authority-unresolved-requirement");
+        assert!(error.to_string().contains(unsatisfied.as_str()));
+    }
+
+    #[test]
+    fn requirement_resolution_refuses_conflicting_registrations() {
+        let declared = fixture_requirement("resolution_conflict");
+        let closure = CapabilityAuthorityClosure::new([
+            fixture_binding(&declared, &TypeDescriptor::INT),
+            fixture_binding(&declared, &TypeDescriptor::STRING),
+        ])
+        .unwrap_or_else(|error| panic!("the declared closure is within the bound: {error}"));
+        let error = RequirementResolution::resolve(&closure, [declared.clone()])
+            .err()
+            .unwrap_or_else(|| panic!("two distinct bindings are refused"));
+        assert!(matches!(
+            &error,
+            PreflightResolutionError::AmbiguousRequirement { requirement }
+                if requirement == &declared
+        ));
+        assert_eq!(error.code(), "authority-ambiguous-requirement");
+        let single = fixture_binding(&declared, &TypeDescriptor::INT);
+        let repeated = CapabilityAuthorityClosure::new([single.clone(), single])
+            .unwrap_or_else(|error| panic!("the declared closure is within the bound: {error}"));
+        let resolution = RequirementResolution::resolve(&repeated, [declared.clone(), declared])
+            .unwrap_or_else(|error| panic!("one distinct binding is not a conflict: {error}"));
+        assert_eq!(resolution.len(), 1);
+    }
+
+    #[test]
+    fn requirement_resolution_rebinds_without_widening_or_narrowing() {
+        let first_requirement = fixture_requirement("rebind_first");
+        let second_requirement = fixture_requirement("rebind_second");
+        let closure = CapabilityAuthorityClosure::new([
+            fixture_binding(&first_requirement, &TypeDescriptor::INT),
+            fixture_binding(&second_requirement, &TypeDescriptor::STRING),
+        ])
+        .unwrap_or_else(|error| panic!("the declared closure is within the bound: {error}"));
+        let resolution = RequirementResolution::resolve(
+            &closure,
+            [first_requirement.clone(), second_requirement.clone()],
+        )
+        .unwrap_or_else(|error| panic!("both requirements are satisfied: {error}"));
+        let replacement_first = fixture_binding(&first_requirement, &TypeDescriptor::STRING);
+        let replacement_second = fixture_binding(&second_requirement, &TypeDescriptor::INT);
+        let rebound = resolution
+            .rebind([
+                (second_requirement.clone(), replacement_second.clone()),
+                (first_requirement.clone(), replacement_first.clone()),
+                (first_requirement.clone(), replacement_first.clone()),
+            ])
+            .unwrap_or_else(|error| panic!("every requirement is rebound: {error}"));
+        assert_eq!(rebound.len(), 2, "duplicate replacements collapse");
+        assert_eq!(
+            rebound.binding_for(&first_requirement),
+            Some(&replacement_first)
+        );
+        assert_eq!(
+            rebound.binding_for(&second_requirement),
+            Some(&replacement_second)
+        );
+        let error = resolution
+            .rebind([(first_requirement.clone(), replacement_first.clone())])
+            .err()
+            .unwrap_or_else(|| panic!("a missing replacement fails resume-start"));
+        assert!(matches!(
+            &error,
+            PreflightResolutionError::UnresolvedRequirement { requirement }
+                if requirement == &second_requirement
+        ));
+        let outside = fixture_requirement("rebind_outside");
+        let error = resolution
+            .rebind([
+                (first_requirement.clone(), replacement_first.clone()),
+                (second_requirement.clone(), replacement_second),
+                (
+                    outside.clone(),
+                    fixture_binding(&outside, &TypeDescriptor::INT),
+                ),
+            ])
+            .err()
+            .unwrap_or_else(|| panic!("a replacement outside the scope is refused"));
+        assert!(matches!(
+            &error,
+            PreflightResolutionError::RebindingWidensClosure { requirement }
+                if requirement == &outside
+        ));
+        assert_eq!(error.code(), "authority-rebinding-widens-closure");
+    }
+
+    #[test]
+    fn requirement_resolution_bound_is_pre_dedup_and_refuses_one_more() {
+        let declared = fixture_requirement("resolution_bound");
+        let closure =
+            CapabilityAuthorityClosure::new([fixture_binding(&declared, &TypeDescriptor::INT)])
+                .unwrap_or_else(|error| {
+                    panic!("the declared closure is within the bound: {error}")
+                });
+        assert!(
+            RequirementResolution::resolve(&closure, [declared.clone()]).is_ok(),
+            "a declaration at or below the bound is admitted"
+        );
+        let oversized = vec![declared; RequirementResolution::MAXIMUM_REQUIREMENTS + 1];
+        let error = RequirementResolution::resolve(&closure, oversized)
+            .err()
+            .unwrap_or_else(|| panic!("one declaration past the bound is refused"));
+        assert!(matches!(
+            &error,
+            PreflightResolutionError::ExceedsMaximumRequirements { maximum, .. }
+                if *maximum == RequirementResolution::MAXIMUM_REQUIREMENTS
+        ));
+        assert_eq!(error.code(), "authority-resolution-exceeds-maximum");
     }
 
     /// Returns one public capability requirement of one declared fixture path.

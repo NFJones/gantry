@@ -114,7 +114,8 @@ pub use authority::{
     AuthorityInstanceId, AuthorityLeasePolicy, AuthorityRequirementId, AuthorityRight,
     CapabilityAuthorityClosure, ExternalOutcome, FenceCategory, FenceLatches, FencePoint,
     FenceState, GenerationRelation, InstanceComparison, LeaseRelation, LineageRecord,
-    LineageRelation, RightsRelation, RightsSet, SharedAuthorityInstance, SiteRequirementSlotId,
+    LineageRelation, PreflightResolutionError, RequirementResolution, ResolvedRequirement,
+    RightsRelation, RightsSet, SharedAuthorityInstance, SiteRequirementSlotId,
 };
 // The callable-value contract is declaration-only in this revision: no callable
 // type is admitted into an artifact, and `CallableType` only realizes the
