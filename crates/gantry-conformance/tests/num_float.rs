@@ -45,16 +45,15 @@ fn finite_float_algorithms_surface_is_published() {
     let note = read_text(&workspace_root().join("docs/num-foundation.md"));
 
     let anchor = "GNT-40.5-finite-float-algorithms";
-    assert_eq!(
-        NUM_CLAUSES.last(),
-        Some(&anchor),
-        "the finite-float clause is the specification's final clause"
+    assert!(
+        NUM_CLAUSES.contains(&anchor),
+        "the finite-float clause is declared by the numeric clause vocabulary"
     );
     assert!(note.contains(anchor), "the note names `{anchor}`");
     let clause = clause_body(&specification, anchor);
     assert!(
-        specification.trim_end().ends_with(clause.trim_end()),
-        "the final clause body runs to the end of the specification"
+        !specification.trim_end().ends_with(clause.trim_end()),
+        "the finite-float clause is no longer the specification's final clause"
     );
     assert_eq!(
         UnaryFloatAlgorithm::ALL.map(UnaryFloatAlgorithm::wire_name),

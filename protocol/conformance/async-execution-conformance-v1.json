@@ -20,19 +20,19 @@
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "f79eaf0faff26fbf987ee740bbe2be3c16cdd92cb999b2d24ea26639b34c802c"
+   "sha256": "e5e36d7360d4ecf9abeb32ee0c87ec7071e923e4b4d4ae62137a565c8e5743f6"
   },
   {
    "path": "protocol/conformance/async-execution-adoption-v1.json",
-   "sha256": "ea10504efe309159ee44fbb40f59d1a6e8af188b9584089e663c549983374996"
+   "sha256": "a930cd06d94e478a46e0e23000d538a6d0abc21349976e75542e3c5788b3876b"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "41935336bfcc26aa27aa9bdd407161af734ed1f4e644142b191f963416386b81"
+   "sha256": "64b988592c4e7a98de3e1a578c69738fb43759ffb61b8e6c884554887a669714"
   },
   {
    "path": "protocol/conformance/async-execution-gate-v1.json",
-   "sha256": "fb559256933b5cf412b459bdecc99fa6879acbead373bd5b822892e97fef3331"
+   "sha256": "38cc2ac6cc5aa33e4a7d58c9786e555432bdd8d6d006c28bd1ab73cd12091194"
   },
   {
    "path": "protocol/goldens/concurrent-refinement-model-v1.json",
@@ -181,39 +181,39 @@
    "artifact": "protocol/conformance/blocking-work-v1.json",
    "commit": "3892895c41d1f8290e97da09ce32260c51a1d74d",
    "issue": "GNT-ASYNC-BLOCK-001",
-   "sha256": "4430a803b57a934195f690b379eac3e9ceaf6734e0771435e704745be0ab7fca",
+   "sha256": "5b3a695b30da56831cb26d89109d4a83fce7a3c042818d9a89c0c69c8623bb38",
    "subject": "Isolate package work behind bounded blocking admission."
   },
   {
    "artifact": "protocol/conformance/cli-runtime-policy-v1.json",
    "commit": "98d91f33e6206688a5354dc7d5260dbc1afaf5d6",
    "issue": "GNT-ASYNC-CLI-001",
-   "sha256": "300a1ee3583f66955aca3989c799b0713091cc6362b138afca14110977aea5c1",
+   "sha256": "ca8efe2923a47e659476050b9bba954f3763a25ad3add42b368ce2661cf3f413",
    "subject": "Adopt multithread CLI runtime policy"
   },
   {
    "artifact": "protocol/conformance/native-source-concurrency-gate-v1.json",
    "commit": "a6915ef212b9e245da00fd383f79bc81f05c3556",
    "issue": "GNT-ASYNC-GATE-200",
-   "sha256": "bdf7963437693faced0cf67206c7f17bbbc8d65491470b137af855a3ed2c8d16",
+   "sha256": "31fee5981cf74c936c5e826a7cdf5f004f2ee6717e39d676435f5033d3d95e8f",
    "subject": "Close the native source concurrency evidence gate."
   },
   {
    "artifact": "protocol/conformance/async-execution-refinement-v1.json",
    "commit": "ca413e8e23f714e33d72511a74f02a2eeccc4032",
    "issue": "GNT-ASYNC-PROOF-001",
-   "sha256": "45d0833b32eab53355c9178c5931cc7608dcb4057f641ef6cbcbb286ceacfe91",
+   "sha256": "dc423595fb4c6fcff0411ba00ec3b6b9dc5a488a12e1216ef243a28fd45ea472",
    "subject": "Compose async execution refinements"
   },
   {
    "artifact": "protocol/conformance/async-recovery-v1.json",
    "commit": "d5d34c22107d8f16739b21baf6a0f6f773de276a",
    "issue": "GNT-ASYNC-REC-001",
-   "sha256": "d5ab0bfeb131055ff4e887a6f7a49059b9090489d6f8f7a866f99fa786dc0265",
+   "sha256": "2458cccbec06bafbb45ba62adddec8f2ab51d578c812c23c76ae5fc8138113ae",
    "subject": "Qualify executor-backed recovery"
   }
  ],
- "specification_sha256": "e82686d56653f64ea1d3c1aab0a33a58cacf643e00bed4d57f6e35fbf2766832",
+ "specification_sha256": "251b6eac825a1772d3d6941589d46bc50f6d210bf1220d8b6192183d601e77c4",
  "status": "verified",
  "worker_policy": {
   "cli_runtime": "tokio-multi-thread",

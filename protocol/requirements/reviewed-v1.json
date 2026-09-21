@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "e82686d56653f64ea1d3c1aab0a33a58cacf643e00bed4d57f6e35fbf2766832",
+  "specification_sha256": "251b6eac825a1772d3d6941589d46bc50f6d210bf1220d8b6192183d601e77c4",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15645,
+      "end_line": 15649,
       "rationale": null
     }
   ],
@@ -41727,6 +41727,45 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_float.rs#finite_float_algorithms_are_exact_and_total"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.6-canonical-numeric-text",
+      "span_start_line": 15646,
+      "span_end_line": 15649,
+      "anchor_line": 15647,
+      "body_start_line": 15648,
+      "body_end_line": 15649,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15648,
+          "end_line": 15649,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_text.rs#canonical_numeric_text_round_trips_exactly"
               ],
               "rationale": null
             }

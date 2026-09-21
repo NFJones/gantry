@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "e82686d56653f64ea1d3c1aab0a33a58cacf643e00bed4d57f6e35fbf2766832",
-  "byte_length": 1064715,
-  "line_count": 15645,
+  "specification_sha256": "251b6eac825a1772d3d6941589d46bc50f6d210bf1220d8b6192183d601e77c4",
+  "byte_length": 1066529,
+  "line_count": 15649,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "01b23ddf862dc2d4910db068f5ebfd28147219ae8bb5a0fd4949d52045d1df2c",
+      "sha256": "2ed00323619ea34728cfa1860350137d73472dc9dbb514db439ec3163b518483",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15645,
-      "sha256": "4caddc96811f3d4a0bcc34905f05df5837b3a046bd744a961dc6f138268cc879",
+      "end_line": 15649,
+      "sha256": "7264d1b7e9d6c8c39d2fb8e61b30337a54eec5b7ebe6191043b4f4989457f694",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "c1dc278403ba100c4d57c2655fd8c82187255af26e506baeab988d2e900f0854",
+      "span_sha256": "4ffca18db5247089d8e8bc368e89405877cbe70260ef60488bc53f06dfa3cb63",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "c3aa090087b1f7e5c8db4a81737074c02c0e8d095d9afd017cf116c17f885f24",
+      "body_sha256": "bbac0dba22d1aa3b045eeade123dd89d273b69733b7fecfb26fcdceb06490912",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42864,6 +42864,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_float.rs#finite_float_algorithms_are_exact_and_total"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.6-canonical-numeric-text",
+      "span_start_line": 15646,
+      "span_end_line": 15649,
+      "span_sha256": "7423e4cb36b54e9e0f90e80841a9870397b3dce5851ee90ad6ab2c79f51df105",
+      "anchor_line": 15647,
+      "body_start_line": 15648,
+      "body_end_line": 15649,
+      "body_sha256": "8516d376e8cd0db833dce1195c0d2cfa41ef88cfbf84c7471f5d2c4364b66e3f",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15648,
+          "end_line": 15649,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_text.rs#canonical_numeric_text_round_trips_exactly"
               ],
               "rationale": null
             }

@@ -1,4 +1,4 @@
-//! The admitted deterministic numeric algorithms of `GNT-40.2` through `GNT-40.5`.
+//! The admitted deterministic numeric algorithms of `GNT-40.2` through `GNT-40.6`.
 //!
 //! Every operation is pure and exact: it consumes canonical operands and publishes exactly one
 //! canonical value, exactly one declared deterministic failure, or nothing where the clause
@@ -6,9 +6,10 @@
 //! implicitly, coerces across numeric types, or consults a host facility, an ambient rounding mode,
 //! timing, prior calls, or global state. This module publishes the checked integer algorithms and
 //! the unary negation (`GNT-40.2`), the two numeric conversions (`GNT-40.3`), the checked bit
-//! operations (`GNT-40.4`), and the finite-float algorithms (`GNT-40.5`) only: it publishes no
-//! parsing, formatting, work limit, cancellation safe point, quota, schema, recovery, durability,
-//! boundary encoding, lowering, machine representation, or family behavior.
+//! operations (`GNT-40.4`), the finite-float algorithms (`GNT-40.5`), and the canonical numeric
+//! text helpers (`GNT-40.6`) only: it publishes no source-literal grammar, work limit, cancellation
+//! safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine
+//! representation, or family behavior.
 
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::DeterministicEvaluationCode;
@@ -72,6 +73,49 @@ impl CheckedIntegerAlgorithm {
             Self::Remainder => left.checked_rem(right),
         }
     }
+}
+
+/// Returns the canonical decimal text of one canonical `Int` (`GNT-40.6`).
+///
+/// The text is an optional `-` followed by decimal digits with no leading zero on a multi-digit
+/// magnitude and no negative zero, and the formatter is total over the canonical domain.
+#[must_use]
+pub fn format_canonical_int(value: GantryInt) -> String {
+    value.get().to_string()
+}
+
+/// Parses exactly the canonical decimal text of one canonical `Int` (`GNT-40.6`).
+///
+/// The parse publishes exactly one canonical `Int` value only when the text is that value's own
+/// canonical text, and otherwise publishes nothing: a bare `+`, a leading zero on a multi-digit
+/// magnitude, `-0`, a digit separator, a fractional part, or a magnitude outside the canonical
+/// domain is refused rather than normalized.
+#[must_use]
+pub fn parse_canonical_int(text: &str) -> Option<GantryInt> {
+    let value = GantryInt::new(text.parse::<i64>().ok()?)?;
+    (format_canonical_int(value) == text).then_some(value)
+}
+
+/// Returns the canonical number text of one canonical `Float` (`GNT-40.6`).
+///
+/// The text is the canonical number spelling of the value's normalized IEEE binary64 form, the same
+/// spelling the canonical JSON rules use for the same values, and the formatter is total over the
+/// finite domain.
+#[must_use]
+pub fn format_canonical_float(value: GantryFloat) -> String {
+    value.canonical_string()
+}
+
+/// Parses exactly the canonical number text of one canonical `Float` (`GNT-40.6`).
+///
+/// The parse publishes exactly one canonical `Float` value only when the text is that value's own
+/// canonical text, and otherwise publishes nothing: a non-canonical spelling of the same value, a
+/// bare `+`, `-0`, a non-finite or `NaN` spelling, or a spelling that rounds to a different value
+/// is refused rather than normalized.
+#[must_use]
+pub fn parse_canonical_float(text: &str) -> Option<GantryFloat> {
+    let value = GantryFloat::new(text.parse::<f64>().ok()?)?;
+    (format_canonical_float(value) == text).then_some(value)
 }
 
 /// Negates one canonical `Int` operand (`GNT-40.2`).
