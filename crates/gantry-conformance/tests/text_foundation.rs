@@ -8,9 +8,10 @@ use gantry::ir::{CharValue, TEXT_CLAUSES, TextDiagnosticCode, TextValue};
 
 /// The text surface this slice publishes, written out independently of the model and the note: the
 /// clause anchors in specification order and the one registered refusal spelling.
-const EXPECTED_CLAUSES: [&str; 2] = [
+const EXPECTED_CLAUSES: [&str; 3] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
+    "GNT-41.2-canonical-text-normalization",
 ];
 const EXPECTED_DIAGNOSTIC: &str = "text-invalid-utf8";
 
@@ -174,11 +175,11 @@ fn text_note_names_every_declared_clause_and_the_diagnostic() {
     let flat = note.split_whitespace().collect::<Vec<_>>().join(" ");
     for phrase in [
         "no grapheme-cluster segmentation",
-        "no normalization",
         "no case mapping",
         "no regular expression",
         "no locale",
-        "no Unicode data version",
+        "no compatibility form",
+        "no `String` method",
     ] {
         assert!(flat.contains(phrase), "the note declares `{phrase}`");
     }

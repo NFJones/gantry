@@ -1,6 +1,6 @@
 {
  "format": "gantry.generics-traits-runtime-evidence/v1",
- "specification_sha256": "b5a7981a63a6cd853adf5710eb570eb412ff3fc00023a0673dd68cc9c47e405c",
+ "specification_sha256": "2c16648ed1eb69c8e0dc163776783a393460ed5df5b9869fcd181fa61f675087",
  "issue": "GNT-GEN-RUN-001",
  "profile": "evaluator",
  "entries": [

@@ -11,12 +11,16 @@
 
 use std::fmt;
 
+use gantry_core::unicode::{normalize_nfc, normalize_nfd};
+
 use crate::scalar::CharValue;
 
-/// The declared clauses of Section 41, in specification order (`GNT-41.0`, `GNT-41.1`).
-pub const TEXT_CLAUSES: [&str; 2] = [
+/// The declared clauses of Section 41, in specification order
+/// (`GNT-41.0`, `GNT-41.1`, `GNT-41.2`).
+pub const TEXT_CLAUSES: [&str; 3] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
+    "GNT-41.2-canonical-text-normalization",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -43,6 +47,29 @@ impl TextDiagnosticCode {
     pub fn owning_clause(self) -> &'static str {
         match self {
             Self::InvalidUtf8 => "GNT-41.1-canonical-text-values",
+        }
+    }
+}
+
+/// One published canonical normalization form of `GNT-41.2-canonical-text-normalization`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum NormalizationForm {
+    /// Normalization Form D, the canonical decomposition, spelled `nfd`.
+    Nfd,
+    /// Normalization Form C, the canonical composition, spelled `nfc`.
+    Nfc,
+}
+
+impl NormalizationForm {
+    /// Every declared form, in declaration order.
+    pub const ALL: [Self; 2] = [Self::Nfd, Self::Nfc];
+
+    /// Returns the registered spelling of the form.
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
+        match self {
+            Self::Nfd => "nfd",
+            Self::Nfc => "nfc",
         }
     }
 }
@@ -180,6 +207,21 @@ impl TextValue {
         self.text.get(from..to).map(|slice| Self {
             text: slice.to_owned(),
         })
+    }
+
+    /// Publishes the named canonical normalization form of the value
+    /// (`GNT-41.2-canonical-text-normalization`).
+    ///
+    /// Normalization is total and deterministic over the pinned Unicode 16.0.0 data: it publishes a
+    /// new value whose identity is the normalized scalar sequence, never modifies the value it was
+    /// given, and is idempotent in each published form.
+    #[must_use]
+    pub fn normalize(&self, form: NormalizationForm) -> Self {
+        let text = match form {
+            NormalizationForm::Nfd => normalize_nfd(&self.text),
+            NormalizationForm::Nfc => normalize_nfc(&self.text),
+        };
+        Self { text }
     }
 
     /// Returns every scalar boundary of the value: the octet offset of each scalar and the end of

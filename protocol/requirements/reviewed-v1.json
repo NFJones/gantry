@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "b5a7981a63a6cd853adf5710eb570eb412ff3fc00023a0673dd68cc9c47e405c",
+  "specification_sha256": "2c16648ed1eb69c8e0dc163776783a393460ed5df5b9869fcd181fa61f675087",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15663,
+      "end_line": 15667,
       "rationale": null
     }
   ],
@@ -41854,10 +41854,10 @@
     {
       "id": "GNT-41.1-canonical-text-values",
       "span_start_line": 15661,
-      "span_end_line": 15663,
+      "span_end_line": 15664,
       "anchor_line": 15661,
       "body_start_line": 15662,
-      "body_end_line": 15663,
+      "body_end_line": 15664,
       "profiles": [
         "analyzer"
       ],
@@ -41869,7 +41869,7 @@
         {
           "key": "clause-001",
           "start_line": 15662,
-          "end_line": 15663,
+          "end_line": 15664,
           "profiles": [
             "analyzer"
           ],
@@ -41883,6 +41883,46 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/text_foundation.rs#text_values_admit_exactly_well_formed_utf8"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.2-canonical-text-normalization",
+      "span_start_line": 15665,
+      "span_end_line": 15667,
+      "anchor_line": 15665,
+      "body_start_line": 15666,
+      "body_end_line": 15667,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15666,
+          "end_line": 15667,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_normalization.rs#normalization_clause_publishes_the_two_canonical_forms",
+                "crates/gantry-conformance/tests/text_normalization.rs#normalization_matches_the_pinned_unicode_data"
               ],
               "rationale": null
             }
