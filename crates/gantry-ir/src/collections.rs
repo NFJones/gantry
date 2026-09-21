@@ -667,10 +667,13 @@ impl SetValue {
         element: &LogicalValue,
     ) -> Result<Self, CollectionKeyRefusal> {
         let admitted = policy.admit(element)?;
-        let mut elements = self.elements.as_ref().clone();
-        match elements.binary_search_by(|existing| canonical_order(existing, &admitted)) {
+        match self
+            .elements
+            .binary_search_by(|existing| canonical_order(existing, &admitted))
+        {
             Ok(_) => Ok(self.clone()),
             Err(index) => {
+                let mut elements = self.elements.as_ref().clone();
                 elements.insert(index, admitted);
                 Ok(Self {
                     elements: Arc::new(elements),
@@ -1816,5 +1819,15 @@ mod collection_storage_tests {
         let duplicate = value.clone();
         assert!(Arc::ptr_eq(&value.elements, &duplicate.elements));
         assert_eq!(value.elements(), duplicate.elements());
+    }
+    #[test]
+    fn a_repeated_element_publishes_a_value_sharing_the_same_storage() {
+        let value = SetValue::admit(policy(), &[integer(1), integer(2)])
+            .unwrap_or_else(|error| panic!("the elements are admitted: {error:?}"));
+        let repeated = value
+            .with_element(policy(), &integer(2))
+            .unwrap_or_else(|error| panic!("the repeated element is admitted: {error:?}"));
+        assert_eq!(repeated.elements(), value.elements());
+        assert!(Arc::ptr_eq(&value.elements, &repeated.elements));
     }
 }
