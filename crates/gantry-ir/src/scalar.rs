@@ -729,6 +729,12 @@ pub struct BytesValue {
 }
 
 impl BytesValue {
+    /// Seals an already shared octet sequence as an immutable value.
+    #[must_use]
+    fn from_shared_octets(octets: Arc<Vec<u8>>) -> Self {
+        Self { octets }
+    }
+
     /// Seals an octet sequence as an immutable value.
     #[must_use]
     pub fn from_octets(octets: Vec<u8>) -> Self {
@@ -1113,8 +1119,7 @@ impl ByteBufferValue {
     /// Consuming freeze into an immutable value; aliased buffers are refused.
     pub fn freeze(self) -> Result<BytesValue, ScalarError> {
         self.exclusive()?;
-        let octets = Arc::try_unwrap(self.octets).unwrap_or_else(|shared| (*shared).clone());
-        Ok(BytesValue::from_octets(octets))
+        Ok(BytesValue::from_shared_octets(self.octets))
     }
 
     /// Deep copy that is independent of this buffer.
@@ -1331,5 +1336,44 @@ mod byte_value_storage_tests {
             .unwrap_or_else(|error| panic!("the canonical text parses: {error}"));
         assert_eq!(reparsed.as_octets(), value.as_octets());
         assert!(!Arc::ptr_eq(&reparsed.octets, &value.octets));
+    }
+}
+
+#[cfg(test)]
+mod freeze_storage_tests {
+    use super::*;
+
+    fn buffer(strategy: StorageStrategy, octets: Vec<u8>) -> ByteBufferValue {
+        ByteBufferValue::with_octets(strategy, ScalarQuota::new(64), octets)
+            .unwrap_or_else(|error| panic!("the octets fit the quota: {error}"))
+    }
+
+    #[test]
+    fn freezing_hands_the_storage_to_the_sealed_value() {
+        for strategy in StorageStrategy::ALL {
+            let buffer = buffer(strategy, vec![7, 8, 9]);
+            let shared = Arc::clone(&buffer.octets);
+            let frozen = buffer
+                .freeze()
+                .unwrap_or_else(|error| panic!("an unshared buffer freezes: {error}"));
+            assert!(Arc::ptr_eq(&shared, &frozen.octets));
+            assert_eq!(frozen.as_octets(), &[7, 8, 9]);
+        }
+    }
+
+    #[test]
+    fn a_duplicate_s_write_detaches_from_the_frozen_value() {
+        for strategy in StorageStrategy::ALL {
+            let buffer = buffer(strategy, vec![1, 2, 3]);
+            let mut duplicate = buffer.independent_copy();
+            let frozen = buffer
+                .freeze()
+                .unwrap_or_else(|error| panic!("an unshared buffer freezes: {error}"));
+            duplicate
+                .append(4)
+                .unwrap_or_else(|error| panic!("the duplicate is mutable: {error}"));
+            assert_eq!(frozen.as_octets(), &[1, 2, 3]);
+            assert_eq!(duplicate.octets(), &[1, 2, 3, 4]);
+        }
     }
 }
