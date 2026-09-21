@@ -23,11 +23,11 @@ specification decides.
 | `GNT-41.8-bounded-text-matching` | bounded pattern matching over admitted patterns: `Pattern::admit` under a caller-declared step budget, `is_match`, and the leftmost-longest `find_first` span as a `TextRange` (`start`, `end`, `is_empty`, `slice`), with exact admission and bound refusals (`text-pattern-syntax`, `text-pattern-bound`), atomic refusal when a match exhausts its budget (`text-match-budget`), and matching that never normalizes or case-maps |
 | `GNT-41.9-canonical-text-conversions` | the declared explicit conversions: canonical UTF-16 code units and their exact admission (`from_utf16_code_units`, `utf16_code_units`), the total lossless octet-text mapping (`from_lossless_octets`, `lossless_octets`), round-trip exactness in both directions, and refusal of unpaired surrogates under `text-invalid-utf16` |
 | `GNT-41.10-canonical-text-admission-bound` | the declared admission bound: every admission of `GNT-41.1-canonical-text-values` and `GNT-41.9-canonical-text-conversions` publishes a value of at most `TEXT_VALUE_SCALAR_BOUND` scalar values and refuses a longer sequence under `text-value-bound` while examining it, before any part of the excess is constructed |
+| `GNT-41.11-canonical-text-value-bound` | the declared published-value bound: every operation of this section that publishes a value publishes one holding at most `TEXT_VALUE_SCALAR_BOUND` scalar values, so the builder's build, normalization, and case mapping refuse under `text-value-bound`, while composing and before publishing, when the value they would publish would exceed it |
 
 ## Registered diagnostics
 
 | Spelling | Owning clause | Condition |
-| `GNT-41.11-canonical-text-value-bound` | the declared published-value bound: every operation of this section that publishes a value publishes one holding at most `TEXT_VALUE_SCALAR_BOUND` scalar values, so the builder's build, normalization, and case mapping refuse under `text-value-bound`, while composing and before publishing, when the value they would publish would exceed it |
 | --- | --- | --- |
 | `text-invalid-utf8` | `GNT-41.1-canonical-text-values` | an octet sequence is not well-formed UTF-8; the refusal names the zero-based octet index at which well-formed decoding fails |
 | `text-builder-bound` | `GNT-41.4-canonical-text-builders` | appending one text value would push the builder past its declared octet bound; the refusal names the appended and accumulated octet counts and the bound, and the builder is unchanged |
@@ -35,7 +35,7 @@ specification decides.
 | `text-pattern-bound` | `GNT-41.8-bounded-text-matching` | a pattern exceeds a declared pattern bound, the declared step budget is zero, or the declared step budget exceeds `PATTERN_STEP_BOUND`; the refusal names the bound |
 | `text-match-budget` | `GNT-41.8-bounded-text-matching` | a match spent more steps than the declared step budget; no span, partial span, or prefix state is published |
 | `text-invalid-utf16` | `GNT-41.9-canonical-text-conversions` | a code-unit sequence is not a well-formed UTF-16 encoding of scalar values; the refusal names the zero-based code-unit index of the lone or unpaired surrogate |
-| `text-value-bound` | `GNT-41.11-canonical-text-value-bound` with `GNT-41.10-canonical-text-admission-bound` | a value would hold more than the declared bound: an admission refuses the sequence, and a build or transform refuses the value it would publish; the refusal names the observed scalar count and the bound, is decided while the sequence is examined, and publishes no value, prefix, or partial state |
+| `text-value-bound` | `GNT-41.11-canonical-text-value-bound` | a value would hold more than the declared bound: a build or transform refuses the value it would publish, and the admissions of `GNT-41.10-canonical-text-admission-bound` publish the same refusal for a sequence; an admission refuses the sequence, and a build or transform refuses the value it would publish; the refusal names the observed scalar count and the bound, is decided while the sequence is examined, and publishes no value, prefix, or partial state |
 
 ## Model surface (`crates/gantry-ir/src/text.rs`)
 
