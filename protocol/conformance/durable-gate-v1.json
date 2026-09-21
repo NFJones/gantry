@@ -82,7 +82,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "8ab5197e76c7543c62b9295e31a082fccb5dc208f0cef0dcb0ce5b679dd0cf39"
+   "sha256": "df47244fc49bda7b8eca0dcfa479a176dee26d739a5aa5f451479abf40fef88c"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
@@ -118,11 +118,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "a496002750e976e34af4252f3a142d5ade34cf60307814892d7626ebd4a6f353"
+   "sha256": "297764266256454c60a38c3c9e48bc6d09c1f6ac6a24b133ac537132f3700302"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "02147995ace43c04d8fedcdac9dfc2a37f70ee7b1d7b34f622547bb391535d56"
+   "sha256": "1b8be59374f8678c1810bd9f5d350afcbd5658ee5120983aa47ec9063ca87c78"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
