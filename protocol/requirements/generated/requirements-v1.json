@@ -40928,8 +40928,7 @@
                 "crates/gantry-conformance/tests/value_storage_model.rs#value_storage_note_states_the_declared_equivalence_contract",
                 "crates/gantry-conformance/tests/value_storage_model.rs#storage_strategies_agree_on_octets_charges_and_refusals_for_one_operation_sequence",
                 "crates/gantry-conformance/tests/value_storage_model.rs#frozen_values_round_trip_identically_across_strategies",
-                "crates/gantry-conformance/tests/value_storage_model.rs#release_points_and_charge_conservation_are_identical_across_strategies",
-                "crates/gantry-conformance/tests/value_storage_model.rs#modeled_physical_work_grows_linearly_with_the_operation_count"
+                "crates/gantry-conformance/tests/value_storage_model.rs#release_points_and_charge_conservation_are_identical_across_strategies"
               ],
               "rationale": null
             }
