@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "903cf9b4a3bee40b0e7df2ec0d1a0c2063e71a22b71b56d2d6dfcb253e201459",
-  "byte_length": 1098364,
-  "line_count": 15691,
+  "specification_sha256": "d6fdfadf479343d5604aa8da8fae7f489932cf616f048e98736a91a431c47762",
+  "byte_length": 1101999,
+  "line_count": 15695,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15691,
-      "sha256": "50f5ad6ba3ca5f615fa1f449dd1e599b35fece9d52c7efc004b5ba68a2341c72",
+      "end_line": 15695,
+      "sha256": "9b7de390dc8d8e33328839d371fab01183298b05e3113cee4fa5bffa6ffcb71d",
       "rationale": null
     }
   ],
@@ -42957,11 +42957,11 @@
       "id": "GNT-41.0-text-foundation-scope",
       "span_start_line": 15654,
       "span_end_line": 15660,
-      "span_sha256": "12f1240b9fdbb0dc35facb321c6e0b0ee39b41792cd08c76f0595db6b3d039f3",
+      "span_sha256": "d5fe2bf5f2ae1e594abf72ebee9b7f71be44593e0f97b74a92fab3dec405b582",
       "anchor_line": 15657,
       "body_start_line": 15658,
       "body_end_line": 15660,
-      "body_sha256": "c956404dd954e83743e006f73ae7a9ef4c0a5edb6f67f149893fdea9059a00df",
+      "body_sha256": "f101714cc500d8dba4fe92856c5d7e469d8e2fca6a3de2e84a4a7cea61acd50e",
       "profiles": [
         "analyzer"
       ],
@@ -43290,12 +43290,12 @@
     {
       "id": "GNT-41.8-bounded-text-matching",
       "span_start_line": 15689,
-      "span_end_line": 15691,
-      "span_sha256": "cd6db879ebaf0ce587d86aa9ec1826fe14cbbc6d3b04cd7722502a62e452fac0",
+      "span_end_line": 15692,
+      "span_sha256": "ec4351e30dd56e1448bb4e99a5fa3140ef7517830c818a1470114feef6105fa5",
       "anchor_line": 15689,
       "body_start_line": 15690,
-      "body_end_line": 15691,
-      "body_sha256": "47e0382d5c6eccabc64876df5e85cc5e3855b6e903bfa83688a8a166b0c58926",
+      "body_end_line": 15692,
+      "body_sha256": "179ef3eff8f83d224758634c429e2a290e64eb47e1b27513bf8e5df8c2ac78cd",
       "profiles": [
         "analyzer"
       ],
@@ -43307,7 +43307,7 @@
         {
           "key": "clause-001",
           "start_line": 15690,
-          "end_line": 15691,
+          "end_line": 15692,
           "profiles": [
             "analyzer"
           ],
@@ -43322,6 +43322,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_matching.rs#matching_clause_publishes_the_bounded_pattern_surface",
                 "crates/gantry-conformance/tests/text_matching.rs#matching_refuses_a_budget_exhausting_match"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.9-canonical-text-conversions",
+      "span_start_line": 15693,
+      "span_end_line": 15695,
+      "span_sha256": "6fb1f83a1940420e2e7cdfaf7972fe0a56397df3acd7bcf7a7f82bf007f2a6dd",
+      "anchor_line": 15693,
+      "body_start_line": 15694,
+      "body_end_line": 15695,
+      "body_sha256": "2ddb4149e248b5770f4f1b5c3822d53f357c00b03f0973d76f6008fb260ab294",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15694,
+          "end_line": 15695,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_conversions.rs#conversions_clause_publishes_the_declared_exact_conversions",
+                "crates/gantry-conformance/tests/text_conversions.rs#conversions_refuse_unpaired_utf16_surrogates"
               ],
               "rationale": null
             }

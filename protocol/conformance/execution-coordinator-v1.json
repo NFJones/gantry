@@ -1,6 +1,6 @@
 {
  "format": "gantry.execution-coordinator-evidence/v1",
- "specification_sha256": "903cf9b4a3bee40b0e7df2ec0d1a0c2063e71a22b71b56d2d6dfcb253e201459",
+ "specification_sha256": "d6fdfadf479343d5604aa8da8fae7f489932cf616f048e98736a91a431c47762",
  "issue": "GNT-ASYNC-COORD-001",
  "requirements": [
   {

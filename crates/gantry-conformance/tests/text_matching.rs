@@ -10,7 +10,7 @@ use gantry::ir::{
 };
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 9] = [
+const EXPECTED_CLAUSES: [&str; 10] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -20,6 +20,7 @@ const EXPECTED_CLAUSES: [&str; 9] = [
     "GNT-41.6-canonical-text-comparison",
     "GNT-41.7-canonical-grapheme-clusters",
     "GNT-41.8-bounded-text-matching",
+    "GNT-41.9-canonical-text-conversions",
 ];
 const MATCHING_CLAUSE: &str = "GNT-41.8-bounded-text-matching";
 
@@ -58,6 +59,7 @@ fn matching_clause_publishes_the_bounded_pattern_surface() {
             MATCHING_CLAUSE,
             MATCHING_CLAUSE,
             MATCHING_CLAUSE,
+            "GNT-41.9-canonical-text-conversions",
         ],
     );
     assert_eq!(

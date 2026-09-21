@@ -2,14 +2,16 @@
 //! `GNT-41.1-canonical-text-values`, `GNT-41.2-canonical-text-normalization`,
 //! `GNT-41.3-canonical-text-case-mapping`, `GNT-41.4-canonical-text-builders`,
 //! `GNT-41.5-canonical-text-traversal`, `GNT-41.6-canonical-text-comparison`,
-//! `GNT-41.7-canonical-grapheme-clusters`, and `GNT-41.8-bounded-text-matching`: canonical text
-//! values as finite sequences of Unicode scalar values over the Section 35 scalar and octet
-//! contracts, their exact admission from octets, their scalar count and canonical UTF-8 octets,
-//! their scalar-boundary slicing, their two canonical normalization forms, their two full default
-//! case mappings over the pinned Unicode 16.0.0 data, an explicitly bounded builder that publishes
-//! one text value, a forward cursor that publishes the scalars of a value one at a time, the
-//! canonical three-way comparison their identity already decides, a forward cursor that publishes
-//! their extended grapheme clusters, and an explicitly bounded matcher over admitted patterns.
+//! `GNT-41.7-canonical-grapheme-clusters`, `GNT-41.8-bounded-text-matching`, and
+//! `GNT-41.9-canonical-text-conversions`: canonical text values as finite sequences of Unicode
+//! scalar values over the Section 35 scalar and octet contracts, their exact admission from octets
+//! and UTF-16 code units, their scalar count and canonical UTF-8 octets, their scalar-boundary
+//! slicing, their two canonical normalization forms, their two full default case mappings over the
+//! pinned Unicode 16.0.0 data, an explicitly bounded builder that publishes one text value, a
+//! forward cursor that publishes the scalars of a value one at a time, the canonical three-way
+//! comparison their identity already decides, a forward cursor that publishes their extended
+//! grapheme clusters, an explicitly bounded matcher over admitted patterns, and the declared
+//! lossless octet-text mapping.
 //!
 //! The model is pure: it consumes no host locale, host encoding, ambient text facility, timing, or
 //! global mutable state, and it declares no word, sentence, or line segmentation, no case folding,
@@ -27,8 +29,8 @@ use gantry_core::unicode::{
 use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
-/// (`GNT-41.0` through `GNT-41.8`).
-pub const TEXT_CLAUSES: [&str; 9] = [
+/// (`GNT-41.0` through `GNT-41.9`).
+pub const TEXT_CLAUSES: [&str; 10] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -38,6 +40,7 @@ pub const TEXT_CLAUSES: [&str; 9] = [
     "GNT-41.6-canonical-text-comparison",
     "GNT-41.7-canonical-grapheme-clusters",
     "GNT-41.8-bounded-text-matching",
+    "GNT-41.9-canonical-text-conversions",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -53,16 +56,19 @@ pub enum TextDiagnosticCode {
     PatternBound,
     /// `GNT-41.8`: a match exhausted the caller-declared step budget.
     MatchBudget,
+    /// `GNT-41.9`: a UTF-16 code-unit sequence is not a well-formed encoding.
+    InvalidUtf16,
 }
 
 impl TextDiagnosticCode {
     /// Every declared diagnostic, in declaration order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::InvalidUtf8,
         Self::BuilderBound,
         Self::PatternSyntax,
         Self::PatternBound,
         Self::MatchBudget,
+        Self::InvalidUtf16,
     ];
 
     /// Returns the registered refusal spelling.
@@ -74,6 +80,7 @@ impl TextDiagnosticCode {
             Self::PatternSyntax => "text-pattern-syntax",
             Self::PatternBound => "text-pattern-bound",
             Self::MatchBudget => "text-match-budget",
+            Self::InvalidUtf16 => "text-invalid-utf16",
         }
     }
 
@@ -86,6 +93,7 @@ impl TextDiagnosticCode {
             Self::PatternSyntax => "GNT-41.8-bounded-text-matching",
             Self::PatternBound => "GNT-41.8-bounded-text-matching",
             Self::MatchBudget => "GNT-41.8-bounded-text-matching",
+            Self::InvalidUtf16 => "GNT-41.9-canonical-text-conversions",
         }
     }
 }
@@ -388,6 +396,91 @@ impl TextValue {
     #[must_use]
     pub fn canonical_octets(&self) -> &[u8] {
         self.text.as_bytes()
+    }
+
+    /// Admits one UTF-16 code-unit sequence as a text value
+    /// (`GNT-41.9-canonical-text-conversions`).
+    ///
+    /// The sequence is admitted exactly when every code unit is either a scalar value's own code
+    /// unit or one half of a well-formed surrogate pair, so a lone or unpaired surrogate is refused
+    /// under `text-invalid-utf16`, naming the zero-based code-unit index of the offending unit, and
+    /// nothing is replaced, dropped, reversed, or normalized.
+    pub fn from_utf16_code_units(code_units: &[u16]) -> Result<Self, TextError> {
+        let mut text = String::new();
+        let mut index = 0_usize;
+        while index < code_units.len() {
+            let unit = code_units[index];
+            if (0xD800..0xDC00).contains(&unit) {
+                let low = code_units.get(index + 1).copied().ok_or_else(|| {
+                    TextError::new(
+                        TextDiagnosticCode::InvalidUtf16,
+                        format!("code unit {index} is a high surrogate with no low surrogate"),
+                    )
+                })?;
+                if !(0xDC00..0xE000).contains(&low) {
+                    return Err(TextError::new(
+                        TextDiagnosticCode::InvalidUtf16,
+                        format!(
+                            "code unit {index} is a high surrogate not followed by a low surrogate"
+                        ),
+                    ));
+                }
+                let value =
+                    0x1_0000 + ((u32::from(unit) - 0xD800) << 10) + (u32::from(low) - 0xDC00);
+                text.push(char::from_u32(value).ok_or_else(|| {
+                    TextError::new(
+                        TextDiagnosticCode::InvalidUtf16,
+                        format!("code unit {index} does not encode a scalar value"),
+                    )
+                })?);
+                index += 2;
+            } else if (0xDC00..0xE000).contains(&unit) {
+                return Err(TextError::new(
+                    TextDiagnosticCode::InvalidUtf16,
+                    format!("code unit {index} is a low surrogate with no high surrogate"),
+                ));
+            } else {
+                text.push(char::from_u32(u32::from(unit)).ok_or_else(|| {
+                    TextError::new(
+                        TextDiagnosticCode::InvalidUtf16,
+                        format!("code unit {index} does not encode a scalar value"),
+                    )
+                })?);
+                index += 1;
+            }
+        }
+        Ok(Self { text })
+    }
+
+    /// Publishes the canonical UTF-16 code units of the value
+    /// (`GNT-41.9-canonical-text-conversions`): the code units of the value's scalar sequence in
+    /// scalar order, with every scalar outside the basic multilingual plane encoded as one
+    /// surrogate pair, and with no byte-order mark, padding, or reversal.
+    #[must_use]
+    pub fn utf16_code_units(&self) -> Vec<u16> {
+        self.text.encode_utf16().collect()
+    }
+
+    /// Publishes one text value from an octet sequence under the declared lossless octet-text
+    /// mapping (`GNT-41.9-canonical-text-conversions`): every octet maps to the scalar value with
+    /// the same numeric value, so the conversion is total, admits every octet sequence, and keeps
+    /// every octet it was given.
+    #[must_use]
+    pub fn from_lossless_octets(octets: &[u8]) -> Self {
+        Self {
+            text: octets.iter().map(|octet| char::from(*octet)).collect(),
+        }
+    }
+
+    /// Publishes the octets of the value under the declared lossless octet-text mapping, or nothing
+    /// when some scalar of the value has no octet under that mapping
+    /// (`GNT-41.9-canonical-text-conversions`).
+    #[must_use]
+    pub fn lossless_octets(&self) -> Option<Vec<u8>> {
+        self.text
+            .chars()
+            .map(|scalar| u8::try_from(u32::from(scalar)).ok())
+            .collect()
     }
 
     /// Returns whether the value holds no scalar at all (`GNT-41.1-canonical-text-values`).
