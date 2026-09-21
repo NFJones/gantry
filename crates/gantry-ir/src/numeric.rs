@@ -214,7 +214,7 @@ impl BinaryBitOperation {
     /// under `integer-overflow` when it does not. No result wraps, saturates, or is masked into
     /// range, and nothing here coerces, widens implicitly, refuses under any other code, or depends
     /// on a host facility, ambient width, timing, prior calls, or global state.
-    #[must_use]
+    #[must_use = "the exact result or its one declared refusal is the whole outcome"]
     pub fn apply(
         self,
         left: GantryInt,
@@ -262,7 +262,7 @@ impl UnaryBitOperation {
     /// saturates, or is masked into range, and nothing coerces, widens implicitly, refuses under any
     /// other code, or depends on a host facility, ambient width, timing, prior calls, or global
     /// state.
-    #[must_use]
+    #[must_use = "the exact result or its one declared refusal is the whole outcome"]
     pub fn apply(self, value: GantryInt) -> Result<GantryInt, DeterministicEvaluationCode> {
         let result = match self {
             Self::Not => !value.get(),

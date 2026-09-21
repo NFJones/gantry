@@ -154,8 +154,9 @@ fn canonical_modes_are_exact_in_every_mode() {
                             element(right),
                         );
                         if in_domain {
-                            let published =
-                                element(i64::try_from(value).expect("inside the domain"));
+                            let published = element(i64::try_from(value).unwrap_or_else(|error| {
+                                panic!("the exact result is inside the domain: {error}")
+                            }));
                             assert_eq!(
                                 refused,
                                 Ok(published),
@@ -180,8 +181,11 @@ fn canonical_modes_are_exact_in_every_mode() {
                             assert_eq!(
                                 saturated,
                                 Ok(element(
-                                    i64::try_from(value.clamp(minimum, maximum))
-                                        .expect("inside the domain")
+                                    i64::try_from(value.clamp(minimum, maximum)).unwrap_or_else(
+                                        |error| panic!(
+                                            "the nearer bound is inside the domain: {error}"
+                                        ),
+                                    ),
                                 )),
                                 "`saturating` publishes the nearer domain bound"
                             );
@@ -189,7 +193,11 @@ fn canonical_modes_are_exact_in_every_mode() {
                                 wrapped,
                                 Ok(element(
                                     i64::try_from(minimum + (value - minimum).rem_euclid(span))
-                                        .expect("inside the domain")
+                                        .unwrap_or_else(|error| {
+                                            panic!(
+                                                "the reduced result is inside the domain: {error}"
+                                            )
+                                        }),
                                 )),
                                 "`wrapping` publishes the canonical-domain reduction"
                             );

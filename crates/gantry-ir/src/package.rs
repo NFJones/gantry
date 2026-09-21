@@ -1460,7 +1460,7 @@ impl DependencyFingerprint {
                 });
             }
         }
-        supplied.sort_by(|left, right| left.0.as_str().cmp(&right.0.as_str()));
+        supplied.sort_by_key(|pin| pin.0.as_str());
         let mut pins = Vec::with_capacity(supplied.len());
         for (identity, interface) in supplied {
             let interface = interface.ok_or_else(|| PackageError::UnpinnedDependency {
