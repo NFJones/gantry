@@ -1,14 +1,14 @@
-//! The admitted deterministic numeric algorithms of `GNT-40.2` through `GNT-40.4`.
+//! The admitted deterministic numeric algorithms of `GNT-40.2` through `GNT-40.5`.
 //!
 //! Every operation is pure and exact: it consumes canonical operands and publishes exactly one
 //! canonical value, exactly one declared deterministic failure, or nothing where the clause
 //! declares a partial form. Nothing here wraps, saturates, masks a result into range, widens
-//! implicitly, coerces across numeric types, or consults a host facility, timing, prior calls, or
-//! global state. This module publishes the checked integer algorithms and the unary negation
-//! (`GNT-40.2`), the two numeric conversions (`GNT-40.3`), and the checked bit operations
-//! (`GNT-40.4`) only: it publishes no float algorithm, parsing, formatting, work limit,
-//! cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering,
-//! machine representation, or family behavior.
+//! implicitly, coerces across numeric types, or consults a host facility, an ambient rounding mode,
+//! timing, prior calls, or global state. This module publishes the checked integer algorithms and
+//! the unary negation (`GNT-40.2`), the two numeric conversions (`GNT-40.3`), the checked bit
+//! operations (`GNT-40.4`), and the finite-float algorithms (`GNT-40.5`) only: it publishes no
+//! parsing, formatting, work limit, cancellation safe point, quota, schema, recovery, durability,
+//! boundary encoding, lowering, machine representation, or family behavior.
 
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::DeterministicEvaluationCode;

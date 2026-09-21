@@ -52,7 +52,10 @@ fn integer_bit_operations_surface_is_published() {
     );
     assert!(note.contains(anchor), "the note names `{anchor}`");
     let clause = clause_body(&specification, anchor);
-    assert!(!clause.trim().is_empty(), "the clause body publishes text");
+    assert!(
+        !specification.trim_end().ends_with(clause.trim_end()),
+        "the bit operations clause is no longer the specification's final clause"
+    );
     assert_eq!(
         BinaryBitOperation::ALL.map(BinaryBitOperation::wire_name),
         ["and", "or", "xor"]
