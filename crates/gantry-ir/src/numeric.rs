@@ -111,8 +111,8 @@ pub fn format_canonical_float(value: GantryFloat) -> String {
 ///
 /// The parse publishes exactly one canonical `Float` value only when the text is that value's own
 /// canonical text, and otherwise publishes nothing: a non-canonical spelling of the same value, a
-/// bare `+`, `-0`, a non-finite or `NaN` spelling, or a spelling that rounds to a different value
-/// is refused rather than normalized.
+/// sign outside an exponent, `-0`, a non-finite or `NaN` spelling, or a longer decimal that denotes
+/// the same value is refused rather than normalized.
 #[must_use]
 pub fn parse_canonical_float(text: &str) -> Option<GantryFloat> {
     let value = GantryFloat::new(text.parse::<f64>().ok()?)?;

@@ -79,7 +79,7 @@ fn canonical_numeric_text_surface_is_published() {
     }
     for citation in [
         "`GNT-35.2-literal-formation-and-canonical-text`",
-        "`GNT-8.2`",
+        "`GNT-8.5`",
         "`GNT-5.1`",
     ] {
         assert!(clause.contains(citation), "the clause cites {citation}");
