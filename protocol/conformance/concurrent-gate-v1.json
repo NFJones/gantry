@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "SPEC.md",
-   "sha256": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d"
+   "sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d"
   },
   {
    "path": "crates/gantry-conformance/tests/authority_lineage.rs",
@@ -74,7 +74,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "a57c8f789e1fdfc66d4c1fe99d2a20bb59fdc563f9f4dd766f5be458f0ca060e"
+   "sha256": "48cc749c486c69f38c17850c361b66ec41115160ab2e301cb4b4dbc6d6aadf6c"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
@@ -201,7 +201,7 @@
  },
  "specification": {
   "path": "SPEC.md",
-  "sha256": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d"
+  "sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d"
  },
  "status": "verified",
  "validation_commands": [

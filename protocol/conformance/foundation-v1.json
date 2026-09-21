@@ -18,7 +18,7 @@
   },
   {
    "path": "SPEC.md",
-   "sha256": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d"
+   "sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d"
   },
   {
    "path": "crates/gantry-adapter-tokio/Cargo.toml",
@@ -214,7 +214,7 @@
   },
   {
    "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "c0bf64d748b58812be7f4395297e7674251dad3e3120095ea0c91b1eacc9141f"
+   "sha256": "2220614458525883bc97551a9e3373bcbcca2c1960fdb0237d753f6716d525e9"
   },
   {
    "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -246,7 +246,7 @@
   },
   {
    "path": "protocol/conformance/combined-gate-v1.json",
-   "sha256": "616097ccb85220788eb05208cc141ec46b693cceb52c9c9ef6c3a1ccf5ea89d5"
+   "sha256": "3b1d93d34de5e26374d1f6ca5e71a8dd944fb9a5e8845ddba0422add2603b4c7"
   },
   {
    "path": "protocol/conformance/concurrent-executor-v1.json",
@@ -254,7 +254,7 @@
   },
   {
    "path": "protocol/conformance/concurrent-gate-v1.json",
-   "sha256": "29813348d9d9addc9848da5b71bc2d551a29b45b5d759821d3b91942435785cb"
+   "sha256": "abe5b22f4dde70d0c16acfd3836dca3ea94577ca27afe03a9bee6da2a0cec331"
   },
   {
    "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
@@ -278,7 +278,7 @@
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "4c1763f7b2c0bc69c79d159d5b40d61bcf2ab7f6d735a0ab6c86417cf0abd3ab"
+   "sha256": "b5514111f5de0012ae21c41df1e1bb11c958e1ce22d93f3ea8fadfbff5e5c810"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",
@@ -310,7 +310,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "a57c8f789e1fdfc66d4c1fe99d2a20bb59fdc563f9f4dd766f5be458f0ca060e"
+   "sha256": "48cc749c486c69f38c17850c361b66ec41115160ab2e301cb4b4dbc6d6aadf6c"
   },
   {
    "path": "protocol/conformance/sequential-machine-v1.json",
@@ -797,7 +797,7 @@
  },
  "specification": {
   "path": "SPEC.md",
-  "sha256": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d"
+  "sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d"
  },
  "status": "verified",
  "validation_commands": [
