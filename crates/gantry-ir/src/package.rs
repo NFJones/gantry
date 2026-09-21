@@ -4712,7 +4712,7 @@ fn encode_item(output: &mut String, item: &InterfaceItem) {
 #[cfg(test)]
 mod tests {
     use super::{
-        CanonicalIrDigest, CanonicalPath, CollisionCondition, DependencyFingerprint,
+        CanonicalIrDigest, CanonicalPath, CollisionCondition, DependencyFingerprint, DependencyPin,
         GeneratorInputs, IDENTITY_DOMAIN, InterfaceDigest, PackageError, PackageIdentity,
         PackageIdentityInputs, PackageName, PackageSourceIdentity, PackageVersion,
         SelectedFeatureSet, SourceManifestDigest, TargetFactSet, TargetFacts, TargetKind,
@@ -4726,7 +4726,7 @@ mod tests {
     }
 
     #[test]
-    fn dependency_fingerprint_is_order_independent_and_alias_free() {
+    fn dependency_fingerprint_is_order_and_repeat_independent() {
         let package = dependency_identity(TargetKind::Library, None);
         let first = dependency_identity(TargetKind::Binary, Some("crate::main"));
         let second = dependency_identity(TargetKind::Example, Some("crate::demo"));
@@ -4756,7 +4756,43 @@ mod tests {
         assert_eq!(forward.pin_for(&second), Some(&second_pin));
         assert!(!forward.is_empty());
         assert!(forward.as_str().starts_with("dependency-fingerprint:"));
-        assert_eq!(forward.digest_hex(), forward.digest_hex());
+        assert_eq!(forward.digest_hex().len(), 64);
+        assert_eq!(forward.digest(), forward.digest());
+        let pinned: Vec<&InterfaceDigest> = forward
+            .pins()
+            .iter()
+            .map(DependencyPin::interface)
+            .collect();
+        assert_eq!(pinned.len(), 2);
+        assert!(pinned.contains(&&first_pin));
+        assert!(pinned.contains(&&second_pin));
+        let other_package = dependency_identity(TargetKind::Benchmark, None);
+        let other = DependencyFingerprint::derive(
+            other_package,
+            [
+                (first.clone(), Some(first_pin.clone())),
+                (second.clone(), Some(second_pin.clone())),
+            ],
+        )
+        .unwrap_or_else(|error| panic!("the declared dependencies are pinned: {error}"));
+        assert_ne!(
+            forward.digest(),
+            other.digest(),
+            "the fingerprinted package identity is part of the fingerprint"
+        );
+        let repinned = DependencyFingerprint::derive(
+            package.clone(),
+            [
+                (first.clone(), Some(second_pin.clone())),
+                (second.clone(), Some(first_pin.clone())),
+            ],
+        )
+        .unwrap_or_else(|error| panic!("the declared dependencies are pinned: {error}"));
+        assert_ne!(
+            forward.digest(),
+            repinned.digest(),
+            "a dependency's pin is part of the fingerprint"
+        );
         let empty = DependencyFingerprint::derive(package, [])
             .unwrap_or_else(|error| panic!("an empty dependency set is pinned: {error}"));
         assert!(empty.is_empty());
@@ -4783,6 +4819,24 @@ mod tests {
             error
                 .to_string()
                 .contains("resolved without a pinned interface")
+        );
+        let second_open = dependency_identity(TargetKind::Example, Some("crate::demo"));
+        let forward_open = DependencyFingerprint::derive(
+            package.clone(),
+            [(open.clone(), None), (second_open.clone(), None)],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("an open dependency is refused"));
+        let reversed_open = DependencyFingerprint::derive(
+            package.clone(),
+            [(second_open, None), (open.clone(), None)],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("an open dependency is refused"));
+        assert_eq!(
+            forward_open.to_string(),
+            reversed_open.to_string(),
+            "two unpinned dependencies refuse the canonically smallest identity"
         );
         let conflicting = dependency_identity(TargetKind::Benchmark, None);
         let error = DependencyFingerprint::derive(
