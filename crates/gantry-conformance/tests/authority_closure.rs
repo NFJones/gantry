@@ -2,9 +2,10 @@
 //!
 //! The note describes the model of `GNT-3-T-AUTHORITY-CLOSURE` and
 //! `GNT-7.2-authority-rebinding` in `crates/gantry-ir/src/authority.rs`. This
-//! lane binds the note to the model: every declared anchor, every registered
-//! refusal code, and every declared ceiling value must appear, so the note
-//! cannot drift from the types it describes.
+//! lane checks that the note names every declared anchor, every registered
+//! refusal code, every declared ceiling by the constant that declares it, every
+//! clause member the model does not implement, and its non-claim, so a note
+//! edit that drops a fact fails here.
 
 use gantry::ir::{CapabilityAuthorityClosure, RequirementResolution};
 
@@ -35,14 +36,42 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
             "the authority note names the registered code {code}"
         );
     }
-    for ceiling in [
-        CapabilityAuthorityClosure::MAXIMUM_INSTANCES,
-        CapabilityAuthorityClosure::MAXIMUM_SLOTS,
-        RequirementResolution::MAXIMUM_REQUIREMENTS,
+    for member in [
+        "schema root",
+        "instantiation key",
+        "callable row",
+        "maximum static authority",
+        "not representable",
     ] {
         assert!(
-            AUTHORITY_NOTE.contains(&ceiling.to_string()),
-            "the authority note states the declared ceiling {ceiling}"
+            AUTHORITY_NOTE.contains(member),
+            "the authority note names the clause member {member}"
+        );
+    }
+    for ceiling in [
+        (
+            "CapabilityAuthorityClosure::MAXIMUM_INSTANCES",
+            CapabilityAuthorityClosure::MAXIMUM_INSTANCES,
+        ),
+        (
+            "CapabilityAuthorityClosure::MAXIMUM_SLOTS",
+            CapabilityAuthorityClosure::MAXIMUM_SLOTS,
+        ),
+        (
+            "RequirementResolution::MAXIMUM_REQUIREMENTS",
+            RequirementResolution::MAXIMUM_REQUIREMENTS,
+        ),
+    ] {
+        assert!(
+            AUTHORITY_NOTE.contains(ceiling.0),
+            "the authority note names the declaring constant {}",
+            ceiling.0
+        );
+        assert!(
+            AUTHORITY_NOTE.contains(&format!("{}` (each 4096)", ceiling.0))
+                || AUTHORITY_NOTE.contains(&ceiling.1.to_string()),
+            "the authority note states a value for {}",
+            ceiling.0
         );
     }
     assert!(

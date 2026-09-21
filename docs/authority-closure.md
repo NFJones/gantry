@@ -11,38 +11,54 @@ are out of scope for this note.
 
 ## `GNT-3-T-AUTHORITY-CLOSURE`
 
-Each analyzed artifact has one conservative executable authority closure: the
-least set of capability requirement instances — a public capability requirement
-together with the selected implementation binding that satisfies it — plus the
-agent, model-exposed tool, handler, and operation requirement slots that
-contains the declared requirement of every exact operation site reachable from
-every retained root.
+The clause's closure is the least set of capability requirement instances — a
+public capability requirement together with the selected implementation binding
+that satisfies it — plus the agent, model-exposed tool, handler, and operation
+requirement slots that contains the declared requirement of every exact
+operation site reachable from every retained root, and it also contains every
+retained concrete public or durable schema root, every retained instantiation
+key, and every callable row bound invocable from those roots. Inside the
+retained roots it is the maximum static authority of the artifact: it is never
+narrowed by an unreachable-path argument or by runtime observation.
 
-The model publishes exactly that set and nothing else:
+The model implements part of that set, and the note states the boundary
+exactly:
 
-- instances are deduplicated by binding identity and ordered canonically by
-  that identity, so two closures over the same supplied entries are equal
-  whatever the declaration or traversal order;
+- `CapabilityAuthorityClosure` holds capability-binding instances and
+  site-qualified requirement slots, and nothing else. It computes no
+  reachability, no instantiation closure, and no effect fixed point, and it
+  holds no schema root, instantiation key, or callable row: the caller supplies
+  the closure members it proved reachable.
 - a site-qualified requirement slot composes the exact operation site, the
   declared tool slot, and its slot kind, so one slot name at two sites, and two
-  kinds of one slot at one site, are three distinct requirements;
+  kinds of one slot at one site, are three distinct requirements. Its slot kind
+  is the closed tool-slot vocabulary (`composite`, `provider-tool`,
+  `source-handler`); the agent, model-exposed tool, and operation slot flavours
+  the clause also names are **not representable** here, so a caller holding one
+  cannot supply it.
+- instances are deduplicated by binding identity and ordered canonically by
+  that identity's spelling, so two closures over the same supplied entries are
+  equal whatever the declaration or traversal order. The clause orders closure
+  contents canonically by requirement identity; the model's binding-identity
+  order is a deterministic refinement of that requirement, and the model has no
+  canonical byte encoding of its own beyond its members' length-prefixed
+  spellings.
 - least-ness is the caller's obligation: the value never adds an instance or a
   slot the caller did not supply, so a declaration the caller did not prove
-  reachable cannot enter the closure;
+  reachable cannot enter the closure.
 - construction is bounded: the supplied instance and slot counts are measured
-  before deduplication against the declared ceilings
+  before deduplication against the declared ceilings named
   `CapabilityAuthorityClosure::MAXIMUM_INSTANCES` and
   `CapabilityAuthorityClosure::MAXIMUM_SLOTS` (each 4096), and a larger input is
   refused with the registered code `authority-closure-exceeds-maximum` rather
-  than truncated;
-- the closure is byte-identical for the same inputs: its canonical identity
-  spellings are domain-separated and length-prefixed, and no `Debug` or
-  `Display` rendering of any type is a protocol identity.
+  than truncated.
 
-The model does not compute the closure's reachability, the instantiation
-closure, or the effect fixed point, and it fails closed in the clause's sense:
-nothing here publishes a canonical analysis artifact, an executable projection,
-or any authority state derived from an incomplete closure.
+The clause's fail-closed publication rule — analysis fails source-invalid with
+a registered diagnostic identifying an unresolved item, and no closure-derived
+authority state is published — has no v1 surface and no path in this model; the
+reviewed requirement ledger records that rule as `not-applicable` under v1,
+because no v1 artifact publishes an authority closure. This note claims no
+fail-closed behaviour for the model.
 
 ## `GNT-7.2-authority-rebinding`
 
@@ -65,12 +81,20 @@ naming a requirement outside the resolved scope is refused with
 `authority-rebinding-widens-closure` before its own registrations are
 inspected, so rebinding can neither widen nor narrow the closure.
 
-Two obligations the clause also names are not this model's, and a caller must
-not read this surface as satisfying them: the canonical action-signature
-resolution and the single opaque action-mapping revision ID of `GNT-7.2` item
-2, which belong to the agent and action-mapping boundary, and the committed
-execution-state evidence for a replacement binding and its mapping revision,
-which belongs to the durable-record owners.
+The clause also requires rebinding not to resurrect a revoked or expired
+generation and not to confer rights the prior binding lacked. This type carries
+no rights set, no generation, and no lineage, so it decides neither duty: those
+are the instance-level rebinding and comparison rules the same crate models for
+the revocation and compatibility clauses, and a caller must not read the
+requirement resolution as satisfying them.
+
+Two further obligations the clause names are not this model's, and a caller
+must not read this surface as satisfying them: the canonical action-signature
+resolution and the single opaque action-mapping revision ID of Section 7 item 2
+(the anchor `GNT-7.2`, a different anchor from
+`GNT-7.2-authority-rebinding`), which belong to the agent and action-mapping
+boundary, and the committed execution-state evidence for a replacement binding
+and its mapping revision, which belongs to the durable-record owners.
 
 ## Non-claims
 

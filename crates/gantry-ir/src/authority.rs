@@ -4,7 +4,7 @@
 //! This module is the machine-checked identity and lattice model for
 //! `GNT-3-T-AUTHORITY-INSTANCES`, `GNT-3-T-AUTHORITY-LINEAGE`,
 //! `GNT-3-T-AUTHORITY-REVOCATION`, `GNT-3-T-AUTHORITY-ADMISSION`,
-//! `GNT-7.2-authority-rebinding`, and
+//! `GNT-3-T-AUTHORITY-CLOSURE`, `GNT-7.2-authority-rebinding`, and
 //! `GNT-11.6-authority-instance-compatibility`.
 //!
 //! Scope is deliberately narrow: this module models identity, the rights
@@ -537,7 +537,8 @@ impl ResolvedRequirement {
 /// Two obligations that clause text also names are not this type's, and a caller
 /// must not read this surface as satisfying them: the canonical
 /// action-signature resolution and the single opaque action-mapping revision ID
-/// of `GNT-7.2` item 2, which belong to the agent and action-mapping boundary;
+/// of Section 7 item 2 under the anchor `GNT-7.2`, which belong to the agent
+/// and action-mapping boundary;
 /// and the requirement slots of the closure, whose identities are not
 /// requirement identities and are therefore neither resolved nor refused here.
 ///
