@@ -22,9 +22,10 @@ fn read_text(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()))
 }
 
-/// Returns the body of one clause: the text between its anchor and the next anchor, or to the end
-/// of the specification when the clause is the final one.
-fn clause_body<'a>(specification: &'a str, anchor: &str) -> &'a str {
+/// Returns the body of one clause together with the specification text that follows it: the body is
+/// the text between the clause's anchor and the next anchor, or to the end of the specification when
+/// the clause is the final one, and the following text starts at that next anchor when it exists.
+fn clause_body<'a>(specification: &'a str, anchor: &str) -> (&'a str, &'a str) {
     let declaration = format!("<a id=\"{anchor}\"></a>");
     let start = specification
         .find(&declaration)
@@ -32,8 +33,8 @@ fn clause_body<'a>(specification: &'a str, anchor: &str) -> &'a str {
         + declaration.len();
     let rest = &specification[start..];
     match rest.find("<a id=") {
-        Some(end) => &rest[..end],
-        None => rest,
+        Some(end) => (&rest[..end], &rest[end..]),
+        None => (rest, ""),
     }
 }
 
@@ -62,13 +63,17 @@ fn canonical_modes_surface_is_published() {
     assert_eq!(
         NUM_CLAUSES.last(),
         Some(&anchor),
-        "the overflow-mode clause is the specification's final clause"
+        "the numeric section publishes the overflow-mode clause last"
     );
     assert!(note.contains(anchor), "the note names `{anchor}`");
-    let clause = clause_body(&specification, anchor);
+    let (clause, following) = clause_body(&specification, anchor);
     assert!(
-        specification.trim_end().ends_with(clause.trim_end()),
-        "the final clause body runs to the end of the specification"
+        !clause.trim().is_empty(),
+        "the overflow-mode clause declares a body"
+    );
+    assert!(
+        !following.contains("<a id=\"GNT-40."),
+        "no further clause of the numeric section follows the overflow-mode clause"
     );
     assert_eq!(
         OverflowMode::ALL.map(OverflowMode::as_str),

@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "d5eac18756fe4b105e6c733f2bf4ce8777435064f26ff50006c7aa54df1b2ccb",
-  "byte_length": 1069539,
-  "line_count": 15653,
+  "specification_sha256": "b5a7981a63a6cd853adf5710eb570eb412ff3fc00023a0673dd68cc9c47e405c",
+  "byte_length": 1074112,
+  "line_count": 15663,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15653,
-      "sha256": "56aa1e2e895619d350be59b91cfc61298ee32453615a8c05382086cabd26bd86",
+      "end_line": 15663,
+      "sha256": "8e42f358d3496cd01a5375e1229e712953c1806a4fc26897e74a9e98e2bcb7bd",
       "rationale": null
     }
   ],
@@ -42946,6 +42946,88 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_modes.rs#canonical_modes_are_exact_in_every_mode"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.0-text-foundation-scope",
+      "span_start_line": 15654,
+      "span_end_line": 15660,
+      "span_sha256": "cd7ff1c0f5d12e69215ffe50a080ad39ec4e5db921223f45dafdcaf91af4d301",
+      "anchor_line": 15657,
+      "body_start_line": 15658,
+      "body_end_line": 15660,
+      "body_sha256": "fdf71bb588e54cf4f68ca920e9fd7d533a5de7b92b7f2b208d345acb5026f293",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15658,
+          "end_line": 15660,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_foundation.rs#text_clauses_and_the_diagnostic_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.1-canonical-text-values",
+      "span_start_line": 15661,
+      "span_end_line": 15663,
+      "span_sha256": "700f5799f6f78131bedd49a7dc23e42ce25362f5bf0acd658b22a67659b677f0",
+      "anchor_line": 15661,
+      "body_start_line": 15662,
+      "body_end_line": 15663,
+      "body_sha256": "eb63bfb00d256a260d4bb30825c1813d7d6a6c78817a8360d8fb6b51b1a6623b",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15662,
+          "end_line": 15663,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_foundation.rs#text_values_admit_exactly_well_formed_utf8"
               ],
               "rationale": null
             }

@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "d5eac18756fe4b105e6c733f2bf4ce8777435064f26ff50006c7aa54df1b2ccb",
+  "specification_sha256": "b5a7981a63a6cd853adf5710eb570eb412ff3fc00023a0673dd68cc9c47e405c",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15653,
+      "end_line": 15663,
       "rationale": null
     }
   ],
@@ -41805,6 +41805,84 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_modes.rs#canonical_modes_are_exact_in_every_mode"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.0-text-foundation-scope",
+      "span_start_line": 15654,
+      "span_end_line": 15660,
+      "anchor_line": 15657,
+      "body_start_line": 15658,
+      "body_end_line": 15660,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15658,
+          "end_line": 15660,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_foundation.rs#text_clauses_and_the_diagnostic_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.1-canonical-text-values",
+      "span_start_line": 15661,
+      "span_end_line": 15663,
+      "anchor_line": 15661,
+      "body_start_line": 15662,
+      "body_end_line": 15663,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15662,
+          "end_line": 15663,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_foundation.rs#text_values_admit_exactly_well_formed_utf8"
               ],
               "rationale": null
             }
