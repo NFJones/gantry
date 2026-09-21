@@ -151,7 +151,7 @@ fn note_names_the_completion_criteria_and_their_evidence() {
     let section = section_body(&note, "## Completion criteria and their evidence");
     for criterion in [
         "text results are target-independent",
-        "every input-dependent kernel has an exact limit",
+        "every input-dependent kernel has exact limits and safe points",
         "package dependencies obey the pure standard-library DAG",
         "optimized and reference implementations agree",
     ] {
@@ -166,6 +166,19 @@ fn note_names_the_completion_criteria_and_their_evidence() {
             "the completion record names the gated owner `{owner}`"
         );
     }
+    assert_eq!(
+        section.matches("**met**").count(),
+        3,
+        "three criteria are met and the limits-and-safe-points criterion is not"
+    );
+    assert!(
+        section.contains("**unmet, gated**"),
+        "the limits-and-safe-points criterion is recorded as unmet"
+    );
+    assert!(
+        section.contains("does not resolve `GNT-GP-STDLIB-TEXT-001`"),
+        "the record states that the issue is not resolved"
+    );
     for bound in [
         PATTERN_SCALAR_BOUND.to_string(),
         PATTERN_REPEAT_BOUND.to_string(),
