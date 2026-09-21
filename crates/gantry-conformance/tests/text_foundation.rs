@@ -4,7 +4,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::ir::{CharValue, TEXT_CLAUSES, TextDiagnosticCode, TextValue};
+use gantry::ir::{
+    CharValue, PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND, PATTERN_SCALAR_BOUND,
+    PackageFamily, StabilityTier, TEXT_CLAUSES, TextDiagnosticCode, TextValue,
+    canonical_pure_hierarchy,
+};
 
 /// The text surface this slice publishes, written out independently of the model and the note: the
 /// clause anchors in specification order and the registered refusal spellings in declaration order.
@@ -139,6 +143,118 @@ fn section_body<'a>(note: &'a str, heading: &str) -> &'a str {
         Some(end) => &rest[..end],
         None => rest,
     }
+}
+
+#[test]
+fn note_names_the_completion_criteria_and_their_evidence() {
+    let note = read_workspace_file("docs/text-foundation.md");
+    let section = section_body(&note, "## Completion criteria and their evidence");
+    for criterion in [
+        "text results are target-independent",
+        "every input-dependent kernel has an exact limit",
+        "package dependencies obey the pure standard-library DAG",
+        "optimized and reference implementations agree",
+    ] {
+        assert!(
+            section.contains(criterion),
+            "the completion record names the criterion `{criterion}`"
+        );
+    }
+    for owner in ["RESOURCE-001", "926a4a0f", "GATE-200", "916d98cf"] {
+        assert!(
+            section.contains(owner),
+            "the completion record names the gated owner `{owner}`"
+        );
+    }
+    for bound in [
+        PATTERN_SCALAR_BOUND.to_string(),
+        PATTERN_REPEAT_BOUND.to_string(),
+        PATTERN_INSTRUCTION_BOUND.to_string(),
+    ] {
+        assert!(
+            section.contains(&bound),
+            "the completion record names the declared bound {bound}"
+        );
+    }
+}
+
+#[test]
+fn text_family_obeys_the_pure_standard_library_dag() {
+    let graph = canonical_pure_hierarchy()
+        .unwrap_or_else(|error| panic!("the canonical pure hierarchy is declared: {error:?}"));
+    let text = graph
+        .package(&PackageFamily::Text.package_name())
+        .unwrap_or_else(|| panic!("the hierarchy declares `std.text`"));
+    assert!(PackageFamily::Text.is_pure(), "`std.text` is a pure family");
+    assert_eq!(
+        text.tier(),
+        StabilityTier::Stable,
+        "`std.text` is a stable family"
+    );
+    assert!(
+        !text.identity().as_str().is_empty(),
+        "`std.text` publishes an interface identity"
+    );
+    let dependencies = text.dependencies().iter().cloned().collect::<Vec<_>>();
+    assert_eq!(
+        dependencies,
+        vec![
+            PackageFamily::Collections.package_name(),
+            PackageFamily::Core.package_name(),
+        ],
+        "`std.text` depends on exactly `std.collections` and `std.core`"
+    );
+    let pure = PackageFamily::ALL
+        .iter()
+        .filter(|family| family.is_pure())
+        .map(|family| family.package_name())
+        .collect::<Vec<_>>();
+    for dependency in &dependencies {
+        assert!(
+            pure.contains(dependency),
+            "`{dependency}` is a pure standard package"
+        );
+    }
+    for (name, item) in text.items() {
+        assert_eq!(
+            item.owner(),
+            text.name(),
+            "`{name}` is owned by the family that declares it"
+        );
+    }
+}
+
+#[test]
+fn text_model_is_host_independent_and_publishes_no_suspension_entry_point() {
+    let source = read_workspace_file("crates/gantry-ir/src/text.rs");
+    for needle in [
+        "std::env",
+        "std::time",
+        "std::fs",
+        "std::net",
+        "SystemTime",
+        "Instant",
+        "thread",
+        "spawn",
+        "unsafe",
+        "cutoff",
+        "suspend",
+        "cancel",
+        "resume",
+        "abort",
+    ] {
+        assert!(
+            !source.contains(needle),
+            "the text model names no `{needle}`"
+        );
+    }
+    assert!(
+        source.contains("pub struct TextValue"),
+        "the model publishes its text value"
+    );
+    assert_eq!(PATTERN_SCALAR_BOUND, 4096);
+    assert_eq!(PATTERN_REPEAT_BOUND, 255);
+    assert_eq!(PATTERN_INSTRUCTION_BOUND, 16_384);
 }
 
 #[test]
