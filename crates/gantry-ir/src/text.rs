@@ -30,7 +30,7 @@ use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
 /// (`GNT-41.0` through `GNT-41.9`).
-pub const TEXT_CLAUSES: [&str; 10] = [
+pub const TEXT_CLAUSES: [&str; 11] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -41,7 +41,33 @@ pub const TEXT_CLAUSES: [&str; 10] = [
     "GNT-41.7-canonical-grapheme-clusters",
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
+    "GNT-41.10-text-work-limits",
 ];
+
+/// The declared value bound of `GNT-41.10-text-work-limits`: the most scalar values a text value
+/// of this section holds. Every admission of the section refuses a longer sequence under
+/// `text-value-bound`.
+pub const TEXT_VALUE_SCALAR_BOUND: usize = 65_536;
+
+/// The declared normalization work bound of `GNT-41.10-text-work-limits`: the most units one
+/// normalization spends per input scalar.
+pub const NORMALIZATION_UNITS_PER_SCALAR: u64 = 8;
+
+/// The declared case-mapping work bound of `GNT-41.10-text-work-limits`: the most units one case
+/// mapping spends per input scalar.
+pub const CASE_MAPPING_UNITS_PER_SCALAR: u64 = 4;
+
+/// The declared comparison work bound of `GNT-41.10-text-work-limits`: the most units one
+/// comparison spends per compared scalar.
+pub const COMPARISON_UNITS_PER_SCALAR: u64 = 4;
+
+/// The declared grapheme-segmentation work bound of `GNT-41.10-text-work-limits`: the most units
+/// one segmentation spends per input scalar.
+pub const GRAPHEME_UNITS_PER_SCALAR: u64 = 8;
+
+/// The declared maximum work of one invocation of any kernel of this section over a value admitted
+/// by `GNT-41.10-text-work-limits`: the value bound times the largest declared per-scalar bound.
+pub const TEXT_WORK_UNIT_MAXIMUM: u64 = TEXT_VALUE_SCALAR_BOUND as u64 * GRAPHEME_UNITS_PER_SCALAR;
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,17 +84,20 @@ pub enum TextDiagnosticCode {
     MatchBudget,
     /// `GNT-41.9`: a UTF-16 code-unit sequence is not a well-formed encoding.
     InvalidUtf16,
+    /// `GNT-41.10`: an admitted sequence is longer than the declared value bound.
+    ValueBound,
 }
 
 impl TextDiagnosticCode {
     /// Every declared diagnostic, in declaration order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::InvalidUtf8,
         Self::BuilderBound,
         Self::PatternSyntax,
         Self::PatternBound,
         Self::MatchBudget,
         Self::InvalidUtf16,
+        Self::ValueBound,
     ];
 
     /// Returns the registered refusal spelling.
@@ -81,6 +110,7 @@ impl TextDiagnosticCode {
             Self::PatternBound => "text-pattern-bound",
             Self::MatchBudget => "text-match-budget",
             Self::InvalidUtf16 => "text-invalid-utf16",
+            Self::ValueBound => "text-value-bound",
         }
     }
 
@@ -94,6 +124,7 @@ impl TextDiagnosticCode {
             Self::PatternBound => "GNT-41.8-bounded-text-matching",
             Self::MatchBudget => "GNT-41.8-bounded-text-matching",
             Self::InvalidUtf16 => "GNT-41.9-canonical-text-conversions",
+            Self::ValueBound => "GNT-41.10-text-work-limits",
         }
     }
 }
@@ -360,11 +391,12 @@ impl TextValue {
     /// exactly the octets it was admitted from, so nothing is normalized, re-encoded, or stripped.
     /// An ill-formed, truncated, over-long, or surrogate encoding is refused under
     /// `text-invalid-utf8`, naming the zero-based octet index at which well-formed decoding fails.
+    /// A sequence whose decoded value would hold more scalar values than the declared value bound
+    /// of `GNT-41.10-text-work-limits` is refused under `text-value-bound` before any part of the
+    /// value is constructed.
     pub fn from_octets(octets: &[u8]) -> Result<Self, TextError> {
         match std::str::from_utf8(octets) {
-            Ok(text) => Ok(Self {
-                text: text.to_owned(),
-            }),
+            Ok(text) => Self::admit_text(text),
             Err(error) => Err(TextError::new(
                 TextDiagnosticCode::InvalidUtf8,
                 format!(
@@ -377,13 +409,41 @@ impl TextValue {
 
     /// Publishes the text value holding the given scalar values in order
     /// (`GNT-41.1-canonical-text-values`).
-    #[must_use]
-    pub fn from_scalars(scalars: &[CharValue]) -> Self {
+    /// A sequence longer than the declared value bound of `GNT-41.10-text-work-limits` is refused
+    /// under `text-value-bound` before any part of the value is constructed.
+    pub fn from_scalars(scalars: &[CharValue]) -> Result<Self, TextError> {
+        if scalars.len() > TEXT_VALUE_SCALAR_BOUND {
+            return Err(Self::value_bound_error(scalars.len()));
+        }
         let mut text = String::new();
         for scalar in scalars {
             text.push_str(&scalar.to_canonical_string());
         }
-        Self { text }
+        Ok(Self { text })
+    }
+
+    /// Refuses a sequence whose decoded value would exceed the declared value bound
+    /// (`GNT-41.10-text-work-limits`).
+    fn value_bound_error(scalars: usize) -> TextError {
+        TextError::new(
+            TextDiagnosticCode::ValueBound,
+            format!(
+                "the admitted value would hold {scalars} scalar values, beyond the declared value \
+                 bound {TEXT_VALUE_SCALAR_BOUND}"
+            ),
+        )
+    }
+
+    /// Publishes one admitted value from an already well-formed sequence, refusing a value beyond
+    /// the declared value bound (`GNT-41.10-text-work-limits`).
+    fn admit_text(text: &str) -> Result<Self, TextError> {
+        let scalars = text.chars().count();
+        if scalars > TEXT_VALUE_SCALAR_BOUND {
+            return Err(Self::value_bound_error(scalars));
+        }
+        Ok(Self {
+            text: text.to_owned(),
+        })
     }
 
     /// Returns the number of scalar values the value holds (`GNT-41.1-canonical-text-values`).
@@ -449,7 +509,7 @@ impl TextValue {
                 index += 1;
             }
         }
-        Ok(Self { text })
+        Self::admit_text(&text)
     }
 
     /// Publishes the canonical UTF-16 code units of the value
@@ -463,13 +523,17 @@ impl TextValue {
 
     /// Publishes one text value from an octet sequence under the declared lossless octet-text
     /// mapping (`GNT-41.9-canonical-text-conversions`): every octet maps to the scalar value with
-    /// the same numeric value, so the conversion is total, admits every octet sequence, and keeps
-    /// every octet it was given.
-    #[must_use]
-    pub fn from_lossless_octets(octets: &[u8]) -> Self {
-        Self {
-            text: octets.iter().map(|octet| char::from(*octet)).collect(),
+    /// the same numeric value, so the conversion is total over the sequences the declared value
+    /// bound of `GNT-41.10-text-work-limits` admits and keeps every octet it was given: every octet
+    /// maps to one scalar value, so a sequence longer than that bound is refused under
+    /// `text-value-bound` before any part of the value is constructed.
+    pub fn from_lossless_octets(octets: &[u8]) -> Result<Self, TextError> {
+        if octets.len() > TEXT_VALUE_SCALAR_BOUND {
+            return Err(Self::value_bound_error(octets.len()));
         }
+        Ok(Self {
+            text: octets.iter().map(|octet| char::from(*octet)).collect(),
+        })
     }
 
     /// Publishes the octets of the value under the declared lossless octet-text mapping, or nothing

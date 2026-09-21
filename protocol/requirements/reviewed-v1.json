@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "d6fdfadf479343d5604aa8da8fae7f489932cf616f048e98736a91a431c47762",
+  "specification_sha256": "69627988adfe3a73bbd5f1fb53a7cff2bf4d047610afa216936ee002e70e04d5",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15695,
+      "end_line": 15699,
       "rationale": null
     }
   ],
@@ -42203,6 +42203,47 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_conversions.rs#conversions_clause_publishes_the_declared_exact_conversions",
                 "crates/gantry-conformance/tests/text_conversions.rs#conversions_refuse_unpaired_utf16_surrogates"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.10-text-work-limits",
+      "span_start_line": 15696,
+      "span_end_line": 15699,
+      "anchor_line": 15697,
+      "body_start_line": 15698,
+      "body_end_line": 15699,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15698,
+          "end_line": 15699,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_limits.rs#declared_limits_are_published_and_exact",
+                "crates/gantry-conformance/tests/text_limits.rs#admissions_admit_exactly_the_declared_value_bound",
+                "crates/gantry-conformance/tests/text_limits.rs#every_kernel_completes_over_a_maximum_size_value"
               ],
               "rationale": null
             }

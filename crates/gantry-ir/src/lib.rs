@@ -322,8 +322,10 @@ pub use collections::{
 // sentence, or line segmentation, case folding, collation, formatting, parsing, captures,
 // backtracking, host regular-expression semantics, or locale.
 pub use text::{
-    CaseMapping, NormalizationForm, PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND,
-    PATTERN_SCALAR_BOUND, Pattern, TEXT_CLAUSES, TextBuilder, TextDiagnosticCode, TextError,
+    CASE_MAPPING_UNITS_PER_SCALAR, COMPARISON_UNITS_PER_SCALAR, CaseMapping,
+    GRAPHEME_UNITS_PER_SCALAR, NORMALIZATION_UNITS_PER_SCALAR, NormalizationForm,
+    PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND, PATTERN_SCALAR_BOUND, Pattern, TEXT_CLAUSES,
+    TEXT_VALUE_SCALAR_BOUND, TEXT_WORK_UNIT_MAXIMUM, TextBuilder, TextDiagnosticCode, TextError,
     TextGraphemes, TextOrdering, TextRange, TextScalars, TextValue,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned

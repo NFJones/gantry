@@ -1,6 +1,6 @@
 {
  "format": "gantry.durable-coordination-evidence/v1",
- "specification_sha256": "d6fdfadf479343d5604aa8da8fae7f489932cf616f048e98736a91a431c47762",
+ "specification_sha256": "69627988adfe3a73bbd5f1fb53a7cff2bf4d047610afa216936ee002e70e04d5",
  "issue": "GNT-ASYNC-DUR-001",
  "requirements": [
   {
