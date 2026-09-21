@@ -19,6 +19,21 @@ fn read_text(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()))
 }
 
+/// Returns the body of one clause: the text between its anchor and the next anchor, or to the end
+/// of the specification when the clause is the final one.
+fn clause_body<'a>(specification: &'a str, anchor: &str) -> &'a str {
+    let declaration = format!("<a id=\"{anchor}\"></a>");
+    let start = specification
+        .find(&declaration)
+        .unwrap_or_else(|| panic!("the specification anchors `{anchor}`"))
+        + declaration.len();
+    let rest = &specification[start..];
+    match rest.find("<a id=") {
+        Some(end) => &rest[..end],
+        None => rest,
+    }
+}
+
 fn integer(value: i64) -> GantryInt {
     GantryInt::new(value).unwrap_or_else(|| panic!("`{value}` is inside the canonical Int range"))
 }
@@ -106,4 +121,31 @@ fn numeric_conversions_are_exact_and_refuse_outside_the_domain() {
         float_to_int(float(GANTRY_INT_MINIMUM as f64)),
         Some(integer(GANTRY_INT_MINIMUM))
     );
+}
+
+/// `GNT-40.3` is the specification's final clause, so extracting its body takes `clause_body`'s
+/// no-next-anchor path: the body must run to the end of the specification and publish both
+/// conversion spellings, which is the tail branch this lane owns.
+#[test]
+fn numeric_conversions_clause_body_exercises_the_final_clause_tail() {
+    let specification = read_text(&workspace_root().join("SPEC.md"));
+    let clause = clause_body(&specification, "GNT-40.3-numeric-conversions");
+
+    assert!(
+        !clause.contains("<a id="),
+        "the final clause has no next anchor"
+    );
+    assert!(
+        specification.trim_end().ends_with(clause.trim_end()),
+        "the final clause body runs to the end of the specification"
+    );
+    for spelling in [
+        NumericConversion::IntToFloat.wire_name(),
+        NumericConversion::FloatToInt.wire_name(),
+    ] {
+        assert!(
+            clause.contains(&format!("`{spelling}`")),
+            "the final clause publishes the backticked spelling `{spelling}`"
+        );
+    }
 }
