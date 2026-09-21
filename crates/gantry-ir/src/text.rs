@@ -21,6 +21,7 @@
 
 use std::cmp::Ordering;
 use std::fmt;
+use std::sync::Arc;
 
 use gantry_core::unicode::{
     grapheme_cluster_boundaries, normalize_nfc, normalize_nfd, to_full_lowercase, to_full_uppercase,
@@ -246,7 +247,7 @@ impl TextBuilder {
             return Err(TextValue::value_bound_refusal(scalars));
         }
         Ok(TextValue {
-            text: self.text.clone(),
+            text: Arc::new(self.text.clone()),
         })
     }
 }
@@ -308,7 +309,7 @@ impl TextGraphemes<'_> {
         let to = self.boundaries[self.published + 1];
         self.published += 1;
         self.text.get(from..to).map(|slice| TextValue {
-            text: slice.to_owned(),
+            text: Arc::new(slice.to_owned()),
         })
     }
 }
@@ -354,9 +355,11 @@ impl fmt::Display for TextError {
 /// The identity of a value is exactly its scalar sequence, so equality and ordering are decided on
 /// the scalars rather than on the octets that carry them, and a value is immutable: every
 /// operation publishes a new value or an observation and never modifies the value it was given.
+/// The value is immutable — every operation publishes a new value — so duplicates share its
+/// storage rather than copying it.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TextValue {
-    text: String,
+    text: Arc<String>,
 }
 
 impl TextValue {
@@ -364,7 +367,7 @@ impl TextValue {
     #[must_use]
     pub fn empty() -> Self {
         Self {
-            text: String::new(),
+            text: Arc::new(String::new()),
         }
     }
 
@@ -382,7 +385,7 @@ impl TextValue {
                     return Err(Self::value_bound_refusal(scalars));
                 }
                 Ok(Self {
-                    text: decoded.to_owned(),
+                    text: Arc::new(decoded.to_owned()),
                 })
             }
             Err(error) => {
@@ -416,7 +419,9 @@ impl TextValue {
         for scalar in scalars {
             text.push_str(&scalar.to_canonical_string());
         }
-        Ok(Self { text })
+        Ok(Self {
+            text: Arc::new(text),
+        })
     }
 
     /// Refuses a value beyond the declared bound (`GNT-41.10-canonical-text-admission-bound`,
@@ -504,7 +509,9 @@ impl TextValue {
                 index += 1;
             }
         }
-        Ok(Self { text })
+        Ok(Self {
+            text: Arc::new(text),
+        })
     }
 
     /// Publishes the canonical UTF-16 code units of the value
@@ -527,7 +534,12 @@ impl TextValue {
             return Err(Self::value_bound_refusal(octets.len()));
         }
         Ok(Self {
-            text: octets.iter().map(|octet| char::from(*octet)).collect(),
+            text: Arc::new(
+                octets
+                    .iter()
+                    .map(|octet| char::from(*octet))
+                    .collect::<String>(),
+            ),
         })
     }
 
@@ -574,7 +586,7 @@ impl TextValue {
             return None;
         };
         self.text.get(from..to).map(|slice| Self {
-            text: slice.to_owned(),
+            text: Arc::new(slice.to_owned()),
         })
     }
 
@@ -596,7 +608,9 @@ impl TextValue {
         if scalars > TEXT_VALUE_SCALAR_BOUND {
             return Err(Self::value_bound_refusal(scalars));
         }
-        Ok(Self { text })
+        Ok(Self {
+            text: Arc::new(text),
+        })
     }
 
     /// Publishes the named full default case mapping of the value
@@ -617,7 +631,9 @@ impl TextValue {
         if scalars > TEXT_VALUE_SCALAR_BOUND {
             return Err(Self::value_bound_refusal(scalars));
         }
-        Ok(Self { text })
+        Ok(Self {
+            text: Arc::new(text),
+        })
     }
 
     /// Publishes a forward scalar cursor over the value
@@ -1324,5 +1340,34 @@ fn projected_instructions(node: &Node) -> Option<usize> {
                     .checked_add((*maximum as usize).saturating_sub(minimum)),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod text_storage_tests {
+    use super::*;
+
+    #[test]
+    fn duplicates_share_the_published_text_storage() {
+        let value =
+            TextValue::from_octets(b"gantry").unwrap_or_else(|error| panic!("admitted: {error}"));
+        let duplicate = value.clone();
+        assert!(Arc::ptr_eq(&value.text, &duplicate.text));
+        assert_eq!(value, duplicate);
+        assert_eq!(value.canonical_octets(), duplicate.canonical_octets());
+    }
+
+    #[test]
+    fn a_transform_publishes_fresh_storage() {
+        let value =
+            TextValue::from_octets(b"gantry").unwrap_or_else(|error| panic!("admitted: {error}"));
+        let upper = value
+            .map_case(CaseMapping::Upper)
+            .unwrap_or_else(|error| panic!("mapped: {error}"));
+        assert_eq!(
+            upper,
+            TextValue::from_octets(b"GANTRY").unwrap_or_else(|error| panic!("admitted: {error}"))
+        );
+        assert!(!Arc::ptr_eq(&value.text, &upper.text));
     }
 }
