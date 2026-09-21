@@ -13,9 +13,10 @@ use gantry::ir::{CapabilityAuthorityClosure, RequirementResolution};
 const AUTHORITY_NOTE: &str = include_str!("../../../docs/authority-closure.md");
 
 /// Returns whether one block of the note contains the phrase, after collapsing
-/// the whitespace inside that block. A block is a paragraph, a list item, or a
-/// table row: a phrase wrapped inside one block is recognised, while a phrase
-/// assembled across two blocks is not.
+/// the whitespace inside that block. A block is one blank-line-separated region
+/// of the note — a paragraph, a whole list, or a whole table — so a phrase
+/// wrapped inside one region is recognised, while a phrase assembled across
+/// two regions is not. Items of one list remain one region.
 fn block_contains(needle: &str) -> bool {
     AUTHORITY_NOTE.split("\n\n").any(|block| {
         block

@@ -43,11 +43,12 @@ const MODEL_SOURCE: &str = include_str!("../../gantry-ir/src/package.rs");
 const PACKAGE_MODEL_NOTE: &str = include_str!("../../../docs/package-model.md");
 
 /// Returns whether one block of the note contains the phrase, after collapsing
-/// the whitespace inside that block. A block is a paragraph, a list item, or a
-/// table row: a phrase wrapped inside one block is recognised, while a phrase
-/// assembled across two blocks is not. The registered-code rows are asserted
-/// against the raw note instead, because a row wrapped across lines would no
-/// longer render as one table row.
+/// the whitespace inside that block. A block is one blank-line-separated region
+/// of the note — a paragraph, a whole list, or a whole table — so a phrase
+/// wrapped inside one region is recognised, while a phrase assembled across two
+/// regions is not. The registered-code rows are asserted against the raw note
+/// instead, because a row wrapped across lines would no longer render as one
+/// table row.
 fn package_note_block_contains(needle: &str) -> bool {
     PACKAGE_MODEL_NOTE.split("\n\n").any(|block| {
         block
