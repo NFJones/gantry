@@ -218,8 +218,10 @@ pub fn grapheme_cluster_boundaries(value: &str) -> Vec<usize> {
         .iter()
         .map(|scalar| grapheme_break(*scalar))
         .collect();
+    let mut state = GraphemeState::default();
     for (index, offset) in offsets.iter().enumerate().skip(1) {
-        if is_grapheme_break(&scalars, &classes, index) {
+        state = state.advanced(scalars[index - 1], classes[index - 1]);
+        if is_grapheme_break(classes[index - 1], classes[index], scalars[index], state) {
             boundaries.push(*offset);
         }
     }
@@ -227,9 +229,56 @@ pub fn grapheme_cluster_boundaries(value: &str) -> Vec<usize> {
     boundaries
 }
 
-fn is_grapheme_break(scalars: &[char], classes: &[GraphemeBreak], index: usize) -> bool {
-    let prior = classes[index - 1];
-    let current = classes[index];
+/// The forward state the grapheme rules need: the length of the run of regional indicators ending
+/// at the scalar before the current position, the three facts the Indic conjunct rule needs, and
+/// whether the scalar before the current position is a zero-width joiner preceded by an
+/// `Extended_Pictographic` scalar with only `Extend` scalars in between.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct GraphemeState {
+    regional_run: usize,
+    /// Whether the scalar immediately before the current run of `InCB=Extend`/`InCB=Linker`
+    /// scalars is `InCB=Consonant`.
+    run_before_consonant: bool,
+    /// Whether the current run of `InCB=Extend`/`InCB=Linker` scalars holds a linker.
+    run_has_linker: bool,
+    /// Whether an `Extended_Pictographic` scalar appears before the current position with only
+    /// `Extend` scalars in between.
+    pictographic_run: bool,
+    /// Whether the scalar before the current position is a zero-width joiner that satisfies the
+    /// `Extended_Pictographic` run rule above.
+    pictographic_zwj: bool,
+}
+
+impl GraphemeState {
+    /// Advances the state by consuming one scalar, so every rule of the segmentation reads facts
+    /// carried forward instead of scanning backwards from the boundary it decides.
+    fn advanced(mut self, scalar: char, class: GraphemeBreak) -> Self {
+        self.regional_run = if class == GraphemeBreak::RegionalIndicator {
+            self.regional_run + 1
+        } else {
+            0
+        };
+        match indic_conjunct_break(scalar) {
+            IndicConjunctBreak::Extend => {}
+            IndicConjunctBreak::Linker => self.run_has_linker = true,
+            other => {
+                self.run_before_consonant = other == IndicConjunctBreak::Consonant;
+                self.run_has_linker = false;
+            }
+        }
+        self.pictographic_zwj = class == GraphemeBreak::Zwj && self.pictographic_run;
+        self.pictographic_run = is_extended_pictographic(scalar)
+            || (self.pictographic_run && class == GraphemeBreak::Extend);
+        self
+    }
+}
+
+fn is_grapheme_break(
+    prior: GraphemeBreak,
+    current: GraphemeBreak,
+    current_scalar: char,
+    state: GraphemeState,
+) -> bool {
     // GB3
     if prior == GraphemeBreak::Cr && current == GraphemeBreak::Lf {
         return false;
@@ -280,66 +329,28 @@ fn is_grapheme_break(scalars: &[char], classes: &[GraphemeBreak], index: usize) 
         return false;
     }
     // GB9c
-    if indic_conjunct_break(scalars[index]) == IndicConjunctBreak::Consonant
-        && indic_conjunct_before(scalars, index)
+    if indic_conjunct_break(current_scalar) == IndicConjunctBreak::Consonant
+        && state.run_before_consonant
+        && state.run_has_linker
     {
         return false;
     }
     // GB11
     if prior == GraphemeBreak::Zwj
-        && is_extended_pictographic(scalars[index])
-        && extended_pictographic_before_zwj(scalars, index)
+        && is_extended_pictographic(current_scalar)
+        && state.pictographic_zwj
     {
         return false;
     }
     // GB12 and GB13
-    if prior == GraphemeBreak::RegionalIndicator && current == GraphemeBreak::RegionalIndicator {
-        let mut count = 1_usize;
-        let mut cursor = index - 1;
-        while cursor > 0 && classes[cursor - 1] == GraphemeBreak::RegionalIndicator {
-            count += 1;
-            cursor -= 1;
-        }
-        if count % 2 == 1 {
-            return false;
-        }
+    if prior == GraphemeBreak::RegionalIndicator
+        && current == GraphemeBreak::RegionalIndicator
+        && state.regional_run % 2 == 1
+    {
+        return false;
     }
     // GB999
     true
-}
-
-/// Returns whether GB9c holds before the conjunct consonant at `index`.
-fn indic_conjunct_before(scalars: &[char], index: usize) -> bool {
-    let mut cursor = index;
-    let mut linker = false;
-    while cursor > 0 {
-        match indic_conjunct_break(scalars[cursor - 1]) {
-            IndicConjunctBreak::Extend => cursor -= 1,
-            IndicConjunctBreak::Linker => {
-                linker = true;
-                cursor -= 1;
-            }
-            IndicConjunctBreak::Consonant => return linker,
-            IndicConjunctBreak::None => return false,
-        }
-    }
-    false
-}
-
-/// Returns whether GB11 holds before the code point at `index`, whose predecessor is a ZWJ.
-fn extended_pictographic_before_zwj(scalars: &[char], index: usize) -> bool {
-    let mut cursor = index - 1;
-    while cursor > 0 {
-        let prior = scalars[cursor - 1];
-        if is_extended_pictographic(prior) {
-            return true;
-        }
-        if grapheme_break(prior) != GraphemeBreak::Extend {
-            return false;
-        }
-        cursor -= 1;
-    }
-    false
 }
 
 /// Returns whether `value` is excluded by Gantry's identifier-security rule.

@@ -150,6 +150,55 @@ fn grapheme_clusters_match_the_pinned_unicode_vectors() {
     );
 }
 
+/// Segmentation is one forward pass over the value's scalars. The sizes here are chosen so that a
+/// per-boundary backward scan (regional-indicator parity, the Indic conjunct walk, and the
+/// `Extended_Pictographic`/ZWJ run) cannot finish: the regional-indicator and linker runs are
+/// 400,000 scalars long, which the previous implementation walked once per boundary.
+#[test]
+fn grapheme_segmentation_is_linear_in_its_input() {
+    let regional = char::from_u32(0x1F1E6).unwrap_or_else(|| panic!("U+1F1E6 is a scalar"));
+    let consonant = char::from_u32(0x0915).unwrap_or_else(|| panic!("U+0915 is a scalar"));
+    let linker = char::from_u32(0x094D).unwrap_or_else(|| panic!("U+094D is a scalar"));
+    let nukta = char::from_u32(0x093C).unwrap_or_else(|| panic!("U+093C is a scalar"));
+    let waving = char::from_u32(0x1F44B).unwrap_or_else(|| panic!("U+1F44B is a scalar"));
+    let joiner = char::from_u32(0x200D).unwrap_or_else(|| panic!("U+200D is a scalar"));
+
+    let mut flags = String::new();
+    for _ in 0..400_000 {
+        flags.push(regional);
+    }
+    let value = admitted(flags.as_bytes());
+    assert_eq!(
+        clusters_of(&value).len(),
+        200_000,
+        "regional indicators pair into clusters of two"
+    );
+
+    let mut conjunct = String::from(consonant);
+    conjunct.push_str(&linker.to_string().repeat(400_000));
+    conjunct.push(nukta);
+    conjunct.push(consonant);
+    let value = admitted(conjunct.as_bytes());
+    assert_eq!(
+        clusters_of(&value).len(),
+        1,
+        "a consonant joined to a consonant by linkers is one cluster"
+    );
+
+    let mut emoji = String::new();
+    for _ in 0..200_000 {
+        emoji.push(waving);
+        emoji.push(joiner);
+    }
+    emoji.push(waving);
+    let value = admitted(emoji.as_bytes());
+    assert_eq!(
+        clusters_of(&value).len(),
+        1,
+        "a pictographic sequence joined by zero-width joiners is one cluster"
+    );
+}
+
 #[test]
 fn grapheme_clusters_are_decided_on_the_value_scalar_sequence() {
     let composed = admitted("\u{e9}".as_bytes());
