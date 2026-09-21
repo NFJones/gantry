@@ -50,6 +50,20 @@ fn refusal_of(result: Result<IntegerValue, ScalarError>) -> String {
     }
 }
 
+/// The buffer's initialized octets as an owned sequence.
+fn octets(value: &ByteBufferValue) -> Vec<u8> {
+    value.octets().to_vec()
+}
+
+/// A split position beyond the initialized prefix, refused under every strategy.
+fn refusal_of_split(value: &mut ByteBufferValue) -> String {
+    let beyond = value.len().saturating_add(1);
+    match value.split_off(beyond) {
+        Ok(_) => panic!("a split beyond the prefix is refused"),
+        Err(error) => format!("{:?}: {}", error.code(), error),
+    }
+}
+
 #[test]
 fn value_storage_note_states_the_declared_equivalence_contract() {
     let note = read_note();
@@ -240,4 +254,48 @@ fn frozen_values_round_trip_identically_across_strategies() {
         !losses[0].is_empty(),
         "the width-loss projection is refused with a named diagnostic"
     );
+}
+
+#[test]
+fn release_points_and_charge_conservation_are_identical_across_strategies() {
+    let mut states = Vec::new();
+    for strategy in StorageStrategy::ALL {
+        let mut value = buffer(strategy, b"gantry-release");
+        let charged = value.quota().used_octets();
+        let mut tail = value
+            .split_off(6)
+            .unwrap_or_else(|error| panic!("the split position is inside the prefix: {error}"));
+        assert_eq!(
+            value.quota().used_octets() + tail.quota().used_octets(),
+            charged,
+            "splitting conserves the total charge"
+        );
+        let head_octets = octets(&value);
+        let tail_octets = octets(&tail);
+        assert_eq!(head_octets.len() + tail_octets.len(), charged);
+        let released = tail.len();
+        tail.truncate(0)
+            .unwrap_or_else(|error| panic!("truncating to zero is admitted: {error}"));
+        assert_eq!(
+            tail.quota().used_octets(),
+            0,
+            "truncation releases exactly the removed octets"
+        );
+        let refusal = refusal_of_split(&mut value);
+        states.push((
+            head_octets,
+            tail_octets,
+            value.quota().used_octets(),
+            tail.quota().used_octets(),
+            released,
+            refusal,
+        ));
+    }
+    for pair in states.windows(2) {
+        assert_eq!(
+            pair[0], pair[1],
+            "identical octets, charges, releases, and refusals"
+        );
+    }
+    assert!(states[0].4 > 0, "the differential exercised a real release");
 }
