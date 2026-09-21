@@ -11,6 +11,7 @@
 //! `declare_collections_surface`.
 
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use gantry_core::canonical_key::{CanonicalKey, CanonicalKeyError, CanonicalKeyLimits};
 use gantry_core::numeric::GantryInt;
@@ -503,9 +504,11 @@ impl SetTypeIdentity {
 /// The value is its finite entries in the canonical collection order of `GNT-39.2`: each entry is
 /// one admitted canonical key of `GNT-39.1-admitted-collection-keys` and the value member that key
 /// resolves to. Admitting a value refuses a repeated key under `collection-duplicate-key`.
+/// The map value is immutable after admission, so every duplicate shares its entries rather
+/// than copying them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MapValue {
-    entries: Vec<(CanonicalKey, LogicalValue)>,
+    entries: Arc<Vec<(CanonicalKey, LogicalValue)>>,
 }
 
 impl MapValue {
@@ -525,7 +528,9 @@ impl MapValue {
             .zip(pairs.iter().map(|(_, value)| value.clone()))
             .collect::<Vec<_>>();
         entries.sort_by(|left, right| canonical_order(&left.0, &right.0));
-        Ok(Self { entries })
+        Ok(Self {
+            entries: Arc::new(entries),
+        })
     }
 
     /// Returns the admitted entries in canonical collection order.
@@ -581,12 +586,14 @@ impl MapValue {
         value: LogicalValue,
     ) -> Result<Self, CollectionKeyRefusal> {
         let admitted = policy.admit(key)?;
-        let mut entries = self.entries.clone();
+        let mut entries = self.entries.as_ref().clone();
         match entries.binary_search_by(|(existing, _)| canonical_order(existing, &admitted)) {
             Ok(index) => entries[index] = (admitted, value),
             Err(index) => entries.insert(index, (admitted, value)),
         }
-        Ok(Self { entries })
+        Ok(Self {
+            entries: Arc::new(entries),
+        })
     }
 }
 
@@ -595,9 +602,11 @@ impl MapValue {
 /// The value is its finite elements in the canonical collection order of `GNT-39.2`: each element
 /// is one admitted canonical key of `GNT-39.1-admitted-collection-keys`, because a set element is a
 /// collection key. Admitting a value refuses a repeated element under `collection-duplicate-key`.
+/// The set value is immutable after admission, so every duplicate shares its elements rather
+/// than copying them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SetValue {
-    elements: Vec<CanonicalKey>,
+    elements: Arc<Vec<CanonicalKey>>,
 }
 
 impl SetValue {
@@ -608,7 +617,9 @@ impl SetValue {
     ) -> Result<Self, CollectionKeyRefusal> {
         let mut admitted = policy.admit_batch(elements)?;
         admitted.sort_by(canonical_order);
-        Ok(Self { elements: admitted })
+        Ok(Self {
+            elements: Arc::new(admitted),
+        })
     }
 
     /// Returns the admitted elements in canonical collection order.
@@ -656,12 +667,14 @@ impl SetValue {
         element: &LogicalValue,
     ) -> Result<Self, CollectionKeyRefusal> {
         let admitted = policy.admit(element)?;
-        let mut elements = self.elements.clone();
+        let mut elements = self.elements.as_ref().clone();
         match elements.binary_search_by(|existing| canonical_order(existing, &admitted)) {
             Ok(_) => Ok(self.clone()),
             Err(index) => {
                 elements.insert(index, admitted);
-                Ok(Self { elements })
+                Ok(Self {
+                    elements: Arc::new(elements),
+                })
             }
         }
     }
@@ -1755,4 +1768,53 @@ pub fn canonical_collections_hierarchy() -> Result<StdGraph, StdlibError> {
     let mut graph = crate::stdlib::canonical_pure_hierarchy()?;
     declare_collections_surface(&mut graph)?;
     Ok(graph)
+}
+
+#[cfg(test)]
+mod collection_storage_tests {
+    use super::*;
+    use gantry_core::canonical_key::DEFAULT_CANONICAL_KEY_LIMITS;
+
+    fn policy() -> CollectionKeyPolicy {
+        CollectionKeyPolicy::new(DEFAULT_CANONICAL_KEY_LIMITS)
+    }
+
+    fn integer(value: i64) -> LogicalValue {
+        LogicalValue::integer(
+            GantryInt::new(value).unwrap_or_else(|| panic!("`{value}` is an admitted Int")),
+        )
+    }
+
+    #[test]
+    fn duplicates_share_the_admitted_map_entries() {
+        let value = MapValue::admit(
+            policy(),
+            &[(integer(1), integer(10)), (integer(2), integer(20))],
+        )
+        .unwrap_or_else(|error| panic!("the entries are admitted: {error:?}"));
+        let duplicate = value.clone();
+        assert!(Arc::ptr_eq(&value.entries, &duplicate.entries));
+        assert_eq!(value.entries(), duplicate.entries());
+    }
+
+    #[test]
+    fn a_new_entry_publishes_fresh_storage_and_leaves_the_source_alone() {
+        let value = MapValue::admit(policy(), &[(integer(1), integer(10))])
+            .unwrap_or_else(|error| panic!("the entry is admitted: {error:?}"));
+        let extended = value
+            .with_entry(policy(), &integer(2), integer(20))
+            .unwrap_or_else(|error| panic!("the entry is admitted: {error:?}"));
+        assert_eq!(value.len(), 1);
+        assert_eq!(extended.len(), 2);
+        assert!(!Arc::ptr_eq(&value.entries, &extended.entries));
+    }
+
+    #[test]
+    fn duplicates_share_the_admitted_set_elements() {
+        let value = SetValue::admit(policy(), &[integer(1), integer(2)])
+            .unwrap_or_else(|error| panic!("the elements are admitted: {error:?}"));
+        let duplicate = value.clone();
+        assert!(Arc::ptr_eq(&value.elements, &duplicate.elements));
+        assert_eq!(value.elements(), duplicate.elements());
+    }
 }
