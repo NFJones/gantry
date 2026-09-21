@@ -1527,9 +1527,19 @@ fn collection_family_declares_its_package_surface() {
     );
     assert_eq!(package.tier(), StabilityTier::Stable);
     assert_eq!(package.tier().wire_name(), "stable");
+    let family_paragraph = note
+        .split("\n\n")
+        .find(|paragraph| {
+            paragraph.contains("is one family of the canonical pure standard-library hierarchy")
+        })
+        .unwrap_or_else(|| panic!("the note carries the family paragraph"));
     assert!(
-        note.contains(package.tier().wire_name()),
-        "the note names the tier the hierarchy declares"
+        family_paragraph.contains(&format!("at the {} tier", package.tier().wire_name())),
+        "the family paragraph names the tier the hierarchy declares"
+    );
+    assert!(
+        family.is_pure() && family_paragraph.contains("pure,"),
+        "the family paragraph names the purity the hierarchy declares"
     );
     for (dependent, edges) in [
         (
@@ -1559,15 +1569,25 @@ fn collection_family_declares_its_package_surface() {
             );
         }
     }
-    for variant in [
-        StdlibNonClaim::AdapterPresence,
-        StdlibNonClaim::CapabilityAndProviderExistence,
-        StdlibNonClaim::LayoutAsIdentity,
-        StdlibNonClaim::FamilyBehavior,
+    let flattened = note.split_whitespace().collect::<Vec<_>>().join(" ");
+    for (claim, variant) in [
+        ("no adapter", StdlibNonClaim::AdapterPresence),
+        (
+            "no capability package",
+            StdlibNonClaim::CapabilityAndProviderExistence,
+        ),
+        (
+            "no repository path as source identity",
+            StdlibNonClaim::LayoutAsIdentity,
+        ),
+        (
+            "no family behavior of its own",
+            StdlibNonClaim::FamilyBehavior,
+        ),
     ] {
         assert!(
-            note.contains(&format!("{variant:?}")),
-            "the note names the declared non-claim `{variant:?}`"
+            flattened.contains(&format!("{claim} (`{variant:?}`)")),
+            "the note pairs `{claim}` with the declared non-claim `{variant:?}`"
         );
     }
     for required in [
