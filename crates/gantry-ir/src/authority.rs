@@ -43,6 +43,8 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 
+use crate::agent::{ToolSlotId, ToolSlotKind};
+use crate::facts::StaticSiteId;
 use crate::generated::RecoveryClass;
 use crate::manifest::encode_hex;
 use crate::{CanonicalImplementationIdentity, CanonicalPath, CanonicalSignature};
@@ -294,6 +296,7 @@ impl AuthorityBindingId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityAuthorityClosure {
     instances: Vec<AuthorityBindingId>,
+    slots: Vec<SiteRequirementSlotId>,
 }
 
 impl CapabilityAuthorityClosure {
@@ -307,12 +310,51 @@ impl CapabilityAuthorityClosure {
     /// so duplicates count toward it.
     pub const MAXIMUM_INSTANCES: usize = 4096;
 
+    /// The largest number of supplied requirement slots one construction admits.
+    ///
+    /// The bound is measured over the supplied slots before deduplication, so
+    /// duplicates count toward it, and a larger input is refused with
+    /// [`AuthorityError::ClosureExceedsMaximum`] instead of being truncated.
+    pub const MAXIMUM_SLOTS: usize = 4096;
+
     /// Builds the closure over the supplied reachable capability bindings.
     ///
     /// Instances are deduplicated by binding identity and ordered canonically by
-    /// that identity.
+    /// that identity. A closure built this way declares no requirement slot,
+    /// which is exact for a reachable set whose operation sites expose no slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthorityError::ClosureExceedsMaximum`] when the supplied
+    /// instances exceed [`Self::MAXIMUM_INSTANCES`].
     pub fn new(
         instances: impl IntoIterator<Item = AuthorityBindingId>,
+    ) -> Result<Self, AuthorityError> {
+        Self::with_slots(instances, [])
+    }
+
+    /// Builds the closure over the supplied bindings and requirement slots.
+    ///
+    /// `GNT-3-T-AUTHORITY-CLOSURE` requires the closure to contain the declared
+    /// requirement of every exact operation site, including the agent-,
+    /// model-exposed-, handler-, and operation-slots attached to those sites.
+    /// Each supplied [`SiteRequirementSlotId`] is one such site-qualified slot.
+    ///
+    /// Instances are deduplicated by binding identity and ordered canonically by
+    /// that identity; slots are deduplicated by slot identity and ordered
+    /// canonically by that identity, so two closures over the same supplied
+    /// entries are equal whatever the traversal order. Least-ness stays the
+    /// caller's obligation in both directions: this construction never adds a
+    /// binding or a slot the caller did not supply.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthorityError::ClosureExceedsMaximum`] when the supplied
+    /// instances exceed [`Self::MAXIMUM_INSTANCES`] or the supplied slots exceed
+    /// [`Self::MAXIMUM_SLOTS`].
+    pub fn with_slots(
+        instances: impl IntoIterator<Item = AuthorityBindingId>,
+        slots: impl IntoIterator<Item = SiteRequirementSlotId>,
     ) -> Result<Self, AuthorityError> {
         let mut collected = Vec::new();
         for instance in instances {
@@ -326,8 +368,21 @@ impl CapabilityAuthorityClosure {
         }
         collected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         collected.dedup_by(|left, right| left.as_str() == right.as_str());
+        let mut collected_slots = Vec::new();
+        for slot in slots {
+            collected_slots.push(slot);
+            if collected_slots.len() > Self::MAXIMUM_SLOTS {
+                return Err(AuthorityError::ClosureExceedsMaximum {
+                    observed: collected_slots.len(),
+                    maximum: Self::MAXIMUM_SLOTS,
+                });
+            }
+        }
+        collected_slots.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        collected_slots.dedup_by(|left, right| left.as_str() == right.as_str());
         Ok(Self {
             instances: collected,
+            slots: collected_slots,
         })
     }
 
@@ -335,6 +390,18 @@ impl CapabilityAuthorityClosure {
     #[must_use]
     pub fn instances(&self) -> &[AuthorityBindingId] {
         &self.instances
+    }
+
+    /// Returns the closure's requirement slots in canonical identity order.
+    #[must_use]
+    pub fn slots(&self) -> &[SiteRequirementSlotId] {
+        &self.slots
+    }
+
+    /// Returns whether the closure contains one exact requirement slot identity.
+    #[must_use]
+    pub fn contains_slot(&self, slot: &SiteRequirementSlotId) -> bool {
+        self.slots.iter().any(|declared| declared == slot)
     }
 
     /// Returns whether the closure contains one exact binding identity.
@@ -353,6 +420,74 @@ impl CapabilityAuthorityClosure {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.instances.is_empty()
+    }
+}
+
+/// One declared requirement slot of a [`CapabilityAuthorityClosure`]
+/// (`GNT-3-T-AUTHORITY-CLOSURE`).
+///
+/// The identity composes the exact operation site with the kind-qualified tool
+/// slot attached to that site, so one slot name at two sites, and two kinds of
+/// one slot at one site, are three distinct requirements. Every variable-length
+/// part is length-prefixed, so two different slots cannot share one identity, and
+/// the structural position is spelled by its ordered numeric components rather
+/// than by any source span or physical path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SiteRequirementSlotId {
+    site: StaticSiteId,
+    slot: ToolSlotId,
+    kind: ToolSlotKind,
+    text: Arc<str>,
+}
+
+impl SiteRequirementSlotId {
+    /// Derives one requirement-slot identity from its exact site and slot.
+    #[must_use]
+    pub fn new(site: StaticSiteId, slot: ToolSlotId, kind: ToolSlotKind) -> Self {
+        let position = site
+            .position()
+            .components()
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(".");
+        let text = format!(
+            "site-slot:{}:{}:{}:{}",
+            encode_text(site.workflow().as_str()),
+            encode_text(&position),
+            encode_text(slot.as_str()),
+            kind.wire_name()
+        );
+        Self {
+            site,
+            slot,
+            kind,
+            text: Arc::from(text),
+        }
+    }
+
+    /// Returns the exact portable identity spelling.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    /// Returns the exact operation site this slot is attached to.
+    #[must_use]
+    pub const fn site(&self) -> &StaticSiteId {
+        &self.site
+    }
+
+    /// Returns the declared tool slot.
+    #[must_use]
+    pub const fn slot(&self) -> &ToolSlotId {
+        &self.slot
+    }
+
+    /// Returns the declared slot kind.
+    #[must_use]
+    pub const fn kind(&self) -> ToolSlotKind {
+        self.kind
     }
 }
 
@@ -1584,7 +1719,7 @@ mod tests {
     use super::{
         AUTHORITY_RIGHT_ORDER, AdmissionRequest, AuthorityBindingId, AuthorityError,
         AuthorityFence, AuthorityGeneration, AuthorityRequirementId, AuthorityRight,
-        CapabilityAuthorityClosure, FenceCategory, FenceState, RightsSet,
+        CapabilityAuthorityClosure, FenceCategory, FenceState, RightsSet, SiteRequirementSlotId,
     };
     use crate::generated::RecoveryClass;
     use crate::{
@@ -1870,5 +2005,181 @@ mod tests {
         assert_eq!(empty.len(), 0);
         assert!(empty.instances().is_empty());
         assert!(!empty.contains(&reachable));
+    }
+
+    fn fixture_site(name: &str, component: u64) -> crate::facts::StaticSiteId {
+        crate::facts::StaticSiteId::new(
+            CanonicalPath::new(&format!("crate::{name}"))
+                .unwrap_or_else(|error| panic!("the fixture path is canonical: {error}")),
+            crate::facts::StructuralPosition::new(vec![component])
+                .unwrap_or_else(|error| panic!("the fixture position is nonempty: {error}")),
+        )
+    }
+
+    fn fixture_slot(package: &str, name: &str) -> crate::agent::ToolSlotId {
+        crate::agent::ToolSlotId::derive(package, name)
+            .unwrap_or_else(|error| panic!("the fixture slot is declared: {error}"))
+    }
+
+    fn fixture_requirement_slot(
+        site: &str,
+        component: u64,
+        name: &str,
+        kind: crate::agent::ToolSlotKind,
+    ) -> SiteRequirementSlotId {
+        SiteRequirementSlotId::new(
+            fixture_site(site, component),
+            fixture_slot("fixture", name),
+            kind,
+        )
+    }
+
+    #[test]
+    fn capability_authority_closure_orders_and_dedups_requirement_slots() {
+        let first = fixture_requirement_slot(
+            "alpha",
+            0,
+            "search",
+            crate::agent::ToolSlotKind::ProviderTool,
+        );
+        let second = fixture_requirement_slot(
+            "beta",
+            1,
+            "fetch",
+            crate::agent::ToolSlotKind::SourceHandler,
+        );
+        let forward = CapabilityAuthorityClosure::with_slots([], [first.clone(), second.clone()])
+            .unwrap_or_else(|error| panic!("the declared slots are within the bound: {error}"));
+        let reversed = CapabilityAuthorityClosure::with_slots([], [second.clone(), first.clone()])
+            .unwrap_or_else(|error| panic!("the declared slots are within the bound: {error}"));
+        assert_eq!(forward, reversed, "canonical order is traversal-order free");
+        assert_eq!(forward.slots().len(), 2);
+        assert!(forward.contains_slot(&first));
+        assert!(forward.contains_slot(&second));
+        let duplicated =
+            CapabilityAuthorityClosure::with_slots([], [first.clone(), first.clone(), second])
+                .unwrap_or_else(|error| panic!("duplicates stay within the bound: {error}"));
+        assert_eq!(
+            duplicated, forward,
+            "one slot identity enters the closure once"
+        );
+    }
+
+    #[test]
+    fn capability_authority_closure_qualifies_requirement_slots_by_site() {
+        let here = fixture_requirement_slot(
+            "alpha",
+            0,
+            "search",
+            crate::agent::ToolSlotKind::ProviderTool,
+        );
+        let there = fixture_requirement_slot(
+            "alpha",
+            1,
+            "search",
+            crate::agent::ToolSlotKind::ProviderTool,
+        );
+        let elsewhere = fixture_requirement_slot(
+            "beta",
+            0,
+            "search",
+            crate::agent::ToolSlotKind::ProviderTool,
+        );
+        assert_ne!(here, there, "one slot at two positions is two requirements");
+        assert_ne!(
+            here, elsewhere,
+            "one slot in two workflows is two requirements"
+        );
+        let closure =
+            CapabilityAuthorityClosure::with_slots([], [here.clone(), there.clone(), elsewhere])
+                .unwrap_or_else(|error| panic!("the declared slots are within the bound: {error}"));
+        assert_eq!(closure.slots().len(), 3);
+        assert!(closure.contains_slot(&here));
+        assert!(closure.contains_slot(&there));
+    }
+
+    #[test]
+    fn capability_authority_closure_qualifies_requirement_slots_by_kind() {
+        let provider = fixture_requirement_slot(
+            "alpha",
+            0,
+            "search",
+            crate::agent::ToolSlotKind::ProviderTool,
+        );
+        let handler = fixture_requirement_slot(
+            "alpha",
+            0,
+            "search",
+            crate::agent::ToolSlotKind::SourceHandler,
+        );
+        assert_ne!(
+            provider, handler,
+            "one slot name under two kinds is two requirements"
+        );
+        assert_eq!(provider.kind().wire_name(), "provider-tool");
+        assert_eq!(handler.kind().wire_name(), "source-handler");
+    }
+
+    #[test]
+    fn capability_authority_closure_refuses_oversized_requirement_slot_input() {
+        let slot = fixture_requirement_slot(
+            "alpha",
+            0,
+            "search",
+            crate::agent::ToolSlotKind::ProviderTool,
+        );
+        let oversized = vec![slot; CapabilityAuthorityClosure::MAXIMUM_SLOTS + 1];
+        let error = CapabilityAuthorityClosure::with_slots([], oversized)
+            .err()
+            .unwrap_or_else(|| panic!("one slot past the bound is refused"));
+        assert!(
+            matches!(
+                error,
+                AuthorityError::ClosureExceedsMaximum { maximum, .. }
+                    if maximum == CapabilityAuthorityClosure::MAXIMUM_SLOTS
+            ),
+            "the refusal names the declared slot bound"
+        );
+    }
+
+    #[test]
+    fn capability_authority_closure_without_slots_declares_none() {
+        let reachable = fixture_binding(&fixture_requirement("reachable"), &TypeDescriptor::INT);
+        let closure = CapabilityAuthorityClosure::new([reachable.clone()])
+            .unwrap_or_else(|error| panic!("the declared closure is within the bound: {error}"));
+        assert_eq!(closure.instances(), std::slice::from_ref(&reachable));
+        assert!(
+            closure.slots().is_empty(),
+            "a closure that supplies no slot declares none"
+        );
+        assert!(!closure.contains_slot(&fixture_requirement_slot(
+            "alpha",
+            0,
+            "search",
+            crate::agent::ToolSlotKind::ProviderTool,
+        )));
+    }
+
+    #[test]
+    fn site_requirement_slot_identity_is_prefixed_and_stable() {
+        let slot =
+            fixture_requirement_slot("alpha", 2, "search", crate::agent::ToolSlotKind::Composite);
+        assert!(slot.as_str().starts_with("site-slot:"));
+        assert_eq!(slot.kind(), crate::agent::ToolSlotKind::Composite);
+        assert_eq!(slot.site().position().components(), &[2]);
+        assert_eq!(
+            slot.slot().as_str(),
+            fixture_slot("fixture", "search").as_str()
+        );
+        assert_eq!(
+            slot,
+            fixture_requirement_slot("alpha", 2, "search", crate::agent::ToolSlotKind::Composite)
+        );
+        assert_ne!(
+            slot.as_str(),
+            fixture_requirement_slot("alpha", 20, "search", crate::agent::ToolSlotKind::Composite)
+                .as_str(),
+            "length-prefixed parts keep neighbouring numbers distinct"
+        );
     }
 }
