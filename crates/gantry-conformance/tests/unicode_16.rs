@@ -4,10 +4,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::unicode::{
-    UNICODE_VERSION, confusable_skeleton, grapheme_break, is_extended_pictographic,
-    is_identifier_recommended, is_identifier_security_excluded, is_nfc, is_white_space,
-    is_xid_continue, is_xid_start, normalize_nfc, normalize_nfd, push_full_lowercase,
-    push_full_uppercase, script, script_extensions, to_full_lowercase, to_full_uppercase,
+    UNICODE_VERSION, confusable_skeleton, grapheme_break, indic_conjunct_break,
+    is_extended_pictographic, is_identifier_recommended, is_identifier_security_excluded, is_nfc,
+    is_white_space, is_xid_continue, is_xid_start, normalize_nfc, normalize_nfd,
+    push_full_lowercase, push_full_uppercase, script, script_extensions, to_full_lowercase,
+    to_full_uppercase,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -144,6 +145,66 @@ fn extended_pictographic_matches_the_pinned_emoji_data() {
         assigned > 0,
         "the pinned ranges assign at least one code point"
     );
+}
+
+#[test]
+fn indic_conjunct_break_matches_the_pinned_derived_core_properties() {
+    let text = read_text(&unicode_root().join("ucd/DerivedCoreProperties.txt"));
+    let mut expected = vec!["None"; 0x11_0000];
+    let mut listed: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        let row = line.split('#').next().unwrap_or_default().trim();
+        if row.is_empty() {
+            continue;
+        }
+        let mut fields = row.split(';');
+        let (Some(range), Some(property)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        if property.trim() != "InCB" {
+            continue;
+        }
+        let value = fields.next().unwrap_or_default().trim();
+        let (start, end) = pinned_range(range.trim());
+        for code in start..=end {
+            expected[code as usize] = value;
+        }
+        if !listed.contains(&value) {
+            listed.push(value);
+        }
+    }
+    assert_eq!(
+        listed.len(),
+        3,
+        "the pinned data lists three non-default values"
+    );
+    for value in &listed {
+        assert!(
+            ["Consonant", "Extend", "Linker"].contains(value),
+            "the pinned value {value} is declared"
+        );
+    }
+    let mut observed: Vec<&str> = Vec::new();
+    for code in 0..=0x10_FFFF_u32 {
+        let Some(character) = char::from_u32(code) else {
+            continue;
+        };
+        let spelling = indic_conjunct_break(character).spelling();
+        assert_eq!(
+            spelling, expected[code as usize],
+            "Indic_Conjunct_Break of U+{code:04X}"
+        );
+        if !observed.contains(&spelling) {
+            observed.push(spelling);
+        }
+    }
+    assert!(observed.contains(&"None"), "the default value is reachable");
+    for value in listed {
+        assert!(
+            observed.contains(&value),
+            "the pinned value {value} is reachable through the lookup"
+        );
+    }
 }
 
 #[test]
