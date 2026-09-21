@@ -121,14 +121,45 @@ fn note_names_the_declared_ownership_and_gated_obligations() {
         "the handoff record distinguishes admission validity from work limits"
     );
     assert!(
-        section.contains("publishes no work limit and no cancellation safe point"),
-        "the handoff record states the unbounded kernels' gated obligation"
+        section.contains("publish no declared work limit yet"),
+        "the handoff record states the remaining kernels' undeclared limit"
     );
     assert!(
         !section
             .contains("Every input-dependent kernel of the section has an exact declared bound"),
         "the handoff record does not claim a bound for every kernel"
     );
+}
+
+#[test]
+fn kernels_examine_their_input_in_one_forward_pass() {
+    let note = read_workspace_file("docs/text-foundation.md");
+    let record = section_body(&note, "## Declared ownership and handoff");
+    for required in [
+        "8697435",
+        "16ea7fd",
+        "stable counting sort",
+        "one output buffer",
+        "advances one forward state per scalar",
+    ] {
+        assert!(
+            record.contains(required),
+            "the record names the work shape `{required}`"
+        );
+    }
+    let source = read_workspace_file("crates/gantry-core/src/unicode.rs");
+    for removed in [
+        "indic_conjunct_before",
+        "extended_pictographic_before_zwj",
+        "has_cased_before",
+        "has_cased_after",
+        "codes.remove(",
+    ] {
+        assert!(
+            !source.contains(removed),
+            "the kernel source does not name the removed scan `{removed}`"
+        );
+    }
 }
 
 /// Returns the body of one note section: the text between its heading and the next level-two
