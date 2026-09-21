@@ -306,3 +306,46 @@ fn release_points_and_charge_conservation_are_identical_across_strategies() {
     }
     assert!(states[0].4 > 0, "the differential exercised a real release");
 }
+
+/// The declared write accounting for a geometrically growing write sequence.
+///
+/// This pins the model's declared accounting against a tally the test keeps itself; it does not
+/// measure an implementation and certifies no wall-clock or allocation behaviour.
+#[test]
+fn growing_write_chunks_charge_work_linear_in_the_data_handled() {
+    const TARGET: usize = 4096;
+    for strategy in StorageStrategy::ALL {
+        let quota = ScalarQuota::charged(TARGET, 0)
+            .unwrap_or_else(|error| panic!("the quota is admitted: {error}"));
+        let mut value = ByteBufferValue::new(strategy, quota);
+        let mut handled = 0_usize;
+        let mut expected = 0_usize;
+        let mut chunk = 1_usize;
+        while handled < TARGET {
+            let length = chunk.min(TARGET - handled);
+            if matches!(strategy, StorageStrategy::CopyOnWrite) {
+                expected += handled;
+            }
+            value
+                .extend(&vec![0x2e_u8; length])
+                .unwrap_or_else(|error| panic!("the chunk is admitted: {error}"));
+            handled += length;
+            chunk = chunk.saturating_mul(2);
+        }
+        assert_eq!(value.len(), TARGET);
+        assert_eq!(
+            value.physical_work(),
+            expected,
+            "the accumulated work matches the test's own tally of the declared rule"
+        );
+        assert!(
+            expected == 0 || value.strategy().write_work(handled) > 0,
+            "the per-step declaration agrees with the aggregate for a representative length"
+        );
+        assert!(
+            expected <= 2 * handled,
+            "geometric growth stays linear: {expected} <= {}",
+            2 * handled
+        );
+    }
+}

@@ -15,7 +15,8 @@ with exactly three members, published by `StorageStrategy::ALL` and spelled by `
 is that strategy.
 
 Physical work is nonsemantic: `duplication_work` publishes the octets a strategy copies on
-duplication and `write_work` publishes the octets it copies on a write that follows an alias;
+duplication and `write_work` publishes the octets a strategy copies for one write operation — the
+model charges the declared write work on every write, whether or not an alias is live;
 `ByteBufferValue::physical_work` accumulates them, and no source program observes the result. The
 semantic layer of a buffer is `ScalarQuota`: `charged`, `reserve`, and `release` publish the
 charge, and every strategy carries the identical quota state.
