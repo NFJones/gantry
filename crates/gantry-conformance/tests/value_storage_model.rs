@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{ByteBufferValue, RESOURCE_CLAUSES, ScalarQuota, StorageStrategy};
-use gantry::ir::{IntegerValue, ScalarError, ScalarKind, ScalarWidth};
+use gantry::ir::{BytesValue, IntegerValue, ScalarError, ScalarKind, ScalarWidth};
 
 /// The workspace root of this checkout.
 fn workspace_root() -> PathBuf {
@@ -183,9 +183,9 @@ fn frozen_values_round_trip_identically_across_strategies() {
     let value = IntegerValue::new(kind, -7)
         .unwrap_or_else(|error| panic!("the integer is admitted: {error}"));
     let encoded = value.to_octets();
-    let short = &encoded[..encoded.len() - 1];
-    let expected_loss = refusal_of(IntegerValue::from_octets(kind, short));
+    let expected_text: String = encoded.iter().map(|octet| format!("{octet:02x}")).collect();
     let mut frozen = Vec::new();
+    let mut losses = Vec::new();
     for strategy in StorageStrategy::ALL {
         let buffer = buffer(strategy, &encoded);
         let bytes = buffer
@@ -198,17 +198,29 @@ fn frozen_values_round_trip_identically_across_strategies() {
         assert_eq!(sealed, encoded, "external encoding identity");
         let text = bytes.to_canonical_text();
         assert_eq!(
+            text, expected_text,
+            "the canonical text is the exact lowercase hexadecimal spelling"
+        );
+        let reparsed = BytesValue::parse_canonical_text(&text)
+            .unwrap_or_else(|error| panic!("the canonical text parses: {error}"));
+        let recovered: Vec<u8> = (0..reparsed.len())
+            .map(|index| reparsed.octet(index))
+            .collect::<Result<Vec<u8>, ScalarError>>()
+            .unwrap_or_else(|error| panic!("every reparsed octet is addressable: {error}"));
+        assert_eq!(
+            recovered, sealed,
+            "the canonical text round-trips to this strategy's sealed octets"
+        );
+        assert_eq!(
             IntegerValue::from_octets(kind, &sealed)
                 .unwrap_or_else(|error| panic!("the value round-trips: {error}"))
                 .value(),
             -7,
             "the external encoding round-trips exactly"
         );
-        assert_eq!(
-            refusal_of(IntegerValue::from_octets(kind, short)),
-            expected_loss,
-            "a projection that loses a width is refused identically under every strategy"
-        );
+        // The width-loss projection is taken from this strategy's own sealed octets.
+        let lossy = &sealed[..sealed.len() - 1];
+        losses.push(refusal_of(IntegerValue::from_octets(kind, lossy)));
         frozen.push((sealed, text));
     }
     for pair in frozen.windows(2) {
@@ -218,9 +230,14 @@ fn frozen_values_round_trip_identically_across_strategies() {
             "identical canonical text after freezing"
         );
     }
-    assert_eq!(
-        frozen[0].1.len(),
-        frozen[0].0.len() * 2,
-        "the canonical text spells every sealed octet"
+    for fingerprint in &losses {
+        assert_eq!(
+            fingerprint, &losses[0],
+            "a width-loss projection taken from any strategy's sealed octets is refused identically"
+        );
+    }
+    assert!(
+        !losses[0].is_empty(),
+        "the width-loss projection is refused with a named diagnostic"
     );
 }
