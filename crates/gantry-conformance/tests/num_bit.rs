@@ -46,17 +46,13 @@ fn integer_bit_operations_surface_is_published() {
     let note = read_text(&workspace_root().join("docs/num-foundation.md"));
 
     let anchor = "GNT-40.4-integer-bit-operations";
-    assert_eq!(
-        NUM_CLAUSES.last(),
-        Some(&anchor),
-        "the bit operations clause is the specification's final clause"
+    assert!(
+        NUM_CLAUSES.contains(&anchor),
+        "the bit operations clause is declared by the numeric clause vocabulary"
     );
     assert!(note.contains(anchor), "the note names `{anchor}`");
     let clause = clause_body(&specification, anchor);
-    assert!(
-        specification.trim_end().ends_with(clause.trim_end()),
-        "the final clause body runs to the end of the specification"
-    );
+    assert!(!clause.trim().is_empty(), "the clause body publishes text");
     assert_eq!(
         BinaryBitOperation::ALL.map(BinaryBitOperation::wire_name),
         ["and", "or", "xor"]

@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "04b1a42a636a7c5067179e778d889141031de2aef659e8fafaf08b163d8b1301",
+  "specification_sha256": "0a6b183d0358c60bc7c45d430332225aac50eb3d17c8f799a44b84f28a085988",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15641,
+      "end_line": 15645,
       "rationale": null
     }
   ],
@@ -41688,6 +41688,45 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_bit.rs#integer_bit_operations_are_exact_and_refuse_out_of_domain"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.5-finite-float-algorithms",
+      "span_start_line": 15642,
+      "span_end_line": 15645,
+      "anchor_line": 15643,
+      "body_start_line": 15644,
+      "body_end_line": 15645,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15644,
+          "end_line": 15645,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_float.rs#finite_float_algorithms_are_exact_and_total"
               ],
               "rationale": null
             }

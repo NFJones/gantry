@@ -318,12 +318,13 @@ pub use prng::{
     DeterministicPrng, NUM_CLAUSES, PRNG_ALGORITHM, PRNG_ALGORITHM_VERSION, PRNG_MIX_FIRST,
     PRNG_MIX_SECOND, PRNG_STATE_INCREMENT, PrngAlgorithmVersion,
 };
-// The Section 40 checked-integer algorithms are declaration-only primitives: exact canonical values
-// or exactly one declared deterministic failure, with no wrapping, saturation, masking, coercion,
-// implicit widening, or host dependence.
+// The Section 40 numeric algorithms are declaration-only primitives: the checked integer and bit
+// operations publish exact canonical values or exactly one declared deterministic failure, and the
+// finite-float algorithms publish exact canonical values only, with no wrapping, saturation,
+// masking, coercion, implicit widening, ambient rounding, or host dependence.
 pub use numeric::{
-    BinaryBitOperation, CheckedIntegerAlgorithm, NEGATE_WIRE_NAME, NumericConversion,
-    UnaryBitOperation, float_to_int, int_to_float, negate,
+    BinaryBitOperation, BinaryFloatAlgorithm, CheckedIntegerAlgorithm, NEGATE_WIRE_NAME,
+    NumericConversion, UnaryBitOperation, UnaryFloatAlgorithm, float_to_int, int_to_float, negate,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade

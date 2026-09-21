@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "04b1a42a636a7c5067179e778d889141031de2aef659e8fafaf08b163d8b1301",
-  "byte_length": 1063111,
-  "line_count": 15641,
+  "specification_sha256": "0a6b183d0358c60bc7c45d430332225aac50eb3d17c8f799a44b84f28a085988",
+  "byte_length": 1064609,
+  "line_count": 15645,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "412787b058c7544ee3db3d6d3cec9d9fe0a0f551d6533bc92156cc4129322bed",
+      "sha256": "01b23ddf862dc2d4910db068f5ebfd28147219ae8bb5a0fd4949d52045d1df2c",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15641,
-      "sha256": "3cb8ba4876b5b8b15ddf86190862c475be4c9ce42e8838e012881b6bd738dd0f",
+      "end_line": 15645,
+      "sha256": "380a363457a9e52ed5f764c86bd1604c0b1aadc9a152abab766527d6a35680a8",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "b952c88322d71770e9859faf398158fa7e52bd735cb251c02a6bae61d24f5e91",
+      "span_sha256": "c1dc278403ba100c4d57c2655fd8c82187255af26e506baeab988d2e900f0854",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "0688ab98e20b017ae719a38358e2f9546d335ae261c92f19aeecae4de9f5cf7b",
+      "body_sha256": "c3aa090087b1f7e5c8db4a81737074c02c0e8d095d9afd017cf116c17f885f24",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -42823,6 +42823,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/num_bit.rs#integer_bit_operations_are_exact_and_refuse_out_of_domain"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-40.5-finite-float-algorithms",
+      "span_start_line": 15642,
+      "span_end_line": 15645,
+      "span_sha256": "278a131d33831ef9a6244f06fbb0e16f04c084267d39cfa577c07282cac6ce10",
+      "anchor_line": 15643,
+      "body_start_line": 15644,
+      "body_end_line": 15645,
+      "body_sha256": "333fd9764164d8974709786923af2ad097b7d8b0a964df7842a66eb3b3caf116",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15644,
+          "end_line": 15645,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/num_float.rs#finite_float_algorithms_are_exact_and_total"
               ],
               "rationale": null
             }

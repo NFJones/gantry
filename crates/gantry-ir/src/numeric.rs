@@ -176,6 +176,79 @@ impl UnaryBitOperation {
     }
 }
 
+/// One admitted unary finite-float algorithm of `GNT-40.5`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnaryFloatAlgorithm {
+    /// Sign-flipped operand.
+    Negate,
+    /// Magnitude of the operand.
+    Abs,
+}
+
+impl UnaryFloatAlgorithm {
+    /// Every admitted unary finite-float algorithm, in declaration order.
+    pub const ALL: [Self; 2] = [Self::Negate, Self::Abs];
+
+    /// Returns the canonical wire spelling of this algorithm.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Negate => "negate",
+            Self::Abs => "abs",
+        }
+    }
+
+    /// Applies the algorithm to exactly one canonical operand (`GNT-40.5`).
+    ///
+    /// Both algorithms are exact over the canonical `Float` domain and total: the sign flip and the
+    /// magnitude neither round nor refuse an operand, and nothing here consults a host math library,
+    /// an ambient rounding mode, timing, prior calls, or global state.
+    #[must_use]
+    pub fn apply(self, value: GantryFloat) -> GantryFloat {
+        match self {
+            Self::Negate => value.negated(),
+            Self::Abs => GantryFloat::new(value.get().abs())
+                .unwrap_or_else(|| unreachable!("a magnitude of a finite value is finite")),
+        }
+    }
+}
+
+/// One admitted binary finite-float algorithm of `GNT-40.5`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BinaryFloatAlgorithm {
+    /// Lesser of the two operands under the canonical total order.
+    Minimum,
+    /// Greater of the two operands under the canonical total order.
+    Maximum,
+}
+
+impl BinaryFloatAlgorithm {
+    /// Every admitted binary finite-float algorithm, in declaration order.
+    pub const ALL: [Self; 2] = [Self::Minimum, Self::Maximum];
+
+    /// Returns the canonical wire spelling of this algorithm.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Minimum => "minimum",
+            Self::Maximum => "maximum",
+        }
+    }
+
+    /// Applies the algorithm to exactly two canonical operands (`GNT-40.5`).
+    ///
+    /// The comparison uses the canonical `Float` value's own total order, so an equal pair publishes
+    /// that equal value and neither algorithm rounds, refuses an operand, or consults a host math
+    /// library, an ambient rounding mode, timing, prior calls, or global state.
+    #[must_use]
+    pub fn apply(self, left: GantryFloat, right: GantryFloat) -> GantryFloat {
+        match self {
+            Self::Minimum => left.min(right),
+            Self::Maximum => left.max(right),
+        }
+    }
+}
+
 /// One admitted numeric conversion of `GNT-40.3`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NumericConversion {
