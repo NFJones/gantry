@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{CharValue, TEXT_CLAUSES, TextValue};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 11] = [
+const EXPECTED_CLAUSES: [&str; 10] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -18,7 +18,6 @@ const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.7-canonical-grapheme-clusters",
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
-    "GNT-41.10-text-work-limits",
 ];
 const TRAVERSAL_CLAUSE: &str = "GNT-41.5-canonical-text-traversal";
 
@@ -63,11 +62,7 @@ fn traversal_publishes_exactly_the_scalar_sequence() {
         scalar("\u{301}"),
     ];
     assert_eq!(published, expected);
-    assert_eq!(
-        TextValue::from_scalars(&published)
-            .unwrap_or_else(|error| panic!("the scalar sequence is admitted: {error}")),
-        value
-    );
+    assert_eq!(TextValue::from_scalars(&published), value);
 }
 
 #[test]

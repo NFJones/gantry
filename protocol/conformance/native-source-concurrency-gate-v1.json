@@ -18,43 +18,43 @@
   },
   {
    "path": "protocol/conformance/async-cancellation-v1.json",
-   "sha256": "d89984ce8aaee3e8e730f200ecd5a4f91070c7de777b4a6d609fb5615639a5ef"
+   "sha256": "efa0ad0cd9a7fc19151d74a85fd259b2de5531a23824be8f09444b65880eb282"
   },
   {
    "path": "protocol/conformance/async-coordinator-model-v1.json",
-   "sha256": "372f8edf0ea9a24280f76568f654d8b84cb2cfae269b9fd0c489c6e1c50db2bd"
+   "sha256": "96e43f39dd74866645636045a7a51289cb33d9d2796d4500519d3b7073f718f0"
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "b5a19670e19f0cb4d6e9ae0bd119787aac61dd2ee4ba3ab4c89894b860f8d2a0"
+   "sha256": "ac9bb9cd64f1ee93a852ce58964651af59cfce7eaa082ad7af75b34c55d0e047"
   },
   {
    "path": "protocol/conformance/async-execution-observation-v1.json",
-   "sha256": "13447ff3480f1b60bc9d566c3273dadab5fcfab13a2c66d60d83839babe25730"
+   "sha256": "3a88947c01badd71d27a344710e9bb8a096ac67f9753826f765e6f89238ac0c9"
   },
   {
    "path": "protocol/conformance/async-source-lowering-v1.json",
-   "sha256": "46c7a63a2480686b21b8969bfcbe910c0488bf26ce15428e664c67d48d3e3812"
+   "sha256": "eab52bb88326767dbd6a445e636395fc9bf6f19fd7a315161410e190580c111a"
   },
   {
    "path": "protocol/conformance/durable-coordination-v1.json",
-   "sha256": "aac92f657e5924d569ffc5cbf170b0c80e74405b48f77197c35fdf419ff809f7"
+   "sha256": "94a43d7f439a8b910960fd6fe22d64f2bb9feb656bbee4673e223d9f18fcd42a"
   },
   {
    "path": "protocol/conformance/executable-task-ir-v1.json",
-   "sha256": "89660f20c43822923e36d9a48cad38f09911437352d1573c96ce90d1f822ed82"
+   "sha256": "9902e900e1598b42de03a79674c585ff9fd2fe67ab116cde2f6d1eb6bad859d3"
   },
   {
    "path": "protocol/conformance/source-join-v1.json",
-   "sha256": "443f7590a17ff42c4d7dfaeca4896702c07ae8b1630bd7c012794b9af3ddef31"
+   "sha256": "5dd0370a2fc78cf4f656490b4f4e932868badaf64de2d9969a8f2a3a42bde56a"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
-   "sha256": "60011da7648e264bbb8b2e1f9adfc2737e3a5864ab14c2789fe878d03a889789"
+   "sha256": "5ece290b182a0b5cdc7d269acb8396d1cc366ebed93ab3e223fa439f58046a16"
   },
   {
    "path": "protocol/conformance/tokio-executor-v1.json",
-   "sha256": "532b6e9aa325562c76d7281e794bd781b5a0253ce0cd207f77aa7e4dcf5bb0e8"
+   "sha256": "8aaea97758c0c942b62979d4e2a8ea1e310b616403cec35a81d18b29858f1712"
   }
  ],
  "assignment_authentication": {
@@ -263,7 +263,7 @@
    "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#registration_and_settlement_interleavings_do_not_lose_wakeups"
   }
  ],
- "specification_sha256": "69627988adfe3a73bbd5f1fb53a7cff2bf4d047610afa216936ee002e70e04d5",
+ "specification_sha256": "d6fdfadf479343d5604aa8da8fae7f489932cf616f048e98736a91a431c47762",
  "status": "verified",
  "validation_commands": [
   "timeout 180s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test native_source_concurrency_gate",

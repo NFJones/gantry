@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "69627988adfe3a73bbd5f1fb53a7cff2bf4d047610afa216936ee002e70e04d5",
-  "byte_length": 1106097,
-  "line_count": 15699,
+  "specification_sha256": "d6fdfadf479343d5604aa8da8fae7f489932cf616f048e98736a91a431c47762",
+  "byte_length": 1101999,
+  "line_count": 15695,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15699,
-      "sha256": "44943c5ad032c2ae00608691db8d805ad8753e351a3f78c9d84ea663661b646d",
+      "end_line": 15695,
+      "sha256": "9b7de390dc8d8e33328839d371fab01183298b05e3113cee4fa5bffa6ffcb71d",
       "rationale": null
     }
   ],
@@ -42875,11 +42875,11 @@
       "id": "GNT-40.6-canonical-numeric-text",
       "span_start_line": 15646,
       "span_end_line": 15649,
-      "span_sha256": "06da7002a9a0d620b1c9ef702ec170c90267d41add946b27918709a942725d3c",
+      "span_sha256": "d8dab1e1b755ac1a05a7462f35d628e26adf6a1d6d4b8e8da636e4eee30a8238",
       "anchor_line": 15647,
       "body_start_line": 15648,
       "body_end_line": 15649,
-      "body_sha256": "b1b5b81ad859f5110c404108516faba34b96f9fa67a679201ad9c5d1c51dbcb8",
+      "body_sha256": "439ad0d5456f8093cac3e4d539c8981858d7ea1034a00bc274ea266055888735",
       "profiles": [
         "analyzer"
       ],
@@ -42916,11 +42916,11 @@
       "id": "GNT-40.7-canonical-integer-overflow-modes",
       "span_start_line": 15650,
       "span_end_line": 15653,
-      "span_sha256": "4a730289b466711b5c11a1edb8754b3538b9c84a7728a6b475eaee5c4c39bfea",
+      "span_sha256": "f6232c49560b30808c56e21def6f2b42581c3a6064caf21dfbd68ed8b67cfe25",
       "anchor_line": 15651,
       "body_start_line": 15652,
       "body_end_line": 15653,
-      "body_sha256": "227258f786b1591f18b1e913503cf947b8bf22a5925058ebf6cfb31d9d659b51",
+      "body_sha256": "1ae6d63d3bfc738cf94a42b07de74f7293408763c2ead6901ddc12539395add1",
       "profiles": [
         "analyzer"
       ],
@@ -42998,11 +42998,11 @@
       "id": "GNT-41.1-canonical-text-values",
       "span_start_line": 15661,
       "span_end_line": 15664,
-      "span_sha256": "992058d6ba1c1701da428ef93af5efaf2db78491ea8834225da123738b4991e1",
+      "span_sha256": "30fb282c68db2c71710c2a56b720bfe4cca159da15cee2c47eec22a92b956925",
       "anchor_line": 15661,
       "body_start_line": 15662,
       "body_end_line": 15664,
-      "body_sha256": "3bd3bdcb03368fa29c115687cf83c01a6c11bb9ee85c143c272ba8d8428568b1",
+      "body_sha256": "95b9bdc5c00187489735d624caa6c3ecdd1c1d65b84800735cdeab9453cee29e",
       "profiles": [
         "analyzer"
       ],
@@ -43039,11 +43039,11 @@
       "id": "GNT-41.2-canonical-text-normalization",
       "span_start_line": 15665,
       "span_end_line": 15668,
-      "span_sha256": "ccb434871a905192867c74411b93d107d1c8e5076d85d6ab93fd41aeaa747398",
+      "span_sha256": "bead40eb60ebef3ad0710b7a46ff30f1a73079decab50ec5b159e9dc1d8efc4d",
       "anchor_line": 15665,
       "body_start_line": 15666,
       "body_end_line": 15668,
-      "body_sha256": "fbdcb3ce51d6a9a786442829e48b2d8db2580e284e86d1df761e26d5bef6e6d3",
+      "body_sha256": "50fc7938613440ee01dba69c7b85f9318d985a26740c70826bb07ff0e21526ab",
       "profiles": [
         "analyzer"
       ],
@@ -43081,11 +43081,11 @@
       "id": "GNT-41.3-canonical-text-case-mapping",
       "span_start_line": 15669,
       "span_end_line": 15672,
-      "span_sha256": "23f0ef8c5056d1e5089b251d6466d778d3926a14293f63a55a1dfaf88d2212de",
+      "span_sha256": "7adc23825871b423106fef96c9d59568549d9459ad5c26114f12f05bef1e4a87",
       "anchor_line": 15669,
       "body_start_line": 15670,
       "body_end_line": 15672,
-      "body_sha256": "3b5d27b3900a162a37cda97061f2b258dc3ba50e155a781a57a52a7348efb395",
+      "body_sha256": "bc36868a3aad311728d618f5f16ea29932d7d349fa1725ec39dd6419f183e58f",
       "profiles": [
         "analyzer"
       ],
@@ -43123,11 +43123,11 @@
       "id": "GNT-41.4-canonical-text-builders",
       "span_start_line": 15673,
       "span_end_line": 15676,
-      "span_sha256": "1ec925af91c0ba285b8022f758282dc6daa12741e7aec1bb8fad2412ad1022b9",
+      "span_sha256": "187a0a728b3f61201b025a8027a3e5705736d5d2f05036fff27478dfe5df4995",
       "anchor_line": 15673,
       "body_start_line": 15674,
       "body_end_line": 15676,
-      "body_sha256": "9861a463e0574cc96ed00ae822b7c5ece19080f815ba780876ea4aa7a17a4a32",
+      "body_sha256": "625b82647c69fc3c72d7f7a45ad680ec56f6b7431de7068176c1ac3872b49763",
       "profiles": [
         "analyzer"
       ],
@@ -43165,11 +43165,11 @@
       "id": "GNT-41.5-canonical-text-traversal",
       "span_start_line": 15677,
       "span_end_line": 15680,
-      "span_sha256": "9eec9a7cbaefc7b0c0290ceebcc44baf57b6536cd5edcf878e5143ea341aa34c",
+      "span_sha256": "ca3826ac017e95f154574080753527be5375eb430fd2e4ee383a81802370b456",
       "anchor_line": 15677,
       "body_start_line": 15678,
       "body_end_line": 15680,
-      "body_sha256": "0c9d4380b71e1e80175fa0498daa4b5a20757b441a63d68d5d2d603132cfa782",
+      "body_sha256": "675ce1f5dfe8703e782e4447296d6becf4b6c88463e75c091e038ebc2a76e8cf",
       "profiles": [
         "analyzer"
       ],
@@ -43207,11 +43207,11 @@
       "id": "GNT-41.6-canonical-text-comparison",
       "span_start_line": 15681,
       "span_end_line": 15684,
-      "span_sha256": "1f4be6ed1e87afd7255137258d95137b9b321e8b92da2590b77361e1bfe96e8e",
+      "span_sha256": "dc49dd797e493d655e97d0a01b4039ed0b69efebbae91c1d4d721eb2b3f216f5",
       "anchor_line": 15681,
       "body_start_line": 15682,
       "body_end_line": 15684,
-      "body_sha256": "9c37c7c58de7680ffed5a7adaf8c595e871fb7a15655d6cfa68ce5912bac16a3",
+      "body_sha256": "c5accf67ece9a2dd487236318b271f0798b2705dfa3698706a33fa9e8df02128",
       "profiles": [
         "analyzer"
       ],
@@ -43249,11 +43249,11 @@
       "id": "GNT-41.7-canonical-grapheme-clusters",
       "span_start_line": 15685,
       "span_end_line": 15688,
-      "span_sha256": "0d095482051020fed28a455fc12861a75d5bef9185376ace7fd9248d92490a26",
+      "span_sha256": "913dca8f608b745ab0cadcd21abce0eb91d2bfc9a537a8cadf0890755929d051",
       "anchor_line": 15685,
       "body_start_line": 15686,
       "body_end_line": 15688,
-      "body_sha256": "d9fcae408c690dc1d545a70e1ecb1260fbf62b77c3ec4f24650d4eb77e98aea8",
+      "body_sha256": "b55a56ad0ed4ecc5b644daf7ecf81100d9e11b40825cf59e02310666506fb9b2",
       "profiles": [
         "analyzer"
       ],
@@ -43333,11 +43333,11 @@
       "id": "GNT-41.9-canonical-text-conversions",
       "span_start_line": 15693,
       "span_end_line": 15695,
-      "span_sha256": "b299b8ed8f67da2cf4fe14f43dae972198a85b0b35072581d7a2290be8d23ff0",
+      "span_sha256": "6fb1f83a1940420e2e7cdfaf7972fe0a56397df3acd7bcf7a7f82bf007f2a6dd",
       "anchor_line": 15693,
       "body_start_line": 15694,
       "body_end_line": 15695,
-      "body_sha256": "0ff2d8975d3bed5bc0d0f72c3f81a0fd0c2fb4776e7af0f8274c7e269925fbc3",
+      "body_sha256": "2ddb4149e248b5770f4f1b5c3822d53f357c00b03f0973d76f6008fb260ab294",
       "profiles": [
         "analyzer"
       ],
@@ -43364,49 +43364,6 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_conversions.rs#conversions_clause_publishes_the_declared_exact_conversions",
                 "crates/gantry-conformance/tests/text_conversions.rs#conversions_refuse_unpaired_utf16_surrogates"
-              ],
-              "rationale": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "GNT-41.10-text-work-limits",
-      "span_start_line": 15696,
-      "span_end_line": 15699,
-      "span_sha256": "5ed378f91b7e4e7753e62152b7e817980e19aa36d16307a9831c32352620cb90",
-      "anchor_line": 15697,
-      "body_start_line": 15698,
-      "body_end_line": 15699,
-      "body_sha256": "9c1a835727f0957fc9d0b17723a0ad21a4edf8e958dd19dba7a26350edc8ddfc",
-      "profiles": [
-        "analyzer"
-      ],
-      "roles": [
-        "harness",
-        "implementation"
-      ],
-      "clauses": [
-        {
-          "key": "clause-001",
-          "start_line": 15698,
-          "end_line": 15699,
-          "profiles": [
-            "analyzer"
-          ],
-          "roles": [
-            "harness",
-            "implementation"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/text_limits.rs#declared_limits_are_published_and_exact",
-                "crates/gantry-conformance/tests/text_limits.rs#admissions_admit_exactly_the_declared_value_bound",
-                "crates/gantry-conformance/tests/text_limits.rs#every_kernel_completes_over_a_maximum_size_value"
               ],
               "rationale": null
             }

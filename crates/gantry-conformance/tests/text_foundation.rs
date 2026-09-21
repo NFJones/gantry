@@ -12,7 +12,7 @@ use gantry::ir::{
 
 /// The text surface this slice publishes, written out independently of the model and the note: the
 /// clause anchors in specification order and the registered refusal spellings in declaration order.
-const EXPECTED_CLAUSES: [&str; 11] = [
+const EXPECTED_CLAUSES: [&str; 10] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -23,16 +23,14 @@ const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.7-canonical-grapheme-clusters",
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
-    "GNT-41.10-text-work-limits",
 ];
-const EXPECTED_DIAGNOSTICS: [&str; 7] = [
+const EXPECTED_DIAGNOSTICS: [&str; 6] = [
     "text-invalid-utf8",
     "text-builder-bound",
     "text-pattern-syntax",
     "text-pattern-bound",
     "text-match-budget",
     "text-invalid-utf16",
-    "text-value-bound",
 ];
 
 #[test]
@@ -115,16 +113,16 @@ fn note_names_the_declared_ownership_and_gated_obligations() {
         "the handoff record states the gated runtime obligation"
     );
     assert!(
-        section.contains("Every kernel of the section declares an exact bound or budget"),
-        "the handoff record names the kernels' declared bounds"
+        section.contains("Only two kernels of the section declare an exact bound or budget"),
+        "the handoff record names exactly which kernels declare bounds"
     );
     assert!(
-        section.contains("enforces under `text-value-bound`"),
-        "the handoff record states that every admission enforces the declared value bound"
+        section.contains("are exact validity rules for their inputs, not work limits"),
+        "the handoff record distinguishes admission validity from work limits"
     );
     assert!(
-        section.contains("No cancellation safe point is published"),
-        "the handoff record states the gated safe-point obligation"
+        section.contains("publishes no work limit and no cancellation safe point"),
+        "the handoff record states the unbounded kernels' gated obligation"
     );
     assert!(
         !section
@@ -174,8 +172,8 @@ fn note_names_the_completion_criteria_and_their_evidence() {
         "three criteria are met and the limits-and-safe-points criterion is not"
     );
     assert!(
-        section.contains("**limits met, safe points gated**"),
-        "the limits-and-safe-points criterion is recorded with its limits met and safe points gated"
+        section.contains("**unmet, gated**"),
+        "the limits-and-safe-points criterion is recorded as unmet"
     );
     assert!(
         section.contains("does not resolve `GNT-GP-STDLIB-TEXT-001`"),
@@ -366,8 +364,7 @@ fn text_slicing_publishes_only_scalars_the_value_holds() {
 fn text_identity_is_the_scalar_sequence() {
     let from_octets = admitted("a\u{e9}".as_bytes());
     let scalars = [scalar("a"), scalar("\u{e9}")];
-    let from_scalars = TextValue::from_scalars(&scalars)
-        .unwrap_or_else(|error| panic!("the scalar sequence is admitted: {error}"));
+    let from_scalars = TextValue::from_scalars(&scalars);
     assert_eq!(from_scalars, from_octets);
     assert_eq!(
         from_scalars.canonical_octets(),
@@ -376,11 +373,7 @@ fn text_identity_is_the_scalar_sequence() {
     assert!(admitted(b"a") < admitted(b"b"));
     assert!(admitted(b"b") < admitted("\u{e9}".as_bytes()));
     assert!(admitted("\u{e9}".as_bytes()) < admitted("\u{1f600}".as_bytes()));
-    assert_eq!(
-        TextValue::empty(),
-        TextValue::from_scalars(&[])
-            .unwrap_or_else(|error| panic!("the empty scalar sequence is admitted: {error}"))
-    );
+    assert_eq!(TextValue::empty(), TextValue::from_scalars(&[]));
 }
 
 #[test]
