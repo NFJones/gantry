@@ -524,15 +524,22 @@ impl ResolvedRequirement {
 }
 
 /// The preflight resolution of one executable authority closure
-/// (`GNT-7.2` item 2 and `GNT-7.2-authority-rebinding`).
+/// (`GNT-7.2-authority-rebinding`).
 ///
-/// `GNT-7.2` requires the integration, before a new execution or resume begins,
-/// to resolve every declared requirement of the executable authority closure and
-/// to reject conflicting or ambiguous registrations during preflight; an
-/// unresolved requirement is a start or resume-start failure even when no
-/// reachable path is expected to use it. `GNT-7.2-authority-rebinding` requires
-/// resume to re-establish every requirement of that closure and to fail when any
-/// requirement cannot be rebound, without widening the closure.
+/// `GNT-7.2-authority-rebinding` requires resume to re-establish every
+/// requirement of the executable closure of `GNT-3-T-AUTHORITY-CLOSURE`, to fail
+/// resume-start when any requirement cannot be rebound, and not to widen the
+/// closure. Resolving the same requirements is what a new execution performs
+/// before interpretation begins, so an unsatisfied or ambiguously registered
+/// requirement is refused here rather than at first dispatch, whether or not a
+/// reachable path is expected to use it.
+///
+/// Two obligations that clause text also names are not this type's, and a caller
+/// must not read this surface as satisfying them: the canonical
+/// action-signature resolution and the single opaque action-mapping revision ID
+/// of `GNT-7.2` item 2, which belong to the agent and action-mapping boundary;
+/// and the requirement slots of the closure, whose identities are not
+/// requirement identities and are therefore neither resolved nor refused here.
 ///
 /// This type establishes exactly that scope and nothing more. It is not a
 /// per-call authorization and confers no dispatch right, which is the explicit
@@ -632,7 +639,9 @@ impl RequirementResolution {
     /// [`PreflightResolutionError::AmbiguousRequirement`]; and a replacement for
     /// a requirement this resolution does not carry is refused with
     /// [`PreflightResolutionError::RebindingWidensClosure`], so rebinding can
-    /// neither widen nor narrow the resolved scope.
+    /// neither widen nor narrow the resolved scope. A replacement outside that
+    /// scope is refused as widening before its own registrations are inspected,
+    /// so the widening refusal takes precedence over the ambiguity refusal.
     ///
     /// # Errors
     ///
@@ -658,6 +667,9 @@ impl RequirementResolution {
         let mut index = 0;
         while index < supplied.len() {
             let requirement = supplied[index].0.clone();
+            let Some(resolved) = self.entry_for(&requirement) else {
+                return Err(PreflightResolutionError::RebindingWidensClosure { requirement });
+            };
             let mut chosen: Option<AuthorityBindingId> = None;
             while index < supplied.len() && supplied[index].0 == requirement {
                 let candidate = &supplied[index].1;
@@ -670,9 +682,6 @@ impl RequirementResolution {
                 }
                 index += 1;
             }
-            let Some(resolved) = self.entry_for(&requirement) else {
-                return Err(PreflightResolutionError::RebindingWidensClosure { requirement });
-            };
             let Some(binding) = chosen else {
                 return Err(PreflightResolutionError::UnresolvedRequirement { requirement });
             };
@@ -733,7 +742,7 @@ impl RequirementResolution {
     }
 }
 
-/// Failure of one preflight requirement resolution (`GNT-7.2`).
+/// Failure of one preflight requirement resolution (`GNT-7.2-authority-rebinding`).
 ///
 /// This vocabulary is separate from [`AuthorityError`] because a resolution
 /// refusal names the requirement it concerns, which that value-typed refusal
@@ -2254,6 +2263,36 @@ mod tests {
                 if requirement == &outside
         ));
         assert_eq!(error.code(), "authority-rebinding-widens-closure");
+        assert_eq!(
+            error.to_string(),
+            format!("authority-rebinding-widens-closure: {}", outside.as_str())
+        );
+        let error = resolution
+            .rebind([
+                (first_requirement.clone(), replacement_first.clone()),
+                (
+                    second_requirement.clone(),
+                    fixture_binding(&second_requirement, &TypeDescriptor::INT),
+                ),
+                (
+                    outside.clone(),
+                    fixture_binding(&outside, &TypeDescriptor::INT),
+                ),
+                (
+                    outside.clone(),
+                    fixture_binding(&outside, &TypeDescriptor::STRING),
+                ),
+            ])
+            .err()
+            .unwrap_or_else(|| panic!("an out-of-scope requirement is refused as widening"));
+        assert!(
+            matches!(
+                &error,
+                PreflightResolutionError::RebindingWidensClosure { requirement }
+                    if requirement == &outside
+            ),
+            "the widening refusal precedes the ambiguity refusal for a requirement outside the scope"
+        );
     }
 
     #[test]
@@ -2264,9 +2303,15 @@ mod tests {
                 .unwrap_or_else(|error| {
                     panic!("the declared closure is within the bound: {error}")
                 });
-        assert!(
-            RequirementResolution::resolve(&closure, [declared.clone()]).is_ok(),
-            "a declaration at or below the bound is admitted"
+        let at_bound = RequirementResolution::resolve(
+            &closure,
+            vec![declared.clone(); RequirementResolution::MAXIMUM_REQUIREMENTS],
+        )
+        .unwrap_or_else(|error| panic!("the declared bound is inclusive: {error}"));
+        assert_eq!(
+            at_bound.len(),
+            1,
+            "duplicate declarations collapse after the bound check"
         );
         let oversized = vec![declared; RequirementResolution::MAXIMUM_REQUIREMENTS + 1];
         let error = RequirementResolution::resolve(&closure, oversized)
@@ -2274,10 +2319,19 @@ mod tests {
             .unwrap_or_else(|| panic!("one declaration past the bound is refused"));
         assert!(matches!(
             &error,
-            PreflightResolutionError::ExceedsMaximumRequirements { maximum, .. }
+            PreflightResolutionError::ExceedsMaximumRequirements { observed, maximum }
                 if *maximum == RequirementResolution::MAXIMUM_REQUIREMENTS
+                    && *observed == RequirementResolution::MAXIMUM_REQUIREMENTS + 1
         ));
         assert_eq!(error.code(), "authority-resolution-exceeds-maximum");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "authority-resolution-exceeds-maximum: {} supplied requirements exceed the declared maximum of {}",
+                RequirementResolution::MAXIMUM_REQUIREMENTS + 1,
+                RequirementResolution::MAXIMUM_REQUIREMENTS
+            )
+        );
     }
 
     /// Returns one public capability requirement of one declared fixture path.
