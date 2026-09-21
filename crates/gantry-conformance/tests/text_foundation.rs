@@ -7,14 +7,15 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{CharValue, TEXT_CLAUSES, TextDiagnosticCode, TextValue};
 
 /// The text surface this slice publishes, written out independently of the model and the note: the
-/// clause anchors in specification order and the one registered refusal spelling.
-const EXPECTED_CLAUSES: [&str; 4] = [
+/// clause anchors in specification order and the registered refusal spellings in declaration order.
+const EXPECTED_CLAUSES: [&str; 5] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
     "GNT-41.3-canonical-text-case-mapping",
+    "GNT-41.4-canonical-text-builders",
 ];
-const EXPECTED_DIAGNOSTIC: &str = "text-invalid-utf8";
+const EXPECTED_DIAGNOSTICS: [&str; 2] = ["text-invalid-utf8", "text-builder-bound"];
 
 #[test]
 fn text_clauses_and_the_diagnostic_are_published() {
@@ -40,17 +41,18 @@ fn text_clauses_and_the_diagnostic_are_published() {
         );
         previous = position;
     }
-    assert!(
-        specification.contains(EXPECTED_DIAGNOSTIC),
-        "the section declares the registered diagnostic"
-    );
     assert_eq!(
-        TextDiagnosticCode::ALL.len(),
-        1,
-        "the section declares exactly one diagnostic"
+        TextDiagnosticCode::ALL.map(TextDiagnosticCode::spelling),
+        EXPECTED_DIAGNOSTICS,
+        "the section declares the registered diagnostics in declaration order"
     );
+    for diagnostic in EXPECTED_DIAGNOSTICS {
+        assert!(
+            specification.contains(diagnostic),
+            "the section declares the registered diagnostic `{diagnostic}`"
+        );
+    }
     for code in TextDiagnosticCode::ALL {
-        assert_eq!(code.spelling(), EXPECTED_DIAGNOSTIC);
         assert!(EXPECTED_CLAUSES.contains(&code.owning_clause()));
     }
 }
@@ -167,10 +169,12 @@ fn text_note_names_every_declared_clause_and_the_diagnostic() {
     for clause in TEXT_CLAUSES {
         assert!(note.contains(clause), "the note names `{clause}`");
     }
-    assert!(
-        note.contains(EXPECTED_DIAGNOSTIC),
-        "the note names the registered diagnostic"
-    );
+    for diagnostic in EXPECTED_DIAGNOSTICS {
+        assert!(
+            note.contains(diagnostic),
+            "the note names the registered diagnostic `{diagnostic}`"
+        );
+    }
     // Prose assertions read the note with its whitespace flattened, so re-wrapping a paragraph
     // cannot change whether the note declares a non-claim.
     let flat = note.split_whitespace().collect::<Vec<_>>().join(" ");

@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "3bb4d8369990ad53c2040179491179dd6117f3b5c3d36bed3aee533bb684ed5f",
+  "specification_sha256": "4520f605737ad953e5735d733f45104e4f09d2b332c433f4f1acf38e49c1ef81",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15671,
+      "end_line": 15675,
       "rationale": null
     }
   ],
@@ -41933,10 +41933,10 @@
     {
       "id": "GNT-41.3-canonical-text-case-mapping",
       "span_start_line": 15669,
-      "span_end_line": 15671,
+      "span_end_line": 15672,
       "anchor_line": 15669,
       "body_start_line": 15670,
-      "body_end_line": 15671,
+      "body_end_line": 15672,
       "profiles": [
         "analyzer"
       ],
@@ -41948,7 +41948,7 @@
         {
           "key": "clause-001",
           "start_line": 15670,
-          "end_line": 15671,
+          "end_line": 15672,
           "profiles": [
             "analyzer"
           ],
@@ -41963,6 +41963,46 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_case_mapping.rs#case_clause_publishes_the_two_full_default_mappings",
                 "crates/gantry-conformance/tests/text_case_mapping.rs#case_mapping_matches_the_pinned_unicode_data"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.4-canonical-text-builders",
+      "span_start_line": 15673,
+      "span_end_line": 15675,
+      "anchor_line": 15673,
+      "body_start_line": 15674,
+      "body_end_line": 15675,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15674,
+          "end_line": 15675,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_builders.rs#builder_clause_publishes_the_bounded_builder",
+                "crates/gantry-conformance/tests/text_builders.rs#builder_refuses_at_the_declared_bound_atomically"
               ],
               "rationale": null
             }

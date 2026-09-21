@@ -2,25 +2,27 @@
 
 This note documents the pure text foundation `SPEC.md` Section 41 publishes: the canonical text
 value, its admission from octets, its scalar count and canonical octets, its scalar-boundary
-slicing, its two canonical normalization forms, and its two full default case mappings over the
-pinned Unicode 16.0.0 data, over the scalar and octet contracts of Section 35. It is
-documentation: it grants
-nothing, and where it and the specification differ the specification decides.
+slicing, its two canonical normalization forms, its two full default case mappings over the pinned
+Unicode 16.0.0 data, and an explicitly bounded text builder, over the scalar and octet contracts of
+Section 35. It is documentation: it grants nothing, and where it and the specification differ the
+specification decides.
 
 ## Declared clauses
 
 | Clause | What it publishes |
 | --- | --- |
-| `GNT-41.0-text-foundation-scope` | the section scope, its purity, its model (`crates/gantry-ir/src/text.rs`) and evidence (`crates/gantry-conformance/tests/text_foundation.rs`, `crates/gantry-conformance/tests/text_normalization.rs`, `crates/gantry-conformance/tests/text_case_mapping.rs`) paths, and its one frozen diagnostic |
+| `GNT-41.0-text-foundation-scope` | the section scope, its purity, its model (`crates/gantry-ir/src/text.rs`) and evidence (`crates/gantry-conformance/tests/text_foundation.rs`, `crates/gantry-conformance/tests/text_normalization.rs`, `crates/gantry-conformance/tests/text_case_mapping.rs`, `crates/gantry-conformance/tests/text_builders.rs`) paths, and its two frozen diagnostics |
 | `GNT-41.1-canonical-text-values` | the canonical text value as a finite scalar sequence, exact UTF-8 admission, the scalar count and canonical octets, scalar-boundary slicing, and value immutability |
 | `GNT-41.2-canonical-text-normalization` | the two canonical normalization forms of a text value over the pinned Unicode 16.0.0 data: Normalization Form D (`nfd`) and Normalization Form C (`nfc`), totality, idempotence, non-mutation, and the boundary that admission never normalizes |
 | `GNT-41.3-canonical-text-case-mapping` | the two locale-independent full default case mappings of a text value over the pinned Unicode 16.0.0 data: the lowercase mapping (`lower`) and the uppercase mapping (`upper`), totality, per-scalar sequence order, and the boundary that a mapping is neither a case fold nor an identity |
+| `GNT-41.4-canonical-text-builders` | the explicitly bounded text builder: a caller-declared octet bound, ordered and atomic appends refused under `text-builder-bound` without changing the builder, the accumulated sequence as the exact concatenation in append order, and a `build` that publishes one immutable value independent of later appends |
 
-## Registered diagnostic
+## Registered diagnostics
 
 | Spelling | Owning clause | Condition |
 | --- | --- | --- |
 | `text-invalid-utf8` | `GNT-41.1-canonical-text-values` | an octet sequence is not well-formed UTF-8; the refusal names the zero-based octet index at which well-formed decoding fails |
+| `text-builder-bound` | `GNT-41.4-canonical-text-builders` | appending one text value would push the builder past its declared octet bound; the refusal names the appended and accumulated octet counts and the bound, and the builder is unchanged |
 
 ## Model surface (`crates/gantry-ir/src/text.rs`)
 
@@ -31,13 +33,15 @@ nothing, and where it and the specification differ the specification decides.
 refusal. `TextValue::normalize` and `NormalizationForm` (`nfd`, `nfc`) publish exactly the two
 canonical forms of `GNT-41.2-canonical-text-normalization`. `TextValue::map_case` and
 `CaseMapping` (`lower`, `upper`) publish exactly the two full default case mappings of
-`GNT-41.3-canonical-text-case-mapping`. `TEXT_CLAUSES` names the four declared clause anchors in
+`GNT-41.3-canonical-text-case-mapping`. `TextBuilder` (`with_octet_bound`, `octet_bound`, `len`,
+`is_empty`, `append`, `build`) publishes exactly the bounded builder of
+`GNT-41.4-canonical-text-builders`. `TEXT_CLAUSES` names the five declared clause anchors in
 specification order.
 
 ## Declared non-claims
 
 The section declares no grapheme-cluster segmentation or cluster identity, no case folding, no
-collation or locale-aware comparison, no text builder or interpolation, no formatting,
+collation or locale-aware comparison, no interpolation, no formatting,
 parsing, or numbering of any type, no regular expression or matching contract, no locale value or
 catalog, no boundary schema, no source text literal grammar, and no work limit, cancellation safe
 point, quota, suspension, schema, recovery, durability, boundary encoding, lowering, machine
@@ -49,4 +53,10 @@ added. Case mapping is published only by `GNT-41.3-canonical-text-case-mapping`,
 locale-independent full default mappings: no locale-specific tailoring such as the Turkish or
 Azeri mappings is published, no title case is published, no case-insensitive comparison or case
 fold is published, and no `String` method is added. The section claims no performance, storage
-layout, or physical representation.
+layout, or physical representation. A builder is published only by
+`GNT-41.4-canonical-text-builders`, and only as an explicitly bounded construction state: no
+unbounded builder, no implicit or ambient builder, no builder identity, comparison, or ordering,
+no builder sharing mutable storage with another builder or with a published value, and no partial
+publication is published, and the declared octet bound is a semantic limit of that construction
+state rather than a quota, a resource-accounting contract, a work limit, or a cancellation safe
+point.

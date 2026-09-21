@@ -1,16 +1,16 @@
 //! The pure text foundation of `GNT-41.0-text-foundation-scope`,
-//! `GNT-41.1-canonical-text-values`, `GNT-41.2-canonical-text-normalization`, and
-//! `GNT-41.3-canonical-text-case-mapping`: canonical text values as finite sequences of Unicode
-//! scalar values over the Section 35 scalar and octet contracts, their exact admission from octets,
-//! their scalar count and canonical UTF-8 octets, their scalar-boundary slicing, their two
-//! canonical normalization forms, and their two full default case mappings over the pinned Unicode
-//! 16.0.0 data.
+//! `GNT-41.1-canonical-text-values`, `GNT-41.2-canonical-text-normalization`,
+//! `GNT-41.3-canonical-text-case-mapping`, and `GNT-41.4-canonical-text-builders`: canonical text
+//! values as finite sequences of Unicode scalar values over the Section 35 scalar and octet
+//! contracts, their exact admission from octets, their scalar count and canonical UTF-8 octets,
+//! their scalar-boundary slicing, their two canonical normalization forms, their two full default
+//! case mappings over the pinned Unicode 16.0.0 data, and an explicitly bounded builder that
+//! publishes one text value.
 //!
 //! The model is pure: it consumes no host locale, host encoding, ambient text facility, timing, or
 //! global mutable state, and it declares no grapheme-cluster segmentation, no case folding, no
-//! builder, no formatting, parsing, or interpolation, no regular expression, no locale value or
-//! catalog, no compatibility normalization form, and no boundary schema, recovery, or durable
-//! behavior.
+//! formatting, parsing, or interpolation, no regular expression, no locale value or catalog, no
+//! compatibility normalization form, and no boundary schema, recovery, or durable behavior.
 
 use std::fmt;
 
@@ -19,12 +19,13 @@ use gantry_core::unicode::{normalize_nfc, normalize_nfd, to_full_lowercase, to_f
 use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
-/// (`GNT-41.0`, `GNT-41.1`, `GNT-41.2`, `GNT-41.3`).
-pub const TEXT_CLAUSES: [&str; 4] = [
+/// (`GNT-41.0`, `GNT-41.1`, `GNT-41.2`, `GNT-41.3`, `GNT-41.4`).
+pub const TEXT_CLAUSES: [&str; 5] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
     "GNT-41.3-canonical-text-case-mapping",
+    "GNT-41.4-canonical-text-builders",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -32,17 +33,20 @@ pub const TEXT_CLAUSES: [&str; 4] = [
 pub enum TextDiagnosticCode {
     /// `GNT-41.1`: an octet sequence is not well-formed UTF-8.
     InvalidUtf8,
+    /// `GNT-41.4`: appending to a builder would exceed its declared octet bound.
+    BuilderBound,
 }
 
 impl TextDiagnosticCode {
     /// Every declared diagnostic, in declaration order.
-    pub const ALL: [Self; 1] = [Self::InvalidUtf8];
+    pub const ALL: [Self; 2] = [Self::InvalidUtf8, Self::BuilderBound];
 
     /// Returns the registered refusal spelling.
     #[must_use]
     pub fn spelling(self) -> &'static str {
         match self {
             Self::InvalidUtf8 => "text-invalid-utf8",
+            Self::BuilderBound => "text-builder-bound",
         }
     }
 
@@ -51,6 +55,7 @@ impl TextDiagnosticCode {
     pub fn owning_clause(self) -> &'static str {
         match self {
             Self::InvalidUtf8 => "GNT-41.1-canonical-text-values",
+            Self::BuilderBound => "GNT-41.4-canonical-text-builders",
         }
     }
 }
@@ -97,6 +102,73 @@ impl CaseMapping {
         match self {
             Self::Lower => "lower",
             Self::Upper => "upper",
+        }
+    }
+}
+
+/// One published bounded text builder of `GNT-41.4-canonical-text-builders`.
+///
+/// A builder accumulates the canonical octets of text values up to a declared bound and publishes
+/// exactly one text value: appending is explicit, ordered, and atomic, a refused append leaves the
+/// builder exactly as it was, and `build` publishes a new value that shares no mutable storage with
+/// the builder.
+#[derive(Clone, Debug)]
+pub struct TextBuilder {
+    text: String,
+    octet_bound: usize,
+}
+
+impl TextBuilder {
+    /// Publishes a builder whose accumulated canonical octets may never exceed `octet_bound`.
+    #[must_use]
+    pub fn with_octet_bound(octet_bound: usize) -> Self {
+        Self {
+            text: String::new(),
+            octet_bound,
+        }
+    }
+
+    /// Returns the declared octet bound of the builder.
+    #[must_use]
+    pub fn octet_bound(&self) -> usize {
+        self.octet_bound
+    }
+
+    /// Returns the number of canonical octets the builder has accumulated.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.text.len()
+    }
+
+    /// Returns whether the builder has accumulated no octet at all.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+
+    /// Appends one text value, refusing under `text-builder-bound` when the declared bound would be
+    /// exceeded; a refused append leaves the builder exactly as it was.
+    pub fn append(&mut self, value: &TextValue) -> Result<(), TextError> {
+        let appended = value.canonical_octets().len();
+        let accumulated = self.text.len();
+        if accumulated.saturating_add(appended) > self.octet_bound {
+            return Err(TextError::new(
+                TextDiagnosticCode::BuilderBound,
+                format!(
+                    "appending {appended} octet(s) to {accumulated} accumulated octet(s) exceeds the declared bound of {}",
+                    self.octet_bound
+                ),
+            ));
+        }
+        self.text.push_str(&value.text);
+        Ok(())
+    }
+
+    /// Publishes the text value whose canonical octets are exactly the accumulated sequence.
+    #[must_use]
+    pub fn build(&self) -> TextValue {
+        TextValue {
+            text: self.text.clone(),
         }
     }
 }
