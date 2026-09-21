@@ -64,6 +64,9 @@ fn refusal_of_split(value: &mut ByteBufferValue) -> String {
     }
 }
 
+/// Copy chain lengths exercised by the linear-growth check.
+const CHAIN_LENGTHS: [usize; 3] = [4, 16, 64];
+
 #[test]
 fn value_storage_note_states_the_declared_equivalence_contract() {
     let note = read_note();
@@ -305,4 +308,44 @@ fn release_points_and_charge_conservation_are_identical_across_strategies() {
         );
     }
     assert!(states[0].4 > 0, "the differential exercised a real release");
+}
+
+#[test]
+fn modeled_physical_work_grows_linearly_with_the_operation_count() {
+    let octets = vec![0x5a_u8; 64];
+    for strategy in StorageStrategy::ALL {
+        let mut previous = 0_usize;
+        for count in CHAIN_LENGTHS {
+            let mut duplicates = 0_usize;
+            for _ in 0..count {
+                let mut source = buffer(strategy, &octets);
+                let alias = source.alias();
+                duplicates += alias.physical_work();
+            }
+            let mut writes = 0_usize;
+            for _ in 0..count {
+                let mut value = buffer(strategy, &octets);
+                value
+                    .append(0x2e)
+                    .unwrap_or_else(|error| panic!("the append is admitted: {error}"));
+                writes += value.physical_work();
+            }
+            assert_eq!(
+                duplicates,
+                count * strategy.duplication_work(octets.len()),
+                "alias work is exactly linear in the count"
+            );
+            assert_eq!(
+                writes,
+                count * strategy.write_work(octets.len()),
+                "write work is exactly linear in the count"
+            );
+            let total = duplicates + writes;
+            assert!(
+                total == 0 || total >= previous,
+                "the modeled work never shrinks as the workload grows"
+            );
+            previous = total;
+        }
+    }
 }
