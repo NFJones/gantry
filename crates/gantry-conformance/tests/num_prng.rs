@@ -30,6 +30,21 @@ fn read_text(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()))
 }
 
+/// Returns the body of one clause: the text between its anchor and the next anchor, or to the end
+/// of the specification when the clause is the final one.
+fn clause_body<'a>(specification: &'a str, anchor: &str) -> &'a str {
+    let declaration = format!("<a id=\"{anchor}\"></a>");
+    let start = specification
+        .find(&declaration)
+        .unwrap_or_else(|| panic!("the specification anchors `{anchor}`"))
+        + declaration.len();
+    let rest = &specification[start..];
+    match rest.find("<a id=") {
+        Some(end) => &rest[..end],
+        None => rest,
+    }
+}
+
 #[test]
 fn deterministic_prng_surface_is_published() {
     let specification = read_text(&workspace_root().join("SPEC.md"));
@@ -50,6 +65,7 @@ fn deterministic_prng_surface_is_published() {
         PrngAlgorithmVersion::ALL[0].version(),
         PRNG_ALGORITHM_VERSION
     );
+    let prng_clause = clause_body(&specification, "GNT-40.1-deterministic-prng-identity");
     for spelling in [
         PRNG_ALGORITHM,
         &format!("0x{PRNG_STATE_INCREMENT:016X}"),
@@ -57,8 +73,8 @@ fn deterministic_prng_surface_is_published() {
         &format!("0x{PRNG_MIX_SECOND:016X}"),
     ] {
         assert!(
-            specification.contains(spelling),
-            "the specification publishes `{spelling}`"
+            prng_clause.contains(spelling),
+            "the `GNT-40.1` clause publishes `{spelling}`"
         );
     }
 

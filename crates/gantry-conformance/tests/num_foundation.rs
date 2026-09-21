@@ -91,8 +91,22 @@ fn num_note_names_the_declared_family_purity_and_separation() {
     assert_eq!(PackageFamily::Num.package_name(), "std.num");
     assert_eq!(PackageFamily::Num.wire_name(), "num");
     assert!(PackageFamily::Num.is_pure());
-    assert!(note.contains(&PackageFamily::Num.package_name()));
-    assert!(note.contains(PackageFamily::Num.wire_name()));
+    let identity = note
+        .split("\n\n")
+        .find(|paragraph| paragraph.contains("GNT-34.1-canonical-hierarchy-and-package-names"))
+        .unwrap_or_else(|| panic!("the note cites the identity clause"));
+    let flat_identity = identity.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat_identity.contains(&PackageFamily::Num.package_name()),
+        "the identity paragraph names the numeric package"
+    );
+    assert!(
+        flat_identity.contains(&format!(
+            "wire spelling `{}`",
+            PackageFamily::Num.wire_name()
+        )),
+        "the identity paragraph names the numeric wire spelling"
+    );
 
     // The separation is a model fact: the random counterpart is capability-backed, not pure.
     assert!(!PackageFamily::Random.is_pure());
