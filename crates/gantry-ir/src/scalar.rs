@@ -1330,6 +1330,6 @@ mod byte_value_storage_tests {
         let reparsed = BytesValue::parse_canonical_text("00ff10")
             .unwrap_or_else(|error| panic!("the canonical text parses: {error}"));
         assert_eq!(reparsed.as_octets(), value.as_octets());
-        assert!(Arc::ptr_eq(&reparsed.octets, &value.octets) == false);
+        assert!(!Arc::ptr_eq(&reparsed.octets, &value.octets));
     }
 }
