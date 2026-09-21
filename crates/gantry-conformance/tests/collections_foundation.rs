@@ -24,7 +24,7 @@ use gantry::ir::{
     RangeTypeIdentity, RangeValue, SetTypeIdentity, SetValue, TypeDescriptor, canonical_order,
     check_collection_non_claims,
 };
-use gantry::ir::{PackageFamily, canonical_pure_hierarchy};
+use gantry::ir::{PackageFamily, StabilityTier, canonical_pure_hierarchy};
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValueLimits};
 
@@ -1525,6 +1525,24 @@ fn collection_family_declares_its_package_surface() {
         dependencies.contains(&PackageFamily::Core.package_name()),
         "`std.collections` depends only on `std.core`"
     );
+    assert_eq!(package.tier(), StabilityTier::Stable);
+    assert_eq!(package.tier().wire_name(), "stable");
+    assert!(
+        note.contains(package.tier().wire_name()),
+        "the note names the tier the hierarchy declares"
+    );
+    for dependent in [PackageFamily::Text, PackageFamily::Codec] {
+        let dependent_package = graph
+            .package(&dependent.package_name())
+            .unwrap_or_else(|| panic!("the hierarchy declares the dependent family"));
+        assert!(
+            dependent_package
+                .dependencies()
+                .contains(&family.package_name()),
+            "`{}` depends on `std.collections`",
+            dependent.package_name()
+        );
+    }
     for required in [
         "std.collections",
         "collections",
