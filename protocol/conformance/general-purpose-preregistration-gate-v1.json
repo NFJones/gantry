@@ -10,11 +10,11 @@
   },
   {
    "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-   "sha256": "8d10d0e49552e3dc6b6f6e55a3abf66333dafd7bcfb6360e4244829257d20ce4"
+   "sha256": "8b14666d5545f11a64f3e0d66b21bd3698b93640c91de8cacd1b56538ded2aa5"
   },
   {
    "path": "protocol/goldens/general-purpose-preregistration-v1.canonical.json",
-   "sha256": "cf9f1166a25d37350d47d1a0bb51a6ab16ae736fadaa658cfa0fa3dc7197e9ab"
+   "sha256": "9752be5b33b19b5d5e5d8cb511b6c225f74430779a66ba59540c77c1d3a20deb"
   },
   {
    "path": "protocol/schemas/general-purpose-preregistration-v1.schema.json",

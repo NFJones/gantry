@@ -1,6 +1,6 @@
 {
  "format": "gantry.executable-task-ir-evidence/v1",
- "specification_sha256": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d",
+ "specification_sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d",
  "issue": "GNT-ASYNC-IR-001",
  "requirements": [
   {

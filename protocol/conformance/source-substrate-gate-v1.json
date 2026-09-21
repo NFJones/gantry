@@ -14,7 +14,7 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "9641a85173c5d65f4875d21e6336d07ff6c1d8cf2a0aae4e501e90980341e155"
+   "sha256": "a496002750e976e34af4252f3a142d5ade34cf60307814892d7626ebd4a6f353"
   },
   {
    "path": "protocol/schemas/source-substrate-v1.schema.json",
@@ -34,7 +34,7 @@
    "id": "diagnostic-presentation",
    "kind": "golden",
    "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
-   "revision": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d",
+   "revision": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -42,7 +42,7 @@
    "id": "requirement-ledger",
    "kind": "requirement",
    "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
-   "revision": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d",
+   "revision": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -50,7 +50,7 @@
    "id": "source-provider",
    "kind": "public-api",
    "path": "crates/gantry-conformance/tests/source_provider.rs",
-   "revision": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d",
+   "revision": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d",
    "state": "verified",
    "visibility": "public-facade"
   },
@@ -58,7 +58,7 @@
    "id": "source-substrate",
    "kind": "fixture",
    "path": "crates/gantry-conformance/tests/source_substrate.rs",
-   "revision": "12361e3436c9c520bff8743516f0184f9423049d7cad3dae6bd3eb6971a04c3d",
+   "revision": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d",
    "state": "verified",
    "visibility": "public-facade"
   }
