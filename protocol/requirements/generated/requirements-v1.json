@@ -40924,7 +40924,8 @@
                 "crates/gantry-conformance/tests/scalar_foundation.rs#storage_strategies_agree_on_octets_charges_and_refusals",
                 "crates/gantry-conformance/tests/scalar_foundation.rs#external_encodings_round_trip_and_refuse_wrong_widths",
                 "crates/gantry-conformance/tests/value_storage_model.rs#value_storage_note_states_the_declared_equivalence_contract",
-                "crates/gantry-conformance/tests/value_storage_model.rs#storage_strategies_agree_on_octets_charges_and_refusals_for_one_operation_sequence"
+                "crates/gantry-conformance/tests/value_storage_model.rs#storage_strategies_agree_on_octets_charges_and_refusals_for_one_operation_sequence",
+                "crates/gantry-conformance/tests/value_storage_model.rs#frozen_values_round_trip_identically_across_strategies"
               ],
               "rationale": null
             }

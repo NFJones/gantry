@@ -86,7 +86,7 @@
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "99e3f354f9923f5c417f8300cd9e5834a938c26cc7c9a1e838b485da5e48d291"
+   "sha256": "dc795945432561889957cdb01f5176fab1e579f8ba8d2d317dc5156f8809df1e"
   }
  ],
  "environment_gaps": [

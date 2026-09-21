@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{ByteBufferValue, RESOURCE_CLAUSES, ScalarQuota, StorageStrategy};
+use gantry::ir::{IntegerValue, ScalarError, ScalarKind, ScalarWidth};
 
 /// The workspace root of this checkout.
 fn workspace_root() -> PathBuf {
@@ -36,6 +37,17 @@ fn buffer(strategy: StorageStrategy, octets: &[u8]) -> ByteBufferValue {
 /// A refusal fingerprint: the diagnostic code's identity and the refusal's detail text.
 fn refusal(error: gantry::ir::ScalarError) -> String {
     format!("{:?}: {}", error.code(), error)
+}
+
+/// A refusal fingerprint from a fallible construction.
+fn refusal_of(result: Result<IntegerValue, ScalarError>) -> String {
+    match result {
+        Ok(value) => panic!(
+            "the construction is refused, not accepted as {}",
+            value.value()
+        ),
+        Err(error) => refusal(error),
+    }
 }
 
 #[test]
@@ -163,4 +175,52 @@ fn storage_strategies_agree_on_octets_charges_and_refusals_for_one_operation_seq
     assert_eq!(StorageStrategy::CopyOnWrite.write_work(6), 6);
     assert_eq!(StorageStrategy::EagerCopy.write_work(6), 0);
     assert_eq!(StorageStrategy::Reuse.write_work(6), 0);
+}
+
+#[test]
+fn frozen_values_round_trip_identically_across_strategies() {
+    let kind = ScalarKind::Signed(ScalarWidth::W32);
+    let value = IntegerValue::new(kind, -7)
+        .unwrap_or_else(|error| panic!("the integer is admitted: {error}"));
+    let encoded = value.to_octets();
+    let short = &encoded[..encoded.len() - 1];
+    let expected_loss = refusal_of(IntegerValue::from_octets(kind, short));
+    let mut frozen = Vec::new();
+    for strategy in StorageStrategy::ALL {
+        let buffer = buffer(strategy, &encoded);
+        let bytes = buffer
+            .freeze()
+            .unwrap_or_else(|error| panic!("an unshared buffer freezes: {error}"));
+        let sealed: Vec<u8> = (0..bytes.len())
+            .map(|index| bytes.octet(index))
+            .collect::<Result<Vec<u8>, ScalarError>>()
+            .unwrap_or_else(|error| panic!("every sealed octet is addressable: {error}"));
+        assert_eq!(sealed, encoded, "external encoding identity");
+        let text = bytes.to_canonical_text();
+        assert_eq!(
+            IntegerValue::from_octets(kind, &sealed)
+                .unwrap_or_else(|error| panic!("the value round-trips: {error}"))
+                .value(),
+            -7,
+            "the external encoding round-trips exactly"
+        );
+        assert_eq!(
+            refusal_of(IntegerValue::from_octets(kind, short)),
+            expected_loss,
+            "a projection that loses a width is refused identically under every strategy"
+        );
+        frozen.push((sealed, text));
+    }
+    for pair in frozen.windows(2) {
+        assert_eq!(pair[0].0, pair[1].0, "identical octets after freezing");
+        assert_eq!(
+            pair[0].1, pair[1].1,
+            "identical canonical text after freezing"
+        );
+    }
+    assert_eq!(
+        frozen[0].1.len(),
+        frozen[0].0.len() * 2,
+        "the canonical text spells every sealed octet"
+    );
 }
