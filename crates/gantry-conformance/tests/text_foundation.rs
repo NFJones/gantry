@@ -131,8 +131,11 @@ fn note_names_the_declared_ownership_and_gated_obligations() {
     );
 }
 
+/// The record names the repaired hot spots and their commits, states that it does not claim one
+/// pass per kernel, and refuses the removed scans' spellings. The lane certifies exactly that
+/// narrow guarantee: it does not certify any kernel's asymptotic shape.
 #[test]
-fn kernels_examine_their_input_in_one_forward_pass() {
+fn record_names_repaired_hot_spots_and_removed_scan_spellings() {
     let note = read_workspace_file("docs/text-foundation.md");
     let record = section_body(&note, "## Declared ownership and handoff");
     for required in [
