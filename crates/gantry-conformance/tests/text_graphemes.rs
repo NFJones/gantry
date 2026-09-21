@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{CaseMapping, TEXT_CLAUSES, TextValue};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 11] = [
+const EXPECTED_CLAUSES: [&str; 12] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -19,6 +19,7 @@ const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
+    "GNT-41.11-canonical-text-value-bound",
 ];
 const GRAPHEME_CLAUSE: &str = "GNT-41.7-canonical-grapheme-clusters";
 
@@ -211,7 +212,9 @@ fn grapheme_clusters_are_decided_on_the_value_scalar_sequence() {
     assert_eq!(clusters_of(&composed), vec!["\u{e9}".to_owned()]);
     assert_eq!(composed.canonical_octets(), recorded.as_slice());
     let sharp = admitted("\u{df}".as_bytes());
-    let upper = sharp.map_case(CaseMapping::Upper);
+    let upper = sharp.map_case(CaseMapping::Upper).unwrap_or_else(|error| {
+        panic!("the published value stays within the declared bound: {error}")
+    });
     assert_eq!(clusters_of(&sharp), vec!["\u{df}".to_owned()]);
     assert_eq!(clusters_of(&upper), vec!["S".to_owned(), "S".to_owned()]);
     assert_eq!(sharp.canonical_octets(), "\u{df}".as_bytes());

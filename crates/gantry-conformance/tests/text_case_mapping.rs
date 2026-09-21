@@ -4,10 +4,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::ir::{CaseMapping, TEXT_CLAUSES, TextValue};
+use gantry::ir::{
+    CaseMapping, TEXT_CLAUSES, TEXT_VALUE_SCALAR_BOUND, TextDiagnosticCode, TextValue,
+};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 11] = [
+const EXPECTED_CLAUSES: [&str; 12] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -19,8 +21,37 @@ const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
+    "GNT-41.11-canonical-text-value-bound",
 ];
 const CASE_CLAUSE: &str = "GNT-41.3-canonical-text-case-mapping";
+
+#[test]
+fn case_mapping_refuses_a_mapping_beyond_the_declared_bound() {
+    let half = TEXT_VALUE_SCALAR_BOUND / 2;
+    let at_bound = TextValue::from_lossless_octets(&vec![0xDF_u8; half])
+        .unwrap_or_else(|error| panic!("the value is admitted: {error}"));
+    assert_eq!(
+        mapped_value(&at_bound, CaseMapping::Upper).scalar_count(),
+        TEXT_VALUE_SCALAR_BOUND,
+        "a mapping at the declared bound publishes"
+    );
+    let mut beyond = vec![0xDF_u8; half];
+    beyond.push(0xDF);
+    let value = TextValue::from_lossless_octets(&beyond)
+        .unwrap_or_else(|error| panic!("the value is admitted: {error}"));
+    let error = value
+        .map_case(CaseMapping::Upper)
+        .err()
+        .unwrap_or_else(|| panic!("a mapping beyond the bound is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::ValueBound);
+    assert_eq!(
+        error.detail(),
+        format!(
+            "the value would hold {} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}",
+            TEXT_VALUE_SCALAR_BOUND + 2
+        )
+    );
+}
 
 #[test]
 fn case_clause_publishes_the_two_full_default_mappings() {
@@ -66,7 +97,7 @@ fn case_mapping_matches_the_pinned_unicode_data() {
     assert_eq!(mapped("\u{fb01}", CaseMapping::Upper), "FI");
     assert_eq!(mapped("\u{fb01}", CaseMapping::Lower), "\u{fb01}");
     assert_eq!(
-        TextValue::empty().map_case(CaseMapping::Upper),
+        mapped_value(&TextValue::empty(), CaseMapping::Upper),
         TextValue::empty()
     );
 }
@@ -88,13 +119,16 @@ fn case_mapping_is_total_and_noninvasive() {
     let recorded = value.clone();
     assert_eq!(value.scalar_count(), 3);
     for mapping in CaseMapping::ALL {
-        let _ = value.map_case(mapping);
+        let _ = mapped_value(&value, mapping);
         assert_eq!(value, recorded, "case mapping never modifies its input");
         assert_eq!(value.canonical_octets(), recorded.canonical_octets());
     }
-    assert_eq!(rendered(&value.map_case(CaseMapping::Upper)), "SS\u{130}FI");
     assert_eq!(
-        rendered(&value.map_case(CaseMapping::Lower)),
+        rendered(&mapped_value(&value, CaseMapping::Upper)),
+        "SS\u{130}FI"
+    );
+    assert_eq!(
+        rendered(&mapped_value(&value, CaseMapping::Lower)),
         "\u{df}i\u{307}\u{fb01}"
     );
     // A mapping is not a case fold: a fold would equate `ß` with `SS`, while the lowercase mapping
@@ -127,7 +161,7 @@ fn case_mapping_never_reduces_the_scalar_count() {
             let value = admitted(text.as_bytes());
             for mapping in CaseMapping::ALL {
                 assert!(
-                    value.map_case(mapping).scalar_count() >= value.scalar_count(),
+                    mapped_value(&value, mapping).scalar_count() >= value.scalar_count(),
                     "the `{}` mapping of U+{code:04X} never reduces the scalar count",
                     mapping.spelling()
                 );
@@ -137,7 +171,7 @@ fn case_mapping_never_reduces_the_scalar_count() {
     let mixed = admitted("\u{df}Gantry\u{130}".as_bytes());
     for mapping in CaseMapping::ALL {
         assert!(
-            mixed.map_case(mapping).scalar_count() >= mixed.scalar_count(),
+            mapped_value(&mixed, mapping).scalar_count() >= mixed.scalar_count(),
             "the `{}` mapping never reduces the scalar count of a value",
             mapping.spelling()
         );
@@ -150,7 +184,7 @@ fn admitted(octets: &[u8]) -> TextValue {
 }
 
 fn mapped(text: &str, mapping: CaseMapping) -> String {
-    rendered(&admitted(text.as_bytes()).map_case(mapping))
+    rendered(&mapped_value(&admitted(text.as_bytes()), mapping))
 }
 
 fn rendered(value: &TextValue) -> String {
@@ -179,4 +213,10 @@ fn read_workspace_file(relative: &str) -> String {
         .join(relative);
     fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("`{}` is readable: {error}", path.display()))
+}
+
+fn mapped_value(value: &TextValue, mapping: CaseMapping) -> TextValue {
+    value.map_case(mapping).unwrap_or_else(|error| {
+        panic!("the published value stays within the declared bound: {error}")
+    })
 }

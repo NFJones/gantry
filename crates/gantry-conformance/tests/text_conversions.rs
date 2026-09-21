@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{TEXT_CLAUSES, TEXT_VALUE_SCALAR_BOUND, TextDiagnosticCode, TextError, TextValue};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 11] = [
+const EXPECTED_CLAUSES: [&str; 12] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -19,6 +19,7 @@ const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
+    "GNT-41.11-canonical-text-value-bound",
 ];
 const CONVERSION_CLAUSE: &str = "GNT-41.9-canonical-text-conversions";
 
@@ -221,7 +222,7 @@ fn admissions_refuse_the_first_condition_the_sequence_meets() {
     assert_eq!(
         error.detail(),
         format!(
-            "the admitted value would hold {} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}",
+            "the value would hold {} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}",
             TEXT_VALUE_SCALAR_BOUND + 1
         )
     );

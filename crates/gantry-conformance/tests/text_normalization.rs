@@ -5,10 +5,12 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::ir::{NormalizationForm, TEXT_CLAUSES, TextValue};
+use gantry::ir::{
+    NormalizationForm, TEXT_CLAUSES, TEXT_VALUE_SCALAR_BOUND, TextDiagnosticCode, TextValue,
+};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 11] = [
+const EXPECTED_CLAUSES: [&str; 12] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -20,9 +22,38 @@ const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
+    "GNT-41.11-canonical-text-value-bound",
 ];
 const NORMALIZATION_CLAUSE: &str = "GNT-41.2-canonical-text-normalization";
 const SECTION_HEADING: &str = "## 41. Text Foundation";
+
+#[test]
+fn normalization_refuses_a_form_beyond_the_declared_bound() {
+    let half = TEXT_VALUE_SCALAR_BOUND / 2;
+    let at_bound = TextValue::from_lossless_octets(&vec![0xE9_u8; half])
+        .unwrap_or_else(|error| panic!("the value is admitted: {error}"));
+    assert_eq!(
+        normalized_from(&at_bound, NormalizationForm::Nfd).scalar_count(),
+        TEXT_VALUE_SCALAR_BOUND,
+        "a decomposition at the declared bound publishes"
+    );
+    let mut beyond = vec![0xE9_u8; half];
+    beyond.push(0xE9);
+    let value = TextValue::from_lossless_octets(&beyond)
+        .unwrap_or_else(|error| panic!("the value is admitted: {error}"));
+    let error = value
+        .normalize(NormalizationForm::Nfd)
+        .err()
+        .unwrap_or_else(|| panic!("a decomposition beyond the bound is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::ValueBound);
+    assert_eq!(
+        error.detail(),
+        format!(
+            "the value would hold {} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}",
+            TEXT_VALUE_SCALAR_BOUND + 2
+        )
+    );
+}
 
 #[test]
 fn normalization_clause_publishes_the_two_canonical_forms() {
@@ -61,19 +92,25 @@ fn normalization_matches_the_pinned_unicode_data() {
         composed, decomposed,
         "the spellings are distinct text values"
     );
-    assert_eq!(decomposed.normalize(NormalizationForm::Nfc), composed);
-    assert_eq!(composed.normalize(NormalizationForm::Nfd), decomposed);
+    assert_eq!(
+        normalized_from(&decomposed, NormalizationForm::Nfc),
+        composed
+    );
+    assert_eq!(
+        normalized_from(&composed, NormalizationForm::Nfd),
+        decomposed
+    );
 
     let syllable = admitted("\u{ac01}".as_bytes());
     let jamo = admitted("\u{1100}\u{1161}\u{11a8}".as_bytes());
-    assert_eq!(syllable.normalize(NormalizationForm::Nfd), jamo);
-    assert_eq!(jamo.normalize(NormalizationForm::Nfc), syllable);
+    assert_eq!(normalized_from(&syllable, NormalizationForm::Nfd), jamo);
+    assert_eq!(normalized_from(&jamo, NormalizationForm::Nfc), syllable);
 
     let ascii = admitted(b"gantry");
-    assert_eq!(ascii.normalize(NormalizationForm::Nfc), ascii);
-    assert_eq!(ascii.normalize(NormalizationForm::Nfd), ascii);
+    assert_eq!(normalized_from(&ascii, NormalizationForm::Nfc), ascii);
+    assert_eq!(normalized_from(&ascii, NormalizationForm::Nfd), ascii);
     assert_eq!(
-        TextValue::empty().normalize(NormalizationForm::Nfc),
+        normalized_from(&TextValue::empty(), NormalizationForm::Nfc),
         TextValue::empty()
     );
 }
@@ -83,18 +120,18 @@ fn normalization_is_total_idempotent_and_noninvasive() {
     let value = admitted("e\u{301}\u{ac01}\u{feff}".as_bytes());
     let recorded = value.clone();
     for form in NormalizationForm::ALL {
-        let normalized = value.normalize(form);
+        let normalized = normalized_from(&value, form);
         assert_eq!(value, recorded, "normalization never modifies its input");
         assert_eq!(value.canonical_octets(), recorded.canonical_octets());
         assert_eq!(
-            normalized.normalize(form),
+            normalized_from(&normalized, form),
             normalized,
             "the `{}` form is idempotent",
             form.spelling()
         );
     }
-    let decomposed = value.normalize(NormalizationForm::Nfd);
-    let composed = value.normalize(NormalizationForm::Nfc);
+    let decomposed = normalized_from(&value, NormalizationForm::Nfd);
+    let composed = normalized_from(&value, NormalizationForm::Nfc);
     assert_eq!(
         composed.scalar_count(),
         3,
@@ -106,7 +143,10 @@ fn normalization_is_total_idempotent_and_noninvasive() {
         "the decomposed form expands the mark and the syllable"
     );
     assert_ne!(composed, decomposed);
-    assert_eq!(composed.normalize(NormalizationForm::Nfd), decomposed);
+    assert_eq!(
+        normalized_from(&composed, NormalizationForm::Nfd),
+        decomposed
+    );
 }
 
 #[test]
@@ -115,7 +155,7 @@ fn admission_still_preserves_octets_exactly() {
     let value = admitted(decomposed);
     assert_eq!(value.canonical_octets(), decomposed);
     assert_eq!(value.scalar_count(), 2);
-    assert_ne!(value, value.normalize(NormalizationForm::Nfc));
+    assert_ne!(value, normalized_from(&value, NormalizationForm::Nfc));
 }
 
 /// Every anchor Section 41 cites resolves to an anchor the specification declares.
@@ -207,4 +247,10 @@ fn read_workspace_file(relative: &str) -> String {
         .join(relative);
     fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("`{}` is readable: {error}", path.display()))
+}
+
+fn normalized_from(value: &TextValue, form: NormalizationForm) -> TextValue {
+    value.normalize(form).unwrap_or_else(|error| {
+        panic!("the published value stays within the declared bound: {error}")
+    })
 }

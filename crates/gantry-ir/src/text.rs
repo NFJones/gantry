@@ -30,7 +30,7 @@ use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
 /// (`GNT-41.0` through `GNT-41.9`).
-pub const TEXT_CLAUSES: [&str; 11] = [
+pub const TEXT_CLAUSES: [&str; 12] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -42,6 +42,7 @@ pub const TEXT_CLAUSES: [&str; 11] = [
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
+    "GNT-41.11-canonical-text-value-bound",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -98,7 +99,7 @@ impl TextDiagnosticCode {
             Self::PatternSyntax => "GNT-41.8-bounded-text-matching",
             Self::PatternBound => "GNT-41.8-bounded-text-matching",
             Self::MatchBudget => "GNT-41.8-bounded-text-matching",
-            Self::ValueBound => "GNT-41.10-canonical-text-admission-bound",
+            Self::ValueBound => "GNT-41.11-canonical-text-value-bound",
             Self::InvalidUtf16 => "GNT-41.9-canonical-text-conversions",
         }
     }
@@ -235,11 +236,18 @@ impl TextBuilder {
     }
 
     /// Publishes the text value whose canonical octets are exactly the accumulated sequence.
-    #[must_use]
-    pub fn build(&self) -> TextValue {
-        TextValue {
-            text: self.text.clone(),
+    ///
+    /// A build whose value would hold more than `TEXT_VALUE_SCALAR_BOUND` scalar values refuses
+    /// under `text-value-bound` and publishes nothing
+    /// (`GNT-41.11-canonical-text-value-bound`).
+    pub fn build(&self) -> Result<TextValue, TextError> {
+        let scalars = self.text.chars().count();
+        if scalars > TEXT_VALUE_SCALAR_BOUND {
+            return Err(TextValue::value_bound_refusal(scalars));
         }
+        Ok(TextValue {
+            text: self.text.clone(),
+        })
     }
 }
 
@@ -411,13 +419,13 @@ impl TextValue {
         Ok(Self { text })
     }
 
-    /// Refuses an admission whose value would exceed the declared admission bound
-    /// (`GNT-41.10-canonical-text-admission-bound`).
+    /// Refuses a value beyond the declared bound (`GNT-41.10-canonical-text-admission-bound`,
+    /// `GNT-41.11-canonical-text-value-bound`).
     fn value_bound_refusal(scalars: usize) -> TextError {
         TextError::new(
             TextDiagnosticCode::ValueBound,
             format!(
-                "the admitted value would hold {scalars} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}"
+                "the value would hold {scalars} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}"
             ),
         )
     }
@@ -575,14 +583,20 @@ impl TextValue {
     ///
     /// Normalization is total and deterministic over the pinned Unicode 16.0.0 data: it publishes a
     /// new value whose identity is the normalized scalar sequence, never modifies the value it was
-    /// given, and is idempotent in each published form.
-    #[must_use]
-    pub fn normalize(&self, form: NormalizationForm) -> Self {
+    /// given, and is idempotent in each published form. A form whose scalar sequence would hold
+    /// more than `TEXT_VALUE_SCALAR_BOUND` scalar values refuses under `text-value-bound` and
+    /// publishes nothing (`GNT-41.11-canonical-text-value-bound`); a decomposition may hold more
+    /// scalars than the value it decomposes even when the value is admitted.
+    pub fn normalize(&self, form: NormalizationForm) -> Result<Self, TextError> {
         let text = match form {
             NormalizationForm::Nfd => normalize_nfd(&self.text),
             NormalizationForm::Nfc => normalize_nfc(&self.text),
         };
-        Self { text }
+        let scalars = text.chars().count();
+        if scalars > TEXT_VALUE_SCALAR_BOUND {
+            return Err(Self::value_bound_refusal(scalars));
+        }
+        Ok(Self { text })
     }
 
     /// Publishes the named full default case mapping of the value
@@ -590,14 +604,20 @@ impl TextValue {
     ///
     /// The mapping is total and deterministic over the pinned Unicode 16.0.0 data, locale-neutral,
     /// and applied to each scalar in sequence order, so the result may hold a different number of
-    /// scalars than the value it was mapped from; the value it was given is never modified.
-    #[must_use]
-    pub fn map_case(&self, mapping: CaseMapping) -> Self {
+    /// scalars than the value it was mapped from; the value it was given is never modified. A
+    /// mapping whose result would hold more than `TEXT_VALUE_SCALAR_BOUND` scalar values refuses
+    /// under `text-value-bound` and publishes nothing
+    /// (`GNT-41.11-canonical-text-value-bound`).
+    pub fn map_case(&self, mapping: CaseMapping) -> Result<Self, TextError> {
         let text = match mapping {
             CaseMapping::Lower => to_full_lowercase(&self.text),
             CaseMapping::Upper => to_full_uppercase(&self.text),
         };
-        Self { text }
+        let scalars = text.chars().count();
+        if scalars > TEXT_VALUE_SCALAR_BOUND {
+            return Err(Self::value_bound_refusal(scalars));
+        }
+        Ok(Self { text })
     }
 
     /// Publishes a forward scalar cursor over the value

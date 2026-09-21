@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "cd7c8a39f250135e32e53aebbf5ca120f261fd3259effcc476a48d1dcfafad2a",
-  "byte_length": 1104293,
-  "line_count": 15699,
+  "specification_sha256": "befd51ac43952ca72afbf6b42c52eeb6f16fe01bb4147857bd6458fc56106565",
+  "byte_length": 1105827,
+  "line_count": 15703,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15699,
-      "sha256": "e5b6da3a0f7ef577a645f01fd8eb0d9ad0a36163109b882f34fc6e4858047fc5",
+      "end_line": 15703,
+      "sha256": "573d003ed0b87c78eec0295beff81905305a9902f14afdfb1c33f4fef201bc6e",
       "rationale": null
     }
   ],
@@ -43375,11 +43375,11 @@
       "id": "GNT-41.10-canonical-text-admission-bound",
       "span_start_line": 15696,
       "span_end_line": 15699,
-      "span_sha256": "88d9948c2d98a88d7992eefaf350be5bab8f0a9f70517988cf73629a26b6b5fc",
+      "span_sha256": "6c80e693d19e14655a15fe31daa1ced71e6bb91d780defc241c5d5e1e7a4eb8c",
       "anchor_line": 15697,
       "body_start_line": 15698,
       "body_end_line": 15699,
-      "body_sha256": "e8e66288c2caee385f26f8ee6a266bed6509c38926d635ee300b418b26f7d3cf",
+      "body_sha256": "59ac1ef6b75aa64765726da1788e6ccd410cd41efa6213abfa193f1f9f9b061d",
       "profiles": [
         "analyzer"
       ],
@@ -43406,6 +43406,49 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_foundation.rs#admissions_enforce_the_declared_admission_bound",
                 "crates/gantry-conformance/tests/text_conversions.rs#utf16_admission_counts_the_value_while_it_decodes"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.11-canonical-text-value-bound",
+      "span_start_line": 15700,
+      "span_end_line": 15703,
+      "span_sha256": "70a2af997734b5ad38c754395d46180a0d295c46cbcbbd1d1000374161842e40",
+      "anchor_line": 15701,
+      "body_start_line": 15702,
+      "body_end_line": 15703,
+      "body_sha256": "8720c3d69d7e4933e4c5003de3af62e8388e5c194e8609a9856b6e36109cd42c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15702,
+          "end_line": 15703,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_builders.rs#builder_refuses_a_value_beyond_the_declared_bound",
+                "crates/gantry-conformance/tests/text_normalization.rs#normalization_refuses_a_form_beyond_the_declared_bound",
+                "crates/gantry-conformance/tests/text_case_mapping.rs#case_mapping_refuses_a_mapping_beyond_the_declared_bound"
               ],
               "rationale": null
             }

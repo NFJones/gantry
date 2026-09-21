@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "cd7c8a39f250135e32e53aebbf5ca120f261fd3259effcc476a48d1dcfafad2a",
+  "specification_sha256": "befd51ac43952ca72afbf6b42c52eeb6f16fe01bb4147857bd6458fc56106565",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15699,
+      "end_line": 15703,
       "rationale": null
     }
   ],
@@ -42243,6 +42243,47 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_foundation.rs#admissions_enforce_the_declared_admission_bound",
                 "crates/gantry-conformance/tests/text_conversions.rs#utf16_admission_counts_the_value_while_it_decodes"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.11-canonical-text-value-bound",
+      "span_start_line": 15700,
+      "span_end_line": 15703,
+      "anchor_line": 15701,
+      "body_start_line": 15702,
+      "body_end_line": 15703,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15702,
+          "end_line": 15703,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_builders.rs#builder_refuses_a_value_beyond_the_declared_bound",
+                "crates/gantry-conformance/tests/text_normalization.rs#normalization_refuses_a_form_beyond_the_declared_bound",
+                "crates/gantry-conformance/tests/text_case_mapping.rs#case_mapping_refuses_a_mapping_beyond_the_declared_bound"
               ],
               "rationale": null
             }

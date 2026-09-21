@@ -4,10 +4,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gantry::ir::{TEXT_CLAUSES, TextBuilder, TextDiagnosticCode, TextValue};
+use gantry::ir::{
+    TEXT_CLAUSES, TEXT_VALUE_SCALAR_BOUND, TextBuilder, TextDiagnosticCode, TextValue,
+};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 11] = [
+const EXPECTED_CLAUSES: [&str; 12] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -19,8 +21,42 @@ const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
+    "GNT-41.11-canonical-text-value-bound",
 ];
 const BUILDER_CLAUSE: &str = "GNT-41.4-canonical-text-builders";
+
+#[test]
+fn builder_refuses_a_value_beyond_the_declared_bound() {
+    let at_bound = TextValue::from_lossless_octets(&vec![b'a'; TEXT_VALUE_SCALAR_BOUND])
+        .unwrap_or_else(|error| panic!("the value at the bound is admitted: {error}"));
+    let mut builder = TextBuilder::with_octet_bound(TEXT_VALUE_SCALAR_BOUND + 1);
+    builder
+        .append(&at_bound)
+        .unwrap_or_else(|error| panic!("the value at the bound is appended: {error}"));
+    assert_eq!(
+        built(&builder).scalar_count(),
+        TEXT_VALUE_SCALAR_BOUND,
+        "a build at the declared bound publishes"
+    );
+    builder
+        .append(
+            &TextValue::from_lossless_octets(b"a")
+                .unwrap_or_else(|error| panic!("one scalar is admitted: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("one more scalar is appended: {error}"));
+    let error = builder
+        .build()
+        .err()
+        .unwrap_or_else(|| panic!("a build beyond the bound is refused"));
+    assert_eq!(error.code(), TextDiagnosticCode::ValueBound);
+    assert_eq!(
+        error.detail(),
+        format!(
+            "the value would hold {} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}",
+            TEXT_VALUE_SCALAR_BOUND + 1
+        )
+    );
+}
 
 #[test]
 fn builder_clause_publishes_the_bounded_builder() {
@@ -61,7 +97,7 @@ fn builder_accumulates_in_append_order() {
     assert_eq!(builder.octet_bound(), 64);
     assert!(builder.is_empty());
     assert_eq!(builder.len(), 0);
-    assert_eq!(builder.build(), TextValue::empty());
+    assert_eq!(built(&builder), TextValue::empty());
 
     let decomposed = admitted("e\u{301}".as_bytes());
     let syllable = admitted("\u{ac01}".as_bytes());
@@ -73,11 +109,11 @@ fn builder_accumulates_in_append_order() {
         decomposed.canonical_octets().len() + syllable.canonical_octets().len()
     );
     assert!(!builder.is_empty());
-    assert_eq!(builder.build().canonical_octets(), accumulated);
+    assert_eq!(built(&builder).canonical_octets(), accumulated);
 
     // Appending the empty value changes nothing.
     append(&mut builder, &TextValue::empty());
-    assert_eq!(builder.build().canonical_octets(), accumulated);
+    assert_eq!(built(&builder).canonical_octets(), accumulated);
 }
 
 #[test]
@@ -98,11 +134,11 @@ fn builder_refuses_at_the_declared_bound_atomically() {
         refusal.detail()
     );
     assert_eq!(builder.len(), 3, "a refused append changes nothing");
-    assert_eq!(builder.build().canonical_octets(), b"abc");
+    assert_eq!(built(&builder).canonical_octets(), b"abc");
 
     // A zero bound admits exactly the empty value.
     let mut zero = TextBuilder::with_octet_bound(0);
-    assert_eq!(zero.build(), TextValue::empty());
+    assert_eq!(built(&zero), TextValue::empty());
     assert!(zero.append(&three).is_err());
     append(&mut zero, &TextValue::empty());
 }
@@ -111,7 +147,7 @@ fn builder_refuses_at_the_declared_bound_atomically() {
 fn builder_publication_is_independent_of_later_appends() {
     let mut builder = TextBuilder::with_octet_bound(8);
     append(&mut builder, &admitted(b"ab"));
-    let published = builder.build();
+    let published = built(&builder);
     let recorded = published.clone();
     append(&mut builder, &admitted(b"cd"));
     assert_eq!(
@@ -119,7 +155,7 @@ fn builder_publication_is_independent_of_later_appends() {
         "a later append cannot change a published value"
     );
     assert_eq!(published.canonical_octets(), b"ab");
-    assert_eq!(builder.build().canonical_octets(), b"abcd");
+    assert_eq!(built(&builder).canonical_octets(), b"abcd");
 }
 
 fn admitted(octets: &[u8]) -> TextValue {
@@ -154,4 +190,10 @@ fn read_workspace_file(relative: &str) -> String {
         .join(relative);
     fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("`{}` is readable: {error}", path.display()))
+}
+
+fn built(builder: &TextBuilder) -> TextValue {
+    builder.build().unwrap_or_else(|error| {
+        panic!("the published value stays within the declared bound: {error}")
+    })
 }

@@ -15,7 +15,7 @@ const LIMITS_CLAUSE: &str = "GNT-41.10-canonical-text-admission-bound";
 
 /// The text surface this slice publishes, written out independently of the model and the note: the
 /// clause anchors in specification order and the registered refusal spellings in declaration order.
-const EXPECTED_CLAUSES: [&str; 11] = [
+const EXPECTED_CLAUSES: [&str; 12] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -27,6 +27,7 @@ const EXPECTED_CLAUSES: [&str; 11] = [
     "GNT-41.8-bounded-text-matching",
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
+    "GNT-41.11-canonical-text-value-bound",
 ];
 const EXPECTED_DIAGNOSTICS: [&str; 7] = [
     "text-invalid-utf8",
@@ -467,13 +468,13 @@ fn admissions_enforce_the_declared_admission_bound() {
     assert_eq!(TEXT_VALUE_SCALAR_BOUND, 65_536);
     assert_eq!(
         TEXT_CLAUSES.len(),
-        11,
-        "the section declares eleven clauses"
+        12,
+        "the section declares twelve clauses"
     );
     assert!(TEXT_CLAUSES.contains(&LIMITS_CLAUSE));
     let detail = |observed: usize| {
         format!(
-            "the admitted value would hold {observed} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}"
+            "the value would hold {observed} scalar values, beyond the declared bound {TEXT_VALUE_SCALAR_BOUND}"
         )
     };
     let at_bound = vec![b'a'; TEXT_VALUE_SCALAR_BOUND];
