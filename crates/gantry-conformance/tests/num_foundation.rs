@@ -110,14 +110,16 @@ fn num_note_names_the_declared_family_purity_and_separation() {
 
     // The separation is a model fact: the random counterpart is capability-backed, not pure.
     assert!(!PackageFamily::Random.is_pure());
-    assert!(note.contains(&PackageFamily::Random.package_name()));
     let separation = note
         .split("\n\n")
-        .find(|paragraph| paragraph.contains(&PackageFamily::Random.package_name()))
-        .unwrap_or_else(|| panic!("the note names the random counterpart"));
+        .find(|paragraph| paragraph.contains("separation from the capability-backed"))
+        .unwrap_or_else(|| {
+            panic!("the note states the separation from the capability-backed family")
+        });
     assert!(
-        separation.contains("capability-backed"),
-        "the separation paragraph marks the random family capability-backed: {separation}"
+        separation.contains(&PackageFamily::Random.package_name())
+            && separation.contains("capability-backed"),
+        "the separation paragraph names the random family and marks it capability-backed: {separation}"
     );
 
     // The note records declarations only.
