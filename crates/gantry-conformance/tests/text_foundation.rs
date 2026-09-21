@@ -138,9 +138,11 @@ fn kernels_examine_their_input_in_one_forward_pass() {
     for required in [
         "8697435",
         "16ea7fd",
-        "stable counting sort",
+        "counts the combining classes of each non-starter segment",
         "one output buffer",
-        "advances one forward state per scalar",
+        "one reverse presence pass followed by one forward mapping pass",
+        "carries one forward state per scalar",
+        "does not claim that each kernel traverses its input exactly once",
     ] {
         assert!(
             record.contains(required),
