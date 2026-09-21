@@ -70,6 +70,61 @@ fn text_clauses_and_the_diagnostic_are_published() {
 }
 
 #[test]
+fn note_names_the_declared_ownership_and_gated_obligations() {
+    let note = read_workspace_file("docs/text-foundation.md");
+    let section = section_body(&note, "## Declared ownership and handoff");
+    for clause in EXPECTED_CLAUSES {
+        assert!(
+            section.contains(clause),
+            "the handoff record names the declared clause `{clause}`"
+        );
+    }
+    for diagnostic in EXPECTED_DIAGNOSTICS {
+        assert!(
+            section.contains(diagnostic),
+            "the handoff record names the declared diagnostic `{diagnostic}`"
+        );
+    }
+    for owner in [
+        "std.num",
+        "GNT-40.6-canonical-numeric-text",
+        "TIME-001",
+        "4cf122ef",
+        "RESOURCE-001",
+        "926a4a0f",
+        "GATE-200",
+        "916d98cf",
+        "STDLIB-001",
+        "f3908168",
+        "PUB-001",
+        "624db3b4",
+    ] {
+        assert!(
+            section.contains(owner),
+            "the handoff record names the owner `{owner}`"
+        );
+    }
+    assert!(
+        section.contains("publishes no cancellation safe point"),
+        "the handoff record states the gated runtime obligation"
+    );
+}
+
+/// Returns the body of one note section: the text between its heading and the next level-two
+/// heading, or to the end of the note when the section is the final one.
+fn section_body<'a>(note: &'a str, heading: &str) -> &'a str {
+    let start = note
+        .find(heading)
+        .unwrap_or_else(|| panic!("the note has the section `{heading}`"))
+        + heading.len();
+    let rest = &note[start..];
+    match rest.find("\n## ") {
+        Some(end) => &rest[..end],
+        None => rest,
+    }
+}
+
+#[test]
 fn text_values_admit_exactly_well_formed_utf8() {
     let empty = admitted(b"");
     assert!(empty.is_empty());
