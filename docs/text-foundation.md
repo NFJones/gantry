@@ -35,7 +35,7 @@ specification decides.
 | `text-pattern-bound` | `GNT-41.8-bounded-text-matching` | a pattern exceeds a declared pattern bound, the declared step budget is zero, or the declared step budget exceeds `PATTERN_STEP_BOUND`; the refusal names the bound |
 | `text-match-budget` | `GNT-41.8-bounded-text-matching` | a match spent more steps than the declared step budget; no span, partial span, or prefix state is published |
 | `text-invalid-utf16` | `GNT-41.9-canonical-text-conversions` | a code-unit sequence is not a well-formed UTF-16 encoding of scalar values; the refusal names the zero-based code-unit index of the lone or unpaired surrogate |
-| `text-value-bound` | `GNT-41.11-canonical-text-value-bound` | a value would hold more than the declared bound: a build or transform refuses the value it would publish, and the admissions of `GNT-41.10-canonical-text-admission-bound` publish the same refusal for a sequence; an admission refuses the sequence, and a build or transform refuses the value it would publish; the refusal names the observed scalar count and the bound, is decided while the sequence is examined, and publishes no value, prefix, or partial state |
+| `text-value-bound` | `GNT-41.11-canonical-text-value-bound` | a value would hold more than the declared bound: the admissions of `GNT-41.10-canonical-text-admission-bound` refuse the sequence, and a build or transform refuses the value it would publish; the refusal names the observed scalar count and the bound and publishes no value, prefix, or partial state |
 
 ## Model surface (`crates/gantry-ir/src/text.rs`)
 
