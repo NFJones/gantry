@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{TEXT_CLAUSES, TextBuilder, TextDiagnosticCode, TextValue};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 7] = [
+const EXPECTED_CLAUSES: [&str; 8] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -15,6 +15,7 @@ const EXPECTED_CLAUSES: [&str; 7] = [
     "GNT-41.4-canonical-text-builders",
     "GNT-41.5-canonical-text-traversal",
     "GNT-41.6-canonical-text-comparison",
+    "GNT-41.7-canonical-grapheme-clusters",
 ];
 const BUILDER_CLAUSE: &str = "GNT-41.4-canonical-text-builders";
 

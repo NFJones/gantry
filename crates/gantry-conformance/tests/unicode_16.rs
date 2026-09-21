@@ -47,7 +47,7 @@ fn vendored_unicode_inputs_match_the_reviewed_manifest() {
         assert_eq!(digest, expected, "hash mismatch for {relative}");
         checked += 1;
     }
-    assert_eq!(checked, 17);
+    assert_eq!(checked, 18);
     assert!(read_text(&root.join("ucd/ReadMe.txt")).contains("Version 16.0.0"));
     assert!(read_text(&root.join("security/confusables.txt")).contains("# Version: 16.0.0"));
 }

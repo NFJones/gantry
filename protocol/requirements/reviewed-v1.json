@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "900e6ad608b1bf44d5b3a1b5d69676d47c126e0acae753d946708ab88fdff2f6",
+  "specification_sha256": "3bf6127bb61efa5fe3b00de08d5ca823b7647694ddb1412d0d2d110606b3eb4b",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15683,
+      "end_line": 15687,
       "rationale": null
     }
   ],
@@ -42053,10 +42053,10 @@
     {
       "id": "GNT-41.6-canonical-text-comparison",
       "span_start_line": 15681,
-      "span_end_line": 15683,
+      "span_end_line": 15684,
       "anchor_line": 15681,
       "body_start_line": 15682,
-      "body_end_line": 15683,
+      "body_end_line": 15684,
       "profiles": [
         "analyzer"
       ],
@@ -42068,7 +42068,7 @@
         {
           "key": "clause-001",
           "start_line": 15682,
-          "end_line": 15683,
+          "end_line": 15684,
           "profiles": [
             "analyzer"
           ],
@@ -42083,6 +42083,46 @@
               "evidence": [
                 "crates/gantry-conformance/tests/text_comparison.rs#comparison_clause_publishes_the_three_results",
                 "crates/gantry-conformance/tests/text_comparison.rs#comparison_orders_by_scalar_sequence"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-41.7-canonical-grapheme-clusters",
+      "span_start_line": 15685,
+      "span_end_line": 15687,
+      "anchor_line": 15685,
+      "body_start_line": 15686,
+      "body_end_line": 15687,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15686,
+          "end_line": 15687,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/text_graphemes.rs#grapheme_clause_publishes_the_forward_cluster_cursor",
+                "crates/gantry-conformance/tests/text_graphemes.rs#grapheme_clusters_match_the_pinned_unicode_vectors"
               ],
               "rationale": null
             }

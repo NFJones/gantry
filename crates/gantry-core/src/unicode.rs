@@ -149,6 +149,199 @@ pub fn is_extended_pictographic(value: char) -> bool {
     in_ranges(value, EXTENDED_PICTOGRAPHIC)
 }
 
+/// One Unicode 16 `Indic_Conjunct_Break` value from the pinned data.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum IndicConjunctBreak {
+    /// The implicit default every unlisted code point has.
+    None,
+    /// A consonant that can begin an Indic conjunct cluster.
+    Consonant,
+    /// A code point that extends an Indic conjunct cluster.
+    Extend,
+    /// A linker that joins the components of an Indic conjunct cluster.
+    Linker,
+}
+
+impl IndicConjunctBreak {
+    /// Returns the pinned Unicode 16 property-value spelling.
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
+        INDIC_CONJUNCT_BREAK_VALUES[usize::from(Self::index(self))]
+    }
+
+    fn index(value: Self) -> u8 {
+        match value {
+            Self::None => 0,
+            Self::Consonant => 1,
+            Self::Extend => 2,
+            Self::Linker => 3,
+        }
+    }
+
+    fn from_index(index: u8) -> Self {
+        match index {
+            1 => Self::Consonant,
+            2 => Self::Extend,
+            3 => Self::Linker,
+            _ => Self::None,
+        }
+    }
+}
+
+/// Returns the pinned Unicode 16 `Indic_Conjunct_Break` value of `value`.
+#[must_use]
+pub fn indic_conjunct_break(value: char) -> IndicConjunctBreak {
+    IndicConjunctBreak::from_index(value_range_u8(value as u32, INDIC_CONJUNCT_BREAK).unwrap_or(0))
+}
+
+/// Returns the octet offset of every extended grapheme cluster boundary of `value`, in order.
+///
+/// The boundaries are those of the extended grapheme clusters the pinned Unicode 16.0.0 data and
+/// the UAX #29 rules decide: the result always begins at zero and ends at the value's octet length,
+/// holds one entry per cluster boundary, and is decided only by the value's own scalar sequence, so
+/// segmentation never normalizes, case-maps, or modifies the value. A value holding no scalar has
+/// exactly one boundary at zero.
+#[must_use]
+pub fn grapheme_cluster_boundaries(value: &str) -> Vec<usize> {
+    let scalars: Vec<char> = value.chars().collect();
+    let mut boundaries = vec![0_usize];
+    if scalars.is_empty() {
+        return boundaries;
+    }
+    let mut offsets = Vec::with_capacity(scalars.len());
+    let mut offset = 0_usize;
+    for scalar in &scalars {
+        offsets.push(offset);
+        offset += scalar.len_utf8();
+    }
+    let classes: Vec<GraphemeBreak> = scalars
+        .iter()
+        .map(|scalar| grapheme_break(*scalar))
+        .collect();
+    for (index, offset) in offsets.iter().enumerate().skip(1) {
+        if is_grapheme_break(&scalars, &classes, index) {
+            boundaries.push(*offset);
+        }
+    }
+    boundaries.push(offset);
+    boundaries
+}
+
+fn is_grapheme_break(scalars: &[char], classes: &[GraphemeBreak], index: usize) -> bool {
+    let prior = classes[index - 1];
+    let current = classes[index];
+    // GB3
+    if prior == GraphemeBreak::Cr && current == GraphemeBreak::Lf {
+        return false;
+    }
+    // GB4
+    if matches!(
+        prior,
+        GraphemeBreak::Cr | GraphemeBreak::Lf | GraphemeBreak::Control
+    ) {
+        return true;
+    }
+    // GB5
+    if matches!(
+        current,
+        GraphemeBreak::Cr | GraphemeBreak::Lf | GraphemeBreak::Control
+    ) {
+        return true;
+    }
+    // GB6
+    if prior == GraphemeBreak::L
+        && matches!(
+            current,
+            GraphemeBreak::L | GraphemeBreak::V | GraphemeBreak::Lv | GraphemeBreak::Lvt
+        )
+    {
+        return false;
+    }
+    // GB7
+    if matches!(prior, GraphemeBreak::Lv | GraphemeBreak::V)
+        && matches!(current, GraphemeBreak::V | GraphemeBreak::T)
+    {
+        return false;
+    }
+    // GB8
+    if matches!(prior, GraphemeBreak::Lvt | GraphemeBreak::T) && current == GraphemeBreak::T {
+        return false;
+    }
+    // GB9
+    if matches!(current, GraphemeBreak::Extend | GraphemeBreak::Zwj) {
+        return false;
+    }
+    // GB9a
+    if current == GraphemeBreak::SpacingMark {
+        return false;
+    }
+    // GB9b
+    if prior == GraphemeBreak::Prepend {
+        return false;
+    }
+    // GB9c
+    if indic_conjunct_break(scalars[index]) == IndicConjunctBreak::Consonant
+        && indic_conjunct_before(scalars, index)
+    {
+        return false;
+    }
+    // GB11
+    if prior == GraphemeBreak::Zwj
+        && is_extended_pictographic(scalars[index])
+        && extended_pictographic_before_zwj(scalars, index)
+    {
+        return false;
+    }
+    // GB12 and GB13
+    if prior == GraphemeBreak::RegionalIndicator && current == GraphemeBreak::RegionalIndicator {
+        let mut count = 1_usize;
+        let mut cursor = index - 1;
+        while cursor > 0 && classes[cursor - 1] == GraphemeBreak::RegionalIndicator {
+            count += 1;
+            cursor -= 1;
+        }
+        if count % 2 == 1 {
+            return false;
+        }
+    }
+    // GB999
+    true
+}
+
+/// Returns whether GB9c holds before the conjunct consonant at `index`.
+fn indic_conjunct_before(scalars: &[char], index: usize) -> bool {
+    let mut cursor = index;
+    let mut linker = false;
+    while cursor > 0 {
+        match indic_conjunct_break(scalars[cursor - 1]) {
+            IndicConjunctBreak::Extend => cursor -= 1,
+            IndicConjunctBreak::Linker => {
+                linker = true;
+                cursor -= 1;
+            }
+            IndicConjunctBreak::Consonant => return linker,
+            IndicConjunctBreak::None => return false,
+        }
+    }
+    false
+}
+
+/// Returns whether GB11 holds before the code point at `index`, whose predecessor is a ZWJ.
+fn extended_pictographic_before_zwj(scalars: &[char], index: usize) -> bool {
+    let mut cursor = index - 1;
+    while cursor > 0 {
+        let prior = scalars[cursor - 1];
+        if is_extended_pictographic(prior) {
+            return true;
+        }
+        if grapheme_break(prior) != GraphemeBreak::Extend {
+            return false;
+        }
+        cursor -= 1;
+    }
+    false
+}
+
 /// Returns whether `value` is excluded by Gantry's identifier-security rule.
 #[must_use]
 pub fn is_identifier_security_excluded(value: char) -> bool {

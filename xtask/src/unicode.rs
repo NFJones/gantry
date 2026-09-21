@@ -28,6 +28,7 @@ const DATA_FILES: &[&str] = &[
     "ucd/SpecialCasing.txt",
     "ucd/UnicodeData.txt",
     "ucd/auxiliary/GraphemeBreakProperty.txt",
+    "ucd/auxiliary/GraphemeBreakTest.txt",
     "ucd/emoji/emoji-data.txt",
 ];
 
@@ -51,6 +52,7 @@ const ALL_FILES: &[&str] = &[
     "ucd/SpecialCasing.txt",
     "ucd/UnicodeData.txt",
     "ucd/auxiliary/GraphemeBreakProperty.txt",
+    "ucd/auxiliary/GraphemeBreakTest.txt",
     "ucd/emoji/emoji-data.txt",
 ];
 
@@ -75,6 +77,12 @@ const GRAPHEME_BREAK_VALUES: &[&str] = &[
     "LVT",
 ];
 
+/// The declared `Indic_Conjunct_Break` values, in generated table order.
+///
+/// Index zero is the implicit default; the parser refuses a listed default and any spelling this
+/// list does not declare.
+const INDIC_CONJUNCT_BREAK_VALUES: &[&str] = &["None", "Consonant", "Extend", "Linker"];
+
 #[derive(Clone, Debug)]
 struct UnicodeTables {
     xid_start: Vec<(u32, u32)>,
@@ -98,6 +106,7 @@ struct UnicodeTables {
     script_extensions: Vec<(u32, u32, Vec<u16>)>,
     confusables: Vec<(u32, Vec<u32>)>,
     grapheme_break: Vec<(u32, u32, u8)>,
+    indic_conjunct_break: Vec<(u32, u32, u8)>,
     extended_pictographic: Vec<(u32, u32)>,
 }
 
@@ -243,6 +252,10 @@ fn verify_versions(root: &Path) -> Result<(), String> {
     if !emoji.contains("# Used with Emoji Version 16.0") {
         return Err("emoji-data does not identify version 16.0".to_owned());
     }
+    let vectors = read_text(&root.join("ucd/auxiliary/GraphemeBreakTest.txt"))?;
+    if !vectors.contains("# GraphemeBreakTest-16.0.0.txt") {
+        return Err("GraphemeBreakTest does not identify version 16.0.0".to_owned());
+    }
     Ok(())
 }
 
@@ -303,6 +316,7 @@ fn load_tables(root: &Path) -> Result<UnicodeTables, String> {
         )?,
         confusables: parse_confusables(&read_text(&root.join("security/confusables.txt"))?)?,
         grapheme_break: parse_grapheme_break(&grapheme)?,
+        indic_conjunct_break: parse_indic_conjunct_break(&core)?,
         extended_pictographic: parse_property(&emoji, "Extended_Pictographic")?,
     })
 }
@@ -445,6 +459,53 @@ fn parse_grapheme_break(text: &str) -> Result<Vec<(u32, u32, u8)>, String> {
         {
             return Err(format!(
                 "grapheme-break ranges overlap at or before 0x{start:X}"
+            ));
+        }
+        prior_end = Some(*end);
+    }
+    Ok(ranges)
+}
+
+fn parse_property_value(
+    text: &str,
+    property: &str,
+    value: &str,
+) -> Result<Vec<(u32, u32)>, String> {
+    let mut ranges = Vec::new();
+    for line in data_lines(text) {
+        let mut fields = line.split(';');
+        let (Some(range), Some(name)) = (fields.next(), fields.next()) else {
+            return Err(format!("malformed property row {line:?}"));
+        };
+        let entry = fields
+            .next()
+            .unwrap_or_default()
+            .split('#')
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if name.trim() == property && entry == value {
+            ranges.push(parse_range(range.trim())?);
+        }
+    }
+    merge_ranges(ranges)
+}
+
+fn parse_indic_conjunct_break(text: &str) -> Result<Vec<(u32, u32, u8)>, String> {
+    let mut ranges = Vec::new();
+    for (index, value) in INDIC_CONJUNCT_BREAK_VALUES.iter().enumerate().skip(1) {
+        for (start, end) in parse_property_value(text, "InCB", value)? {
+            ranges.push((start, end, index as u8));
+        }
+    }
+    ranges.sort_unstable();
+    let mut prior_end: Option<u32> = None;
+    for (start, end, _) in &ranges {
+        if let Some(prior) = prior_end
+            && *start <= prior
+        {
+            return Err(format!(
+                "indic-conjunct-break ranges overlap at or before 0x{start:X}"
             ));
         }
         prior_end = Some(*end);
@@ -659,6 +720,16 @@ pub const UNICODE_VERSION: (u8, u8, u8) = (16, 0, 0);\n",
     render_mappings(&mut output, "CONFUSABLES", &tables.confusables);
     render_value_ranges(&mut output, "GRAPHEME_BREAK", &tables.grapheme_break);
     render_strings(&mut output, "GRAPHEME_BREAK_VALUES", GRAPHEME_BREAK_VALUES);
+    render_value_ranges(
+        &mut output,
+        "INDIC_CONJUNCT_BREAK",
+        &tables.indic_conjunct_break,
+    );
+    render_strings(
+        &mut output,
+        "INDIC_CONJUNCT_BREAK_VALUES",
+        INDIC_CONJUNCT_BREAK_VALUES,
+    );
     render_ranges(
         &mut output,
         "EXTENDED_PICTOGRAPHIC",

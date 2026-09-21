@@ -1,29 +1,32 @@
 //! The pure text foundation of `GNT-41.0-text-foundation-scope`,
 //! `GNT-41.1-canonical-text-values`, `GNT-41.2-canonical-text-normalization`,
 //! `GNT-41.3-canonical-text-case-mapping`, `GNT-41.4-canonical-text-builders`,
-//! `GNT-41.5-canonical-text-traversal`, and `GNT-41.6-canonical-text-comparison`: canonical text
-//! values as finite sequences of Unicode scalar values over the Section 35 scalar and octet
-//! contracts, their exact admission from octets, their scalar count and canonical UTF-8 octets,
-//! their scalar-boundary slicing, their two canonical normalization forms, their two full default
-//! case mappings over the pinned Unicode 16.0.0 data, an explicitly bounded builder that publishes
-//! one text value, a forward cursor that publishes the scalars of a value one at a time, and the
-//! canonical three-way comparison their identity already decides.
+//! `GNT-41.5-canonical-text-traversal`, `GNT-41.6-canonical-text-comparison`, and
+//! `GNT-41.7-canonical-grapheme-clusters`: canonical text values as finite sequences of Unicode
+//! scalar values over the Section 35 scalar and octet contracts, their exact admission from octets,
+//! their scalar count and canonical UTF-8 octets, their scalar-boundary slicing, their two
+//! canonical normalization forms, their two full default case mappings over the pinned Unicode
+//! 16.0.0 data, an explicitly bounded builder that publishes one text value, a forward cursor that
+//! publishes the scalars of a value one at a time, the canonical three-way comparison their
+//! identity already decides, and a forward cursor that publishes their extended grapheme clusters.
 //!
 //! The model is pure: it consumes no host locale, host encoding, ambient text facility, timing, or
-//! global mutable state, and it declares no grapheme-cluster segmentation, no case folding, no
-//! formatting, parsing, or interpolation, no regular expression, no locale value or catalog, no
+//! global mutable state, and it declares no word, sentence, or line segmentation, no case folding,
+//! no formatting, parsing, or interpolation, no regular expression, no locale value or catalog, no
 //! compatibility normalization form, and no boundary schema, recovery, or durable behavior.
 
 use std::cmp::Ordering;
 use std::fmt;
 
-use gantry_core::unicode::{normalize_nfc, normalize_nfd, to_full_lowercase, to_full_uppercase};
+use gantry_core::unicode::{
+    grapheme_cluster_boundaries, normalize_nfc, normalize_nfd, to_full_lowercase, to_full_uppercase,
+};
 
 use crate::scalar::CharValue;
 
 /// The declared clauses of Section 41, in specification order
-/// (`GNT-41.0` through `GNT-41.6`).
-pub const TEXT_CLAUSES: [&str; 7] = [
+/// (`GNT-41.0` through `GNT-41.7`).
+pub const TEXT_CLAUSES: [&str; 8] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -31,6 +34,7 @@ pub const TEXT_CLAUSES: [&str; 7] = [
     "GNT-41.4-canonical-text-builders",
     "GNT-41.5-canonical-text-traversal",
     "GNT-41.6-canonical-text-comparison",
+    "GNT-41.7-canonical-grapheme-clusters",
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
@@ -233,6 +237,39 @@ impl TextScalars<'_> {
     }
 }
 
+/// One published forward extended grapheme cluster cursor of
+/// `GNT-41.7-canonical-grapheme-clusters`.
+///
+/// The cursor publishes the value's extended grapheme clusters one at a time in sequence order and
+/// never modifies the value; `remaining` starts at the value's cluster count.
+pub struct TextGraphemes<'a> {
+    text: &'a str,
+    boundaries: Vec<usize>,
+    published: usize,
+}
+
+impl TextGraphemes<'_> {
+    /// Returns the number of clusters the cursor has not yet published.
+    #[must_use]
+    pub fn remaining(&self) -> usize {
+        self.boundaries.len() - 1 - self.published
+    }
+
+    /// Publishes the next extended grapheme cluster in sequence order, or none when every cluster
+    /// has been published.
+    pub fn next_cluster(&mut self) -> Option<TextValue> {
+        if self.published + 1 >= self.boundaries.len() {
+            return None;
+        }
+        let from = self.boundaries[self.published];
+        let to = self.boundaries[self.published + 1];
+        self.published += 1;
+        self.text.get(from..to).map(|slice| TextValue {
+            text: slice.to_owned(),
+        })
+    }
+}
+
 /// One refused text-foundation decision of `GNT-41.0-text-foundation-scope`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TextError {
@@ -423,6 +460,21 @@ impl TextValue {
             Ordering::Less => TextOrdering::Less,
             Ordering::Equal => TextOrdering::Equal,
             Ordering::Greater => TextOrdering::Greater,
+        }
+    }
+
+    /// Publishes a forward extended grapheme cluster cursor over the value
+    /// (`GNT-41.7-canonical-grapheme-clusters`).
+    ///
+    /// The clusters are the extended grapheme clusters of the pinned Unicode 16.0.0 data, decided
+    /// on the value's own scalar sequence: segmentation never normalizes, case-maps, or modifies
+    /// the value, and `remaining` starts at the value's cluster count.
+    #[must_use]
+    pub fn graphemes(&self) -> TextGraphemes<'_> {
+        TextGraphemes {
+            text: &self.text,
+            boundaries: grapheme_cluster_boundaries(&self.text),
+            published: 0,
         }
     }
 
