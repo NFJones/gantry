@@ -942,7 +942,7 @@ impl StorageStrategy {
 }
 
 /// A logically mutable octet buffer with an initialized prefix.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ByteBufferValue {
     strategy: StorageStrategy,
     octets: Arc<Vec<u8>>,
@@ -1016,6 +1016,14 @@ impl ByteBufferValue {
         self.physical_work
     }
 
+    /// Storage for one duplicate of this buffer under the declared strategy.
+    fn duplicate_storage(&self) -> Arc<Vec<u8>> {
+        match self.strategy {
+            StorageStrategy::EagerCopy => Arc::new(self.octets.as_ref().clone()),
+            StorageStrategy::CopyOnWrite | StorageStrategy::Reuse => Arc::clone(&self.octets),
+        }
+    }
+
     fn exclusive(&self) -> Result<(), ScalarError> {
         if self.aliased {
             Err(ScalarError::new(
@@ -1079,7 +1087,10 @@ impl ByteBufferValue {
         }
         let ceiling = self.quota.max_octets();
         let excess = self.quota.used_octets().saturating_sub(self.octets.len());
-        let mut head = self.octets.as_ref().clone();
+        let mut head = match Arc::get_mut(&mut self.octets) {
+            Some(unique) => std::mem::take(unique),
+            None => self.octets.as_ref().clone(),
+        };
         let tail = head.split_off(at);
         self.quota = ScalarQuota::charged(ceiling, head.len() + excess)?;
         self.octets = Arc::new(head);
@@ -1105,10 +1116,7 @@ impl ByteBufferValue {
     pub fn independent_copy(&self) -> Self {
         Self {
             strategy: self.strategy,
-            octets: match self.strategy {
-                StorageStrategy::EagerCopy => Arc::new(self.octets.as_ref().clone()),
-                StorageStrategy::CopyOnWrite | StorageStrategy::Reuse => Arc::clone(&self.octets),
-            },
+            octets: self.duplicate_storage(),
             quota: self.quota,
             aliased: false,
             physical_work: self.physical_work + self.strategy.duplication_work(self.octets.len()),
@@ -1121,12 +1129,21 @@ impl ByteBufferValue {
         self.aliased = true;
         Self {
             strategy: self.strategy,
-            octets: match self.strategy {
-                StorageStrategy::EagerCopy => Arc::new(self.octets.as_ref().clone()),
-                StorageStrategy::CopyOnWrite | StorageStrategy::Reuse => Arc::clone(&self.octets),
-            },
+            octets: self.duplicate_storage(),
             quota: self.quota,
             aliased: true,
+            physical_work: self.physical_work + self.strategy.duplication_work(self.octets.len()),
+        }
+    }
+}
+
+impl Clone for ByteBufferValue {
+    fn clone(&self) -> Self {
+        Self {
+            strategy: self.strategy,
+            octets: self.duplicate_storage(),
+            quota: self.quota,
+            aliased: self.aliased,
             physical_work: self.physical_work + self.strategy.duplication_work(self.octets.len()),
         }
     }
@@ -1229,4 +1246,58 @@ pub fn check_scalar_non_claims(assertions: &[ScalarNonClaimAssertion]) -> Result
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod buffer_storage_tests {
+    use super::*;
+
+    fn buffer(strategy: StorageStrategy, octets: Vec<u8>) -> ByteBufferValue {
+        ByteBufferValue::with_octets(strategy, ScalarQuota::new(64), octets)
+            .unwrap_or_else(|error| panic!("the octets fit the quota: {error}"))
+    }
+
+    #[test]
+    fn duplication_matches_the_declared_strategy() {
+        for strategy in StorageStrategy::ALL {
+            let mut source = buffer(strategy, vec![1, 2, 3]);
+            let alias = source.alias();
+            let copy = source.independent_copy();
+            let clone = source.clone();
+            let shares = !matches!(strategy, StorageStrategy::EagerCopy);
+            assert_eq!(Arc::ptr_eq(&source.octets, &alias.octets), shares);
+            assert_eq!(Arc::ptr_eq(&source.octets, &copy.octets), shares);
+            assert_eq!(Arc::ptr_eq(&source.octets, &clone.octets), shares);
+        }
+    }
+
+    #[test]
+    fn a_write_on_a_duplicate_detaches_without_touching_the_other_handle() {
+        for strategy in StorageStrategy::ALL {
+            let source = buffer(strategy, vec![1, 2, 3]);
+            let mut copy = source.independent_copy();
+            copy.append(4)
+                .unwrap_or_else(|error| panic!("the duplicate is mutable: {error}"));
+            assert_eq!(source.octets(), &[1, 2, 3]);
+            assert_eq!(copy.octets(), &[1, 2, 3, 4]);
+            assert!(!Arc::ptr_eq(&source.octets, &copy.octets));
+        }
+    }
+
+    #[test]
+    fn a_split_leaves_two_independent_halves() {
+        for strategy in StorageStrategy::ALL {
+            let mut value = buffer(strategy, vec![1, 2, 3, 4]);
+            let mut tail = value
+                .split_off(2)
+                .unwrap_or_else(|error| panic!("the split position is inside the prefix: {error}"));
+            value
+                .append(9)
+                .unwrap_or_else(|error| panic!("the head is mutable: {error}"));
+            tail.append(8)
+                .unwrap_or_else(|error| panic!("the tail is mutable: {error}"));
+            assert_eq!(value.octets(), &[1, 2, 9]);
+            assert_eq!(tail.octets(), &[3, 4, 8]);
+        }
+    }
 }
