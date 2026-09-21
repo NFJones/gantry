@@ -222,12 +222,15 @@ aggregate `canonical_pure_hierarchy()`:
 | Item | Class | Tier | Clauses published |
 | --- | --- | --- | --- |
 | `std.collections::map` | module | stable | `GNT-39.1-admitted-collection-keys`, `GNT-39.2-canonical-collection-order-and-duplicate-identity`, `GNT-39.4-map-type-form-recognition`, `GNT-39.5-map-type-identity`, `GNT-39.8-collection-value-model` |
-| `std.collections::set` | module | stable | `GNT-39.1-admitted-collection-keys`, `GNT-39.2-canonical-collection-order-and-duplicate-identity`, `GNT-39.6-set-and-range-type-identities`, `GNT-39.8-collection-value-model` |
-| `std.collections::range` | module | stable | `GNT-39.6-set-and-range-type-identities`, `GNT-39.7-range-step-contract`, `GNT-39.8-collection-value-model` |
+| `std.collections::set` | module | stable | `GNT-39.1-admitted-collection-keys`, `GNT-39.2-canonical-collection-order-and-duplicate-identity`, `GNT-39.4-map-type-form-recognition`, `GNT-39.6-set-and-range-type-identities`, `GNT-39.8-collection-value-model` |
+| `std.collections::range` | module | stable | `GNT-39.2-canonical-collection-order-and-duplicate-identity`, `GNT-39.4-map-type-form-recognition`, `GNT-39.6-set-and-range-type-identities`, `GNT-39.7-range-step-contract`, `GNT-39.8-collection-value-model` |
 
 Each item name is the lowercase logical spelling of the model's own kind spelling
 (`CollectionValueKind::spelling`), because a canonical logical `std` name is a lowercase dotted
-path. Each row declares exactly one class and one tier, each item takes its owning package's
+path. Each row lists every section clause that publishes a fact about that kind's surface, in
+specification order: the form recognition that admits it, its key or order contract where one
+applies, its type identity, its step contract, and its value model. Each row declares exactly one
+class and one tier, each item takes its owning package's
 declared modes and targets, and the package interface digest covers those declared names, classes,
 tiers, and applicability, so a changed row is a different interface identity. The rows are the
 family's own declaration and grant no source operation, source API, behavior, storage fact, or

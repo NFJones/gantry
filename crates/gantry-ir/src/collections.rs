@@ -1668,6 +1668,10 @@ pub struct CollectionItemRow {
 /// Each name is the lowercase logical spelling of the model's own kind spelling
 /// (`CollectionValueKind::spelling`), because a canonical logical `std` name is a lowercase dotted
 /// path, so the declared rows are derived from the kind vocabulary rather than restated beside it.
+///
+/// Each row lists every section clause that publishes a fact about that kind's surface — the form
+/// recognition that admits it, its key or order contract where one applies, its type identity, its
+/// step contract, and its value model — in specification order.
 pub const COLLECTION_ITEMS: [CollectionItemRow; 3] = [
     CollectionItemRow {
         kind: CollectionValueKind::Map,
@@ -1690,6 +1694,7 @@ pub const COLLECTION_ITEMS: [CollectionItemRow; 3] = [
         clauses: &[
             "GNT-39.1-admitted-collection-keys",
             "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+            "GNT-39.4-map-type-form-recognition",
             "GNT-39.6-set-and-range-type-identities",
             "GNT-39.8-collection-value-model",
         ],
@@ -1700,6 +1705,8 @@ pub const COLLECTION_ITEMS: [CollectionItemRow; 3] = [
         class: NameClass::Module,
         tier: StabilityTier::Stable,
         clauses: &[
+            "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+            "GNT-39.4-map-type-form-recognition",
             "GNT-39.6-set-and-range-type-identities",
             "GNT-39.7-range-step-contract",
             "GNT-39.8-collection-value-model",

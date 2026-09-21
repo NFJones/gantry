@@ -1610,6 +1610,47 @@ fn collection_family_declares_its_package_surface() {
     }
 }
 
+/// The item surface `std.collections` publishes, written out independently of the model and of the
+/// note: the admitted kind, the canonical logical item name, and the section clauses that publish a
+/// fact about that kind's surface, in specification order. The lane compares both the model's rows
+/// and the note's table rows against this table, so a row or a table entry that drifts fails here
+/// even when the model and the note agree with each other.
+const EXPECTED_ITEMS: [(CollectionValueKind, &str, &[&str]); 3] = [
+    (
+        CollectionValueKind::Map,
+        "std.collections::map",
+        &[
+            "GNT-39.1-admitted-collection-keys",
+            "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+            "GNT-39.4-map-type-form-recognition",
+            "GNT-39.5-map-type-identity",
+            "GNT-39.8-collection-value-model",
+        ],
+    ),
+    (
+        CollectionValueKind::Set,
+        "std.collections::set",
+        &[
+            "GNT-39.1-admitted-collection-keys",
+            "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+            "GNT-39.4-map-type-form-recognition",
+            "GNT-39.6-set-and-range-type-identities",
+            "GNT-39.8-collection-value-model",
+        ],
+    ),
+    (
+        CollectionValueKind::Range,
+        "std.collections::range",
+        &[
+            "GNT-39.2-canonical-collection-order-and-duplicate-identity",
+            "GNT-39.4-map-type-form-recognition",
+            "GNT-39.6-set-and-range-type-identities",
+            "GNT-39.7-range-step-contract",
+            "GNT-39.8-collection-value-model",
+        ],
+    ),
+];
+
 /// The family publishes its own item surface (`GNT-34.2`, `GNT-34.6`, `GNT-34.8`): one module item
 /// per admitted collection kind, each at the family's stable tier, with the package interface
 /// digest covering those declared facts, and the note pairing every item with the clauses it
@@ -1646,28 +1687,37 @@ fn collection_package_publishes_one_module_item_per_admitted_kind() {
     );
     let modes = package.modes().iter().copied().collect::<Vec<_>>();
     let targets = package.targets().iter().copied().collect::<Vec<_>>();
-    for row in COLLECTION_ITEMS {
+    assert_eq!(
+        COLLECTION_ITEMS.len(),
+        EXPECTED_ITEMS.len(),
+        "the family declares one row per expected item"
+    );
+    for (kind, name, clauses) in EXPECTED_ITEMS {
+        let row = COLLECTION_ITEMS
+            .iter()
+            .find(|row| row.kind == kind)
+            .unwrap_or_else(|| panic!("the family declares a row for `{name}`"));
         assert_eq!(
             row.name,
-            format!(
-                "std.collections::{}",
-                row.kind.spelling().to_ascii_lowercase()
-            ),
+            format!("std.collections::{}", kind.spelling().to_ascii_lowercase()),
             "the item name is the lowercase logical path of its kind"
+        );
+        assert_eq!(row.name, name, "the item name is the expected logical path");
+        assert_eq!(row.class, NameClass::Module, "`{name}` is a module");
+        assert_eq!(row.tier, StabilityTier::Stable, "`{name}` is stable");
+        assert_eq!(
+            row.clauses, clauses,
+            "`{name}` publishes exactly the expected clauses in specification order"
         );
         let item = package
             .item(row.name)
-            .unwrap_or_else(|| panic!("`{}` is declared", row.name));
-        assert_eq!(row.class, NameClass::Module);
-        assert_eq!(row.tier, StabilityTier::Stable);
-        assert_eq!(item.class(), row.class, "`{}` is a module", row.name);
-        assert_eq!(item.tier(), row.tier, "`{}` is stable", row.name);
-        assert!(!row.clauses.is_empty(), "`{}` names its clauses", row.name);
-        for clause in row.clauses {
+            .unwrap_or_else(|| panic!("`{name}` is declared"));
+        assert_eq!(item.class(), NameClass::Module, "`{name}` is a module");
+        assert_eq!(item.tier(), StabilityTier::Stable, "`{name}` is stable");
+        for clause in clauses {
             assert!(
                 COLLECTION_CLAUSES.contains(clause),
-                "`{}` publishes the declared clause `{clause}`",
-                row.name
+                "`{name}` publishes the declared clause `{clause}`"
             );
         }
     }
@@ -1725,19 +1775,22 @@ fn collection_package_publishes_one_module_item_per_admitted_kind() {
         "a graph without the family refuses the item declaration",
     );
     assert_eq!(refusal.code(), StdlibDiagnosticCode::UnknownEdge);
-    // The note publishes the surface it documents.
+    // The note publishes the surface it documents, and the lane compares the note with its own
+    // expectation rather than with the model's rows: every expected table row must appear exactly,
+    // so a dropped, added, or reordered clause in the note fails here.
     let note = fs::read_to_string(workspace_root().join("docs/collections-foundation.md"))
         .unwrap_or_else(|error| panic!("the collection note is readable: {error}"));
-    for row in COLLECTION_ITEMS {
-        assert!(note.contains(row.name), "the note names `{}`", row.name);
-        for clause in row.clauses {
-            assert!(
-                note.lines()
-                    .any(|line| line.contains(row.name) && line.contains(clause)),
-                "the note pairs `{}` with `{clause}` on one row",
-                row.name
-            );
-        }
+    for (_, name, clauses) in EXPECTED_ITEMS {
+        let rendered = clauses
+            .iter()
+            .map(|clause| format!("`{clause}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let expected_row = format!("| `{name}` | module | stable | {rendered} |");
+        assert!(
+            note.lines().any(|line| line == expected_row),
+            "the note carries exactly `{expected_row}`"
+        );
     }
 }
 
