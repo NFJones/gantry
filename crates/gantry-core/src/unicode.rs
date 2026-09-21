@@ -427,15 +427,29 @@ pub fn push_full_uppercase(value: char, output: &mut String) {
 #[must_use]
 pub fn to_full_lowercase(value: &str) -> String {
     let characters = value.chars().collect::<Vec<_>>();
+    // One backward pass records, for every position, whether the next non-Case_Ignorable scalar
+    // after it is Cased; the forward pass carries the same fact for the previous one. The
+    // Final_Sigma rule therefore costs a constant number of steps per scalar instead of a scan
+    // from every capital sigma.
+    let mut after_is_cased = vec![false; characters.len()];
+    let mut next_significant_is_cased = false;
+    for index in (0..characters.len()).rev() {
+        after_is_cased[index] = next_significant_is_cased;
+        let character = characters[index];
+        if !in_ranges(character, CASE_IGNORABLE) {
+            next_significant_is_cased = in_ranges(character, CASED);
+        }
+    }
     let mut output = String::new();
+    let mut before_is_cased = false;
     for (index, character) in characters.iter().copied().enumerate() {
-        if character == '\u{03A3}'
-            && has_cased_before(&characters, index)
-            && !has_cased_after(&characters, index)
-        {
+        if character == '\u{03A3}' && before_is_cased && !after_is_cased[index] {
             output.push('\u{03C2}');
         } else {
             push_full_lowercase(character, &mut output);
+        }
+        if !in_ranges(character, CASE_IGNORABLE) {
+            before_is_cased = in_ranges(character, CASED);
         }
     }
     output
@@ -466,23 +480,6 @@ pub fn confusable_skeleton(value: &str) -> String {
         }
     }
     normalize_nfd(&mapped)
-}
-
-fn has_cased_before(characters: &[char], index: usize) -> bool {
-    characters[..index]
-        .iter()
-        .rev()
-        .copied()
-        .find(|character| !in_ranges(*character, CASE_IGNORABLE))
-        .is_some_and(|character| in_ranges(character, CASED))
-}
-
-fn has_cased_after(characters: &[char], index: usize) -> bool {
-    characters[index + 1..]
-        .iter()
-        .copied()
-        .find(|character| !in_ranges(*character, CASE_IGNORABLE))
-        .is_some_and(|character| in_ranges(character, CASED))
 }
 
 fn in_ranges(value: char, ranges: &[(u32, u32)]) -> bool {
@@ -603,21 +600,55 @@ fn hangul_decomposition(code: u32) -> Option<Vec<u32>> {
 }
 
 fn canonical_order(codes: &mut [u32]) {
-    for index in 1..codes.len() {
-        let class = combining_class(codes[index]);
-        if class == 0 {
-            continue;
-        }
-        let mut position = index;
-        while position > 0 {
-            let previous = combining_class(codes[position - 1]);
-            if previous == 0 || previous <= class {
-                break;
-            }
-            codes.swap(position - 1, position);
-            position -= 1;
+    if codes.len() < 2 {
+        return;
+    }
+    // Canonical ordering is a stable sort of every non-starter segment by
+    // `Canonical_Combining_Class`, so a segment is ordered in one pass over its classes rather
+    // than by comparing every non-starter with all of its predecessors.
+    let mut ordered = Vec::with_capacity(codes.len());
+    let mut segment = Vec::new();
+    for &code in codes.iter() {
+        if combining_class(code) == 0 {
+            flush_non_starter_segment(&mut segment, &mut ordered);
+            ordered.push(code);
+        } else {
+            segment.push(code);
         }
     }
+    flush_non_starter_segment(&mut segment, &mut ordered);
+    codes.copy_from_slice(&ordered);
+}
+
+/// Appends one non-starter segment in canonical order: a stable counting sort over the segment's
+/// `Canonical_Combining_Class` values, whose distinct values are a small closed set.
+fn flush_non_starter_segment(segment: &mut Vec<u32>, ordered: &mut Vec<u32>) {
+    if segment.len() < 2 {
+        ordered.append(segment);
+        return;
+    }
+    let classes = segment
+        .iter()
+        .map(|code| combining_class(*code))
+        .collect::<Vec<_>>();
+    let mut counts = [0_usize; 256];
+    for class in classes.iter() {
+        counts[usize::from(*class)] += 1;
+    }
+    let mut starts = [0_usize; 256];
+    let mut total = 0_usize;
+    for (index, count) in counts.iter().enumerate() {
+        starts[index] = total;
+        total += count;
+    }
+    let mut placed = vec![0_u32; segment.len()];
+    for (index, code) in segment.iter().enumerate() {
+        let class = usize::from(classes[index]);
+        placed[starts[class]] = *code;
+        starts[class] += 1;
+    }
+    ordered.extend(placed);
+    segment.clear();
 }
 
 fn canonical_compose(codes: &mut Vec<u32>) {
@@ -627,25 +658,27 @@ fn canonical_compose(codes: &mut Vec<u32>) {
     let mut starter_index = 0;
     let mut starter = codes[0];
     let mut prior_class = 0;
-    let mut index = 1;
-    while index < codes.len() {
-        let current = codes[index];
+    // Composition writes into one output buffer instead of removing each composed scalar from the
+    // input, so no composition shifts the scalars that follow it.
+    let mut composed = Vec::with_capacity(codes.len());
+    composed.push(codes[0]);
+    for &current in codes[1..].iter() {
         let class = combining_class(current);
-        if let Some(composed) = compose(starter, current)
+        if let Some(value) = compose(starter, current)
             && (prior_class == 0 || prior_class < class)
         {
-            codes[starter_index] = composed;
-            starter = composed;
-            codes.remove(index);
+            composed[starter_index] = value;
+            starter = value;
             continue;
         }
         if class == 0 {
-            starter_index = index;
+            starter_index = composed.len();
             starter = current;
         }
         prior_class = class;
-        index += 1;
+        composed.push(current);
     }
+    *codes = composed;
 }
 
 fn compose(first: u32, second: u32) -> Option<u32> {
@@ -693,9 +726,98 @@ fn code_to_char(code: u32) -> char {
 mod tests {
     use super::{
         UNICODE_VERSION, confusable_skeleton, is_identifier_security_excluded, is_nfc,
-        is_white_space, is_xid_continue, is_xid_start, normalize_nfc, push_full_lowercase,
-        push_full_uppercase, script, script_extensions,
+        is_white_space, is_xid_continue, is_xid_start, normalize_nfc, normalize_nfd,
+        push_full_lowercase, push_full_uppercase, script, script_extensions, to_full_lowercase,
     };
+
+    /// The adversarial size is chosen so that the quadratic implementations this module replaced
+    /// (an insertion sort per non-starter and a backward scan per capital sigma) could not finish:
+    /// 200,000 non-starters mean 2 * 10^10 comparisons under the previous canonical ordering.
+    #[test]
+    fn canonical_ordering_and_final_sigma_are_linear_in_their_input() {
+        const RUN: usize = 200_000;
+        let starter = 'A';
+        let class_230 = char::from_u32(0x0301).unwrap_or_else(|| panic!("U+0301 is a scalar"));
+        let class_220 = char::from_u32(0x0323).unwrap_or_else(|| panic!("U+0323 is a scalar"));
+        let capital_sigma = char::from_u32(0x03A3).unwrap_or_else(|| panic!("U+03A3 is a scalar"));
+        let small_sigma = char::from_u32(0x03C3).unwrap_or_else(|| panic!("U+03C3 is a scalar"));
+        let final_sigma = char::from_u32(0x03C2).unwrap_or_else(|| panic!("U+03C2 is a scalar"));
+
+        let mut input = String::from(starter);
+        for _ in 0..RUN / 2 {
+            input.push(class_230);
+            input.push(class_220);
+        }
+        let ordered = normalize_nfd(&input);
+        assert_eq!(ordered.chars().count(), input.chars().count());
+        let classes = ordered
+            .chars()
+            .skip(1)
+            .map(|character| {
+                if character == class_220 {
+                    220_u32
+                } else {
+                    230_u32
+                }
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            classes.windows(2).all(|pair| pair[0] <= pair[1]),
+            "the segment is ordered by canonical combining class"
+        );
+
+        let marks = class_230.to_string().repeat(RUN);
+        let mut trailing = String::from(starter);
+        trailing.push_str(&marks);
+        trailing.push(capital_sigma);
+        assert_eq!(
+            to_full_lowercase(&trailing).chars().last(),
+            Some(final_sigma)
+        );
+
+        let mut leading = String::new();
+        leading.push(capital_sigma);
+        leading.push_str(&marks);
+        leading.push(starter);
+        assert_eq!(
+            to_full_lowercase(&leading).chars().next(),
+            Some(small_sigma)
+        );
+
+        // A capital sigma followed by a long Case_Ignorable run is what makes a per-sigma
+        // backward scan quadratic; this input repeats that shape 1,000 times.
+        let long_run = class_230.to_string().repeat(1_000);
+        let mut repeated = String::new();
+        for _ in 0..1_000 {
+            repeated.push('a');
+            repeated.push_str(&long_run);
+            repeated.push(capital_sigma);
+            repeated.push('1');
+        }
+        assert_eq!(
+            to_full_lowercase(&repeated).matches(final_sigma).count(),
+            1_000,
+            "every sigma of the repeated shape takes the final form"
+        );
+
+        // Composition-heavy input: the previous implementation removed each composed scalar from
+        // the middle of its buffer, so 400,000 compositions shifted about 1.6 * 10^11 scalars.
+        let composed_character =
+            char::from_u32(0x00E1).unwrap_or_else(|| panic!("U+00E1 is a scalar"));
+        let mut repeated = String::new();
+        for _ in 0..400_000 {
+            repeated.push('a');
+            repeated.push(class_230);
+        }
+        let normalized = normalize_nfc(&repeated);
+        assert_eq!(normalized.chars().count(), 400_000);
+        assert!(
+            normalized
+                .chars()
+                .all(|character| character == composed_character),
+            "every base composes with its following mark"
+        );
+    }
 
     #[test]
     fn pinned_properties_cover_unicode_16_boundaries() {
