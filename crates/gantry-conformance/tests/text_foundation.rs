@@ -105,8 +105,25 @@ fn note_names_the_declared_ownership_and_gated_obligations() {
         );
     }
     assert!(
-        section.contains("publishes no cancellation safe point"),
+        section.contains("remain gated on the runtime owners named above"),
         "the handoff record states the gated runtime obligation"
+    );
+    assert!(
+        section.contains("Only two kernels of the section declare an exact bound or budget"),
+        "the handoff record names exactly which kernels declare bounds"
+    );
+    assert!(
+        section.contains("are exact validity rules for their inputs, not work limits"),
+        "the handoff record distinguishes admission validity from work limits"
+    );
+    assert!(
+        section.contains("publishes no work limit and no cancellation safe point"),
+        "the handoff record states the unbounded kernels' gated obligation"
+    );
+    assert!(
+        !section
+            .contains("Every input-dependent kernel of the section has an exact declared bound"),
+        "the handoff record does not claim a bound for every kernel"
     );
 }
 
