@@ -12,25 +12,28 @@ use gantry::ir::{CapabilityAuthorityClosure, RequirementResolution};
 /// The published note guarded by this lane.
 const AUTHORITY_NOTE: &str = include_str!("../../../docs/authority-closure.md");
 
-/// Returns the note with every whitespace run collapsed to one space, so a
-/// phrase that a wrap splits in the file can still be asserted as one phrase.
-fn flattened_note() -> String {
-    AUTHORITY_NOTE
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+/// Returns whether one block of the note contains the phrase, after collapsing
+/// the whitespace inside that block. A block is a paragraph, a list item, or a
+/// table row: a phrase wrapped inside one block is recognised, while a phrase
+/// assembled across two blocks is not.
+fn block_contains(needle: &str) -> bool {
+    AUTHORITY_NOTE.split("\n\n").any(|block| {
+        block
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .contains(needle)
+    })
 }
 
 #[test]
 fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
-    let flattened = flattened_note();
-    let note = flattened.as_str();
     for anchor in [
         "GNT-3-T-AUTHORITY-CLOSURE",
         "GNT-7.2-authority-rebinding",
         "GNT-3-T-AUTHORITY-ADMISSION",
     ] {
-        assert!(note.contains(anchor), "the authority note names {anchor}");
+        assert!(block_contains(anchor), "the authority note names {anchor}");
     }
     for code in [
         "authority-closure-exceeds-maximum",
@@ -40,7 +43,7 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
         "authority-resolution-exceeds-maximum",
     ] {
         assert!(
-            note.contains(code),
+            block_contains(code),
             "the authority note names the registered code {code}"
         );
     }
@@ -52,7 +55,7 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
         "not representable",
     ] {
         assert!(
-            note.contains(member),
+            block_contains(member),
             "the authority note names the clause member {member}"
         );
     }
@@ -73,12 +76,12 @@ fn authority_note_names_the_owned_clauses_codes_and_ceilings() {
     for (constant, value) in ceilings {
         let declared = format!("{constant}` ({value})");
         assert!(
-            flattened.contains(&declared),
-            "the authority note declares {constant} as {value} in one phrase"
+            block_contains(&declared),
+            "the authority note declares {constant} as {value} in one block"
         );
     }
     assert!(
-        note.contains("It grants nothing"),
+        block_contains("It grants nothing"),
         "the authority note carries its non-claim"
     );
 }

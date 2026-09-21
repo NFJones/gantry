@@ -4771,6 +4771,13 @@ mod tests {
         assert_eq!(pinned_identities.len(), 2);
         assert!(pinned_identities.contains(&&first));
         assert!(pinned_identities.contains(&&second));
+        for pin in forward.pins() {
+            assert_eq!(
+                forward.pin_for(pin.identity()),
+                Some(pin.interface()),
+                "each pin keeps its own identity and interface paired"
+            );
+        }
         let other_package = dependency_identity(TargetKind::Benchmark, None);
         let other = DependencyFingerprint::derive(
             other_package,

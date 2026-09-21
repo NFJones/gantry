@@ -42,22 +42,26 @@ const MODEL_SOURCE: &str = include_str!("../../gantry-ir/src/package.rs");
 /// The published package-model note guarded by this lane.
 const PACKAGE_MODEL_NOTE: &str = include_str!("../../../docs/package-model.md");
 
-/// Returns the note with every whitespace run collapsed to one space, so a
-/// phrase that a wrap splits in the file can still be asserted as one phrase.
-/// The registered-code rows are asserted against the raw note, because a row
-/// wrapped across lines would no longer render as one table row.
-fn flattened_package_note() -> String {
-    PACKAGE_MODEL_NOTE
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+/// Returns whether one block of the note contains the phrase, after collapsing
+/// the whitespace inside that block. A block is a paragraph, a list item, or a
+/// table row: a phrase wrapped inside one block is recognised, while a phrase
+/// assembled across two blocks is not. The registered-code rows are asserted
+/// against the raw note instead, because a row wrapped across lines would no
+/// longer render as one table row.
+fn package_note_block_contains(needle: &str) -> bool {
+    PACKAGE_MODEL_NOTE.split("\n\n").any(|block| {
+        block
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .contains(needle)
+    })
 }
 
 /// The package model publishes every registered code, its registered meaning,
 /// its owning clause, every declared clause anchor, and its non-claims.
 #[test]
 fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
-    let flattened = flattened_package_note();
     for clause in [
         "GNT-16.0",
         "GNT-16.1-package-identity",
@@ -71,7 +75,7 @@ fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
         "GNT-16.9-resolution-order-independence",
     ] {
         assert!(
-            flattened.contains(clause),
+            package_note_block_contains(clause),
             "the package-model note names {clause}"
         );
     }
@@ -89,19 +93,20 @@ fn package_model_note_names_every_registered_code_anchor_and_non_claim() {
         );
     }
     assert!(
-        flattened.contains("MUST NOT be reported under another condition's code"),
+        package_note_block_contains("MUST NOT be reported under another condition's code"),
         "the note carries the code-less reporting rule"
     );
     assert!(
-        flattened.contains("This model grants nothing."),
+        package_note_block_contains("This model grants nothing."),
         "the note carries its non-claim"
     );
     assert!(
-        flattened.contains("capability ceiling") && flattened.contains("undefined property"),
+        package_note_block_contains("capability ceiling")
+            && package_note_block_contains("undefined property"),
         "the note names the remaining code-less condition families"
     );
     assert!(
-        flattened.contains("`not-applicable` under a v1 profile"),
+        package_note_block_contains("`not-applicable` under a v1 profile"),
         "the note states the v1 not-applicable status of the section"
     );
 }
