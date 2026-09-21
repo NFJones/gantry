@@ -16716,7 +16716,8 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_cannot_revive_a_revoked_or_expired_generation",
-                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change"
+                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change",
+                "crates/gantry-conformance/tests/authority_closure.rs#authority_note_names_the_owned_clauses_codes_and_ceilings"
               ],
               "rationale": null
             },
@@ -16725,7 +16726,8 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_cannot_revive_a_revoked_or_expired_generation",
-                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change"
+                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change",
+                "crates/gantry-conformance/tests/authority_closure.rs#authority_note_names_the_owned_clauses_codes_and_ceilings"
               ],
               "rationale": null
             },
@@ -16734,7 +16736,8 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_cannot_revive_a_revoked_or_expired_generation",
-                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change"
+                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change",
+                "crates/gantry-conformance/tests/authority_closure.rs#authority_note_names_the_owned_clauses_codes_and_ceilings"
               ],
               "rationale": null
             },
@@ -16743,7 +16746,8 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_cannot_revive_a_revoked_or_expired_generation",
-                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change"
+                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change",
+                "crates/gantry-conformance/tests/authority_closure.rs#authority_note_names_the_owned_clauses_codes_and_ceilings"
               ],
               "rationale": null
             },
@@ -16752,7 +16756,8 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_cannot_revive_a_revoked_or_expired_generation",
-                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change"
+                "crates/gantry-conformance/tests/authority_lineage.rs#rebinding_of_unchanged_binding_is_not_an_authority_change",
+                "crates/gantry-conformance/tests/authority_closure.rs#authority_note_names_the_owned_clauses_codes_and_ceilings"
               ],
               "rationale": null
             }

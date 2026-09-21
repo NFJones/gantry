@@ -5,6 +5,10 @@
    "sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d"
   },
   {
+   "path": "crates/gantry-conformance/tests/authority_closure.rs",
+   "sha256": "efc1b8f7959f7ea93e917ce4f8aee4b9c6929a6840b1680209af11ba9792b9c3"
+  },
+  {
    "path": "crates/gantry-conformance/tests/authority_lineage.rs",
    "sha256": "5f1383286bbd3bd0744885bc66b60bd5cc3ad37610828ae0bc6f3283f530781a"
   },
@@ -82,7 +86,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "8a653f12462f6bc63f8d93ab1b20a299749443d9d79049aa8bc108958bfc4f32"
+   "sha256": "fb86e007d62415505aca9d7f54c026380b3db5bf797bcb78dc6647f5d4a113f9"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
@@ -118,11 +122,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "17e7ec0432bdd214a5490290447c0d39f8ad67903a1d8308457768be38ba7023"
+   "sha256": "8b9b4d746800bebf00805ad5036ea019fc92fe49ab725eeda3c4763eefaecc98"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "0501bc5d402e812a0ac0f15b3cbcab1d36a21898f08e9909c685df8b25924c5b"
+   "sha256": "800159f9ca376ba9225b3dd2ec7611eb093b59bad036c24eacaeeadf0a42f3fc"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
@@ -154,7 +158,7 @@
  "environment_gaps": [
   "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result or a qualified stable-media power-loss environment."
  ],
- "evidence_anchor_count": 124,
+ "evidence_anchor_count": 125,
  "format": "gantry.durable-gate-evidence/v1",
  "gate": "GNT-GATE-600",
  "prerequisites": [

@@ -37,6 +37,10 @@
    "sha256": "aba3cefcfbff6f9eb7f9687f521aa0a6165a2f2c48fefdf9033936fafd2bc00d"
   },
   {
+   "path": "crates/gantry-conformance/tests/authority_closure.rs",
+   "sha256": "efc1b8f7959f7ea93e917ce4f8aee4b9c6929a6840b1680209af11ba9792b9c3"
+  },
+  {
    "path": "crates/gantry-conformance/tests/authority_lineage.rs",
    "sha256": "5f1383286bbd3bd0744885bc66b60bd5cc3ad37610828ae0bc6f3283f530781a"
   },
@@ -230,7 +234,7 @@
   },
   {
    "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "1f4f9a64fbca1563b68c5799eb60b6fe67dd718d7b2563d7e1149ff454328e8d"
+   "sha256": "8db9eac27025759cd6f1f53dcdf8037eb10537a231612cd60e0e9ac5bab28ad4"
   },
   {
    "path": "protocol/conformance/execution-observation-v1.json",
@@ -266,11 +270,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "17e7ec0432bdd214a5490290447c0d39f8ad67903a1d8308457768be38ba7023"
+   "sha256": "8b9b4d746800bebf00805ad5036ea019fc92fe49ab725eeda3c4763eefaecc98"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "0501bc5d402e812a0ac0f15b3cbcab1d36a21898f08e9909c685df8b25924c5b"
+   "sha256": "800159f9ca376ba9225b3dd2ec7611eb093b59bad036c24eacaeeadf0a42f3fc"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
@@ -303,7 +307,7 @@
  "environment_gaps": [
   "The stable macOS product lane executes in hosted CI; this Linux gate run does not claim a local macOS result."
  ],
- "evidence_anchor_count": 189,
+ "evidence_anchor_count": 190,
  "format": "gantry.sequential-gate-evidence/v1",
  "gate": "GNT-GATE-400",
  "prerequisites": [
