@@ -274,13 +274,19 @@ fn release_points_and_charge_conservation_are_identical_across_strategies() {
         let tail_octets = octets(&tail);
         assert_eq!(head_octets.len() + tail_octets.len(), charged);
         let released = tail.len();
+        let tail_before = tail.quota().used_octets();
+        assert_eq!(
+            tail_before, released,
+            "the split charges the tail its own octets"
+        );
         tail.truncate(0)
             .unwrap_or_else(|error| panic!("truncating to zero is admitted: {error}"));
         assert_eq!(
-            tail.quota().used_octets(),
-            0,
+            tail_before - tail.quota().used_octets(),
+            released,
             "truncation releases exactly the removed octets"
         );
+        assert_eq!(tail.quota().used_octets(), 0);
         let refusal = refusal_of_split(&mut value);
         states.push((
             head_octets,
@@ -288,6 +294,7 @@ fn release_points_and_charge_conservation_are_identical_across_strategies() {
             value.quota().used_octets(),
             tail.quota().used_octets(),
             released,
+            tail_before,
             refusal,
         ));
     }
