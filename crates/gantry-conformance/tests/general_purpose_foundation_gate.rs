@@ -143,6 +143,29 @@ fn foundation_gate_rejects_malformed_missing_cyclic_stale_and_overclaiming_recor
     assert!(validate_manifest(&root, &unqualified).is_err());
 }
 
+#[test]
+fn foundation_gate_refuses_a_bound_source_that_is_not_committed() {
+    let root = workspace_root();
+    let untracked = FileDigest {
+        path: "docs/reference/general-purpose-refactor-issue-plan.md".to_owned(),
+        sha256: "0".repeat(64),
+    };
+    assert!(
+        validate_tracked_source(&root, &untracked).is_err(),
+        "a source under the ignored directory is refused even when a local copy exists"
+    );
+    let specification =
+        fs::read(root.join("SPEC.md")).unwrap_or_else(|error| panic!("SPEC.md: {error}"));
+    let tracked = FileDigest {
+        path: "SPEC.md".to_owned(),
+        sha256: format!("{:x}", Sha256::digest(specification)),
+    };
+    assert!(
+        validate_tracked_source(&root, &tracked).is_ok(),
+        "a committed source whose bytes match is admitted"
+    );
+}
+
 fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     if manifest.format != "gantry.general-purpose-foundation-gate-evidence/v1"
         || manifest.gate != "GNT-GP-GATE-100"
