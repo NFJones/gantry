@@ -14,8 +14,10 @@ use gantry::ir::{
     PackageFamily, Prelude, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
     SelectedInstance, SemanticMode, StabilityTier, StabilityTransition, StdContractVersion,
     StdDeprecation, StdGraph, StdItem, StdName, StdPackage, StdlibDiagnosticCode, StdlibError,
-    StdlibNonClaim, StdlibNonClaimAssertion, TargetKind, canonical_pure_hierarchy,
-    check_layout_identity, check_stdlib_non_claims, require_applicable,
+    StdlibNonClaim, StdlibNonClaimAssertion, TargetKind, canonical_codec_hierarchy,
+    canonical_collections_hierarchy, canonical_crypto_hierarchy, canonical_data_hierarchy,
+    canonical_pure_hierarchy, canonical_std_hierarchy, check_layout_identity,
+    check_stdlib_non_claims, require_applicable,
 };
 
 const CORE: &str = "std.core";
@@ -1291,6 +1293,84 @@ fn prelude_edition_is_folded_into_the_aggregate_identity() {
         )
         .code(),
         StdlibDiagnosticCode::PublicationDrift
+    );
+}
+
+#[test]
+fn aggregate_hierarchy_composes_every_declared_family_surface() {
+    let aggregate = canonical_std_hierarchy()
+        .unwrap_or_else(|error| panic!("the aggregate hierarchy is declared: {error}"));
+    let families = [
+        canonical_collections_hierarchy(),
+        canonical_codec_hierarchy(),
+        canonical_crypto_hierarchy(),
+        canonical_data_hierarchy(),
+    ];
+    let mut expected: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for family in families {
+        let family =
+            family.unwrap_or_else(|error| panic!("the family hierarchy declares: {error}"));
+        for name in family.package_names() {
+            let package = family
+                .package(name)
+                .unwrap_or_else(|| panic!("`{name}` resolves in its family hierarchy"));
+            if !package.items().is_empty() {
+                expected
+                    .entry(name.to_string())
+                    .or_default()
+                    .extend(package.items().keys().cloned());
+            }
+        }
+    }
+    assert!(
+        !expected.is_empty(),
+        "the declared families carry item rows"
+    );
+    let mut declared: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for name in aggregate.package_names() {
+        let package = aggregate
+            .package(name)
+            .unwrap_or_else(|| panic!("`{name}` resolves in the aggregate hierarchy"));
+        if !package.items().is_empty() {
+            declared.insert(name.to_string(), package.items().keys().cloned().collect());
+        }
+    }
+    assert_eq!(
+        declared, expected,
+        "the aggregate declares exactly the composed family item surfaces"
+    );
+    for name in aggregate.package_names() {
+        let package = aggregate
+            .package(name)
+            .unwrap_or_else(|| panic!("`{name}` resolves in the aggregate hierarchy"));
+        for item in package.items().values() {
+            assert_eq!(
+                item.owner(),
+                name,
+                "every aggregate item is owned by its declaring package"
+            );
+        }
+    }
+    assert!(
+        aggregate.validate().is_ok(),
+        "the composed aggregate hierarchy is valid"
+    );
+    assert!(
+        aggregate.topological_order().is_ok(),
+        "the composed pure DAG is acyclic"
+    );
+    let contract = StdContractVersion::new(1, 0)
+        .unwrap_or_else(|error| panic!("the fixture contract version is valid: {error}"));
+    let manifest = aggregate
+        .manifest(contract)
+        .unwrap_or_else(|error| panic!("the aggregate manifest is valid: {error}"));
+    assert_eq!(manifest.entries().len(), aggregate.package_names().len());
+    assert!(manifest.verify_against(&aggregate).is_ok());
+    assert!(
+        aggregate
+            .package("crates/gantry-ir/src/crypto.rs")
+            .is_none(),
+        "repository layout is never a standard-package identity"
     );
 }
 

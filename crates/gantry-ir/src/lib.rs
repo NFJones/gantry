@@ -51,6 +51,7 @@ mod scalar;
 mod schema;
 mod secret;
 mod signature;
+mod std_hierarchy;
 mod stdlib;
 mod target;
 mod text;
@@ -409,6 +410,7 @@ pub use numeric::{
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade
 // identity, stability tiers, applicability, and the aggregate manifest without any
 // physical repository layout entering an identity.
+pub use std_hierarchy::canonical_std_hierarchy;
 pub use stdlib::{
     CANONICAL_PRELUDE_EDITION, CANONICAL_PRELUDE_MEMBERS, FacadeReexport, FeatureSelection,
     MAX_STD_NAME_BYTES, MAX_STD_PACKAGES, NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude,
