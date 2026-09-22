@@ -19,7 +19,8 @@ use gantry::ir::{
     StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim, StdlibNonClaimAssertion,
     TargetKind, canonical_codec_hierarchy, canonical_collections_hierarchy,
     canonical_crypto_hierarchy, canonical_data_hierarchy, canonical_pure_hierarchy,
-    canonical_std_hierarchy, check_layout_identity, check_stdlib_non_claims, require_applicable,
+    canonical_std_hierarchy, check_layout_identity, check_stdlib_non_claims, hex_decode,
+    hex_encode, require_applicable, sha256_digest,
 };
 
 const CORE: &str = "std.core";
@@ -1470,6 +1471,44 @@ fn aggregate_manifest_catalog_matches_the_live_hierarchy() {
             declared["interface_digest"],
             Value::from(entry.identity().as_str()),
             "`{name}` publishes its interface digest"
+        );
+    }
+}
+
+#[test]
+fn cross_family_pure_composition_over_the_aggregate() {
+    let graph = canonical_std_hierarchy()
+        .unwrap_or_else(|error| panic!("the aggregate hierarchy is declared: {error}"));
+    // Compose two pure families over the aggregate: hash a message with `std.crypto`, spell the
+    // digest with `std.codec`, decode the spelling, and re-hash the decoded octets.
+    let message = b"gantry-stdlib-composition";
+    let digest =
+        sha256_digest(message).unwrap_or_else(|error| panic!("the message is admitted: {error:?}"));
+    let spelled = hex_encode(digest.octets())
+        .unwrap_or_else(|error| panic!("the digest is encodable: {error:?}"));
+    assert_eq!(spelled.len(), 64, "the digest spells as sixty-four digits");
+    let decoded =
+        hex_decode(&spelled).unwrap_or_else(|error| panic!("the spelling decodes: {error:?}"));
+    assert_eq!(decoded.as_slice(), digest.octets().as_slice());
+    let second = sha256_digest(&decoded)
+        .unwrap_or_else(|error| panic!("the decoded octets are admitted: {error:?}"));
+    assert_eq!(
+        second,
+        sha256_digest(digest.octets())
+            .unwrap_or_else(|error| panic!("the digest re-hashes: {error:?}")),
+        "the composition is pure and deterministic"
+    );
+    // Each composed item keeps the defining package the aggregate declares.
+    for (item, owner) in [
+        ("std.crypto.hash", "std.crypto"),
+        ("std.codec.hex", "std.codec"),
+    ] {
+        let package = graph
+            .package(owner)
+            .unwrap_or_else(|| panic!("`{owner}` is declared in the aggregate"));
+        assert!(
+            package.item(item).is_some(),
+            "`{item}` is declared by `{owner}` in the aggregate"
         );
     }
 }
