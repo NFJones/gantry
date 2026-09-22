@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "3066140bf5934c3f71c815e22aa8cf64e285ec18249db6655159cc88b35361e7",
-  "byte_length": 1246455,
-  "line_count": 16280,
+  "specification_sha256": "7b5b96d1bb01680590d28475ded8b7b150dcd8ff57ea546ede1e64318a669bb4",
+  "byte_length": 1248448,
+  "line_count": 16303,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16280,
-      "sha256": "1f2fc7c0364ddd6a23b9d0f9f8e0fa334d896374d2ff745d70cc7d0d70493af4",
+      "end_line": 16303,
+      "sha256": "34667b90316df293866459d916a82b46f15b776d20d1b455aa7a734646ed82aa",
       "rationale": null
     }
   ],
@@ -44900,6 +44900,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_path_values_are_bounded_and_escape_free"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.3-filesystem-action-values",
+      "span_start_line": 16281,
+      "span_end_line": 16303,
+      "span_sha256": "088b82d59ee50b6aef0cb2e2cb70ee8a08094780908d78886c03b0e377faf027",
+      "anchor_line": 16282,
+      "body_start_line": 16283,
+      "body_end_line": 16303,
+      "body_sha256": "676cc4751bb26f08ff8ae7de5e8d4d5ee9002544e99884c6518ec354bf00cdb5",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16283,
+          "end_line": 16303,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_actions_are_closed_and_carry_recovery_classes"
               ],
               "rationale": null
             }

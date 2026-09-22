@@ -9,9 +9,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_SURFACE_MODES, FS_SURFACE_TARGETS,
+    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction,
     FsDiagnosticCode, FsPath, NameClass, PackageFamily, Prelude, StabilityTier, StdGraph, StdItem,
     StdPackage, StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface,
+    generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -51,6 +52,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.0-filesystem-foundation-scope",
             "GNT-47.1-filesystem-modules-and-item-rows",
             "GNT-47.2-filesystem-path-values",
+            "GNT-47.3-filesystem-action-values",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -88,6 +90,11 @@ fn fs_module_rows_are_closed_and_canonical() {
         assert_eq!(row.class, NameClass::Module);
         assert_eq!(row.tier, StabilityTier::Stable);
         let expected: &[&str] = match row.name {
+            "std.fs::action" => &[
+                "GNT-47.0-filesystem-foundation-scope",
+                "GNT-47.1-filesystem-modules-and-item-rows",
+                "GNT-47.3-filesystem-action-values",
+            ],
             "std.fs::path" => &[
                 "GNT-47.0-filesystem-foundation-scope",
                 "GNT-47.1-filesystem-modules-and-item-rows",
@@ -337,6 +344,66 @@ fn fs_path_values_are_bounded_and_escape_free() {
         "A declared root is a portable name of ASCII lower-case letters, digits, and `_` whose first scalar is a lower-case letter",
         "the separator scalar `/` or `\\`",
         "`canonical_spelling` renders the declared root followed by each declared segment separated by `/`",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_actions_are_closed_and_carry_recovery_classes() {
+    assert_eq!(
+        FsAction::ALL,
+        [
+            FsAction::Create,
+            FsAction::Read,
+            FsAction::Replace,
+            FsAction::Remove,
+        ]
+    );
+    let spellings = FsAction::ALL
+        .into_iter()
+        .map(FsAction::wire_name)
+        .collect::<Vec<_>>();
+    assert_eq!(spellings, ["create", "read", "replace", "remove"]);
+    for action in FsAction::ALL {
+        assert_eq!(FsAction::from_wire_name(action.wire_name()), Some(action));
+        assert_eq!(action.as_str(), action.wire_name());
+        assert_ne!(
+            action.declared_recovery_class(),
+            RecoveryClass::ReadOnly,
+            "no whole-object action is read_only"
+        );
+    }
+    assert_eq!(FsAction::from_wire_name("append"), None);
+    assert_eq!(
+        FsAction::ALL
+            .into_iter()
+            .map(FsAction::declared_recovery_class)
+            .collect::<Vec<_>>(),
+        [
+            RecoveryClass::NonIdempotent,
+            RecoveryClass::Idempotent,
+            RecoveryClass::NonIdempotent,
+            RecoveryClass::NonIdempotent,
+        ],
+        "a read is idempotent and a create, a replace, and a remove are not"
+    );
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in FS_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "The declared actions are exactly four - create, read, replace, and remove, in that canonical order",
+        "a read is `idempotent`, while a create, a replace, and a remove are `non_idempotent`",
+        "no action declares an implicit root, a default directory, or a search path",
+        "declares no partial progress, no octet quantity, no request, no handle, and no resource state",
     ] {
         assert!(
             specification.contains(rule),

@@ -7,6 +7,7 @@
 
 use std::fmt;
 
+use crate::generated::RecoveryClass;
 use crate::package::TargetKind;
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
@@ -15,10 +16,11 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 3] = [
+pub const FS_CLAUSES: [&str; 4] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
+    "GNT-47.3-filesystem-action-values",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -53,6 +55,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
         clauses: &[
             "GNT-47.0-filesystem-foundation-scope",
             "GNT-47.1-filesystem-modules-and-item-rows",
+            "GNT-47.3-filesystem-action-values",
         ],
     },
     FsItemRow {
@@ -426,4 +429,60 @@ fn validate_segments(segments: &[&str], base: u32) -> Result<(), FsError> {
         }
     }
     Ok(())
+}
+
+/// One declared whole-object filesystem action of `GNT-47.3-filesystem-action-values`.
+///
+/// Each action consumes one path value of `GNT-47.2-filesystem-path-values` and no ambient
+/// location, and each states exactly one recovery class of the action-declaration rule: a read is
+/// `idempotent`, while a create, a replace, and a remove are `non_idempotent`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FsAction {
+    /// Creates one object at a declared path.
+    Create,
+    /// Reads one object at a declared path.
+    Read,
+    /// Replaces one object at a declared path.
+    Replace,
+    /// Removes one object at a declared path.
+    Remove,
+}
+
+impl FsAction {
+    /// Every declared action, in canonical order.
+    pub const ALL: [Self; 4] = [Self::Create, Self::Read, Self::Replace, Self::Remove];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Read => "read",
+            Self::Replace => "replace",
+            Self::Remove => "remove",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|action| action.wire_name() == value)
+    }
+
+    /// Returns the declared recovery class of this action.
+    #[must_use]
+    pub const fn declared_recovery_class(self) -> RecoveryClass {
+        match self {
+            Self::Read => RecoveryClass::Idempotent,
+            Self::Create | Self::Replace | Self::Remove => RecoveryClass::NonIdempotent,
+        }
+    }
 }

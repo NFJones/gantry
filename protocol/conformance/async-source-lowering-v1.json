@@ -14,7 +14,7 @@
   },
   {
    "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "212fce15c8c84042a7ca1404b53ac52b854fd01e09f7675b468e2f45edc1853b"
+   "sha256": "7a9e508a331f544856aad532bf78dd833ea75af85c5f4c3a3c96e095f9aef3c2"
   }
  ],
  "capabilities": [
@@ -77,5 +77,5 @@
    "requirement": "GNT-15.8"
   }
  ],
- "specification_sha256": "3066140bf5934c3f71c815e22aa8cf64e285ec18249db6655159cc88b35361e7"
+ "specification_sha256": "7b5b96d1bb01680590d28475ded8b7b150dcd8ff57ea546ede1e64318a669bb4"
 }

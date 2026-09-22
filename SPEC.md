@@ -16278,3 +16278,26 @@ grant, runtime availability, case-folding or encoding rule, cancellation safe po
 recovery, durability, boundary encoding, lowering, machine representation, or family behavior, no
 change to any other clause of this section or of Section 29, and it claims no performance, storage
 layout, or physical representation.
+
+<a id="GNT-47.3-filesystem-action-values"></a>
+
+**[GNT-47.3-filesystem-action-values] Filesystem action values.** This clause declares the whole-object
+action vocabulary of the `std.fs::action` module. The declared actions are exactly four - create,
+read, replace, and remove, in that canonical order, spelled `create`, `read`, `replace`, and
+`remove` - and the model's `FsAction` and its `FsAction::ALL` publish them: no other action, alias, or
+spelling is declared, and an action presented by an undeclared spelling is refused rather than
+inferred or substituted. Each action consumes one path value of `GNT-47.2-filesystem-path-values`
+and no ambient location: a path spelling is never authority here either, and no action declares an
+implicit root, a default directory, or a search path. Each declared action states exactly one
+recovery class of the action-declaration rule: a read is `idempotent`, while a create, a replace,
+and a remove are `non_idempotent`, because repeating one of them may create a second object, replace
+a second time, or remove an object another party created in between; the model accessor
+`declared_recovery_class` publishes exactly that decision, and no clause of this section relabels an
+action class or claims deduplication. A whole-object action publishes one outcome for one object
+and no stream: this clause declares no partial progress, no octet quantity, no request, no handle,
+and no resource state, which later clauses of this section may publish through the common I/O
+contract. This clause publishes the action vocabulary and its recovery classes only: it publishes no
+descriptor, open handle, resource, traversal, watch, snapshot, receipt, quota, adapter, host trait,
+capability grant, runtime availability, schema, recovery, durability, boundary encoding, lowering,
+machine representation, or family behavior, no change to any other clause of this section or of
+Section 29, and it claims no performance, storage layout, or physical representation.
