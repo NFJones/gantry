@@ -238,7 +238,7 @@ pub use metadata::{
     DocumentationFormat, DocumentationLink, ExampleDeclaration, ExampleMode, GeneratedOrigin,
     LintDeclaration, LintId, LintScope, LintSeverity, MetadataDeclarations, MetadataDiagnosticCode,
     MetadataError, MetadataSubject, SOURCE_METADATA_CLAUSES, SemanticAttribute, ToolMetadata,
-    admit_lint_control, admit_semantic_attribute,
+    admit_lint_control, admit_semantic_attribute, resolve_documentation_link,
 };
 pub use operation::{
     AdapterInstance, CrashCutClassification, DedupRecord, DedupRecordState, DedupRetentionBounds,

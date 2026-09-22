@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::package::PublicInterfaceManifest;
 use gantry_core::mode::SemanticMode;
 
 pub const SOURCE_METADATA_CLAUSES: [&str; 13] = [
@@ -65,6 +66,27 @@ pub fn admit_semantic_attribute(
         return Err(MetadataError::UnknownSemanticAttribute);
     }
     Ok(attribute)
+}
+
+/// Resolves one documentation link against one frozen Section 16 interface (`GNT-31.2`).
+///
+/// The link names one package-qualified target (`package::item`). The presented package name and
+/// the target interface must agree, and the named target must be recorded and exported there; an
+/// unknown, invisible, or foreign-package target is refused rather than resolved through an
+/// import, display label, filesystem path, or renderer convention.
+pub fn resolve_documentation_link(
+    link: &DocumentationLink,
+    package: &str,
+    interface: &PublicInterfaceManifest,
+) -> Result<MetadataSubject, MetadataError> {
+    let (qualified, item) = link
+        .target()
+        .split_once("::")
+        .ok_or(MetadataError::InvalidLink)?;
+    if package.is_empty() || qualified != package || !interface.is_exported(item) {
+        return Err(MetadataError::InvalidLink);
+    }
+    MetadataSubject::new(link.target())
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

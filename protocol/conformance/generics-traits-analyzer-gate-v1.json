@@ -74,7 +74,7 @@
   },
   {
    "path": "crates/gantry-ir/src/lib.rs",
-   "sha256": "3fcede795f67f89dfe01a80bcaeff4b197f3fcd26a9a95a2a158e74bd2660264"
+   "sha256": "bf17ed5108d306dd585c7149b7461f34cec308df81836b37d4997159955af8b7"
   },
   {
    "path": "crates/gantry-ir/src/type_properties.rs",

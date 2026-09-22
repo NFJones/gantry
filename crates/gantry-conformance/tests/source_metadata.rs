@@ -5,14 +5,19 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use gantry::ir::{
-    DependencyWarningPolicy, Deprecation, DocumentationBoundary, DocumentationComment,
-    DocumentationFormat, DocumentationLink, ExampleDeclaration, ExampleMode, GeneratedOrigin,
-    LintDeclaration, LintId, LintScope, LintSeverity, MetadataDeclarations, MetadataDiagnosticCode,
-    MetadataError, MetadataSubject, SOURCE_METADATA_CLAUSES, SemanticAttribute, SemanticMode,
-    ToolMetadata, admit_lint_control, admit_semantic_attribute,
+    ConstructionPolicy, DeclaredSurface, DependencyWarningPolicy, Deprecation,
+    DocumentationBoundary, DocumentationComment, DocumentationFormat, DocumentationLink,
+    ExampleDeclaration, ExampleMode, ExhaustivenessPolicy, GeneratedOrigin, InterfaceItem,
+    InterfaceMetadata, InterfaceSeal, ItemKind, LintDeclaration, LintId, LintScope, LintSeverity,
+    MetadataDeclarations, MetadataDiagnosticCode, MetadataError, MetadataSubject, NominalFacts,
+    PublicInterfaceManifest, SOURCE_METADATA_CLAUSES, SelectedFeatureSet, SemanticAttribute,
+    SemanticMode, TargetKind, ToolMetadata, Visibility, admit_lint_control,
+    admit_semantic_attribute, resolve_documentation_link,
 };
+use gantry::protocol::ProtocolVersion;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -263,5 +268,64 @@ fn documentation_attaches_only_at_the_leading_boundary() {
     assert_eq!(
         declarations.attach_at_boundary(comment, DocumentationBoundary::Leading),
         Err(MetadataError::InvalidDocumentationAttachment)
+    );
+}
+
+#[test]
+fn documentation_links_resolve_only_against_visible_interface_targets() {
+    let metadata = InterfaceMetadata {
+        edition: Arc::from("2026"),
+        stdlib_contract: ProtocolVersion { major: 1, minor: 0 },
+        protocol_versions: Vec::new(),
+        target_predicates: Vec::new(),
+        public_features: SelectedFeatureSet::empty(),
+    };
+    let declared = DeclaredSurface::from_names(&["Export", "Hidden"])
+        .unwrap_or_else(|error| panic!("surface: {error:?}"));
+    let nominal = |name: &str, visibility: Visibility| {
+        let mut item = InterfaceItem::new(name, ItemKind::Nominal, visibility, TargetKind::Library)
+            .unwrap_or_else(|error| panic!("item {name}: {error:?}"));
+        item.nominal = Some(NominalFacts {
+            fields: vec![Arc::from("value")],
+            variants: Vec::new(),
+            construction: ConstructionPolicy::Exhaustive,
+            exhaustiveness: ExhaustivenessPolicy::Exhaustive,
+            schema: None,
+        });
+        item
+    };
+    let interface = PublicInterfaceManifest::seal(InterfaceSeal {
+        version: PublicInterfaceManifest::VERSION,
+        metadata: &metadata,
+        surface: &declared,
+        items: &[
+            nominal("Export", Visibility::Exported),
+            nominal("Hidden", Visibility::PackageLocal),
+        ],
+        dependencies: &[],
+        exports: &[],
+    })
+    .unwrap_or_else(|error| panic!("seal: {error:?}"));
+    let link = |target: &str| {
+        DocumentationLink::new(target).unwrap_or_else(|error| panic!("link {target:?}: {error:?}"))
+    };
+    let resolved = resolve_documentation_link(&link("pkg::Export"), "pkg", &interface)
+        .unwrap_or_else(|error| panic!("resolution: {error:?}"));
+    assert_eq!(resolved.as_str(), "pkg::Export");
+    assert_eq!(
+        resolve_documentation_link(&link("pkg::Hidden"), "pkg", &interface),
+        Err(MetadataError::InvalidLink)
+    );
+    assert_eq!(
+        resolve_documentation_link(&link("pkg::Absent"), "pkg", &interface),
+        Err(MetadataError::InvalidLink)
+    );
+    assert_eq!(
+        resolve_documentation_link(&link("other::Export"), "pkg", &interface),
+        Err(MetadataError::InvalidLink)
+    );
+    assert_eq!(
+        resolve_documentation_link(&link("pkg::Export"), "", &interface),
+        Err(MetadataError::InvalidLink)
     );
 }
