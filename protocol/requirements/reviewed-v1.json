@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "464c779afba9f90e53fd6ad885fcef4660c2e7eee3eb1eea4118ff2d8bb0d086",
+  "specification_sha256": "b6d8830363e0e5142c44e6f747db4b23e3cc6d13deeb2c10442723080cc3b6a7",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15937,
+      "end_line": 15941,
       "rationale": null
     }
   ],
@@ -43199,10 +43199,10 @@
     {
       "id": "GNT-45.2-standard-io-modules-and-item-rows",
       "span_start_line": 15877,
-      "span_end_line": 15905,
+      "span_end_line": 15909,
       "anchor_line": 15878,
       "body_start_line": 15879,
-      "body_end_line": 15905,
+      "body_end_line": 15909,
       "profiles": [
         "analyzer"
       ],
@@ -43214,7 +43214,7 @@
         {
           "key": "clause-001",
           "start_line": 15879,
-          "end_line": 15905,
+          "end_line": 15909,
           "profiles": [
             "analyzer"
           ],
@@ -43228,7 +43228,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/io_foundation.rs#io_item_rows_are_closed_and_owned",
-                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_declaration_requires_the_family_package"
+                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_admission_is_closed_and_exact",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_declaration_requires_the_family_package",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_identity_covers_exactly_the_declared_rows"
               ],
               "rationale": null
             }
@@ -43238,11 +43240,11 @@
     },
     {
       "id": "GNT-45.3-io-progress-derivation",
-      "span_start_line": 15906,
-      "span_end_line": 15937,
-      "anchor_line": 15907,
-      "body_start_line": 15908,
-      "body_end_line": 15937,
+      "span_start_line": 15910,
+      "span_end_line": 15941,
+      "anchor_line": 15911,
+      "body_start_line": 15912,
+      "body_end_line": 15941,
       "profiles": [
         "analyzer"
       ],
@@ -43253,8 +43255,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15908,
-          "end_line": 15937,
+          "start_line": 15912,
+          "end_line": 15941,
           "profiles": [
             "analyzer"
           ],

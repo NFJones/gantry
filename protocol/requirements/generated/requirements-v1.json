@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "464c779afba9f90e53fd6ad885fcef4660c2e7eee3eb1eea4118ff2d8bb0d086",
-  "byte_length": 1217982,
-  "line_count": 15937,
+  "specification_sha256": "b6d8830363e0e5142c44e6f747db4b23e3cc6d13deeb2c10442723080cc3b6a7",
+  "byte_length": 1218267,
+  "line_count": 15941,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "a6b87843de3c755da64848b3586df05012e47ce7e18115cc351f25946c102932",
+      "sha256": "01ba1f1626bfe7dd380e5b46a48fdd35a0d7f80b47f8e0c4b949c64bf85e234b",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15937,
-      "sha256": "36ab977eb5d63a18751d9401ee5d6f78aad76e74cbde817781456449e484eba6",
+      "end_line": 15941,
+      "sha256": "c7fd060b8f44cc77520450ae9fe5a6ed9e4820fbcf09c8576bf0453180fb9358",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "161a550af5a11bd9f65ace4a5aa74040c5478d5f21026da3b925a0c2e125c3a4",
+      "span_sha256": "b3a1e7fcaf9dde4572a9a9032b97c288831351a982f88e5afb7c4a14a4f933e4",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "b9b91ba073de4d99473845a4cdb892b5c0e4941e9d9fb95148953b900066277d",
+      "body_sha256": "cc034c267a53e05f1d96f54c6309d3549d668bbccce013d87c5a153f1a627c28",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44408,12 +44408,12 @@
     {
       "id": "GNT-45.2-standard-io-modules-and-item-rows",
       "span_start_line": 15877,
-      "span_end_line": 15905,
-      "span_sha256": "27b309e746fb67c6d7d22c49fa941c494f06c231e6e551c7f0f7ecdca6aa6847",
+      "span_end_line": 15909,
+      "span_sha256": "ccd04b6f660005a1f0908a5f8e088a9c8c35b3897ebd9d9947abc207e39c2afb",
       "anchor_line": 15878,
       "body_start_line": 15879,
-      "body_end_line": 15905,
-      "body_sha256": "c18d9cd0bbef7d1dcafe833055b6b2ef9681e21fd73dafc3f389cfbc077e4570",
+      "body_end_line": 15909,
+      "body_sha256": "bf7c5b63935c9ac3f6fb4898bdf07d4a17a6e48b243b7fea6902a4dafb5d6b5f",
       "profiles": [
         "analyzer"
       ],
@@ -44425,7 +44425,7 @@
         {
           "key": "clause-001",
           "start_line": 15879,
-          "end_line": 15905,
+          "end_line": 15909,
           "profiles": [
             "analyzer"
           ],
@@ -44439,7 +44439,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/io_foundation.rs#io_item_rows_are_closed_and_owned",
-                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_declaration_requires_the_family_package"
+                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_admission_is_closed_and_exact",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_declaration_requires_the_family_package",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_identity_covers_exactly_the_declared_rows"
               ],
               "rationale": null
             }
@@ -44449,12 +44451,12 @@
     },
     {
       "id": "GNT-45.3-io-progress-derivation",
-      "span_start_line": 15906,
-      "span_end_line": 15937,
+      "span_start_line": 15910,
+      "span_end_line": 15941,
       "span_sha256": "e3d8e40e498064e0fba0d3543f107f8aa227a4dc44b8999f0e9922eae068880e",
-      "anchor_line": 15907,
-      "body_start_line": 15908,
-      "body_end_line": 15937,
+      "anchor_line": 15911,
+      "body_start_line": 15912,
+      "body_end_line": 15941,
       "body_sha256": "314abe5386ef563687123fde1bdfb6e22a2bbf20a1ce39d63e37b0b6a7dedd9b",
       "profiles": [
         "analyzer"
@@ -44466,8 +44468,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15908,
-          "end_line": 15937,
+          "start_line": 15912,
+          "end_line": 15941,
           "profiles": [
             "analyzer"
           ],

@@ -6,9 +6,12 @@
 //! no I/O: every decision is a deterministic function of explicit inputs.
 
 use crate::operation::ProgressObservation;
+use crate::package::TargetKind;
 use crate::stdlib::{
-    NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
+    NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
+    StdlibError,
 };
+use gantry_core::mode::SemanticMode;
 
 /// The Section 45 clauses implemented by this pure model, in declaration order.
 pub const IO_CLAUSES: [&str; 4] = [
@@ -20,6 +23,12 @@ pub const IO_CLAUSES: [&str; 4] = [
 
 /// The declared one-call request-contract version of `GNT-45.1-bounded-one-call-io-contract`.
 pub const IO_CONTRACT_VERSION: u64 = 1;
+
+/// The declared semantic mode of every `std.io` item row.
+pub const IO_SURFACE_MODES: [SemanticMode; 1] = [SemanticMode::Application];
+
+/// The declared target kinds of every `std.io` item row.
+pub const IO_SURFACE_TARGETS: [TargetKind; 2] = [TargetKind::Library, TargetKind::Binary];
 
 /// The greatest octet count one read or write request may ask for.
 ///
@@ -332,22 +341,88 @@ pub const IO_ITEMS: [IoItemRow; 3] = [
 /// by the graph rather than merged.
 pub fn declare_io_surface(graph: &mut StdGraph) -> Result<(), StdlibError> {
     let owner = PackageFamily::Io.package_name();
-    let (modes, targets) = {
+    let (modes, targets, present) = {
         let package = graph.package(&owner).ok_or_else(|| {
             StdlibError::new(
                 StdlibDiagnosticCode::UnknownEdge,
                 format!("`{owner}` is not declared, so its item surface cannot be declared"),
             )
         })?;
+        validate_io_surface_package(package)?;
         (
             package.modes().iter().copied().collect::<Vec<_>>(),
             package.targets().iter().copied().collect::<Vec<_>>(),
+            IO_ITEMS
+                .iter()
+                .filter(|row| package.item(row.name).is_some())
+                .count(),
         )
     };
+    if present == IO_ITEMS.len() {
+        let row = IO_ITEMS[0];
+        return graph.declare_item(StdItem::new(
+            row.name, row.class, row.tier, &modes, &targets,
+        )?);
+    }
     for row in IO_ITEMS {
         graph.declare_item(StdItem::new(
             row.name, row.class, row.tier, &modes, &targets,
         )?)?;
+    }
+    Ok(())
+}
+
+/// Admits an already-declared `std.io` surface as exactly the three declared module rows.
+///
+/// The declared applicability must be exactly the application semantic mode over the library and
+/// binary target kinds, no item outside the three declared rows may exist, and no row may be
+/// missing; each violation is refused under its declared diagnostic rather than repaired.
+pub fn admit_io_surface(graph: &StdGraph) -> Result<(), StdlibError> {
+    let owner = PackageFamily::Io.package_name();
+    let package = graph.package(&owner).ok_or_else(|| {
+        StdlibError::new(
+            StdlibDiagnosticCode::UnknownEdge,
+            format!("`{owner}` is not declared, so its item surface cannot be admitted"),
+        )
+    })?;
+    validate_io_surface_package(package)?;
+    if IO_ITEMS.iter().any(|row| package.item(row.name).is_none()) {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            "the declared std.io item surface is incomplete".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+/// Validates the declared applicability, the closed item set, and the surface's atomicity.
+fn validate_io_surface_package(package: &StdPackage) -> Result<(), StdlibError> {
+    if package.modes().iter().copied().ne(IO_SURFACE_MODES)
+        || package.targets().iter().copied().ne(IO_SURFACE_TARGETS)
+    {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::UnsupportedApplicability,
+            format!(
+                "`{}` must declare exactly the application mode over the library and binary targets",
+                package.name()
+            ),
+        ));
+    }
+    let present = IO_ITEMS
+        .iter()
+        .filter(|row| package.item(row.name).is_some())
+        .count();
+    if package.items().len() != present {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            "a declared name outside the three std.io modules is refused".to_owned(),
+        ));
+    }
+    if present != 0 && present != IO_ITEMS.len() {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            "the std.io item surface is partially declared".to_owned(),
+        ));
     }
     Ok(())
 }

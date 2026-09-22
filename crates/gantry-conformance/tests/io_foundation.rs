@@ -11,10 +11,10 @@ use std::path::{Path, PathBuf};
 use gantry::ir::generated::HostDomainFamily;
 use gantry::ir::{
     CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, HostProgress, IO_CLAUSES, IO_CONTRACT_VERSION, IO_ITEMS,
-    IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError, IoOperation, IoOutcome, IoRequest,
-    NameClass, PackageFamily, Prelude, ProgressObservation, STDLIB_CLAUSES, SemanticMode,
-    StabilityTier, StdGraph, StdPackage, StdlibDiagnosticCode, TargetKind, admit_io_progress,
-    declare_io_surface,
+    IO_REQUEST_OCTET_BOUND, IO_SURFACE_MODES, IO_SURFACE_TARGETS, IoDiagnosticCode, IoError,
+    IoOperation, IoOutcome, IoRequest, NameClass, PackageFamily, Prelude, ProgressObservation,
+    STDLIB_CLAUSES, SemanticMode, StabilityTier, StdGraph, StdItem, StdPackage,
+    StdlibDiagnosticCode, TargetKind, admit_io_progress, admit_io_surface, declare_io_surface,
 };
 
 const REQUIRED_ANCHORS: [&str; 10] = [
@@ -318,6 +318,7 @@ fn io_surface_declaration_requires_the_family_package() {
     let package = graph
         .package(&owner)
         .unwrap_or_else(|| panic!("the family package is declared"));
+    assert_eq!(package.items().len(), IO_ITEMS.len());
     for row in IO_ITEMS {
         let item = package
             .item(row.name)
@@ -326,9 +327,188 @@ fn io_surface_declaration_requires_the_family_package() {
         assert_eq!(item.modes(), package.modes());
         assert_eq!(item.targets(), package.targets());
     }
+    assert_eq!(IO_SURFACE_MODES, [SemanticMode::Application]);
+    assert_eq!(
+        IO_SURFACE_TARGETS,
+        [TargetKind::Library, TargetKind::Binary]
+    );
+    assert_eq!(
+        declare_io_surface(&mut graph)
+            .err()
+            .map(|error| error.code()),
+        Some(StdlibDiagnosticCode::DuplicatePackage),
+        "a second declaration of one item is refused by the duplicate rule"
+    );
+}
+
+#[test]
+fn io_surface_admission_is_closed_and_exact() {
+    let fixture = |modes: &[SemanticMode], targets: &[TargetKind]| {
+        let mut graph = StdGraph::new(Prelude::canonical());
+        let declared = StdPackage::new(
+            PackageFamily::Io,
+            NameClass::Package,
+            StabilityTier::Stable,
+            modes,
+            targets,
+            &[],
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("the fixture package declaration is admissible: {error:?}"));
+        graph
+            .declare(declared)
+            .unwrap_or_else(|error| panic!("the fixture package is admissible: {error:?}"));
+        graph
+    };
+    let owner = PackageFamily::Io.package_name();
+
+    let mut portable = fixture(
+        &[SemanticMode::Portable],
+        &[TargetKind::Library, TargetKind::Binary],
+    );
+    assert_eq!(
+        declare_io_surface(&mut portable)
+            .err()
+            .map(|error| error.code()),
+        Some(StdlibDiagnosticCode::UnsupportedApplicability)
+    );
+
+    let mut library_only = fixture(&[SemanticMode::Application], &[TargetKind::Library]);
+    assert_eq!(
+        declare_io_surface(&mut library_only)
+            .err()
+            .map(|error| error.code()),
+        Some(StdlibDiagnosticCode::UnsupportedApplicability)
+    );
+
+    let mut graph = fixture(
+        &[SemanticMode::Application],
+        &[TargetKind::Library, TargetKind::Binary],
+    );
+    assert!(declare_io_surface(&mut graph).is_ok());
     assert!(
-        declare_io_surface(&mut graph).is_err(),
-        "a second declaration of one item is refused"
+        admit_io_surface(&graph).is_ok(),
+        "{:?}",
+        admit_io_surface(&graph).err()
+    );
+    graph
+        .declare_item(
+            StdItem::new(
+                "std.io::invented",
+                NameClass::Module,
+                StabilityTier::Stable,
+                &[SemanticMode::Application],
+                &[TargetKind::Library, TargetKind::Binary],
+            )
+            .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}"));
+    assert_eq!(
+        admit_io_surface(&graph).err().map(|error| error.code()),
+        Some(StdlibDiagnosticCode::InvalidNameClassification),
+        "an item outside the declared set is refused"
+    );
+
+    let mut partial = fixture(
+        &[SemanticMode::Application],
+        &[TargetKind::Library, TargetKind::Binary],
+    );
+    let row = IO_ITEMS[0];
+    partial
+        .declare_item(
+            StdItem::new(
+                row.name,
+                row.class,
+                row.tier,
+                &[SemanticMode::Application],
+                &[TargetKind::Library, TargetKind::Binary],
+            )
+            .unwrap_or_else(|error| panic!("the declared row is admissible: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("the declared row is admissible: {error:?}"));
+    assert_eq!(
+        declare_io_surface(&mut partial)
+            .err()
+            .map(|error| error.code()),
+        Some(StdlibDiagnosticCode::InvalidNameClassification),
+        "a partially declared surface is refused before mutating"
+    );
+    let after = partial
+        .package(&owner)
+        .unwrap_or_else(|| panic!("the family package is declared"));
+    assert_eq!(after.items().len(), 1, "the refusal mutates nothing");
+}
+
+#[test]
+fn io_surface_identity_covers_exactly_the_declared_rows() {
+    let canonical = |tier: StabilityTier| {
+        let mut graph = StdGraph::new(Prelude::canonical());
+        let declared = StdPackage::new(
+            PackageFamily::Io,
+            NameClass::Package,
+            StabilityTier::Stable,
+            &[SemanticMode::Application],
+            &[TargetKind::Library, TargetKind::Binary],
+            &[],
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("the fixture package declaration is admissible: {error:?}"));
+        graph
+            .declare(declared)
+            .unwrap_or_else(|error| panic!("the fixture package is admissible: {error:?}"));
+        for row in IO_ITEMS {
+            let row_tier = if row.operation == IoOperation::Seek {
+                tier
+            } else {
+                row.tier
+            };
+            graph
+                .declare_item(
+                    StdItem::new(
+                        row.name,
+                        row.class,
+                        row_tier,
+                        &[SemanticMode::Application],
+                        &[TargetKind::Library, TargetKind::Binary],
+                    )
+                    .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}")),
+                )
+                .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}"));
+        }
+        graph
+    };
+    let identity = |graph: &StdGraph| {
+        graph
+            .package(&PackageFamily::Io.package_name())
+            .unwrap_or_else(|| panic!("the family package is declared"))
+            .identity()
+            .as_str()
+            .to_owned()
+    };
+
+    let baseline = identity(&canonical(StabilityTier::Stable));
+    assert_ne!(
+        identity(&canonical(StabilityTier::Experimental)),
+        baseline,
+        "a changed row tier changes the interface identity"
+    );
+    let mut with_extra = canonical(StabilityTier::Stable);
+    with_extra
+        .declare_item(
+            StdItem::new(
+                "std.io::invented",
+                NameClass::Module,
+                StabilityTier::Stable,
+                &[SemanticMode::Application],
+                &[TargetKind::Library, TargetKind::Binary],
+            )
+            .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}"));
+    assert_ne!(
+        identity(&with_extra),
+        baseline,
+        "an extra item changes the interface identity"
     );
 }
 
