@@ -1306,6 +1306,114 @@ fn fs_reader_note_pins_every_declared_clause_and_module() {
             row.name
         );
     }
+    // Every declared member of the two vocabularies and of the frozen registry must be named, so a
+    // summary cannot quietly drop a member.
+    for action in FsAction::ALL {
+        assert!(
+            note.contains(action.wire_name()),
+            "the reader note must name the action {}",
+            action.as_str()
+        );
+    }
+    for operation in FsResourceOperation::ALL {
+        assert!(
+            note.contains(operation.wire_name()),
+            "the reader note must name the operation {}",
+            operation.as_str()
+        );
+    }
+    for code in FsDiagnosticCode::ALL {
+        assert!(
+            note.contains(code.as_str()),
+            "the reader note must name the diagnostic {}",
+            code.as_str()
+        );
+    }
+    // The material per-clause claims, so a substantive sentence cannot change or disappear while
+    // the anchor-only check stays green.
+    let claims: &[(&str, &[&str])] = &[
+        (
+            "GNT-47.0-filesystem-foundation-scope",
+            &["declaration contract"],
+        ),
+        (
+            "GNT-47.1-filesystem-modules-and-item-rows",
+            &[
+                "std.fs::action",
+                "std.fs::path",
+                "std.fs::resource",
+                "application semantic mode",
+            ],
+        ),
+        (
+            "GNT-47.2-filesystem-path-values",
+            &[
+                "a path spelling is never authority",
+                "zero-based position",
+                "fs-path-escape",
+            ],
+        ),
+        (
+            "GNT-47.3-filesystem-action-values",
+            &["`read_only`", "`non_idempotent`"],
+        ),
+        (
+            "GNT-47.4-filesystem-resource-operations",
+            &["consume exactly one", "GNT-45.3-io-progress-derivation"],
+        ),
+        (
+            "GNT-47.5-filesystem-resource-state",
+            &["GNT-28.4", "never carried in durable state"],
+        ),
+        (
+            "GNT-47.6-filesystem-traversal",
+            &["ascending Unicode", "zero-based"],
+        ),
+        (
+            "GNT-47.7-filesystem-action-grants",
+            &["read-only grant refuses"],
+        ),
+        (
+            "GNT-47.8-filesystem-link-policy",
+            &["FS_RESOLUTION_COUNT", "never followed"],
+        ),
+        (
+            "GNT-47.9-filesystem-replacement",
+            &["exactly one declared outcome", "no spelling"],
+        ),
+        (
+            "GNT-47.10-filesystem-declared-limits",
+            &["exactly three quantitative bounds"],
+        ),
+        (
+            "GNT-47.11-filesystem-case-identity",
+            &["exactly case-sensitive, never folded"],
+        ),
+        (
+            "GNT-47.12-filesystem-operation-refusals",
+            &["exactly two declared", "no third diagnostic spelling"],
+        ),
+        (
+            "GNT-47.13-filesystem-partial-progress-and-settlement",
+            &["short-read", "short-write", "no remainder"],
+        ),
+        (
+            "GNT-47.14-filesystem-durable-carriers",
+            &[
+                "GNT-28.7-durable-resource-reconstruction",
+                "ordinary durable state",
+            ],
+        ),
+    ];
+    for (anchor, phrases) in claims {
+        assert!(note.contains(anchor), "the reader note must name {anchor}");
+        for phrase in *phrases {
+            assert!(
+                note.contains(phrase),
+                "the reader note must state {phrase} for {anchor}"
+            );
+        }
+    }
     for rule in [
         "a path spelling is never authority",
         "exactly case-sensitive, never folded",

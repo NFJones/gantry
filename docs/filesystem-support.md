@@ -37,8 +37,9 @@ descriptor, adapter, capability grant, runtime availability, or machine behavior
   (`FS_RESOLUTION_COUNT`), a symbolic link, junction, or reparse point is never followed and is
   refused without publishing a diagnostic spelling of its own, and a traversal resolves nothing.
 - **Replacement** (`GNT-47.9-filesystem-replacement`): exactly one declared outcome, published by
-  `FsReplacementOutcome` with no spelling of its own; no staging, no partial object, and no third
-  result.
+  `FsReplacementOutcome` with no spelling of its own; no staging and no partial object. This bullet
+  counts success outcomes only: the refusals a replacement can meet stay with the clauses that
+  declare them.
 - **Declared limits** (`GNT-47.10-filesystem-declared-limits`): exactly three quantitative bounds —
   256 segments per path value, one `GNT-45.1` request for each of read, write, and seek, and one
   resolution per operation; the clause's silence is not a limit.
@@ -46,12 +47,13 @@ descriptor, adapter, capability grant, runtime availability, or machine behavior
   sequence equality, exactly case-sensitive, never folded; a target's own case behaviour is a
   declared host fact and is never identity, a lookup key, a merge, a rename, or a substitution.
 - **Operation refusals** (`GNT-47.12-filesystem-operation-refusals`): exactly two declared
-  conditions — an unadmitted target state and a collision a folding target reports — with no third
-  diagnostic spelling and no refusal of their own.
-- **Partial progress** (`GNT-47.13-filesystem-partial-progress-and-settlement`): read, write, and
-  seek publish exactly the derived observation for the octets they committed, so a short transfer
-  stays `short-read` or `short-write` progress and never becomes a completion; no remainder is
-  carried, no retry is performed, and a following transfer is a new declared operation.
+  conditions — an unadmitted target state and a collision a folding target reports. The clause adds
+  no third diagnostic spelling, no refusal position, count, or bound, and no refusal procedure.
+- **Partial progress** (`GNT-47.13-filesystem-partial-progress-and-settlement`): a read and a write
+  publish exactly the derived observation for the octets they committed, so a short transfer stays
+  `short-read` or `short-write` progress and never becomes a completion, and a seek publishes exactly
+  the derived observation for its declared target position and the position it observed; no remainder
+  is carried, no retry is performed, and a following transfer is a new declared operation.
 - **Durable carriers** (`GNT-47.14-filesystem-durable-carriers`): the declared reconstruction record
   of `GNT-28.7-durable-resource-reconstruction` is the one admissible carrier for an admitted
   instance; ordinary serialization and ordinary durable state are not records of this section.
