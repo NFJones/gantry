@@ -1,0 +1,129 @@
+{
+  "format": "gantry-std-test-surface-v1",
+  "contract": {
+    "major": 1,
+    "minor": 0
+  },
+  "package": {
+    "name": "std.test",
+    "class": "package",
+    "tier": "stable",
+    "family": "test",
+    "target_kind": "test",
+    "admitted_modes": [
+      "portable"
+    ],
+    "shipping_authority": false,
+    "non_claims": [
+      "ambient-authority",
+      "oracle-provider",
+      "test-only-semantics",
+      "wildcard-prelude"
+    ]
+  },
+  "kinds": [
+    "benchmark",
+    "compile-fail",
+    "durable-recovery",
+    "example",
+    "integration",
+    "property",
+    "replay",
+    "snapshot",
+    "unit"
+  ],
+  "substitutions": [
+    {
+      "wire_name": "capability",
+      "meaning": "A declared capability grant supplies the authority a test uses."
+    },
+    {
+      "wire_name": "clock",
+      "meaning": "A deterministic clock supplies the time a test observes."
+    },
+    {
+      "wire_name": "prng",
+      "meaning": "A deterministic pseudo-random source supplies generated values."
+    },
+    {
+      "wire_name": "provider",
+      "meaning": "A deterministic provider or recorded transcript supplies model results."
+    },
+    {
+      "wire_name": "scheduler",
+      "meaning": "A controlled scheduler supplies interleaving and wake order."
+    },
+    {
+      "wire_name": "storage-fault",
+      "meaning": "A deterministic storage fault supplies failure injection."
+    }
+  ],
+  "harness_capabilities": [
+    {
+      "wire_name": "deterministic-test-ordering-and-isolation",
+      "requirement": "deterministic test ordering and isolation"
+    },
+    {
+      "wire_name": "assertion-and-comparison-diagnostics",
+      "requirement": "assertion and comparison diagnostics"
+    },
+    {
+      "wire_name": "fixtures-and-temporary-capability-roots",
+      "requirement": "fixtures and temporary capability roots"
+    },
+    {
+      "wire_name": "fake-clocks-random-sources-and-host-capabilities",
+      "requirement": "fake clocks, random sources, and host capabilities"
+    },
+    {
+      "wire_name": "expected-failure-and-timeout-support",
+      "requirement": "expected-failure and timeout support"
+    },
+    {
+      "wire_name": "property-test-shrinking-contracts",
+      "requirement": "property-test shrinking contracts"
+    },
+    {
+      "wire_name": "durable-replay-and-recovery-test-harnesses",
+      "requirement": "durable replay and recovery test harnesses"
+    }
+  ],
+  "execution_rules": [
+    {
+      "wire_name": "deterministic-discovery-and-ordering",
+      "requirement": "deterministic discovery and ordering"
+    },
+    {
+      "wire_name": "per-test-isolation",
+      "requirement": "per-test isolation"
+    },
+    {
+      "wire_name": "bounded-parallelism",
+      "requirement": "bounded parallelism"
+    },
+    {
+      "wire_name": "timeouts",
+      "requirement": "timeouts"
+    },
+    {
+      "wire_name": "fixtures",
+      "requirement": "fixtures"
+    },
+    {
+      "wire_name": "temporary-capability-roots",
+      "requirement": "temporary capability roots"
+    },
+    {
+      "wire_name": "structured-assertions",
+      "requirement": "structured assertions"
+    },
+    {
+      "wire_name": "shrinking",
+      "requirement": "shrinking"
+    },
+    {
+      "wire_name": "replay",
+      "requirement": "replay"
+    }
+  ]
+}

@@ -7,9 +7,14 @@
 //! declared testing-support harness contract with its strict substitution declaration, plus the
 //! declared execution rules, the canonical discovery order a run enumerates, and the declared run
 //! plan that binds kinds and substitutions to those rules. Every declared identity is checked
-//! against the module's executable kebab-case identity rule.
+//! against the module's executable kebab-case identity rule, and the published surface catalog is
+//! pinned field by field against the live model.
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde_json::Value;
 
 use gantry::ir::{
     DeclaredCeiling, ModeAdmission, NameClass, PackageError, PackageFamily, RequirementDemand,
@@ -386,4 +391,89 @@ fn declared_identities_are_the_kebab_case_of_their_requirement() {
             rule.wire_name()
         );
     }
+}
+
+#[test]
+fn std_test_surface_catalog_matches_the_live_surface() {
+    let document =
+        fs::read_to_string(workspace_root().join("protocol/catalogs/std-test-surface-v1.json"))
+            .unwrap_or_else(|error| panic!("the std.test surface catalog reads: {error}"));
+    let catalog: Value = serde_json::from_str(&document)
+        .unwrap_or_else(|error| panic!("the std.test surface catalog is JSON: {error}"));
+    assert_eq!(catalog["format"], Value::from("gantry-std-test-surface-v1"));
+    assert_eq!(catalog["contract"]["major"], Value::from(1));
+    assert_eq!(catalog["contract"]["minor"], Value::from(0));
+
+    let package = &catalog["package"];
+    assert_eq!(package["name"], Value::from(STD_TEST_PACKAGE));
+    assert_eq!(package["class"], Value::from("package"));
+    assert_eq!(package["tier"], Value::from("stable"));
+    assert_eq!(
+        package["family"],
+        Value::from(std_test_family().wire_name())
+    );
+    assert_eq!(
+        package["target_kind"],
+        Value::from(STD_TEST_TARGET_KIND.wire_name())
+    );
+    assert_eq!(
+        package["shipping_authority"],
+        Value::from(test_target_is_shipping_authority())
+    );
+    assert_eq!(
+        package["admitted_modes"],
+        Value::from(vec![STD_TEST_ADMITTED_MODE.wire_name()])
+    );
+    assert_eq!(
+        package["non_claims"],
+        Value::from(STD_TEST_NON_CLAIMS.to_vec())
+    );
+
+    let kinds = catalog["kinds"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the catalog publishes kinds as an array"))
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .unwrap_or_else(|| panic!("a catalog kind is a string"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(kinds, TestKind::ALL.map(TestKind::wire_name).to_vec());
+
+    let substitutions = catalog["substitutions"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the catalog publishes substitutions as an array"));
+    assert_eq!(substitutions.len(), TestSubstitution::ALL.len());
+    for (entry, substitution) in substitutions.iter().zip(TestSubstitution::ALL) {
+        assert_eq!(entry["wire_name"], Value::from(substitution.wire_name()));
+        assert_eq!(entry["meaning"], Value::from(substitution.meaning()));
+    }
+
+    let harness = catalog["harness_capabilities"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the catalog publishes harness capabilities as an array"));
+    assert_eq!(harness.len(), TestHarnessCapability::ALL.len());
+    for (entry, capability) in harness.iter().zip(TestHarnessCapability::ALL) {
+        assert_eq!(entry["wire_name"], Value::from(capability.wire_name()));
+        assert_eq!(entry["requirement"], Value::from(capability.requirement()));
+    }
+
+    let rules = catalog["execution_rules"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the catalog publishes execution rules as an array"));
+    assert_eq!(rules.len(), TestExecutionRule::ALL.len());
+    for (entry, rule) in rules.iter().zip(TestExecutionRule::ALL) {
+        assert_eq!(entry["wire_name"], Value::from(rule.wire_name()));
+        assert_eq!(entry["requirement"], Value::from(rule.requirement()));
+    }
+}
+
+/// Returns the workspace root that holds the published protocol catalog.
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .unwrap_or_else(|| panic!("conformance crate has a workspace parent"))
+        .to_path_buf()
 }
