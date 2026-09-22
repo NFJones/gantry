@@ -20,6 +20,7 @@ mod authority;
 mod callable;
 mod callable_identity;
 mod canonical;
+mod codec;
 mod collections;
 mod constant;
 mod effects;
@@ -299,6 +300,15 @@ pub use secret::{
 };
 pub use signature::{
     ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
+};
+// The Section 42 codec foundation: the declared `std.codec` family with its five modules, the
+// versioned codec identity and its exact admission rule, the frozen refusal vocabulary with its
+// codec categories of `GNT-29.9-codec-contract`, and the separation between application codecs
+// and the sealed canonical boundary and durable recovery projections.
+pub use codec::{
+    CODEC_CLAUSES, CODEC_ITEMS, CodecCategory, CodecDiagnosticCode, CodecError, CodecItemRow,
+    CodecKind, CodecVersion, DECLARED_CODEC_VERSION, canonical_codec_hierarchy,
+    declare_codec_surface,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,

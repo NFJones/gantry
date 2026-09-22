@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d",
+  "specification_sha256": "2dea18cebec00ec295d8fa19d3858266507c4c3a711e3cb90dd76268b8772e54",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15703,
+      "end_line": 15713,
       "rationale": null
     }
   ],
@@ -42296,6 +42296,86 @@
                 "crates/gantry-conformance/tests/text_builders.rs#builder_refuses_a_value_beyond_the_declared_bound",
                 "crates/gantry-conformance/tests/text_normalization.rs#normalization_refuses_a_form_beyond_the_declared_bound",
                 "crates/gantry-conformance/tests/text_case_mapping.rs#case_mapping_refuses_a_mapping_beyond_the_declared_bound"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-42.0-codec-foundation-scope",
+      "span_start_line": 15704,
+      "span_end_line": 15709,
+      "anchor_line": 15707,
+      "body_start_line": 15708,
+      "body_end_line": 15709,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15708,
+          "end_line": 15709,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/codec_foundation.rs#section_42_clauses_are_published",
+                "crates/gantry-conformance/tests/codec_foundation.rs#codec_surface_declares_the_five_modules"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-42.1-versioned-codec-contract",
+      "span_start_line": 15710,
+      "span_end_line": 15713,
+      "anchor_line": 15711,
+      "body_start_line": 15712,
+      "body_end_line": 15713,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15712,
+          "end_line": 15713,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/codec_foundation.rs#declared_versions_admit_exactly_the_declared_identity",
+                "crates/gantry-conformance/tests/codec_foundation.rs#refusals_are_frozen_and_classified"
               ],
               "rationale": null
             }

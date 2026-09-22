@@ -2,7 +2,7 @@
  "artifacts": [
   {
    "path": "SPEC.md",
-   "sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d"
+   "sha256": "2dea18cebec00ec295d8fa19d3858266507c4c3a711e3cb90dd76268b8772e54"
   },
   {
    "path": "crates/gantry-conformance/tests/authority_closure.rs",
@@ -66,31 +66,31 @@
   },
   {
    "path": "protocol/conformance/durable-events-v1.json",
-   "sha256": "6cb7a585776c4cb3c5abf4a6415c929f6f554a1f98935b3ca7415a35499cccf3"
+   "sha256": "4b6e85fce27c09fd091f0a3ac481aa548759687c9c99f3af3d88cbf4cefc621f"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",
-   "sha256": "ddcf86b59abe94c947d2d37eba7255bb359ad1ef2f0874315e2c612fc25d81e5"
+   "sha256": "d57410650ad70ece56651fcb44648095aea89da694dba277537dfef18c30cb1b"
   },
   {
    "path": "protocol/conformance/durable-refinement-v1.json",
-   "sha256": "5d70f36189f149990aae51d64a3a1cbf28fa4a4c60354325f355c19e489dd143"
+   "sha256": "d5f80e3f4118121f8981cfd7c5020351edbcdaf4d924e46136276844148881f4"
   },
   {
    "path": "protocol/conformance/durable-start-v1.json",
-   "sha256": "d7963acc616c2811ef6b371de63ea667e6cb67804783e7a31949681fc4b5ce26"
+   "sha256": "cd0efde5b98fd4fe0e58b897d3845d82199a0719c5bfa2d5e163afeeedd74e46"
   },
   {
    "path": "protocol/conformance/journal-storage-v1.json",
-   "sha256": "d617398f5dd263fd851ac6faa6432ad13adc8da1227619939aa2d5cb06d418ab"
+   "sha256": "ad903db9af17314826697bce27dbd2faa8913a69dc59baf7bc4d77311eca3800"
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "fb86e007d62415505aca9d7f54c026380b3db5bf797bcb78dc6647f5d4a113f9"
+   "sha256": "aec114d13d9b3c3c8d347671af6851ead10110c3ac2875d54701338332a323a4"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
-   "sha256": "ed00473a2ede6bf8ad810a020d56c031eebcbe74582ddda9f97e142640dd0c44"
+   "sha256": "e694f6c5083f8b9d7a6c3dbb5ee3fbeb3deceae508de8cedef1f17913d8e7e54"
   },
   {
    "path": "protocol/conformance/sqlite-storage-v1.json",
@@ -122,15 +122,15 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "8b9b4d746800bebf00805ad5036ea019fc92fe49ab725eeda3c4763eefaecc98"
+   "sha256": "347a4e51f820fef2fe62e75afc6f362925521f5e1ab89ac5f2459fa88133e57c"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "800159f9ca376ba9225b3dd2ec7611eb093b59bad036c24eacaeeadf0a42f3fc"
+   "sha256": "c5cc2525ef6d12a45b46e02b675f754d7e4029a425332f6b6fb1e79ff0f337f4"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
-   "sha256": "19ca408716f6ef944a877a9f6ecebabefa4f075ab03294048e06f09bebc6fc60"
+   "sha256": "c073c244d3a8086a5ebae536c6335550d698fc81c25196b7301d362d4c66537b"
   }
  ],
  "claim": {
@@ -225,7 +225,7 @@
  },
  "specification": {
   "path": "SPEC.md",
-  "sha256": "cb7f80e94220c0987f03a541427641629838f145024b9a9f81472244f155b03d"
+  "sha256": "2dea18cebec00ec295d8fa19d3858266507c4c3a711e3cb90dd76268b8772e54"
  },
  "status": "verified",
  "validation_commands": [
