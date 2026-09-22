@@ -54,6 +54,7 @@ mod signature;
 mod std_hierarchy;
 mod stdlib;
 mod target;
+mod test_support;
 mod text;
 pub mod toolchain;
 mod type_expression;
@@ -434,6 +435,10 @@ pub use target::{
     TargetDescriptorField, TargetDescriptorRecord, TargetDiagnosticCode, TargetError,
     TargetFactsDigest, TargetFactsRecord, TargetMatrix, TargetMatrixDigest, TargetMatrixEntry,
     TargetMatrixState, TargetPredicate, TargetPredicateName, ToolchainIdentity,
+};
+pub use test_support::{
+    STD_TEST_CLASS, STD_TEST_NON_CLAIMS, STD_TEST_PACKAGE, STD_TEST_TIER, TestKind,
+    TestSubstitution, ambient_authority_is_never_acquired, std_test_family,
 };
 // The bounded untrusted compilation and cache model of SPEC.md Section 26 is published
 // here, except for its `ToolchainIdentity`, which the landed target model already
