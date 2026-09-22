@@ -2,7 +2,7 @@
   "catalog": "gantry.public-formats",
   "major": 1,
   "minor": 0,
-  "specification_revision": "b935cd1d365c40febbfbeb18d5f8fc8ee3a3d4c38e6a563b96f1dedeb9a48689",
+  "specification_revision": "2407d21d4f91832fe69ba359f028f34bb8d99e6521fe3dd5505a4c4ccb8f4392",
   "formats": [
     {
       "format": "canonical-transcript/v1",

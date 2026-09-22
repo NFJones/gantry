@@ -9,11 +9,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_REPLACEMENT_ACTION, FS_RESOLUTION_COUNT,
-    FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError, FsPath,
-    FsResourceOperation, IoOperation, NameClass, PackageFamily, Prelude, ResourceCarrier,
-    ResourceLifetimeState, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
-    admit_fs_surface, declare_fs_surface, fs_traversal_order, generated::RecoveryClass,
+    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_REFUSAL_CONDITIONS, FS_REPLACEMENT_ACTION,
+    FS_RESOLUTION_COUNT, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError,
+    FsPath, FsRefusalCondition, FsResourceOperation, FsTargetState, IoOperation, NameClass,
+    PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState, StabilityTier, StdGraph,
+    StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface,
+    fs_traversal_order, generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -62,6 +63,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.9-filesystem-replacement",
             "GNT-47.10-filesystem-declared-limits",
             "GNT-47.11-filesystem-case-identity",
+            "GNT-47.12-filesystem-operation-refusals",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -107,6 +109,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.8-filesystem-link-policy",
                 "GNT-47.9-filesystem-replacement",
                 "GNT-47.10-filesystem-declared-limits",
+                "GNT-47.12-filesystem-operation-refusals",
             ],
             "std.fs::path" => &[
                 "GNT-47.0-filesystem-foundation-scope",
@@ -123,6 +126,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.5-filesystem-resource-state",
                 "GNT-47.8-filesystem-link-policy",
                 "GNT-47.10-filesystem-declared-limits",
+                "GNT-47.12-filesystem-operation-refusals",
             ],
             other => panic!("the undeclared module row `{other}` must not exist"),
         };
@@ -916,6 +920,7 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
             "FS_CLAUSES",
             "FS_ITEMS",
             "FS_PATH_SEGMENT_BOUND",
+            "FS_REFUSAL_CONDITIONS",
             "FS_REPLACEMENT_ACTION",
             "FS_RESOLUTION_COUNT",
             "FS_SURFACE_MODES",
@@ -1017,6 +1022,97 @@ fn fs_path_value_case_identity_is_exact_and_never_folded() {
         "A target's own case behaviour is not a fact of this section",
         "A fold is never identity, never a lookup key, never a merge, never a rename, and never a substitution",
         "what a folding target reports is not a declared outcome of this section, this clause admits no fold as identity, publishes no refusal of its own, and adds no diagnostic to the frozen registry of `GNT-47.0-filesystem-foundation-scope`",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_operation_refusals_name_one_target_state_and_add_no_diagnostic_spelling() {
+    assert_eq!(
+        FS_REFUSAL_CONDITIONS,
+        [
+            FsRefusalCondition::TargetStateUnadmitted,
+            FsRefusalCondition::FoldingTargetCollision,
+        ]
+    );
+    // The frozen registry keeps its two codes: the refusal vocabulary adds no third spelling.
+    assert_eq!(
+        FsDiagnosticCode::ALL,
+        [FsDiagnosticCode::PathEscape, FsDiagnosticCode::PathInvalid]
+    );
+
+    // Each whole-object action names exactly one declared target state it does not admit.
+    assert_eq!(
+        FsAction::Create.unadmitted_target_state(),
+        Some(FsTargetState::Present)
+    );
+    for action in [FsAction::Read, FsAction::Replace, FsAction::Remove] {
+        assert_eq!(
+            action.unadmitted_target_state(),
+            Some(FsTargetState::Absent),
+            "{} is refused when no object is named",
+            action.as_str()
+        );
+    }
+    for action in FsAction::ALL {
+        assert_eq!(
+            action.refusal_conditions(),
+            [
+                FsRefusalCondition::TargetStateUnadmitted,
+                FsRefusalCondition::FoldingTargetCollision,
+            ],
+            "{} resolves the declared path value of its caller",
+            action.as_str()
+        );
+    }
+
+    // Only `open` names an unadmitted target state; the nine instance operations declare no
+    // condition of the refusal clause at all.
+    assert_eq!(
+        FsResourceOperation::Open.unadmitted_target_state(),
+        Some(FsTargetState::Absent)
+    );
+    assert_eq!(
+        FsResourceOperation::Open.refusal_conditions(),
+        [
+            FsRefusalCondition::TargetStateUnadmitted,
+            FsRefusalCondition::FoldingTargetCollision,
+        ]
+    );
+    for operation in FsResourceOperation::ALL {
+        if operation == FsResourceOperation::Open {
+            continue;
+        }
+        assert_eq!(
+            operation.unadmitted_target_state(),
+            None,
+            "{}",
+            operation.as_str()
+        );
+        assert!(
+            operation.refusal_conditions().is_empty(),
+            "{} applies to an admitted instance and declares no refusal condition",
+            operation.as_str()
+        );
+    }
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for rule in [
+        "This clause declares the refusal vocabulary of an operation of this section whose declared target state does not admit it",
+        "Exactly two refusal conditions are declared, and the model's `FsRefusalCondition` and its `FS_REFUSAL_CONDITIONS` publish them",
+        "the frozen registry of `GNT-47.0-filesystem-foundation-scope` keeps exactly `fs-path-escape` and `fs-path-invalid`, both owned by `GNT-47.2-filesystem-path-values`, and this clause adds no third code, no refusal position, count, or bound, and no spelling of its own",
+        "either absent - no object is named by the declared path value - or present - one object is named by it",
+        "`create` is refused when the declared target state is present, because an object that is already named does not admit creation, and `read`, `replace`, and `remove` are refused when the declared target state is absent",
+        "`FsResourceOperation::unadmitted_target_state` publishes that decision",
+        "the other nine declared operations apply to one admitted instance of `GNT-47.5-filesystem-resource-state`, declare no condition of this clause, and are neither admitted nor refused by it",
+        "is refused when the target reports a collision under the target's own case behaviour",
+        "the model accessors `FsAction::refusal_conditions` and `FsResourceOperation::refusal_conditions` publish exactly that condition set for the two vocabularies",
+        "it publishes no folded spelling, no preferred spelling, no lookup key, and no identity of a fold",
+        "an operation refused because the declared target state does not admit it is never published as refused for a collision",
     ] {
         assert!(
             specification.contains(rule),

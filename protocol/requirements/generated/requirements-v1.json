@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "b935cd1d365c40febbfbeb18d5f8fc8ee3a3d4c38e6a563b96f1dedeb9a48689",
-  "byte_length": 1272049,
-  "line_count": 16601,
+  "specification_sha256": "2407d21d4f91832fe69ba359f028f34bb8d99e6521fe3dd5505a4c4ccb8f4392",
+  "byte_length": 1277069,
+  "line_count": 16662,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "16390c8a830d73e328f7a22c6dc23406a58c44743dc60c6acf02ba573a94a9f9",
+      "sha256": "e14bbc85d48429baf8f1fae27ae66807941cdaa2e650c97b708864d9f2469000",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16601,
-      "sha256": "8ca9fa54ac6c616651a3291b9a7586566626155427893e21ceda2ea91b1e70b7",
+      "end_line": 16662,
+      "sha256": "1f90e48aad5f12a74cd305476ffa25696e4c379663509a5309c0afd5e623dd0a",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "f2f3abec16686d6708256832cb1775a7d96bab59909786923e94a7f268d7f272",
+      "span_sha256": "a64c91bff556e658a56f27aee168a437239ce7401a2b50e42bfd8fa312653ec3",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "2735e458a20a25b392e2778bfae8dab1a22cd92cbee4ddd002ed0f4ad864966b",
+      "body_sha256": "50d62afc9c0af358f931c23b9546cddb16149fd72006c6cf63e05eeecacc1e0f",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45269,6 +45269,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_path_value_case_identity_is_exact_and_never_folded"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.12-filesystem-operation-refusals",
+      "span_start_line": 16602,
+      "span_end_line": 16662,
+      "span_sha256": "ad459e2f554356d5e3b5424404de976570450cd3694df331c46d2ef263d71972",
+      "anchor_line": 16603,
+      "body_start_line": 16604,
+      "body_end_line": 16662,
+      "body_sha256": "032b48b52cb9d08ab85c43629ea2591c34d058479ef92c5baedba3f8d8aee08e",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16604,
+          "end_line": 16662,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_operation_refusals_name_one_target_state_and_add_no_diagnostic_spelling"
               ],
               "rationale": null
             }

@@ -5,10 +5,11 @@
 //! `std.fs::action`, and the resource operation vocabulary of `std.fs::resource` with its
 //! consumption of the common I/O contract and its content-mutation fact, the read-only grant
 //! refusal over both vocabularies, the declared instance state vocabulary, and the declared
-//! canonical traversal order of entry names, and the declared link policy of a resolved entry. It
-//! is not a descriptor, an open handle, a live
-//! resource instance, an adapter, a capability, or a runtime availability, and it performs no I/O:
-//! every decision it publishes is a deterministic function of its declared arguments alone.
+//! canonical traversal order of entry names, the declared link policy of a resolved entry, and the
+//! declared refusal conditions of an action and a resource operation. It is not a descriptor, an
+//! open handle, a live resource instance, an adapter, a capability, or a runtime availability, and
+//! it performs no I/O: every decision it publishes is a deterministic function of its declared
+//! arguments alone.
 
 use std::fmt;
 
@@ -22,7 +23,7 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 12] = [
+pub const FS_CLAUSES: [&str; 13] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
@@ -35,6 +36,7 @@ pub const FS_CLAUSES: [&str; 12] = [
     "GNT-47.9-filesystem-replacement",
     "GNT-47.10-filesystem-declared-limits",
     "GNT-47.11-filesystem-case-identity",
+    "GNT-47.12-filesystem-operation-refusals",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -75,6 +77,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.8-filesystem-link-policy",
             "GNT-47.9-filesystem-replacement",
             "GNT-47.10-filesystem-declared-limits",
+            "GNT-47.12-filesystem-operation-refusals",
         ],
     },
     FsItemRow {
@@ -101,6 +104,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.5-filesystem-resource-state",
             "GNT-47.8-filesystem-link-policy",
             "GNT-47.10-filesystem-declared-limits",
+            "GNT-47.12-filesystem-operation-refusals",
         ],
     },
 ];
@@ -231,6 +235,42 @@ pub const FS_PATH_SEGMENT_BOUND: usize = 256;
 
 /// The declared number of resolutions one operation of this section performs for its path value.
 pub const FS_RESOLUTION_COUNT: u32 = 1;
+
+/// One declared condition under which an operation of this section is refused
+/// (`GNT-47.12-filesystem-operation-refusals`).
+///
+/// A refusal condition publishes no diagnostic spelling and no code of `FsDiagnosticCode`: the
+/// frozen registry of `GNT-47.0-filesystem-foundation-scope` keeps its two codes, both owned by
+/// `GNT-47.2-filesystem-path-values`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FsRefusalCondition {
+    /// The declared target state does not admit the operation's declared effect.
+    TargetStateUnadmitted,
+    /// The target reports a collision under its own case behaviour.
+    FoldingTargetCollision,
+}
+
+/// Every declared refusal condition, in declaration order.
+pub const FS_REFUSAL_CONDITIONS: [FsRefusalCondition; 2] = [
+    FsRefusalCondition::TargetStateUnadmitted,
+    FsRefusalCondition::FoldingTargetCollision,
+];
+
+/// The declared target state of the object a path value of `GNT-47.2-filesystem-path-values` names.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FsTargetState {
+    /// No object is named by the declared path value.
+    Absent,
+    /// One object is named by the declared path value.
+    Present,
+}
+
+/// The declared refusal conditions of an operation that resolves the declared path value of its
+/// caller: each whole-object action and the `open` resource operation.
+const PATH_RESOLVING_REFUSAL_CONDITIONS: [FsRefusalCondition; 2] = [
+    FsRefusalCondition::TargetStateUnadmitted,
+    FsRefusalCondition::FoldingTargetCollision,
+];
 
 /// One declared filesystem refusal condition of `GNT-47.2-filesystem-path-values`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -532,6 +572,25 @@ impl FsAction {
     pub const fn declares_content_mutation(self) -> bool {
         matches!(self, Self::Create | Self::Replace | Self::Remove)
     }
+
+    /// Returns the declared target state this action does not admit.
+    ///
+    /// A `create` names a present target state, because an object that is already named does not
+    /// admit creation, while a `read`, a `replace`, and a `remove` name an absent one, because no
+    /// object is named for that action to publish, replace, or remove.
+    #[must_use]
+    pub const fn unadmitted_target_state(self) -> Option<FsTargetState> {
+        match self {
+            Self::Create => Some(FsTargetState::Present),
+            Self::Read | Self::Replace | Self::Remove => Some(FsTargetState::Absent),
+        }
+    }
+
+    /// Returns the declared refusal conditions of this action, in declaration order.
+    #[must_use]
+    pub const fn refusal_conditions(self) -> &'static [FsRefusalCondition] {
+        &PATH_RESOLVING_REFUSAL_CONDITIONS
+    }
 }
 
 /// The declared replacement action of `GNT-47.9-filesystem-replacement`.
@@ -644,6 +703,44 @@ impl FsResourceOperation {
     #[must_use]
     pub const fn declares_content_mutation(self) -> bool {
         matches!(self, Self::Write | Self::Truncate)
+    }
+
+    /// Returns the declared target state this operation does not admit, if any.
+    ///
+    /// Only `open` names one: it is refused when the declared target state is absent. The nine
+    /// operations that apply to one admitted instance of `GNT-47.5-filesystem-resource-state`
+    /// declare no condition of `GNT-47.12-filesystem-operation-refusals`.
+    #[must_use]
+    pub const fn unadmitted_target_state(self) -> Option<FsTargetState> {
+        match self {
+            Self::Open => Some(FsTargetState::Absent),
+            Self::Read
+            | Self::Write
+            | Self::Seek
+            | Self::Flush
+            | Self::Sync
+            | Self::Truncate
+            | Self::Close
+            | Self::Lock
+            | Self::Watch => None,
+        }
+    }
+
+    /// Returns the declared refusal conditions of this operation, in declaration order.
+    #[must_use]
+    pub const fn refusal_conditions(self) -> &'static [FsRefusalCondition] {
+        match self {
+            Self::Open => &PATH_RESOLVING_REFUSAL_CONDITIONS,
+            Self::Read
+            | Self::Write
+            | Self::Seek
+            | Self::Flush
+            | Self::Sync
+            | Self::Truncate
+            | Self::Close
+            | Self::Lock
+            | Self::Watch => &[],
+        }
     }
 }
 

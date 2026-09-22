@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "b935cd1d365c40febbfbeb18d5f8fc8ee3a3d4c38e6a563b96f1dedeb9a48689",
+  "specification_sha256": "2407d21d4f91832fe69ba359f028f34bb8d99e6521fe3dd5505a4c4ccb8f4392",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16601,
+      "end_line": 16662,
       "rationale": null
     }
   ],
@@ -44012,6 +44012,45 @@
               "rationale": null,
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_path_value_case_identity_is_exact_and_never_folded"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.12-filesystem-operation-refusals",
+      "span_start_line": 16602,
+      "span_end_line": 16662,
+      "anchor_line": 16603,
+      "body_start_line": 16604,
+      "body_end_line": 16662,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16604,
+          "end_line": 16662,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_operation_refusals_name_one_target_state_and_add_no_diagnostic_spelling"
               ]
             }
           ]
