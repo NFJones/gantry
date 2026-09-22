@@ -483,29 +483,67 @@ fn testing_support_note_is_current() {
     ] {
         assert!(note.contains(required), "the note names {required}");
     }
-    for kind in TestKind::ALL {
-        let token = format!("`{}`", kind.wire_name());
-        assert!(note.contains(&token), "the note names the kind {token}");
+    assert_eq!(
+        section_members(&note, "## Test kinds"),
+        TestKind::ALL
+            .map(|kind| kind.wire_name().to_owned())
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(
+        section_members(&note, "## Declared substitutions"),
+        TestSubstitution::ALL
+            .map(|substitution| substitution.wire_name().to_owned())
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(
+        section_members(&note, "## Harness capabilities"),
+        TestHarnessCapability::ALL
+            .map(|capability| capability.wire_name().to_owned())
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(
+        section_members(&note, "## Execution rules"),
+        TestExecutionRule::ALL
+            .map(|rule| rule.wire_name().to_owned())
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(
+        section_members(&note, "## Non-claims"),
+        STD_TEST_NON_CLAIMS
+            .iter()
+            .map(|non_claim| (*non_claim).to_owned())
+            .collect::<BTreeSet<_>>()
+    );
+}
+
+/// Returns the backticked members one note section declares as its bullets.
+///
+/// The note is compared section by section, so a vocabulary member removed from the model cannot
+/// survive as a stale bullet in the note: every compared section must list exactly the live
+/// members, no more and no fewer. Only bullet members are collected, so a prose sentence inside a
+/// section may still name an API without being mistaken for a declared member.
+fn section_members(note: &str, heading: &str) -> BTreeSet<String> {
+    let mut members = BTreeSet::new();
+    let mut in_section = false;
+    for line in note.lines() {
+        if line.starts_with("## ") {
+            in_section = line.trim_end() == heading;
+            continue;
+        }
+        if !in_section || !line.starts_with("- ") {
+            continue;
+        }
+        for (index, part) in line.split('`').enumerate() {
+            if index % 2 == 1 && !part.is_empty() {
+                members.insert(part.to_owned());
+            }
+        }
     }
-    for substitution in TestSubstitution::ALL {
-        let token = format!("`{}`", substitution.wire_name());
-        assert!(note.contains(&token), "the note names {token}");
-    }
-    for capability in TestHarnessCapability::ALL {
-        let token = format!("`{}`", capability.wire_name());
-        assert!(note.contains(&token), "the note names {token}");
-    }
-    for rule in TestExecutionRule::ALL {
-        let token = format!("`{}`", rule.wire_name());
-        assert!(note.contains(&token), "the note names {token}");
-    }
-    for non_claim in STD_TEST_NON_CLAIMS {
-        let token = format!("`{non_claim}`");
-        assert!(
-            note.contains(&token),
-            "the note names the non-claim {token}"
-        );
-    }
+    members
 }
 
 /// Returns the workspace root that holds the published protocol catalog.

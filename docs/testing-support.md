@@ -1,11 +1,11 @@
 # The `std.test` package
 
-`docs/reference/general-purpose-refactor.md` publishes the testing-support contract this note
-indexes: tests are first-class package targets of the standard-library hierarchy. The note is
-pinned by
+This note indexes the `GNT-GP-TEST-001` testing-support contract as it is declared by the landed
+model `crates/gantry-ir/src/test_support.rs`: tests are first-class package targets of the
+standard-library hierarchy. The note is pinned by
 `crates/gantry-conformance/tests/test_support.rs#testing_support_note_is_current`, which requires
-it to name every declared kind, substitution, harness capability, execution rule, and non-claim,
-so it cannot drift from the model.
+every vocabulary section below to name exactly the live members, so the note cannot drift from the
+model.
 
 ## Package identity
 
@@ -71,7 +71,10 @@ enumerated in canonical order with `declare_test_discovery`.
 
 ## Non-claims
 
-`ambient-authority`, `oracle-provider`, `test-only-semantics`, `wildcard-prelude`.
+- `ambient-authority`
+- `oracle-provider`
+- `test-only-semantics`
+- `wildcard-prelude`
 
 ## Published metadata and evidence
 
