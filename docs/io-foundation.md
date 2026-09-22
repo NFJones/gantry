@@ -70,8 +70,10 @@ Section 20 facts that own them.
 
 - It admits no streaming, incremental, chunked, or resumable contract and no buffering, queueing,
   or wait behavior beyond the progress observation a single call publishes.
-- It declares no item or interface row for `std.io`, no interface digest, and no stability tier;
-  `GNT-34.8-defining-identity-and-interface-digest` requires an item surface before either exists.
+- It declares no interface digest of its own; the declared module rows of
+  `GNT-45.2-standard-io-modules-and-item-rows` (`std.io::reader`, `std.io::seek`, and
+  `std.io::writer`, each at the stable tier over the application mode) are the family’s item
+  surface, and the digest covers exactly those rows.
 - It grants no adapter, no host trait, no runtime availability, and no capability: adapters remain
   leaves, and `GNT-29.11-adapter-declaration-obligations` keeps an adapter declaration evidence
   only rather than an implementation or availability claim.

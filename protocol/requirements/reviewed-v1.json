@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "80719f552c6701b1e681a5c0d519dfe27aba94631729303974ab9d84a39eddc8",
+  "specification_sha256": "2a986152b91ba098e518341a7a69b16e238de9e984840324ced8e05100d2c812",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15876,
+      "end_line": 15905,
       "rationale": null
     }
   ],
@@ -43189,6 +43189,46 @@
                 "crates/gantry-conformance/tests/io_foundation.rs#io_progress_precedence_and_derivation_scope_are_published",
                 "crates/gantry-conformance/tests/io_foundation.rs#io_progress_sets_are_closed_per_kind",
                 "crates/gantry-conformance/tests/io_foundation.rs#io_request_bound_is_inclusive_and_refuses_zero_and_one_more"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-45.2-standard-io-modules-and-item-rows",
+      "span_start_line": 15877,
+      "span_end_line": 15905,
+      "anchor_line": 15878,
+      "body_start_line": 15879,
+      "body_end_line": 15905,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15879,
+          "end_line": 15905,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/io_foundation.rs#io_item_rows_are_closed_and_owned",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_surface_declaration_requires_the_family_package"
               ],
               "rationale": null
             }

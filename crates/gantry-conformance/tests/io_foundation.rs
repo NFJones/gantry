@@ -10,12 +10,13 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::generated::HostDomainFamily;
 use gantry::ir::{
-    CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, HostProgress, IO_CLAUSES, IO_CONTRACT_VERSION,
-    IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError, IoOperation, IoRequest, PackageFamily,
-    ProgressObservation, STDLIB_CLAUSES, admit_io_progress,
+    CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, HostProgress, IO_CLAUSES, IO_CONTRACT_VERSION, IO_ITEMS,
+    IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError, IoOperation, IoRequest, NameClass,
+    PackageFamily, Prelude, ProgressObservation, STDLIB_CLAUSES, SemanticMode, StabilityTier,
+    StdGraph, StdPackage, StdlibDiagnosticCode, TargetKind, admit_io_progress, declare_io_surface,
 };
 
-const REQUIRED_ANCHORS: [&str; 8] = [
+const REQUIRED_ANCHORS: [&str; 9] = [
     "GNT-29.1",
     "GNT-29.2",
     "GNT-29.3",
@@ -24,6 +25,7 @@ const REQUIRED_ANCHORS: [&str; 8] = [
     "GNT-34.1",
     "GNT-45.0",
     "GNT-45.1",
+    "GNT-45.2",
 ];
 
 fn workspace_root() -> PathBuf {
@@ -61,6 +63,7 @@ fn io_contract_clauses_and_scope_are_published() {
         [
             "GNT-45.0-common-io-foundation-scope",
             "GNT-45.1-bounded-one-call-io-contract",
+            "GNT-45.2-standard-io-modules-and-item-rows",
         ]
     );
     assert_eq!(IO_CONTRACT_VERSION, 1);
@@ -264,6 +267,68 @@ fn io_progress_precedence_and_derivation_scope_are_published() {
 }
 
 #[test]
+fn io_item_rows_are_closed_and_owned() {
+    assert_eq!(IO_ITEMS.len(), IoOperation::ALL.len());
+    let names = IO_ITEMS.iter().map(|row| row.name).collect::<Vec<_>>();
+    assert_eq!(names, ["std.io::reader", "std.io::seek", "std.io::writer"]);
+    let unique = names.iter().collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(unique.len(), names.len());
+    for (row, operation) in IO_ITEMS.iter().zip(IoOperation::ALL) {
+        assert_eq!(row.operation, operation);
+        assert_eq!(row.name, operation.module_name());
+        assert_eq!(row.class, NameClass::Module);
+        assert_eq!(row.tier, StabilityTier::Stable);
+        assert_eq!(
+            row.clauses.to_vec(),
+            [
+                "GNT-45.0-common-io-foundation-scope",
+                "GNT-45.1-bounded-one-call-io-contract",
+                "GNT-45.2-standard-io-modules-and-item-rows",
+            ]
+        );
+    }
+}
+
+#[test]
+fn io_surface_declaration_requires_the_family_package() {
+    let mut empty = StdGraph::new(Prelude::canonical());
+    let refusal = declare_io_surface(&mut empty)
+        .err()
+        .unwrap_or_else(|| panic!("an undeclared family package must be refused"));
+    assert_eq!(refusal.code(), StdlibDiagnosticCode::UnknownEdge);
+
+    let mut graph = StdGraph::new(Prelude::canonical());
+    let declared = StdPackage::new(
+        PackageFamily::Io,
+        NameClass::Package,
+        StabilityTier::Stable,
+        &[SemanticMode::Application],
+        &[TargetKind::Library, TargetKind::Binary],
+        &[],
+        &[],
+    )
+    .unwrap_or_else(|error| panic!("the family package declaration is admissible: {error:?}"));
+    assert!(graph.declare(declared).is_ok());
+    assert!(declare_io_surface(&mut graph).is_ok());
+    let owner = PackageFamily::Io.package_name();
+    let package = graph
+        .package(&owner)
+        .unwrap_or_else(|| panic!("the family package is declared"));
+    for row in IO_ITEMS {
+        let item = package
+            .item(row.name)
+            .unwrap_or_else(|| panic!("{} is declared", row.name));
+        assert_eq!(item.tier(), row.tier);
+        assert_eq!(item.modes(), package.modes());
+        assert_eq!(item.targets(), package.targets());
+    }
+    assert!(
+        declare_io_surface(&mut graph).is_err(),
+        "a second declaration of one item is refused"
+    );
+}
+
+#[test]
 fn io_note_names_the_declared_capability_family() {
     let note = read_text(&workspace_root().join("docs/io-foundation.md"));
     let flat = flatten(&note);
@@ -395,7 +460,7 @@ fn io_note_records_the_unlanded_contract_without_claiming_it() {
 
     for needle in [
         "It admits no streaming, incremental, chunked, or resumable contract and no buffering, queueing, or wait behavior beyond the progress observation a single call publishes.",
-        "It declares no item or interface row for `std.io`, no interface digest, and no stability tier",
+        "It declares no interface digest of its own; the declared module rows of `GNT-45.2-standard-io-modules-and-item-rows`",
         "It grants no adapter, no host trait, no runtime availability, and no capability: adapters remain leaves",
     ] {
         assert!(

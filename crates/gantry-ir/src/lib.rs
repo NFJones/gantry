@@ -202,8 +202,8 @@ pub use host_domain::{
 // Section 45 publishes the common I/O foundation: the closed operation vocabulary and the
 // versioned one-call request contract. It adds no adapter, host trait, or runtime availability.
 pub use io::{
-    IO_CLAUSES, IO_CONTRACT_VERSION, IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError,
-    IoOperation, IoRequest, admit_io_progress,
+    IO_CLAUSES, IO_CONTRACT_VERSION, IO_ITEMS, IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError,
+    IoItemRow, IoOperation, IoRequest, admit_io_progress, declare_io_surface,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and

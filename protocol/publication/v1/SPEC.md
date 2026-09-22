@@ -15874,3 +15874,32 @@ runtime availability, no work limit, cancellation safe point, quota, or charge, 
 recovery, durability, boundary encoding, lowering, machine representation, or family behavior, no
 change to `GNT-29.2-reader-writer-seek-progress` or to any other clause of Section 29, and it
 claims no performance, storage layout, or physical representation.
+
+<a id="GNT-45.2-standard-io-modules-and-item-rows"></a>
+
+**[GNT-45.2-standard-io-modules-and-item-rows] Standard I/O modules and item rows.** This clause
+publishes the declared module surface of the `std.io` family of
+`GNT-34.1-canonical-hierarchy-and-package-names`: exactly three modules — `std.io::reader`,
+`std.io::seek`, and `std.io::writer`, in that canonical order — each classified as a module of
+`GNT-34.2-name-classification` at the stable tier of `GNT-34.6-stability-tiers` and declared for
+the application semantic mode over the library and binary target kinds, because the family is
+capability-backed and `GNT-34.3-acyclic-internal-dependency-dag` forbids a pure family from
+depending on it. The declared set is closed, its canonical order is its canonical name order, and
+no other module, alias, item, or spelling is declared: an undeclared module name is refused under
+`invalid-name-classification` rather than inferred, substituted, or accepted as an alias. Each
+module owns exactly one declared one-call contract of
+`GNT-45.1-bounded-one-call-io-contract`: `std.io::reader` owns its read requests, `std.io::seek`
+owns its seek requests, and `std.io::writer` owns its write requests, so every item this family
+exports has exactly one defining package and one stable identity under
+`GNT-34.8-defining-identity-and-interface-digest`, and the family's interface digest covers
+exactly these three module rows and no other item. The model's `IoItemRow` and `IO_ITEMS` publish
+the rows, `declare_io_surface` declares them over one standard-library graph so an item is never
+applicable outside its own package's applicability (`GNT-34.7-applicability-and-feature-
+granularity`), and its analyzer evidence is `crates/gantry-conformance/tests/io_foundation.rs`.
+This clause publishes the module rows and their contract ownership only: it publishes no source
+syntax, import rule, facade path, implementation, adapter, host trait, capability grant, or
+runtime availability, no streaming, buffering, or backpressure contract, no work limit,
+cancellation safe point, quota, or charge, no schema, recovery, durability, boundary encoding,
+lowering, machine representation, or family behavior, no change to any other clause of this
+section or of Section 29, and it claims no performance, storage layout, or physical
+representation.

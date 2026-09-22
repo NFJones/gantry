@@ -6,11 +6,15 @@
 //! no I/O: every decision is a deterministic function of explicit inputs.
 
 use crate::operation::ProgressObservation;
+use crate::stdlib::{
+    NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
+};
 
 /// The Section 45 clauses implemented by this pure model, in declaration order.
-pub const IO_CLAUSES: [&str; 2] = [
+pub const IO_CLAUSES: [&str; 3] = [
     "GNT-45.0-common-io-foundation-scope",
     "GNT-45.1-bounded-one-call-io-contract",
+    "GNT-45.2-standard-io-modules-and-item-rows",
 ];
 
 /// The declared one-call request-contract version of `GNT-45.1-bounded-one-call-io-contract`.
@@ -74,6 +78,16 @@ impl IoOperation {
                 ProgressObservation::NotStarted,
                 ProgressObservation::ShortWrite,
             ],
+        }
+    }
+
+    /// Returns the canonical logical module name of this operation's one-call contract.
+    #[must_use]
+    pub const fn module_name(self) -> &'static str {
+        match self {
+            Self::Read => "std.io::reader",
+            Self::Seek => "std.io::seek",
+            Self::Write => "std.io::writer",
         }
     }
 }
@@ -233,4 +247,90 @@ pub fn admit_io_progress(
         operation,
         observation,
     })
+}
+
+/// One declared public module of `std.io` and the clauses that publish it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IoItemRow {
+    /// The declared operation whose one-call contract this module owns.
+    pub operation: IoOperation,
+    /// The canonical logical item name.
+    pub name: &'static str,
+    /// The declared name classification of `GNT-34.2-name-classification`.
+    pub class: NameClass,
+    /// The declared stability tier of `GNT-34.6-stability-tiers`.
+    pub tier: StabilityTier,
+    /// The section clauses this item publishes, in specification order.
+    pub clauses: &'static [&'static str],
+}
+
+/// The declared public items of `std.io`, one module per declared operation.
+///
+/// Each name is the canonical logical spelling of the model's own operation identity
+/// ([`IoOperation::module_name`]), so the rows are derived from the operation vocabulary rather
+/// than restated beside it, and each row lists every clause that publishes a fact about that
+/// item's surface in specification order.
+pub const IO_ITEMS: [IoItemRow; 3] = [
+    IoItemRow {
+        operation: IoOperation::Read,
+        name: IoOperation::Read.module_name(),
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        clauses: &[
+            "GNT-45.0-common-io-foundation-scope",
+            "GNT-45.1-bounded-one-call-io-contract",
+            "GNT-45.2-standard-io-modules-and-item-rows",
+        ],
+    },
+    IoItemRow {
+        operation: IoOperation::Seek,
+        name: IoOperation::Seek.module_name(),
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        clauses: &[
+            "GNT-45.0-common-io-foundation-scope",
+            "GNT-45.1-bounded-one-call-io-contract",
+            "GNT-45.2-standard-io-modules-and-item-rows",
+        ],
+    },
+    IoItemRow {
+        operation: IoOperation::Write,
+        name: IoOperation::Write.module_name(),
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        clauses: &[
+            "GNT-45.0-common-io-foundation-scope",
+            "GNT-45.1-bounded-one-call-io-contract",
+            "GNT-45.2-standard-io-modules-and-item-rows",
+        ],
+    },
+];
+
+/// Declares the published item surface of `std.io` over one standard-library graph
+/// (`GNT-34.6-stability-tiers`, `GNT-34.8-defining-identity-and-interface-digest`).
+///
+/// The owning package must already be declared, and each item takes that package's declared modes
+/// and targets, so an item is never applicable outside its own package's applicability
+/// (`GNT-34.7-applicability-and-feature-granularity`). A second declaration of one item is refused
+/// by the graph rather than merged.
+pub fn declare_io_surface(graph: &mut StdGraph) -> Result<(), StdlibError> {
+    let owner = PackageFamily::Io.package_name();
+    let (modes, targets) = {
+        let package = graph.package(&owner).ok_or_else(|| {
+            StdlibError::new(
+                StdlibDiagnosticCode::UnknownEdge,
+                format!("`{owner}` is not declared, so its item surface cannot be declared"),
+            )
+        })?;
+        (
+            package.modes().iter().copied().collect::<Vec<_>>(),
+            package.targets().iter().copied().collect::<Vec<_>>(),
+        )
+    };
+    for row in IO_ITEMS {
+        graph.declare_item(StdItem::new(
+            row.name, row.class, row.tier, &modes, &targets,
+        )?)?;
+    }
+    Ok(())
 }
