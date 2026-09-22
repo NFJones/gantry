@@ -16,13 +16,16 @@
 //! runtime compaction, and host-resource reconstruction stay outside this model under
 //! `GNT-28.10-resource-accounting-non-claims`.
 //!
-//! This module owns the admission boundary only. It performs no durable or host I/O,
-//! decodes no record bytes, and publishes no journal, checkpoint, evaluator, or host
-//! behavior; those remain with the durable, recovery, and machine modules.
+//! This module owns the admission boundary and the runtime's settlement step: an admitted
+//! resource settles only from a model-issued settlement or cleanup proof, so the runtime never
+//! chooses a terminal disposition the model did not derive. It performs no durable or host I/O,
+//! decodes no record bytes, and publishes no journal, checkpoint, evaluator, or host behavior;
+//! those remain with the durable, recovery, and machine modules.
 
 use gantry_ir::{
-    DurableResourceRecord, Quota, QuotaFamily, QuotaOwner, ResourceCarrier, ResourceError,
-    ResourceLedger, admit_resource_carrier,
+    DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness, PoisonWitness,
+    PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ResourceCarrier, ResourceError,
+    ResourceLedger, ResourceLifetimeState, admit_resource_carrier,
 };
 
 /// One resource whose declared accounting facts the runtime has admitted.
@@ -97,5 +100,50 @@ impl AdmittedResource {
     #[must_use]
     pub fn durable_record(&self) -> DurableResourceRecord {
         self.ledger.durable_record()
+    }
+
+    /// Records that finalization of one admitted resource completed.
+    ///
+    /// The resource must already be finishing: the model's two-phase lifetime of
+    /// `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` is entered through the
+    /// ledger and this step records the completion at one declared logical instant. Any other
+    /// lifetime is refused by the model's own transition rule, no quota fact changes, and the
+    /// retained settlement baseline names the current owner.
+    pub fn complete_finalization(
+        &mut self,
+        settled_at: u64,
+    ) -> Result<ResourceLifetimeState, ResourceError> {
+        self.ledger.finish(settled_at)?;
+        Ok(self.ledger.lifetime())
+    }
+
+    /// Settles one admitted resource from a model-issued post-failure settlement.
+    ///
+    /// The settlement is admitted only through the model's poisoning witness: a settlement whose
+    /// derived state is not the poisoned state is refused with
+    /// `ResourceError::FailureDoesNotPoisonResource` before any lifetime fact changes, so the
+    /// runtime never chooses a terminal disposition for a failure the model did not settle as
+    /// poisoned.
+    pub fn settle_from_post_failure(
+        &mut self,
+        settlement: &PostFailureSettlement,
+        settled_at: u64,
+    ) -> Result<ResourceLifetimeState, ResourceError> {
+        let witness = PoisonWitness::from_post_failure(settlement, settled_at)?;
+        self.ledger.poison(witness)?;
+        Ok(self.ledger.lifetime())
+    }
+
+    /// Settles one admitted resource from admitted hard-cancellation cleanup.
+    ///
+    /// The cleanup witness is obtainable only from the stop model's linearized escalation, so
+    /// this step can never manufacture emergency release from an arbitrary logical instant.
+    pub fn settle_from_emergency_cleanup(
+        &mut self,
+        cleanup: EmergencyCleanupWitness,
+    ) -> Result<ResourceLifetimeState, ResourceError> {
+        self.ledger
+            .emergency_release(EmergencyReleaseWitness::from_cleanup(cleanup))?;
+        Ok(self.ledger.lifetime())
     }
 }
