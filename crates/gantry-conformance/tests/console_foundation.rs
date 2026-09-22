@@ -474,7 +474,9 @@ fn console_terminal_observations_and_control_boundary_are_declared() {
         );
     }
     for rule in [
+        "The frozen diagnostics of this section are `console-observation-inconsistent`, owned by `GNT-46.5-console-terminal-observations`",
         "spelled `terminal-attached` and `terminal-not-attached`",
+        "a dimension observation cannot be presented for a console that is not attached",
         "a count outside that range is refused under the frozen console diagnostic `console-observation-inconsistent`",
         "consumes no admitted `std.io` request",
         "that module row stays a declared name without a published contract until",

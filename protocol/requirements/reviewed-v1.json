@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "c31738787778d69c8f57d3b0f6285c9d48b29b3891ae7c5aaae34592f5c8418d",
+  "specification_sha256": "49597fe35a1b9267aa6bd62ecf7901d892ddd24ca6d5efea78047c7d3e238b4f",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16194,
+      "end_line": 16197,
       "rationale": null
     }
   ],
@@ -43321,15 +43321,15 @@
     {
       "id": "GNT-46.0-console-foundation-scope",
       "span_start_line": 16002,
-      "span_end_line": 16017,
+      "span_end_line": 16019,
       "anchor_line": 16003,
       "body_start_line": 16004,
-      "body_end_line": 16017,
+      "body_end_line": 16019,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16004,
-          "end_line": 16017,
+          "end_line": 16019,
           "profiles": [
             "analyzer"
           ],
@@ -43359,16 +43359,16 @@
     },
     {
       "id": "GNT-46.1-console-modules-and-item-rows",
-      "span_start_line": 16018,
-      "span_end_line": 16044,
-      "anchor_line": 16019,
-      "body_start_line": 16020,
-      "body_end_line": 16044,
+      "span_start_line": 16020,
+      "span_end_line": 16046,
+      "anchor_line": 16021,
+      "body_start_line": 16022,
+      "body_end_line": 16046,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16020,
-          "end_line": 16044,
+          "start_line": 16022,
+          "end_line": 16046,
           "profiles": [
             "analyzer"
           ],
@@ -43400,16 +43400,16 @@
     },
     {
       "id": "GNT-46.2-console-bounded-operations",
-      "span_start_line": 16045,
-      "span_end_line": 16066,
-      "anchor_line": 16046,
-      "body_start_line": 16047,
-      "body_end_line": 16066,
+      "span_start_line": 16047,
+      "span_end_line": 16068,
+      "anchor_line": 16048,
+      "body_start_line": 16049,
+      "body_end_line": 16068,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16047,
-          "end_line": 16066,
+          "start_line": 16049,
+          "end_line": 16068,
           "profiles": [
             "analyzer"
           ],
@@ -43440,16 +43440,16 @@
     },
     {
       "id": "GNT-46.3-console-operation-recovery-and-accepted-input",
-      "span_start_line": 16067,
-      "span_end_line": 16115,
-      "anchor_line": 16068,
-      "body_start_line": 16069,
-      "body_end_line": 16115,
+      "span_start_line": 16069,
+      "span_end_line": 16117,
+      "anchor_line": 16070,
+      "body_start_line": 16071,
+      "body_end_line": 16117,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16069,
-          "end_line": 16115,
+          "start_line": 16071,
+          "end_line": 16117,
           "profiles": [
             "analyzer"
           ],
@@ -43479,16 +43479,16 @@
     },
     {
       "id": "GNT-46.4-console-encoding-and-shutdown-settlement",
-      "span_start_line": 16116,
-      "span_end_line": 16155,
-      "anchor_line": 16117,
-      "body_start_line": 16118,
-      "body_end_line": 16155,
+      "span_start_line": 16118,
+      "span_end_line": 16157,
+      "anchor_line": 16119,
+      "body_start_line": 16120,
+      "body_end_line": 16157,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16118,
-          "end_line": 16155,
+          "start_line": 16120,
+          "end_line": 16157,
           "profiles": [
             "analyzer"
           ],
@@ -43518,16 +43518,16 @@
     },
     {
       "id": "GNT-46.5-console-terminal-observations",
-      "span_start_line": 16156,
-      "span_end_line": 16194,
-      "anchor_line": 16157,
-      "body_start_line": 16158,
-      "body_end_line": 16194,
+      "span_start_line": 16158,
+      "span_end_line": 16197,
+      "anchor_line": 16159,
+      "body_start_line": 16160,
+      "body_end_line": 16197,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16158,
-          "end_line": 16194,
+          "start_line": 16160,
+          "end_line": 16197,
           "profiles": [
             "analyzer"
           ],

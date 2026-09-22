@@ -16014,7 +16014,9 @@ creates no terminal, descriptor, adapter, host trait, capability grant, renderer
 authority, runtime availability, operation or request vocabulary, streaming, buffering, schema,
 recovery, durability, boundary encoding, lowering, or machine behavior, and no clause of this
 section may be read as publishing, implying, or substituting a facility this section does not
-declare.
+declare. The frozen diagnostics of this section are `console-observation-inconsistent`, owned by
+`GNT-46.5-console-terminal-observations`; each diagnostic names one owning clause and no spelling
+is shared by two refusal conditions.
 
 <a id="GNT-46.1-console-modules-and-item-rows"></a>
 
@@ -16164,8 +16166,9 @@ spelled `terminal-attached` and `terminal-not-attached` — and the model's `Con
 `ConsoleDetection::ALL` publish them, so an undeclared fact spelling is refused rather than inferred,
 substituted, or dropped. A console attached to a terminal publishes `terminal-attached` and one
 dimension observation; a console that is not attached publishes `terminal-not-attached` and no
-dimension observation, and a dimension observation presented for a not-attached console is refused
-rather than defaulted. A dimension observation declares exactly two counts — the column count and
+dimension observation, and a dimension observation cannot be presented for a console that is not
+attached, because that declared report carries none. A dimension observation
+declares exactly two counts — the column count and
 the row count, in that canonical order — and the model's `ConsoleDimensions` publishes them: each
 count is at least one and at most `CONSOLE_DIMENSION_BOUND`, and a count outside that range is
 refused under the frozen console diagnostic `console-observation-inconsistent`, naming the observed
