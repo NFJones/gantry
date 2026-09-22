@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataModule,
-    DataRefusalCategory, DataVersion, NameClass, PackageFamily, StabilityTier,
+    DataRefusalCategory, DataVersion, MIME_PARAMETER_COUNT_BOUND, MIME_PARAMETER_NAME_TOKEN_BOUND,
+    MIME_PARAMETER_VALUE_OCTET_BOUND, MIME_SUBTYPE_TOKEN_BOUND, MIME_TEXT_OCTET_BOUND,
+    MIME_TYPE_TOKEN_BOUND, MimeType, NameClass, PackageFamily, StabilityTier,
     URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND, URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND,
     URL_SCHEME_SCALAR_BOUND, URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND,
     URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND, Url, UrlHost, canonical_data_hierarchy,
@@ -32,7 +34,7 @@ fn workspace_root() -> PathBuf {
 fn section_43_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(DATA_CLAUSES.len(), 3);
+    assert_eq!(DATA_CLAUSES.len(), 4);
     let mut prior = 0_usize;
     for clause in DATA_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -111,6 +113,25 @@ fn section_43_clauses_are_published() {
     ] {
         assert!(url.contains(term), "the URL clause must name {term}");
     }
+    let mime_start = spec
+        .find(&format!("<a id=\"{}\"></a>", DATA_CLAUSES[3]))
+        .unwrap_or_else(|| panic!("the MIME clause anchor is published"));
+    let mime = &spec[mime_start..];
+    for term in [
+        "`std.data::mime`",
+        "`GNT-43.1-data-value-model-contract`",
+        "`MIME_TEXT_OCTET_BOUND`",
+        "`MIME_TYPE_TOKEN_BOUND`",
+        "`MIME_SUBTYPE_TOKEN_BOUND`",
+        "`MIME_PARAMETER_NAME_TOKEN_BOUND`",
+        "`MIME_PARAMETER_VALUE_OCTET_BOUND`",
+        "`MIME_PARAMETER_COUNT_BOUND`",
+        "`; `",
+        "`data-malformed-input`",
+        "`data-expansion-limit`",
+    ] {
+        assert!(mime.contains(term), "the MIME clause must name {term}");
+    }
 }
 
 #[test]
@@ -154,8 +175,9 @@ fn data_surface_declares_the_three_modules() {
         assert_eq!(row.class, NameClass::Module, "`{}` is a module", row.name);
         assert_eq!(row.tier, StabilityTier::Stable, "`{}` is stable", row.name);
         let expected: &[&str] = match module {
-            DataModule::Url => &DATA_CLAUSES[..],
-            DataModule::Http | DataModule::Mime => &DATA_CLAUSES[..2],
+            DataModule::Url => &[DATA_CLAUSES[0], DATA_CLAUSES[1], DATA_CLAUSES[2]],
+            DataModule::Mime => &[DATA_CLAUSES[0], DATA_CLAUSES[1], DATA_CLAUSES[3]],
+            DataModule::Http => &DATA_CLAUSES[..2],
         };
         assert_eq!(
             row.clauses, expected,
@@ -415,7 +437,7 @@ fn url_parses_and_displays_the_canonical_form() {
 
 #[test]
 fn url_refuses_noncanonical_spellings_and_indexes_the_departure() {
-    let cases: [(&str, usize); 21] = [
+    let cases: [(&str, usize); 22] = [
         ("HTTP://h/", 0),
         ("https://Example.test/", 8),
         ("https://ex%41mple.test/", 10),
@@ -437,6 +459,7 @@ fn url_refuses_noncanonical_spellings_and_indexes_the_departure() {
         ("https://10.0.0.256/", 17),
         ("https://10.0.0.01/", 16),
         ("https://10.0.0/", 14),
+        ("https://123/", 11),
     ];
     for (text, index) in cases {
         let error = refusal(Url::parse(text));
@@ -453,6 +476,44 @@ fn url_refuses_noncanonical_spellings_and_indexes_the_departure() {
             error.detail()
         );
     }
+    let long_numeric = format!("https://{}/", "9".repeat(40));
+    let error = refusal(Url::parse(&long_numeric));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("octet 10: "),
+        "a long numeric host refuses at the third digit: {}",
+        error.detail()
+    );
+    let multibyte_scheme = format!("{}://h/", "é".repeat(33));
+    let error = refusal(Url::parse(&multibyte_scheme));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("octet 0: "),
+        "a scheme counts scalars but refuses the first non-ASCII octet: {}",
+        error.detail()
+    );
+    let error = refusal(Url::parse("1abc"));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("octet 0: "),
+        "a leading digit departs at the first octet: {}",
+        error.detail()
+    );
+    let bracketed = refusal(Url::parse("http://[::1]:0/"));
+    assert_eq!(bracketed.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        bracketed.detail().starts_with("octet 13: "),
+        "the bracketed port refusal names the port digit: {}",
+        bracketed.detail()
+    );
+    let multibyte_zone = format!("https://[fe80::1%25{}]/", "é".repeat(32));
+    let error = refusal(Url::parse(&multibyte_zone));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("octet 19: "),
+        "a zone counts scalars but refuses the first non-ASCII octet: {}",
+        error.detail()
+    );
 }
 
 #[test]
@@ -461,7 +522,7 @@ fn url_construction_admits_only_canonical_components() {
         "https",
         UrlHost::RegName("h".to_owned()),
         None,
-        Vec::new(),
+        vec![String::new()],
         None,
         None,
     ) {
@@ -469,11 +530,16 @@ fn url_construction_admits_only_canonical_components() {
         Err(error) => panic!("the components must be admitted: {}", error.detail()),
     };
     assert_eq!(bare.canonical_text(), "https://h/");
+    let reparsed = match Url::parse(&bare.canonical_text()) {
+        Ok(value) => value,
+        Err(error) => panic!("the canonical form must round-trip: {}", error.detail()),
+    };
+    assert_eq!(reparsed, bare, "a constructed value parses back unchanged");
     let empty_query = match Url::new(
         "https",
         UrlHost::RegName("h".to_owned()),
         None,
-        Vec::new(),
+        vec![String::new()],
         Some(String::new()),
         None,
     ) {
@@ -485,7 +551,7 @@ fn url_construction_admits_only_canonical_components() {
         "https",
         UrlHost::RegName("h".to_owned()),
         None,
-        Vec::new(),
+        vec![String::new()],
         None,
         Some(String::new()),
     ) {
@@ -497,7 +563,7 @@ fn url_construction_admits_only_canonical_components() {
         "https",
         UrlHost::RegName("h".to_owned()),
         Some(443),
-        Vec::new(),
+        vec![String::new()],
         None,
         None,
     ) {
@@ -512,7 +578,7 @@ fn url_construction_admits_only_canonical_components() {
         "https",
         UrlHost::RegName("h".to_owned()),
         None,
-        Vec::new(),
+        vec![String::new()],
         None,
         None,
     ) {
@@ -588,7 +654,7 @@ fn url_construction_admits_only_canonical_components() {
                 "https",
                 UrlHost::RegName("h".to_owned()),
                 None,
-                Vec::new(),
+                vec![String::new()],
                 Some("a b".to_owned()),
                 None,
             ),
@@ -599,11 +665,44 @@ fn url_construction_admits_only_canonical_components() {
                 "https",
                 UrlHost::RegName("h".to_owned()),
                 None,
-                Vec::new(),
+                vec![String::new()],
                 None,
                 Some("a b".to_owned()),
             ),
             1,
+        ),
+        (
+            Url::new(
+                "https",
+                UrlHost::RegName("127.0.0.1".to_owned()),
+                None,
+                vec![String::new()],
+                None,
+                None,
+            ),
+            0,
+        ),
+        (
+            Url::new(
+                "https",
+                UrlHost::RegName("123".to_owned()),
+                None,
+                vec![String::new()],
+                None,
+                None,
+            ),
+            0,
+        ),
+        (
+            Url::new(
+                "https",
+                UrlHost::RegName("h".to_owned()),
+                None,
+                Vec::new(),
+                None,
+                None,
+            ),
+            0,
         ),
     ] {
         let error = refusal(value);
@@ -763,6 +862,274 @@ fn url_bounds_are_declared_and_enforced() {
     );
     assert!(
         error.detail().contains(&URL_TEXT_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+}
+
+fn mime_refusal(result: Result<MimeType, DataError>) -> DataError {
+    match result {
+        Ok(value) => panic!("the value must be refused: {}", value.canonical_text()),
+        Err(error) => error,
+    }
+}
+
+#[test]
+fn mime_parses_and_displays_the_canonical_form() {
+    for text in [
+        "application/json",
+        "text/plain; charset=utf-8",
+        "application/vnd.example+json; a=b; b=\"two words\"",
+        "text/plain; x=\"\"",
+        "application/x-custom; a=\"0\"",
+        "application/octet-stream; a=\"quote\\\"inside\"",
+        "application/octet-stream; a=\"back\\\\slash\"",
+    ] {
+        let value = match MimeType::parse(text) {
+            Ok(value) => value,
+            Err(error) => panic!("`{text}` must be admitted: {}", error.detail()),
+        };
+        assert_eq!(
+            value.canonical_text(),
+            text,
+            "the canonical form is the text"
+        );
+        assert_eq!(
+            value.to_string(),
+            text,
+            "display publishes the canonical form"
+        );
+        let reparsed = match MimeType::parse(&value.canonical_text()) {
+            Ok(value) => value,
+            Err(error) => panic!("the canonical form must round-trip: {}", error.detail()),
+        };
+        assert_eq!(
+            reparsed, value,
+            "a parse of the canonical form is the value"
+        );
+    }
+    let value = match MimeType::parse("text/plain; charset=utf-8") {
+        Ok(value) => value,
+        Err(error) => panic!("the components must be admitted: {}", error.detail()),
+    };
+    assert_eq!(value.media_type(), "text");
+    assert_eq!(value.subtype(), "plain");
+    assert_eq!(
+        value.parameters(),
+        &[("charset".to_owned(), "utf-8".to_owned())][..]
+    );
+    let escaped = match MimeType::parse("application/octet-stream; a=\"quote\\\"inside\"") {
+        Ok(value) => value,
+        Err(error) => panic!("the escaped value must be admitted: {}", error.detail()),
+    };
+    assert_eq!(
+        escaped.parameters(),
+        &[("a".to_owned(), "quote\"inside".to_owned())][..],
+        "the carried value holds the unescaped octet"
+    );
+    let parsed = match MimeType::parse("text/plain") {
+        Ok(value) => value,
+        Err(error) => panic!("the bare type must be admitted: {}", error.detail()),
+    };
+    assert_ne!(value, parsed, "a parameter changes the value");
+}
+
+#[test]
+fn mime_refuses_noncanonical_spellings_and_indexes_the_departure() {
+    let cases: [(&str, usize); 14] = [
+        ("Application/Json", 0),
+        ("text/Plain", 5),
+        ("text /plain", 4),
+        ("text", 4),
+        ("text/", 5),
+        ("text/plain;Charset=utf-8", 11),
+        ("text/plain; charset=utf-8; a=b", 27),
+        ("text/plain; a=b; a=c", 17),
+        ("text/plain; a=\"b\"", 14),
+        ("text/plain; a=\"x\\y\"", 17),
+        ("text/plain; a=\"x", 16),
+        ("text/plain; a=x y", 15),
+        ("text/plain;", 11),
+        ("text/plain; ", 12),
+    ];
+    for (text, index) in cases {
+        let error = mime_refusal(MimeType::parse(text));
+        assert_eq!(error.code(), DataDiagnosticCode::MalformedInput, "{text}");
+        assert_eq!(error.requirement(), DATA_CLAUSES[1], "{text}");
+        assert_eq!(
+            error.category(),
+            DataRefusalCategory::MalformedInput,
+            "{text}"
+        );
+        assert!(
+            error.detail().starts_with(&format!("octet {index}: ")),
+            "`{text}` departs at octet {index}: {}",
+            error.detail()
+        );
+    }
+}
+
+#[test]
+fn mime_construction_admits_only_canonical_components() {
+    let bare = match MimeType::new("text", "plain", Vec::new()) {
+        Ok(value) => value,
+        Err(error) => panic!("the components must be admitted: {}", error.detail()),
+    };
+    assert_eq!(bare.canonical_text(), "text/plain");
+    let parsed = match MimeType::parse("text/plain") {
+        Ok(value) => value,
+        Err(error) => panic!("the bare type must be admitted: {}", error.detail()),
+    };
+    assert_eq!(bare, parsed, "equality is component equality");
+    let with_parameters = match MimeType::new(
+        "text",
+        "plain",
+        vec![
+            ("a".to_owned(), "x".to_owned()),
+            ("b".to_owned(), "two words".to_owned()),
+        ],
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("the components must be admitted: {}", error.detail()),
+    };
+    assert_eq!(
+        with_parameters.canonical_text(),
+        "text/plain; a=x; b=\"two words\""
+    );
+    let reparsed = match MimeType::parse(&with_parameters.canonical_text()) {
+        Ok(value) => value,
+        Err(error) => panic!("the constructed form must round-trip: {}", error.detail()),
+    };
+    assert_eq!(reparsed, with_parameters);
+    for (result, index) in [
+        (MimeType::new("Text", "plain", Vec::new()), 0_usize),
+        (MimeType::new("text", "Plain", Vec::new()), 0),
+        (
+            MimeType::new("text", "plain", vec![("A".to_owned(), "x".to_owned())]),
+            0,
+        ),
+        (
+            MimeType::new(
+                "text",
+                "plain",
+                vec![
+                    ("b".to_owned(), "x".to_owned()),
+                    ("a".to_owned(), "y".to_owned()),
+                ],
+            ),
+            0,
+        ),
+        (
+            MimeType::new(
+                "text",
+                "plain",
+                vec![
+                    ("a".to_owned(), "x".to_owned()),
+                    ("a".to_owned(), "y".to_owned()),
+                ],
+            ),
+            0,
+        ),
+        (
+            MimeType::new(
+                "text",
+                "plain",
+                vec![("a".to_owned(), "line\nbreak".to_owned())],
+            ),
+            4,
+        ),
+    ] {
+        let error = mime_refusal(result);
+        assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+        assert_eq!(error.requirement(), DATA_CLAUSES[1]);
+        assert!(
+            error.detail().starts_with(&format!("octet {index}: ")),
+            "the refusal names the component index: {}",
+            error.detail()
+        );
+    }
+}
+
+#[test]
+fn mime_bounds_are_declared_and_enforced() {
+    let over_text = format!("text/plain; a={}", "a".repeat(MIME_TEXT_OCTET_BOUND));
+    let error = mime_refusal(MimeType::parse(&over_text));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the presented text"),
+        "{}",
+        error.detail()
+    );
+    let long_type = format!("{}/plain", "a".repeat(MIME_TYPE_TOKEN_BOUND + 1));
+    let error = mime_refusal(MimeType::parse(&long_type));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(error.detail().contains("the type"), "{}", error.detail());
+    assert!(
+        error
+            .detail()
+            .contains(&(MIME_TYPE_TOKEN_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+    let long_subtype = format!("text/{}", "a".repeat(MIME_SUBTYPE_TOKEN_BOUND + 1));
+    let error = mime_refusal(MimeType::parse(&long_subtype));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(error.detail().contains("the subtype"), "{}", error.detail());
+    let long_name = format!(
+        "text/plain; {}=x",
+        "a".repeat(MIME_PARAMETER_NAME_TOKEN_BOUND + 1)
+    );
+    let error = mime_refusal(MimeType::parse(&long_name));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the parameter name"),
+        "{}",
+        error.detail()
+    );
+    let long_value = format!(
+        "text/plain; a=\"{}\"",
+        "b".repeat(MIME_PARAMETER_VALUE_OCTET_BOUND + 1)
+    );
+    let error = mime_refusal(MimeType::parse(&long_value));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("a parameter value"),
+        "{}",
+        error.detail()
+    );
+    let many_parameters = format!(
+        "text/plain; {}",
+        (0..MIME_PARAMETER_COUNT_BOUND + 1)
+            .map(|index| format!("p{index:02}=x"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
+    let error = mime_refusal(MimeType::parse(&many_parameters));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the parameter count"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&(MIME_PARAMETER_COUNT_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+    let parameters = (0..MIME_PARAMETER_COUNT_BOUND)
+        .map(|index| (format!("p{index:02}"), "a".repeat(1_000)))
+        .collect::<Vec<_>>();
+    let error = mime_refusal(MimeType::new("text", "plain", parameters));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the canonical form"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains(&MIME_TEXT_OCTET_BOUND.to_string()),
         "{}",
         error.detail()
     );

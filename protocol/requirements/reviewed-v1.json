@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "9b87f0d2c859999da07541d303912190cb5a9cf027d2e08a8d00d52e9ac46abe",
+  "specification_sha256": "d60cc068af398e6f6fcfb8dba3a8de5e6509b44505ccf4717004e42f829dd39c",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15751,
+      "end_line": 15755,
       "rationale": null
     }
   ],
@@ -42738,6 +42738,48 @@
                 "crates/gantry-conformance/tests/data_foundation.rs#url_refuses_noncanonical_spellings_and_indexes_the_departure",
                 "crates/gantry-conformance/tests/data_foundation.rs#url_construction_admits_only_canonical_components",
                 "crates/gantry-conformance/tests/data_foundation.rs#url_bounds_are_declared_and_enforced"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-43.3-mime-type-and-parameter-model",
+      "span_start_line": 15752,
+      "span_end_line": 15755,
+      "anchor_line": 15753,
+      "body_start_line": 15754,
+      "body_end_line": 15755,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15754,
+          "end_line": 15755,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/data_foundation.rs#mime_parses_and_displays_the_canonical_form",
+                "crates/gantry-conformance/tests/data_foundation.rs#mime_refuses_noncanonical_spellings_and_indexes_the_departure",
+                "crates/gantry-conformance/tests/data_foundation.rs#mime_construction_admits_only_canonical_components",
+                "crates/gantry-conformance/tests/data_foundation.rs#mime_bounds_are_declared_and_enforced"
               ],
               "rationale": null
             }

@@ -1,6 +1,6 @@
 {
  "format": "gantry.durable-event-evidence/v1",
- "specification_sha256": "9b87f0d2c859999da07541d303912190cb5a9cf027d2e08a8d00d52e9ac46abe",
+ "specification_sha256": "d60cc068af398e6f6fcfb8dba3a8de5e6509b44505ccf4717004e42f829dd39c",
  "issue": "GNT-DUR-005",
  "entries": [
   {

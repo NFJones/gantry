@@ -16,10 +16,11 @@ use crate::stdlib::{
 };
 
 /// The declared clauses of Section 43, in specification order.
-pub const DATA_CLAUSES: [&str; 3] = [
+pub const DATA_CLAUSES: [&str; 4] = [
     "GNT-43.0-data-family-scope",
     "GNT-43.1-data-value-model-contract",
     "GNT-43.2-url-value-model",
+    "GNT-43.3-mime-type-and-parameter-model",
 ];
 
 /// The one declared version of every value model in this revision
@@ -362,6 +363,7 @@ pub const DATA_ITEMS: [DataItemRow; 3] = [
         clauses: &[
             "GNT-43.0-data-family-scope",
             "GNT-43.1-data-value-model-contract",
+            "GNT-43.3-mime-type-and-parameter-model",
         ],
     },
     DataItemRow {
@@ -502,7 +504,18 @@ impl Url {
     ) -> Result<Self, DataError> {
         admit_scheme(scheme, 0)?;
         match &host {
-            UrlHost::RegName(name) => admit_reg_name(name, 0)?,
+            UrlHost::RegName(name) => {
+                admit_reg_name(name, 0)?;
+                if name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b'.')
+                {
+                    return Err(url_malformed(
+                        0,
+                        "a reg-name holds an octet that is not a digit or `.`",
+                    ));
+                }
+            }
             UrlHost::Ipv4(_) => {}
             UrlHost::Ipv6 { zone, .. } => {
                 if let Some(zone) = zone {
@@ -522,6 +535,9 @@ impl Url {
                 URL_SEGMENT_COUNT_BOUND,
                 "the path segment count",
             ));
+        }
+        if segments.is_empty() {
+            return Err(url_malformed(0, "a path holds one or more segments"));
         }
         for segment in &segments {
             admit_segment(segment, 0)?;
@@ -566,7 +582,13 @@ impl Url {
         }
         let Some(colon) = text.find(':') else {
             let mut position = 0_usize;
-            while position < bytes.len() && is_scheme_octet(bytes[position]) {
+            while position < bytes.len()
+                && if position == 0 {
+                    bytes[position].is_ascii_lowercase()
+                } else {
+                    is_scheme_octet(bytes[position])
+                }
+            {
                 position += 1;
             }
             return Err(url_malformed(
@@ -879,12 +901,9 @@ fn admit_octets(
 /// Admits one scheme (`GNT-43.2-url-value-model`).
 fn admit_scheme(text: &str, base: usize) -> Result<(), DataError> {
     let bytes = text.as_bytes();
-    if bytes.len() > URL_SCHEME_SCALAR_BOUND {
-        return Err(url_bound(
-            bytes.len(),
-            URL_SCHEME_SCALAR_BOUND,
-            "the scheme",
-        ));
+    let scalars = text.chars().count();
+    if scalars > URL_SCHEME_SCALAR_BOUND {
+        return Err(url_bound(scalars, URL_SCHEME_SCALAR_BOUND, "the scheme"));
     }
     if !bytes.first().is_some_and(u8::is_ascii_lowercase) {
         return Err(url_malformed(
@@ -906,9 +925,10 @@ fn admit_scheme(text: &str, base: usize) -> Result<(), DataError> {
 /// Admits one reg-name (`GNT-43.2-url-value-model`).
 fn admit_reg_name(text: &str, base: usize) -> Result<(), DataError> {
     let bytes = text.as_bytes();
-    if bytes.len() > URL_HOST_SCALAR_BOUND {
+    let scalars = text.chars().count();
+    if scalars > URL_HOST_SCALAR_BOUND {
         return Err(url_bound(
-            bytes.len(),
+            scalars,
             URL_HOST_SCALAR_BOUND,
             "the reg-name host",
         ));
@@ -919,7 +939,7 @@ fn admit_reg_name(text: &str, base: usize) -> Result<(), DataError> {
     let mut label_start = 0_usize;
     for (index, byte) in bytes.iter().enumerate() {
         if *byte == b'.' {
-            let label_len = index - label_start;
+            let label_len = text[label_start..index].chars().count();
             if label_len == 0 {
                 return Err(url_malformed(
                     base + index,
@@ -939,7 +959,7 @@ fn admit_reg_name(text: &str, base: usize) -> Result<(), DataError> {
             ));
         }
     }
-    let label_len = bytes.len() - label_start;
+    let label_len = text[label_start..].chars().count();
     if label_len == 0 {
         return Err(url_malformed(
             base + bytes.len() - 1,
@@ -972,7 +992,6 @@ fn admit_ipv4(text: &str, base: usize) -> Result<[u8; 4], DataError> {
                 "an IPv4 part holds one or more digits",
             ));
         }
-        let mut value = 0_u32;
         for (offset, digit) in digits.iter().enumerate() {
             if !digit.is_ascii_digit() {
                 return Err(url_malformed(
@@ -980,7 +999,6 @@ fn admit_ipv4(text: &str, base: usize) -> Result<[u8; 4], DataError> {
                     "an IPv4 part holds digits",
                 ));
             }
-            value = value * 10 + u32::from(*digit - b'0');
         }
         if digits.len() > 1 && digits[0] == b'0' {
             return Err(url_malformed(
@@ -988,11 +1006,15 @@ fn admit_ipv4(text: &str, base: usize) -> Result<[u8; 4], DataError> {
                 "an IPv4 part holds no leading zero",
             ));
         }
-        if value > 255 || digits.len() > 3 {
-            return Err(url_malformed(
-                base + end - 1,
-                "an IPv4 part spells an integer from 0 through 255",
-            ));
+        let mut value = 0_u32;
+        for (offset, digit) in digits.iter().enumerate() {
+            value = value * 10 + u32::from(*digit - b'0');
+            if value > 255 {
+                return Err(url_malformed(
+                    base + start + offset,
+                    "an IPv4 part spells an integer from 0 through 255",
+                ));
+            }
         }
         *slot = value as u8;
         if part < 3 {
@@ -1183,9 +1205,10 @@ fn admit_ipv6_literal(text: &str, base: usize) -> Result<([u16; 8], Option<Strin
 /// Admits one zone identifier (`GNT-43.2-url-value-model`).
 fn admit_zone(text: &str, base: usize) -> Result<(), DataError> {
     let bytes = text.as_bytes();
-    if bytes.len() > URL_ZONE_SCALAR_BOUND {
+    let scalars = text.chars().count();
+    if scalars > URL_ZONE_SCALAR_BOUND {
         return Err(url_bound(
-            bytes.len(),
+            scalars,
             URL_ZONE_SCALAR_BOUND,
             "the zone identifier",
         ));
@@ -1247,7 +1270,7 @@ fn admit_authority(text: &str, base: usize) -> Result<(UrlHost, Option<u16>), Da
         let (groups, zone) = admit_ipv6_literal(&rest[..close], base + 1)?;
         let after = &rest[close + 1..];
         let port = match after.strip_prefix(':') {
-            Some(port) => Some(admit_port(port, base + close + 2)?),
+            Some(port) => Some(admit_port(port, base + close + 3)?),
             None => {
                 if after.is_empty() {
                     None
@@ -1335,4 +1358,434 @@ fn admit_fragment(text: &str, base: usize) -> Result<(), DataError> {
         is_query_octet,
         "a fragment holds the declared query set",
     )
+}
+
+/// The declared text bound of `GNT-43.3-mime-type-and-parameter-model`.
+pub const MIME_TEXT_OCTET_BOUND: usize = 4_096;
+
+/// The declared type-token scalar bound of `GNT-43.3-mime-type-and-parameter-model`.
+pub const MIME_TYPE_TOKEN_BOUND: usize = 64;
+
+/// The declared subtype-token scalar bound of `GNT-43.3-mime-type-and-parameter-model`.
+pub const MIME_SUBTYPE_TOKEN_BOUND: usize = 64;
+
+/// The declared parameter-name scalar bound of `GNT-43.3-mime-type-and-parameter-model`.
+pub const MIME_PARAMETER_NAME_TOKEN_BOUND: usize = 64;
+
+/// The declared parameter-value octet bound of `GNT-43.3-mime-type-and-parameter-model`.
+pub const MIME_PARAMETER_VALUE_OCTET_BOUND: usize = 1_024;
+
+/// The declared parameter-count bound of `GNT-43.3-mime-type-and-parameter-model`.
+pub const MIME_PARAMETER_COUNT_BOUND: usize = 32;
+
+/// One MIME type value of `GNT-43.3-mime-type-and-parameter-model`.
+///
+/// The declared components are a type, a subtype, and zero or more parameters in canonical name
+/// order, and every value is in the canonical form that clause declares.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MimeType {
+    media_type: String,
+    subtype: String,
+    parameters: Vec<(String, String)>,
+}
+
+impl MimeType {
+    /// Constructs one MIME type value from declared components
+    /// (`GNT-43.3-mime-type-and-parameter-model`).
+    ///
+    /// Each component is admitted by its own declared rule, so every constructed value is in
+    /// canonical form; a component outside its admitted form is refused under the declared
+    /// malformed-input refusal naming the zero-based index within the component or under the
+    /// declared expansion-limit refusal naming the component's observed measure and declared
+    /// bound, a parameter list whose names are not in canonical order or repeat a name is
+    /// refused, and a value whose canonical form would exceed `MIME_TEXT_OCTET_BOUND` octets is
+    /// refused before any part of it is constructed.
+    pub fn new(
+        media_type: &str,
+        subtype: &str,
+        parameters: Vec<(String, String)>,
+    ) -> Result<Self, DataError> {
+        admit_mime_token(media_type, 0, MIME_TYPE_TOKEN_BOUND, "the type")?;
+        admit_mime_token(subtype, 0, MIME_SUBTYPE_TOKEN_BOUND, "the subtype")?;
+        if parameters.len() > MIME_PARAMETER_COUNT_BOUND {
+            return Err(mime_bound(
+                parameters.len(),
+                MIME_PARAMETER_COUNT_BOUND,
+                "the parameter count",
+            ));
+        }
+        let mut previous: Option<&str> = None;
+        for (name, value) in &parameters {
+            admit_mime_token(
+                name,
+                0,
+                MIME_PARAMETER_NAME_TOKEN_BOUND,
+                "the parameter name",
+            )?;
+            if previous.is_some_and(|previous| name.as_str() <= previous) {
+                let detail = if previous == Some(name.as_str()) {
+                    "a parameter name appears once"
+                } else {
+                    "the parameter names follow the canonical order"
+                };
+                return Err(mime_malformed(0, detail));
+            }
+            previous = Some(name.as_str());
+            admit_mime_parameter_carried(value)?;
+        }
+        let value = Self {
+            media_type: media_type.to_owned(),
+            subtype: subtype.to_owned(),
+            parameters,
+        };
+        let text = value.canonical_text();
+        if text.len() > MIME_TEXT_OCTET_BOUND {
+            return Err(mime_bound(
+                text.len(),
+                MIME_TEXT_OCTET_BOUND,
+                "the canonical form",
+            ));
+        }
+        Ok(value)
+    }
+
+    /// Parses the canonical form of a MIME type value (`GNT-43.3-mime-type-and-parameter-model`).
+    ///
+    /// The parse is the declared left-to-right examination: the text bound is decided first, then
+    /// each component in order, and the first departure decides the refusal.
+    pub fn parse(text: &str) -> Result<Self, DataError> {
+        let bytes = text.as_bytes();
+        if bytes.len() > MIME_TEXT_OCTET_BOUND {
+            return Err(mime_bound(
+                bytes.len(),
+                MIME_TEXT_OCTET_BOUND,
+                "the presented text",
+            ));
+        }
+        let mut index = 0_usize;
+        while index < bytes.len() && is_mime_token_octet(bytes[index]) {
+            index += 1;
+        }
+        let media_type = &text[..index];
+        admit_mime_token(media_type, 0, MIME_TYPE_TOKEN_BOUND, "the type")?;
+        if bytes.get(index) != Some(&b'/') {
+            return Err(mime_malformed(
+                index,
+                "a type is followed by the separator `/`",
+            ));
+        }
+        index += 1;
+        let subtype_start = index;
+        while index < bytes.len() && is_mime_token_octet(bytes[index]) {
+            index += 1;
+        }
+        let subtype = &text[subtype_start..index];
+        admit_mime_token(
+            subtype,
+            subtype_start,
+            MIME_SUBTYPE_TOKEN_BOUND,
+            "the subtype",
+        )?;
+        let mut parameters: Vec<(String, String)> = Vec::new();
+        while index < bytes.len() {
+            if bytes[index] != b';' || bytes.get(index + 1) != Some(&b' ') {
+                let position = if bytes[index] == b';' {
+                    index + 1
+                } else {
+                    index
+                };
+                return Err(mime_malformed(
+                    position,
+                    "a parameter is preceded by the separator `; `",
+                ));
+            }
+            index += 2;
+            let name_start = index;
+            while index < bytes.len() && is_mime_token_octet(bytes[index]) {
+                index += 1;
+            }
+            let name = &text[name_start..index];
+            admit_mime_token(
+                name,
+                name_start,
+                MIME_PARAMETER_NAME_TOKEN_BOUND,
+                "the parameter name",
+            )?;
+            if bytes.get(index) != Some(&b'=') {
+                return Err(mime_malformed(index, "a parameter name is followed by `=`"));
+            }
+            index += 1;
+            let (value, next) = admit_mime_parameter_value(text, bytes, index)?;
+            index = next;
+            let previous = parameters.last().map(|(previous, _)| previous.as_str());
+            if previous.is_some_and(|previous| name <= previous) {
+                let detail = if previous == Some(name) {
+                    "a parameter name appears once"
+                } else {
+                    "the parameter names follow the canonical order"
+                };
+                return Err(mime_malformed(name_start, detail));
+            }
+            if parameters.len() + 1 > MIME_PARAMETER_COUNT_BOUND {
+                return Err(mime_bound(
+                    parameters.len() + 1,
+                    MIME_PARAMETER_COUNT_BOUND,
+                    "the parameter count",
+                ));
+            }
+            parameters.push((name.to_owned(), value));
+        }
+        Ok(Self {
+            media_type: media_type.to_owned(),
+            subtype: subtype.to_owned(),
+            parameters,
+        })
+    }
+
+    /// Returns the declared type.
+    #[must_use]
+    pub fn media_type(&self) -> &str {
+        &self.media_type
+    }
+
+    /// Returns the declared subtype.
+    #[must_use]
+    pub fn subtype(&self) -> &str {
+        &self.subtype
+    }
+
+    /// Returns the declared parameters, in canonical order.
+    #[must_use]
+    pub fn parameters(&self) -> &[(String, String)] {
+        &self.parameters
+    }
+
+    /// Publishes the canonical form of this value (`GNT-43.3-mime-type-and-parameter-model`).
+    #[must_use]
+    pub fn canonical_text(&self) -> String {
+        let mut text = format!("{}/{}", self.media_type, self.subtype);
+        for (name, value) in &self.parameters {
+            text.push_str("; ");
+            text.push_str(name);
+            text.push('=');
+            if is_mime_token(value) {
+                text.push_str(value);
+                continue;
+            }
+            text.push('"');
+            for byte in value.bytes() {
+                if byte == b'"' || byte == b'\\' {
+                    text.push('\\');
+                }
+                text.push(char::from(byte));
+            }
+            text.push('"');
+        }
+        text
+    }
+}
+
+impl std::fmt::Display for MimeType {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.canonical_text())
+    }
+}
+
+/// Publishes one malformed-input refusal for the MIME value model
+/// (`GNT-43.3-mime-type-and-parameter-model`).
+fn mime_malformed(index: usize, detail: &'static str) -> DataError {
+    DataError::new(
+        DataDiagnosticCode::MalformedInput,
+        format!("octet {index}: {detail}"),
+    )
+}
+
+/// Publishes one expansion-limit refusal for the MIME value model
+/// (`GNT-43.3-mime-type-and-parameter-model`).
+fn mime_bound(observed: usize, declared: usize, what: &'static str) -> DataError {
+    DataError::new(
+        DataDiagnosticCode::ExpansionLimit,
+        format!("{what} holds {observed}; the declared bound is {declared}"),
+    )
+}
+
+/// Returns whether the octet is a declared MIME token octet
+/// (`GNT-43.3-mime-type-and-parameter-model`).
+fn is_mime_token_octet(byte: u8) -> bool {
+    byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'+' | b'.' | b'_')
+}
+
+/// Returns whether the octet is a declared MIME quoted-set octet
+/// (`GNT-43.3-mime-type-and-parameter-model`).
+fn is_mime_quoted_octet(byte: u8) -> bool {
+    byte.is_ascii_alphabetic()
+        || byte.is_ascii_digit()
+        || matches!(
+            byte,
+            b'-' | b'.'
+                | b'_'
+                | b'~'
+                | b'!'
+                | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*'
+                | b'+'
+                | b','
+                | b'/'
+                | b':'
+                | b';'
+                | b'<'
+                | b'='
+                | b'>'
+                | b'?'
+                | b'@'
+                | b'['
+                | b']'
+                | b'^'
+                | b'`'
+                | b'{'
+                | b'|'
+                | b'}'
+                | b' '
+        )
+}
+
+/// Returns whether the text is a declared MIME token
+/// (`GNT-43.3-mime-type-and-parameter-model`).
+fn is_mime_token(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.first().is_some_and(u8::is_ascii_lowercase)
+        && bytes.iter().all(|byte| is_mime_token_octet(*byte))
+}
+
+/// Admits one declared MIME token (`GNT-43.3-mime-type-and-parameter-model`).
+fn admit_mime_token(
+    text: &str,
+    base: usize,
+    bound: usize,
+    what: &'static str,
+) -> Result<(), DataError> {
+    let bytes = text.as_bytes();
+    let scalars = text.chars().count();
+    if scalars > bound {
+        return Err(mime_bound(scalars, bound, what));
+    }
+    if !bytes.first().is_some_and(u8::is_ascii_lowercase) {
+        return Err(mime_malformed(
+            base,
+            "a token begins with a lowercase ASCII letter",
+        ));
+    }
+    for (index, byte) in bytes.iter().enumerate().skip(1) {
+        if !is_mime_token_octet(*byte) {
+            return Err(mime_malformed(
+                base + index,
+                "a token holds lowercase letters, digits, `-`, `+`, `.`, and `_`",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Admits one carried parameter value (`GNT-43.3-mime-type-and-parameter-model`).
+fn admit_mime_parameter_carried(value: &str) -> Result<(), DataError> {
+    let bytes = value.as_bytes();
+    if bytes.len() > MIME_PARAMETER_VALUE_OCTET_BOUND {
+        return Err(mime_bound(
+            bytes.len(),
+            MIME_PARAMETER_VALUE_OCTET_BOUND,
+            "a parameter value",
+        ));
+    }
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte != b'"' && *byte != b'\\' && !is_mime_quoted_octet(*byte) {
+            return Err(mime_malformed(
+                index,
+                "a parameter value holds the declared quoted set",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Admits one presented parameter value and returns its carried value with the next index
+/// (`GNT-43.3-mime-type-and-parameter-model`).
+fn admit_mime_parameter_value(
+    text: &str,
+    bytes: &[u8],
+    start: usize,
+) -> Result<(String, usize), DataError> {
+    if bytes.get(start) == Some(&b'"') {
+        let mut carried = String::new();
+        let mut index = start + 1;
+        loop {
+            let Some(byte) = bytes.get(index) else {
+                return Err(mime_malformed(index, "a quoted value closes with `\"`"));
+            };
+            match *byte {
+                b'"' => {
+                    index += 1;
+                    break;
+                }
+                b'\\' => {
+                    let Some(escaped) = bytes.get(index + 1) else {
+                        return Err(mime_malformed(index + 1, "an escape holds `\"` or `\\`"));
+                    };
+                    if *escaped != b'"' && *escaped != b'\\' {
+                        return Err(mime_malformed(index + 1, "an escape holds `\"` or `\\`"));
+                    }
+                    carried.push(char::from(*escaped));
+                    index += 2;
+                }
+                _ => {
+                    if !is_mime_quoted_octet(*byte) {
+                        return Err(mime_malformed(
+                            index,
+                            "a quoted value holds the declared quoted set",
+                        ));
+                    }
+                    carried.push(char::from(*byte));
+                    index += 1;
+                }
+            }
+        }
+        if carried.len() > MIME_PARAMETER_VALUE_OCTET_BOUND {
+            return Err(mime_bound(
+                carried.len(),
+                MIME_PARAMETER_VALUE_OCTET_BOUND,
+                "a parameter value",
+            ));
+        }
+        if is_mime_token(&carried) {
+            return Err(mime_malformed(
+                start,
+                "the quoted form is admitted only for a value the bare form cannot spell",
+            ));
+        }
+        return Ok((carried, index));
+    }
+    let mut index = start;
+    while index < bytes.len() && is_mime_token_octet(bytes[index]) {
+        index += 1;
+    }
+    if index == start || !bytes[start].is_ascii_lowercase() {
+        return Err(mime_malformed(
+            start,
+            "a bare value begins with a lowercase ASCII letter",
+        ));
+    }
+    let carried = text[start..index].to_owned();
+    if carried.len() > MIME_PARAMETER_VALUE_OCTET_BOUND {
+        return Err(mime_bound(
+            carried.len(),
+            MIME_PARAMETER_VALUE_OCTET_BOUND,
+            "a parameter value",
+        ));
+    }
+    Ok((carried, index))
 }
