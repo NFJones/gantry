@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "4e81bbf4f6b07b2a3a7157e6474eec4c889c70d4decbda08f2a7b750e220c9ee",
+  "specification_sha256": "7c662d478977770bc037e07bef6b3bb00faac7116277fe7653a772915a5eb1dd",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16458,
+      "end_line": 16486,
       "rationale": null
     }
   ],
@@ -43856,6 +43856,45 @@
               "rationale": null,
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.8-filesystem-link-policy",
+      "span_start_line": 16459,
+      "span_end_line": 16486,
+      "anchor_line": 16460,
+      "body_start_line": 16461,
+      "body_end_line": 16486,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16461,
+          "end_line": 16486,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_link_policy_refuses_links_without_resolution_or_reread"
               ]
             }
           ]

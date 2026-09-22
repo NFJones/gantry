@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "4e81bbf4f6b07b2a3a7157e6474eec4c889c70d4decbda08f2a7b750e220c9ee",
-  "byte_length": 1260662,
-  "line_count": 16458,
+  "specification_sha256": "7c662d478977770bc037e07bef6b3bb00faac7116277fe7653a772915a5eb1dd",
+  "byte_length": 1262896,
+  "line_count": 16486,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "b1878b30dc3333e919606a6189d1986e858ca3c6a4e618f7a56efb8ac95b1608",
+      "sha256": "8ba32d18c7d46f0adc6861f36f646cca0c90797b8c8aa9e5ace309c12e4a312d",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16458,
-      "sha256": "dfb43a0756aaf21a153ef714b5f90f8c3032bd0ced9813b8ce2329e304873644",
+      "end_line": 16486,
+      "sha256": "3c7783fbf02fe7c100483aa835aa8e725064472bd12522969ceed926a7e5982a",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "c11ba0276fa8aa141aa4da2822c3c1d0c55e110d517b43b55d8181f9b8f7907e",
+      "span_sha256": "64747fb374f101ba417a864bf070ae00e5fd2d9e2ca388007136f4a125854281",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "413d38329b577765f18b752932b53e9fa8dd6a13b943da6b4de05c9b4f0b87e3",
+      "body_sha256": "3d357a2bf206f74c9f3865044e3c9fd44b821b93b83040a05670a3d34c3908e2",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45105,6 +45105,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.8-filesystem-link-policy",
+      "span_start_line": 16459,
+      "span_end_line": 16486,
+      "span_sha256": "1af920e456fb2dd42357b6193fbcd0ac999d070dd853f91eafb8e5d5d022f87d",
+      "anchor_line": 16460,
+      "body_start_line": 16461,
+      "body_end_line": 16486,
+      "body_sha256": "f7f92afe1a4c999b60f70f4d0220363d6652bc006bc31525915eb907332ec718",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16461,
+          "end_line": 16486,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_link_policy_refuses_links_without_resolution_or_reread"
               ],
               "rationale": null
             }

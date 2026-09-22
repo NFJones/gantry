@@ -9,11 +9,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction,
-    FsDiagnosticCode, FsPath, FsResourceOperation, IoOperation, NameClass, PackageFamily, Prelude,
-    ResourceCarrier, ResourceLifetimeState, StabilityTier, StdGraph, StdItem, StdPackage,
-    StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface, fs_traversal_order,
-    generated::RecoveryClass,
+    FS_CLAUSES, FS_ITEMS, FS_LINK_REFUSAL_CODE, FS_PATH_SEGMENT_BOUND, FS_RESOLUTION_COUNT,
+    FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsPath, FsResourceOperation,
+    IoOperation, NameClass, PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState,
+    StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface,
+    declare_fs_surface, fs_traversal_order, generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -58,6 +58,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.5-filesystem-resource-state",
             "GNT-47.6-filesystem-traversal",
             "GNT-47.7-filesystem-action-grants",
+            "GNT-47.8-filesystem-link-policy",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -112,6 +113,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.1-filesystem-modules-and-item-rows",
                 "GNT-47.4-filesystem-resource-operations",
                 "GNT-47.5-filesystem-resource-state",
+                "GNT-47.8-filesystem-link-policy",
             ],
             other => panic!("the undeclared module row `{other}` must not exist"),
         };
@@ -121,6 +123,44 @@ fn fs_module_rows_are_closed_and_canonical() {
         assert!(
             FS_ITEMS.iter().any(|row| row.clauses.contains(&clause)),
             "some declared module row must register the clause {clause}"
+        );
+    }
+}
+
+#[test]
+fn fs_link_policy_refuses_links_without_resolution_or_reread() {
+    assert_eq!(
+        FS_RESOLUTION_COUNT, 1,
+        "one operation resolves its path value exactly once"
+    );
+    assert_eq!(
+        FS_LINK_REFUSAL_CODE,
+        FsDiagnosticCode::PathEscape,
+        "the link refusal uses the frozen escape code"
+    );
+    assert!(FsDiagnosticCode::ALL.contains(&FS_LINK_REFUSAL_CODE));
+    assert_eq!(FS_LINK_REFUSAL_CODE.as_str(), "fs-path-escape");
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in FS_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "resolving one operation's path value is exactly one step, and this clause declares exactly one resolution per operation",
+        "with no re-resolution, fallback, retry, or second attempt, so a later change to an entry never admits it after a refusal",
+        "An entry of one of those three kinds is never followed",
+        "whether or not the link target names a location inside the declared root",
+        "the refusal is not normalization, substitution, truncation, or a partial execution of the operation's declared effect",
+        "and resolves no entry, so a traversal alone publishes no such refusal and a link or a target that changes while a traversal runs does not change the names it publishes",
+        "A grant's read-only status neither widens nor narrows this rule",
+        "no race-detection, race-reporting, or race-retry mechanism",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
         );
     }
 }

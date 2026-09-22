@@ -5,7 +5,8 @@
 //! `std.fs::action`, and the resource operation vocabulary of `std.fs::resource` with its
 //! consumption of the common I/O contract and its content-mutation fact, the read-only grant
 //! refusal over both vocabularies, the declared instance state vocabulary, and the declared
-//! canonical traversal order of entry names. It is not a descriptor, an open handle, a live
+//! canonical traversal order of entry names, and the declared link policy of a resolved entry. It
+//! is not a descriptor, an open handle, a live
 //! resource instance, an adapter, a capability, or a runtime availability, and it performs no I/O:
 //! every decision it publishes is a deterministic function of its declared arguments alone.
 
@@ -21,7 +22,7 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 8] = [
+pub const FS_CLAUSES: [&str; 9] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
@@ -30,6 +31,7 @@ pub const FS_CLAUSES: [&str; 8] = [
     "GNT-47.5-filesystem-resource-state",
     "GNT-47.6-filesystem-traversal",
     "GNT-47.7-filesystem-action-grants",
+    "GNT-47.8-filesystem-link-policy",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -89,6 +91,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.1-filesystem-modules-and-item-rows",
             "GNT-47.4-filesystem-resource-operations",
             "GNT-47.5-filesystem-resource-state",
+            "GNT-47.8-filesystem-link-policy",
         ],
     },
 ];
@@ -216,6 +219,12 @@ fn validate_fs_surface_package(graph: &StdGraph, package: &StdPackage) -> Result
 
 /// The largest segment count one declared `std.fs` path value may carry.
 pub const FS_PATH_SEGMENT_BOUND: usize = 256;
+
+/// The declared number of resolutions one operation of this section performs for its path value.
+pub const FS_RESOLUTION_COUNT: u32 = 1;
+
+/// The frozen diagnostic code that refuses an entry the declared link policy never follows.
+pub const FS_LINK_REFUSAL_CODE: FsDiagnosticCode = FsDiagnosticCode::PathEscape;
 
 /// One declared filesystem refusal condition of `GNT-47.2-filesystem-path-values`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
