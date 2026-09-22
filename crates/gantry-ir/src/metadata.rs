@@ -51,6 +51,29 @@ closed!(SemanticAttribute, [Entry => "entry", Export => "export", Test => "test"
 closed!(LintSeverity, [Allow => "allow", Deny => "deny", Forbid => "forbid", Warn => "warn"]);
 closed!(LintScope, [Dependency => "dependency", Item => "item", Package => "package"]);
 closed!(DependencyWarningPolicy, [Deny => "deny", Ignore => "ignore", Inherit => "inherit", Warn => "warn"]);
+closed!(DependencyDiagnosticClass, [
+    OrdinaryWarning => "ordinary-warning",
+    Semantic => "semantic",
+    Security => "security",
+    Integrity => "integrity",
+    Authority => "authority",
+    Compatibility => "compatibility",
+    Publication => "publication"
+]);
+
+/// Returns whether one dependency warning policy ignores one class of dependency diagnostic
+/// (`GNT-31.9`).
+///
+/// `ignore` affects only ordinary dependency warnings; it never hides a semantic, security,
+/// integrity, authority, compatibility, or publication failure.
+#[must_use]
+pub const fn dependency_policy_ignores(
+    policy: DependencyWarningPolicy,
+    class: DependencyDiagnosticClass,
+) -> bool {
+    matches!(policy, DependencyWarningPolicy::Ignore)
+        && matches!(class, DependencyDiagnosticClass::OrdinaryWarning)
+}
 
 /// Admits one presented compiler-owned semantic attribute (`GNT-31.5`).
 ///
@@ -335,6 +358,86 @@ pub fn admit_lint_control(
         return Err(MetadataError::UnsuppressibleLint);
     }
     Ok((scope, severity))
+}
+
+/// The declared lints and their scoped controls of `GNT-31.7` and `GNT-31.8`.
+///
+/// Declarations are keyed by owning subject and machine identity; a control references one
+/// declared lint and changes only its severity at the declared scope. An unknown lint identity,
+/// a repeated declaration or control of one lint, an unsuppressible lint, and a control that
+/// lowers `forbid` are refused, and no control depends on source order, import order, dependency
+/// order, display spelling, or ambient configuration.
+#[derive(Default)]
+pub struct LintControlSet {
+    declared: BTreeSet<(MetadataSubject, LintId, LintSeverity, bool)>,
+    controls: BTreeMap<(MetadataSubject, LintId), (LintScope, LintSeverity)>,
+}
+
+impl LintControlSet {
+    /// Declares one lint of one owning subject; a duplicate declaration is refused.
+    pub fn declare(
+        &mut self,
+        subject: MetadataSubject,
+        lint: &LintDeclaration,
+    ) -> Result<(), MetadataError> {
+        if !self
+            .declared
+            .insert((subject, lint.id.clone(), lint.severity, lint.suppressible))
+        {
+            return Err(MetadataError::DuplicateLint);
+        }
+        Ok(())
+    }
+
+    /// Applies one scoped control to one declared lint.
+    pub fn control(
+        &mut self,
+        subject: &MetadataSubject,
+        id: &LintId,
+        scope: LintScope,
+        severity: LintSeverity,
+    ) -> Result<(LintScope, LintSeverity), MetadataError> {
+        let declared = self
+            .declared
+            .iter()
+            .find(|(declared_subject, declared_id, _, _)| {
+                declared_subject == subject && declared_id == id
+            })
+            .map(|(_, _, declared_severity, suppressible)| {
+                LintDeclaration::new(
+                    subject.clone(),
+                    id.clone(),
+                    *declared_severity,
+                    *suppressible,
+                )
+            })
+            .ok_or(MetadataError::DuplicateLint)?;
+        let admitted = admit_lint_control(&declared, scope, severity)?;
+        let key = (subject.clone(), id.clone());
+        if self.controls.contains_key(&key) {
+            return Err(MetadataError::DuplicateLint);
+        }
+        self.controls.insert(key, admitted);
+        Ok(admitted)
+    }
+
+    /// Returns the effective severity of one declared lint after its control, when declared.
+    #[must_use]
+    pub fn effective_severity(
+        &self,
+        subject: &MetadataSubject,
+        id: &LintId,
+    ) -> Option<LintSeverity> {
+        if let Some((_, severity)) = self.controls.get(&(subject.clone(), id.clone())) {
+            return Some(*severity);
+        }
+        self.declared
+            .iter()
+            .find(|(declared_subject, declared_id, _, _)| {
+                declared_subject == subject && declared_id == id
+            })
+            .map(|(_, _, severity, _)| *severity)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

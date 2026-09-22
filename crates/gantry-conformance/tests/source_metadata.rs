@@ -8,14 +8,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gantry::ir::{
-    ConstructionPolicy, DeclaredSurface, DependencyWarningPolicy, Deprecation,
-    DocumentationBoundary, DocumentationComment, DocumentationFormat, DocumentationLink,
-    ExampleDeclaration, ExampleMode, ExhaustivenessPolicy, GeneratedOrigin, InterfaceItem,
-    InterfaceMetadata, InterfaceSeal, ItemKind, LintDeclaration, LintId, LintScope, LintSeverity,
-    MetadataDeclarations, MetadataDiagnosticCode, MetadataError, MetadataSubject, NominalFacts,
-    PublicInterfaceManifest, SOURCE_METADATA_CLAUSES, SelectedFeatureSet, SemanticAttribute,
-    SemanticMode, TargetKind, ToolMetadata, Visibility, admit_lint_control,
-    admit_semantic_attribute, resolve_documentation_link,
+    ConstructionPolicy, DeclaredSurface, DependencyDiagnosticClass, DependencyWarningPolicy,
+    Deprecation, DocumentationBoundary, DocumentationComment, DocumentationFormat,
+    DocumentationLink, ExampleDeclaration, ExampleMode, ExhaustivenessPolicy, GeneratedOrigin,
+    InterfaceItem, InterfaceMetadata, InterfaceSeal, ItemKind, LintControlSet, LintDeclaration,
+    LintId, LintScope, LintSeverity, MetadataDeclarations, MetadataDiagnosticCode, MetadataError,
+    MetadataSubject, NominalFacts, PublicInterfaceManifest, SOURCE_METADATA_CLAUSES,
+    SelectedFeatureSet, SemanticAttribute, SemanticMode, TargetKind, ToolMetadata, Visibility,
+    admit_lint_control, admit_semantic_attribute, dependency_policy_ignores,
+    resolve_documentation_link,
 };
 use gantry::protocol::ProtocolVersion;
 
@@ -327,5 +328,104 @@ fn documentation_links_resolve_only_against_visible_interface_targets() {
     assert_eq!(
         resolve_documentation_link(&link("pkg::Export"), "", &interface),
         Err(MetadataError::InvalidLink)
+    );
+}
+
+#[test]
+fn dependency_policies_hide_only_ordinary_warnings() {
+    assert_eq!(
+        DependencyWarningPolicy::ALL.map(DependencyWarningPolicy::wire_name),
+        ["deny", "ignore", "inherit", "warn"]
+    );
+    assert_eq!(
+        DependencyDiagnosticClass::ALL.map(DependencyDiagnosticClass::wire_name),
+        [
+            "ordinary-warning",
+            "semantic",
+            "security",
+            "integrity",
+            "authority",
+            "compatibility",
+            "publication"
+        ]
+    );
+    for policy in DependencyWarningPolicy::ALL {
+        for class in DependencyDiagnosticClass::ALL {
+            let hides = policy == DependencyWarningPolicy::Ignore
+                && class == DependencyDiagnosticClass::OrdinaryWarning;
+            assert_eq!(
+                dependency_policy_ignores(policy, class),
+                hides,
+                "{} / {}",
+                policy.wire_name(),
+                class.wire_name()
+            );
+        }
+    }
+}
+
+#[test]
+fn lint_controls_apply_only_declared_scoped_severities() {
+    let subject = subject("std.core::Option");
+    let id = LintId::new("metadata::missing-doc").unwrap_or_else(|_| panic!());
+    let mut controls = LintControlSet::default();
+    let lint = LintDeclaration::new(subject.clone(), id.clone(), LintSeverity::Warn, true);
+    assert!(controls.declare(subject.clone(), &lint).is_ok());
+    assert_eq!(
+        controls.declare(subject.clone(), &lint),
+        Err(MetadataError::DuplicateLint)
+    );
+    assert_eq!(
+        controls.effective_severity(&subject, &id),
+        Some(LintSeverity::Warn)
+    );
+    assert_eq!(
+        controls.control(&subject, &id, LintScope::Item, LintSeverity::Deny),
+        Ok((LintScope::Item, LintSeverity::Deny))
+    );
+    assert_eq!(
+        controls.effective_severity(&subject, &id),
+        Some(LintSeverity::Deny)
+    );
+    assert_eq!(
+        controls.control(&subject, &id, LintScope::Package, LintSeverity::Allow),
+        Err(MetadataError::DuplicateLint)
+    );
+    let unknown = LintId::new("unknown::lint").unwrap_or_else(|_| panic!());
+    assert_eq!(
+        controls.control(&subject, &unknown, LintScope::Item, LintSeverity::Deny),
+        Err(MetadataError::DuplicateLint)
+    );
+    let security = LintDeclaration::new(
+        subject.clone(),
+        LintId::new("security::authority").unwrap_or_else(|_| panic!()),
+        LintSeverity::Deny,
+        false,
+    );
+    assert!(controls.declare(subject.clone(), &security).is_ok());
+    assert_eq!(
+        controls.control(
+            &subject,
+            security.id(),
+            LintScope::Package,
+            LintSeverity::Allow
+        ),
+        Err(MetadataError::UnsuppressibleLint)
+    );
+    let forbidden = LintDeclaration::new(
+        subject.clone(),
+        LintId::new("style::forbidden").unwrap_or_else(|_| panic!()),
+        LintSeverity::Forbid,
+        true,
+    );
+    assert!(controls.declare(subject.clone(), &forbidden).is_ok());
+    assert_eq!(
+        controls.control(
+            &subject,
+            forbidden.id(),
+            LintScope::Dependency,
+            LintSeverity::Deny
+        ),
+        Err(MetadataError::UnsuppressibleLint)
     );
 }
