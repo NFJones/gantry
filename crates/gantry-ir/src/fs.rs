@@ -6,7 +6,7 @@
 //! consumption of the common I/O contract and its content-mutation fact. It is not a descriptor, an
 //! open handle, a live resource instance, an adapter, a capability, or a runtime availability, and
 //! it performs no I/O: every decision it publishes is a deterministic function of its declared
-//! arguments alone.
+//! arguments alone. It also publishes the declared canonical traversal order of entry names.
 
 use std::fmt;
 
@@ -20,13 +20,14 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 6] = [
+pub const FS_CLAUSES: [&str; 7] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
     "GNT-47.3-filesystem-action-values",
     "GNT-47.4-filesystem-resource-operations",
     "GNT-47.5-filesystem-resource-state",
+    "GNT-47.6-filesystem-traversal",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -73,6 +74,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.0-filesystem-foundation-scope",
             "GNT-47.1-filesystem-modules-and-item-rows",
             "GNT-47.2-filesystem-path-values",
+            "GNT-47.6-filesystem-traversal",
         ],
     },
     FsItemRow {
@@ -604,4 +606,24 @@ impl FsResourceOperation {
     pub const fn declares_content_mutation(self) -> bool {
         matches!(self, Self::Write | Self::Truncate)
     }
+}
+
+/// Returns the declared canonical traversal order of `names`.
+///
+/// The order is ascending by code unit over each declared name and is never a host directory order,
+/// and every name is checked against the declared segment domain of
+/// `GNT-47.2-filesystem-path-values` before it is published.
+///
+/// # Errors
+///
+/// Returns the path diagnostic of the first entry whose name is outside the declared segment
+/// domain, positioned at that entry's zero-based ordinal within the traversal.
+pub fn fs_traversal_order(names: &[&str]) -> Result<Vec<String>, FsError> {
+    let mut ordered = Vec::with_capacity(names.len());
+    for (position, name) in names.iter().enumerate() {
+        validate_segments(std::slice::from_ref(name), position as u32)?;
+        ordered.push((*name).to_owned());
+    }
+    ordered.sort_unstable();
+    Ok(ordered)
 }

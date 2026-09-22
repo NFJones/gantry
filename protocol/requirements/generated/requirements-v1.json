@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "eb10db83a76943555198adba57105e46387495e4f15b230fb33eb7d112e904c9",
-  "byte_length": 1255975,
-  "line_count": 16395,
+  "specification_sha256": "cf259d4172bee7a2f4dd1012ac59f84a042349bbff32b0d15a5b6484a9057673",
+  "byte_length": 1258302,
+  "line_count": 16427,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "76a99a0f184b6ee5d43dda8801bcea256634083bef526dc38da4aa192137f7d4",
+      "sha256": "b9249ca9b5ec2c7d788b810ec1a1e8d1016b2c909df80d7fa56b38a8928f81b9",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16395,
-      "sha256": "3b15d6fb5c233379e6c2b4155cb376357cf70586fe2273fd76c79ecf32ea449e",
+      "end_line": 16427,
+      "sha256": "7ba0ede5d2030b69d0b32ef89fa1faf1f9173a1743168fba2cdc5ccad61d8652",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "6b917a384478c20a1ef2968cd868ddd57ec2926e5c4f44d0f1dc35ebb5e0c3f3",
+      "span_sha256": "871809e436eb83d01ee3f88106442f2ec90d48d30a386a98f2cdbedf7f9e68c0",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "aed85fa9963d9bbb787eecb9fce7c9fd92ee07ac5f0fcf649614d3cb18d71aad",
+      "body_sha256": "b7b1ad6d8248203db1c3fd30c713a9e9210e3bbcfde46f1a539f2102aa150a37",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45023,6 +45023,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_resource_state_vocabulary_consumes_section28_and_read_only_grants_cannot_mutate"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.6-filesystem-traversal",
+      "span_start_line": 16396,
+      "span_end_line": 16427,
+      "span_sha256": "9f87cb2206041cf857ce0f6c78008e2d4268d5af848eb2821199ba2cc674851c",
+      "anchor_line": 16397,
+      "body_start_line": 16398,
+      "body_end_line": 16427,
+      "body_sha256": "23fc7fe26a8bc35c0856a698bd04365d1ab5a6700ae0531d10086a4adaab694a",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16398,
+          "end_line": 16427,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_traversal_publishes_canonical_entry_order_and_refuses_outer_names"
               ],
               "rationale": null
             }

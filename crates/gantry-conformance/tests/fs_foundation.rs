@@ -12,7 +12,8 @@ use gantry::ir::{
     FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction,
     FsDiagnosticCode, FsPath, FsResourceOperation, IoOperation, NameClass, PackageFamily, Prelude,
     ResourceCarrier, ResourceLifetimeState, StabilityTier, StdGraph, StdItem, StdPackage,
-    StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface, generated::RecoveryClass,
+    StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface, fs_traversal_order,
+    generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -55,6 +56,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.3-filesystem-action-values",
             "GNT-47.4-filesystem-resource-operations",
             "GNT-47.5-filesystem-resource-state",
+            "GNT-47.6-filesystem-traversal",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -101,6 +103,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.0-filesystem-foundation-scope",
                 "GNT-47.1-filesystem-modules-and-item-rows",
                 "GNT-47.2-filesystem-path-values",
+                "GNT-47.6-filesystem-traversal",
             ],
             "std.fs::resource" => &[
                 "GNT-47.0-filesystem-foundation-scope",
@@ -643,6 +646,79 @@ fn fs_resource_state_vocabulary_consumes_section28_and_read_only_grants_cannot_m
         "An admitted instance is never carried in durable state, exactly as the rule of `GNT-3-T-AUTHORITY-INSTANCES` declares of a live instance",
         "a durable record carries no live handle, no descriptor, and no admitted instance",
         "reconstruction reads the declared reconstruction record of `GNT-28.7-durable-resource-reconstruction`",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_traversal_publishes_canonical_entry_order_and_refuses_outer_names() {
+    assert_eq!(
+        fs_traversal_order(&["b", "a", "B", "10", "a1"])
+            .unwrap_or_else(|error| panic!("declared names are admissible: {error:?}")),
+        ["10", "B", "a", "a1", "b"],
+        "the declared order ascends by code unit and never uses a host order"
+    );
+    assert_eq!(
+        fs_traversal_order(&["\u{e9}", "z"])
+            .unwrap_or_else(|error| panic!("non-ASCII names are declared segments: {error:?}")),
+        ["z", "\u{e9}"],
+        "a code-unit order places a multi-byte name after a one-byte name"
+    );
+    assert!(
+        fs_traversal_order(&[])
+            .unwrap_or_else(|error| panic!("an empty object is admitted: {error:?}"))
+            .is_empty()
+    );
+
+    let empty = match fs_traversal_order(&["a", ""]) {
+        Ok(names) => panic!("an empty entry name must be refused, got {names:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(empty.code(), FsDiagnosticCode::PathInvalid);
+    assert_eq!(empty.position(), 1, "the refusal names the entry position");
+
+    let separator = match fs_traversal_order(&["a", "b/c"]) {
+        Ok(names) => panic!("a separator scalar must be refused, got {names:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(separator.code(), FsDiagnosticCode::PathInvalid);
+    assert_eq!(separator.position(), 1);
+
+    let control = match fs_traversal_order(&["\u{7}"]) {
+        Ok(names) => panic!("a control scalar must be refused, got {names:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(control.code(), FsDiagnosticCode::PathInvalid);
+    assert_eq!(control.position(), 0);
+
+    let parent = match fs_traversal_order(&["a", "b", ".."]) {
+        Ok(names) => panic!("the parent component must be refused, got {names:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(parent.code(), FsDiagnosticCode::PathEscape);
+    assert_eq!(parent.position(), 2);
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in FS_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "A traversal publishes the declared names of the entries of the object the path value names, in exactly one canonical order: ascending by code unit over the declared name",
+        "never in the host's directory order, and never in an order that depends on the host, an adapter, a clock, a locale, or an environment fact",
+        "Two traversals of the same declared path value over the same declared object state publish the same sequence",
+        "the model function `fs_traversal_order` of `crates/gantry-ir/src/fs.rs` publishes the order and the refusal",
+        "refused under the diagnostic of that clause rather than normalized, escaped, truncated, renamed, dropped, or silently skipped",
+        "the refusal names the zero-based position of that entry within the traversal",
+        "it follows no symbolic link, junction, or reparse point implicitly",
+        "no snapshot, atomicity, or isolation guarantee across entries",
+        "no admitted request of `GNT-45.1-bounded-one-call-io-contract`",
     ] {
         assert!(
             specification.contains(rule),
