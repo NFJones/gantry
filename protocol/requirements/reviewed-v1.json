@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "599dc331fbb1c6704032825fe4482f27b1b94a010517687263197eb289bfaf45",
+  "specification_sha256": "b865e286208ecc60c6e536ddd7de533931ecb3428354d06046fc927603b2fe89",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16007,
+      "end_line": 16001,
       "rationale": null
     }
   ],
@@ -43118,10 +43118,10 @@
     {
       "id": "GNT-45.0-common-io-foundation-scope",
       "span_start_line": 15790,
-      "span_end_line": 15821,
+      "span_end_line": 15820,
       "anchor_line": 15793,
       "body_start_line": 15794,
-      "body_end_line": 15821,
+      "body_end_line": 15820,
       "profiles": [
         "analyzer"
       ],
@@ -43133,7 +43133,7 @@
         {
           "key": "clause-001",
           "start_line": 15794,
-          "end_line": 15821,
+          "end_line": 15820,
           "profiles": [
             "analyzer"
           ],
@@ -43156,11 +43156,11 @@
     },
     {
       "id": "GNT-45.1-bounded-one-call-io-contract",
-      "span_start_line": 15822,
-      "span_end_line": 15883,
-      "anchor_line": 15823,
-      "body_start_line": 15824,
-      "body_end_line": 15883,
+      "span_start_line": 15821,
+      "span_end_line": 15882,
+      "anchor_line": 15822,
+      "body_start_line": 15823,
+      "body_end_line": 15882,
       "profiles": [
         "analyzer"
       ],
@@ -43171,8 +43171,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15824,
-          "end_line": 15883,
+          "start_line": 15823,
+          "end_line": 15882,
           "profiles": [
             "analyzer"
           ],
@@ -43198,11 +43198,11 @@
     },
     {
       "id": "GNT-45.2-standard-io-modules-and-item-rows",
-      "span_start_line": 15884,
-      "span_end_line": 15917,
-      "anchor_line": 15885,
-      "body_start_line": 15886,
-      "body_end_line": 15917,
+      "span_start_line": 15883,
+      "span_end_line": 15916,
+      "anchor_line": 15884,
+      "body_start_line": 15885,
+      "body_end_line": 15916,
       "profiles": [
         "analyzer"
       ],
@@ -43213,8 +43213,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15886,
-          "end_line": 15917,
+          "start_line": 15885,
+          "end_line": 15916,
           "profiles": [
             "analyzer"
           ],
@@ -43240,11 +43240,11 @@
     },
     {
       "id": "GNT-45.3-io-progress-derivation",
-      "span_start_line": 15918,
-      "span_end_line": 15959,
-      "anchor_line": 15919,
-      "body_start_line": 15920,
-      "body_end_line": 15959,
+      "span_start_line": 15917,
+      "span_end_line": 15958,
+      "anchor_line": 15918,
+      "body_start_line": 15919,
+      "body_end_line": 15958,
       "profiles": [
         "analyzer"
       ],
@@ -43255,8 +43255,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15920,
-          "end_line": 15959,
+          "start_line": 15919,
+          "end_line": 15958,
           "profiles": [
             "analyzer"
           ],
@@ -43279,17 +43279,17 @@
       ]
     },
     {
-      "id": "GNT-45.4-io-backpressure-and-chunk-settlement",
-      "span_start_line": 15960,
-      "span_end_line": 16007,
-      "anchor_line": 15961,
-      "body_start_line": 15962,
-      "body_end_line": 16007,
+      "id": "GNT-45.4-io-backpressure-fact",
+      "span_start_line": 15959,
+      "span_end_line": 16001,
+      "anchor_line": 15960,
+      "body_start_line": 15961,
+      "body_end_line": 16001,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15962,
-          "end_line": 16007,
+          "start_line": 15961,
+          "end_line": 16001,
           "profiles": [
             "analyzer"
           ],

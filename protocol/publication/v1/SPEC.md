@@ -812,7 +812,7 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
-| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, and the common I/O foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-and-chunk-settlement` |
+| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, and the common I/O foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -15797,9 +15797,9 @@ common I/O foundation of `std.io`: the closed operation vocabulary one reader, w
 contract is expressed with, the versioned one-call request contract under which one bounded read,
 write, or seek request is admitted, the progress observation of
 `GNT-29.2-reader-writer-seek-progress` that an admitted request publishes, the portable refusal
-set one inadmissible request publishes, the backpressure fact and the bounded-chunk settlement
-rule of `GNT-45.4-io-backpressure-and-chunk-settlement`, and the separation among an admitted
-request's progress observation, the portable domain-error envelope of
+set one inadmissible request publishes, the backpressure fact of
+`GNT-45.4-io-backpressure-fact`, and the separation among an admitted request's progress
+observation, the portable domain-error envelope of
 `GNT-29.3-portable-domain-error-envelope`, the
 operational adapter failure of `GNT-29.1-channel-separation`, and the operation identity,
 progress, settlement, effect certainty, post-failure state, and owner generation that Section 20
@@ -15813,9 +15813,8 @@ diagnostics of this section are `io-request-bound`, `io-request-kind`, and
 `GNT-45.3-io-progress-derivation`; each names one owning clause and no spelling is shared by two
 clauses. This section introduces no second progress
 vocabulary, no second request bound, no streaming, incremental, chunked, or resumable contract
-beyond the backpressure fact and the bounded-chunk settlement rule of
-`GNT-45.4-io-backpressure-and-chunk-settlement`, no suspension, no quota or charge, no work limit
-or cancellation safe point, no schema, recovery,
+beyond the backpressure fact of `GNT-45.4-io-backpressure-fact`, no suspension, no quota or
+charge, no work limit or cancellation safe point, no schema, recovery,
 durability, boundary encoding, lowering, machine representation, or family behavior, and no
 clause of this section may be read as publishing, implying, or substituting a facility this
 section does not declare.
@@ -15873,9 +15872,9 @@ clause publishes no `io` category of its own, and the error carries only the env
 `GNT-29.3-portable-domain-error-envelope` with native detail excluded under
 `GNT-29.14-native-detail-exclusion`. This clause publishes the operation vocabulary, the versioned
 one-call request contract, the progress sets, and the refusals only: it admits no streaming,
-incremental, or resumable contract beyond the bounded-chunk settlement and backpressure fact of
-`GNT-45.4-io-backpressure-and-chunk-settlement`, no buffering, queueing, or wait behavior beyond
-the progress observation a single call publishes, no suspension, no item or interface row for
+incremental, chunked, or resumable contract beyond the backpressure fact of
+`GNT-45.4-io-backpressure-fact`, no buffering, queueing, or wait behavior beyond the progress
+observation a single call publishes, no suspension, no item or interface row for
 `std.io` and no interface digest or stability tier, no adapter, host trait, capability grant, or
 runtime availability, no work limit, cancellation safe point, quota, or charge, no schema,
 recovery, durability, boundary encoding, lowering, machine representation, or family behavior, no
@@ -15910,7 +15909,7 @@ granularity`), and its analyzer evidence is `crates/gantry-conformance/tests/io_
 This clause publishes the module rows and their contract ownership only: it publishes no source
 syntax, import rule, facade path, implementation, adapter, host trait, capability grant, or
 runtime availability, no streaming, buffering, or backpressure contract beyond
-`GNT-45.4-io-backpressure-and-chunk-settlement`, no work limit,
+`GNT-45.4-io-backpressure-fact`, no work limit,
 cancellation safe point, quota, or charge, no schema, recovery, durability, boundary encoding,
 lowering, machine representation, or family behavior, no change to any other clause of this
 section or of Section 29, and it claims no performance, storage layout, or physical
@@ -15952,17 +15951,17 @@ derivation is a deterministic function of the admitted facts alone, never of a h
 timing, a prior call, or global mutable state, and two derivations of equal facts publish equal
 observations. This clause publishes the facts and the derivation only: it publishes no work limit,
 cancellation safe point, quota, or charge, no streaming, buffering, or backpressure contract
-beyond `GNT-45.4-io-backpressure-and-chunk-settlement`, no
+beyond `GNT-45.4-io-backpressure-fact`, no
 interruption, cancellation, settlement, effect certainty, or post-failure state, which Section 20
 owns, no schema, recovery, durability, boundary encoding, lowering, machine representation, or
 family behavior, no change to any other clause of this section, and it claims no performance,
 storage layout, or physical representation.
 
-<a id="GNT-45.4-io-backpressure-and-chunk-settlement"></a>
+<a id="GNT-45.4-io-backpressure-fact"></a>
 
-**[GNT-45.4-io-backpressure-and-chunk-settlement] Backpressure and bounded-chunk settlement.** This
-clause publishes the backpressure fact and the bounded-chunk settlement rule that
-`GNT-45.1-bounded-one-call-io-contract` deferred. A backpressure fact is a fact one admitted call
+**[GNT-45.4-io-backpressure-fact] The backpressure fact of one admitted call.** This clause
+publishes the backpressure fact that `GNT-45.1-bounded-one-call-io-contract` deferred. A
+backpressure fact is a fact one admitted call
 presents: it declares that the call observed its peer not ready, so it advanced or accepted no
 octet and observed no end of stream. The declared backpressure kinds are exactly two — read and
 write, in that canonical order, spelled `read` and `write` — and the model's `IoBackpressure` and
@@ -15987,21 +15986,16 @@ completion, as an end of stream, or as a failure channel. This clause adds no me
 closed `GNT-29.2-reader-writer-seek-progress` vocabulary and changes no admissible set of any
 kind: a blocked call publishes no second progress vocabulary.
 
-A blocked call commits nothing: it publishes no committed progress, no partial result, and no
-state a later request observes or resumes, exactly as a refusal does, and it is never implicitly
-retried, repaired, or carried forward. The bounded-chunk settlement rule of an admitted call is
-that the octets one call commits are exactly the octets it observed advance: a call that advances
-`n` octets commits exactly `n` returned initialized octets and no spare capacity, no uninitialized
-data, and no capacity beyond `n`, and a short read or a short write commits exactly its observed
-advance or acceptance and carries no remainder. No remainder is ever carried by this contract: a
-call after a short, blocked, or failed call is a fresh admission of a fresh request with its own
-quantity and its own outcome, and an outcome whose effect certainty is ambiguous is never
-presented as progress and never retried. This clause publishes the backpressure fact, the
-bounded-chunk settlement rule, and the non-carry rule only: it admits no queue, no wait, no
-suspension, no scheduler, no fairness or timing behavior, no buffering beyond one call's own
-settlement, no retry, no adapter, host trait, host operation, capability grant, or runtime
-availability, no work limit, cancellation safe point, quota, or charge, no schema, recovery,
-durability, boundary encoding, lowering, machine representation, or family behavior, no change to
+A blocked call publishes no committed progress, no partial result, and no state a later request
+observes or resumes, and it is never implicitly retried, repaired, or carried forward: the whole
+of what a blocked call publishes is the `not-started` observation and the declared witness of its
+blocking. This clause publishes the backpressure fact, its refusals, and its derivation only: it
+admits no queue, no wait, no suspension, no scheduler, no fairness or timing behavior, no retry,
+no chunk payload, buffer capacity, initialized-length, or carried-remainder contract, no
+streaming, incremental, chunked, or resumable contract, no buffering beyond one call's own facts,
+no adapter, host trait, host operation, capability grant, or runtime availability, no work limit,
+cancellation safe point, quota, or charge, no schema, recovery, durability, boundary encoding,
+lowering, machine representation, or family behavior, no change to
 `GNT-29.2-reader-writer-seek-progress` and no change to the request contract, progress sets, or
 precedence of `GNT-45.1-bounded-one-call-io-contract`, and it claims no performance, storage
 layout, or physical representation.

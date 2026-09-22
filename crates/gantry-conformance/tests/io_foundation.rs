@@ -69,7 +69,7 @@ fn io_contract_clauses_and_scope_are_published() {
             "GNT-45.1-bounded-one-call-io-contract",
             "GNT-45.2-standard-io-modules-and-item-rows",
             "GNT-45.3-io-progress-derivation",
-            "GNT-45.4-io-backpressure-and-chunk-settlement",
+            "GNT-45.4-io-backpressure-fact",
         ]
     );
     assert_eq!(IO_CONTRACT_VERSION, 1);
@@ -993,7 +993,7 @@ fn io_note_records_the_unlanded_contract_without_claiming_it() {
     let flat = flatten(&note);
 
     for needle in [
-        "It admits no streaming, incremental, or resumable contract beyond the bounded-chunk settlement and backpressure fact of `GNT-45.4-io-backpressure-and-chunk-settlement`, and no buffering, queueing, or wait behavior beyond the progress observation a single call publishes.",
+        "It admits no streaming, incremental, chunked, or resumable contract beyond the backpressure fact of `GNT-45.4-io-backpressure-fact`, and no buffering, queueing, or wait behavior beyond the progress observation a single call publishes.",
         "It declares no interface digest of its own; the declared module rows of `GNT-45.2-standard-io-modules-and-item-rows`",
         "It grants no adapter, no host trait, no runtime availability, and no capability: adapters remain leaves",
     ] {

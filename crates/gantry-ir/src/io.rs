@@ -4,8 +4,7 @@
 //! contract of `std.io` with its declared finite octet bound and its progress sets. It is not a
 //! runtime reader, writer, or seek handle, an adapter, a scheduler, or a buffer, and it performs
 //! no I/O: every decision is a deterministic function of explicit inputs. The module also
-//! publishes the declared backpressure fact and the bounded-chunk settlement rule of
-//! `GNT-45.4-io-backpressure-and-chunk-settlement`.
+//! publishes the declared backpressure fact of `GNT-45.4-io-backpressure-fact`.
 
 use crate::operation::ProgressObservation;
 use crate::package::TargetKind;
@@ -21,7 +20,7 @@ pub const IO_CLAUSES: [&str; 5] = [
     "GNT-45.1-bounded-one-call-io-contract",
     "GNT-45.2-standard-io-modules-and-item-rows",
     "GNT-45.3-io-progress-derivation",
-    "GNT-45.4-io-backpressure-and-chunk-settlement",
+    "GNT-45.4-io-backpressure-fact",
 ];
 
 /// The declared one-call request-contract version of `GNT-45.1-bounded-one-call-io-contract`.
