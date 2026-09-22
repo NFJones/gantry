@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "22fff6d80ce9d54670923f0610105cd7edfcdb2cfbd8fb55b53f57ba3ea57d60",
+  "specification_sha256": "599dc331fbb1c6704032825fe4482f27b1b94a010517687263197eb289bfaf45",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15952,
+      "end_line": 16007,
       "rationale": null
     }
   ],
@@ -43118,10 +43118,10 @@
     {
       "id": "GNT-45.0-common-io-foundation-scope",
       "span_start_line": 15790,
-      "span_end_line": 15817,
+      "span_end_line": 15821,
       "anchor_line": 15793,
       "body_start_line": 15794,
-      "body_end_line": 15817,
+      "body_end_line": 15821,
       "profiles": [
         "analyzer"
       ],
@@ -43133,7 +43133,7 @@
         {
           "key": "clause-001",
           "start_line": 15794,
-          "end_line": 15817,
+          "end_line": 15821,
           "profiles": [
             "analyzer"
           ],
@@ -43156,11 +43156,11 @@
     },
     {
       "id": "GNT-45.1-bounded-one-call-io-contract",
-      "span_start_line": 15818,
-      "span_end_line": 15878,
-      "anchor_line": 15819,
-      "body_start_line": 15820,
-      "body_end_line": 15878,
+      "span_start_line": 15822,
+      "span_end_line": 15883,
+      "anchor_line": 15823,
+      "body_start_line": 15824,
+      "body_end_line": 15883,
       "profiles": [
         "analyzer"
       ],
@@ -43171,8 +43171,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15820,
-          "end_line": 15878,
+          "start_line": 15824,
+          "end_line": 15883,
           "profiles": [
             "analyzer"
           ],
@@ -43198,11 +43198,11 @@
     },
     {
       "id": "GNT-45.2-standard-io-modules-and-item-rows",
-      "span_start_line": 15879,
-      "span_end_line": 15911,
-      "anchor_line": 15880,
-      "body_start_line": 15881,
-      "body_end_line": 15911,
+      "span_start_line": 15884,
+      "span_end_line": 15917,
+      "anchor_line": 15885,
+      "body_start_line": 15886,
+      "body_end_line": 15917,
       "profiles": [
         "analyzer"
       ],
@@ -43213,8 +43213,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15881,
-          "end_line": 15911,
+          "start_line": 15886,
+          "end_line": 15917,
           "profiles": [
             "analyzer"
           ],
@@ -43240,11 +43240,11 @@
     },
     {
       "id": "GNT-45.3-io-progress-derivation",
-      "span_start_line": 15912,
-      "span_end_line": 15952,
-      "anchor_line": 15913,
-      "body_start_line": 15914,
-      "body_end_line": 15952,
+      "span_start_line": 15918,
+      "span_end_line": 15959,
+      "anchor_line": 15919,
+      "body_start_line": 15920,
+      "body_end_line": 15959,
       "profiles": [
         "analyzer"
       ],
@@ -43255,8 +43255,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15914,
-          "end_line": 15952,
+          "start_line": 15920,
+          "end_line": 15959,
           "profiles": [
             "analyzer"
           ],
@@ -43276,6 +43276,46 @@
             }
           ]
         }
+      ]
+    },
+    {
+      "id": "GNT-45.4-io-backpressure-and-chunk-settlement",
+      "span_start_line": 15960,
+      "span_end_line": 16007,
+      "anchor_line": 15961,
+      "body_start_line": 15962,
+      "body_end_line": 16007,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15962,
+          "end_line": 16007,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/io_foundation.rs#io_backpressure_is_closed_and_settles_as_not_started",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_contract_clauses_and_scope_are_published"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
       ]
     }
   ]

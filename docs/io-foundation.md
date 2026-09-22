@@ -68,10 +68,26 @@ exactly one progress observation of the landed `GNT-29.2` mapping, its outcome i
 the `GNT-29.1` channels, and interruption, cancellation, and ambiguous settlement remain the
 Section 20 facts that own them.
 
+## Backpressure and bounded-chunk settlement
+
+`GNT-45.4-io-backpressure-and-chunk-settlement` publishes the backpressure fact a single admitted
+call presents and the settlement rule of one bounded chunk. The declared backpressure kinds are
+exactly `read` and `write` in canonical order, and a seek is never backpressured: its progress is
+a function of its declared target and its observed positions alone. `IoOutcome::Blocked` presents
+one such fact bound to the admitted quantity of its request, `IoOutcome::blocked` publishes the
+declared witness separately from the observation, and the derived progress of a blocked call is
+`not-started`, because no advance, no acceptance, and no end of stream were observed: the clause
+adds no member to the closed `GNT-29.2-reader-writer-seek-progress` vocabulary. A blocked fact
+outside the declared quantity range is refused under `io-observation-inconsistent`, a blocked fact
+bound to another request is refused under `io-outcome-request-mismatch`, a blocked call commits
+nothing, and no remainder is ever carried forward: a call after a short, blocked, or failed call
+is a fresh admission of a fresh request.
+
 ## What this surface does not claim
 
-- It admits no streaming, incremental, chunked, or resumable contract and no buffering, queueing,
-  or wait behavior beyond the progress observation a single call publishes.
+- It admits no streaming, incremental, or resumable contract beyond the bounded-chunk settlement
+  and backpressure fact of `GNT-45.4-io-backpressure-and-chunk-settlement`, and no buffering,
+  queueing, or wait behavior beyond the progress observation a single call publishes.
 - It declares no interface digest of its own; the declared module rows of
   `GNT-45.2-standard-io-modules-and-item-rows` (`std.io::reader`, `std.io::seek`, and
   `std.io::writer`, each at the stable tier over the application mode) are the family’s item

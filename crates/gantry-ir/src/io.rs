@@ -3,7 +3,9 @@
 //! This module publishes the declared operation vocabulary and the versioned one-call request
 //! contract of `std.io` with its declared finite octet bound and its progress sets. It is not a
 //! runtime reader, writer, or seek handle, an adapter, a scheduler, or a buffer, and it performs
-//! no I/O: every decision is a deterministic function of explicit inputs.
+//! no I/O: every decision is a deterministic function of explicit inputs. The module also
+//! publishes the declared backpressure fact and the bounded-chunk settlement rule of
+//! `GNT-45.4-io-backpressure-and-chunk-settlement`.
 
 use crate::operation::ProgressObservation;
 use crate::package::TargetKind;
@@ -14,11 +16,12 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 45 clauses implemented by this pure model, in declaration order.
-pub const IO_CLAUSES: [&str; 4] = [
+pub const IO_CLAUSES: [&str; 5] = [
     "GNT-45.0-common-io-foundation-scope",
     "GNT-45.1-bounded-one-call-io-contract",
     "GNT-45.2-standard-io-modules-and-item-rows",
     "GNT-45.3-io-progress-derivation",
+    "GNT-45.4-io-backpressure-and-chunk-settlement",
 ];
 
 /// The declared one-call request-contract version of `GNT-45.1-bounded-one-call-io-contract`.
@@ -289,6 +292,13 @@ impl IoRequest {
                     fact: "target",
                 })
             }
+            IoOutcome::Blocked {
+                operation,
+                quantity,
+            } if quantity != self.quantity => Err(IoError::RequestMismatch {
+                operation: operation.operation(),
+                fact: operation.quantity_fact(),
+            }),
             _ => outcome.derive_progress(),
         }
     }
@@ -500,6 +510,51 @@ fn validate_io_surface_package(graph: &StdGraph, package: &StdPackage) -> Result
     Ok(())
 }
 
+/// One declared kind whose peer can present a backpressure fact.
+///
+/// A seek is never backpressured by `GNT-45.4-io-backpressure-and-chunk-settlement`: its progress
+/// is a function of its declared target and its observed positions alone, so no seek fact is
+/// declared here and no other kind, alias, or spelling is admitted.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum IoBackpressure {
+    /// A read that observed its peer not ready.
+    Read,
+    /// A write that observed its peer not ready.
+    Write,
+}
+
+impl IoBackpressure {
+    /// Every declared kind, in canonical order.
+    pub const ALL: [Self; 2] = [Self::Read, Self::Write];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+        }
+    }
+
+    /// Returns the declared operation kind this backpressure kind belongs to.
+    #[must_use]
+    pub const fn operation(self) -> IoOperation {
+        match self {
+            Self::Read => IoOperation::Read,
+            Self::Write => IoOperation::Write,
+        }
+    }
+
+    /// Returns the declared fact name one observed quantity of this kind is published under.
+    #[must_use]
+    pub const fn quantity_fact(self) -> &'static str {
+        match self {
+            Self::Read => "requested",
+            Self::Write => "provided",
+        }
+    }
+}
+
 /// One declared set of facts a single admitted I/O call observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IoOutcome {
@@ -528,6 +583,13 @@ pub enum IoOutcome {
         /// The octet count the write accepted.
         accepted: u64,
     },
+    /// A read or write observed its peer not ready, advancing and accepting no octet.
+    Blocked {
+        /// The declared kind whose peer was not ready.
+        operation: IoBackpressure,
+        /// The octet count the call was admitted for.
+        quantity: u64,
+    },
 }
 
 impl IoOutcome {
@@ -538,6 +600,19 @@ impl IoOutcome {
             Self::Read { .. } => IoOperation::Read,
             Self::Seek { .. } => IoOperation::Seek,
             Self::Write { .. } => IoOperation::Write,
+            Self::Blocked { operation, .. } => operation.operation(),
+        }
+    }
+
+    /// Returns the declared backpressure witness of this outcome, when it presents one.
+    ///
+    /// The witness is published separately from the derived progress observation, so no caller
+    /// reads a blocker as a completion, as an end of stream, or as a failure.
+    #[must_use]
+    pub const fn blocked(&self) -> Option<IoBackpressure> {
+        match *self {
+            Self::Blocked { operation, .. } => Some(operation),
+            _ => None,
         }
     }
 
@@ -604,6 +679,20 @@ impl IoOutcome {
                     return Ok(ProgressObservation::NotStarted);
                 }
                 Ok(ProgressObservation::ShortWrite)
+            }
+            Self::Blocked {
+                operation,
+                quantity,
+            } => {
+                if quantity == 0 || quantity > IO_REQUEST_OCTET_BOUND {
+                    return Err(IoError::ObservationInconsistent {
+                        operation: operation.operation(),
+                        fact: operation.quantity_fact(),
+                        observed: quantity,
+                        maximum: IO_REQUEST_OCTET_BOUND,
+                    });
+                }
+                Ok(ProgressObservation::NotStarted)
             }
             Self::Seek { target, from, to } => {
                 if to != target {

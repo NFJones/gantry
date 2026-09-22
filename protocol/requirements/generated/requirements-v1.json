@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "22fff6d80ce9d54670923f0610105cd7edfcdb2cfbd8fb55b53f57ba3ea57d60",
-  "byte_length": 1219243,
-  "line_count": 15952,
+  "specification_sha256": "599dc331fbb1c6704032825fe4482f27b1b94a010517687263197eb289bfaf45",
+  "byte_length": 1223736,
+  "line_count": 16007,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "01ba1f1626bfe7dd380e5b46a48fdd35a0d7f80b47f8e0c4b949c64bf85e234b",
+      "sha256": "b0893f740e94ad9761035ce9856856c0092cfd478fbf7aca79bbd44e621eae39",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15952,
-      "sha256": "bc8c82931cf0148fc06190fc35194bd4723e4db24bc531c84c39a05f1e131046",
+      "end_line": 16007,
+      "sha256": "8b65321795112d925119579e9d446be34f7df5b06ad893e725afe8d3f91e7668",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "b3a1e7fcaf9dde4572a9a9032b97c288831351a982f88e5afb7c4a14a4f933e4",
+      "span_sha256": "5f16cea8dd64ecb01f8bb6a4d59f5211f2edb1a07e01e79406682e37c24f1619",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "cc034c267a53e05f1d96f54c6309d3549d668bbccce013d87c5a153f1a627c28",
+      "body_sha256": "eccf49c6543f7d16bfb46bacb944a1466eed1831bc8609d65fcfe8bf79895eeb",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44323,12 +44323,12 @@
     {
       "id": "GNT-45.0-common-io-foundation-scope",
       "span_start_line": 15790,
-      "span_end_line": 15817,
-      "span_sha256": "6efffe2adf426d87217e62a7a32a5c0e72933ae27914ed033c21e6846602b35a",
+      "span_end_line": 15821,
+      "span_sha256": "b4753b0e9fc8723dce793e09f67637985298c2313c1e6ad4d45b985f21577c00",
       "anchor_line": 15793,
       "body_start_line": 15794,
-      "body_end_line": 15817,
-      "body_sha256": "3df532c8b7e351545a901b8167e96b939961ba84faf9dd040b88ddd13b9757bf",
+      "body_end_line": 15821,
+      "body_sha256": "60d3b2a1ea6e0a24bd0a3138f93677c5a12cfad5ab4c44c1064ab148a53c4e58",
       "profiles": [
         "analyzer"
       ],
@@ -44340,7 +44340,7 @@
         {
           "key": "clause-001",
           "start_line": 15794,
-          "end_line": 15817,
+          "end_line": 15821,
           "profiles": [
             "analyzer"
           ],
@@ -44363,13 +44363,13 @@
     },
     {
       "id": "GNT-45.1-bounded-one-call-io-contract",
-      "span_start_line": 15818,
-      "span_end_line": 15878,
-      "span_sha256": "71849f92c33de135f3db66430d6ea3b3f0b3d4c505fa7480fd8c155b5687290c",
-      "anchor_line": 15819,
-      "body_start_line": 15820,
-      "body_end_line": 15878,
-      "body_sha256": "73af77a11f14498274b33e162145c86f83cd44135f1f87bb064c1f9baeb60698",
+      "span_start_line": 15822,
+      "span_end_line": 15883,
+      "span_sha256": "97d4917d4808d029ce35bdde99b5f2955c8dd3af29de975c8bd5028d6e8862ec",
+      "anchor_line": 15823,
+      "body_start_line": 15824,
+      "body_end_line": 15883,
+      "body_sha256": "8003084987ca4bad8f1bc376d981fc246ee3b6f4e9ec242fbef5c6f5ac90cd13",
       "profiles": [
         "analyzer"
       ],
@@ -44380,8 +44380,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15820,
-          "end_line": 15878,
+          "start_line": 15824,
+          "end_line": 15883,
           "profiles": [
             "analyzer"
           ],
@@ -44407,13 +44407,13 @@
     },
     {
       "id": "GNT-45.2-standard-io-modules-and-item-rows",
-      "span_start_line": 15879,
-      "span_end_line": 15911,
-      "span_sha256": "ccd04b6f660005a1f0908a5f8e088a9c8c35b3897ebd9d9947abc207e39c2afb",
-      "anchor_line": 15880,
-      "body_start_line": 15881,
-      "body_end_line": 15911,
-      "body_sha256": "bf7c5b63935c9ac3f6fb4898bdf07d4a17a6e48b243b7fea6902a4dafb5d6b5f",
+      "span_start_line": 15884,
+      "span_end_line": 15917,
+      "span_sha256": "2f950b6207ab3bb77982b2a51331146afa7adbbb83fb09689496a88fc8a7f0dd",
+      "anchor_line": 15885,
+      "body_start_line": 15886,
+      "body_end_line": 15917,
+      "body_sha256": "d5b6a6e7fbac4426d3cf53d3b9fd2a6962b299e47ba818bdb6cc5c6843f0ae2e",
       "profiles": [
         "analyzer"
       ],
@@ -44424,8 +44424,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15881,
-          "end_line": 15911,
+          "start_line": 15886,
+          "end_line": 15917,
           "profiles": [
             "analyzer"
           ],
@@ -44451,13 +44451,13 @@
     },
     {
       "id": "GNT-45.3-io-progress-derivation",
-      "span_start_line": 15912,
-      "span_end_line": 15952,
-      "span_sha256": "424a5eceb2f748e038aa1aef7538951bbd3972dda90c9c0a4d18c6b2e9634fe1",
-      "anchor_line": 15913,
-      "body_start_line": 15914,
-      "body_end_line": 15952,
-      "body_sha256": "56c156e29060a55c877906831dfe0562f15bb7deb3aeacf475917a06731759c5",
+      "span_start_line": 15918,
+      "span_end_line": 15959,
+      "span_sha256": "ab9ea42e38da49d87fce7013482d7540d34c0a5a728cfc56674fe36b68aacd2e",
+      "anchor_line": 15919,
+      "body_start_line": 15920,
+      "body_end_line": 15959,
+      "body_sha256": "70ded6c9a0ce9638c0157a0853849596de115b623d0220ec79641fdc314f54f6",
       "profiles": [
         "analyzer"
       ],
@@ -44468,8 +44468,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15914,
-          "end_line": 15952,
+          "start_line": 15920,
+          "end_line": 15959,
           "profiles": [
             "analyzer"
           ],
@@ -44484,6 +44484,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/io_foundation.rs#io_progress_derivation_is_total_and_precedence_preserving",
                 "crates/gantry-conformance/tests/io_foundation.rs#io_observation_facts_outside_their_ranges_are_refused"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-45.4-io-backpressure-and-chunk-settlement",
+      "span_start_line": 15960,
+      "span_end_line": 16007,
+      "span_sha256": "080d24cc06ed9855881d4b890f8cad9203170fc3dfb445fe40118575dc17211c",
+      "anchor_line": 15961,
+      "body_start_line": 15962,
+      "body_end_line": 16007,
+      "body_sha256": "10e945fc420ba2f49a9f210e6138cf1dcbc5dcfacbc0eba12112f1fa771bb7bf",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15962,
+          "end_line": 16007,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/io_foundation.rs#io_backpressure_is_closed_and_settles_as_not_started",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_contract_clauses_and_scope_are_published"
               ],
               "rationale": null
             }

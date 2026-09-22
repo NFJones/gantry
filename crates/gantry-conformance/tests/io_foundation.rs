@@ -11,13 +11,14 @@ use std::path::{Path, PathBuf};
 use gantry::ir::generated::HostDomainFamily;
 use gantry::ir::{
     CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, HostProgress, IO_CLAUSES, IO_CONTRACT_VERSION, IO_ITEMS,
-    IO_REQUEST_OCTET_BOUND, IO_SURFACE_MODES, IO_SURFACE_TARGETS, IoDiagnosticCode, IoError,
-    IoOperation, IoOutcome, IoRequest, NameClass, PackageFamily, Prelude, ProgressObservation,
-    STDLIB_CLAUSES, SemanticMode, StabilityTier, StdGraph, StdItem, StdName, StdPackage,
-    StdlibDiagnosticCode, TargetKind, admit_io_progress, admit_io_surface, declare_io_surface,
+    IO_REQUEST_OCTET_BOUND, IO_SURFACE_MODES, IO_SURFACE_TARGETS, IoBackpressure, IoDiagnosticCode,
+    IoError, IoOperation, IoOutcome, IoRequest, NameClass, PackageFamily, Prelude,
+    ProgressObservation, STDLIB_CLAUSES, SemanticMode, StabilityTier, StdGraph, StdItem, StdName,
+    StdPackage, StdlibDiagnosticCode, TargetKind, admit_io_progress, admit_io_surface,
+    declare_io_surface,
 };
 
-const REQUIRED_ANCHORS: [&str; 10] = [
+const REQUIRED_ANCHORS: [&str; 11] = [
     "GNT-29.1",
     "GNT-29.2",
     "GNT-29.3",
@@ -28,6 +29,7 @@ const REQUIRED_ANCHORS: [&str; 10] = [
     "GNT-45.1",
     "GNT-45.2",
     "GNT-45.3",
+    "GNT-45.4",
 ];
 
 fn workspace_root() -> PathBuf {
@@ -67,6 +69,7 @@ fn io_contract_clauses_and_scope_are_published() {
             "GNT-45.1-bounded-one-call-io-contract",
             "GNT-45.2-standard-io-modules-and-item-rows",
             "GNT-45.3-io-progress-derivation",
+            "GNT-45.4-io-backpressure-and-chunk-settlement",
         ]
     );
     assert_eq!(IO_CONTRACT_VERSION, 1);
@@ -990,7 +993,7 @@ fn io_note_records_the_unlanded_contract_without_claiming_it() {
     let flat = flatten(&note);
 
     for needle in [
-        "It admits no streaming, incremental, chunked, or resumable contract and no buffering, queueing, or wait behavior beyond the progress observation a single call publishes.",
+        "It admits no streaming, incremental, or resumable contract beyond the bounded-chunk settlement and backpressure fact of `GNT-45.4-io-backpressure-and-chunk-settlement`, and no buffering, queueing, or wait behavior beyond the progress observation a single call publishes.",
         "It declares no interface digest of its own; the declared module rows of `GNT-45.2-standard-io-modules-and-item-rows`",
         "It grants no adapter, no host trait, no runtime availability, and no capability: adapters remain leaves",
     ] {
@@ -999,4 +1002,107 @@ fn io_note_records_the_unlanded_contract_without_claiming_it() {
             "the note must record the unlanded contract: {needle}"
         );
     }
+}
+
+#[test]
+fn io_backpressure_is_closed_and_settles_as_not_started() {
+    assert_eq!(
+        IoBackpressure::ALL,
+        [IoBackpressure::Read, IoBackpressure::Write]
+    );
+    let spellings = IoBackpressure::ALL
+        .into_iter()
+        .map(IoBackpressure::wire_name)
+        .collect::<Vec<_>>();
+    assert_eq!(spellings, ["read", "write"]);
+    assert_eq!(IoBackpressure::Read.operation(), IoOperation::Read);
+    assert_eq!(IoBackpressure::Write.operation(), IoOperation::Write);
+    assert_eq!(IoBackpressure::Read.quantity_fact(), "requested");
+    assert_eq!(IoBackpressure::Write.quantity_fact(), "provided");
+
+    let read = IoRequest::read(8).unwrap_or_else(|_| panic!("an eight-octet read is admissible"));
+    let blocked_read = IoOutcome::Blocked {
+        operation: IoBackpressure::Read,
+        quantity: 8,
+    };
+    assert_eq!(blocked_read.operation(), IoOperation::Read);
+    assert_eq!(blocked_read.blocked(), Some(IoBackpressure::Read));
+    assert_eq!(
+        blocked_read.derive_progress(),
+        Ok(ProgressObservation::NotStarted)
+    );
+    assert_eq!(
+        read.derive_progress(&blocked_read),
+        Ok(ProgressObservation::NotStarted)
+    );
+    assert_eq!(
+        admit_io_progress(IoOperation::Read, ProgressObservation::NotStarted),
+        Ok(())
+    );
+
+    let write =
+        IoRequest::write(8).unwrap_or_else(|_| panic!("an eight-octet write is admissible"));
+    let blocked_write = IoOutcome::Blocked {
+        operation: IoBackpressure::Write,
+        quantity: 8,
+    };
+    assert_eq!(blocked_write.blocked(), Some(IoBackpressure::Write));
+    assert_eq!(
+        write.derive_progress(&blocked_write),
+        Ok(ProgressObservation::NotStarted)
+    );
+
+    assert_eq!(
+        read.derive_progress(&blocked_write),
+        Err(IoError::RequestMismatch {
+            operation: IoOperation::Read,
+            fact: "operation",
+        })
+    );
+    let shorter = IoRequest::read(4).unwrap_or_else(|_| panic!("a four-octet read is admissible"));
+    assert_eq!(
+        shorter.derive_progress(&blocked_read),
+        Err(IoError::RequestMismatch {
+            operation: IoOperation::Read,
+            fact: "requested",
+        })
+    );
+
+    assert_eq!(
+        IoOutcome::Blocked {
+            operation: IoBackpressure::Read,
+            quantity: 0,
+        }
+        .derive_progress(),
+        Err(IoError::ObservationInconsistent {
+            operation: IoOperation::Read,
+            fact: "requested",
+            observed: 0,
+            maximum: IO_REQUEST_OCTET_BOUND,
+        })
+    );
+    let beyond = IO_REQUEST_OCTET_BOUND + 1;
+    assert_eq!(
+        IoOutcome::Blocked {
+            operation: IoBackpressure::Write,
+            quantity: beyond,
+        }
+        .derive_progress(),
+        Err(IoError::ObservationInconsistent {
+            operation: IoOperation::Write,
+            fact: "provided",
+            observed: beyond,
+            maximum: IO_REQUEST_OCTET_BOUND,
+        })
+    );
+
+    assert_eq!(
+        IoOutcome::Read {
+            requested: 8,
+            advanced: 0,
+            ended: false,
+        }
+        .blocked(),
+        None
+    );
 }
