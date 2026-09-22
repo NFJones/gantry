@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "af5f3aa6b9e1c6bd1bdb9f30649e32a7a40da636fcf282a2a424662355535b6c",
+  "specification_sha256": "816a1d8cce04a8f304bd6df1093efbab3f1266a724bcff0d9f3fa6d2fbaea8f3",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15737,
+      "end_line": 15747,
       "rationale": null
     }
   ],
@@ -42616,6 +42616,86 @@
               "evidence": [
                 "crates/gantry-conformance/tests/codec_foundation.rs#codec_non_claims_are_closed_and_never_presented_as_guarantees",
                 "crates/gantry-conformance/tests/codec_foundation.rs#codec_family_note_is_current"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-43.0-data-family-scope",
+      "span_start_line": 15738,
+      "span_end_line": 15743,
+      "anchor_line": 15741,
+      "body_start_line": 15742,
+      "body_end_line": 15743,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15742,
+          "end_line": 15743,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/data_foundation.rs#section_43_clauses_are_published",
+                "crates/gantry-conformance/tests/data_foundation.rs#data_surface_declares_the_three_modules"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-43.1-data-value-model-contract",
+      "span_start_line": 15744,
+      "span_end_line": 15747,
+      "anchor_line": 15745,
+      "body_start_line": 15746,
+      "body_end_line": 15747,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15746,
+          "end_line": 15747,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/data_foundation.rs#declared_versions_admit_exactly_the_declared_identity",
+                "crates/gantry-conformance/tests/data_foundation.rs#refusals_are_frozen_and_classified"
               ],
               "rationale": null
             }

@@ -23,6 +23,7 @@ mod canonical;
 mod codec;
 mod collections;
 mod constant;
+mod data;
 mod effects;
 pub mod error_semantics;
 mod executable;
@@ -321,6 +322,15 @@ pub use codec::{
     check_codec_non_claims, compression_decode, compression_encode, declare_codec_surface,
     hex_decode, hex_encode, json_decode, json_encode, read_u16, read_u32, read_u64, write_u16,
     write_u32, write_u64,
+};
+// The Section 43 data foundation: the declared `std.data` family with its `http`, `mime`, and
+// `url` modules, the versioned value-model identity and its exact admission rule, the frozen
+// refusal vocabulary with its declared refusal categories, and the separation between these pure
+// value models and the capability-backed network contracts of
+// `GNT-29.6-dns-socket-tls-and-http-contracts`.
+pub use data::{
+    DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataItemRow,
+    DataModule, DataRefusalCategory, DataVersion, canonical_data_hierarchy, declare_data_surface,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,
