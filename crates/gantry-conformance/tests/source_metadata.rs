@@ -375,6 +375,22 @@ fn lint_controls_apply_only_declared_scoped_severities() {
         controls.declare(subject.clone(), &lint),
         Err(MetadataError::DuplicateLint)
     );
+    // A duplicate declaration of one lint identity is refused even when its severity or
+    // suppressibility differs from the first declaration.
+    assert_eq!(
+        controls.declare(
+            subject.clone(),
+            &LintDeclaration::new(subject.clone(), id.clone(), LintSeverity::Deny, true),
+        ),
+        Err(MetadataError::DuplicateLint)
+    );
+    assert_eq!(
+        controls.declare(
+            subject.clone(),
+            &LintDeclaration::new(subject.clone(), id.clone(), LintSeverity::Warn, false),
+        ),
+        Err(MetadataError::DuplicateLint)
+    );
     assert_eq!(
         controls.effective_severity(&subject, &id),
         Some(LintSeverity::Warn)

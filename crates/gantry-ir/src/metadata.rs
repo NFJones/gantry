@@ -369,23 +369,23 @@ pub fn admit_lint_control(
 /// order, display spelling, or ambient configuration.
 #[derive(Default)]
 pub struct LintControlSet {
-    declared: BTreeSet<(MetadataSubject, LintId, LintSeverity, bool)>,
+    declared: BTreeMap<(MetadataSubject, LintId), (LintSeverity, bool)>,
     controls: BTreeMap<(MetadataSubject, LintId), (LintScope, LintSeverity)>,
 }
 
 impl LintControlSet {
-    /// Declares one lint of one owning subject; a duplicate declaration is refused.
+    /// Declares one lint of one owning subject; a duplicate declaration of that lint is refused.
     pub fn declare(
         &mut self,
         subject: MetadataSubject,
         lint: &LintDeclaration,
     ) -> Result<(), MetadataError> {
-        if !self
-            .declared
-            .insert((subject, lint.id.clone(), lint.severity, lint.suppressible))
-        {
+        let key = (subject, lint.id.clone());
+        if self.declared.contains_key(&key) {
             return Err(MetadataError::DuplicateLint);
         }
+        self.declared
+            .insert(key, (lint.severity, lint.suppressible));
         Ok(())
     }
 
@@ -397,21 +397,13 @@ impl LintControlSet {
         scope: LintScope,
         severity: LintSeverity,
     ) -> Result<(LintScope, LintSeverity), MetadataError> {
-        let declared = self
+        let (declared_severity, suppressible) = self
             .declared
-            .iter()
-            .find(|(declared_subject, declared_id, _, _)| {
-                declared_subject == subject && declared_id == id
-            })
-            .map(|(_, _, declared_severity, suppressible)| {
-                LintDeclaration::new(
-                    subject.clone(),
-                    id.clone(),
-                    *declared_severity,
-                    *suppressible,
-                )
-            })
+            .get(&(subject.clone(), id.clone()))
+            .copied()
             .ok_or(MetadataError::DuplicateLint)?;
+        let declared =
+            LintDeclaration::new(subject.clone(), id.clone(), declared_severity, suppressible);
         let admitted = admit_lint_control(&declared, scope, severity)?;
         let key = (subject.clone(), id.clone());
         if self.controls.contains_key(&key) {
@@ -432,11 +424,8 @@ impl LintControlSet {
             return Some(*severity);
         }
         self.declared
-            .iter()
-            .find(|(declared_subject, declared_id, _, _)| {
-                declared_subject == subject && declared_id == id
-            })
-            .map(|(_, _, severity, _)| *severity)
+            .get(&(subject.clone(), id.clone()))
+            .map(|(severity, _)| *severity)
     }
 }
 
