@@ -109,22 +109,47 @@ impl CodecVersion {
         kind.declared_version()
     }
 
-    /// Admits exactly the declared version of one codec; every other version is refused under
-    /// `codec-unsupported-version` rather than substituted, upgraded, downgraded, or inferred
-    /// (`GNT-42.1-versioned-codec-contract`).
-    pub fn admit(kind: CodecKind, version: u16) -> Result<Self, CodecError> {
-        if version == DECLARED_CODEC_VERSION {
-            Ok(Self { kind, version })
-        } else {
-            Err(CodecError::new(
+    /// Admits exactly one declared codec identity of `GNT-42.1-versioned-codec-contract`.
+    ///
+    /// The canonical identity spelling is `std.codec::<module>@<version>`. An identity naming an
+    /// undeclared codec or an undeclared version is refused under `codec-unsupported-version`,
+    /// naming the observed spelling and the declared identity, or the declared set when no
+    /// declared codec is named, rather than substituted, upgraded, downgraded, inferred, or
+    /// approximated.
+    pub fn admit(presented: &str) -> Result<Self, CodecError> {
+        let Some((module, version)) = presented.rsplit_once('@') else {
+            return Err(Self::undeclared_identity(presented));
+        };
+        let Some(kind) = CodecKind::from_module_name(module) else {
+            return Err(Self::undeclared_identity(presented));
+        };
+        let declared = kind.declared_version();
+        match version.parse::<u16>() {
+            Ok(version) if version == DECLARED_CODEC_VERSION => Ok(Self { kind, version }),
+            _ => Err(CodecError::new(
                 CodecDiagnosticCode::UnsupportedVersion,
                 format!(
-                    "`{}@{version}` is not the declared codec identity `{}`",
-                    kind.module_name(),
-                    kind.declared_version().canonical_identity()
+                    "`{presented}` is not the declared codec identity `{}`",
+                    declared.canonical_identity()
                 ),
-            ))
+            )),
         }
+    }
+
+    /// Publishes the refusal of one identity that names no declared codec
+    /// (`GNT-42.1-versioned-codec-contract`).
+    fn undeclared_identity(presented: &str) -> CodecError {
+        let declared = CodecKind::ALL
+            .iter()
+            .map(|kind| format!("`{}`", kind.declared_version().canonical_identity()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        CodecError::new(
+            CodecDiagnosticCode::UnsupportedVersion,
+            format!(
+                "`{presented}` names no declared codec identity; the declared identities are {declared}"
+            ),
+        )
     }
 
     /// Returns the canonical identity spelling `std.codec::<module>@<version>`

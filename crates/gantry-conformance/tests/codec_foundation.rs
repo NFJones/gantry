@@ -138,13 +138,14 @@ fn declared_versions_admit_exactly_the_declared_identity() {
             format!("{}@{}", kind.module_name(), DECLARED_CODEC_VERSION)
         );
         assert_eq!(
-            CodecVersion::admit(kind, DECLARED_CODEC_VERSION),
+            CodecVersion::admit(&declared.canonical_identity()),
             Ok(declared)
         );
         for version in [0_u16, 2_u16] {
-            let error = match CodecVersion::admit(kind, version) {
+            let presented = format!("{}@{version}", kind.module_name());
+            let error = match CodecVersion::admit(&presented) {
                 Ok(identity) => panic!(
-                    "@{version} must be refused, got `{}`",
+                    "`{presented}` must be refused, got `{}`",
                     identity.canonical_identity()
                 ),
                 Err(error) => error,
@@ -152,11 +153,7 @@ fn declared_versions_admit_exactly_the_declared_identity() {
             assert_eq!(error.code(), CodecDiagnosticCode::UnsupportedVersion);
             assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
             assert_eq!(error.category(), CodecCategory::Decode);
-            assert!(
-                error.detail().contains(&format!("@{}", version)),
-                "{}",
-                error.detail()
-            );
+            assert!(error.detail().contains(&presented), "{}", error.detail());
             assert!(
                 error.detail().contains(kind.module_name()),
                 "{}",
@@ -165,10 +162,31 @@ fn declared_versions_admit_exactly_the_declared_identity() {
         }
     }
     assert_eq!(
-        CodecVersion::admit(CodecKind::Hex, DECLARED_CODEC_VERSION)
-            .map(|identity| identity.canonical_identity()),
+        CodecVersion::admit("std.codec::hex@1").map(|identity| identity.canonical_identity()),
         Ok("std.codec::hex@1".to_owned())
     );
+    for presented in ["std.codec::other@1", "std.codec::hex", "not-an-identity"] {
+        let error = match CodecVersion::admit(presented) {
+            Ok(identity) => panic!(
+                "`{presented}` must be refused, got `{}`",
+                identity.canonical_identity()
+            ),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), CodecDiagnosticCode::UnsupportedVersion);
+        assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+        assert_eq!(error.category(), CodecCategory::Decode);
+        assert!(
+            error.detail().contains(presented),
+            "the refusal names the observed identity: {}",
+            error.detail()
+        );
+        assert!(
+            error.detail().contains("std.codec::base64"),
+            "the refusal names the declared set: {}",
+            error.detail()
+        );
+    }
 }
 
 #[test]
