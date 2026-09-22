@@ -469,6 +469,45 @@ fn std_test_surface_catalog_matches_the_live_surface() {
     }
 }
 
+#[test]
+fn testing_support_note_is_current() {
+    let note = fs::read_to_string(workspace_root().join("docs/testing-support.md"))
+        .unwrap_or_else(|error| panic!("docs/testing-support.md: {error}"));
+    for required in [
+        "`std.test`",
+        "`GNT-GP-TEST-001`",
+        "`protocol/catalogs/std-test-surface-v1.json`",
+        "`may_acquire_ambient_authority`",
+        "`declare_test_run`",
+        "`canonical_wire_name`",
+    ] {
+        assert!(note.contains(required), "the note names {required}");
+    }
+    for kind in TestKind::ALL {
+        let token = format!("`{}`", kind.wire_name());
+        assert!(note.contains(&token), "the note names the kind {token}");
+    }
+    for substitution in TestSubstitution::ALL {
+        let token = format!("`{}`", substitution.wire_name());
+        assert!(note.contains(&token), "the note names {token}");
+    }
+    for capability in TestHarnessCapability::ALL {
+        let token = format!("`{}`", capability.wire_name());
+        assert!(note.contains(&token), "the note names {token}");
+    }
+    for rule in TestExecutionRule::ALL {
+        let token = format!("`{}`", rule.wire_name());
+        assert!(note.contains(&token), "the note names {token}");
+    }
+    for non_claim in STD_TEST_NON_CLAIMS {
+        let token = format!("`{non_claim}`");
+        assert!(
+            note.contains(&token),
+            "the note names the non-claim {token}"
+        );
+    }
+}
+
 /// Returns the workspace root that holds the published protocol catalog.
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
