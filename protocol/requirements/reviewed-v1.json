@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "03cc7a6674d4b3581f0615170f7822249e79ee9f2efbb005cec72aabfd62d09d",
+  "specification_sha256": "d4e95d9ccf006dc37918a492a0d846016074c0c600940ba11c991b49ebfea685",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16551,
+      "end_line": 16559,
       "rationale": null
     }
   ],
@@ -43950,15 +43950,15 @@
     {
       "id": "GNT-47.10-filesystem-declared-limits",
       "span_start_line": 16516,
-      "span_end_line": 16551,
+      "span_end_line": 16559,
       "anchor_line": 16517,
       "body_start_line": 16518,
-      "body_end_line": 16551,
+      "body_end_line": 16559,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16518,
-          "end_line": 16551,
+          "end_line": 16559,
           "profiles": [
             "analyzer"
           ],

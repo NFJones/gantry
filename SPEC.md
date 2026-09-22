@@ -16518,7 +16518,8 @@ claims no performance, storage layout, or physical representation.
 
 **[GNT-47.10-filesystem-declared-limits] Filesystem declared limits.** This clause publishes the
 quantitative limits this section declares, so that no reader infers a bound this section does not
-publish. Exactly three quantitative facts of this section are declared as limits or counts: a path
+publish. Exactly three quantitative bounds on the values of this section and on the work one
+operation may do are declared: a path
 value declares at least one and at most `FS_PATH_SEGMENT_BOUND` segments, the declared bound of
 `GNT-47.2-filesystem-path-values`, which is `256`; a read, a write, and a seek each consume exactly
 one admitted request of `GNT-45.1-bounded-one-call-io-contract`, the declared count of
@@ -16529,6 +16530,13 @@ declared limit names the limit and the value observed against it, exactly as
 `GNT-47.2-filesystem-path-values` declares of a segment count outside its range, and this clause
 publishes no refusal of its own: a refusal a declared limit produced is never published as a
 refusal an implementation produced, and no refusal of another clause becomes a refusal of this one.
+Identity, uniqueness, and closed-vocabulary counts are not limits in this clause's sense: the single
+declared generation and the single declared owner generation of
+`GNT-47.5-filesystem-resource-state`, the single declared outcome of
+`GNT-47.9-filesystem-replacement`, the single recovery class each declared action states of
+`GNT-47.3-filesystem-action-values`, and the closed module, action, operation, and diagnostic sets
+of this section are identity or vocabulary facts, and they bound neither the cardinality of a value
+nor the work one operation may do.
 
 No other quantitative limit is declared here, and this clause's silence is not a limit: this
 section declares no limit on traversal entries, on entry-name length beyond the declared segment
@@ -16541,8 +16549,8 @@ if at all, only by a clause that publishes that bound - such as
 `GNT-28.5-closed-quota-families-and-owners` and `GNT-28.6-bounded-renewal-and-exhaustion` for
 charges and quotas - or by the runtime or host that owns it. A bound a host, a platform, an adapter,
 a file system, or a runtime enforces is not a declared limit of this section and MUST NOT be
-presented as one, published as a portable diagnostic, or relied on as a portable fact: a portable
-program is admitted and refused by the declared limits above alone.
+presented as one, published as a portable diagnostic, or relied on as a portable fact: no
+host-enforced bound participates in admitting or refusing a portable program.
 
 This clause publishes the declared limit set only: it publishes no quota, charge, reservation,
 retention fence, reclamation rule, or exhaustion behaviour, no enforcement point or admission

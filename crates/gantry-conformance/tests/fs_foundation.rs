@@ -105,6 +105,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.7-filesystem-action-grants",
                 "GNT-47.8-filesystem-link-policy",
                 "GNT-47.9-filesystem-replacement",
+                "GNT-47.10-filesystem-declared-limits",
             ],
             "std.fs::path" => &[
                 "GNT-47.0-filesystem-foundation-scope",
@@ -890,9 +891,38 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
     assert_eq!(FS_PATH_SEGMENT_BOUND, 256);
     assert_eq!(FS_RESOLUTION_COUNT, 1);
 
-    // The section's declared quantitative facts are exactly the numeric constants the model
-    // exports, so a third numeric constant fails this lane until its clause publishes it.
+    // Every public constant of the model module is declared here, so a bound added in any spelling
+    // fails this lane until the clause that publishes it lands.
     let model = read_text(&workspace_root().join("crates/gantry-ir/src/fs.rs"));
+    let mut constants = Vec::new();
+    for line in model.lines() {
+        let Some(rest) = line.trim().strip_prefix("pub const ") else {
+            continue;
+        };
+        if rest.starts_with("fn ") {
+            continue;
+        }
+        constants.push(rest.split(':').next().unwrap_or_default().to_owned());
+    }
+    constants.sort_unstable();
+    assert_eq!(
+        constants,
+        [
+            "ALL",
+            "ALL",
+            "ALL",
+            "FS_CLAUSES",
+            "FS_ITEMS",
+            "FS_PATH_SEGMENT_BOUND",
+            "FS_REPLACEMENT_ACTION",
+            "FS_RESOLUTION_COUNT",
+            "FS_SURFACE_MODES",
+            "FS_SURFACE_TARGETS",
+        ]
+        .map(str::to_owned)
+    );
+
+    // The numeric subset of those constants is exactly the two declared limits.
     let mut declared = Vec::new();
     for line in model.lines() {
         let Some(rest) = line.strip_prefix("pub const FS_") else {
@@ -928,7 +958,8 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
     }
     for rule in [
         "This clause publishes the quantitative limits this section declares, so that no reader infers a bound this section does not publish",
-        "Exactly three quantitative facts of this section are declared as limits or counts",
+        "Exactly three quantitative bounds on the values of this section and on the work one operation may do are declared",
+        "Identity, uniqueness, and closed-vocabulary counts are not limits in this clause's sense",
         "at most `FS_PATH_SEGMENT_BOUND` segments, the declared bound of `GNT-47.2-filesystem-path-values`, which is `256`",
         "a read, a write, and a seek each consume exactly one admitted request of `GNT-45.1-bounded-one-call-io-contract`, the declared count of `GNT-47.4-filesystem-resource-operations`",
         "whose declared quantity is bounded by that contract's `IO_REQUEST_OCTET_BOUND` alone",
@@ -938,6 +969,7 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
         "this section declares no limit on traversal entries",
         "a quantity this clause does not declare is unbounded by this section",
         "MUST NOT be presented as one, published as a portable diagnostic, or relied on as a portable fact",
+        "no host-enforced bound participates in admitting or refusing a portable program",
     ] {
         assert!(
             specification.contains(rule),

@@ -73,6 +73,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.7-filesystem-action-grants",
             "GNT-47.8-filesystem-link-policy",
             "GNT-47.9-filesystem-replacement",
+            "GNT-47.10-filesystem-declared-limits",
         ],
     },
     FsItemRow {

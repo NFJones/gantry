@@ -1,6 +1,6 @@
 {
  "format": "gantry.tokio-executor-evidence/v1",
- "specification_sha256": "03cc7a6674d4b3581f0615170f7822249e79ee9f2efbb005cec72aabfd62d09d",
+ "specification_sha256": "d4e95d9ccf006dc37918a492a0d846016074c0c600940ba11c991b49ebfea685",
  "issue": "GNT-ASYNC-TOKIO-001",
  "requirements": [
   {
