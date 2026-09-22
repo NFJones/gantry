@@ -156,7 +156,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     {
         return Err("foundation gate does not bind the active specification".to_owned());
     }
-    validate_digest(root, &manifest.prerequisite_source)?;
+    validate_tracked_source(root, &manifest.prerequisite_source)?;
 
     ordered_unique(manifest.verifies.iter().map(String::as_str), "verifies")?;
     if manifest.verifies.len() < EXPECTED_VERIFIES_FLOOR {
@@ -275,6 +275,24 @@ fn is_commit(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+/// Validates one bound gate source: it must be committed in `git` and its bytes must match.
+///
+/// A source that is not tracked — for example a path under an ignored directory that merely
+/// happens to exist in this workspace — is refused, because the record could not then be
+/// reproduced from repository bytes.
+fn validate_tracked_source(root: &Path, artifact: &FileDigest) -> Result<(), String> {
+    let tracked = Command::new("git")
+        .current_dir(root)
+        .args(["ls-files", "--error-unmatch", &artifact.path])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|error| format!("could not inspect tracked gate sources: {error}"))?;
+    if !tracked.success() {
+        return Err(format!("gate source is not committed: {}", artifact.path));
+    }
+    validate_digest(root, artifact)
 }
 
 fn validate_digest(root: &Path, artifact: &FileDigest) -> Result<(), String> {

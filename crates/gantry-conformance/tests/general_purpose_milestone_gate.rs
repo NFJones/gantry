@@ -42,26 +42,85 @@ const EXPECTED_VERIFIES_FLOOR: usize = 5;
 
 const EXPECTED_EVIDENCE_FLOOR: usize = 4;
 
-const EXPECTED_ACCEPTANCE: &[(&str, &str)] = &[
-    ("artifact-reproducibility-and-publication-set", "passed"),
-    ("clean-and-incremental-compilation-equivalence", "passed"),
-    ("deterministic-library-vectors", "passed"),
-    ("package-workspace-and-lockfile-resolution", "passed"),
+const EXPECTED_ACCEPTANCE: &[(&str, &str, &str, Option<&str>)] = &[
+    (
+        "artifact-reproducibility-and-publication-set",
+        "passed",
+        "protocol/publication/verification-v1.json",
+        None,
+    ),
+    (
+        "clean-and-incremental-compilation-equivalence",
+        "passed",
+        "crates/gantry-conformance/tests/toolchain_bounded.rs",
+        None,
+    ),
+    (
+        "deterministic-library-vectors",
+        "passed",
+        "crates/gantry-conformance/tests/scalar_foundation.rs",
+        None,
+    ),
+    (
+        "package-workspace-and-lockfile-resolution",
+        "passed",
+        "crates/gantry-conformance/tests/workspace_lockfile.rs",
+        None,
+    ),
     (
         "parallel-separate-compilation-and-cross-target-arrangements",
         "qualified",
+        "protocol/catalogs/general-purpose-preregistration-v1.json",
+        Some("000761b0 GNT-GP-TOOLING-RUNTIME-001; 6503c841 GNT-GP-LINK-DEFER-001"),
     ),
-    ("prerequisite-provenance-authentication", "passed"),
-    ("registry-authentication-and-round-trips", "passed"),
-    ("requirement-mapped-evidence", "passed"),
-    ("runtime-execution-and-durable-replay", "qualified"),
-    ("semantic-resource-bounds", "passed"),
+    (
+        "prerequisite-provenance-authentication",
+        "passed",
+        "protocol/catalogs/general-purpose-preregistration-v1.json",
+        None,
+    ),
+    (
+        "registry-authentication-and-round-trips",
+        "passed",
+        "crates/gantry-conformance/tests/registry_trust.rs",
+        None,
+    ),
+    (
+        "requirement-mapped-evidence",
+        "passed",
+        "protocol/requirements/reviewed-v1.json",
+        None,
+    ),
+    (
+        "runtime-execution-and-durable-replay",
+        "qualified",
+        "protocol/catalogs/general-purpose-preregistration-v1.json",
+        Some("f3667613 GNT-GP-TEST-RUNTIME-001"),
+    ),
+    (
+        "semantic-resource-bounds",
+        "passed",
+        "crates/gantry-conformance/tests/resource_accounting.rs",
+        None,
+    ),
     (
         "standard-library-hierarchy-and-interface-identity",
         "passed",
+        "protocol/catalogs/stdlib-hierarchy-v1.json",
+        None,
     ),
-    ("testing-support-surface", "passed"),
-    ("whole-application-benchmark-thresholds", "qualified"),
+    (
+        "testing-support-surface",
+        "passed",
+        "protocol/catalogs/std-test-surface-v1.json",
+        None,
+    ),
+    (
+        "whole-application-benchmark-thresholds",
+        "qualified",
+        "protocol/catalogs/general-purpose-preregistration-v1.json",
+        Some("f4d5e02c GNT-GP-BENCH-001"),
+    ),
 ];
 
 const EXPECTED_PHASE: &str = "phase-1-deterministic-language";
@@ -201,6 +260,14 @@ fn milestone_gate_rejects_malformed_missing_cyclic_stale_and_overclaiming_record
     reclassified_acceptance.acceptance[0].owner = Some("someone".to_owned());
     assert!(validate_manifest(&root, &reclassified_acceptance).is_err());
 
+    let mut substituted_owner = manifest.clone();
+    substituted_owner.acceptance[4].owner = Some("someone".to_owned());
+    assert!(validate_manifest(&root, &substituted_owner).is_err());
+
+    let mut substituted_evidence = manifest.clone();
+    substituted_evidence.acceptance[0].evidence = "SPEC.md".to_owned();
+    assert!(validate_manifest(&root, &substituted_evidence).is_err());
+
     let mut overclaim = manifest.clone();
     overclaim.claim.advertises_general_purpose = true;
     assert!(validate_manifest(&root, &overclaim).is_err());
@@ -302,12 +369,26 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     )?;
     let expected_acceptance = EXPECTED_ACCEPTANCE
         .iter()
-        .map(|(item, disposition)| ((*item).to_owned(), (*disposition).to_owned()))
+        .map(|(item, disposition, evidence, owner)| {
+            (
+                (*item).to_owned(),
+                (*disposition).to_owned(),
+                (*evidence).to_owned(),
+                owner.map(str::to_owned),
+            )
+        })
         .collect::<Vec<_>>();
     let actual_acceptance = manifest
         .acceptance
         .iter()
-        .map(|acceptance| (acceptance.item.clone(), acceptance.disposition.clone()))
+        .map(|acceptance| {
+            (
+                acceptance.item.clone(),
+                acceptance.disposition.clone(),
+                acceptance.evidence.clone(),
+                acceptance.owner.clone(),
+            )
+        })
         .collect::<Vec<_>>();
     if actual_acceptance != expected_acceptance {
         return Err("milestone gate acceptance closure differs".to_owned());

@@ -7,8 +7,8 @@
   "sha256": "481f9ccaa079589dbeb021277b8a02f8fc5f84906fee04280585481b669eaaa0"
  },
  "prerequisite_source": {
-  "path": "docs/reference/general-purpose-refactor-issue-plan.md",
-  "sha256": "70dd715a10a3c94a6ba71d03222ff8c2aa31685ce5baa8021013b868828e53b8"
+  "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
+  "sha256": "f8df87ee67a8b3f1f37f409e8857d11da6d4d46cd9d3850e5cc45638a0a653f5"
  },
  "verifies": [
   "artifact-digest-integrity",
