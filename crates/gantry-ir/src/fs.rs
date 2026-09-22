@@ -531,9 +531,6 @@ impl FsAction {
 /// The declared replacement action of `GNT-47.9-filesystem-replacement`.
 pub const FS_REPLACEMENT_ACTION: FsAction = FsAction::Replace;
 
-/// Whether the declared replacement publishes a staging spelling: it declares none.
-pub const FS_REPLACEMENT_DECLARES_STAGING: bool = false;
-
 /// One declared resource operation of `GNT-47.4-filesystem-resource-operations`.
 ///
 /// Each operation names one path value of `GNT-47.2-filesystem-path-values` and the grant the

@@ -9,12 +9,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_REPLACEMENT_ACTION,
-    FS_REPLACEMENT_DECLARES_STAGING, FS_RESOLUTION_COUNT, FS_SURFACE_MODES, FS_SURFACE_TARGETS,
-    FsAction, FsDiagnosticCode, FsPath, FsResourceOperation, IoOperation, NameClass, PackageFamily,
-    Prelude, ResourceCarrier, ResourceLifetimeState, StabilityTier, StdGraph, StdItem, StdPackage,
-    StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface, fs_traversal_order,
-    generated::RecoveryClass,
+    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_REPLACEMENT_ACTION, FS_RESOLUTION_COUNT,
+    FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsPath, FsResourceOperation,
+    IoOperation, NameClass, PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState,
+    StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface,
+    declare_fs_surface, fs_traversal_order, generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -843,11 +842,17 @@ fn fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies() {
 fn fs_replacement_publishes_no_staging_or_partial_object() {
     assert_eq!(FS_REPLACEMENT_ACTION, FsAction::Replace);
     assert_eq!(FS_REPLACEMENT_ACTION.wire_name(), "replace");
-    let staging_declared = FS_REPLACEMENT_DECLARES_STAGING;
-    assert!(
-        !staging_declared,
-        "the declared replacement publishes no staging spelling"
+    assert_eq!(
+        FsAction::ALL,
+        [
+            FsAction::Create,
+            FsAction::Read,
+            FsAction::Replace,
+            FsAction::Remove
+        ],
+        "the action vocabulary is still closed over exactly its four declared members"
     );
+    assert!(FsAction::ALL.contains(&FS_REPLACEMENT_ACTION));
     assert!(FS_REPLACEMENT_ACTION.declares_content_mutation());
 
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
@@ -862,7 +867,7 @@ fn fs_replacement_publishes_no_staging_or_partial_object() {
         "A replacement names exactly one path value of `GNT-47.2-filesystem-path-values` and the grant the caller presents",
         "it has exactly one declared outcome for the object the path value names: the complete declared object replaces the complete named object",
         "This clause publishes no intermediate, partial, spliced, or staged outcome, no mixed old and new content, no partially replaced object, no resume, and no rollback of the replaced object",
-        "a replacement that cannot complete is refused rather than partially published",
+        "a replacement that the implementation refuses publishes the declared refusal rather than a partially replaced object",
         "A replacement is one declared operation and never a declared sequence of them",
         "this clause publishes no staging, temporary, backup, sibling, or intermediate path spelling, no renaming step, no multi-step order, and no shell or host convention for one",
         "The read-only grant rule of `GNT-47.7-filesystem-action-grants` refuses a replacement presented under a read-only grant",

@@ -16495,8 +16495,8 @@ exactly one declared outcome for the object the path value names: the complete d
 replaces the complete named object. This clause publishes no intermediate, partial, spliced, or
 staged outcome, no mixed old and new content, no partially replaced object, no resume, and no
 rollback of the replaced object, and it declares no diagnostic of
-`GNT-47.0-filesystem-foundation-scope` for such an outcome: a replacement that cannot complete is
-refused rather than partially published.
+`GNT-47.0-filesystem-foundation-scope` for such an outcome: a replacement that the implementation
+refuses publishes the declared refusal rather than a partially replaced object.
 
 A replacement is one declared operation and never a declared sequence of them: this clause publishes
 no staging, temporary, backup, sibling, or intermediate path spelling, no renaming step, no
@@ -16504,7 +16504,7 @@ multi-step order, and no shell or host convention for one, and a name that is no
 `GNT-47.2-filesystem-path-values` is never authority here. The read-only grant rule of
 `GNT-47.7-filesystem-action-grants` refuses a replacement presented under a read-only grant, the
 single-resolution and link rules of `GNT-47.8-filesystem-link-policy` apply to it unchanged, and a
-traversal of `GNT-47.6-filesystem-traversal` publishes nothing about it.
+traversal of `GNT-47.6-filesystem-traversal` publishes nothing about the replacement.
 
 This clause publishes the replacement contract only: it publishes no durability, commit point,
 ordering, flush or sync requirement, journal, recovery, reclamation, or crash behavior, no
