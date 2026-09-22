@@ -418,9 +418,9 @@ pub use stdlib::{
     PreludeBinding, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
     SelectedInstance, StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation,
     StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest, StdManifestEntry,
-    StdName, StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
-    StdlibNonClaimAssertion, canonical_pure_hierarchy, check_layout_identity,
-    check_stdlib_non_claims, require_applicable,
+    StdName, StdPackage, StdPathInspection, StdPresentation, StdlibDiagnosticCode, StdlibError,
+    StdlibNonClaim, StdlibNonClaimAssertion, canonical_pure_hierarchy, check_layout_identity,
+    check_stdlib_non_claims, inspect_presentation, require_applicable,
 };
 pub use target::{
     AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,

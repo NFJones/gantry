@@ -16,11 +16,12 @@ use gantry::ir::{
     NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude, Relocation, STDLIB_CLAUSES,
     STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance, SemanticMode, StabilityTier,
     StabilityTransition, StdContractVersion, StdDeprecation, StdGraph, StdItem, StdName,
-    StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim, StdlibNonClaimAssertion,
-    TargetKind, canonical_codec_hierarchy, canonical_collections_hierarchy,
-    canonical_crypto_hierarchy, canonical_data_hierarchy, canonical_pure_hierarchy,
-    canonical_std_hierarchy, check_layout_identity, check_stdlib_non_claims, hex_decode,
-    hex_encode, require_applicable, sha256_digest,
+    StdPackage, StdPresentation, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
+    StdlibNonClaimAssertion, TargetKind, canonical_codec_hierarchy,
+    canonical_collections_hierarchy, canonical_crypto_hierarchy, canonical_data_hierarchy,
+    canonical_pure_hierarchy, canonical_std_hierarchy, check_layout_identity,
+    check_stdlib_non_claims, hex_decode, hex_encode, inspect_presentation, require_applicable,
+    sha256_digest,
 };
 
 const CORE: &str = "std.core";
@@ -2203,4 +2204,86 @@ fn sorted_spellings(mut spellings: Vec<&str>) -> Vec<&str> {
     deduped.dedup();
     assert_eq!(spellings, deduped, "each spelling appears once");
     spellings
+}
+
+#[test]
+fn presented_paths_report_defining_identities_and_refuse_layout() {
+    let graph = graph_with(&[package(
+        PackageFamily::Core,
+        StabilityTier::Stable,
+        &[],
+        &[OPTION_ITEM],
+    )]);
+    let facades = [FacadeReexport::new("std.io::option", CORE, OPTION_ITEM)
+        .unwrap_or_else(|error| panic!("the fixture facade is valid: {error}"))];
+
+    let defining = inspect_presentation(&graph, &facades, CORE)
+        .unwrap_or_else(|error| panic!("the package presentation is inspected: {error}"));
+    assert_eq!(defining.presentation(), StdPresentation::Defining);
+    assert_eq!(defining.defining_package(), CORE);
+    assert_eq!(defining.facade_item(), None);
+    assert_eq!(defining.defining_identity(), CORE);
+
+    let convenience = inspect_presentation(&graph, &facades, "std.io::option")
+        .unwrap_or_else(|error| panic!("the facade presentation is inspected: {error}"));
+    assert_eq!(convenience.presentation(), StdPresentation::Facade);
+    assert_eq!(convenience.defining_package(), CORE);
+    assert_eq!(convenience.facade_item(), Some(OPTION_ITEM));
+    assert_eq!(convenience.defining_identity(), "std.core#std.core::option");
+    assert_ne!(convenience.defining_identity(), convenience.presented());
+
+    let dotted = inspect_presentation(&graph, &facades, "std.io.option")
+        .unwrap_or_else(|error| panic!("the dotted facade presentation is inspected: {error}"));
+    assert_eq!(dotted.presentation(), StdPresentation::Facade);
+    assert_eq!(dotted.defining_package(), CORE);
+    assert_eq!(dotted.defining_identity(), convenience.defining_identity());
+
+    for presented in [
+        "crates/gantry-ir/src/stdlib.rs",
+        "src/lib.rs",
+        "docs/testing-support.md",
+    ] {
+        let error = refuse(
+            inspect_presentation(&graph, &facades, presented),
+            "physical repository layout",
+        );
+        assert_eq!(error.code(), StdlibDiagnosticCode::LayoutDerivedIdentity);
+    }
+    for presented in ["", "   "] {
+        let error = refuse(
+            inspect_presentation(&graph, &facades, presented),
+            "an empty presentation",
+        );
+        assert_eq!(error.code(), StdlibDiagnosticCode::InvalidPackageName);
+    }
+    let error = refuse(
+        inspect_presentation(&graph, &facades, "std.net::socket"),
+        "an undeclared presentation",
+    );
+    assert_eq!(error.code(), StdlibDiagnosticCode::UnknownEdge);
+}
+
+#[test]
+fn facades_without_a_declared_exported_defining_side_are_refused() {
+    let graph = graph_with(&[package(
+        PackageFamily::Core,
+        StabilityTier::Stable,
+        &[],
+        &[OPTION_ITEM],
+    )]);
+    let unexported = FacadeReexport::new("std.io::absent", CORE, "std.core::absent")
+        .unwrap_or_else(|error| panic!("the fixture facade is valid: {error}"));
+    let error = refuse(
+        inspect_presentation(&graph, &[unexported], "std.io::absent"),
+        "an unexported defining item",
+    );
+    assert_eq!(error.code(), StdlibDiagnosticCode::FacadeIdentityLoss);
+
+    let unknown = FacadeReexport::new("std.net::socket", "std.net", "std.net::socket")
+        .unwrap_or_else(|error| panic!("the fixture facade is valid: {error}"));
+    let error = refuse(
+        inspect_presentation(&graph, &[unknown], "std.net::socket"),
+        "an undeclared defining package",
+    );
+    assert_eq!(error.code(), StdlibDiagnosticCode::UnknownEdge);
 }

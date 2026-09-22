@@ -1033,6 +1033,129 @@ impl Prelude {
     }
 }
 
+/// How one presented path names a standard-library identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StdPresentation {
+    /// The presentation names a declared package itself.
+    Defining,
+    /// The presentation names a declared convenience facade re-export.
+    Facade,
+}
+
+impl StdPresentation {
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Defining => "defining",
+            Self::Facade => "facade",
+        }
+    }
+}
+
+/// The declared identity one presented path carries, as tooling reports it.
+///
+/// A facade presentation never erases the defining package: `defining_identity` always names the
+/// defining side, so a tool can show the convenience path and the defining identity side by side,
+/// and physical repository layout is never reported as an identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StdPathInspection {
+    presented: String,
+    presentation: StdPresentation,
+    defining_package: String,
+    facade_item: Option<String>,
+}
+
+impl StdPathInspection {
+    /// Returns the presentation that was inspected.
+    #[must_use]
+    pub fn presented(&self) -> &str {
+        &self.presented
+    }
+
+    /// Returns how the presentation names its identity.
+    #[must_use]
+    pub const fn presentation(&self) -> StdPresentation {
+        self.presentation
+    }
+
+    /// Returns the defining package identity, never a facade path.
+    #[must_use]
+    pub fn defining_package(&self) -> &str {
+        &self.defining_package
+    }
+
+    /// Returns the re-exported item a facade presentation names, if it names one.
+    #[must_use]
+    pub fn facade_item(&self) -> Option<&str> {
+        self.facade_item.as_deref()
+    }
+
+    /// Returns the preserved defining identity of the presentation.
+    #[must_use]
+    pub fn defining_identity(&self) -> String {
+        match &self.facade_item {
+            Some(item) => format!("{}#{item}", self.defining_package),
+            None => self.defining_package.clone(),
+        }
+    }
+}
+
+/// Inspects one presented path against the declared hierarchy.
+///
+/// A presentation may be a declared package name (`std.core`) or a declared convenience facade
+/// path (`std.io::option`); `::` and `.` are the same separator, as everywhere else in this
+/// module. A facade presentation is reported with the defining package and re-exported item it
+/// carries and is never reported as an identity of its own, and its defining side must be declared
+/// and exported by the graph. Physical repository layout — a presentation containing a path
+/// separator or ending in `.rs` — is refused rather than reinterpreted as an identity, because
+/// layout is nonsemantic; an empty presentation and a presentation that names nothing declared are
+/// refused too.
+pub fn inspect_presentation(
+    graph: &StdGraph,
+    facades: &[FacadeReexport],
+    presented: &str,
+) -> Result<StdPathInspection, StdlibError> {
+    let named = presented.trim();
+    if named.is_empty() {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidPackageName,
+            "an empty presentation names no standard identity",
+        ));
+    }
+    if named.contains('/') || named.contains('\\') || named.ends_with(".rs") {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::LayoutDerivedIdentity,
+            format!("`{presented}` names physical repository layout, not a standard identity"),
+        ));
+    }
+    let canonical = canonical_std_path(named);
+    if let Some(facade) = facades
+        .iter()
+        .find(|facade| canonical_std_path(facade.path()) == canonical)
+    {
+        facade.admit(graph, &facade.defining_identity())?;
+        return Ok(StdPathInspection {
+            presented: named.to_owned(),
+            presentation: StdPresentation::Facade,
+            defining_package: facade.defining_package().to_owned(),
+            facade_item: Some(facade.item().to_owned()),
+        });
+    }
+    if graph.package(&canonical).is_some() {
+        return Ok(StdPathInspection {
+            presented: named.to_owned(),
+            presentation: StdPresentation::Defining,
+            defining_package: canonical,
+            facade_item: None,
+        });
+    }
+    Err(StdlibError::new(
+        StdlibDiagnosticCode::UnknownEdge,
+        format!("`{presented}` names no declared standard package or facade"),
+    ))
+}
+
 /// One declared facade re-export of `GNT-34.5-facade-and-reexport-identity`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FacadeReexport {
