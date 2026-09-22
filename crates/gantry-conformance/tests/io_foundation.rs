@@ -1106,3 +1106,106 @@ fn io_backpressure_is_closed_and_settles_as_not_started() {
         None
     );
 }
+
+#[test]
+fn io_note_worked_traces_match_the_model() {
+    let note = read_text(&workspace_root().join("docs/io-foundation.md"));
+    let flat = flatten(&note);
+
+    for needle in [
+        "`IoRequest::read(8)` admits one eight-octet read; an outcome that advanced 3 octets without observing the end of its stream derives `short-read`.",
+        "The same admitted read whose facts advanced 0 octets and observed the end of its stream derives `eof`, because an observed end of stream takes precedence over `not-started`.",
+        "`IoRequest::write(8)` admits one eight-octet write; an outcome provided 8 octets that accepted 0 of them without completing derives `not-started`.",
+        "A blocked read bound to its admitted quantity derives `not-started` and publishes its `IoBackpressure::Read` witness through `IoOutcome::blocked`; the same fact presented for another quantity is refused under `io-outcome-request-mismatch`.",
+        "`IoRequest::seek(5)` with facts from 5 to 5 derives `not-started`, and with facts from 2 to 5 derives `committed-progress`.",
+        "`IoRequest::read(0)` and `IoRequest::read(1048577)` are both refused under `io-request-bound`; `IoRequest::admit_wire(\"seek-to\", 1)` is refused under `io-request-kind`.",
+    ] {
+        assert!(
+            flat.contains(needle),
+            "the note must publish the trace: {needle}"
+        );
+    }
+
+    let read = IoRequest::read(8).unwrap_or_else(|_| panic!("an eight-octet read is admissible"));
+    assert_eq!(
+        read.derive_progress(&IoOutcome::Read {
+            requested: 8,
+            advanced: 3,
+            ended: false,
+        }),
+        Ok(ProgressObservation::ShortRead)
+    );
+    assert_eq!(
+        read.derive_progress(&IoOutcome::Read {
+            requested: 8,
+            advanced: 0,
+            ended: true,
+        }),
+        Ok(ProgressObservation::Eof)
+    );
+    let write =
+        IoRequest::write(8).unwrap_or_else(|_| panic!("an eight-octet write is admissible"));
+    assert_eq!(
+        write.derive_progress(&IoOutcome::Write {
+            provided: 8,
+            accepted: 0,
+        }),
+        Ok(ProgressObservation::NotStarted)
+    );
+    let blocked = IoOutcome::Blocked {
+        operation: IoBackpressure::Read,
+        quantity: 8,
+    };
+    assert_eq!(blocked.blocked(), Some(IoBackpressure::Read));
+    assert_eq!(
+        read.derive_progress(&blocked),
+        Ok(ProgressObservation::NotStarted)
+    );
+    let shorter = IoRequest::read(4).unwrap_or_else(|_| panic!("a four-octet read is admissible"));
+    assert_eq!(
+        shorter.derive_progress(&blocked),
+        Err(IoError::RequestMismatch {
+            operation: IoOperation::Read,
+            fact: "requested",
+        })
+    );
+    let seek = IoRequest::seek(5);
+    assert_eq!(
+        seek.derive_progress(&IoOutcome::Seek {
+            target: 5,
+            from: 5,
+            to: 5,
+        }),
+        Ok(ProgressObservation::NotStarted)
+    );
+    assert_eq!(
+        seek.derive_progress(&IoOutcome::Seek {
+            target: 5,
+            from: 2,
+            to: 5,
+        }),
+        Ok(ProgressObservation::CommittedProgress)
+    );
+    assert_eq!(
+        IoRequest::read(0).err(),
+        Some(IoError::RequestBound {
+            operation: IoOperation::Read,
+            observed: 0,
+            maximum: IO_REQUEST_OCTET_BOUND,
+        })
+    );
+    assert_eq!(
+        IoRequest::read(IO_REQUEST_OCTET_BOUND + 1).err(),
+        Some(IoError::RequestBound {
+            operation: IoOperation::Read,
+            observed: IO_REQUEST_OCTET_BOUND + 1,
+            maximum: IO_REQUEST_OCTET_BOUND,
+        })
+    );
+    assert_eq!(
+        IoRequest::admit_wire("seek-to", 1).err(),
+        Some(IoError::RequestKind {
+            observed: "seek-to".to_owned(),
+        })
+    );
+}

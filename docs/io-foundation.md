@@ -83,6 +83,25 @@ refused under `io-outcome-request-mismatch`, and a blocked call publishes nothin
 `not-started` observation and its witness: chunk payloads, buffer capacity, initialized length,
 carried remainders, and streaming contracts remain undeclared.
 
+## Worked traces of the declared contract
+
+Each trace below is a model call, not a host interaction: `crates/gantry-ir/src/io.rs` decides it,
+and `crates/gantry-conformance/tests/io_foundation.rs` pins both the call and this description.
+
+- `IoRequest::read(8)` admits one eight-octet read; an outcome that advanced 3 octets without
+  observing the end of its stream derives `short-read`.
+- The same admitted read whose facts advanced 0 octets and observed the end of its stream derives
+  `eof`, because an observed end of stream takes precedence over `not-started`.
+- `IoRequest::write(8)` admits one eight-octet write; an outcome provided 8 octets that accepted
+  0 of them without completing derives `not-started`.
+- A blocked read bound to its admitted quantity derives `not-started` and publishes its
+  `IoBackpressure::Read` witness through `IoOutcome::blocked`; the same fact presented for another
+  quantity is refused under `io-outcome-request-mismatch`.
+- `IoRequest::seek(5)` with facts from 5 to 5 derives `not-started`, and with facts from 2 to 5
+  derives `committed-progress`.
+- `IoRequest::read(0)` and `IoRequest::read(1048577)` are both refused under `io-request-bound`;
+  `IoRequest::admit_wire("seek-to", 1)` is refused under `io-request-kind`.
+
 ## What this surface does not claim
 
 - It admits no streaming, incremental, chunked, or resumable contract beyond the backpressure
