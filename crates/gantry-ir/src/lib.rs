@@ -354,8 +354,9 @@ pub use data::{
 pub use crypto::{
     AlgorithmIdentity, CRYPTO_CLAUSES, CRYPTO_ITEMS, CryptoDiagnosticCode, CryptoError,
     CryptoItemRow, CryptoModule, CryptoRefusalCategory, DECLARED_ALGORITHM_VERSION,
-    SHA256_DIGEST_OCTET_LENGTH, SHA256_INPUT_OCTET_BOUND, Sha256Digest, canonical_crypto_hierarchy,
-    declare_crypto_surface, sha256_digest,
+    ED25519_MESSAGE_OCTET_BOUND, ED25519_PUBLIC_KEY_OCTET_LENGTH, ED25519_SIGNATURE_OCTET_LENGTH,
+    Ed25519Verdict, SHA256_DIGEST_OCTET_LENGTH, SHA256_INPUT_OCTET_BOUND, Sha256Digest,
+    canonical_crypto_hierarchy, declare_crypto_surface, ed25519_verify, sha256_digest,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,

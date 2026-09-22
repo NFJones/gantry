@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "00e354b876055ea059b23906e7f347aec6dd1c3b7505202b4478c5cde179d284",
+  "specification_sha256": "f85623052e3ff665d4ba643b40c63f124b72fd209d4632a0280ae59779e9dc33",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15781,
+      "end_line": 15785,
       "rationale": null
     }
   ],
@@ -43026,6 +43026,48 @@
                 "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_digests_match_the_declared_vectors",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_input_bound_is_declared_and_enforced",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_digest_is_pure_and_canonical"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.3-signature-verification",
+      "span_start_line": 15782,
+      "span_end_line": 15785,
+      "anchor_line": 15783,
+      "body_start_line": 15784,
+      "body_end_line": 15785,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15784,
+          "end_line": 15785,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_clauses_are_published",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_verifies_the_declared_vectors",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_refuses_tampered_presentations",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_refusals_are_declared_and_indexed"
               ],
               "rationale": null
             }

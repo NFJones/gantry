@@ -14,9 +14,10 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     AlgorithmIdentity, CRYPTO_CLAUSES, CRYPTO_ITEMS, CryptoDiagnosticCode, CryptoError,
-    CryptoModule, CryptoRefusalCategory, DECLARED_ALGORITHM_VERSION, NameClass, PackageFamily,
-    SHA256_DIGEST_OCTET_LENGTH, SHA256_INPUT_OCTET_BOUND, StabilityTier,
-    canonical_crypto_hierarchy, canonical_pure_hierarchy, sha256_digest,
+    CryptoModule, CryptoRefusalCategory, DECLARED_ALGORITHM_VERSION, ED25519_MESSAGE_OCTET_BOUND,
+    ED25519_PUBLIC_KEY_OCTET_LENGTH, ED25519_SIGNATURE_OCTET_LENGTH, Ed25519Verdict, NameClass,
+    PackageFamily, SHA256_DIGEST_OCTET_LENGTH, SHA256_INPUT_OCTET_BOUND, StabilityTier,
+    canonical_crypto_hierarchy, canonical_pure_hierarchy, ed25519_verify, sha256_digest,
 };
 
 fn workspace_root() -> PathBuf {
@@ -31,7 +32,7 @@ fn workspace_root() -> PathBuf {
 fn section_44_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(CRYPTO_CLAUSES.len(), 3);
+    assert_eq!(CRYPTO_CLAUSES.len(), 4);
     let mut prior = 0_usize;
     for clause in CRYPTO_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -91,7 +92,11 @@ fn section_44_clauses_are_published() {
             "the contract clause must name {term}"
         );
     }
-    let hashing = &spec[hashing_start..];
+    let signature_start = spec
+        .find(&format!("<a id=\"{}\"></a>", CRYPTO_CLAUSES[3]))
+        .unwrap_or_else(|| panic!("the signature-verification anchor is published"));
+    assert!(hashing_start < signature_start);
+    let hashing = &spec[hashing_start..signature_start];
     for term in [
         "`std.crypto::hash::sha256@1`",
         "`SHA256_INPUT_OCTET_BOUND`",
@@ -113,6 +118,36 @@ fn section_44_clauses_are_published() {
         assert!(
             hashing.contains(term),
             "the content-hashing clause must name {term}"
+        );
+    }
+    let signature = &spec[signature_start..];
+    for term in [
+        "`std.crypto::signature::ed25519@1`",
+        "`ED25519_PUBLIC_KEY_OCTET_LENGTH`",
+        "`ED25519_SIGNATURE_OCTET_LENGTH`",
+        "`ED25519_MESSAGE_OCTET_BOUND`",
+        "`ed25519_verify`",
+        "`Ed25519Verdict`",
+        "`accepted`",
+        "`refused`",
+        "`crypto-malformed-input`",
+        "`crypto-work-limit`",
+        "`2^255 - 19`",
+        "`a3785913ca4deb75abd841414d0a700098e879777940c78c73fe6f2bee6c0352`",
+        "`5866666666666666666666666666666666666666666666666666666666666666`",
+        "`edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010`",
+        "`0x6a09e667f3bcc908`",
+        "`0xbb67ae8584caa73b`",
+        "`0x428a2f98d728ae22`",
+        "`0x6c44198c4a475817`",
+        "`σ1(x) = ROTR19(x) ⊕ ROTR61(x) ⊕ SHR6(x)`",
+        "`[s]B = R + [k]A`",
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+        "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+    ] {
+        assert!(
+            signature.contains(term),
+            "the signature-verification clause must name {term}"
         );
     }
 }
@@ -147,7 +182,10 @@ fn crypto_surface_declares_the_two_modules() {
         expected,
         "the family declares exactly one module item per declared module"
     );
-    let expected_clauses: [&[&str]; 2] = [&CRYPTO_CLAUSES[..3], &CRYPTO_CLAUSES[..2]];
+    let expected_clauses: [&[&str]; 2] = [
+        &[CRYPTO_CLAUSES[0], CRYPTO_CLAUSES[1], CRYPTO_CLAUSES[2]],
+        &[CRYPTO_CLAUSES[0], CRYPTO_CLAUSES[1], CRYPTO_CLAUSES[3]],
+    ];
     for (index, (row, module)) in CRYPTO_ITEMS.iter().zip(CryptoModule::ALL).enumerate() {
         assert_eq!(row.module, module);
         assert_eq!(
@@ -328,20 +366,29 @@ fn refusals_are_frozen_and_classified() {
     assert!(CryptoRefusalCategory::from_wire_name("not-a-category").is_none());
 }
 
-/// Decodes one declared lowercase-hexadecimal vector into its digest octets.
+/// Decodes one declared lowercase-hexadecimal octet string.
 fn declared_octets(hex: &str) -> Vec<u8> {
-    assert_eq!(hex.len(), SHA256_DIGEST_OCTET_LENGTH * 2);
-    hex.as_bytes()
+    let digits = hex.as_bytes();
+    if digits.len() & 1 == 1 {
+        panic!("a declared vector holds whole octets");
+    }
+    let digit = |octet: u8| match octet {
+        b'0'..=b'9' => octet - b'0',
+        b'a'..=b'f' => octet - b'a' + 10,
+        _ => panic!("a declared vector is lowercase hexadecimal"),
+    };
+    digits
         .chunks_exact(2)
-        .map(|pair| {
-            let digit = |octet: u8| match octet {
-                b'0'..=b'9' => octet - b'0',
-                b'a'..=b'f' => octet - b'a' + 10,
-                _ => panic!("a declared vector is lowercase hexadecimal"),
-            };
-            digit(pair[0]) * 16 + digit(pair[1])
-        })
+        .map(|pair| digit(pair[0]) * 16 + digit(pair[1]))
         .collect()
+}
+
+/// Publishes the refusal one presentation is expected to meet, or reports the verdict instead.
+fn refusal(result: Result<Ed25519Verdict, CryptoError>, context: &str) -> CryptoError {
+    match result {
+        Ok(verdict) => panic!("{context}, got `{}`", verdict.wire_name()),
+        Err(error) => error,
+    }
 }
 
 #[test]
@@ -425,4 +472,136 @@ fn sha256_digest_is_pure_and_canonical() {
             .unwrap_or_else(|error| panic!("{length} octets are admitted: {error:?}"));
         assert_eq!(published.octets().len(), SHA256_DIGEST_OCTET_LENGTH);
     }
+}
+
+#[test]
+fn ed25519_verifies_the_declared_vectors() {
+    let vectors = [
+        (
+            "",
+            "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+            "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+        ),
+        (
+            "72",
+            "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+            "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+        ),
+        (
+            "af82",
+            "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+            "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+        ),
+    ];
+    for (message, public_key, signature) in vectors {
+        let verdict = ed25519_verify(
+            &declared_octets(public_key),
+            &declared_octets(message),
+            &declared_octets(signature),
+        )
+        .unwrap_or_else(|error| panic!("the declared vector is admitted: {error:?}"));
+        assert_eq!(verdict, Ed25519Verdict::Accepted);
+    }
+    assert_eq!(Ed25519Verdict::ALL.len(), 2);
+    assert_eq!(Ed25519Verdict::Accepted.wire_name(), "accepted");
+    assert_eq!(Ed25519Verdict::Refused.wire_name(), "refused");
+}
+
+#[test]
+fn ed25519_refuses_tampered_presentations() {
+    let public_key =
+        declared_octets("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+    let signature = declared_octets(
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+    );
+    let verdict = ed25519_verify(&public_key, b"x", &signature)
+        .unwrap_or_else(|error| panic!("the presentation is admitted: {error:?}"));
+    assert_eq!(verdict, Ed25519Verdict::Refused);
+    let mut shifted = signature.clone();
+    shifted[32] += 1;
+    let verdict = ed25519_verify(&public_key, b"", &shifted)
+        .unwrap_or_else(|error| panic!("the presentation is admitted: {error:?}"));
+    assert_eq!(verdict, Ed25519Verdict::Refused);
+}
+
+#[test]
+fn ed25519_refusals_are_declared_and_indexed() {
+    let public_key =
+        declared_octets("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+    let signature = declared_octets(
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+    );
+    assert_eq!(ED25519_PUBLIC_KEY_OCTET_LENGTH, 32);
+    assert_eq!(ED25519_SIGNATURE_OCTET_LENGTH, 64);
+    assert_eq!(ED25519_MESSAGE_OCTET_BOUND, 1_048_576);
+    let error = refusal(
+        ed25519_verify(&public_key[..31], b"", &signature[..63]),
+        "the public-key octet count is the first declared condition",
+    );
+    assert_eq!(error.code(), CryptoDiagnosticCode::MalformedInput);
+    assert_eq!(error.code().as_str(), "crypto-malformed-input");
+    assert_eq!(error.requirement(), CRYPTO_CLAUSES[1]);
+    assert_eq!(error.category(), CryptoRefusalCategory::MalformedInput);
+    assert!(error.detail().contains("31"), "{}", error.detail());
+    let error = refusal(
+        ed25519_verify(&public_key, b"", &signature[..63]),
+        "the signature octet count is the second declared condition",
+    );
+    assert_eq!(error.code(), CryptoDiagnosticCode::MalformedInput);
+    assert!(error.detail().contains("63"), "{}", error.detail());
+    let long = vec![0_u8; ED25519_MESSAGE_OCTET_BOUND + 1];
+    let error = refusal(
+        ed25519_verify(&public_key, &long, &signature),
+        "the message beyond the declared bound is refused",
+    );
+    assert_eq!(error.code(), CryptoDiagnosticCode::WorkLimit);
+    assert_eq!(error.category(), CryptoRefusalCategory::WorkLimit);
+    assert!(error.detail().contains("1048577"), "{}", error.detail());
+    assert!(error.detail().contains("1048576"), "{}", error.detail());
+    let mut noncanonical = signature.clone();
+    noncanonical[32..].copy_from_slice(&declared_octets(
+        "edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010",
+    ));
+    let error = refusal(
+        ed25519_verify(&public_key, b"", &noncanonical),
+        "the scalar equal to the declared order is refused",
+    );
+    assert_eq!(error.code(), CryptoDiagnosticCode::MalformedInput);
+    assert!(error.detail().contains("63"), "{}", error.detail());
+    let invalid =
+        declared_octets("0200000000000000000000000000000000000000000000000000000000000000");
+    let error = refusal(
+        ed25519_verify(&invalid, b"", &signature),
+        "a public key that is not a declared curve point is refused",
+    );
+    assert_eq!(error.code(), CryptoDiagnosticCode::MalformedInput);
+    assert!(error.detail().contains("31"), "{}", error.detail());
+    let noncanonical_key =
+        declared_octets("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
+    let error = refusal(
+        ed25519_verify(&noncanonical_key, b"", &signature),
+        "a non-canonical field encoding is refused",
+    );
+    assert_eq!(error.code(), CryptoDiagnosticCode::MalformedInput);
+    let zero_with_sign =
+        declared_octets("0100000000000000000000000000000000000000000000000000000000000080");
+    let error = refusal(
+        ed25519_verify(&zero_with_sign, b"", &signature),
+        "a zero x with a set sign bit is refused",
+    );
+    assert_eq!(error.code(), CryptoDiagnosticCode::MalformedInput);
+    let mut bad_commitment = signature.clone();
+    bad_commitment[..32].copy_from_slice(&declared_octets(
+        "0200000000000000000000000000000000000000000000000000000000000000",
+    ));
+    let error = refusal(
+        ed25519_verify(&public_key, b"", &bad_commitment),
+        "a committed point that is not a declared curve point is refused",
+    );
+    assert_eq!(error.code(), CryptoDiagnosticCode::MalformedInput);
+    assert!(error.detail().contains("31"), "{}", error.detail());
+    let admitted = vec![0_u8; ED25519_MESSAGE_OCTET_BOUND];
+    let verdict = ed25519_verify(&public_key, &admitted, &signature)
+        .unwrap_or_else(|error| panic!("the declared bound is admitted: {error:?}"));
+    assert_eq!(verdict, Ed25519Verdict::Refused);
 }
