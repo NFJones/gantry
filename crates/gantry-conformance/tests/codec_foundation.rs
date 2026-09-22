@@ -1,25 +1,27 @@
-//! Public-facade conformance for the `GNT-42.0`-`GNT-42.3` codec foundation and hex and base64
-//! codecs.
+//! Public-facade conformance for the `GNT-42.0`-`GNT-42.4` codec foundation and hex, base64, and
+//! binary codecs.
 //!
 //! The section declares the `std.codec` family, its five module items, the versioned codec
 //! identity and its exact admission rule, the frozen refusal vocabulary with its codec categories
-//! of `GNT-29.9-codec-contract`, the canonical hex and base64 codecs of `GNT-42.2-hex-codec` and
-//! `GNT-42.3-base64-codec`, and the separation between application codecs and the sealed
-//! canonical boundary and durable recovery projections: these lanes require every declared
-//! clause, module row, refusal, and category to be published in the specification and the model,
-//! and exercise the version-admission rule and the hex and base64 codecs' canonical forms,
-//! bounds, and refusals directly.
+//! of `GNT-29.9-codec-contract`, the canonical hex, base64, and binary codecs of
+//! `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`, and
+//! `GNT-42.4-binary-endian-readers-and-writers`, and the separation between application codecs
+//! and the sealed canonical boundary and durable recovery projections: these lanes require every
+//! declared clause, module row, refusal, and category to be published in the specification and
+//! the model, and exercise the version-admission rule and the hex, base64, and binary codecs'
+//! canonical forms, bounds, and refusals directly.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, CODEC_CLAUSES, CODEC_ITEMS, CodecCategory,
-    CodecDiagnosticCode, CodecError, CodecKind, CodecVersion, DECLARED_CODEC_VERSION,
-    HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, NameClass, PackageFamily, StabilityTier,
-    base64_decode, base64_encode, canonical_codec_hierarchy, canonical_pure_hierarchy, hex_decode,
-    hex_encode,
+    BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, BINARY_VALUE_OCTET_BOUND, CODEC_CLAUSES,
+    CODEC_ITEMS, CodecCategory, CodecDiagnosticCode, CodecError, CodecKind, CodecVersion,
+    DECLARED_CODEC_VERSION, Endian, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, NameClass,
+    PackageFamily, StabilityTier, base64_decode, base64_encode, canonical_codec_hierarchy,
+    canonical_pure_hierarchy, hex_decode, hex_encode, read_u16, read_u32, read_u64, write_u16,
+    write_u32, write_u64,
 };
 
 fn workspace_root() -> PathBuf {
@@ -34,7 +36,7 @@ fn workspace_root() -> PathBuf {
 fn section_42_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(CODEC_CLAUSES.len(), 4);
+    assert_eq!(CODEC_CLAUSES.len(), 5);
     let mut prior = 0_usize;
     for clause in CODEC_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -112,9 +114,11 @@ fn codec_surface_declares_the_five_modules() {
         assert_eq!(row.class, NameClass::Module, "`{}` is a module", row.name);
         assert_eq!(row.tier, StabilityTier::Stable, "`{}` is stable", row.name);
         let base64_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[3]];
+        let binary_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[4]];
         let expected: &[&str] = match kind {
             CodecKind::Hex => &CODEC_CLAUSES[..3],
             CodecKind::Base64 => &base64_expected[..],
+            CodecKind::Binary => &binary_expected[..],
             _ => &CODEC_CLAUSES[..2],
         };
         assert_eq!(
@@ -530,6 +534,113 @@ fn base64_codec_refuses_malformed_and_oversized_input() {
         error
             .detail()
             .contains(&BASE64_VALUE_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+}
+
+#[test]
+fn binary_codec_reads_and_writes_canonical_forms() {
+    let octets = [0x01_u8, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+    assert_eq!(read_u16(Endian::Big, &octets, 0), Ok(0x0102));
+    assert_eq!(read_u16(Endian::Little, &octets, 0), Ok(0x0201));
+    assert_eq!(read_u16(Endian::Big, &octets, 6), Ok(0x0708));
+    assert_eq!(read_u32(Endian::Big, &octets, 2), Ok(0x0304_0506));
+    assert_eq!(read_u32(Endian::Little, &octets, 2), Ok(0x0605_0403));
+    assert_eq!(read_u64(Endian::Big, &octets, 0), Ok(0x0102_0304_0506_0708));
+    assert_eq!(
+        read_u64(Endian::Little, &octets, 0),
+        Ok(0x0807_0605_0403_0201)
+    );
+    assert_eq!(write_u16(Endian::Big, 0x0102), [0x01, 0x02]);
+    assert_eq!(write_u16(Endian::Little, 0x0102), [0x02, 0x01]);
+    assert_eq!(
+        write_u32(Endian::Big, 0x0102_0304),
+        [0x01, 0x02, 0x03, 0x04]
+    );
+    assert_eq!(
+        write_u32(Endian::Little, 0x0102_0304),
+        [0x04, 0x03, 0x02, 0x01]
+    );
+    assert_eq!(
+        write_u64(Endian::Big, 0x0102_0304_0506_0708),
+        [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+    );
+    assert_eq!(
+        write_u64(Endian::Little, 0x0102_0304_0506_0708),
+        [0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
+    );
+    for endian in Endian::ALL {
+        assert_eq!(Endian::from_wire_name(endian.wire_name()), Some(endian));
+        let value = match read_u16(endian, &octets, 2) {
+            Ok(value) => value,
+            Err(error) => panic!("the window is held: {}", error.detail()),
+        };
+        assert_eq!(write_u16(endian, value), octets[2..4]);
+        let wide = match read_u64(endian, &octets, 0) {
+            Ok(value) => value,
+            Err(error) => panic!("the window is held: {}", error.detail()),
+        };
+        assert_eq!(write_u64(endian, wide), octets);
+        let word = match read_u32(endian, &octets, 0) {
+            Ok(value) => value,
+            Err(error) => panic!("the window is held: {}", error.detail()),
+        };
+        assert_eq!(write_u32(endian, word), octets[0..4]);
+    }
+    assert_eq!(Endian::ALL.len(), 2);
+    assert_eq!(Endian::from_wire_name("native"), None);
+    assert_eq!(Endian::from_wire_name("Big"), None);
+    let bound_octets = vec![0_u8; BINARY_VALUE_OCTET_BOUND];
+    assert_eq!(
+        read_u64(Endian::Big, &bound_octets, BINARY_VALUE_OCTET_BOUND - 8),
+        Ok(0)
+    );
+}
+
+#[test]
+fn binary_codec_refuses_truncated_and_oversized_sequences() {
+    let octets = [0x00_u8; 4];
+    let truncation_cases: [(Option<CodecError>, usize); 5] = [
+        (read_u16(Endian::Big, &octets, 3).err(), 4),
+        (read_u16(Endian::Little, &octets, 4).err(), 4),
+        (read_u16(Endian::Big, &octets, 9).err(), 9),
+        (read_u32(Endian::Big, &octets, 1).err(), 4),
+        (read_u64(Endian::Little, &octets, 0).err(), 4),
+    ];
+    for (refusal, index) in truncation_cases {
+        let error = match refusal {
+            Some(error) => error,
+            None => panic!("the window at departure index {index} must be refused"),
+        };
+        assert_eq!(error.code(), CodecDiagnosticCode::MalformedInput);
+        assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+        assert_eq!(error.category(), CodecCategory::MalformedInput);
+        assert!(
+            error
+                .detail()
+                .contains(&format!("first octet index it does not hold is {index}")),
+            "the refusal names the departure index: {}",
+            error.detail()
+        );
+    }
+    let oversized = vec![0_u8; BINARY_VALUE_OCTET_BOUND + 1];
+    let error = match read_u16(Endian::Big, &oversized, 0) {
+        Ok(value) => panic!("the oversized sequence must be refused, got {value}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+    assert_eq!(error.category(), CodecCategory::ResourceLimit);
+    assert!(
+        error.detail().contains(&oversized.len().to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&BINARY_VALUE_OCTET_BOUND.to_string()),
         "{}",
         error.detail()
     );

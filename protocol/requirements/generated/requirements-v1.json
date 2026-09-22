@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "5526583f71fabb076abd0230fbd5c352dfcf1fb046ee8f4e576d652ba7c35d1f",
-  "byte_length": 1122977,
-  "line_count": 15721,
+  "specification_sha256": "576537f569741973ee05f1b096554c1868b278ff12935e59e7d5ef14412deeb6",
+  "byte_length": 1127256,
+  "line_count": 15725,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "5dc8f7fd08aa05bd372f80fdfcde47b988bfe9fd12bc6319b0f6745cd0e49db7",
+      "sha256": "cac18ae08f6d6885c23532087b67d074a8ecef5589376f4dbe04bd809d7933ff",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15721,
-      "sha256": "7bd58f79dbb4adc588ab9b4fae7b98d00016c15246965dd8721fb689bb347e7e",
+      "end_line": 15725,
+      "sha256": "1a74e8c73d59cc4f6a0a52513c44f8cff3220858823bd51aebdbd14065f40f88",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "18699c56e73638b3f7bc1628152cdb6251e5ed852716fd27ca861a7e97feb094",
+      "span_sha256": "998b397decc81fc8cebd8760908d6711c6697b94d443d2f05882c4bcb7cc0682",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "b649701d1f494081c545522a6ff63cf340cc5e2aab212c721d3067297357b1ce",
+      "body_sha256": "7f5ca772e35704e90fcd3fc857917064881041d20d91fe678a18fa3205d937fc",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -43629,6 +43629,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/codec_foundation.rs#base64_codec_encodes_and_decodes_canonical_forms",
                 "crates/gantry-conformance/tests/codec_foundation.rs#base64_codec_refuses_malformed_and_oversized_input"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-42.4-binary-endian-readers-and-writers",
+      "span_start_line": 15722,
+      "span_end_line": 15725,
+      "span_sha256": "f2dc444248766ba797974db07afb6812a3645dc3bba473f56f90eafd2fb52442",
+      "anchor_line": 15723,
+      "body_start_line": 15724,
+      "body_end_line": 15725,
+      "body_sha256": "56ae9484458a58d5858a314b58353a3fc55498a139f71f4f40fcebf9084a72da",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15724,
+          "end_line": 15725,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/codec_foundation.rs#binary_codec_reads_and_writes_canonical_forms",
+                "crates/gantry-conformance/tests/codec_foundation.rs#binary_codec_refuses_truncated_and_oversized_sequences"
               ],
               "rationale": null
             }

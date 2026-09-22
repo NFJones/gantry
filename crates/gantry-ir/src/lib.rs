@@ -303,14 +303,16 @@ pub use signature::{
 };
 // The Section 42 codec foundation: the declared `std.codec` family with its five modules, the
 // versioned codec identity and its exact admission rule, the frozen refusal vocabulary with its
-// codec categories of `GNT-29.9-codec-contract`, the canonical hex and base64 codecs of
-// `GNT-42.2-hex-codec` and `GNT-42.3-base64-codec`, and the separation between application codecs
-// and the sealed canonical boundary and durable recovery projections.
+// codec categories of `GNT-29.9-codec-contract`, the canonical hex, base64, and binary codecs of
+// `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`, and `GNT-42.4-binary-endian-readers-and-writers`,
+// and the separation between application codecs and the sealed canonical boundary and durable
+// recovery projections.
 pub use codec::{
-    BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, CODEC_CLAUSES, CODEC_ITEMS, CodecCategory,
-    CodecDiagnosticCode, CodecError, CodecItemRow, CodecKind, CodecVersion, DECLARED_CODEC_VERSION,
-    HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, base64_decode, base64_encode,
-    canonical_codec_hierarchy, declare_codec_surface, hex_decode, hex_encode,
+    BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, BINARY_VALUE_OCTET_BOUND, CODEC_CLAUSES,
+    CODEC_ITEMS, CodecCategory, CodecDiagnosticCode, CodecError, CodecItemRow, CodecKind,
+    CodecVersion, DECLARED_CODEC_VERSION, Endian, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND,
+    base64_decode, base64_encode, canonical_codec_hierarchy, declare_codec_surface, hex_decode,
+    hex_encode, read_u16, read_u32, read_u64, write_u16, write_u32, write_u64,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,

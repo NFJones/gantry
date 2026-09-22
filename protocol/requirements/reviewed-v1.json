@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "5526583f71fabb076abd0230fbd5c352dfcf1fb046ee8f4e576d652ba7c35d1f",
+  "specification_sha256": "576537f569741973ee05f1b096554c1868b278ff12935e59e7d5ef14412deeb6",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15721,
+      "end_line": 15725,
       "rationale": null
     }
   ],
@@ -42456,6 +42456,46 @@
               "evidence": [
                 "crates/gantry-conformance/tests/codec_foundation.rs#base64_codec_encodes_and_decodes_canonical_forms",
                 "crates/gantry-conformance/tests/codec_foundation.rs#base64_codec_refuses_malformed_and_oversized_input"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-42.4-binary-endian-readers-and-writers",
+      "span_start_line": 15722,
+      "span_end_line": 15725,
+      "anchor_line": 15723,
+      "body_start_line": 15724,
+      "body_end_line": 15725,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15724,
+          "end_line": 15725,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/codec_foundation.rs#binary_codec_reads_and_writes_canonical_forms",
+                "crates/gantry-conformance/tests/codec_foundation.rs#binary_codec_refuses_truncated_and_oversized_sequences"
               ],
               "rationale": null
             }

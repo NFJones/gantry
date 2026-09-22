@@ -1,25 +1,28 @@
 //! The codec foundation of `GNT-42.0-codec-foundation-scope`,
-//! `GNT-42.1-versioned-codec-contract`, `GNT-42.2-hex-codec`, and `GNT-42.3-base64-codec`: the
-//! declared `std.codec` family with its five modules, the versioned codec identity and its exact
-//! admission rule, the frozen refusal vocabulary with its codec categories of
-//! `GNT-29.9-codec-contract`, the canonical hex and base64 codecs, and the separation between
-//! application codecs and the sealed canonical boundary and durable recovery projections.
+//! `GNT-42.1-versioned-codec-contract`, `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`, and
+//! `GNT-42.4-binary-endian-readers-and-writers`: the declared `std.codec` family with its five
+//! modules, the versioned codec identity and its exact admission rule, the frozen refusal
+//! vocabulary with its codec categories of `GNT-29.9-codec-contract`, the canonical hex, base64,
+//! and binary codecs, and the separation between application codecs and the sealed canonical
+//! boundary and durable recovery projections.
 //!
 //! The model is pure: it consumes no host codec library, host encoding facility, ambient
 //! registry, platform behavior, timing, or global mutable state, and the only concrete codec
-//! behavior it declares is that of the hex and base64 codecs, which `GNT-42.2-hex-codec` and
-//! `GNT-42.3-base64-codec` publish.
+//! behavior it declares is that of the hex, base64, and binary codecs, which
+//! `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`, and
+//! `GNT-42.4-binary-endian-readers-and-writers` publish.
 
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
 };
 
 /// The declared clauses of Section 42, in specification order.
-pub const CODEC_CLAUSES: [&str; 4] = [
+pub const CODEC_CLAUSES: [&str; 5] = [
     "GNT-42.0-codec-foundation-scope",
     "GNT-42.1-versioned-codec-contract",
     "GNT-42.2-hex-codec",
     "GNT-42.3-base64-codec",
+    "GNT-42.4-binary-endian-readers-and-writers",
 ];
 
 /// The one declared version of every codec in this revision
@@ -381,6 +384,7 @@ pub const CODEC_ITEMS: [CodecItemRow; 5] = [
         clauses: &[
             "GNT-42.0-codec-foundation-scope",
             "GNT-42.1-versioned-codec-contract",
+            "GNT-42.4-binary-endian-readers-and-writers",
         ],
     },
     CodecItemRow {
@@ -766,5 +770,144 @@ fn base64_symbol(value: u8) -> char {
         '+'
     } else {
         '/'
+    }
+}
+
+/// The declared value bound of `GNT-42.4-binary-endian-readers-and-writers`: the largest octet
+/// count a binary read admits.
+pub const BINARY_VALUE_OCTET_BOUND: usize = 65_536;
+
+/// One declared byte order of `GNT-42.4-binary-endian-readers-and-writers`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Endian {
+    /// The most significant octet of the width stands first.
+    Big,
+    /// The least significant octet of the width stands first.
+    Little,
+}
+
+impl Endian {
+    /// The closed declared set, in canonical wire order.
+    pub const ALL: [Endian; 2] = [Self::Big, Self::Little];
+
+    /// Returns the canonical wire spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Big => "big",
+            Self::Little => "little",
+        }
+    }
+
+    /// Decodes one canonical wire spelling; every other spelling is `None`.
+    #[must_use]
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|endian| endian.wire_name() == name)
+    }
+}
+
+/// Publishes the width-octet window of one binary read of
+/// `GNT-42.4-binary-endian-readers-and-writers`.
+///
+/// A sequence holding more than `BINARY_VALUE_OCTET_BOUND` octets is refused under
+/// `codec-expansion-limit` before any part of it is examined, and a window the sequence does not
+/// wholly hold is refused under `codec-malformed-input`, naming the first zero-based octet index
+/// the sequence does not hold — the offset itself when the offset lies beyond the recorded
+/// length, and otherwise the recorded length.
+fn binary_window(octets: &[u8], offset: usize, width: usize) -> Result<&[u8], CodecError> {
+    if octets.len() > BINARY_VALUE_OCTET_BOUND {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::ExpansionLimit,
+            format!(
+                "the presented octet sequence holds {} octets, beyond the declared bound {BINARY_VALUE_OCTET_BOUND}",
+                octets.len()
+            ),
+        ));
+    }
+    let end = offset.saturating_add(width);
+    if end > octets.len() {
+        return Err(binary_malformed_refusal(
+            offset,
+            width,
+            offset.max(octets.len()),
+        ));
+    }
+    Ok(&octets[offset..end])
+}
+
+/// Publishes the refusal of one binary read whose window the sequence does not wholly hold.
+fn binary_malformed_refusal(offset: usize, width: usize, departure: usize) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::MalformedInput,
+        format!(
+            "the presented octet sequence does not hold the {width}-octet window at offset {offset}: the first octet index it does not hold is {departure}"
+        ),
+    )
+}
+
+/// Reads one unsigned 16-bit value in the declared byte order
+/// (`GNT-42.4-binary-endian-readers-and-writers`).
+pub fn read_u16(endian: Endian, octets: &[u8], offset: usize) -> Result<u16, CodecError> {
+    let window = binary_window(octets, offset, 2)?;
+    let bytes = [window[0], window[1]];
+    Ok(match endian {
+        Endian::Big => u16::from_be_bytes(bytes),
+        Endian::Little => u16::from_le_bytes(bytes),
+    })
+}
+
+/// Reads one unsigned 32-bit value in the declared byte order
+/// (`GNT-42.4-binary-endian-readers-and-writers`).
+pub fn read_u32(endian: Endian, octets: &[u8], offset: usize) -> Result<u32, CodecError> {
+    let window = binary_window(octets, offset, 4)?;
+    let bytes = [window[0], window[1], window[2], window[3]];
+    Ok(match endian {
+        Endian::Big => u32::from_be_bytes(bytes),
+        Endian::Little => u32::from_le_bytes(bytes),
+    })
+}
+
+/// Reads one unsigned 64-bit value in the declared byte order
+/// (`GNT-42.4-binary-endian-readers-and-writers`).
+pub fn read_u64(endian: Endian, octets: &[u8], offset: usize) -> Result<u64, CodecError> {
+    let window = binary_window(octets, offset, 8)?;
+    let bytes = [
+        window[0], window[1], window[2], window[3], window[4], window[5], window[6], window[7],
+    ];
+    Ok(match endian {
+        Endian::Big => u64::from_be_bytes(bytes),
+        Endian::Little => u64::from_le_bytes(bytes),
+    })
+}
+
+/// Writes one unsigned 16-bit value in the declared byte order
+/// (`GNT-42.4-binary-endian-readers-and-writers`).
+#[must_use]
+pub fn write_u16(endian: Endian, value: u16) -> [u8; 2] {
+    match endian {
+        Endian::Big => value.to_be_bytes(),
+        Endian::Little => value.to_le_bytes(),
+    }
+}
+
+/// Writes one unsigned 32-bit value in the declared byte order
+/// (`GNT-42.4-binary-endian-readers-and-writers`).
+#[must_use]
+pub fn write_u32(endian: Endian, value: u32) -> [u8; 4] {
+    match endian {
+        Endian::Big => value.to_be_bytes(),
+        Endian::Little => value.to_le_bytes(),
+    }
+}
+
+/// Writes one unsigned 64-bit value in the declared byte order
+/// (`GNT-42.4-binary-endian-readers-and-writers`).
+#[must_use]
+pub fn write_u64(endian: Endian, value: u64) -> [u8; 8] {
+    match endian {
+        Endian::Big => value.to_be_bytes(),
+        Endian::Little => value.to_le_bytes(),
     }
 }
