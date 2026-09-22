@@ -9,8 +9,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS, NameClass,
-    PackageFamily, Prelude, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
+    CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS,
+    ConsoleOperation, IoOperation, IoOutcome, IoRequest, NameClass, PackageFamily, Prelude,
+    ProgressObservation, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
     admit_console_surface, declare_console_surface,
 };
 use gantry::ir::{SemanticMode, TargetKind};
@@ -36,6 +37,7 @@ fn console_contract_clauses_and_scope_are_published() {
         [
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
+            "GNT-46.2-console-bounded-operations",
         ]
     );
     assert_eq!(CONSOLE_SURFACE_MODES, [SemanticMode::Application]);
@@ -61,17 +63,28 @@ fn console_module_rows_are_closed_and_canonical() {
     assert_eq!(
         names,
         [
+            "std.console::control",
             "std.console::input",
             "std.console::output",
             "std.console::terminal",
-            "std.console::control",
         ]
     );
     assert_eq!(CONSOLE_ITEMS.len(), 4);
     for row in CONSOLE_ITEMS {
         assert_eq!(row.class, NameClass::Module);
         assert_eq!(row.tier, StabilityTier::Stable);
-        assert_eq!(row.clauses, CONSOLE_CLAUSES.as_slice());
+        let expected: &[&str] = match row.name {
+            "std.console::input" | "std.console::output" => &[
+                "GNT-46.0-console-foundation-scope",
+                "GNT-46.1-console-modules-and-item-rows",
+                "GNT-46.2-console-bounded-operations",
+            ],
+            _ => &[
+                "GNT-46.0-console-foundation-scope",
+                "GNT-46.1-console-modules-and-item-rows",
+            ],
+        };
+        assert_eq!(row.clauses, expected);
     }
 }
 
@@ -104,6 +117,15 @@ fn console_surface_declaration_requires_the_family_package() {
         .package(&owner)
         .unwrap_or_else(|| panic!("the family package is declared"));
     assert_eq!(package.items().len(), CONSOLE_ITEMS.len());
+    let declared_order = package.items().keys().cloned().collect::<Vec<_>>();
+    let row_order = CONSOLE_ITEMS
+        .iter()
+        .map(|row| row.name.replace("::", "."))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        declared_order, row_order,
+        "the rows must follow the package's canonical name order"
+    );
     for row in CONSOLE_ITEMS {
         let item = package
             .item(row.name)
@@ -172,5 +194,61 @@ fn console_surface_admission_is_closed_and_exact() {
             .err()
             .map(|error| error.code()),
         Some(StdlibDiagnosticCode::UnsupportedApplicability)
+    );
+}
+
+#[test]
+fn console_operations_are_closed_and_consume_io_requests() {
+    assert_eq!(
+        ConsoleOperation::ALL,
+        [
+            ConsoleOperation::Read,
+            ConsoleOperation::Write,
+            ConsoleOperation::Flush,
+        ]
+    );
+    let spellings = ConsoleOperation::ALL
+        .into_iter()
+        .map(ConsoleOperation::wire_name)
+        .collect::<Vec<_>>();
+    assert_eq!(spellings, ["read", "write", "flush"]);
+    for operation in ConsoleOperation::ALL {
+        assert_eq!(
+            ConsoleOperation::from_wire_name(operation.wire_name()),
+            Some(operation)
+        );
+    }
+    assert_eq!(ConsoleOperation::from_wire_name("flush-all"), None);
+
+    assert_eq!(ConsoleOperation::Read.module_name(), "std.console::input");
+    assert_eq!(ConsoleOperation::Write.module_name(), "std.console::output");
+    assert_eq!(ConsoleOperation::Flush.module_name(), "std.console::output");
+
+    assert_eq!(
+        ConsoleOperation::Read.io_operation(),
+        Some(IoOperation::Read)
+    );
+    assert_eq!(
+        ConsoleOperation::Write.io_operation(),
+        Some(IoOperation::Write)
+    );
+    assert_eq!(ConsoleOperation::Flush.io_operation(), None);
+    assert_eq!(ConsoleOperation::Read.completed_observation(), None);
+    assert_eq!(ConsoleOperation::Write.completed_observation(), None);
+    assert_eq!(
+        ConsoleOperation::Flush.completed_observation(),
+        Some(ProgressObservation::CommittedProgress)
+    );
+
+    // A console read consumes the admitted `std.io` request contract unchanged.
+    let request =
+        IoRequest::read(8).unwrap_or_else(|_| panic!("an eight-octet read is admissible"));
+    assert_eq!(
+        request.derive_progress(&IoOutcome::Read {
+            requested: 8,
+            advanced: 3,
+            ended: false,
+        }),
+        Ok(ProgressObservation::ShortRead)
     );
 }

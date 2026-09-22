@@ -211,7 +211,7 @@ pub use io::{
 // capability, or runtime availability.
 pub use console::{
     CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS, ConsoleItemRow,
-    admit_console_surface, declare_console_surface,
+    ConsoleOperation, admit_console_surface, declare_console_surface,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and

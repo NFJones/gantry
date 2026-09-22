@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "6e0f736b388b10efc2ce5d80b07b50c320254a95741f136a3621ea4f7bd29177",
-  "byte_length": 1226350,
-  "line_count": 16043,
+  "specification_sha256": "c04a0af3b2cec32c7c0f1621a95c26c4f6833e162ed0404f4f2889ab88496f43",
+  "byte_length": 1228230,
+  "line_count": 16066,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "a534935df34b1112a0638ea2fa3290485a2060c06c1a043ff9d7469a2603b192",
+      "sha256": "e6df8daa5158f6532e0cd813212e5aee3e4d4f56d6650fd96cc18b5c35ea1411",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16043,
-      "sha256": "435e7852c5c6c9d0b02734bdd05b0f2caf8b44967f37684c8ba3c7a958c8e765",
+      "end_line": 16066,
+      "sha256": "c9067388705fd63b143b0a7a7136d2f79f09444e5e3359f8edbb0548a855be82",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "77899a0251c104d0a5a5a63e7f9da0165309aa32101407a70a59d5d47cd1614e",
+      "span_sha256": "c20b3341fd40e830bca2a8ffb22dc2a72282d84f8921e00c643a45b3c5c76c3a",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "3ede8aee53c166a395cf5434b4584f056e9eddc360365b2f404f9149d261eab1",
+      "body_sha256": "e2a81fb6c27070e77a921af28a23d6cc10a820ee5ed1304172b45b26043a95ce",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44577,12 +44577,12 @@
     {
       "id": "GNT-46.1-console-modules-and-item-rows",
       "span_start_line": 16018,
-      "span_end_line": 16043,
-      "span_sha256": "31d69500ae99a64cc24bbdda175f7e8c4924ca77c7ac5a1caf131d12e4fef669",
+      "span_end_line": 16044,
+      "span_sha256": "f9c496c796f11e598c4c307e4ebe842cfeba92d2af213fb35c0993e828c63ffb",
       "anchor_line": 16019,
       "body_start_line": 16020,
-      "body_end_line": 16043,
-      "body_sha256": "c557fa56c664fd027bf56b03244e33baf4a507141f68df2ab08b01e001ae4a42",
+      "body_end_line": 16044,
+      "body_sha256": "c98f11c112e78392b67d2af83c2519e5f3551e39666350f37118caead2d21318",
       "profiles": [
         "analyzer"
       ],
@@ -44594,7 +44594,7 @@
         {
           "key": "clause-001",
           "start_line": 16020,
-          "end_line": 16043,
+          "end_line": 16044,
           "profiles": [
             "analyzer"
           ],
@@ -44610,6 +44610,48 @@
                 "crates/gantry-conformance/tests/console_foundation.rs#console_module_rows_are_closed_and_canonical",
                 "crates/gantry-conformance/tests/console_foundation.rs#console_surface_declaration_requires_the_family_package",
                 "crates/gantry-conformance/tests/console_foundation.rs#console_surface_admission_is_closed_and_exact"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-46.2-console-bounded-operations",
+      "span_start_line": 16045,
+      "span_end_line": 16066,
+      "span_sha256": "c21d2c4cdd2334c56e00c0a645c205a38c79bdc51f42df741dcb5346ac3c806f",
+      "anchor_line": 16046,
+      "body_start_line": 16047,
+      "body_end_line": 16066,
+      "body_sha256": "593f6c9efa90e829e2b345ba5d3be332d6fdf3dd891d31ff2676a36444a9e8fb",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16047,
+          "end_line": 16066,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/console_foundation.rs#console_operations_are_closed_and_consume_io_requests",
+                "crates/gantry-conformance/tests/console_foundation.rs#console_module_rows_are_closed_and_canonical"
               ],
               "rationale": null
             }

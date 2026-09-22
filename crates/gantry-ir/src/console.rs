@@ -5,6 +5,8 @@
 //! renderer, and it performs no I/O: every decision is a deterministic function of the declared
 //! standard-library graph it is handed.
 
+use crate::io::IoOperation;
+use crate::operation::ProgressObservation;
 use crate::package::TargetKind;
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
@@ -13,10 +15,86 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 46 clauses implemented by this pure model, in declaration order.
-pub const CONSOLE_CLAUSES: [&str; 2] = [
+pub const CONSOLE_CLAUSES: [&str; 3] = [
     "GNT-46.0-console-foundation-scope",
     "GNT-46.1-console-modules-and-item-rows",
+    "GNT-46.2-console-bounded-operations",
 ];
+
+/// One declared console operation of `GNT-46.2-console-bounded-operations`.
+///
+/// A console read or write consumes exactly one admitted request of the `std.io` one-call
+/// contract; a flush declares no octet quantity. The console publishes no second request contract,
+/// no second octet bound, and no second progress vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleOperation {
+    /// One bounded console read.
+    Read,
+    /// One bounded console write.
+    Write,
+    /// One flush of previously written console output.
+    Flush,
+}
+
+impl ConsoleOperation {
+    /// Every declared operation, in canonical order.
+    pub const ALL: [Self; 3] = [Self::Read, Self::Write, Self::Flush];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+            Self::Flush => "flush",
+        }
+    }
+
+    /// Strictly decodes one declared portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|operation| operation.wire_name() == value)
+    }
+
+    /// Returns the declared module that owns this operation.
+    #[must_use]
+    pub const fn module_name(self) -> &'static str {
+        match self {
+            Self::Read => "std.console::input",
+            Self::Write | Self::Flush => "std.console::output",
+        }
+    }
+
+    /// Returns the declared `std.io` operation this console operation consumes, when any.
+    ///
+    /// A read or write consumes one admitted request of the
+    /// `GNT-45.1-bounded-one-call-io-contract` and publishes exactly the observation
+    /// `GNT-45.3-io-progress-derivation` derives from its admitted facts; a flush consumes no
+    /// request.
+    #[must_use]
+    pub const fn io_operation(self) -> Option<IoOperation> {
+        match self {
+            Self::Read => Some(IoOperation::Read),
+            Self::Write => Some(IoOperation::Write),
+            Self::Flush => None,
+        }
+    }
+
+    /// Returns the observation a completed operation publishes without an octet count, when any.
+    ///
+    /// A completed flush publishes exactly `committed-progress` and no octet count; a read or
+    /// write publishes no observation here, because its observation is the derivation of its
+    /// admitted `std.io` facts.
+    #[must_use]
+    pub const fn completed_observation(self) -> Option<ProgressObservation> {
+        match self {
+            Self::Flush => Some(ProgressObservation::CommittedProgress),
+            Self::Read | Self::Write => None,
+        }
+    }
+}
 
 /// The declared semantic mode of every `std.console` item row.
 pub const CONSOLE_SURFACE_MODES: [SemanticMode; 1] = [SemanticMode::Application];
@@ -37,13 +115,23 @@ pub struct ConsoleItemRow {
     pub clauses: &'static [&'static str],
 }
 
-/// The declared public modules of `std.console`, in canonical order.
+/// The declared public modules of `std.console`, in canonical name order.
 ///
 /// The rows are declared by `GNT-46.1-console-modules-and-item-rows` alone; the family carries no
 /// second vocabulary, no terminal handle, and no escape-sequence surface, and every row's
 /// applicability is its owning package's application-mode applicability over the library and
-/// binary targets.
+/// binary targets. Canonical order is canonical name order: exactly the order
+/// `StdPackage::items` publishes.
 pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
+    ConsoleItemRow {
+        name: "std.console::control",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        clauses: &[
+            "GNT-46.0-console-foundation-scope",
+            "GNT-46.1-console-modules-and-item-rows",
+        ],
+    },
     ConsoleItemRow {
         name: "std.console::input",
         class: NameClass::Module,
@@ -51,6 +139,7 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
         clauses: &[
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
+            "GNT-46.2-console-bounded-operations",
         ],
     },
     ConsoleItemRow {
@@ -60,19 +149,11 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
         clauses: &[
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
+            "GNT-46.2-console-bounded-operations",
         ],
     },
     ConsoleItemRow {
         name: "std.console::terminal",
-        class: NameClass::Module,
-        tier: StabilityTier::Stable,
-        clauses: &[
-            "GNT-46.0-console-foundation-scope",
-            "GNT-46.1-console-modules-and-item-rows",
-        ],
-    },
-    ConsoleItemRow {
-        name: "std.console::control",
         class: NameClass::Module,
         tier: StabilityTier::Stable,
         clauses: &[
