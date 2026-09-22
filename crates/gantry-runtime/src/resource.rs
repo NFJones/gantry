@@ -26,6 +26,8 @@
 //! no durable or host I/O, decodes no record bytes, and publishes no journal, checkpoint,
 //! evaluator, or host behavior; those remain with the durable, recovery, and machine modules.
 
+use std::collections::BTreeMap;
+
 use gantry_ir::{
     CanonicalPath, DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness,
     ExecutableOperation, LogicalOperationId, PoisonWitness, PostFailureSettlement, Quota,
@@ -123,6 +125,102 @@ pub enum PostFailureSettlementRefusal {
     StaleGeneration,
     /// The model refused the settlement under its own witness or lifetime rules.
     Model(ResourceError),
+}
+
+/// One runtime-owned registry of admitted resources, keyed by their Section 20 subject.
+///
+/// Every account enters through a subject only the machine can issue, so one subject owns at most
+/// one account, and a settlement selects its account by the settlement's own operation and
+/// generation rather than by caller text: a settlement naming an operation or generation the
+/// registry holds no account for changes nothing.
+#[derive(Debug, Default)]
+pub struct ResourceRegistry {
+    accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
+}
+
+impl ResourceRegistry {
+    /// Creates an empty registry.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            accounts: BTreeMap::new(),
+        }
+    }
+
+    /// Admits one resource for one machine-issued subject.
+    ///
+    /// A subject that already owns an account is refused rather than replaced, so one subject can
+    /// never own two lifetimes.
+    pub fn admit(
+        &mut self,
+        subject: ResourceSubjectBinding,
+        carrier: ResourceCarrier,
+        record: DurableResourceRecord,
+    ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        match self.accounts.entry(key) {
+            std::collections::btree_map::Entry::Occupied(_) => {
+                Err(ResourceRegistryRefusal::SecondAdmission)
+            }
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                let account = AdmittedResource::admit(carrier, record, subject)
+                    .map_err(ResourceRegistryRefusal::Admission)?;
+                Ok(slot.insert(account))
+            }
+        }
+    }
+
+    /// Returns the account one subject owns, when any.
+    #[must_use]
+    pub fn account(&self, subject: &ResourceSubjectBinding) -> Option<&AdmittedResource> {
+        self.accounts
+            .get(&(subject.operation().clone(), subject.generation().clone()))
+    }
+
+    /// Returns the account one subject owns for owner-authorized changes, when any.
+    #[must_use]
+    pub fn account_mut(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+    ) -> Option<&mut AdmittedResource> {
+        self.accounts
+            .get_mut(&(subject.operation().clone(), subject.generation().clone()))
+    }
+
+    /// Settles the account its own subject names from one model-issued post-failure settlement.
+    ///
+    /// The account is selected by the settlement's own operation and generation, so a settlement
+    /// naming a subject this registry holds no account for is refused without changing any account.
+    pub fn settle_from_post_failure(
+        &mut self,
+        settlement: &PostFailureSettlement,
+        settled_at: u64,
+    ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
+        let key = (
+            settlement.operation().clone(),
+            settlement.generation().clone(),
+        );
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .settle_from_post_failure(settlement, settled_at)
+            .map_err(ResourceRegistryRefusal::Settlement)
+    }
+}
+
+/// Why the runtime resource registry refused an admission or a settlement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResourceRegistryRefusal {
+    /// The subject already owns an admitted account.
+    SecondAdmission,
+    /// The registry holds no account for the settlement's own operation and generation.
+    UnknownSubject,
+    /// The model refused the carrier or the reconstruction record at admission.
+    Admission(ResourceError),
+    /// The account's own settlement step refused the settlement.
+    Settlement(PostFailureSettlementRefusal),
 }
 
 /// One resource whose declared accounting facts the runtime has admitted.

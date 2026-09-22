@@ -21,7 +21,7 @@ use gantry::portable::IdentityKind;
 use gantry::runtime::{
     AdmittedResource, ExecutionBudget, Instruction, InstructionKind, Machine, MachineCheckpointV3,
     MachineLabel, MachineLimits, MachineProgram, MachineStep, PostFailureSettlementRefusal,
-    ResourceSubjectBinding, Workflow,
+    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding, Workflow,
 };
 use gantry::value::DEFAULT_VALUE_LIMITS;
 
@@ -688,5 +688,77 @@ fn runtime_subject_survives_checkpoint_recovery() {
     assert_eq!(
         admitted_resource.settle_from_post_failure(&matching, 21),
         Ok(ResourceLifetimeState::Poisoned)
+    );
+}
+
+#[test]
+fn resource_registry_gives_one_subject_exactly_one_account() {
+    let (_program, _machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("the fixture operation declares an action"));
+
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert!(registry.account(&subject).is_some());
+
+    assert_eq!(
+        registry.admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::SecondAdmission)
+    );
+
+    let foreign = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        "crate::resource_runtime_foreign",
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        registry.settle_from_post_failure(&foreign, 21),
+        Err(ResourceRegistryRefusal::UnknownSubject)
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Active)
+    );
+
+    let matching = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        registry.settle_from_post_failure(&matching, 21),
+        Ok(ResourceLifetimeState::Poisoned)
+    );
+    let account = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("the subject still owns its account"));
+    assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Poisoned);
+    assert_eq!(
+        account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(8)
+    );
+
+    assert_eq!(
+        registry.settle_from_post_failure(&matching, 22),
+        Err(ResourceRegistryRefusal::Settlement(
+            PostFailureSettlementRefusal::Model(ResourceError::IllegalLifetimeTransition)
+        ))
     );
 }
