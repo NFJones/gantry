@@ -60,8 +60,10 @@ under `io-progress-inapplicable`. A seek request declares any nonnegative positi
 kind's admitted set is closed, and where a presented observation satisfies more than one declared
 meaning, `eof` takes precedence over `not-started`: a read that observes the end of its stream is
 `eof` even when it advances no octet, and `not-started` is published only when no advance and no
-end of stream are observed. This revision publishes the closed sets and that precedence only;
-derivation from a presented quantity is left to a later clause. Each admitted request publishes
+end of stream are observed. This revision publishes the closed sets, that precedence, and the
+derivation of `GNT-45.3-io-progress-derivation`: the facts a read, write, or seek observes and
+the exact observation they decide, with `io-observation-inconsistent` refusing facts outside
+their declared ranges. Each admitted request publishes
 exactly one progress observation of the landed `GNT-29.2` mapping, its outcome is exactly one of
 the `GNT-29.1` channels, and interruption, cancellation, and ambiguous settlement remain the
 Section 20 facts that own them.

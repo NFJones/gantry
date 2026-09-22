@@ -11,10 +11,11 @@ use crate::stdlib::{
 };
 
 /// The Section 45 clauses implemented by this pure model, in declaration order.
-pub const IO_CLAUSES: [&str; 3] = [
+pub const IO_CLAUSES: [&str; 4] = [
     "GNT-45.0-common-io-foundation-scope",
     "GNT-45.1-bounded-one-call-io-contract",
     "GNT-45.2-standard-io-modules-and-item-rows",
+    "GNT-45.3-io-progress-derivation",
 ];
 
 /// The declared one-call request-contract version of `GNT-45.1-bounded-one-call-io-contract`.
@@ -95,6 +96,8 @@ impl IoOperation {
 /// The closed refusal set of the Section 45 one-call contract.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IoDiagnosticCode {
+    /// A presented observation fact lies outside its declared range.
+    ObservationInconsistent,
     /// A progress observation lies outside its kind's declared set.
     ProgressInapplicable,
     /// A request's declared quantity is zero or beyond the declared octet bound.
@@ -105,7 +108,8 @@ pub enum IoDiagnosticCode {
 
 impl IoDiagnosticCode {
     /// Every declared code, in exact wire-name order.
-    pub const ALL: [Self; 3] = [
+    pub const ALL: [Self; 4] = [
+        Self::ObservationInconsistent,
         Self::ProgressInapplicable,
         Self::RequestBound,
         Self::RequestKind,
@@ -115,6 +119,7 @@ impl IoDiagnosticCode {
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
         match self {
+            Self::ObservationInconsistent => "io-observation-inconsistent",
             Self::ProgressInapplicable => "io-progress-inapplicable",
             Self::RequestBound => "io-request-bound",
             Self::RequestKind => "io-request-kind",
@@ -131,6 +136,17 @@ impl IoDiagnosticCode {
 /// One refusal of `GNT-45.1-bounded-one-call-io-contract`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IoError {
+    /// A presented observation fact lies outside its declared range.
+    ObservationInconsistent {
+        /// The operation kind the facts belong to.
+        operation: IoOperation,
+        /// The presented fact's declared name.
+        fact: &'static str,
+        /// The observed value exactly as presented.
+        observed: u64,
+        /// The declared range's inclusive upper bound for that fact.
+        maximum: u64,
+    },
     /// A read or write request declared a quantity that is zero or beyond the declared bound.
     RequestBound {
         /// The declared operation kind.
@@ -159,6 +175,7 @@ impl IoError {
     #[must_use]
     pub const fn code(&self) -> IoDiagnosticCode {
         match self {
+            Self::ObservationInconsistent { .. } => IoDiagnosticCode::ObservationInconsistent,
             Self::RequestBound { .. } => IoDiagnosticCode::RequestBound,
             Self::RequestKind { .. } => IoDiagnosticCode::RequestKind,
             Self::ProgressInapplicable { .. } => IoDiagnosticCode::ProgressInapplicable,
@@ -333,4 +350,118 @@ pub fn declare_io_surface(graph: &mut StdGraph) -> Result<(), StdlibError> {
         )?)?;
     }
     Ok(())
+}
+
+/// One declared set of facts a single admitted I/O call observed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IoOutcome {
+    /// A read observed its asked-for count, its advance, and its end-of-stream fact.
+    Read {
+        /// The octet count the read asked for.
+        requested: u64,
+        /// The octet count the read advanced.
+        advanced: u64,
+        /// Whether the read observed the end of its stream.
+        ended: bool,
+    },
+    /// A seek observed its declared target position and the position it observed.
+    Seek {
+        /// The declared target position.
+        target: u64,
+        /// The position the call observed.
+        current: u64,
+    },
+    /// A write observed its provided count and its accepted count.
+    Write {
+        /// The octet count the write was provided.
+        provided: u64,
+        /// The octet count the write accepted.
+        accepted: u64,
+    },
+}
+
+impl IoOutcome {
+    /// Returns the declared operation kind these facts belong to.
+    #[must_use]
+    pub const fn operation(&self) -> IoOperation {
+        match self {
+            Self::Read { .. } => IoOperation::Read,
+            Self::Seek { .. } => IoOperation::Seek,
+            Self::Write { .. } => IoOperation::Write,
+        }
+    }
+
+    /// Derives the one progress observation these admitted facts decide.
+    ///
+    /// A fact outside its declared range is refused under `io-observation-inconsistent` before
+    /// any observation is derived, and the decision is total over admitted facts and preserves
+    /// the precedence of `GNT-45.1-bounded-one-call-io-contract`.
+    pub fn derive_progress(&self) -> Result<ProgressObservation, IoError> {
+        match *self {
+            Self::Read {
+                requested,
+                advanced,
+                ended,
+            } => {
+                if requested == 0 || requested > IO_REQUEST_OCTET_BOUND {
+                    return Err(IoError::ObservationInconsistent {
+                        operation: IoOperation::Read,
+                        fact: "requested",
+                        observed: requested,
+                        maximum: IO_REQUEST_OCTET_BOUND,
+                    });
+                }
+                if advanced > requested {
+                    return Err(IoError::ObservationInconsistent {
+                        operation: IoOperation::Read,
+                        fact: "advanced",
+                        observed: advanced,
+                        maximum: requested,
+                    });
+                }
+                if ended {
+                    return Ok(ProgressObservation::Eof);
+                }
+                if advanced == 0 {
+                    return Ok(ProgressObservation::NotStarted);
+                }
+                if advanced == requested {
+                    return Ok(ProgressObservation::CommittedProgress);
+                }
+                Ok(ProgressObservation::ShortRead)
+            }
+            Self::Write { provided, accepted } => {
+                if provided == 0 || provided > IO_REQUEST_OCTET_BOUND {
+                    return Err(IoError::ObservationInconsistent {
+                        operation: IoOperation::Write,
+                        fact: "provided",
+                        observed: provided,
+                        maximum: IO_REQUEST_OCTET_BOUND,
+                    });
+                }
+                if accepted > provided {
+                    return Err(IoError::ObservationInconsistent {
+                        operation: IoOperation::Write,
+                        fact: "accepted",
+                        observed: accepted,
+                        maximum: provided,
+                    });
+                }
+                if accepted == provided {
+                    return Ok(ProgressObservation::CommittedProgress);
+                }
+                if accepted == 0 {
+                    return Ok(ProgressObservation::NotStarted);
+                }
+                Ok(ProgressObservation::ShortWrite)
+            }
+            Self::Seek { target, current } => {
+                if current == target {
+                    Ok(ProgressObservation::NotStarted)
+                } else {
+                    Ok(ProgressObservation::CommittedProgress)
+                }
+            }
+        }
+    }
 }

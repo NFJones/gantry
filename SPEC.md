@@ -15903,3 +15903,35 @@ cancellation safe point, quota, or charge, no schema, recovery, durability, boun
 lowering, machine representation, or family behavior, no change to any other clause of this
 section or of Section 29, and it claims no performance, storage layout, or physical
 representation.
+
+<a id="GNT-45.3-io-progress-derivation"></a>
+
+**[GNT-45.3-io-progress-derivation] Progress derivation from declared observations.** This clause
+publishes the derivation `GNT-45.1-bounded-one-call-io-contract` deferred: an admitted request's
+progress observation is decided by its operation kind and the facts the call observes, and this
+clause declares those facts and the exact decision. A read observes exactly three facts: the
+octet count it asked for, the octet count it advanced, and whether it observed the end of its
+stream. A write observes exactly two: the octet count provided and the octet count accepted. A
+seek observes exactly two: its declared target position and the position the call observed. The
+facts are admitted only within their declared ranges: an advanced count greater than the count a
+read asked for, an accepted count greater than the count a write was provided, and any other fact
+outside its declared range are refused under `io-observation-inconsistent`, naming the observed
+fact and the declared range, before any observation is derived, so a read's asked-for count and a
+write's provided count are each admitted only inside `IO_REQUEST_OCTET_BOUND`. The decision is
+total over admitted facts and preserves every precedence of
+`GNT-45.1-bounded-one-call-io-contract`: a read that observed the end of its stream is `eof`
+whatever it advanced, a read that observed no advance and no end is `not-started`, a read that
+advanced every octet it asked for without an end is `committed-progress`, and any other read is
+`short-read`; a write that accepted every octet it was provided is `committed-progress`, a write
+that accepted none is `not-started`, and any other write is `short-write`; and a seek whose
+observed position is its declared target is `not-started`, while any other seek is
+`committed-progress`. The model's `IoOutcome` publishes the facts and `derive_progress` publishes
+exactly this decision, so no caller can present an observation its facts do not decide: the
+derivation is a deterministic function of the admitted facts alone, never of a host, an adapter,
+timing, a prior call, or global mutable state, and two derivations of equal facts publish equal
+observations. This clause publishes the facts and the derivation only: it publishes no work limit,
+cancellation safe point, quota, or charge, no streaming, buffering, or backpressure contract, no
+interruption, cancellation, settlement, effect certainty, or post-failure state, which Section 20
+owns, no schema, recovery, durability, boundary encoding, lowering, machine representation, or
+family behavior, no change to any other clause of this section, and it claims no performance,
+storage layout, or physical representation.

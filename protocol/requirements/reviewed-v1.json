@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "2a986152b91ba098e518341a7a69b16e238de9e984840324ced8e05100d2c812",
+  "specification_sha256": "464c779afba9f90e53fd6ad885fcef4660c2e7eee3eb1eea4118ff2d8bb0d086",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15905,
+      "end_line": 15937,
       "rationale": null
     }
   ],
@@ -43229,6 +43229,46 @@
               "evidence": [
                 "crates/gantry-conformance/tests/io_foundation.rs#io_item_rows_are_closed_and_owned",
                 "crates/gantry-conformance/tests/io_foundation.rs#io_surface_declaration_requires_the_family_package"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-45.3-io-progress-derivation",
+      "span_start_line": 15906,
+      "span_end_line": 15937,
+      "anchor_line": 15907,
+      "body_start_line": 15908,
+      "body_end_line": 15937,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15908,
+          "end_line": 15937,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/io_foundation.rs#io_progress_derivation_is_total_and_precedence_preserving",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_observation_facts_outside_their_ranges_are_refused"
               ],
               "rationale": null
             }

@@ -11,12 +11,13 @@ use std::path::{Path, PathBuf};
 use gantry::ir::generated::HostDomainFamily;
 use gantry::ir::{
     CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, HostProgress, IO_CLAUSES, IO_CONTRACT_VERSION, IO_ITEMS,
-    IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError, IoOperation, IoRequest, NameClass,
-    PackageFamily, Prelude, ProgressObservation, STDLIB_CLAUSES, SemanticMode, StabilityTier,
-    StdGraph, StdPackage, StdlibDiagnosticCode, TargetKind, admit_io_progress, declare_io_surface,
+    IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError, IoOperation, IoOutcome, IoRequest,
+    NameClass, PackageFamily, Prelude, ProgressObservation, STDLIB_CLAUSES, SemanticMode,
+    StabilityTier, StdGraph, StdPackage, StdlibDiagnosticCode, TargetKind, admit_io_progress,
+    declare_io_surface,
 };
 
-const REQUIRED_ANCHORS: [&str; 9] = [
+const REQUIRED_ANCHORS: [&str; 10] = [
     "GNT-29.1",
     "GNT-29.2",
     "GNT-29.3",
@@ -26,6 +27,7 @@ const REQUIRED_ANCHORS: [&str; 9] = [
     "GNT-45.0",
     "GNT-45.1",
     "GNT-45.2",
+    "GNT-45.3",
 ];
 
 fn workspace_root() -> PathBuf {
@@ -64,6 +66,7 @@ fn io_contract_clauses_and_scope_are_published() {
             "GNT-45.0-common-io-foundation-scope",
             "GNT-45.1-bounded-one-call-io-contract",
             "GNT-45.2-standard-io-modules-and-item-rows",
+            "GNT-45.3-io-progress-derivation",
         ]
     );
     assert_eq!(IO_CONTRACT_VERSION, 1);
@@ -229,6 +232,7 @@ fn io_progress_sets_are_closed_per_kind() {
     assert_eq!(
         codes,
         [
+            "io-observation-inconsistent",
             "io-progress-inapplicable",
             "io-request-bound",
             "io-request-kind"
@@ -260,7 +264,7 @@ fn io_progress_precedence_and_derivation_scope_are_published() {
     }
     for needle in [
         "`eof` takes precedence over `not-started`",
-        "derivation from a presented quantity is left to a later clause",
+        "the derivation of `GNT-45.3-io-progress-derivation`",
     ] {
         assert!(note.contains(needle), "the note must state: {needle}");
     }
@@ -326,6 +330,179 @@ fn io_surface_declaration_requires_the_family_package() {
         declare_io_surface(&mut graph).is_err(),
         "a second declaration of one item is refused"
     );
+}
+
+#[test]
+fn io_progress_derivation_is_total_and_precedence_preserving() {
+    let bound = IO_REQUEST_OCTET_BOUND;
+    let cases = [
+        (
+            IoOutcome::Read {
+                requested: 8,
+                advanced: 0,
+                ended: true,
+            },
+            ProgressObservation::Eof,
+        ),
+        (
+            IoOutcome::Read {
+                requested: 8,
+                advanced: 8,
+                ended: true,
+            },
+            ProgressObservation::Eof,
+        ),
+        (
+            IoOutcome::Read {
+                requested: 8,
+                advanced: 0,
+                ended: false,
+            },
+            ProgressObservation::NotStarted,
+        ),
+        (
+            IoOutcome::Read {
+                requested: 8,
+                advanced: 8,
+                ended: false,
+            },
+            ProgressObservation::CommittedProgress,
+        ),
+        (
+            IoOutcome::Read {
+                requested: 8,
+                advanced: 3,
+                ended: false,
+            },
+            ProgressObservation::ShortRead,
+        ),
+        (
+            IoOutcome::Read {
+                requested: bound,
+                advanced: bound,
+                ended: false,
+            },
+            ProgressObservation::CommittedProgress,
+        ),
+        (
+            IoOutcome::Write {
+                provided: 8,
+                accepted: 8,
+            },
+            ProgressObservation::CommittedProgress,
+        ),
+        (
+            IoOutcome::Write {
+                provided: 8,
+                accepted: 0,
+            },
+            ProgressObservation::NotStarted,
+        ),
+        (
+            IoOutcome::Write {
+                provided: 8,
+                accepted: 3,
+            },
+            ProgressObservation::ShortWrite,
+        ),
+        (
+            IoOutcome::Seek {
+                target: 4,
+                current: 4,
+            },
+            ProgressObservation::NotStarted,
+        ),
+        (
+            IoOutcome::Seek {
+                target: 4,
+                current: 9,
+            },
+            ProgressObservation::CommittedProgress,
+        ),
+    ];
+    for (outcome, expected) in cases {
+        assert_eq!(outcome.derive_progress(), Ok(expected));
+    }
+}
+
+#[test]
+fn io_observation_facts_outside_their_ranges_are_refused() {
+    let bound = IO_REQUEST_OCTET_BOUND;
+    let cases = [
+        (
+            IoOutcome::Read {
+                requested: 8,
+                advanced: 9,
+                ended: false,
+            },
+            "advanced",
+            9,
+            8,
+        ),
+        (
+            IoOutcome::Read {
+                requested: 0,
+                advanced: 0,
+                ended: false,
+            },
+            "requested",
+            0,
+            bound,
+        ),
+        (
+            IoOutcome::Read {
+                requested: bound + 1,
+                advanced: 0,
+                ended: false,
+            },
+            "requested",
+            bound + 1,
+            bound,
+        ),
+        (
+            IoOutcome::Write {
+                provided: 8,
+                accepted: 9,
+            },
+            "accepted",
+            9,
+            8,
+        ),
+        (
+            IoOutcome::Write {
+                provided: 0,
+                accepted: 0,
+            },
+            "provided",
+            0,
+            bound,
+        ),
+        (
+            IoOutcome::Write {
+                provided: bound + 1,
+                accepted: 0,
+            },
+            "provided",
+            bound + 1,
+            bound,
+        ),
+    ];
+    for (outcome, fact, observed, maximum) in cases {
+        let error = outcome
+            .derive_progress()
+            .err()
+            .unwrap_or_else(|| panic!("{outcome:?} must be refused"));
+        assert_eq!(
+            error,
+            IoError::ObservationInconsistent {
+                operation: outcome.operation(),
+                fact,
+                observed,
+                maximum,
+            }
+        );
+        assert_eq!(error.code(), IoDiagnosticCode::ObservationInconsistent);
+    }
 }
 
 #[test]
