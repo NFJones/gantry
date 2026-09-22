@@ -9,9 +9,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FS_CLAUSES, FS_ITEMS, FS_SURFACE_MODES, FS_SURFACE_TARGETS, NameClass, PackageFamily, Prelude,
-    StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface,
-    declare_fs_surface,
+    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_SURFACE_MODES, FS_SURFACE_TARGETS,
+    FsDiagnosticCode, FsPath, NameClass, PackageFamily, Prelude, StabilityTier, StdGraph, StdItem,
+    StdPackage, StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -50,6 +50,7 @@ fn fs_contract_clauses_and_scope_are_published() {
         [
             "GNT-47.0-filesystem-foundation-scope",
             "GNT-47.1-filesystem-modules-and-item-rows",
+            "GNT-47.2-filesystem-path-values",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -67,6 +68,12 @@ fn fs_contract_clauses_and_scope_are_published() {
     }
     assert!(specification.contains("the capability-backed family `std.fs`"));
     assert!(specification.contains("consumes and never restates or widens"));
+    assert!(
+        specification.contains(
+            "The frozen diagnostics of this section are `fs-path-invalid` and `fs-path-escape`"
+        ),
+        "the section must publish its frozen diagnostic registry"
+    );
 }
 
 #[test]
@@ -80,13 +87,18 @@ fn fs_module_rows_are_closed_and_canonical() {
     for row in FS_ITEMS {
         assert_eq!(row.class, NameClass::Module);
         assert_eq!(row.tier, StabilityTier::Stable);
-        assert_eq!(
-            row.clauses,
-            [
+        let expected: &[&str] = match row.name {
+            "std.fs::path" => &[
                 "GNT-47.0-filesystem-foundation-scope",
                 "GNT-47.1-filesystem-modules-and-item-rows",
-            ]
-        );
+                "GNT-47.2-filesystem-path-values",
+            ],
+            _ => &[
+                "GNT-47.0-filesystem-foundation-scope",
+                "GNT-47.1-filesystem-modules-and-item-rows",
+            ],
+        };
+        assert_eq!(row.clauses, expected);
     }
 }
 
@@ -208,4 +220,111 @@ fn fs_surface_admission_is_closed_and_exact() {
             .map(|error| error.code()),
         Some(StdlibDiagnosticCode::UnsupportedApplicability)
     );
+}
+
+#[test]
+fn fs_path_values_are_bounded_and_escape_free() {
+    assert_eq!(
+        FsDiagnosticCode::ALL,
+        [FsDiagnosticCode::PathEscape, FsDiagnosticCode::PathInvalid]
+    );
+    assert_eq!(FsDiagnosticCode::PathEscape.as_str(), "fs-path-escape");
+    assert_eq!(FsDiagnosticCode::PathInvalid.as_str(), "fs-path-invalid");
+    assert_eq!(FS_PATH_SEGMENT_BOUND, 256);
+
+    let path = FsPath::rooted("workspace", &["logs", "today.txt"])
+        .unwrap_or_else(|error| panic!("the declared path is admissible: {error}"));
+    assert_eq!(path.root(), "workspace");
+    let segments = path
+        .segments()
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(segments, ["logs", "today.txt"]);
+    assert_eq!(path.canonical_spelling(), "workspace/logs/today.txt");
+    let joined = path
+        .join(&["extra"])
+        .unwrap_or_else(|error| panic!("the declared join is admissible: {error}"));
+    assert_eq!(
+        joined.canonical_spelling(),
+        "workspace/logs/today.txt/extra"
+    );
+    assert_eq!(
+        joined.root(),
+        "workspace",
+        "a join never changes the declared root"
+    );
+
+    // Reserved components are refused rather than normalized, collapsed, or resolved.
+    for (declared, component, position) in [
+        (vec![".."], "..", 0_u32),
+        (vec!["logs", ".."], "..", 1),
+        (vec!["."], ".", 0),
+    ] {
+        let error = FsPath::rooted("workspace", &declared)
+            .err()
+            .unwrap_or_else(|| panic!("the reserved component {component} must be refused"));
+        assert_eq!(error.code(), FsDiagnosticCode::PathEscape);
+        assert_eq!(error.component(), Some(component));
+        assert_eq!(error.position(), position);
+    }
+    let error = path
+        .join(&[".."])
+        .err()
+        .unwrap_or_else(|| panic!("a reserved component in a join must be refused"));
+    assert_eq!(error.code(), FsDiagnosticCode::PathEscape);
+    assert_eq!(error.position(), 2, "a join reports the joined position");
+
+    // Malformed declarations are refused instead of being repaired or defaulted.
+    for (root, declared) in [
+        ("", vec!["a"]),
+        ("/absolute", vec!["a"]),
+        ("work/space", vec!["a"]),
+        ("~home", vec!["a"]),
+        ("$HOME", vec!["a"]),
+        ("workspace", Vec::new()),
+        ("workspace", vec![""]),
+        ("workspace", vec!["a/b"]),
+        ("workspace", vec!["a\u{7}b"]),
+    ] {
+        let error = FsPath::rooted(root, &declared)
+            .err()
+            .unwrap_or_else(|| panic!("the declared ({root}, {declared:?}) must be refused"));
+        assert_eq!(error.code(), FsDiagnosticCode::PathInvalid);
+        assert_eq!(error.component(), None);
+    }
+
+    // The declared segment bound is enforced rather than truncated.
+    let admitted = vec!["segment"; FS_PATH_SEGMENT_BOUND];
+    assert!(FsPath::rooted("workspace", &admitted).is_ok());
+    let mut beyond = admitted;
+    beyond.push("segment");
+    let error = FsPath::rooted("workspace", &beyond)
+        .err()
+        .unwrap_or_else(|| panic!("a segment count beyond the bound must be refused"));
+    assert_eq!(error.code(), FsDiagnosticCode::PathInvalid);
+    assert!(
+        error.detail().contains("257"),
+        "the refusal names the declared count: {}",
+        error.detail()
+    );
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in FS_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "a path spelling is never authority",
+        "at most `FS_PATH_SEGMENT_BOUND` segments",
+        "refused under `fs-path-escape` naming the reserved component and its position",
+        "refused under `fs-path-invalid` naming the segment and its position",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
 }

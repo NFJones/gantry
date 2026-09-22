@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "724e3ad92c9edd588723071f86f8c0e7341a67166827712f56df709756812bbe",
+  "specification_sha256": "9865109f920bf1b2a1de5b8166bc13f3216db3ed74d65b56e85f854ab853c5f0",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16238,
+      "end_line": 16274,
       "rationale": null
     }
   ],
@@ -43558,15 +43558,15 @@
     {
       "id": "GNT-47.0-filesystem-foundation-scope",
       "span_start_line": 16198,
-      "span_end_line": 16213,
+      "span_end_line": 16215,
       "anchor_line": 16199,
       "body_start_line": 16200,
-      "body_end_line": 16213,
+      "body_end_line": 16215,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16200,
-          "end_line": 16213,
+          "end_line": 16215,
           "profiles": [
             "analyzer"
           ],
@@ -43596,16 +43596,16 @@
     },
     {
       "id": "GNT-47.1-filesystem-modules-and-item-rows",
-      "span_start_line": 16214,
-      "span_end_line": 16238,
-      "anchor_line": 16215,
-      "body_start_line": 16216,
-      "body_end_line": 16238,
+      "span_start_line": 16216,
+      "span_end_line": 16240,
+      "anchor_line": 16217,
+      "body_start_line": 16218,
+      "body_end_line": 16240,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16216,
-          "end_line": 16238,
+          "start_line": 16218,
+          "end_line": 16240,
           "profiles": [
             "analyzer"
           ],
@@ -43622,6 +43622,45 @@
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_module_rows_are_closed_and_canonical",
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_surface_declaration_requires_the_family_package",
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_surface_admission_is_closed_and_exact"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.2-filesystem-path-values",
+      "span_start_line": 16241,
+      "span_end_line": 16274,
+      "anchor_line": 16242,
+      "body_start_line": 16243,
+      "body_end_line": 16274,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16243,
+          "end_line": 16274,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_path_values_are_bounded_and_escape_free"
               ]
             }
           ]

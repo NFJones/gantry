@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "724e3ad92c9edd588723071f86f8c0e7341a67166827712f56df709756812bbe",
-  "byte_length": 1243091,
-  "line_count": 16238,
+  "specification_sha256": "9865109f920bf1b2a1de5b8166bc13f3216db3ed74d65b56e85f854ab853c5f0",
+  "byte_length": 1246001,
+  "line_count": 16274,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16238,
-      "sha256": "6b5dc1923331475a382a47897f4384489dd2324d535601f25757e5dd7e151f89",
+      "end_line": 16274,
+      "sha256": "ae57c3e99b221ddaf31f6d0854abca46290fe63ae94a8c770d30640a99699ec0",
       "rationale": null
     }
   ],
@@ -44785,12 +44785,12 @@
     {
       "id": "GNT-47.0-filesystem-foundation-scope",
       "span_start_line": 16198,
-      "span_end_line": 16213,
-      "span_sha256": "cc943356fd2310ed04d74827e3df95e67d9d5c5cdbadfbddc43af367b854692b",
+      "span_end_line": 16215,
+      "span_sha256": "b56997083da41c224932e08be914ed06b89923f18a47a8d6379ef971169f979a",
       "anchor_line": 16199,
       "body_start_line": 16200,
-      "body_end_line": 16213,
-      "body_sha256": "1500d9ef6e5fc1b0c5503e8a766ea3e2c788977b310a78b79672e378cc7f64f2",
+      "body_end_line": 16215,
+      "body_sha256": "ea42072cab26748b8a55c2fed8e851b45abf91f21afaf5f8dc6f7781461dbb33",
       "profiles": [
         "analyzer"
       ],
@@ -44802,7 +44802,7 @@
         {
           "key": "clause-001",
           "start_line": 16200,
-          "end_line": 16213,
+          "end_line": 16215,
           "profiles": [
             "analyzer"
           ],
@@ -44825,12 +44825,12 @@
     },
     {
       "id": "GNT-47.1-filesystem-modules-and-item-rows",
-      "span_start_line": 16214,
-      "span_end_line": 16238,
+      "span_start_line": 16216,
+      "span_end_line": 16240,
       "span_sha256": "16f43ffa290a691e0df27245e5fe8f859252380f9ffe233e197d9916e0fad93f",
-      "anchor_line": 16215,
-      "body_start_line": 16216,
-      "body_end_line": 16238,
+      "anchor_line": 16217,
+      "body_start_line": 16218,
+      "body_end_line": 16240,
       "body_sha256": "e0edcba4a035ffa0cb41c85fc7e0a75da0d7f17716815d942d100e679aea46b4",
       "profiles": [
         "analyzer"
@@ -44842,8 +44842,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16216,
-          "end_line": 16238,
+          "start_line": 16218,
+          "end_line": 16240,
           "profiles": [
             "analyzer"
           ],
@@ -44859,6 +44859,47 @@
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_module_rows_are_closed_and_canonical",
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_surface_declaration_requires_the_family_package",
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_surface_admission_is_closed_and_exact"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.2-filesystem-path-values",
+      "span_start_line": 16241,
+      "span_end_line": 16274,
+      "span_sha256": "07d0afdb61b7953a6619c61504cfb31c5495723d6ef913cdda969ebc37054cc5",
+      "anchor_line": 16242,
+      "body_start_line": 16243,
+      "body_end_line": 16274,
+      "body_sha256": "65db4c598a433b0814b47bde982f511fc38108eb34c1f3fde72db7019966496a",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16243,
+          "end_line": 16274,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_path_values_are_bounded_and_escape_free"
               ],
               "rationale": null
             }

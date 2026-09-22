@@ -5,6 +5,8 @@
 //! a resource, and it performs no I/O: every decision is a deterministic function of the declared
 //! standard-library graph it is handed.
 
+use std::fmt;
+
 use crate::package::TargetKind;
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
@@ -13,9 +15,10 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 2] = [
+pub const FS_CLAUSES: [&str; 3] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
+    "GNT-47.2-filesystem-path-values",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -59,6 +62,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
         clauses: &[
             "GNT-47.0-filesystem-foundation-scope",
             "GNT-47.1-filesystem-modules-and-item-rows",
+            "GNT-47.2-filesystem-path-values",
         ],
     },
     FsItemRow {
@@ -188,6 +192,238 @@ fn validate_fs_surface_package(graph: &StdGraph, package: &StdPackage) -> Result
                 StdlibDiagnosticCode::UnsupportedApplicability,
                 format!("`{}` does not declare its row's applicability", row.name),
             ));
+        }
+    }
+    Ok(())
+}
+
+/// The largest segment count one declared `std.fs` path value may carry.
+pub const FS_PATH_SEGMENT_BOUND: usize = 256;
+
+/// One declared filesystem refusal condition of `GNT-47.2-filesystem-path-values`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FsDiagnosticCode {
+    /// A reserved component was presented instead of a plain segment.
+    PathEscape,
+    /// A declared segment, root, or count lies outside its declared range.
+    PathInvalid,
+}
+
+impl FsDiagnosticCode {
+    /// Every declared code, in exact wire-name order.
+    pub const ALL: [Self; 2] = [Self::PathEscape, Self::PathInvalid];
+
+    /// Returns the registered diagnostic spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PathEscape => "fs-path-escape",
+            Self::PathInvalid => "fs-path-invalid",
+        }
+    }
+}
+
+/// One typed refusal from the filesystem path value model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FsError {
+    /// A reserved component was presented instead of a plain segment.
+    PathEscape {
+        /// The reserved component exactly as presented.
+        component: &'static str,
+        /// The zero-based position of the segment that carried it.
+        position: u32,
+    },
+    /// A declared segment, root, or count lies outside its declared range.
+    PathInvalid {
+        /// The declared fact exactly as presented.
+        detail: String,
+        /// The zero-based position of the offending segment, or zero for a root or count.
+        position: u32,
+    },
+}
+
+impl FsError {
+    /// Returns the registered diagnostic code of this refusal.
+    #[must_use]
+    pub const fn code(&self) -> FsDiagnosticCode {
+        match self {
+            Self::PathEscape { .. } => FsDiagnosticCode::PathEscape,
+            Self::PathInvalid { .. } => FsDiagnosticCode::PathInvalid,
+        }
+    }
+
+    /// Returns the position of the segment this refusal names.
+    #[must_use]
+    pub const fn position(&self) -> u32 {
+        match self {
+            Self::PathEscape { position, .. } | Self::PathInvalid { position, .. } => *position,
+        }
+    }
+
+    /// Returns the reserved component, when this refusal names one.
+    #[must_use]
+    pub const fn component(&self) -> Option<&'static str> {
+        match self {
+            Self::PathEscape { component, .. } => Some(*component),
+            Self::PathInvalid { .. } => None,
+        }
+    }
+
+    /// Returns the declared fact this refusal names.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        match self {
+            Self::PathEscape { component, .. } => component,
+            Self::PathInvalid { detail, .. } => detail,
+        }
+    }
+}
+
+impl fmt::Display for FsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PathEscape {
+                component,
+                position,
+            } => write!(
+                formatter,
+                "the reserved component `{component}` at position {position} is refused"
+            ),
+            Self::PathInvalid { detail, position } => write!(
+                formatter,
+                "the declared path fact `{detail}` at position {position} is outside its declared range"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for FsError {}
+
+/// One admitted `std.fs` path value of `GNT-47.2-filesystem-path-values`: a declared root and its
+/// ordered segments.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FsPath {
+    root: String,
+    segments: Vec<String>,
+}
+
+impl FsPath {
+    /// Admits one path value of a declared root and its declared segments.
+    ///
+    /// A root that is empty, carries a separator, or carries a home or environment marker is
+    /// refused under `fs-path-invalid`, and a segment outside the declared rules is refused under
+    /// `fs-path-invalid` or `fs-path-escape` rather than normalized, dropped, or resolved.
+    pub fn rooted(root: &str, segments: &[&str]) -> Result<Self, FsError> {
+        validate_root(root)?;
+        validate_segments(segments, 0)?;
+        Ok(Self {
+            root: root.to_owned(),
+            segments: segments
+                .iter()
+                .map(|segment| (*segment).to_owned())
+                .collect(),
+        })
+    }
+
+    /// Extends one admitted path value with declared segments, refusing rather than rewriting.
+    pub fn join(&self, segments: &[&str]) -> Result<Self, FsError> {
+        validate_segments(segments, self.segments.len() as u32)?;
+        let mut joined = self.segments.clone();
+        joined.extend(segments.iter().map(|segment| (*segment).to_owned()));
+        Ok(Self {
+            root: self.root.clone(),
+            segments: joined,
+        })
+    }
+
+    /// Returns the declared root.
+    #[must_use]
+    pub fn root(&self) -> &str {
+        &self.root
+    }
+
+    /// Returns the declared segments, in declared order.
+    #[must_use]
+    pub fn segments(&self) -> &[String] {
+        &self.segments
+    }
+
+    /// Returns the canonical spelling of the declared root and segments.
+    #[must_use]
+    pub fn canonical_spelling(&self) -> String {
+        let mut spelling = self.root.clone();
+        for segment in &self.segments {
+            spelling.push('/');
+            spelling.push_str(segment);
+        }
+        spelling
+    }
+}
+
+/// Validates one declared root under the rules of `GNT-47.2-filesystem-path-values`.
+fn validate_root(root: &str) -> Result<(), FsError> {
+    let invalid = |detail: String| FsError::PathInvalid {
+        detail,
+        position: 0,
+    };
+    if root.is_empty() {
+        return Err(invalid("an empty declared root".to_owned()));
+    }
+    if root.contains('/') {
+        return Err(invalid(format!(
+            "the declared root `{root}` carries a separator"
+        )));
+    }
+    if root.starts_with('~') || root.starts_with('$') {
+        return Err(invalid(format!(
+            "the declared root `{root}` carries a home or environment marker"
+        )));
+    }
+    Ok(())
+}
+
+/// Validates declared segments, offsetting reported positions by `base`.
+fn validate_segments(segments: &[&str], base: u32) -> Result<(), FsError> {
+    if segments.is_empty() {
+        return Err(FsError::PathInvalid {
+            detail: "a path value declares at least one segment".to_owned(),
+            position: base,
+        });
+    }
+    let total = base as usize + segments.len();
+    if total > FS_PATH_SEGMENT_BOUND {
+        return Err(FsError::PathInvalid {
+            detail: format!(
+                "the declared segment count {total} is outside 1..={FS_PATH_SEGMENT_BOUND}"
+            ),
+            position: base,
+        });
+    }
+    for (offset, segment) in segments.iter().enumerate() {
+        let position = base + offset as u32;
+        if *segment == "." || *segment == ".." {
+            return Err(FsError::PathEscape {
+                component: if *segment == "." { "." } else { ".." },
+                position,
+            });
+        }
+        if segment.is_empty() {
+            return Err(FsError::PathInvalid {
+                detail: "an empty declared segment".to_owned(),
+                position,
+            });
+        }
+        if segment.contains('/') {
+            return Err(FsError::PathInvalid {
+                detail: format!("the declared segment `{segment}` carries a separator"),
+                position,
+            });
+        }
+        if segment.chars().any(char::is_control) {
+            return Err(FsError::PathInvalid {
+                detail: format!("the declared segment `{segment}` carries a control scalar"),
+                position,
+            });
         }
     }
     Ok(())
