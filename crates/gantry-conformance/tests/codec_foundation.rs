@@ -1011,6 +1011,15 @@ fn codec_non_claims_are_closed_and_never_presented_as_guarantees() {
     }
     assert_eq!(wire_names.len(), CodecNonClaim::ALL.len());
     assert_eq!(CodecNonClaim::from_wire_name("not-a-non-claim"), None);
+    assert!(
+        CodecNonClaim::ExternalEligibility
+            .statement()
+            .contains(
+                "no value becomes admissible to a boundary or a recovery projection because a codec admitted it"
+            ),
+        "the external-eligibility non-claim publishes its admissibility sentence: {}",
+        CodecNonClaim::ExternalEligibility.statement()
+    );
     let conforming: Vec<CodecNonClaimAssertion> = CodecNonClaim::ALL
         .into_iter()
         .map(|name| CodecNonClaimAssertion::new(name, false))
@@ -1070,4 +1079,10 @@ fn codec_family_note_is_current() {
             claim.wire_name()
         );
     }
+    assert!(
+        note.contains(
+            "no value becomes admissible to a boundary or a recovery projection because a codec admitted it"
+        ),
+        "the note carries the external-eligibility admissibility sentence"
+    );
 }

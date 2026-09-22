@@ -37,7 +37,8 @@ so it cannot drift from the specification or the model.
 - `boundary-encoding` — no codec interprets, substitutes for, or extends the sealed canonical
   boundary encoding.
 - `durable-eligibility` — codec input and output are never durable state.
-- `external-eligibility` — no codec publishes an external capability or protected release.
+- `external-eligibility` — no codec publishes an external capability or protected release, and
+  no value becomes admissible to a boundary or a recovery projection because a codec admitted it.
 - `host-library-authority` — no host facility is a semantic authority for the section.
 - `implicit-application` — every codec operation is invoked explicitly.
 - `recovery-invocation` — recovery never invokes a codec.

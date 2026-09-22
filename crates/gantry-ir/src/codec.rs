@@ -1616,7 +1616,8 @@ pub enum CodecNonClaim {
     BoundaryEncoding,
     /// Codec input and output are never durable state and never carry durable identity.
     DurableEligibility,
-    /// No codec publishes an `ExternalValue`, protected-data release, or durable capability.
+    /// No codec publishes an `ExternalValue`, protected-data release, or durable capability, and
+    /// admission by a codec never makes a value admissible to a boundary or recovery projection.
     ExternalEligibility,
     /// No host facility is a semantic authority for any operation of the section.
     HostLibraryAuthority,
@@ -1658,35 +1659,21 @@ impl CodecNonClaim {
         }
     }
 
-    /// Returns the published statement of this non-claim.
+    /// Returns the published statement of this non-claim, derived from [`CODEC_NON_CLAIMS`] so the
+    /// declared vocabulary has exactly one source.
     #[must_use]
     pub const fn statement(self) -> &'static str {
-        match self {
-            Self::BoundaryEncoding => {
-                "No codec of Section 42 interprets, substitutes for, extends, or is applied to the sealed canonical boundary encoding of Section 5."
-            }
-            Self::DurableEligibility => {
-                "Codec input and output are never durable state, never carry a durable identity, and never make a value or an operation eligible for recovery."
-            }
-            Self::ExternalEligibility => {
-                "A codec of Section 42 never publishes an ExternalValue capability, a protected-data release, or a durable capability."
-            }
-            Self::HostLibraryAuthority => {
-                "No host codec library, host encoding facility, platform compressor, ambient registry, locale, or platform behavior is a semantic authority for any operation of Section 42."
-            }
-            Self::ImplicitApplication => {
-                "No codec of Section 42 is applied implicitly to any value, boundary encoding, journal artifact, or recovery projection; every codec operation is invoked explicitly."
-            }
-            Self::RecoveryInvocation => {
-                "No step of the recovery projection invokes a codec of Section 42, and no refusal of Section 42 is a recovery cut."
-            }
-            Self::UnboundedExpansion => {
-                "Every operation of Section 42 is bounded by the declared bounds of its codec's clause, and no operation expands without a declared bound or defers its bound to a host facility."
-            }
-            Self::VersionNegotiation => {
-                "No codec of Section 42 negotiates, upgrades, downgrades, or falls back to a version other than the declared version identity."
-            }
-        }
+        let position = match self {
+            Self::BoundaryEncoding => 0,
+            Self::DurableEligibility => 1,
+            Self::ExternalEligibility => 2,
+            Self::HostLibraryAuthority => 3,
+            Self::ImplicitApplication => 4,
+            Self::RecoveryInvocation => 5,
+            Self::UnboundedExpansion => 6,
+            Self::VersionNegotiation => 7,
+        };
+        CODEC_NON_CLAIMS[position]
     }
 
     /// Decodes one canonical wire name; every other spelling is `None`.
@@ -1703,7 +1690,7 @@ impl CodecNonClaim {
 pub const CODEC_NON_CLAIMS: [&str; 8] = [
     "No codec of Section 42 interprets, substitutes for, extends, or is applied to the sealed canonical boundary encoding of Section 5.",
     "Codec input and output are never durable state, never carry a durable identity, and never make a value or an operation eligible for recovery.",
-    "A codec of Section 42 never publishes an ExternalValue capability, a protected-data release, or a durable capability.",
+    "A codec of Section 42 never publishes an ExternalValue capability, a protected-data release, or a durable capability, and no value becomes admissible to a boundary or a recovery projection because a codec admitted it.",
     "No host codec library, host encoding facility, platform compressor, ambient registry, locale, or platform behavior is a semantic authority for any operation of Section 42.",
     "No codec of Section 42 is applied implicitly to any value, boundary encoding, journal artifact, or recovery projection; every codec operation is invoked explicitly.",
     "No step of the recovery projection invokes a codec of Section 42, and no refusal of Section 42 is a recovery cut.",
