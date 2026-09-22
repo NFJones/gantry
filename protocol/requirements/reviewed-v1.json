@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "df74b7726b5033b372b4394180c8b3e08da6596239386dd35f2f691cf60573d9",
+  "specification_sha256": "074f5bed7fcf8c066bdf283a2574d9d608c4310f77fed4a5e02aeac0e288fb15",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16306,
+      "end_line": 16347,
       "rationale": null
     }
   ],
@@ -43700,6 +43700,45 @@
               "rationale": null,
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_actions_are_closed_and_carry_recovery_classes"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.4-filesystem-resource-operations",
+      "span_start_line": 16307,
+      "span_end_line": 16347,
+      "anchor_line": 16308,
+      "body_start_line": 16309,
+      "body_end_line": 16347,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16309,
+          "end_line": 16347,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_resource_operations_are_closed_and_consume_io_requests"
               ]
             }
           ]

@@ -812,7 +812,7 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
-| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, the common I/O foundation, the console foundation, and the filesystem foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact`; `GNT-46.0-console-foundation-scope` through `GNT-46.5-console-terminal-observations`; `GNT-47.0-filesystem-foundation-scope` through `GNT-47.3-filesystem-action-values` |
+| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, the common I/O foundation, the console foundation, and the filesystem foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact`; `GNT-46.0-console-foundation-scope` through `GNT-46.5-console-terminal-observations`; `GNT-47.0-filesystem-foundation-scope` through `GNT-47.4-filesystem-resource-operations` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -16304,3 +16304,44 @@ descriptor, open handle, resource, traversal, watch, snapshot, receipt, quota, a
 capability grant, runtime availability, schema, recovery, durability, boundary encoding, lowering,
 machine representation, or family behavior, no change to any other clause of this section or of
 Section 29, and it claims no performance, storage layout, or physical representation.
+
+<a id="GNT-47.4-filesystem-resource-operations"></a>
+
+**[GNT-47.4-filesystem-resource-operations] Filesystem resource operations.** This clause declares the
+resource operation vocabulary of the `std.fs::resource` module. The declared operations are exactly
+ten - open, read, write, seek, flush, sync, truncate, close, lock, and watch, in that canonical
+order, spelled `open`, `read`, `write`, `seek`, `flush`, `sync`, `truncate`, `close`, `lock`, and
+`watch` - and the model's `FsResourceOperation` and its `FsResourceOperation::ALL` publish them: no
+other operation, alias, or spelling is declared, and an operation presented by an undeclared
+spelling is refused rather than inferred or substituted. A spelling outside the declared ten -
+including a settlement spelling such as `finish` and a text-reading spelling such as `read_text` -
+is not declared by this clause and is refused rather than inferred, substituted, or normalized into
+one of the ten: this clause declares no streaming-segment spelling and no implicit native or text
+conversion. Every operation applies to one path value of `GNT-47.2-filesystem-path-values` and the
+grant the caller presents: an operation declares no ambient descriptor, no inherited handle, and no
+implicit root, and a path spelling is never authority here either. A spelling is declared within its
+own module: the whole-object action vocabulary of `GNT-47.3-filesystem-action-values` is a different
+module's closed set, so a spelling both modules use - such as `read` - names the declared operation
+of the module it is presented for, and neither vocabulary admits the other's member.
+
+A read, a write, and a seek each consume exactly one admitted request of the
+`GNT-45.1-bounded-one-call-io-contract` and publishes exactly the progress observation that
+`GNT-45.3-io-progress-derivation` derives from that request's admitted facts: a read consumes one
+read request and a write consumes one write request, each within the declared octet bound of that
+clause, and a seek consumes one seek request whose declared quantity is the position it moves to.
+The model accessor `declared_request_kind` publishes exactly that decision, and no operation
+consumes a second request kind. This clause publishes no second request contract, no second octet
+bound, and no second progress vocabulary. A flush declares no octet quantity and consumes no
+request; a completed flush publishes exactly `committed-progress` of
+`GNT-29.2-reader-writer-seek-progress` and publishes no octet count. open, sync, truncate, close,
+lock, and watch declare no octet quantity and consume no request in this clause, and this clause
+publishes no progress observation, no channel, and no settlement for them: a truncate declares a
+length and not a transfer.
+
+This clause publishes the operation vocabulary and its consumption of the common I/O contract only:
+it publishes no descriptor, open handle, resource, resource state machine, admitted resource
+instance, generation or lineage rule, watch event, snapshot, receipt, quota, mutation or admission
+rule, cancellation safe point, adapter, host trait, capability grant, runtime availability, schema,
+recovery, durability, boundary encoding, lowering, machine representation, or family behavior, no
+change to any other clause of this section or of Sections 20, 29, or 45, and it claims no
+performance, storage layout, or physical representation.

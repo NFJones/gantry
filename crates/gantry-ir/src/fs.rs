@@ -1,13 +1,16 @@
 //! Declared `std.fs` surface model for `SPEC.md` Section 47.
 //!
-//! This module publishes the canonical module and item rows of the `std.fs` family and their exact
-//! applicability. It is not a path, a rooted directory, a descriptor, an adapter, a capability, or
-//! a resource, and it performs no I/O: every decision is a deterministic function of the declared
-//! standard-library graph it is handed.
+//! This module publishes the canonical module and item rows of the `std.fs` family and their
+//! applicability, the path value contract of `std.fs::path`, the whole-object action vocabulary of
+//! `std.fs::action`, and the resource operation vocabulary of `std.fs::resource` with its
+//! consumption of the common I/O contract. It is not a descriptor, an open handle, a live resource
+//! instance, an adapter, a capability, or a runtime availability, and it performs no I/O: every
+//! decision it publishes is a deterministic function of its declared arguments alone.
 
 use std::fmt;
 
 use crate::generated::RecoveryClass;
+use crate::io::IoOperation;
 use crate::package::TargetKind;
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
@@ -16,11 +19,12 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 4] = [
+pub const FS_CLAUSES: [&str; 5] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
     "GNT-47.3-filesystem-action-values",
+    "GNT-47.4-filesystem-resource-operations",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -483,6 +487,103 @@ impl FsAction {
         match self {
             Self::Read => RecoveryClass::ReadOnly,
             Self::Create | Self::Replace | Self::Remove => RecoveryClass::NonIdempotent,
+        }
+    }
+}
+
+/// One declared resource operation of `GNT-47.4-filesystem-resource-operations`.
+///
+/// Each operation names one path value of `GNT-47.2-filesystem-path-values` and the grant the
+/// caller presents. A read, a write, and a seek each consume exactly one admitted request of the
+/// common I/O contract of `GNT-45.1-bounded-one-call-io-contract`; no other operation consumes a
+/// request, declares an octet quantity, or publishes a progress observation here.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FsResourceOperation {
+    /// The declared `open` operation.
+    Open,
+    /// The declared `read` operation.
+    Read,
+    /// The declared `write` operation.
+    Write,
+    /// The declared `seek` operation.
+    Seek,
+    /// The declared `flush` operation.
+    Flush,
+    /// The declared `sync` operation.
+    Sync,
+    /// The declared `truncate` operation.
+    Truncate,
+    /// The declared `close` operation.
+    Close,
+    /// The declared `lock` operation.
+    Lock,
+    /// The declared `watch` operation.
+    Watch,
+}
+
+impl FsResourceOperation {
+    /// Every declared resource operation, in canonical order.
+    pub const ALL: [Self; 10] = [
+        Self::Open,
+        Self::Read,
+        Self::Write,
+        Self::Seek,
+        Self::Flush,
+        Self::Sync,
+        Self::Truncate,
+        Self::Close,
+        Self::Lock,
+        Self::Watch,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Read => "read",
+            Self::Write => "write",
+            Self::Seek => "seek",
+            Self::Flush => "flush",
+            Self::Sync => "sync",
+            Self::Truncate => "truncate",
+            Self::Close => "close",
+            Self::Lock => "lock",
+            Self::Watch => "watch",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|operation| operation.wire_name() == value)
+    }
+
+    /// Returns the declared `std.io` request kind this operation consumes, if any.
+    ///
+    /// A read consumes one read request, a write consumes one write request, and a seek consumes
+    /// one seek request; no other declared operation consumes a request in this clause.
+    #[must_use]
+    pub const fn declared_request_kind(self) -> Option<IoOperation> {
+        match self {
+            Self::Read => Some(IoOperation::Read),
+            Self::Write => Some(IoOperation::Write),
+            Self::Seek => Some(IoOperation::Seek),
+            Self::Open
+            | Self::Flush
+            | Self::Sync
+            | Self::Truncate
+            | Self::Close
+            | Self::Lock
+            | Self::Watch => None,
         }
     }
 }

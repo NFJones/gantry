@@ -220,7 +220,8 @@ pub use console::{
 // adapter, capability, or runtime availability.
 pub use fs::{
     FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction,
-    FsDiagnosticCode, FsError, FsItemRow, FsPath, admit_fs_surface, declare_fs_surface,
+    FsDiagnosticCode, FsError, FsItemRow, FsPath, FsResourceOperation, admit_fs_surface,
+    declare_fs_surface,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and

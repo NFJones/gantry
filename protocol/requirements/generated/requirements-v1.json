@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "df74b7726b5033b372b4394180c8b3e08da6596239386dd35f2f691cf60573d9",
-  "byte_length": 1248769,
-  "line_count": 16306,
+  "specification_sha256": "074f5bed7fcf8c066bdf283a2574d9d608c4310f77fed4a5e02aeac0e288fb15",
+  "byte_length": 1252172,
+  "line_count": 16347,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "6e20178f21f42122cc5d1e76d01327d5c744d932e1ddf3f69c0cb00db50609d4",
+      "sha256": "2b940162c93c74ec16b853b7afc01ab71ef612fee3681034e899ba948217a8e5",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16306,
-      "sha256": "4238afa957b615dacb9ca9bd6bbe96edade6f5c7f05afb8b4290d356ad7166ee",
+      "end_line": 16347,
+      "sha256": "f73c36babdd6150a3513ca99dc731f3c472c180b081ddf48be0356399def6358",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "c03a630766e2c329090a619800c646cc7d0aa4be5cc30eed1b25f98b76bddaad",
+      "span_sha256": "aef54655e28aeb1d8d9dc2b89d3a1c6d156e89c00b707456356b8e25f973ccea",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "03c5d468f1859dd25e5248f43cdbb2b7832c42d97ee3b6c2ff4336863336b926",
+      "body_sha256": "d0de7fa655b0c4596cd664bb98d1e647fd8f738ff1a4f05a3e19ba13e49479cb",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44941,6 +44941,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_actions_are_closed_and_carry_recovery_classes"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.4-filesystem-resource-operations",
+      "span_start_line": 16307,
+      "span_end_line": 16347,
+      "span_sha256": "3b20014440c724bcc5c5170fd77fab99c763a11bdff7cdfaaa07309cbb7c0d6b",
+      "anchor_line": 16308,
+      "body_start_line": 16309,
+      "body_end_line": 16347,
+      "body_sha256": "d0964add8ceec1d5480024722c592ad77acef820d3ec824e4906e2a5f160fa4b",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16309,
+          "end_line": 16347,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_resource_operations_are_closed_and_consume_io_requests"
               ],
               "rationale": null
             }

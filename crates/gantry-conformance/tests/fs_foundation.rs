@@ -2,17 +2,17 @@
 //!
 //! The lane pins the declared filesystem clauses, the closed module-row set, and the exact
 //! declaration and admission behavior of `crates/gantry-ir/src/fs.rs` over one standard-library
-//! graph. It performs no host I/O and claims no path, descriptor, resource, adapter, or runtime
-//! behavior.
+//! graph. It performs no host I/O and claims no descriptor, open handle, live resource instance,
+//! adapter, or runtime behavior.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction,
-    FsDiagnosticCode, FsPath, NameClass, PackageFamily, Prelude, StabilityTier, StdGraph, StdItem,
-    StdPackage, StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface,
-    generated::RecoveryClass,
+    FsDiagnosticCode, FsPath, FsResourceOperation, IoOperation, NameClass, PackageFamily, Prelude,
+    StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface,
+    declare_fs_surface, generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -53,6 +53,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.1-filesystem-modules-and-item-rows",
             "GNT-47.2-filesystem-path-values",
             "GNT-47.3-filesystem-action-values",
+            "GNT-47.4-filesystem-resource-operations",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -414,6 +415,126 @@ fn fs_actions_are_closed_and_carry_recovery_classes() {
         "a create, a replace, and a remove are `non_idempotent`",
         "no action declares an implicit root, a default directory, or a search path",
         "declares no partial progress, no octet quantity, no request, no handle, and no resource state",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_resource_operations_are_closed_and_consume_io_requests() {
+    assert_eq!(
+        FsResourceOperation::ALL,
+        [
+            FsResourceOperation::Open,
+            FsResourceOperation::Read,
+            FsResourceOperation::Write,
+            FsResourceOperation::Seek,
+            FsResourceOperation::Flush,
+            FsResourceOperation::Sync,
+            FsResourceOperation::Truncate,
+            FsResourceOperation::Close,
+            FsResourceOperation::Lock,
+            FsResourceOperation::Watch,
+        ]
+    );
+    assert_eq!(
+        FsResourceOperation::ALL
+            .into_iter()
+            .map(FsResourceOperation::wire_name)
+            .collect::<Vec<_>>(),
+        [
+            "open", "read", "write", "seek", "flush", "sync", "truncate", "close", "lock", "watch",
+        ]
+    );
+    for operation in FsResourceOperation::ALL {
+        assert_eq!(
+            FsResourceOperation::from_wire_name(operation.wire_name()),
+            Some(operation)
+        );
+        assert_eq!(operation.as_str(), operation.wire_name());
+    }
+    for undeclared in ["finish", "read_text", "append", "read-text"] {
+        assert_eq!(
+            FsResourceOperation::from_wire_name(undeclared),
+            None,
+            "`{undeclared}` is not one of the declared ten"
+        );
+    }
+
+    // Exactly the three declared std.io kinds are consumed, one each, and every remaining
+    // declared operation consumes no request at all.
+    let consuming = FsResourceOperation::ALL
+        .into_iter()
+        .filter_map(|operation| {
+            operation
+                .declared_request_kind()
+                .map(|kind| (operation, kind))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        consuming,
+        [
+            (FsResourceOperation::Read, IoOperation::Read),
+            (FsResourceOperation::Write, IoOperation::Write),
+            (FsResourceOperation::Seek, IoOperation::Seek),
+        ]
+    );
+    let mut consumed_kinds = consuming
+        .iter()
+        .map(|(_, kind)| kind.wire_name())
+        .collect::<Vec<_>>();
+    consumed_kinds.sort_unstable();
+    assert_eq!(
+        consumed_kinds,
+        IoOperation::ALL.map(IoOperation::wire_name),
+        "exactly the three declared std.io kinds are consumed, one each"
+    );
+    for operation in [
+        FsResourceOperation::Open,
+        FsResourceOperation::Flush,
+        FsResourceOperation::Sync,
+        FsResourceOperation::Truncate,
+        FsResourceOperation::Close,
+        FsResourceOperation::Lock,
+        FsResourceOperation::Watch,
+    ] {
+        assert_eq!(
+            operation.declared_request_kind(),
+            None,
+            "`{}` consumes no admitted request in this clause",
+            operation.wire_name()
+        );
+    }
+    assert!(
+        FS_ITEMS.iter().any(|row| row.name == "std.fs::resource"),
+        "the declared resource operation vocabulary belongs to the `std.fs::resource` row"
+    );
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in FS_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "The declared operations are exactly ten - open, read, write, seek, flush, sync, truncate, close, lock, and watch, in that canonical order",
+        "the model's `FsResourceOperation` and its `FsResourceOperation::ALL` publish them",
+        "A spelling outside the declared ten - including a settlement spelling such as `finish` and a text-reading spelling such as `read_text` - is not declared by this clause",
+        "no streaming-segment spelling and no implicit native or text conversion",
+        "no ambient descriptor, no inherited handle, and no implicit root",
+        "a path spelling is never authority here either",
+        "a read consumes one read request and a write consumes one write request",
+        "a seek consumes one seek request whose declared quantity is the position it moves to",
+        "The model accessor `declared_request_kind` publishes exactly that decision",
+        "A flush declares no octet quantity and consumes no request",
+        "a completed flush publishes exactly `committed-progress` of `GNT-29.2-reader-writer-seek-progress` and publishes no octet count",
+        "publishes no progress observation, no channel, and no settlement for them",
+        "a truncate declares a length and not a transfer",
+        "no second request contract, no second octet bound, and no second progress vocabulary",
     ] {
         assert!(
             specification.contains(rule),
