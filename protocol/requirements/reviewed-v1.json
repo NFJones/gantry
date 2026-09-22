@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "29bca419a291b2cd2f2d891fe6112034a26058203f8bee9b2cdd64a2ea71d720",
+  "specification_sha256": "b935cd1d365c40febbfbeb18d5f8fc8ee3a3d4c38e6a563b96f1dedeb9a48689",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16598,
+      "end_line": 16601,
       "rationale": null
     }
   ],
@@ -43989,15 +43989,15 @@
     {
       "id": "GNT-47.11-filesystem-case-identity",
       "span_start_line": 16564,
-      "span_end_line": 16598,
+      "span_end_line": 16601,
       "anchor_line": 16565,
       "body_start_line": 16566,
-      "body_end_line": 16598,
+      "body_end_line": 16601,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16566,
-          "end_line": 16598,
+          "end_line": 16601,
           "profiles": [
             "analyzer"
           ],

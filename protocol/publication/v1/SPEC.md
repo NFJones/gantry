@@ -16564,11 +16564,12 @@ section, and it claims no performance, storage layout, or physical representatio
 
 <a id="GNT-47.11-filesystem-case-identity"></a>
 
-**[GNT-47.11-filesystem-case-identity] Filesystem case identity.** This clause publishes the case
-rule of the path values of `GNT-47.2-filesystem-path-values` and of the entry names a traversal of
-`GNT-47.6-filesystem-traversal` publishes. Two path values are equal exactly when their declared
-roots and their declared segment sequences are equal as sequences of Unicode scalar values, exactly
-as `GNT-41.6-canonical-text-comparison` compares two text values: the comparison is exactly
+**[GNT-47.11-filesystem-case-identity] Filesystem case identity.** This clause publishes the
+declaration-layer case rule that `GNT-47.2-filesystem-path-values` leaves to it, for the path values
+of that clause and for the entry names a traversal of `GNT-47.6-filesystem-traversal` publishes. The
+path-value identity of `GNT-47.2-filesystem-path-values` is decided by scalar-value sequence
+equality of the declared root and the declared segments, exactly as
+`GNT-41.6-canonical-text-comparison` compares two text values: the comparison is exactly
 case-sensitive, it never folds, and it never consults a locale, a host collation, a display form, or
 a case-insensitive lookup key, so `Report` and `report` are two declared segments and two declared
 path values that no clause of this section merges, normalizes, folds, renames, or substitutes, and
@@ -16579,12 +16580,14 @@ name publish two different sequences and never one sequence with a preferred spe
 A target's own case behaviour is not a fact of this section: whether a target folds case for its own
 lookup is a declared host fact supplied to the operation, admitted only as
 `GNT-18.7-case-behaviour` admits a case-insensitive or locale-sensitive comparison, and it changes
-no declared path value, no declared segment, and no declared identity. Where a folding target
-reports that two declared path values name one object, the outcome is the refusal the clause
-publishing that operation declares, published before the object is changed, and never a merge, a
-rename, a substitution, a normalization, or a success: this clause publishes no refusal of its own,
-adds no diagnostic to the frozen registry of `GNT-47.0-filesystem-foundation-scope`, and no target
-fold is an escape from `GNT-47.7-filesystem-action-grants`, `GNT-47.8-filesystem-link-policy`, or
+no declared path value, no declared segment, and no declared identity. A fold is never identity,
+never a lookup key, never a merge, never a rename, and never a substitution: what a folding target
+reports is not a declared outcome of this section, this clause admits no fold as identity, publishes
+no refusal of its own, and adds no diagnostic to the frozen registry of
+`GNT-47.0-filesystem-foundation-scope`, so a collision a folding target reports is refused only by a
+refusal some other clause of this section declares, and no clause of this section may read this
+paragraph as declaring one; no target fold is an escape from
+`GNT-47.7-filesystem-action-grants`, `GNT-47.8-filesystem-link-policy`, or
 `GNT-47.9-filesystem-replacement`.
 
 This clause publishes the case-comparison basis only: it publishes no case-insensitive matching,

@@ -988,7 +988,10 @@ fn fs_path_value_case_identity_is_exact_and_never_folded() {
         .unwrap_or_else(|error| panic!("an upper-case segment is declared: {error:?}"));
     let lower = FsPath::rooted("root", &["report"])
         .unwrap_or_else(|error| panic!("a lower-case segment is declared: {error:?}"));
-    assert_ne!(upper, lower, "case decides no declared segment identity");
+    assert_ne!(
+        upper, lower,
+        "no fold merges two declared segments that differ only in case"
+    );
     assert_eq!(upper.canonical_spelling(), "root/Report");
     assert_eq!(lower.canonical_spelling(), "root/report");
     assert_ne!(upper.canonical_spelling(), lower.canonical_spelling());
@@ -1006,13 +1009,14 @@ fn fs_path_value_case_identity_is_exact_and_never_folded() {
 
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
     for rule in [
-        "Two path values are equal exactly when their declared roots and their declared segment sequences are equal as sequences of Unicode scalar values",
+        "the declaration-layer case rule that `GNT-47.2-filesystem-path-values` leaves to it",
+        "The path-value identity of `GNT-47.2-filesystem-path-values` is decided by scalar-value sequence equality of the declared root and the declared segments",
         "the comparison is exactly case-sensitive, it never folds, and it never consults a locale, a host collation, a display form, or a case-insensitive lookup key",
         "`Report` and `report` are two declared segments and two declared path values that no clause of this section merges, normalizes, folds, renames, or substitutes, and neither spelling is preferred",
         "two directory states that differ only in the case of an entry name publish two different sequences and never one sequence with a preferred spelling",
         "A target's own case behaviour is not a fact of this section",
-        "the outcome is the refusal the clause publishing that operation declares, published before the object is changed, and never a merge, a rename, a substitution, a normalization, or a success",
-        "adds no diagnostic to the frozen registry of `GNT-47.0-filesystem-foundation-scope`",
+        "A fold is never identity, never a lookup key, never a merge, never a rename, and never a substitution",
+        "what a folding target reports is not a declared outcome of this section, this clause admits no fold as identity, publishes no refusal of its own, and adds no diagnostic to the frozen registry of `GNT-47.0-filesystem-foundation-scope`",
     ] {
         assert!(
             specification.contains(rule),
