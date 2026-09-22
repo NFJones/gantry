@@ -5,7 +5,8 @@
 //! identity, the closed ordered vocabularies, the no-ambient-authority rule, the one non-shipping
 //! test target kind that qualifies every kind, the ceiling bound a test requirement obeys, and the
 //! declared testing-support harness contract with its strict substitution declaration, plus the
-//! declared execution rules and the canonical discovery order a run enumerates.
+//! declared execution rules, the canonical discovery order a run enumerates, and the declared run
+//! plan that binds kinds and substitutions to those rules.
 
 use std::collections::BTreeSet;
 
@@ -13,10 +14,10 @@ use gantry::ir::{
     DeclaredCeiling, ModeAdmission, NameClass, PackageError, PackageFamily, RequirementDemand,
     STD_TEST_ADMITTED_MODE, STD_TEST_CLASS, STD_TEST_NON_CLAIMS, STD_TEST_PACKAGE,
     STD_TEST_TARGET_KIND, STD_TEST_TIER, SemanticMode, StabilityTier, TargetKind,
-    TestDiscoveryRefusal, TestExecutionRule, TestHarnessCapability, TestKind, TestSubstitution,
-    TestSubstitutionRefusal, bound_test_requirement, declare_test_discovery,
-    declare_test_substitutions, may_acquire_ambient_authority, std_test_family,
-    test_target_is_shipping_authority,
+    TestDiscoveryRefusal, TestExecutionRule, TestHarnessCapability, TestKind, TestRunPlan,
+    TestRunRefusal, TestSubstitution, TestSubstitutionRefusal, bound_test_requirement,
+    declare_test_discovery, declare_test_run, declare_test_substitutions,
+    may_acquire_ambient_authority, std_test_family, test_target_is_shipping_authority,
 };
 
 #[test]
@@ -263,10 +264,10 @@ fn execution_rules_are_closed_in_plan_order() {
             "deterministic-discovery-and-ordering",
             "per-test-isolation",
             "bounded-parallelism",
-            "timeout",
-            "fixture",
-            "temporary-capability-root",
-            "structured-assertion",
+            "timeouts",
+            "fixtures",
+            "temporary-capability-roots",
+            "structured-assertions",
             "shrinking",
             "replay",
         ]
@@ -309,5 +310,48 @@ fn declared_discovery_is_canonical_and_strictly_refused() -> Result<(), TestDisc
         declare_test_discovery(&["alpha", "alpha"]),
         Err(TestDiscoveryRefusal::Duplicate)
     ));
+    Ok(())
+}
+
+#[test]
+fn declared_run_plans_are_canonical_and_strictly_refused() -> Result<(), TestRunRefusal> {
+    let plan = declare_test_run(&["unit", "property"], &["prng", "clock"])?;
+    assert_eq!(
+        plan.kinds(),
+        [TestKind::Property, TestKind::Unit].as_slice()
+    );
+    assert_eq!(
+        plan.substitutions(),
+        [TestSubstitution::Clock, TestSubstitution::Prng].as_slice()
+    );
+    assert_eq!(plan.execution_rules(), TestExecutionRule::ALL.as_slice());
+
+    let permuted = declare_test_run(&["property", "unit"], &["clock", "prng"])?;
+    assert_eq!(plan.kinds(), permuted.kinds());
+    assert_eq!(plan.substitutions(), permuted.substitutions());
+    assert_eq!(plan, permuted);
+
+    let empty = declare_test_run(&[], &[])?;
+    assert!(empty.kinds().is_empty());
+    assert!(empty.substitutions().is_empty());
+    assert_eq!(empty.execution_rules(), TestExecutionRule::ALL.as_slice());
+
+    assert!(matches!(
+        declare_test_run(&["fuzz"], &[]),
+        Err(TestRunRefusal::UnknownKind)
+    ));
+    assert!(matches!(
+        declare_test_run(&["unit", "unit"], &[]),
+        Err(TestRunRefusal::DuplicateKind)
+    ));
+    assert!(matches!(
+        declare_test_run(&[], &["network"]),
+        Err(TestRunRefusal::UnknownSubstitution)
+    ));
+    assert!(matches!(
+        declare_test_run(&[], &["clock", "clock"]),
+        Err(TestRunRefusal::DuplicateSubstitution)
+    ));
+    let _: fn(&[&str], &[&str]) -> Result<TestRunPlan, TestRunRefusal> = declare_test_run;
     Ok(())
 }

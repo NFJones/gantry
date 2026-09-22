@@ -125,6 +125,15 @@ impl TestKind {
     pub fn admitted_modes(self) -> &'static [SemanticMode] {
         ModeAdmission::admitted_modes(self.target_kind())
     }
+
+    /// Returns this kind's index in the canonical declaration order.
+    #[must_use]
+    pub fn canonical_index(self) -> usize {
+        Self::ALL
+            .into_iter()
+            .position(|candidate| candidate == self)
+            .unwrap_or(Self::ALL.len())
+    }
 }
 
 /// One declared deterministic substitution of `std.test`, in canonical wire-name order.
@@ -401,10 +410,10 @@ impl TestExecutionRule {
             Self::DeterministicDiscoveryAndOrdering => "deterministic-discovery-and-ordering",
             Self::PerTestIsolation => "per-test-isolation",
             Self::BoundedParallelism => "bounded-parallelism",
-            Self::Timeout => "timeout",
-            Self::Fixture => "fixture",
-            Self::TemporaryCapabilityRoot => "temporary-capability-root",
-            Self::StructuredAssertion => "structured-assertion",
+            Self::Timeout => "timeouts",
+            Self::Fixture => "fixtures",
+            Self::TemporaryCapabilityRoot => "temporary-capability-roots",
+            Self::StructuredAssertion => "structured-assertions",
             Self::Shrinking => "shrinking",
             Self::Replay => "replay",
         }
@@ -462,4 +471,82 @@ pub fn declare_test_discovery<'a>(names: &[&'a str]) -> Result<Vec<&'a str>, Tes
     }
     declared.sort_unstable();
     Ok(declared)
+}
+
+/// Why one declared test-run plan is refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TestRunRefusal {
+    /// A declared kind spelling is not one of the closed test kinds.
+    UnknownKind,
+    /// A declared kind appears more than once in the same plan.
+    DuplicateKind,
+    /// A declared substitution spelling is not one of the closed substitutions.
+    UnknownSubstitution,
+    /// A declared substitution appears more than once in the same plan.
+    DuplicateSubstitution,
+}
+
+/// One declared test-run plan: the kinds it contains, the substitutions it consumes, and the
+/// execution rules it obeys.
+///
+/// A plan is a declaration only: it schedules nothing, executes nothing, and acquires no
+/// authority. Both declared sets are held in canonical declaration order, independent of the
+/// order they were presented in, and every plan obeys the whole closed `TestExecutionRule` set
+/// because the harness rules are kind-independent: no kind opts out of deterministic discovery,
+/// isolation, bounded parallelism, timeouts, fixtures, temporary capability roots, structured
+/// assertions, shrinking, or replay.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TestRunPlan {
+    kinds: Vec<TestKind>,
+    substitutions: Vec<TestSubstitution>,
+}
+
+impl TestRunPlan {
+    /// Returns the declared kinds, in canonical declaration order.
+    #[must_use]
+    pub fn kinds(&self) -> &[TestKind] {
+        &self.kinds
+    }
+
+    /// Returns the declared substitutions, in canonical declaration order.
+    #[must_use]
+    pub fn substitutions(&self) -> &[TestSubstitution] {
+        &self.substitutions
+    }
+
+    /// Returns the execution rules every declared plan obeys.
+    #[must_use]
+    pub fn execution_rules(&self) -> &'static [TestExecutionRule] {
+        &TestExecutionRule::ALL
+    }
+}
+
+/// Declares one test-run plan over a presented kind set and a presented substitution set.
+///
+/// Both sets are decoded strictly and returned in canonical declaration order, so two runs that
+/// declare the same kinds and substitutions in different orders declare the same plan. An unknown
+/// or twice-declared kind or substitution is refused rather than repaired, and an empty plan is
+/// admitted: it declares no kind and no substitution.
+pub fn declare_test_run(
+    kinds: &[&str],
+    substitutions: &[&str],
+) -> Result<TestRunPlan, TestRunRefusal> {
+    let mut declared_kinds = Vec::with_capacity(kinds.len());
+    for name in kinds {
+        let kind = TestKind::from_wire_name(name).ok_or(TestRunRefusal::UnknownKind)?;
+        if declared_kinds.contains(&kind) {
+            return Err(TestRunRefusal::DuplicateKind);
+        }
+        declared_kinds.push(kind);
+    }
+    declared_kinds.sort_by_key(|kind| kind.canonical_index());
+    let declared_substitutions =
+        declare_test_substitutions(substitutions).map_err(|refusal| match refusal {
+            TestSubstitutionRefusal::Unknown => TestRunRefusal::UnknownSubstitution,
+            TestSubstitutionRefusal::Duplicate => TestRunRefusal::DuplicateSubstitution,
+        })?;
+    Ok(TestRunPlan {
+        kinds: declared_kinds,
+        substitutions: declared_substitutions,
+    })
 }
