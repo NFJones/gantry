@@ -3260,14 +3260,13 @@ impl Compiler<'_> {
             .transpose()?;
         let metadata = ExecutableOperation {
             kind: site.kind,
-            // The result type's resource class supports only the live-resource arm of the Section 20
-            // kind (`OperationKind::for_value_resource_class`); a non-live result is either a value
-            // action or a protected operation and no analyzed fact separates those two yet. The
-            // retained-program format also does not carry the field, so emitting it here would be
-            // silently lost on encode or resume. The field stays explicitly unauthenticated until
-            // both the wire carriage (GNT-GP-OPKIND-001 slice 3) and a declaration-level protection
-            // fact land.
-            section20_kind: None,
+            // Only the live-resource arm is authenticated from the analyzed result type's resource
+            // class; a non-live result is either a value action or a protected operation and no
+            // analyzed fact separates those two, so it stays explicitly unauthenticated rather than
+            // assumed. The retained-program format carries whatever is authenticated here.
+            section20_kind: result_type.primitive_properties().and_then(|properties| {
+                gantry_ir::OperationKind::for_value_resource_class(properties.resource_class())
+            }),
             result_type,
             action,
             template_segments: operation_template_segments(self.tree, &actual_node),

@@ -773,6 +773,7 @@ fn read_value_path(reader: &mut Reader<'_>) -> Result<Vec<ValuePathSegment>, Mac
 
 fn write_operation(writer: &mut Writer, value: &ExecutableOperation) {
     writer.string(value.kind.wire_name());
+    writer.optional_string(value.section20_kind.map(|kind| kind.wire_name()));
     writer.string(&value.result_type.canonical_string());
     writer.boolean(value.action.is_some());
     if let Some(action) = &value.action {
@@ -804,6 +805,13 @@ fn write_operation(writer: &mut Writer, value: &ExecutableOperation) {
 
 fn read_operation(reader: &mut Reader<'_>) -> Result<ExecutableOperation, MachineRecoveryError> {
     let kind = operation_kind(&reader.string()?)?;
+    let section20_kind = match reader.optional_string()? {
+        Some(name) => Some(
+            gantry_ir::OperationKind::from_wire_name(&name)
+                .ok_or(MachineRecoveryError::InvalidEncoding)?,
+        ),
+        None => None,
+    };
     let result_type = ty(&reader.string()?)?;
     let action = if reader.boolean()? {
         let path = path(&reader.string()?)?;
@@ -843,9 +851,7 @@ fn read_operation(reader: &mut Reader<'_>) -> Result<ExecutableOperation, Machin
     let attempted = reader.boolean()?;
     Ok(ExecutableOperation {
         kind,
-        // The retained program format does not carry the Section 20 kind yet; the decoded value
-        // stays explicitly unauthenticated rather than defaulted.
-        section20_kind: None,
+        section20_kind,
         result_type,
         action,
         template_segments,
