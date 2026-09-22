@@ -137,9 +137,12 @@ impl ConsoleOperation {
 ///
 /// The declared recovery class is one member of the landed `read_only`, `idempotent`, and
 /// `non_idempotent` vocabulary. A read consumes a nontransactional input cursor, so an accepted read
-/// is never replayed, retried, repaired, or deduplicated by the console; suppressing a duplicate is
-/// an adapter obligation keyed by a stable operation identity; and an ambiguous read or write is
-/// presented under the Section 20 unknown-outcome contract rather than settled here.
+/// is never replayed, retried, repaired, or deduplicated by the console: only an adapter that owns a
+/// replayable or transactional input source and binds the admitted read's stable operation identity
+/// to its exact result may retry it. A write may duplicate output for the same reason, while a
+/// repeated flush delivers no additional octet and needs no suppression. Effect certainty is not a
+/// fact of this model: `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility` derives it
+/// from an operation's own admitted facts and admission position.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConsoleOperationFacts {
     /// The declared console operation.
@@ -149,10 +152,8 @@ pub struct ConsoleOperationFacts {
     /// Whether the operation consumes a nontransactional input cursor.
     pub consumes_input_cursor: bool,
     /// Whether suppressing a duplicate is an adapter obligation keyed by a stable operation
-    /// identity.
+    /// identity, as `GNT-46.3-console-operation-recovery-and-accepted-input` publishes.
     pub deduplication_is_adapter_owned: bool,
-    /// Whether an ambiguous outcome of the operation is presented as an unknown outcome.
-    pub admits_unknown_outcome: bool,
 }
 
 /// The declared facts of every console operation, in canonical operation order.
@@ -162,21 +163,18 @@ pub const CONSOLE_OPERATION_FACTS: [ConsoleOperationFacts; 3] = [
         recovery: RecoveryClass::NonIdempotent,
         consumes_input_cursor: true,
         deduplication_is_adapter_owned: true,
-        admits_unknown_outcome: true,
     },
     ConsoleOperationFacts {
         operation: ConsoleOperation::Write,
         recovery: RecoveryClass::NonIdempotent,
         consumes_input_cursor: false,
         deduplication_is_adapter_owned: true,
-        admits_unknown_outcome: true,
     },
     ConsoleOperationFacts {
         operation: ConsoleOperation::Flush,
         recovery: RecoveryClass::Idempotent,
         consumes_input_cursor: false,
         deduplication_is_adapter_owned: false,
-        admits_unknown_outcome: false,
     },
 ];
 

@@ -301,17 +301,14 @@ fn console_operation_recovery_and_accepted_input_are_declared() {
             facts.operation.returns_octets()
         );
     }
-    // Only the cursor-consuming read and the possibly duplicating write need an adapter-owned
-    // deduplication proof and may present an unknown outcome.
+    // A read and a write may be duplicated, so suppressing a duplicate is an adapter obligation; a
+    // repeated flush delivers no additional octet and needs none.
     assert_eq!(
         CONSOLE_OPERATION_FACTS
             .iter()
-            .map(|facts| (
-                facts.deduplication_is_adapter_owned,
-                facts.admits_unknown_outcome
-            ))
+            .map(|facts| facts.deduplication_is_adapter_owned)
             .collect::<Vec<_>>(),
-        [(true, true), (true, true), (false, false)]
+        [true, true, false]
     );
     assert!(ConsoleOperation::Write.accepts_octets());
     assert!(!ConsoleOperation::Flush.accepts_octets());
@@ -325,11 +322,12 @@ fn console_operation_recovery_and_accepted_input_are_declared() {
         );
     }
     for rule in [
-        "the console publishes no deduplication, no replay source, and no duplicate record",
+        "a flush is `idempotent` because repeating it delivers no additional octet",
         "An accepted console read is nontransactional and is never implicitly retried, replayed, repaired",
         "is a new request of a new stable operation identity that consumes the cursor again",
+        "a read may be retried only inside an adapter declaration of `GNT-29.11-adapter-declaration-obligations`",
         "The `interrupted` category of `GNT-29.4-console-contract` stays a category of the console family's portable envelope and is never a progress observation",
-        "a flush of the `idempotent` class presents no ambiguous outcome",
+        "the effect certainty of a console call is the certainty",
     ] {
         assert!(
             specification.contains(rule),
@@ -383,10 +381,12 @@ fn console_envelope_rules_are_closed_and_canonical() {
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
     for rule in [
         "The declared console envelope rules are exactly four",
+        "spelled `octets-only-payload`, `encoding-is-text-family-owned`, `protected-value-is-not-an-octet-source`, and `access-is-requester-arranged`",
         "A protected value, protected envelope, credential, or key is not an octet source for a console operation",
         "Terminal detection, terminal dimensions, and terminal control remain outside this section",
         "no console write, read, or flush grants terminal-control authority, terminal control stays separately authorized",
         "not a second shutdown facility, and shutdown ownership rests with the owner that granted the access",
+        "whose completed observation is exactly the `committed-progress` of `GNT-29.2-reader-writer-seek-progress`",
     ] {
         assert!(
             specification.contains(rule),

@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "1b6db32ae689e4d7b55e0184613f6417d88a22f92ab2db9cf73b745dd674950b",
-  "byte_length": 1235148,
-  "line_count": 16144,
+  "specification_sha256": "2daf79d7b92d9792bc7b62228d01bdfb844c7800c1becb11738bdfa219e4c5c3",
+  "byte_length": 1236046,
+  "line_count": 16155,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16144,
-      "sha256": "12525a8e65a84593fe229cc4b41923080dee15b0dd6149bcf87b8661ef111ca6",
+      "end_line": 16155,
+      "sha256": "9c5fd76fea9e0d4941a44e8eb2644061dcc36564299e628592fc63399bf224c5",
       "rationale": null
     }
   ],
@@ -44662,12 +44662,12 @@
     {
       "id": "GNT-46.3-console-operation-recovery-and-accepted-input",
       "span_start_line": 16067,
-      "span_end_line": 16108,
-      "span_sha256": "19fb7fa7a3625fb0666034c972b16fa9f72131279a90479fe4d231dd86ad9bc3",
+      "span_end_line": 16115,
+      "span_sha256": "9a28530ec192027123167e147d51d00dbf7b7e4e2860c92364a620eab0394c80",
       "anchor_line": 16068,
       "body_start_line": 16069,
-      "body_end_line": 16108,
-      "body_sha256": "e7090e07f606546ec3f90820e8d87e84600d47cdabacf820b82f7d850820450e",
+      "body_end_line": 16115,
+      "body_sha256": "457b7ca3dfb3496e0e702dcd2f6b522e7ab34213f8482f36e3acb4dba4bcb964",
       "profiles": [
         "analyzer"
       ],
@@ -44679,7 +44679,7 @@
         {
           "key": "clause-001",
           "start_line": 16069,
-          "end_line": 16108,
+          "end_line": 16115,
           "profiles": [
             "analyzer"
           ],
@@ -44702,13 +44702,13 @@
     },
     {
       "id": "GNT-46.4-console-encoding-and-shutdown-settlement",
-      "span_start_line": 16109,
-      "span_end_line": 16144,
-      "span_sha256": "f374b30cb6c795c208335afbed94503d0f92c6ae84d37a37f4d771291ef7f4af",
-      "anchor_line": 16110,
-      "body_start_line": 16111,
-      "body_end_line": 16144,
-      "body_sha256": "0f57c459ffc2314338f27a44671fad573f53038aee5622eb6d3d67bd16fc3f06",
+      "span_start_line": 16116,
+      "span_end_line": 16155,
+      "span_sha256": "fabe2d1da6a3faf48b9be14fd2234c0c27a2a1d04cc208c07b797201596f65d0",
+      "anchor_line": 16117,
+      "body_start_line": 16118,
+      "body_end_line": 16155,
+      "body_sha256": "5e01217f65cc4ad430d2ac3c5e711fcd891c5d089cffb669401e990540173f4d",
       "profiles": [
         "analyzer"
       ],
@@ -44719,8 +44719,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16111,
-          "end_line": 16144,
+          "start_line": 16118,
+          "end_line": 16155,
           "profiles": [
             "analyzer"
           ],

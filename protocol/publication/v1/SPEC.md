@@ -16075,24 +16075,31 @@ exactly one recovery class of the action-declaration rule — `read_only`, `idem
 publish it: a read is `non_idempotent`, a write is `non_idempotent`, and a flush is `idempotent`, in
 the canonical operation order of that clause. No console operation is `read_only`, because a console
 read consumes an input cursor even though it writes no octet, and no console operation becomes
-`idempotent` merely because repeating it is convenient: the console publishes no deduplication, no
-replay source, and no duplicate record, so the declared class of a console write stays
-`non_idempotent`, and a write is `idempotent` only within an adapter declaration of
-`GNT-29.11-adapter-declaration-obligations` that deduplicates by a stable operation identity, which
-that adapter owns and this clause does not publish.
+`idempotent` merely because repeating it is convenient: a flush is `idempotent` because repeating it
+delivers no additional octet and needs no duplicate suppression from anyone, while the declared
+class of a console write stays `non_idempotent`, and a write is `idempotent` only within an adapter
+declaration of `GNT-29.11-adapter-declaration-obligations` that deduplicates by a stable operation
+identity, which that adapter owns and this clause does not publish.
 
 An accepted console read is nontransactional and is never implicitly retried, replayed, repaired,
 deduplicated, or restored: this section returns no cursor position a read consumed, a request
 presented again after an accepted read is a new request of a new stable operation identity that
 consumes the cursor again, and no console clause presents a replayed read as the same operation, as
-a duplicate of one, or as an outcome of one. Because cursor consumption and byte delivery are not
+a duplicate of one, or as an outcome of one. A retry of one already-admitted read is a different
+question from that new request, and this clause publishes no retry eligibility of its own: a read
+may be retried only inside an adapter declaration of `GNT-29.11-adapter-declaration-obligations`
+that owns a replayable or transactional input source and durably binds the stable operation identity
+of that admitted read to the exact returned octets or end-of-stream result, which that adapter owns
+and the console neither retains nor publishes. Because cursor consumption and byte delivery are not
 made atomic with an operation's committed outcome by this section, an ambiguous console read or
 write — one whose effect may have begun and whose outcome the operation cannot decide — is presented
 under the ambiguous-effect classification and retry eligibility of
 `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility` and settles under the Section 20
-operation ownership that owns it; a call that definitely did not start is not presented as
-ambiguous, a flush of the `idempotent` class presents no ambiguous outcome, and this clause
-publishes no second effect classification, retry eligibility, deduplication proof, or settlement.
+operation ownership that owns it: the effect certainty of a console call is the certainty
+`GNT-20.6-ambiguous-effect-classification-and-retry-eligibility` derives from the call's own admitted
+facts and its own admission position, never from the recovery class this clause declares, and this
+clause publishes no second effect classification, retry eligibility, deduplication proof,
+settlement, or certainty rule.
 The `interrupted` category of `GNT-29.4-console-contract` stays a category of the console family's
 portable envelope and is never a progress observation: an interrupted console call publishes no
 observation of the `GNT-45.3-io-progress-derivation` derivation, becomes no `committed-progress`, no
@@ -16113,9 +16120,11 @@ layout, or physical representation.
 shutdown settlement.** This clause publishes the payload, encoding, protected-data, flush, and
 shutdown facts of the console operations of `GNT-46.2-console-bounded-operations`. The declared
 console envelope rules are exactly four — octets only, encoding owned by the text family, protected
-values not an octet source, and access arranged by its requester, in that canonical order — and the
-model's `ConsoleEnvelopeRule` and its `ConsoleEnvelopeRule::ALL` publish them, so an undeclared rule
-spelling is refused rather than inferred, substituted, or dropped. A console read returns octets and
+values not an octet source, and access arranged by its requester, in that canonical order, spelled
+`octets-only-payload`, `encoding-is-text-family-owned`, `protected-value-is-not-an-octet-source`,
+and `access-is-requester-arranged` — and the model's `ConsoleEnvelopeRule` and its
+`ConsoleEnvelopeRule::ALL` publish them, so an undeclared rule spelling is refused rather than
+inferred, substituted, or dropped. A console read returns octets and
 a console write accepts octets, and each carries no second payload vocabulary: a read's octets are
 never implicitly decoded, converted, normalized, or split into lines, and every text, scalar, line,
 or codec decoding of them consumes the family that owns it rather than this section, so an encoding
@@ -16129,8 +16138,10 @@ not published here: whether an input stream is redirected or interactive, which 
 output, and when access begins and ends are that requester's declaration, and this section publishes
 no descriptor, no ambient standard descriptor, no terminal handle, no background flusher, and no
 console-owned work, cursor, buffer, or partial result that outlives the access it was granted. A
-final flush at shutdown is a flush of the declared operation vocabulary whose completed observation
-is exactly `committed-progress` with no octet count, not a second shutdown facility, and shutdown
+final flush at shutdown is a flush of the declared operation vocabulary of
+`GNT-46.2-console-bounded-operations`, whose completed observation is exactly the
+`committed-progress` of `GNT-29.2-reader-writer-seek-progress` with no octet count, not a second
+shutdown facility, and shutdown
 ownership rests with the owner that granted the access. Terminal detection, terminal dimensions, and
 terminal control remain outside this section: no console write, read, or flush grants
 terminal-control authority, terminal control stays separately authorized, and no clause of this

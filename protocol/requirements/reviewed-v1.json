@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "1b6db32ae689e4d7b55e0184613f6417d88a22f92ab2db9cf73b745dd674950b",
+  "specification_sha256": "2daf79d7b92d9792bc7b62228d01bdfb844c7800c1becb11738bdfa219e4c5c3",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16144,
+      "end_line": 16155,
       "rationale": null
     }
   ],
@@ -43441,15 +43441,15 @@
     {
       "id": "GNT-46.3-console-operation-recovery-and-accepted-input",
       "span_start_line": 16067,
-      "span_end_line": 16108,
+      "span_end_line": 16115,
       "anchor_line": 16068,
       "body_start_line": 16069,
-      "body_end_line": 16108,
+      "body_end_line": 16115,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16069,
-          "end_line": 16108,
+          "end_line": 16115,
           "profiles": [
             "analyzer"
           ],
@@ -43479,16 +43479,16 @@
     },
     {
       "id": "GNT-46.4-console-encoding-and-shutdown-settlement",
-      "span_start_line": 16109,
-      "span_end_line": 16144,
-      "anchor_line": 16110,
-      "body_start_line": 16111,
-      "body_end_line": 16144,
+      "span_start_line": 16116,
+      "span_end_line": 16155,
+      "anchor_line": 16117,
+      "body_start_line": 16118,
+      "body_end_line": 16155,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16111,
-          "end_line": 16144,
+          "start_line": 16118,
+          "end_line": 16155,
           "profiles": [
             "analyzer"
           ],
