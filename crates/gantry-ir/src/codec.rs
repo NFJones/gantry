@@ -115,7 +115,9 @@ impl CodecVersion {
     /// undeclared codec or an undeclared version is refused under `codec-unsupported-version`,
     /// naming the observed spelling and the declared identity, or the declared set when no
     /// declared codec is named, rather than substituted, upgraded, downgraded, inferred, or
-    /// approximated.
+    /// approximated. The presented version text is admitted only when it is exactly the
+    /// canonical spelling of the declared version: a parseable variant such as a leading zero
+    /// or a sign is refused, never normalized to the declared version.
     pub fn admit(presented: &str) -> Result<Self, CodecError> {
         let Some((module, version)) = presented.rsplit_once('@') else {
             return Err(Self::undeclared_identity(presented));
@@ -124,15 +126,16 @@ impl CodecVersion {
             return Err(Self::undeclared_identity(presented));
         };
         let declared = kind.declared_version();
-        match version.parse::<u16>() {
-            Ok(version) if version == DECLARED_CODEC_VERSION => Ok(Self { kind, version }),
-            _ => Err(CodecError::new(
+        if version == DECLARED_CODEC_VERSION.to_string() {
+            Ok(declared)
+        } else {
+            Err(CodecError::new(
                 CodecDiagnosticCode::UnsupportedVersion,
                 format!(
                     "`{presented}` is not the declared codec identity `{}`",
                     declared.canonical_identity()
                 ),
-            )),
+            ))
         }
     }
 

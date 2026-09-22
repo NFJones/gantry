@@ -165,6 +165,29 @@ fn declared_versions_admit_exactly_the_declared_identity() {
         CodecVersion::admit("std.codec::hex@1").map(|identity| identity.canonical_identity()),
         Ok("std.codec::hex@1".to_owned())
     );
+    // A parseable but noncanonical version spelling is not the declared identity.
+    for (presented, declared_identity) in [
+        ("std.codec::hex@01", "std.codec::hex@1"),
+        ("std.codec::hex@+1", "std.codec::hex@1"),
+        ("std.codec::base64@0001", "std.codec::base64@1"),
+    ] {
+        let error = match CodecVersion::admit(presented) {
+            Ok(identity) => panic!(
+                "`{presented}` must be refused, got `{}`",
+                identity.canonical_identity()
+            ),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), CodecDiagnosticCode::UnsupportedVersion);
+        assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+        assert_eq!(error.category(), CodecCategory::Decode);
+        assert!(error.detail().contains(presented), "{}", error.detail());
+        assert!(
+            error.detail().contains(declared_identity),
+            "the refusal names the declared identity: {}",
+            error.detail()
+        );
+    }
     for presented in ["std.codec::other@1", "std.codec::hex", "not-an-identity"] {
         let error = match CodecVersion::admit(presented) {
             Ok(identity) => panic!(
