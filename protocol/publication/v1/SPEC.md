@@ -16363,10 +16363,12 @@ second transition, no second terminal rule, and no reopening, and an operation o
 `GNT-47.4-filesystem-resource-operations` never rewrites an operation state.
 
 An admitted instance carries exactly one declared generation of
-`GNT-20.2-logical-operation-and-resource-generation-identity` and exactly one declared owner: a
-completion, settlement, or record that names another generation, another owner, or another logical
-operation is refused rather than reinterpreted, so a stale generation can never settle a later
-operation, and this clause publishes no second generation, ownership, or lineage vocabulary. A
+`GNT-20.2-logical-operation-and-resource-generation-identity` and exactly one declared owner
+generation of `GNT-20.10-retirement-and-stale-owner-fencing`: a completion, settlement, or record
+that names another generation, another logical operation, or a stale owner is refused rather than
+reinterpreted, so a stale generation can never settle a later operation and a stale owner is never
+admitted, while a genuinely advanced owner remains admissible as that clause declares; this clause
+publishes no second generation, ownership, or lineage vocabulary. A
 grant presented to an operation of `GNT-47.4-filesystem-resource-operations` is either read-only or
 not, and a read-only grant refuses every operation that declares an externally visible mutation of
 the object's content: this clause declares exactly `write` and `truncate` as content-mutating, the
@@ -16376,11 +16378,12 @@ an operation that declares no content mutation is admissible under a read-only g
 the clause that publishes that operation's contract, and a grant's read-only status never changes
 whether an operation declares a content mutation.
 
-An admitted instance is never carried in durable state: a durable record carries no live handle, no
-descriptor, and no admitted instance, and reconstruction reads the declared reconstruction record
-of `GNT-28.7-durable-resource-reconstruction` - the owner generation, the whole-resource lifetime
-state, the distinct operation state, and the quota map - rather than an ordinary serialized value or
-the ordinary durable state of `ResourceCarrier`, which never carries one.
+An admitted instance is never carried in durable state, exactly as the rule of
+`GNT-3-T-AUTHORITY-INSTANCES` declares of a live instance: a durable record carries no live handle,
+no descriptor, and no admitted instance, and reconstruction reads the declared reconstruction
+record of `GNT-28.7-durable-resource-reconstruction` - the owner generation, the whole-resource
+lifetime state, the distinct operation state, and the quota map - rather than an ordinary serialized
+value or ordinary durable state.
 
 This clause publishes the instance state vocabulary, the generation and ownership facts, the
 read-only content-mutation refusal, and the durable exclusion only: it publishes no transition

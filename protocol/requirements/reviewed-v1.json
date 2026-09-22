@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "56de699f772ff28e0fb4c4463ed623f22de2b3f4e4f08d3f100789a46b8298e1",
+  "specification_sha256": "eb10db83a76943555198adba57105e46387495e4f15b230fb33eb7d112e904c9",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16392,
+      "end_line": 16395,
       "rationale": null
     }
   ],
@@ -43755,15 +43755,15 @@
     {
       "id": "GNT-47.5-filesystem-resource-state",
       "span_start_line": 16353,
-      "span_end_line": 16392,
+      "span_end_line": 16395,
       "anchor_line": 16354,
       "body_start_line": 16355,
-      "body_end_line": 16392,
+      "body_end_line": 16395,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16355,
-          "end_line": 16392,
+          "end_line": 16395,
           "profiles": [
             "analyzer"
           ],
