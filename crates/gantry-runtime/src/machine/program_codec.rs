@@ -24,12 +24,19 @@ const MAGIC_V3: &[u8; 8] = b"GNTPRG03";
 /// consuming class that V3 cannot express.
 const MAGIC_V4: &[u8; 8] = b"GNTPRG04";
 
+/// The V5 wire carries the Section 20 operation kind an analysis authenticated.
+///
+/// V5 is selected exactly when at least one operation records such a kind, so a program whose
+/// operations are all unauthenticated keeps the predecessor wire byte-for-byte.
+const MAGIC_V5: &[u8; 8] = b"GNTPRG05";
+
 /// Canonical program wire selected for one machine program.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum ProgramWire {
     V2,
     V3,
     V4,
+    V5,
 }
 
 impl ProgramWire {
@@ -39,6 +46,7 @@ impl ProgramWire {
             Self::V2 => MAGIC_V2,
             Self::V3 => MAGIC_V3,
             Self::V4 => MAGIC_V4,
+            Self::V5 => MAGIC_V5,
         });
     }
 
@@ -51,6 +59,24 @@ impl ProgramWire {
     const fn carries_caller_place_ownership(self) -> bool {
         matches!(self, Self::V4)
     }
+
+    /// Returns whether this wire carries the authenticated Section 20 operation kind.
+    const fn carries_section20_kind(self) -> bool {
+        matches!(self, Self::V5)
+    }
+}
+
+/// Returns whether any operation of the program records an authenticated Section 20 kind.
+fn program_carries_section20_kind(program: &MachineProgram) -> bool {
+    program.workflows().iter().any(|workflow| {
+        workflow.instructions.iter().any(|instruction| {
+            matches!(
+                &instruction.kind,
+                InstructionKind::OperationCall { operation, .. }
+                    if operation.section20_kind.is_some()
+            )
+        })
+    })
 }
 
 fn program_uses_successor_wire(program: &MachineProgram) -> bool {
@@ -159,7 +185,9 @@ fn codec_limits() -> ValueLimits {
 
 pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
     let mut writer = Writer::default();
-    let wire = if program_carries_caller_place_ownership(program) {
+    let wire = if program_carries_section20_kind(program) {
+        ProgramWire::V5
+    } else if program_carries_caller_place_ownership(program) {
         ProgramWire::V4
     } else if program_uses_successor_wire(program) {
         ProgramWire::V3
@@ -210,6 +238,7 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
         magic if magic == MAGIC_V2 => ProgramWire::V2,
         magic if magic == MAGIC_V3 => ProgramWire::V3,
         magic if magic == MAGIC_V4 => ProgramWire::V4,
+        magic if magic == MAGIC_V5 => ProgramWire::V5,
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     };
     let workflow_count = reader.count()?;
@@ -417,7 +446,7 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind, wire: P
             operands,
         } => {
             writer.u8(19);
-            write_operation(writer, operation);
+            write_operation(writer, operation, wire);
             writer.usize(*operands);
         }
         InstructionKind::EnterAgent(agent) => {
@@ -535,7 +564,7 @@ fn read_instruction(
             operands: reader.usize()?,
         },
         19 => InstructionKind::OperationCall {
-            operation: read_operation(reader)?,
+            operation: read_operation(reader, wire)?,
             operands: reader.usize()?,
         },
         20 => InstructionKind::EnterAgent(Arc::from(reader.string()?)),
@@ -771,8 +800,11 @@ fn read_value_path(reader: &mut Reader<'_>) -> Result<Vec<ValuePathSegment>, Mac
     Ok(result)
 }
 
-fn write_operation(writer: &mut Writer, value: &ExecutableOperation) {
+fn write_operation(writer: &mut Writer, value: &ExecutableOperation, wire: ProgramWire) {
     writer.string(value.kind.wire_name());
+    if wire.carries_section20_kind() {
+        writer.optional_string(value.section20_kind.map(|kind| kind.wire_name()));
+    }
     writer.string(&value.result_type.canonical_string());
     writer.boolean(value.action.is_some());
     if let Some(action) = &value.action {
@@ -802,8 +834,22 @@ fn write_operation(writer: &mut Writer, value: &ExecutableOperation) {
     writer.boolean(value.attempted);
 }
 
-fn read_operation(reader: &mut Reader<'_>) -> Result<ExecutableOperation, MachineRecoveryError> {
+fn read_operation(
+    reader: &mut Reader<'_>,
+    wire: ProgramWire,
+) -> Result<ExecutableOperation, MachineRecoveryError> {
     let kind = operation_kind(&reader.string()?)?;
+    let section20_kind = if wire.carries_section20_kind() {
+        match reader.optional_string()? {
+            Some(name) => Some(
+                gantry_ir::OperationKind::from_wire_name(&name)
+                    .ok_or(MachineRecoveryError::InvalidEncoding)?,
+            ),
+            None => None,
+        }
+    } else {
+        None
+    };
     let result_type = ty(&reader.string()?)?;
     let action = if reader.boolean()? {
         let path = path(&reader.string()?)?;
@@ -843,9 +889,7 @@ fn read_operation(reader: &mut Reader<'_>) -> Result<ExecutableOperation, Machin
     let attempted = reader.boolean()?;
     Ok(ExecutableOperation {
         kind,
-        // The retained program format does not carry the Section 20 kind yet; the decoded value
-        // stays explicitly unauthenticated rather than defaulted.
-        section20_kind: None,
+        section20_kind,
         result_type,
         action,
         template_segments,
