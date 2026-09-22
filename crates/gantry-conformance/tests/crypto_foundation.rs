@@ -73,6 +73,8 @@ fn section_44_clauses_are_published() {
         "`GNT-34.1-canonical-hierarchy-and-package-names`",
         "`GNT-34.2-name-classification`",
         "`GNT-34.6-stability-tiers`",
+        "`sha256`",
+        "`ed25519`",
         "`unsupported-algorithm`",
         "`malformed-input`",
         "`work-limit`",

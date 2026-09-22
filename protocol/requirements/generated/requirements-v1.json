@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "aa1e67fdb57999574b06d6a8251f7b36df8e1d5f1c980359ef2fd6968813b618",
-  "byte_length": 1182254,
+  "specification_sha256": "cb53e53b08b7a63a585cf8e3bddb1e2a3a958280648caa32ed50d83f24d12f70",
+  "byte_length": 1182321,
   "line_count": 15777,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9504,
       "end_line": 15777,
-      "sha256": "5fea330a1f815ede2c96a2534bf2e77411d5d991f566e07e330d46a3c22cfdfb",
+      "sha256": "977c772f4736ddc8de4d1bff7a005b7417a9920b1fbe0d79b37886d35e450e71",
       "rationale": null
     }
   ],
@@ -44152,11 +44152,11 @@
       "id": "GNT-44.1-crypto-algorithm-contract",
       "span_start_line": 15774,
       "span_end_line": 15777,
-      "span_sha256": "781be78c8f1a202ae0f62edfa6147994a643969ec2f8738307aa67673fa0714e",
+      "span_sha256": "613e8e54e2bea438fba21ad8405b40b932cb44267138dea9bca05a6b38884a21",
       "anchor_line": 15775,
       "body_start_line": 15776,
       "body_end_line": 15777,
-      "body_sha256": "fa18ebe0819938a81d3610809089cbd790989ea37faec9a50fa7b51106488345",
+      "body_sha256": "9f5f06702e06d3fecd6c6cdcdcae98251c6ed33e285034a2b69e6fff53729e92",
       "profiles": [
         "analyzer"
       ],
