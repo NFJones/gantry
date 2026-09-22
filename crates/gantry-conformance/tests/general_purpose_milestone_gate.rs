@@ -42,7 +42,27 @@ const EXPECTED_VERIFIES_FLOOR: usize = 5;
 
 const EXPECTED_EVIDENCE_FLOOR: usize = 4;
 
-const EXPECTED_ACCEPTANCE_FLOOR: usize = 10;
+const EXPECTED_ACCEPTANCE: &[(&str, &str)] = &[
+    ("artifact-reproducibility-and-publication-set", "passed"),
+    ("clean-and-incremental-compilation-equivalence", "passed"),
+    ("deterministic-library-vectors", "passed"),
+    ("package-workspace-and-lockfile-resolution", "passed"),
+    (
+        "parallel-separate-compilation-and-cross-target-arrangements",
+        "qualified",
+    ),
+    ("prerequisite-provenance-authentication", "passed"),
+    ("registry-authentication-and-round-trips", "passed"),
+    ("requirement-mapped-evidence", "passed"),
+    ("runtime-execution-and-durable-replay", "qualified"),
+    ("semantic-resource-bounds", "passed"),
+    (
+        "standard-library-hierarchy-and-interface-identity",
+        "passed",
+    ),
+    ("testing-support-surface", "passed"),
+    ("whole-application-benchmark-thresholds", "qualified"),
+];
 
 const EXPECTED_PHASE: &str = "phase-1-deterministic-language";
 
@@ -168,6 +188,19 @@ fn milestone_gate_rejects_malformed_missing_cyclic_stale_and_overclaiming_record
     owned_pass.acceptance[0].owner = Some("ownerless".to_owned());
     assert!(validate_manifest(&root, &owned_pass).is_err());
 
+    let mut missing_acceptance = manifest.clone();
+    missing_acceptance.acceptance.pop();
+    assert!(validate_manifest(&root, &missing_acceptance).is_err());
+
+    let mut relabelled_acceptance = manifest.clone();
+    relabelled_acceptance.acceptance[2].item = "generic-workflow".to_owned();
+    assert!(validate_manifest(&root, &relabelled_acceptance).is_err());
+
+    let mut reclassified_acceptance = manifest.clone();
+    reclassified_acceptance.acceptance[0].disposition = "qualified".to_owned();
+    reclassified_acceptance.acceptance[0].owner = Some("someone".to_owned());
+    assert!(validate_manifest(&root, &reclassified_acceptance).is_err());
+
     let mut overclaim = manifest.clone();
     overclaim.claim.advertises_general_purpose = true;
     assert!(validate_manifest(&root, &overclaim).is_err());
@@ -267,8 +300,17 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
             .map(|acceptance| acceptance.item.as_str()),
         "acceptance",
     )?;
-    if manifest.acceptance.len() < EXPECTED_ACCEPTANCE_FLOOR {
-        return Err("milestone gate records too few acceptance items".to_owned());
+    let expected_acceptance = EXPECTED_ACCEPTANCE
+        .iter()
+        .map(|(item, disposition)| ((*item).to_owned(), (*disposition).to_owned()))
+        .collect::<Vec<_>>();
+    let actual_acceptance = manifest
+        .acceptance
+        .iter()
+        .map(|acceptance| (acceptance.item.clone(), acceptance.disposition.clone()))
+        .collect::<Vec<_>>();
+    if actual_acceptance != expected_acceptance {
+        return Err("milestone gate acceptance closure differs".to_owned());
     }
     for acceptance in &manifest.acceptance {
         if !root.join(&acceptance.evidence).is_file() {
