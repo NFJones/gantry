@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "d33758f0831187388dfb74181f0eb20894b6365036bd994876c564bbbeb7ea65",
-  "byte_length": 1133370,
-  "line_count": 15729,
+  "specification_sha256": "943957090e15bb12beaec38098f99e47afddc01256131f16c97fb3ea2bda6a24",
+  "byte_length": 1137887,
+  "line_count": 15733,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "7505e118ab669b025b9bdabb537de6c9abc093c3091190b9c8a2149ddf36a090",
+      "sha256": "5abe3e29d77628b9dc2f10e9ef0568a4c102020d901dd55638a317c8e873c7f3",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15729,
-      "sha256": "78ccd11c2348d353d621bf266d0937b42c2e191cc64fd638c8db7a37f55c12da",
+      "end_line": 15733,
+      "sha256": "28d3354dda791de0cdc701f67fb297f76be4fe33b481e2958d71709a3a73da22",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "36a78d6ee81df0d9e3d2f9c88e9b710d660587deef1166906a89d2319d66ad11",
+      "span_sha256": "f840fe2cfab3eb57442d90148e725e1e24e7a4125ea73ea9ada666c2fd3f1625",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "5e1ca3b7aae8727cb95aef40a55a3dad17f4d857877b0269bc3a16f6d0100126",
+      "body_sha256": "7b47158e660912b6f7fb2d57fe39daa434472add28f4756fe167cdd338441240",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -43713,6 +43713,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/codec_foundation.rs#json_codec_round_trips_the_compact_canonical_language",
                 "crates/gantry-conformance/tests/codec_foundation.rs#json_codec_refuses_noncanonical_and_oversized_input"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-42.6-compression-codec",
+      "span_start_line": 15730,
+      "span_end_line": 15733,
+      "span_sha256": "8234add2b367d7f0bfeb150bc8e747f6d7a6ad5924cb6c583f2f6ed1038fc91b",
+      "anchor_line": 15731,
+      "body_start_line": 15732,
+      "body_end_line": 15733,
+      "body_sha256": "70312d3d4eb0287ae118d8d4a10cc01951a81cef3700b5eea01795b387c9b5d4",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15732,
+          "end_line": 15733,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/codec_foundation.rs#compression_codec_round_trips_the_declared_stored_form",
+                "crates/gantry-conformance/tests/codec_foundation.rs#compression_codec_refuses_undeclared_versions_and_expansion_bombs"
               ],
               "rationale": null
             }

@@ -1,16 +1,16 @@
-//! Public-facade conformance for the `GNT-42.0`-`GNT-42.5` codec foundation and hex, base64,
-//! binary, and dynamic JSON codecs.
+//! Public-facade conformance for the `GNT-42.0`-`GNT-42.6` codec foundation and hex, base64,
+//! binary, dynamic JSON, and compression codecs.
 //!
 //! The section declares the `std.codec` family, its five module items, the versioned codec
 //! identity and its exact admission rule, the frozen refusal vocabulary with its codec categories
-//! of `GNT-29.9-codec-contract`, the canonical hex, base64, binary, and dynamic JSON codecs of
-//! `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
-//! `GNT-42.4-binary-endian-readers-and-writers`, and `GNT-42.5-bounded-dynamic-json`, and the
-//! separation between application codecs and the sealed canonical boundary and durable recovery
-//! projections: these lanes require every declared clause, module row, refusal, and category to
-//! be published in the specification and the model, and exercise the version-admission rule and
-//! the hex, base64, binary, and dynamic JSON codecs' canonical forms, bounds, and refusals
-//! directly.
+//! of `GNT-29.9-codec-contract`, the canonical hex, base64, binary, dynamic JSON, and compression
+//! codecs of `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
+//! `GNT-42.4-binary-endian-readers-and-writers`, `GNT-42.5-bounded-dynamic-json`, and
+//! `GNT-42.6-compression-codec`, and the separation between application codecs and the sealed
+//! canonical boundary and durable recovery projections: these lanes require every declared
+//! clause, module row, refusal, and category to be published in the specification and the model,
+//! and exercise the version-admission rule and the hex, base64, binary, dynamic JSON, and
+//! compression codecs' canonical forms, bounds, and refusals directly.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -18,12 +18,13 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, BINARY_VALUE_OCTET_BOUND, CODEC_CLAUSES,
-    CODEC_ITEMS, CodecCategory, CodecDiagnosticCode, CodecError, CodecKind, CodecVersion,
-    DECLARED_CODEC_VERSION, Endian, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, JSON_DEPTH_BOUND,
-    JSON_NODE_BOUND, JSON_TEXT_OCTET_BOUND, JsonValue, NameClass, PackageFamily, StabilityTier,
-    base64_decode, base64_encode, canonical_codec_hierarchy, canonical_pure_hierarchy, hex_decode,
-    hex_encode, json_decode, json_encode, read_u16, read_u32, read_u64, write_u16, write_u32,
-    write_u64,
+    CODEC_ITEMS, COMPRESSION_ALGORITHM_VERSION, COMPRESSION_ENCODED_OCTET_BOUND,
+    COMPRESSION_VALUE_OCTET_BOUND, CodecCategory, CodecDiagnosticCode, CodecError, CodecKind,
+    CodecVersion, DECLARED_CODEC_VERSION, Endian, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND,
+    JSON_DEPTH_BOUND, JSON_NODE_BOUND, JSON_TEXT_OCTET_BOUND, JsonValue, NameClass, PackageFamily,
+    StabilityTier, base64_decode, base64_encode, canonical_codec_hierarchy,
+    canonical_pure_hierarchy, compression_decode, compression_encode, hex_decode, hex_encode,
+    json_decode, json_encode, read_u16, read_u32, read_u64, write_u16, write_u32, write_u64,
 };
 
 fn workspace_root() -> PathBuf {
@@ -38,7 +39,7 @@ fn workspace_root() -> PathBuf {
 fn section_42_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(CODEC_CLAUSES.len(), 6);
+    assert_eq!(CODEC_CLAUSES.len(), 7);
     let mut prior = 0_usize;
     for clause in CODEC_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -118,12 +119,13 @@ fn codec_surface_declares_the_five_modules() {
         let base64_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[3]];
         let binary_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[4]];
         let json_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[5]];
+        let compression_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[6]];
         let expected: &[&str] = match kind {
             CodecKind::Hex => &CODEC_CLAUSES[..3],
             CodecKind::Base64 => &base64_expected[..],
             CodecKind::Binary => &binary_expected[..],
             CodecKind::Json => &json_expected[..],
-            _ => &CODEC_CLAUSES[..2],
+            CodecKind::Compression => &compression_expected[..],
         };
         assert_eq!(
             row.clauses, expected,
@@ -864,4 +866,119 @@ fn json_encode_refuses_a_value_whose_object_repeats_a_member_key() {
         ("b".to_owned(), JsonValue::Integer(2)),
     ]);
     assert_eq!(json_encode(&distinct), Ok("{\"a\":1,\"b\":2}".to_owned()));
+}
+
+#[test]
+fn compression_codec_round_trips_the_declared_stored_form() {
+    let vectors: [&[u8]; 4] = [&[], &[0x00], &[0xde, 0xad, 0xbe, 0xef], &[0x01; 300]];
+    for value in vectors {
+        let stream = match compression_encode(value) {
+            Ok(stream) => stream,
+            Err(error) => panic!(
+                "the declared value bound admits this vector: {}",
+                error.detail()
+            ),
+        };
+        assert_eq!(stream.len(), value.len() + 5);
+        assert_eq!(stream.first().copied(), Some(COMPRESSION_ALGORITHM_VERSION));
+        assert_eq!(&stream[5..], value);
+        let decoded = match compression_decode(&stream) {
+            Ok(decoded) => decoded,
+            Err(error) => panic!("an encode result is admitted: {}", error.detail()),
+        };
+        assert_eq!(decoded.as_slice(), value);
+        assert_eq!(compression_encode(&decoded), Ok(stream));
+    }
+    let bound_value = vec![0xab; COMPRESSION_VALUE_OCTET_BOUND];
+    let stream = match compression_encode(&bound_value) {
+        Ok(stream) => stream,
+        Err(error) => panic!(
+            "the declared value bound admits its encode: {}",
+            error.detail()
+        ),
+    };
+    assert_eq!(stream.len(), COMPRESSION_ENCODED_OCTET_BOUND);
+    assert_eq!(compression_decode(&stream), Ok(bound_value));
+}
+
+#[test]
+fn compression_codec_refuses_undeclared_versions_and_expansion_bombs() {
+    let error = match compression_decode(&[0x02, 0x00, 0x00, 0x00, 0x00]) {
+        Ok(value) => panic!("the undeclared version must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::UnsupportedVersion);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+    assert_eq!(error.category(), CodecCategory::Decode);
+    assert!(error.detail().contains("0x02"), "{}", error.detail());
+    assert!(error.detail().contains("0x01"), "{}", error.detail());
+    for (stream, index) in [
+        (Vec::new(), 0_usize),
+        (vec![0x01], 1),
+        (vec![0x01, 0x00, 0x00], 3),
+        (vec![0x01, 0x00, 0x00, 0x00, 0x03, 0xaa], 6),
+        (vec![0x01, 0x00, 0x00, 0x00, 0x01, 0xaa, 0xbb], 6),
+    ] {
+        let error = match compression_decode(&stream) {
+            Ok(value) => panic!("the truncated stream must be refused, got {value:?}"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), CodecDiagnosticCode::MalformedInput);
+        assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+        assert_eq!(error.category(), CodecCategory::MalformedInput);
+        assert!(
+            error.detail().contains(&format!("index {index}")),
+            "the refusal names the departure index: {}",
+            error.detail()
+        );
+    }
+    let bomb = [0x01, 0xff, 0xff, 0xff, 0xff];
+    let error = match compression_decode(&bomb) {
+        Ok(value) => panic!("the expansion bomb must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+    assert_eq!(error.category(), CodecCategory::ResourceLimit);
+    assert!(
+        error.detail().contains(&u32::MAX.to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&COMPRESSION_VALUE_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let oversized_stream = vec![0x01; COMPRESSION_ENCODED_OCTET_BOUND + 1];
+    let error = match compression_decode(&oversized_stream) {
+        Ok(value) => panic!("the oversized stream must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains(&oversized_stream.len().to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&COMPRESSION_ENCODED_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let oversized_value = vec![0_u8; COMPRESSION_VALUE_OCTET_BOUND + 1];
+    let error = match compression_encode(&oversized_value) {
+        Ok(value) => panic!(
+            "the oversized value must be refused, got {} octets",
+            value.len()
+        ),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+    assert_eq!(error.category(), CodecCategory::ResourceLimit);
 }

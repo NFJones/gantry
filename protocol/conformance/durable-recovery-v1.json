@@ -1,6 +1,6 @@
 {
  "format": "gantry.durable-recovery-evidence/v1",
- "specification_sha256": "d33758f0831187388dfb74181f0eb20894b6365036bd994876c564bbbeb7ea65",
+ "specification_sha256": "943957090e15bb12beaec38098f99e47afddc01256131f16c97fb3ea2bda6a24",
  "issue": "GNT-DUR-002",
  "capabilities": [
   {

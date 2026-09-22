@@ -82,11 +82,11 @@
   },
   {
    "path": "protocol/conformance/generics-traits-adoption-v1.json",
-   "sha256": "2134f8b046fa7c94044d2ede0ec5a315efad9d1a4ca40153f11ea0753e0f77c9"
+   "sha256": "764de2f963641d0db408529526b5c991bcb5a02c945da569f32cdb4535ad69a0"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "2d782e0191a3413c9e1229fd5b2e8e77ef4768a173933c03724f5f57d4c7c4a4"
+   "sha256": "7871620d7d196859ab5d2abf9d89e541383f9ace9f9ed9b88212df9024b2af9e"
   }
  ],
  "environment_gaps": [
@@ -141,7 +141,7 @@
  "profile_review_summary": [
   {
    "profile": "analyzer",
-   "covered_count": 527,
+   "covered_count": 528,
    "not_applicable_count": 188,
    "planned_count": 0
   },
@@ -190,5 +190,5 @@
  "scale_evidence": [
   "crates/gantry-conformance/tests/generics_conformance.rs#generic_scale_envelopes_are_charged_and_deduplicated"
  ],
- "specification_sha256": "d33758f0831187388dfb74181f0eb20894b6365036bd994876c564bbbeb7ea65"
+ "specification_sha256": "943957090e15bb12beaec38098f99e47afddc01256131f16c97fb3ea2bda6a24"
 }

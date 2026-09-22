@@ -1,30 +1,32 @@
 //! The codec foundation of `GNT-42.0-codec-foundation-scope`,
 //! `GNT-42.1-versioned-codec-contract`, `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
-//! `GNT-42.4-binary-endian-readers-and-writers`, and `GNT-42.5-bounded-dynamic-json`: the
-//! declared `std.codec` family with its five modules, the versioned codec identity and its exact
-//! admission rule, the frozen refusal vocabulary with its codec categories of
-//! `GNT-29.9-codec-contract`, the canonical hex, base64, and binary codecs, the bounded dynamic
-//! JSON codec, and the separation between application codecs and the sealed canonical boundary
-//! and durable recovery projections.
+//! `GNT-42.4-binary-endian-readers-and-writers`, `GNT-42.5-bounded-dynamic-json`, and
+//! `GNT-42.6-compression-codec`: the declared `std.codec` family with its five modules, the
+//! versioned codec identity and its exact admission rule, the frozen refusal vocabulary with its
+//! codec categories of `GNT-29.9-codec-contract`, the canonical hex, base64, and binary codecs,
+//! the bounded dynamic JSON codec, the declared stored compression codec, and the separation
+//! between application codecs and the sealed canonical boundary and durable recovery projections.
 //!
 //! The model is pure: it consumes no host codec library, host encoding facility, ambient
 //! registry, platform behavior, timing, or global mutable state, and the only concrete codec
-//! behavior it declares is that of the hex, base64, binary, and dynamic JSON codecs, which
-//! `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
-//! `GNT-42.4-binary-endian-readers-and-writers`, and `GNT-42.5-bounded-dynamic-json` publish.
+//! behavior it declares is that of the hex, base64, binary, dynamic JSON, and compression codecs,
+//! which `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
+//! `GNT-42.4-binary-endian-readers-and-writers`, `GNT-42.5-bounded-dynamic-json`, and
+//! `GNT-42.6-compression-codec` publish.
 
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
 };
 
 /// The declared clauses of Section 42, in specification order.
-pub const CODEC_CLAUSES: [&str; 6] = [
+pub const CODEC_CLAUSES: [&str; 7] = [
     "GNT-42.0-codec-foundation-scope",
     "GNT-42.1-versioned-codec-contract",
     "GNT-42.2-hex-codec",
     "GNT-42.3-base64-codec",
     "GNT-42.4-binary-endian-readers-and-writers",
     "GNT-42.5-bounded-dynamic-json",
+    "GNT-42.6-compression-codec",
 ];
 
 /// The one declared version of every codec in this revision
@@ -397,6 +399,7 @@ pub const CODEC_ITEMS: [CodecItemRow; 5] = [
         clauses: &[
             "GNT-42.0-codec-foundation-scope",
             "GNT-42.1-versioned-codec-contract",
+            "GNT-42.6-compression-codec",
         ],
     },
     CodecItemRow {
@@ -1467,4 +1470,128 @@ fn write_json_string(text: &str, out: &mut String) {
         }
     }
     out.push('"');
+}
+
+/// The declared value bound of `GNT-42.6-compression-codec`: the largest octet count a stored
+/// value may hold.
+pub const COMPRESSION_VALUE_OCTET_BOUND: usize = 65_536;
+
+/// The declared encoded bound of `GNT-42.6-compression-codec`: the version octet, the four length
+/// octets, and the declared value bound.
+pub const COMPRESSION_ENCODED_OCTET_BOUND: usize = COMPRESSION_VALUE_OCTET_BOUND + 5;
+
+/// The one declared algorithm version octet of `GNT-42.6-compression-codec`.
+pub const COMPRESSION_ALGORITHM_VERSION: u8 = 0x01;
+
+/// Decodes one stream under the declared stored form of `GNT-42.6-compression-codec`.
+///
+/// An admitted stream is exactly the declared version octet, the declared decoded length as four
+/// unsigned big-endian octets, and exactly that many stored octets. A stream holding more than
+/// `COMPRESSION_ENCODED_OCTET_BOUND` octets, and a stream whose declared decoded length exceeds
+/// `COMPRESSION_VALUE_OCTET_BOUND` octets, are refused under `codec-expansion-limit` before any
+/// part of the stored value is examined, so a short stream that declares an unbounded expansion
+/// is refused as an expansion bomb. A stream naming any other version octet is refused under
+/// `codec-unsupported-version`, and every other departure is refused under
+/// `codec-malformed-input`, naming the zero-based octet index of the first departing position.
+pub fn compression_decode(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
+    if stream.len() > COMPRESSION_ENCODED_OCTET_BOUND {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::ExpansionLimit,
+            format!(
+                "the presented compression stream holds {} octets, beyond the declared bound {COMPRESSION_ENCODED_OCTET_BOUND}",
+                stream.len()
+            ),
+        ));
+    }
+    let Some(version) = stream.first().copied() else {
+        return Err(compression_malformed_refusal(
+            0,
+            "the stream ends before its version octet",
+        ));
+    };
+    if version != COMPRESSION_ALGORITHM_VERSION {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::UnsupportedVersion,
+            format!(
+                "the presented compression stream names algorithm version octet {version:#04x}; the declared version octet is {COMPRESSION_ALGORITHM_VERSION:#04x}"
+            ),
+        ));
+    }
+    let Some(header) = stream.get(1..5) else {
+        return Err(compression_malformed_refusal(
+            stream.len(),
+            "the stream ends before its length header is complete",
+        ));
+    };
+    let [first, second, third, fourth] = header else {
+        return Err(compression_malformed_refusal(
+            stream.len(),
+            "the stream ends before its length header is complete",
+        ));
+    };
+    let declared = u32::from_be_bytes([*first, *second, *third, *fourth]);
+    let length = usize::try_from(declared).unwrap_or(usize::MAX);
+    if length > COMPRESSION_VALUE_OCTET_BOUND {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::ExpansionLimit,
+            format!(
+                "the presented compression stream declares a stored value of {length} octets, beyond the declared bound {COMPRESSION_VALUE_OCTET_BOUND}"
+            ),
+        ));
+    }
+    let payload = stream.get(5..).unwrap_or_default();
+    if payload.len() < length {
+        return Err(compression_malformed_refusal(
+            stream.len(),
+            "the stream ends before its stored value is complete",
+        ));
+    }
+    if payload.len() > length {
+        return Err(compression_malformed_refusal(
+            5 + length,
+            "a further octet follows an already complete stored value",
+        ));
+    }
+    Ok(payload.to_vec())
+}
+
+/// Encodes one octet sequence into the declared stored form of `GNT-42.6-compression-codec`.
+///
+/// The published stream is the declared version octet, the input length as four unsigned
+/// big-endian octets, and every input octet in order, so it holds exactly five more octets than
+/// its input. A sequence holding more than `COMPRESSION_VALUE_OCTET_BOUND` octets is refused
+/// under `codec-expansion-limit`, naming the observed octet count and the declared bound, before
+/// any part of a result is constructed.
+pub fn compression_encode(value: &[u8]) -> Result<Vec<u8>, CodecError> {
+    if value.len() > COMPRESSION_VALUE_OCTET_BOUND {
+        return Err(compression_value_refusal(value.len()));
+    }
+    let Ok(length) = u32::try_from(value.len()) else {
+        return Err(compression_value_refusal(value.len()));
+    };
+    let mut stream = Vec::with_capacity(value.len() + 5);
+    stream.push(COMPRESSION_ALGORITHM_VERSION);
+    stream.extend_from_slice(&length.to_be_bytes());
+    stream.extend_from_slice(value);
+    Ok(stream)
+}
+
+/// Publishes the refusal of one stored value beyond the declared value bound.
+fn compression_value_refusal(observed: usize) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::ExpansionLimit,
+        format!(
+            "the presented octet sequence holds {observed} octets, beyond the declared bound {COMPRESSION_VALUE_OCTET_BOUND}"
+        ),
+    )
+}
+
+/// Publishes the refusal of one compression stream outside the declared stored form.
+fn compression_malformed_refusal(index: usize, reason: &str) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::MalformedInput,
+        format!(
+            "the presented compression stream departs from the declared stored form at index {index}: {reason}"
+        ),
+    )
 }
