@@ -233,6 +233,7 @@ fn io_progress_sets_are_closed_per_kind() {
         codes,
         [
             "io-observation-inconsistent",
+            "io-outcome-request-mismatch",
             "io-progress-inapplicable",
             "io-request-bound",
             "io-request-kind"
@@ -690,6 +691,34 @@ fn io_progress_derivation_is_total_and_precedence_preserving() {
     for (outcome, expected) in cases {
         assert_eq!(outcome.derive_progress(), Ok(expected));
     }
+    let read = IoRequest::read(8)
+        .unwrap_or_else(|error| panic!("the fixture request is admissible: {error:?}"));
+    let write = IoRequest::write(8)
+        .unwrap_or_else(|error| panic!("the fixture request is admissible: {error:?}"));
+    let seek = IoRequest::seek(4);
+    assert_eq!(
+        read.derive_progress(&IoOutcome::Read {
+            requested: 8,
+            advanced: 3,
+            ended: false,
+        }),
+        Ok(ProgressObservation::ShortRead)
+    );
+    assert_eq!(
+        write.derive_progress(&IoOutcome::Write {
+            provided: 8,
+            accepted: 8,
+        }),
+        Ok(ProgressObservation::CommittedProgress)
+    );
+    assert_eq!(
+        seek.derive_progress(&IoOutcome::Seek {
+            target: 4,
+            from: 1,
+            to: 4,
+        }),
+        Ok(ProgressObservation::CommittedProgress)
+    );
 }
 
 #[test]
@@ -779,6 +808,54 @@ fn io_observation_facts_outside_their_ranges_are_refused() {
             }
         );
         assert_eq!(error.code(), IoDiagnosticCode::ObservationInconsistent);
+    }
+    let read = IoRequest::read(8)
+        .unwrap_or_else(|error| panic!("the fixture request is admissible: {error:?}"));
+    let write = IoRequest::write(8)
+        .unwrap_or_else(|error| panic!("the fixture request is admissible: {error:?}"));
+    let seek = IoRequest::seek(4);
+    let mismatches = [
+        (
+            read.derive_progress(&IoOutcome::Write {
+                provided: 8,
+                accepted: 8,
+            }),
+            IoOperation::Read,
+            "operation",
+        ),
+        (
+            read.derive_progress(&IoOutcome::Read {
+                requested: 4,
+                advanced: 4,
+                ended: false,
+            }),
+            IoOperation::Read,
+            "requested",
+        ),
+        (
+            write.derive_progress(&IoOutcome::Write {
+                provided: 4,
+                accepted: 4,
+            }),
+            IoOperation::Write,
+            "provided",
+        ),
+        (
+            seek.derive_progress(&IoOutcome::Seek {
+                target: 9,
+                from: 0,
+                to: 9,
+            }),
+            IoOperation::Seek,
+            "target",
+        ),
+    ];
+    for (outcome, operation, fact) in mismatches {
+        let error = outcome
+            .err()
+            .unwrap_or_else(|| panic!("facts from another request must be refused"));
+        assert_eq!(error, IoError::RequestMismatch { operation, fact });
+        assert_eq!(error.code(), IoDiagnosticCode::OutcomeRequestMismatch);
     }
 }
 

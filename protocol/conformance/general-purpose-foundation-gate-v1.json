@@ -4,11 +4,11 @@
  "status": "verified",
  "specification": {
   "path": "SPEC.md",
-  "sha256": "097c3485076fe614f0a2bf1a0c55e6fa9603d2fb2b632ce069db35f742ee72d1"
+  "sha256": "22fff6d80ce9d54670923f0610105cd7edfcdb2cfbd8fb55b53f57ba3ea57d60"
  },
  "prerequisite_source": {
   "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-  "sha256": "5f38629676185b1fff215c4e8c7e942aacdd7eb1ff571bf9a8e5565452450f91"
+  "sha256": "237df58d272dd23a72fbeb1e13f4729542476172cf3f207d598ef6b59dd8621e"
  },
  "verifies": [
   "artifact-digest-integrity",
@@ -147,19 +147,19 @@
  "artifacts": [
   {
    "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-   "sha256": "5f38629676185b1fff215c4e8c7e942aacdd7eb1ff571bf9a8e5565452450f91"
+   "sha256": "237df58d272dd23a72fbeb1e13f4729542476172cf3f207d598ef6b59dd8621e"
   },
   {
    "path": "protocol/conformance/async-execution-adoption-v1.json",
-   "sha256": "495c4d2df6a91d5939d7af755393aa185444ed29aced597661fe97953f1d8fc0"
+   "sha256": "f50327a55f99f12781dad1527f61d32a45aeff40485c56eae9283e3af961bf51"
   },
   {
    "path": "protocol/conformance/general-purpose-preregistration-gate-v1.json",
-   "sha256": "6159824b4c0d48ebe022373e0c0b342b3afb4b6ea417eea85dd1af5455c48382"
+   "sha256": "7b5cff6727efd57ae7cadde8437ae5503f6744d548d3fef57e130993ea26fa66"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "da2b00ecb048cbc507cd8c1ec7e34089000dcdd23ffcd79f5387780db58ca36c"
+   "sha256": "d60be42d61701a555e0e0da54b52603111e0c6178cca09dbc4f86da53bc1729b"
   }
  ],
  "evidence": [

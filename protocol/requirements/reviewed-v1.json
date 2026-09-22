@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "097c3485076fe614f0a2bf1a0c55e6fa9603d2fb2b632ce069db35f742ee72d1",
+  "specification_sha256": "22fff6d80ce9d54670923f0610105cd7edfcdb2cfbd8fb55b53f57ba3ea57d60",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15947,
+      "end_line": 15952,
       "rationale": null
     }
   ],
@@ -43118,10 +43118,10 @@
     {
       "id": "GNT-45.0-common-io-foundation-scope",
       "span_start_line": 15790,
-      "span_end_line": 15816,
+      "span_end_line": 15817,
       "anchor_line": 15793,
       "body_start_line": 15794,
-      "body_end_line": 15816,
+      "body_end_line": 15817,
       "profiles": [
         "analyzer"
       ],
@@ -43133,7 +43133,7 @@
         {
           "key": "clause-001",
           "start_line": 15794,
-          "end_line": 15816,
+          "end_line": 15817,
           "profiles": [
             "analyzer"
           ],
@@ -43156,11 +43156,11 @@
     },
     {
       "id": "GNT-45.1-bounded-one-call-io-contract",
-      "span_start_line": 15817,
-      "span_end_line": 15877,
-      "anchor_line": 15818,
-      "body_start_line": 15819,
-      "body_end_line": 15877,
+      "span_start_line": 15818,
+      "span_end_line": 15878,
+      "anchor_line": 15819,
+      "body_start_line": 15820,
+      "body_end_line": 15878,
       "profiles": [
         "analyzer"
       ],
@@ -43171,8 +43171,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15819,
-          "end_line": 15877,
+          "start_line": 15820,
+          "end_line": 15878,
           "profiles": [
             "analyzer"
           ],
@@ -43198,11 +43198,11 @@
     },
     {
       "id": "GNT-45.2-standard-io-modules-and-item-rows",
-      "span_start_line": 15878,
-      "span_end_line": 15910,
-      "anchor_line": 15879,
-      "body_start_line": 15880,
-      "body_end_line": 15910,
+      "span_start_line": 15879,
+      "span_end_line": 15911,
+      "anchor_line": 15880,
+      "body_start_line": 15881,
+      "body_end_line": 15911,
       "profiles": [
         "analyzer"
       ],
@@ -43213,8 +43213,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15880,
-          "end_line": 15910,
+          "start_line": 15881,
+          "end_line": 15911,
           "profiles": [
             "analyzer"
           ],
@@ -43240,11 +43240,11 @@
     },
     {
       "id": "GNT-45.3-io-progress-derivation",
-      "span_start_line": 15911,
-      "span_end_line": 15947,
-      "anchor_line": 15912,
-      "body_start_line": 15913,
-      "body_end_line": 15947,
+      "span_start_line": 15912,
+      "span_end_line": 15952,
+      "anchor_line": 15913,
+      "body_start_line": 15914,
+      "body_end_line": 15952,
       "profiles": [
         "analyzer"
       ],
@@ -43255,8 +43255,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15913,
-          "end_line": 15947,
+          "start_line": 15914,
+          "end_line": 15952,
           "profiles": [
             "analyzer"
           ],

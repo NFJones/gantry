@@ -15807,8 +15807,9 @@ behavior, and it consumes no host or platform fact. Its pure model is `crates/ga
 and its analyzer evidence is `crates/gantry-conformance/tests/io_foundation.rs`. The frozen
 diagnostics of this section are `io-request-bound`, `io-request-kind`, and
 `io-progress-inapplicable`, owned by `GNT-45.1-bounded-one-call-io-contract`, and
-`io-observation-inconsistent`, owned by `GNT-45.3-io-progress-derivation`; each names one owning
-clause and no spelling is shared by two clauses. This section introduces no second progress
+`io-observation-inconsistent` and `io-outcome-request-mismatch`, owned by
+`GNT-45.3-io-progress-derivation`; each names one owning clause and no spelling is shared by two
+clauses. This section introduces no second progress
 vocabulary, no second request bound, no streaming, incremental, chunked, or resumable contract, no
 suspension, no quota or charge, no work limit or cancellation safe point, no schema, recovery,
 durability, boundary encoding, lowering, machine representation, or family behavior, and no
@@ -15916,15 +15917,19 @@ publishes the derivation `GNT-45.1-bounded-one-call-io-contract` deferred: an ad
 progress observation is decided by its operation kind and the facts the call observes, and this
 clause declares those facts and the exact decision. A read observes exactly three facts: the
 octet count it asked for, the octet count it advanced, and whether it observed the end of its
-stream. A write observes exactly two: the octet count provided and the octet count accepted. A
-seek observes exactly two: its declared target position and the position the call observed. The
+stream. A write observes exactly two: the octet count provided and the octet count accepted. The
 facts are admitted only within their declared ranges: an advanced count greater than the count a
 read asked for, an accepted count greater than the count a write was provided, and any other fact
 outside its declared range are refused under `io-observation-inconsistent`, naming the observed
 fact and the declared range, before any observation is derived, so a read's asked-for count and a
 write's provided count are each admitted only inside `IO_REQUEST_OCTET_BOUND`. A seek observes
 exactly three: its declared target position, the position it held before the call, and the
-position it observed after the call. The decision is
+position it observed after the call. The derivation is bound to the admitted request: the model's
+`IoRequest::derive_progress` refuses, under `io-outcome-request-mismatch`, any presented facts
+whose operation kind differs from that request or whose asked-for, provided, or target quantity
+differs from the quantity the request was admitted with, before any observation is derived, so no
+caller can derive progress for a request from another request's facts; `IoOutcome`'s
+`derive_progress` publishes the decision itself over one request's facts. The decision is
 total over admitted facts and preserves every precedence of
 `GNT-45.1-bounded-one-call-io-contract`: a read that observed the end of its stream is `eof`
 whatever it advanced, a read that observed no advance and no end is `not-started`, a read that

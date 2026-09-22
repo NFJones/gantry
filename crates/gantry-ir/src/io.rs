@@ -107,6 +107,8 @@ impl IoOperation {
 pub enum IoDiagnosticCode {
     /// A presented observation fact lies outside its declared range.
     ObservationInconsistent,
+    /// The presented facts do not belong to the admitted request they are derived for.
+    OutcomeRequestMismatch,
     /// A progress observation lies outside its kind's declared set.
     ProgressInapplicable,
     /// A request's declared quantity is zero or beyond the declared octet bound.
@@ -117,8 +119,9 @@ pub enum IoDiagnosticCode {
 
 impl IoDiagnosticCode {
     /// Every declared code, in exact wire-name order.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::ObservationInconsistent,
+        Self::OutcomeRequestMismatch,
         Self::ProgressInapplicable,
         Self::RequestBound,
         Self::RequestKind,
@@ -129,6 +132,7 @@ impl IoDiagnosticCode {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::ObservationInconsistent => "io-observation-inconsistent",
+            Self::OutcomeRequestMismatch => "io-outcome-request-mismatch",
             Self::ProgressInapplicable => "io-progress-inapplicable",
             Self::RequestBound => "io-request-bound",
             Self::RequestKind => "io-request-kind",
@@ -156,6 +160,13 @@ pub enum IoError {
         observed: u64,
         /// The declared bound or exact value that fact admits.
         maximum: u64,
+    },
+    /// The presented facts do not belong to the admitted request they are derived for.
+    RequestMismatch {
+        /// The request's declared operation kind.
+        operation: IoOperation,
+        /// The presented fact's declared name.
+        fact: &'static str,
     },
     /// A read or write request declared a quantity that is zero or beyond the declared bound.
     RequestBound {
@@ -186,6 +197,7 @@ impl IoError {
     pub const fn code(&self) -> IoDiagnosticCode {
         match self {
             Self::ObservationInconsistent { .. } => IoDiagnosticCode::ObservationInconsistent,
+            Self::RequestMismatch { .. } => IoDiagnosticCode::OutcomeRequestMismatch,
             Self::RequestBound { .. } => IoDiagnosticCode::RequestBound,
             Self::RequestKind { .. } => IoDiagnosticCode::RequestKind,
             Self::ProgressInapplicable { .. } => IoDiagnosticCode::ProgressInapplicable,
@@ -245,6 +257,40 @@ impl IoRequest {
     #[must_use]
     pub const fn quantity(&self) -> u64 {
         self.quantity
+    }
+
+    /// Derives the one progress observation these facts decide for this admitted request.
+    ///
+    /// Facts whose operation kind or declared quantity differs from this request are refused
+    /// under `io-outcome-request-mismatch` before any observation is derived.
+    pub fn derive_progress(&self, outcome: &IoOutcome) -> Result<ProgressObservation, IoError> {
+        if outcome.operation() != self.operation {
+            return Err(IoError::RequestMismatch {
+                operation: self.operation,
+                fact: "operation",
+            });
+        }
+        match *outcome {
+            IoOutcome::Read { requested, .. } if requested != self.quantity => {
+                Err(IoError::RequestMismatch {
+                    operation: IoOperation::Read,
+                    fact: "requested",
+                })
+            }
+            IoOutcome::Write { provided, .. } if provided != self.quantity => {
+                Err(IoError::RequestMismatch {
+                    operation: IoOperation::Write,
+                    fact: "provided",
+                })
+            }
+            IoOutcome::Seek { target, .. } if target != self.quantity => {
+                Err(IoError::RequestMismatch {
+                    operation: IoOperation::Seek,
+                    fact: "target",
+                })
+            }
+            _ => outcome.derive_progress(),
+        }
     }
 
     fn bounded(operation: IoOperation, octet_count: u64) -> Result<Self, IoError> {

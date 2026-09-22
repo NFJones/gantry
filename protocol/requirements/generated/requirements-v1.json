@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "097c3485076fe614f0a2bf1a0c55e6fa9603d2fb2b632ce069db35f742ee72d1",
-  "byte_length": 1218794,
-  "line_count": 15947,
+  "specification_sha256": "22fff6d80ce9d54670923f0610105cd7edfcdb2cfbd8fb55b53f57ba3ea57d60",
+  "byte_length": 1219243,
+  "line_count": 15952,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15947,
-      "sha256": "75c7e1c3ef092cab331a6b6b500ce1569b1155113e8f5ed7d4b36d2ca5434739",
+      "end_line": 15952,
+      "sha256": "bc8c82931cf0148fc06190fc35194bd4723e4db24bc531c84c39a05f1e131046",
       "rationale": null
     }
   ],
@@ -44323,12 +44323,12 @@
     {
       "id": "GNT-45.0-common-io-foundation-scope",
       "span_start_line": 15790,
-      "span_end_line": 15816,
-      "span_sha256": "186b2d8d9ad4bef7a4b5d2777e75b66e0776ce911bacff920892d345797027d3",
+      "span_end_line": 15817,
+      "span_sha256": "6efffe2adf426d87217e62a7a32a5c0e72933ae27914ed033c21e6846602b35a",
       "anchor_line": 15793,
       "body_start_line": 15794,
-      "body_end_line": 15816,
-      "body_sha256": "c86d04f3088fb248d0d7d9d80161c7b6f50afbc8e7d966ee971b7e962cc47ff1",
+      "body_end_line": 15817,
+      "body_sha256": "3df532c8b7e351545a901b8167e96b939961ba84faf9dd040b88ddd13b9757bf",
       "profiles": [
         "analyzer"
       ],
@@ -44340,7 +44340,7 @@
         {
           "key": "clause-001",
           "start_line": 15794,
-          "end_line": 15816,
+          "end_line": 15817,
           "profiles": [
             "analyzer"
           ],
@@ -44363,12 +44363,12 @@
     },
     {
       "id": "GNT-45.1-bounded-one-call-io-contract",
-      "span_start_line": 15817,
-      "span_end_line": 15877,
+      "span_start_line": 15818,
+      "span_end_line": 15878,
       "span_sha256": "71849f92c33de135f3db66430d6ea3b3f0b3d4c505fa7480fd8c155b5687290c",
-      "anchor_line": 15818,
-      "body_start_line": 15819,
-      "body_end_line": 15877,
+      "anchor_line": 15819,
+      "body_start_line": 15820,
+      "body_end_line": 15878,
       "body_sha256": "73af77a11f14498274b33e162145c86f83cd44135f1f87bb064c1f9baeb60698",
       "profiles": [
         "analyzer"
@@ -44380,8 +44380,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15819,
-          "end_line": 15877,
+          "start_line": 15820,
+          "end_line": 15878,
           "profiles": [
             "analyzer"
           ],
@@ -44407,12 +44407,12 @@
     },
     {
       "id": "GNT-45.2-standard-io-modules-and-item-rows",
-      "span_start_line": 15878,
-      "span_end_line": 15910,
+      "span_start_line": 15879,
+      "span_end_line": 15911,
       "span_sha256": "ccd04b6f660005a1f0908a5f8e088a9c8c35b3897ebd9d9947abc207e39c2afb",
-      "anchor_line": 15879,
-      "body_start_line": 15880,
-      "body_end_line": 15910,
+      "anchor_line": 15880,
+      "body_start_line": 15881,
+      "body_end_line": 15911,
       "body_sha256": "bf7c5b63935c9ac3f6fb4898bdf07d4a17a6e48b243b7fea6902a4dafb5d6b5f",
       "profiles": [
         "analyzer"
@@ -44424,8 +44424,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15880,
-          "end_line": 15910,
+          "start_line": 15881,
+          "end_line": 15911,
           "profiles": [
             "analyzer"
           ],
@@ -44451,13 +44451,13 @@
     },
     {
       "id": "GNT-45.3-io-progress-derivation",
-      "span_start_line": 15911,
-      "span_end_line": 15947,
-      "span_sha256": "fcdcefe77b95256e02dae44b54e9e3a38d393dc863209871610709e5c2a81a53",
-      "anchor_line": 15912,
-      "body_start_line": 15913,
-      "body_end_line": 15947,
-      "body_sha256": "3f67f03260654f974b6140ace63995de5f09ba2a83df0a226ef68e4b9b76f6c3",
+      "span_start_line": 15912,
+      "span_end_line": 15952,
+      "span_sha256": "424a5eceb2f748e038aa1aef7538951bbd3972dda90c9c0a4d18c6b2e9634fe1",
+      "anchor_line": 15913,
+      "body_start_line": 15914,
+      "body_end_line": 15952,
+      "body_sha256": "56c156e29060a55c877906831dfe0562f15bb7deb3aeacf475917a06731759c5",
       "profiles": [
         "analyzer"
       ],
@@ -44468,8 +44468,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 15913,
-          "end_line": 15947,
+          "start_line": 15914,
+          "end_line": 15952,
           "profiles": [
             "analyzer"
           ],
