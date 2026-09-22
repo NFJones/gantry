@@ -127,12 +127,17 @@ pub enum PostFailureSettlementRefusal {
     Model(ResourceError),
 }
 
-/// One runtime-owned registry of admitted resources, keyed by their Section 20 subject.
+/// One registry of admitted resources, keyed by their Section 20 subject.
 ///
-/// Every account enters through a subject only the machine can issue, so one subject owns at most
-/// one account, and a settlement selects its account by the settlement's own operation and
-/// generation rather than by caller text: a settlement naming an operation or generation the
+/// A registry owns at most one account per subject: every account enters through a subject only the
+/// machine can issue, and a second admission for the same subject in the same registry is refused
+/// rather than replaced. A settlement selects its account by the settlement's own operation and
+/// generation rather than by caller text, so a settlement naming an operation or generation this
 /// registry holds no account for changes nothing.
+///
+/// Uniqueness here is per registry: this type publishes no global uniqueness claim, and making one
+/// execution-layer registry the runtime's sole live-resource owner remains the next increment's
+/// obligation.
 #[derive(Debug, Default)]
 pub struct ResourceRegistry {
     accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
@@ -149,8 +154,8 @@ impl ResourceRegistry {
 
     /// Admits one resource for one machine-issued subject.
     ///
-    /// A subject that already owns an account is refused rather than replaced, so one subject can
-    /// never own two lifetimes.
+    /// A subject that already owns an account in this registry is refused rather than replaced, so
+    /// one registry never holds two lifetimes for one subject.
     pub fn admit(
         &mut self,
         subject: ResourceSubjectBinding,
@@ -221,6 +226,15 @@ pub enum ResourceRegistryRefusal {
     Admission(ResourceError),
     /// The account's own settlement step refused the settlement.
     Settlement(PostFailureSettlementRefusal),
+}
+
+/// Why the runtime refused to admit a live resource at an operation boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResourceAdmissionRefusal {
+    /// The machine holds no pending operation whose decoded metadata declares an action.
+    NoPendingDeclaredOperation,
+    /// The resource registry refused the admission.
+    Registry(ResourceRegistryRefusal),
 }
 
 /// One resource whose declared accounting facts the runtime has admitted.

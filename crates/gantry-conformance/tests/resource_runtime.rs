@@ -21,7 +21,8 @@ use gantry::portable::IdentityKind;
 use gantry::runtime::{
     AdmittedResource, ExecutionBudget, Instruction, InstructionKind, Machine, MachineCheckpointV3,
     MachineLabel, MachineLimits, MachineProgram, MachineStep, PostFailureSettlementRefusal,
-    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding, Workflow,
+    ResourceAdmissionRefusal, ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
+    Workflow,
 };
 use gantry::value::DEFAULT_VALUE_LIMITS;
 
@@ -761,4 +762,132 @@ fn resource_registry_gives_one_subject_exactly_one_account() {
             PostFailureSettlementRefusal::Model(ResourceError::IllegalLifetimeTransition)
         ))
     );
+}
+
+#[test]
+fn machine_admits_live_resources_only_for_its_pending_operation() {
+    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("the fixture operation declares an action"));
+
+    let mut registry = ResourceRegistry::new();
+    machine
+        .admit_pending_resource(
+            &mut registry,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert!(registry.account(&subject).is_some());
+    assert_eq!(
+        machine.admit_pending_resource(
+            &mut registry,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceAdmissionRefusal::Registry(
+            ResourceRegistryRefusal::SecondAdmission
+        ))
+    );
+
+    let foreign = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        "crate::resource_runtime_foreign",
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        registry.settle_from_post_failure(&foreign, 21),
+        Err(ResourceRegistryRefusal::UnknownSubject)
+    );
+    let matching = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        registry.settle_from_post_failure(&matching, 21),
+        Ok(ResourceLifetimeState::Poisoned)
+    );
+
+    let bytes = machine.checkpoint().canonical_bytes();
+    let decoded = MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("the fixture checkpoint decodes: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("the fixture budget snapshot recovers: {error:?}"));
+    let recovered = Machine::recover_from_checkpoint(program, decoded, budget)
+        .unwrap_or_else(|error| panic!("the fixture machine recovers: {error:?}"));
+    let mut recovered_registry = ResourceRegistry::new();
+    assert!(
+        recovered_registry.account(&subject).is_none(),
+        "a live account is never restored from a checkpoint"
+    );
+    recovered
+        .admit_pending_resource(
+            &mut recovered_registry,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the recovered machine reconstructs its live account: {error:?}")
+        });
+    assert!(recovered_registry.account(&subject).is_some());
+
+    let (_program, bare_machine, none) = machine_with_declared_subject(None);
+    assert!(none.is_none());
+    let mut bare_registry = ResourceRegistry::new();
+    assert_eq!(
+        bare_machine.admit_pending_resource(
+            &mut bare_registry,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceAdmissionRefusal::NoPendingDeclaredOperation)
+    );
+    assert!(bare_registry.account(&subject).is_none());
+}
+
+#[test]
+fn resource_registry_uniqueness_is_per_registry_until_one_owner_is_wired() {
+    let (_program, _machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("the fixture operation declares an action"));
+
+    let mut first = ResourceRegistry::new();
+    first
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert_eq!(
+        first.admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::SecondAdmission)
+    );
+
+    // Negative evidence for the deferred rule: this type publishes no global uniqueness claim, so
+    // the same subject in a second registry is admitted until one execution-layer owner is wired.
+    let mut second = ResourceRegistry::new();
+    second
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "a second registry admission is not refused before the owner is wired: {error:?}"
+            )
+        });
+    assert!(second.account(&subject).is_some());
 }
