@@ -9,11 +9,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FS_CLAUSES, FS_ITEMS, FS_LINK_REFUSAL_CODE, FS_PATH_SEGMENT_BOUND, FS_RESOLUTION_COUNT,
-    FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsPath, FsResourceOperation,
-    IoOperation, NameClass, PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState,
-    StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface,
-    declare_fs_surface, fs_traversal_order, generated::RecoveryClass,
+    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_RESOLUTION_COUNT, FS_SURFACE_MODES,
+    FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsPath, FsResourceOperation, IoOperation,
+    NameClass, PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState, StabilityTier,
+    StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface,
+    fs_traversal_order, generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -101,6 +101,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.1-filesystem-modules-and-item-rows",
                 "GNT-47.3-filesystem-action-values",
                 "GNT-47.7-filesystem-action-grants",
+                "GNT-47.8-filesystem-link-policy",
             ],
             "std.fs::path" => &[
                 "GNT-47.0-filesystem-foundation-scope",
@@ -134,12 +135,10 @@ fn fs_link_policy_refuses_links_without_resolution_or_reread() {
         "one operation resolves its path value exactly once"
     );
     assert_eq!(
-        FS_LINK_REFUSAL_CODE,
-        FsDiagnosticCode::PathEscape,
-        "the link refusal uses the frozen escape code"
+        FsDiagnosticCode::ALL.len(),
+        2,
+        "the link policy adds no diagnostic spelling to the frozen registry"
     );
-    assert!(FsDiagnosticCode::ALL.contains(&FS_LINK_REFUSAL_CODE));
-    assert_eq!(FS_LINK_REFUSAL_CODE.as_str(), "fs-path-escape");
 
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
     for anchor in FS_CLAUSES {
@@ -152,10 +151,12 @@ fn fs_link_policy_refuses_links_without_resolution_or_reread() {
         "resolving one operation's path value is exactly one step, and this clause declares exactly one resolution per operation",
         "with no re-resolution, fallback, retry, or second attempt, so a later change to an entry never admits it after a refusal",
         "An entry of one of those three kinds is never followed",
+        "without publishing a diagnostic spelling of its own and without sharing a frozen spelling of `GNT-47.2-filesystem-path-values`",
         "whether or not the link target names a location inside the declared root",
         "the refusal is not normalization, substitution, truncation, or a partial execution of the operation's declared effect",
         "and resolves no entry, so a traversal alone publishes no such refusal and a link or a target that changes while a traversal runs does not change the names it publishes",
         "A grant's read-only status neither widens nor narrows this rule",
+        "it publishes no diagnostic spelling, no link creation, no link-target reading, no definition of a junction or a reparse point beyond naming it",
         "no race-detection, race-reporting, or race-retry mechanism",
     ] {
         assert!(

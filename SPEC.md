@@ -16466,10 +16466,11 @@ the question `GNT-47.6-filesystem-traversal` defers. A path value of
 operation's path value is exactly one step, and this clause declares exactly one resolution per
 operation - `FS_RESOLUTION_COUNT` - with no re-resolution, fallback, retry, or second attempt, so a
 later change to an entry never admits it after a refusal. An entry of one of those three kinds is
-never followed: the operation that would resolve through it is refused under the frozen
-`fs-path-escape` code of `GNT-47.0-filesystem-foundation-scope` - `FS_LINK_REFUSAL_CODE` - whether
-or not the link target names a location inside the declared root, and the refusal is not
-normalization, substitution, truncation, or a partial execution of the operation's declared effect.
+never followed: the operation that would resolve through it is refused, without publishing a
+diagnostic spelling of its own and without sharing a frozen spelling of
+`GNT-47.2-filesystem-path-values`, whether or not the link target names a location inside the
+declared root, and the refusal is not normalization, substitution, truncation, or a partial
+execution of the operation's declared effect.
 A traversal of `GNT-47.6-filesystem-traversal` publishes the name of such an entry without resolving
 through it and resolves no entry, so a traversal alone publishes no such refusal and a link or a
 target that changes while a traversal runs does not change the names it publishes. A grant's
@@ -16478,9 +16479,9 @@ read-only status neither widens nor narrows this rule: the refusal of
 rule, while this rule refuses whatever grant is presented.
 
 This clause publishes the single-resolution rule, the never-followed entry kinds, and the refusal
-code only: it publishes no link creation, no link-target reading, no definition of a junction or a
-reparse point beyond naming it, no cross-target mapping, no race-detection, race-reporting, or
-race-retry mechanism, no atomicity, snapshot, or isolation guarantee, no mount, bind, or
-canonicalization rule, no entry kind in a traversal result, no content, request, or progress
-observation, no change to any other clause of this section or of Sections 20, 28, and 29, and it
+condition only: it publishes no diagnostic spelling, no link creation, no link-target reading, no
+definition of a junction or a reparse point beyond naming it, no cross-target mapping, no
+race-detection, race-reporting, or race-retry mechanism, no atomicity, snapshot, or isolation
+guarantee, no mount, bind, or canonicalization rule, no entry kind in a traversal result, no
+content, request, or progress observation, no change to any other clause of this section, and it
 claims no performance, storage layout, or physical representation.

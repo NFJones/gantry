@@ -69,6 +69,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.1-filesystem-modules-and-item-rows",
             "GNT-47.3-filesystem-action-values",
             "GNT-47.7-filesystem-action-grants",
+            "GNT-47.8-filesystem-link-policy",
         ],
     },
     FsItemRow {
@@ -222,9 +223,6 @@ pub const FS_PATH_SEGMENT_BOUND: usize = 256;
 
 /// The declared number of resolutions one operation of this section performs for its path value.
 pub const FS_RESOLUTION_COUNT: u32 = 1;
-
-/// The frozen diagnostic code that refuses an entry the declared link policy never follows.
-pub const FS_LINK_REFUSAL_CODE: FsDiagnosticCode = FsDiagnosticCode::PathEscape;
 
 /// One declared filesystem refusal condition of `GNT-47.2-filesystem-path-values`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
