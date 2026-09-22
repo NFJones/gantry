@@ -5,13 +5,11 @@
 //! how semantic release stays independent of record retirement. They perform no
 //! durable I/O and claim no journal, checkpoint, evaluator, or host behavior.
 
-use gantry::ir::generated::RecoveryClass;
 use gantry::ir::{
-    CanonicalPath, Charge, DurableResourceRecord, EmergencyCleanupWitness, FailureClass,
-    GracePolicy, LivenessRoot, OperationAbi, OperationKind, OwnerGeneration, PostFailureSettlement,
-    Quota, QuotaFamily, QuotaOwner, ReceiverOwnership, ResourceAction, ResourceCarrier,
-    ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence,
-    StaticSiteId, StopCause, StopCoordinator, StopRequest, StructuralPosition, TaskStopState,
+    Charge, DurableResourceRecord, EmergencyCleanupWitness, GracePolicy, LivenessRoot,
+    OwnerGeneration, Quota, QuotaFamily, QuotaOwner, ResourceAction, ResourceCarrier,
+    ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence, StopCause,
+    StopCoordinator, StopRequest, TaskStopState,
 };
 use gantry::runtime::AdmittedResource;
 
@@ -347,24 +345,6 @@ fn a_charge_vector_commits_every_declared_member_or_none() {
     );
 }
 
-fn failure_settlement(failure: FailureClass) -> PostFailureSettlement {
-    let path = CanonicalPath::new("crate::resource_runtime")
-        .unwrap_or_else(|_| unreachable!("fixture path is canonical"));
-    let position = StructuralPosition::new(vec![45, 1])
-        .unwrap_or_else(|_| unreachable!("fixture position is canonical"));
-    let site = StaticSiteId::new(path.clone(), position);
-    let operation = OperationAbi::new(
-        OperationKind::LiveResource,
-        &path,
-        &site,
-        1,
-        RecoveryClass::Idempotent,
-        ReceiverOwnership::RetainedByCaller,
-    )
-    .unwrap_or_else(|_| unreachable!("fixture operation is admissible"));
-    operation.settle_failure(failure)
-}
-
 fn emergency_cleanup() -> EmergencyCleanupWitness {
     let policy =
         GracePolicy::new(1, 1).unwrap_or_else(|_| unreachable!("fixture stop policy is bounded"));
@@ -379,34 +359,6 @@ fn emergency_cleanup() -> EmergencyCleanupWitness {
         .escalate(&mut tasks, 21)
         .unwrap_or_else(|_| unreachable!("held stop request escalates at its deadline"));
     escalation.admit_emergency_release()
-}
-
-#[test]
-fn runtime_settles_only_from_model_issued_settlement_proofs() {
-    let mut admitted_resource = admitted_active();
-    let before = admitted_resource.ledger().clone();
-    assert_eq!(
-        admitted_resource
-            .settle_from_post_failure(&failure_settlement(FailureClass::AdapterFailure), 21,),
-        Err(ResourceError::FailureDoesNotPoisonResource)
-    );
-    assert_eq!(admitted_resource.ledger(), &before);
-
-    assert_eq!(
-        admitted_resource
-            .settle_from_post_failure(&failure_settlement(FailureClass::ResourceFailure), 21,),
-        Ok(ResourceLifetimeState::Poisoned)
-    );
-    let settlement = match admitted_resource.ledger().settlement() {
-        Some(settlement) => settlement,
-        None => panic!("the poisoned lifetime retains its settlement baseline"),
-    };
-    assert_eq!(settlement.owner(), OwnerGeneration::new(4));
-    assert_eq!(settlement.settled_at(), 21);
-    assert_eq!(
-        admitted_resource.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
-        Some(8)
-    );
 }
 
 #[test]

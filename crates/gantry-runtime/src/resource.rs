@@ -17,15 +17,19 @@
 //! `GNT-28.10-resource-accounting-non-claims`.
 //!
 //! This module owns the admission boundary and the runtime's settlement step: an admitted
-//! resource settles only from a model-issued settlement or cleanup proof, so the runtime never
-//! chooses a terminal disposition the model did not derive. It performs no durable or host I/O,
-//! decodes no record bytes, and publishes no journal, checkpoint, evaluator, or host behavior;
-//! those remain with the durable, recovery, and machine modules.
+//! resource settles through the model's own lifetime transitions, so the runtime never chooses a
+//! terminal disposition the model did not derive. Settlement from a model-issued post-failure
+//! settlement is deliberately not published here: such a proof names one logical operation and
+//! resource generation, and an admitted account carries no such identity to compare it with, so
+//! binding that subject before mutation is the next increment's obligation under the Section 20
+//! generation fence. It performs no durable or host I/O, decodes no record bytes, and publishes no
+//! journal, checkpoint, evaluator, or host behavior; those remain with the durable, recovery, and
+//! machine modules.
 
 use gantry_ir::{
-    DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness, PoisonWitness,
-    PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ResourceCarrier, ResourceError,
-    ResourceLedger, ResourceLifetimeState, admit_resource_carrier,
+    DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness, Quota, QuotaFamily,
+    QuotaOwner, ResourceCarrier, ResourceError, ResourceLedger, ResourceLifetimeState,
+    admit_resource_carrier,
 };
 
 /// One resource whose declared accounting facts the runtime has admitted.
@@ -114,23 +118,6 @@ impl AdmittedResource {
         settled_at: u64,
     ) -> Result<ResourceLifetimeState, ResourceError> {
         self.ledger.finish(settled_at)?;
-        Ok(self.ledger.lifetime())
-    }
-
-    /// Settles one admitted resource from a model-issued post-failure settlement.
-    ///
-    /// The settlement is admitted only through the model's poisoning witness: a settlement whose
-    /// derived state is not the poisoned state is refused with
-    /// `ResourceError::FailureDoesNotPoisonResource` before any lifetime fact changes, so the
-    /// runtime never chooses a terminal disposition for a failure the model did not settle as
-    /// poisoned.
-    pub fn settle_from_post_failure(
-        &mut self,
-        settlement: &PostFailureSettlement,
-        settled_at: u64,
-    ) -> Result<ResourceLifetimeState, ResourceError> {
-        let witness = PoisonWitness::from_post_failure(settlement, settled_at)?;
-        self.ledger.poison(witness)?;
         Ok(self.ledger.lifetime())
     }
 
