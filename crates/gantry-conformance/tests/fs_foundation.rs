@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{
     FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction,
     FsDiagnosticCode, FsPath, FsResourceOperation, IoOperation, NameClass, PackageFamily, Prelude,
-    StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface,
-    declare_fs_surface, generated::RecoveryClass,
+    ResourceCarrier, ResourceLifetimeState, StabilityTier, StdGraph, StdItem, StdPackage,
+    StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface, generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -54,6 +54,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.2-filesystem-path-values",
             "GNT-47.3-filesystem-action-values",
             "GNT-47.4-filesystem-resource-operations",
+            "GNT-47.5-filesystem-resource-state",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -105,6 +106,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.0-filesystem-foundation-scope",
                 "GNT-47.1-filesystem-modules-and-item-rows",
                 "GNT-47.4-filesystem-resource-operations",
+                "GNT-47.5-filesystem-resource-state",
             ],
             other => panic!("the undeclared module row `{other}` must not exist"),
         };
@@ -551,6 +553,94 @@ fn fs_resource_operations_are_closed_and_consume_io_requests() {
         "publishes no progress observation, no channel, and no settlement for them",
         "a truncate declares a length and not a transfer",
         "no second request contract, no second octet bound, and no second progress vocabulary",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_resource_state_vocabulary_consumes_section28_and_read_only_grants_cannot_mutate() {
+    // The clause consumes the landed Section 28 lifetime vocabulary instead of declaring a second
+    // one, so the state facts pinned here are that model's facts.
+    assert!(ResourceLifetimeState::Active.admits_charge());
+    for state in [
+        ResourceLifetimeState::Finishing,
+        ResourceLifetimeState::Finished,
+        ResourceLifetimeState::Poisoned,
+        ResourceLifetimeState::EmergencyReleased,
+        ResourceLifetimeState::Retired,
+        ResourceLifetimeState::Deleted,
+    ] {
+        assert!(
+            !state.admits_charge(),
+            "only an active resource admits ordinary charges"
+        );
+    }
+    for state in [
+        ResourceLifetimeState::Finished,
+        ResourceLifetimeState::Poisoned,
+        ResourceLifetimeState::EmergencyReleased,
+    ] {
+        assert!(state.is_settled(), "a settled terminal result is declared");
+    }
+    for state in [
+        ResourceLifetimeState::Active,
+        ResourceLifetimeState::Finishing,
+        ResourceLifetimeState::Retired,
+        ResourceLifetimeState::Deleted,
+    ] {
+        assert!(!state.is_settled(), "a non-terminal state is not settled");
+    }
+
+    let mutating = FsResourceOperation::ALL
+        .into_iter()
+        .filter(|operation| operation.declares_content_mutation())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        mutating,
+        [FsResourceOperation::Write, FsResourceOperation::Truncate],
+        "exactly a write and a truncate declare a content mutation"
+    );
+    for operation in [
+        FsResourceOperation::Open,
+        FsResourceOperation::Read,
+        FsResourceOperation::Seek,
+        FsResourceOperation::Flush,
+        FsResourceOperation::Sync,
+        FsResourceOperation::Close,
+        FsResourceOperation::Lock,
+        FsResourceOperation::Watch,
+    ] {
+        assert!(
+            !operation.declares_content_mutation(),
+            "`{}` declares no content mutation",
+            operation.wire_name()
+        );
+    }
+    assert_eq!(ResourceCarrier::ALL.len(), 3, "the carrier set is closed");
+    assert!(ResourceCarrier::ALL.contains(&ResourceCarrier::ReconstructionRecord));
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in FS_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "The whole-resource lifetime state of an instance is exactly the closed vocabulary of `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release`",
+        "active, finishing, finished, poisoned, emergency-released, retired, and deleted",
+        "this clause declares no second lifetime state, no second transition, no second terminal rule, and no reopening",
+        "An admitted instance carries exactly one declared generation of `GNT-20.2-logical-operation-and-resource-generation-identity` and exactly one declared owner",
+        "this clause declares exactly `write` and `truncate` as content-mutating",
+        "the model accessor `declares_content_mutation` publishes exactly that decision",
+        "refused under a read-only grant rather than ignored, downgraded, or partially executed",
+        "a grant's read-only status never changes whether an operation declares a content mutation",
+        "a durable record carries no live handle, no descriptor, and no admitted instance",
+        "reconstruction reads the declared reconstruction record of `GNT-28.7-durable-resource-reconstruction`",
     ] {
         assert!(
             specification.contains(rule),

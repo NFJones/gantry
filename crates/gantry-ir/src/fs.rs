@@ -3,9 +3,10 @@
 //! This module publishes the canonical module and item rows of the `std.fs` family and their
 //! applicability, the path value contract of `std.fs::path`, the whole-object action vocabulary of
 //! `std.fs::action`, and the resource operation vocabulary of `std.fs::resource` with its
-//! consumption of the common I/O contract. It is not a descriptor, an open handle, a live resource
-//! instance, an adapter, a capability, or a runtime availability, and it performs no I/O: every
-//! decision it publishes is a deterministic function of its declared arguments alone.
+//! consumption of the common I/O contract and its content-mutation fact. It is not a descriptor, an
+//! open handle, a live resource instance, an adapter, a capability, or a runtime availability, and
+//! it performs no I/O: every decision it publishes is a deterministic function of its declared
+//! arguments alone.
 
 use std::fmt;
 
@@ -19,12 +20,13 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 5] = [
+pub const FS_CLAUSES: [&str; 6] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
     "GNT-47.3-filesystem-action-values",
     "GNT-47.4-filesystem-resource-operations",
+    "GNT-47.5-filesystem-resource-state",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -81,6 +83,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.0-filesystem-foundation-scope",
             "GNT-47.1-filesystem-modules-and-item-rows",
             "GNT-47.4-filesystem-resource-operations",
+            "GNT-47.5-filesystem-resource-state",
         ],
     },
 ];
@@ -589,5 +592,16 @@ impl FsResourceOperation {
             | Self::Lock
             | Self::Watch => None,
         }
+    }
+
+    /// Returns whether this operation declares an externally visible mutation of the object's
+    /// content.
+    ///
+    /// Exactly a write and a truncate declare one, so a read-only grant refuses exactly those two;
+    /// every other declared operation declares no content mutation, and a grant's read-only status
+    /// never changes that fact.
+    #[must_use]
+    pub const fn declares_content_mutation(self) -> bool {
+        matches!(self, Self::Write | Self::Truncate)
     }
 }
