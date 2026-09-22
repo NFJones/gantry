@@ -1,28 +1,30 @@
 //! The codec foundation of `GNT-42.0-codec-foundation-scope`,
-//! `GNT-42.1-versioned-codec-contract`, `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`, and
-//! `GNT-42.4-binary-endian-readers-and-writers`: the declared `std.codec` family with its five
-//! modules, the versioned codec identity and its exact admission rule, the frozen refusal
-//! vocabulary with its codec categories of `GNT-29.9-codec-contract`, the canonical hex, base64,
-//! and binary codecs, and the separation between application codecs and the sealed canonical
-//! boundary and durable recovery projections.
+//! `GNT-42.1-versioned-codec-contract`, `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
+//! `GNT-42.4-binary-endian-readers-and-writers`, and `GNT-42.5-bounded-dynamic-json`: the
+//! declared `std.codec` family with its five modules, the versioned codec identity and its exact
+//! admission rule, the frozen refusal vocabulary with its codec categories of
+//! `GNT-29.9-codec-contract`, the canonical hex, base64, and binary codecs, the bounded dynamic
+//! JSON codec, and the separation between application codecs and the sealed canonical boundary
+//! and durable recovery projections.
 //!
 //! The model is pure: it consumes no host codec library, host encoding facility, ambient
 //! registry, platform behavior, timing, or global mutable state, and the only concrete codec
-//! behavior it declares is that of the hex, base64, and binary codecs, which
-//! `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`, and
-//! `GNT-42.4-binary-endian-readers-and-writers` publish.
+//! behavior it declares is that of the hex, base64, binary, and dynamic JSON codecs, which
+//! `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
+//! `GNT-42.4-binary-endian-readers-and-writers`, and `GNT-42.5-bounded-dynamic-json` publish.
 
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
 };
 
 /// The declared clauses of Section 42, in specification order.
-pub const CODEC_CLAUSES: [&str; 5] = [
+pub const CODEC_CLAUSES: [&str; 6] = [
     "GNT-42.0-codec-foundation-scope",
     "GNT-42.1-versioned-codec-contract",
     "GNT-42.2-hex-codec",
     "GNT-42.3-base64-codec",
     "GNT-42.4-binary-endian-readers-and-writers",
+    "GNT-42.5-bounded-dynamic-json",
 ];
 
 /// The one declared version of every codec in this revision
@@ -416,6 +418,7 @@ pub const CODEC_ITEMS: [CodecItemRow; 5] = [
         clauses: &[
             "GNT-42.0-codec-foundation-scope",
             "GNT-42.1-versioned-codec-contract",
+            "GNT-42.5-bounded-dynamic-json",
         ],
     },
 ];
@@ -910,4 +913,521 @@ pub fn write_u64(endian: Endian, value: u64) -> [u8; 8] {
         Endian::Big => value.to_be_bytes(),
         Endian::Little => value.to_le_bytes(),
     }
+}
+
+/// The declared text bound of `GNT-42.5-bounded-dynamic-json`: the largest octet count an
+/// admitted JSON text or an encode result may hold.
+pub const JSON_TEXT_OCTET_BOUND: usize = 65_536;
+
+/// The declared node bound of `GNT-42.5-bounded-dynamic-json`: the largest number of values and
+/// member keys one dynamic value may hold in total.
+pub const JSON_NODE_BOUND: usize = 8_192;
+
+/// The declared depth bound of `GNT-42.5-bounded-dynamic-json`: the largest number of containers
+/// a value may nest in.
+pub const JSON_DEPTH_BOUND: u32 = 64;
+
+/// One dynamic JSON value of `GNT-42.5-bounded-dynamic-json`.
+///
+/// An object is the sequence of its members in the order its text presents them, and that order
+/// is part of the value; an integer is exactly one value of the signed 64-bit range; and a text
+/// is a sequence of Unicode scalar values.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum JsonValue {
+    /// The `null` value.
+    Null,
+    /// A boolean value.
+    Bool(bool),
+    /// An integer of the signed 64-bit range.
+    Integer(i64),
+    /// A string value.
+    Text(String),
+    /// An array of values in sequence order.
+    Array(Vec<JsonValue>),
+    /// An object: its members in the order its text presents them.
+    Object(Vec<(String, JsonValue)>),
+}
+
+impl JsonValue {
+    /// Returns the number of values and member keys this value holds in total.
+    #[must_use]
+    pub fn node_count(&self) -> usize {
+        match self {
+            Self::Array(items) => 1 + items.iter().map(Self::node_count).sum::<usize>(),
+            Self::Object(members) => {
+                1 + members
+                    .iter()
+                    .map(|(_, value)| 1 + value.node_count())
+                    .sum::<usize>()
+            }
+            _ => 1,
+        }
+    }
+
+    /// Returns the number of containers this value nests in.
+    #[must_use]
+    pub fn container_depth(&self) -> u32 {
+        match self {
+            Self::Array(items) => 1 + items.iter().map(Self::container_depth).max().unwrap_or(0),
+            Self::Object(members) => {
+                1 + members
+                    .iter()
+                    .map(|(_, value)| value.container_depth())
+                    .max()
+                    .unwrap_or(0)
+            }
+            _ => 0,
+        }
+    }
+}
+
+/// Decodes one text under the declared compact JSON language of `GNT-42.5-bounded-dynamic-json`.
+///
+/// The admitted language is exactly the compact canonical form: one value of the declared dynamic
+/// model for the whole text, with no insignificant whitespace, no trailing octet, and no second
+/// spelling of any admitted value. A text holding more than `JSON_TEXT_OCTET_BOUND` octets, a
+/// value holding more than `JSON_NODE_BOUND` values and member keys, and a value nesting more
+/// than `JSON_DEPTH_BOUND` containers deep are refused under `codec-expansion-limit`; every other
+/// departure from the language is refused under `codec-malformed-input`, naming the zero-based
+/// octet index of the first departing position.
+pub fn json_decode(text: &str) -> Result<JsonValue, CodecError> {
+    if text.len() > JSON_TEXT_OCTET_BOUND {
+        return Err(json_octet_refusal("presented JSON text", text.len()));
+    }
+    let mut parser = JsonParser {
+        text,
+        bytes: text.as_bytes(),
+        index: 0,
+        nodes: 0,
+    };
+    let value = parser.parse_value(0)?;
+    if parser.index != parser.bytes.len() {
+        return Err(parser.malformed("the value is followed by a further octet"));
+    }
+    Ok(value)
+}
+
+/// Encodes one dynamic value of `GNT-42.5-bounded-dynamic-json` as its canonical compact text.
+///
+/// A value holding more than `JSON_NODE_BOUND` values and member keys, nesting more than
+/// `JSON_DEPTH_BOUND` containers deep, or whose canonical text would hold more than
+/// `JSON_TEXT_OCTET_BOUND` octets is refused under `codec-expansion-limit`.
+pub fn json_encode(value: &JsonValue) -> Result<String, CodecError> {
+    if value.node_count() > JSON_NODE_BOUND {
+        return Err(json_node_refusal(
+            "presented dynamic value",
+            value.node_count(),
+        ));
+    }
+    if value.container_depth() > JSON_DEPTH_BOUND {
+        return Err(json_depth_refusal(
+            "presented dynamic value",
+            value.container_depth(),
+        ));
+    }
+    let mut text = String::new();
+    write_json_value(value, &mut text);
+    if text.len() > JSON_TEXT_OCTET_BOUND {
+        return Err(json_octet_refusal(
+            "canonical text of the presented dynamic value",
+            text.len(),
+        ));
+    }
+    Ok(text)
+}
+
+/// The scan state of one `json_decode` of `GNT-42.5-bounded-dynamic-json`.
+struct JsonParser<'a> {
+    text: &'a str,
+    bytes: &'a [u8],
+    index: usize,
+    nodes: usize,
+}
+
+impl JsonParser<'_> {
+    /// Publishes the refusal of one departure at the current octet index.
+    fn malformed(&self, reason: &str) -> CodecError {
+        json_malformed_refusal(self.index, reason)
+    }
+
+    /// Parses one value at the given container depth.
+    fn parse_value(&mut self, depth: u32) -> Result<JsonValue, CodecError> {
+        self.nodes += 1;
+        if self.nodes > JSON_NODE_BOUND {
+            return Err(json_node_refusal("presented JSON text", self.nodes));
+        }
+        let Some(octet) = self.bytes.get(self.index).copied() else {
+            return Err(self.malformed("the text ends before its value is complete"));
+        };
+        match octet {
+            b'n' => {
+                self.expect_literal("null")?;
+                Ok(JsonValue::Null)
+            }
+            b't' => {
+                self.expect_literal("true")?;
+                Ok(JsonValue::Bool(true))
+            }
+            b'f' => {
+                self.expect_literal("false")?;
+                Ok(JsonValue::Bool(false))
+            }
+            b'"' => Ok(JsonValue::Text(self.parse_string()?)),
+            b'[' => self.parse_array(depth),
+            b'{' => self.parse_object(depth),
+            b'-' | b'0'..=b'9' => Ok(JsonValue::Integer(self.parse_integer()?)),
+            _ => Err(self.malformed("the octet cannot begin a JSON value")),
+        }
+    }
+
+    /// Consumes one declared literal octet by octet, refusing at the first departure.
+    fn expect_literal(&mut self, literal: &str) -> Result<(), CodecError> {
+        for (offset, expected) in literal.bytes().enumerate() {
+            match self.bytes.get(self.index + offset) {
+                Some(octet) if *octet == expected => {}
+                Some(_) => {
+                    self.index += offset;
+                    return Err(self.malformed("the octet does not continue the declared literal"));
+                }
+                None => {
+                    self.index = self.bytes.len();
+                    return Err(self.malformed("the text ends before its value is complete"));
+                }
+            }
+        }
+        self.index += literal.len();
+        Ok(())
+    }
+
+    /// Parses one array whose opening `[` stands at the current index.
+    fn parse_array(&mut self, depth: u32) -> Result<JsonValue, CodecError> {
+        self.index += 1;
+        if depth >= JSON_DEPTH_BOUND {
+            return Err(json_depth_refusal("presented JSON text", depth + 1));
+        }
+        let mut items = Vec::new();
+        if self.bytes.get(self.index) == Some(&b']') {
+            self.index += 1;
+            return Ok(JsonValue::Array(items));
+        }
+        loop {
+            items.push(self.parse_value(depth + 1)?);
+            match self.bytes.get(self.index).copied() {
+                Some(b',') => self.index += 1,
+                Some(b']') => {
+                    self.index += 1;
+                    return Ok(JsonValue::Array(items));
+                }
+                Some(_) => return Err(self.malformed("the octet cannot continue a JSON array")),
+                None => return Err(self.malformed("the text ends before its array is complete")),
+            }
+        }
+    }
+
+    /// Parses one object whose opening `{` stands at the current index.
+    fn parse_object(&mut self, depth: u32) -> Result<JsonValue, CodecError> {
+        self.index += 1;
+        if depth >= JSON_DEPTH_BOUND {
+            return Err(json_depth_refusal("presented JSON text", depth + 1));
+        }
+        let mut members: Vec<(String, JsonValue)> = Vec::new();
+        if self.bytes.get(self.index) == Some(&b'}') {
+            self.index += 1;
+            return Ok(JsonValue::Object(members));
+        }
+        loop {
+            let key_index = self.index;
+            if self.bytes.get(self.index) != Some(&b'"') {
+                return Err(self.malformed("a JSON object member requires a string key"));
+            }
+            let key = self.parse_string()?;
+            self.nodes += 1;
+            if self.nodes > JSON_NODE_BOUND {
+                return Err(json_node_refusal("presented JSON text", self.nodes));
+            }
+            if members.iter().any(|(present, _)| *present == key) {
+                return Err(json_malformed_refusal(
+                    key_index,
+                    "the key repeats an earlier member of the same JSON object",
+                ));
+            }
+            if self.bytes.get(self.index) != Some(&b':') {
+                return Err(self.malformed("a JSON object member requires a colon after its key"));
+            }
+            self.index += 1;
+            let member = self.parse_value(depth + 1)?;
+            members.push((key, member));
+            match self.bytes.get(self.index).copied() {
+                Some(b',') => self.index += 1,
+                Some(b'}') => {
+                    self.index += 1;
+                    return Ok(JsonValue::Object(members));
+                }
+                Some(_) => return Err(self.malformed("the octet cannot continue a JSON object")),
+                None => return Err(self.malformed("the text ends before its object is complete")),
+            }
+        }
+    }
+
+    /// Parses one canonical string whose opening quote stands at the current index.
+    fn parse_string(&mut self) -> Result<String, CodecError> {
+        self.index += 1;
+        let mut value = String::new();
+        loop {
+            let Some(octet) = self.bytes.get(self.index).copied() else {
+                return Err(self.malformed("the text ends before its string is complete"));
+            };
+            match octet {
+                b'"' => {
+                    self.index += 1;
+                    return Ok(value);
+                }
+                b'\\' => self.parse_escape(&mut value)?,
+                control if control < 0x20 => {
+                    return Err(self
+                        .malformed("a raw control octet is not part of a canonical JSON string"));
+                }
+                _ => {
+                    let Some(scalar) = self.text[self.index..].chars().next() else {
+                        return Err(self.malformed("the text is not a scalar sequence"));
+                    };
+                    value.push(scalar);
+                    self.index += scalar.len_utf8();
+                }
+            }
+        }
+    }
+
+    /// Parses one escape whose backslash stands at the current index.
+    fn parse_escape(&mut self, value: &mut String) -> Result<(), CodecError> {
+        self.index += 1;
+        let Some(octet) = self.bytes.get(self.index).copied() else {
+            return Err(self.malformed("the text ends before its escape is complete"));
+        };
+        let scalar = match octet {
+            b'"' => '"',
+            b'\\' => '\\',
+            b'b' => '\u{0008}',
+            b'f' => '\u{000c}',
+            b'n' => '\n',
+            b'r' => '\r',
+            b't' => '\t',
+            b'u' => return self.parse_unicode_escape(value),
+            _ => {
+                return Err(
+                    self.malformed("the octet is not part of the canonical JSON escape set")
+                );
+            }
+        };
+        self.index += 1;
+        value.push(scalar);
+        Ok(())
+    }
+
+    /// Parses one `\u00xx` escape whose `u` stands at the current index.
+    fn parse_unicode_escape(&mut self, value: &mut String) -> Result<(), CodecError> {
+        let digits_start = self.index + 1;
+        let Some(digits) = self.bytes.get(digits_start..digits_start.saturating_add(4)) else {
+            self.index = self.bytes.len();
+            return Err(self.malformed("the text ends before its unicode escape is complete"));
+        };
+        let [first, second, third, fourth] = digits else {
+            self.index = self.bytes.len();
+            return Err(self.malformed("the text ends before its unicode escape is complete"));
+        };
+        if *first != b'0' || *second != b'0' {
+            self.index = if *first != b'0' {
+                digits_start
+            } else {
+                digits_start + 1
+            };
+            return Err(self.malformed(
+                "a canonical unicode escape denotes U+0000 to U+001F as `\\u00` and two digits",
+            ));
+        }
+        let Some(high) = json_lowercase_hex(*third) else {
+            self.index = digits_start + 2;
+            return Err(
+                self.malformed("a canonical unicode escape uses two lowercase hexadecimal digits")
+            );
+        };
+        let Some(low) = json_lowercase_hex(*fourth) else {
+            self.index = digits_start + 3;
+            return Err(
+                self.malformed("a canonical unicode escape uses two lowercase hexadecimal digits")
+            );
+        };
+        let code = (u32::from(high) << 4) | u32::from(low);
+        if code > 0x001f {
+            self.index = digits_start + 2;
+            return Err(self.malformed("a canonical unicode escape denotes U+0000 to U+001F only"));
+        }
+        let Some(scalar) = char::from_u32(code) else {
+            self.index = digits_start + 2;
+            return Err(self.malformed("the escape denotes no Unicode scalar value"));
+        };
+        value.push(scalar);
+        self.index = digits_start + 4;
+        Ok(())
+    }
+
+    /// Parses one canonical integer whose first octet stands at the current index.
+    fn parse_integer(&mut self) -> Result<i64, CodecError> {
+        let start = self.index;
+        let negative = self.bytes.get(self.index) == Some(&b'-');
+        if negative {
+            self.index += 1;
+        }
+        let digits_start = self.index;
+        let mut value: i64 = 0;
+        let mut overflow = false;
+        while let Some(octet) = self.bytes.get(self.index).copied() {
+            let digit = match octet {
+                b'0'..=b'9' => i64::from(octet - b'0'),
+                _ => break,
+            };
+            if self.index == digits_start {
+                if digit == 0
+                    && self
+                        .bytes
+                        .get(self.index + 1)
+                        .is_some_and(u8::is_ascii_digit)
+                {
+                    self.index += 1;
+                    return Err(
+                        self.malformed("a leading zero is not part of a canonical JSON integer")
+                    );
+                }
+                if negative && digit == 0 {
+                    return Err(
+                        self.malformed("the value zero never carries a sign in canonical JSON")
+                    );
+                }
+            }
+            value = match value
+                .checked_mul(10)
+                .and_then(|scaled| scaled.checked_sub(digit))
+            {
+                Some(scaled) => scaled,
+                None => {
+                    overflow = true;
+                    break;
+                }
+            };
+            self.index += 1;
+        }
+        if self.index == digits_start {
+            return Err(self.malformed("a JSON integer requires at least one digit"));
+        }
+        if overflow || (!negative && value == i64::MIN) {
+            self.index = start;
+            return Err(self.malformed("the integer token lies outside the signed 64-bit range"));
+        }
+        if negative { Ok(value) } else { Ok(-value) }
+    }
+}
+
+/// Publishes the refusal of one presented JSON text outside the declared compact language of
+/// `GNT-42.5-bounded-dynamic-json`, naming the zero-based octet index of the departure.
+fn json_malformed_refusal(index: usize, reason: &str) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::MalformedInput,
+        format!(
+            "the presented JSON text departs from the declared compact JSON language at index {index}: {reason}"
+        ),
+    )
+}
+
+/// Publishes the refusal of one JSON octet count beyond the declared text bound.
+fn json_octet_refusal(subject: &str, observed: usize) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::ExpansionLimit,
+        format!(
+            "the {subject} holds {observed} octets, beyond the declared bound {JSON_TEXT_OCTET_BOUND}"
+        ),
+    )
+}
+
+/// Publishes the refusal of one JSON node count beyond the declared node bound.
+fn json_node_refusal(subject: &str, observed: usize) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::ExpansionLimit,
+        format!(
+            "the {subject} would hold {observed} values and member keys, beyond the declared bound {JSON_NODE_BOUND}"
+        ),
+    )
+}
+
+/// Publishes the refusal of one JSON container depth beyond the declared depth bound.
+fn json_depth_refusal(subject: &str, observed: u32) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::ExpansionLimit,
+        format!(
+            "the {subject} would nest {observed} containers deep, beyond the declared bound {JSON_DEPTH_BOUND}"
+        ),
+    )
+}
+
+/// Returns the value of one lowercase hexadecimal digit octet; every other octet is `None`.
+fn json_lowercase_hex(octet: u8) -> Option<u8> {
+    match octet {
+        b'0'..=b'9' => Some(octet - b'0'),
+        b'a'..=b'f' => Some(octet - b'a' + 10),
+        _ => None,
+    }
+}
+
+/// Writes the canonical compact text of one dynamic value.
+fn write_json_value(value: &JsonValue, out: &mut String) {
+    match value {
+        JsonValue::Null => out.push_str("null"),
+        JsonValue::Bool(true) => out.push_str("true"),
+        JsonValue::Bool(false) => out.push_str("false"),
+        JsonValue::Integer(integer) => out.push_str(&integer.to_string()),
+        JsonValue::Text(text) => write_json_string(text, out),
+        JsonValue::Array(items) => {
+            out.push('[');
+            for (position, item) in items.iter().enumerate() {
+                if position > 0 {
+                    out.push(',');
+                }
+                write_json_value(item, out);
+            }
+            out.push(']');
+        }
+        JsonValue::Object(members) => {
+            out.push('{');
+            for (position, (key, member)) in members.iter().enumerate() {
+                if position > 0 {
+                    out.push(',');
+                }
+                write_json_string(key, out);
+                out.push(':');
+                write_json_value(member, out);
+            }
+            out.push('}');
+        }
+    }
+}
+
+/// Writes the canonical escaped form of one string.
+fn write_json_string(text: &str, out: &mut String) {
+    out.push('"');
+    for scalar in text.chars() {
+        match scalar {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            control if control < '\u{0020}' => {
+                let code = u32::from(control);
+                out.push_str(&format!("\\u00{code:02x}"));
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
 }

@@ -1,15 +1,16 @@
-//! Public-facade conformance for the `GNT-42.0`-`GNT-42.4` codec foundation and hex, base64, and
-//! binary codecs.
+//! Public-facade conformance for the `GNT-42.0`-`GNT-42.5` codec foundation and hex, base64,
+//! binary, and dynamic JSON codecs.
 //!
 //! The section declares the `std.codec` family, its five module items, the versioned codec
 //! identity and its exact admission rule, the frozen refusal vocabulary with its codec categories
-//! of `GNT-29.9-codec-contract`, the canonical hex, base64, and binary codecs of
-//! `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`, and
-//! `GNT-42.4-binary-endian-readers-and-writers`, and the separation between application codecs
-//! and the sealed canonical boundary and durable recovery projections: these lanes require every
-//! declared clause, module row, refusal, and category to be published in the specification and
-//! the model, and exercise the version-admission rule and the hex, base64, and binary codecs'
-//! canonical forms, bounds, and refusals directly.
+//! of `GNT-29.9-codec-contract`, the canonical hex, base64, binary, and dynamic JSON codecs of
+//! `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
+//! `GNT-42.4-binary-endian-readers-and-writers`, and `GNT-42.5-bounded-dynamic-json`, and the
+//! separation between application codecs and the sealed canonical boundary and durable recovery
+//! projections: these lanes require every declared clause, module row, refusal, and category to
+//! be published in the specification and the model, and exercise the version-admission rule and
+//! the hex, base64, binary, and dynamic JSON codecs' canonical forms, bounds, and refusals
+//! directly.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -18,10 +19,11 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{
     BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, BINARY_VALUE_OCTET_BOUND, CODEC_CLAUSES,
     CODEC_ITEMS, CodecCategory, CodecDiagnosticCode, CodecError, CodecKind, CodecVersion,
-    DECLARED_CODEC_VERSION, Endian, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, NameClass,
-    PackageFamily, StabilityTier, base64_decode, base64_encode, canonical_codec_hierarchy,
-    canonical_pure_hierarchy, hex_decode, hex_encode, read_u16, read_u32, read_u64, write_u16,
-    write_u32, write_u64,
+    DECLARED_CODEC_VERSION, Endian, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, JSON_DEPTH_BOUND,
+    JSON_NODE_BOUND, JSON_TEXT_OCTET_BOUND, JsonValue, NameClass, PackageFamily, StabilityTier,
+    base64_decode, base64_encode, canonical_codec_hierarchy, canonical_pure_hierarchy, hex_decode,
+    hex_encode, json_decode, json_encode, read_u16, read_u32, read_u64, write_u16, write_u32,
+    write_u64,
 };
 
 fn workspace_root() -> PathBuf {
@@ -36,7 +38,7 @@ fn workspace_root() -> PathBuf {
 fn section_42_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(CODEC_CLAUSES.len(), 5);
+    assert_eq!(CODEC_CLAUSES.len(), 6);
     let mut prior = 0_usize;
     for clause in CODEC_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -115,10 +117,12 @@ fn codec_surface_declares_the_five_modules() {
         assert_eq!(row.tier, StabilityTier::Stable, "`{}` is stable", row.name);
         let base64_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[3]];
         let binary_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[4]];
+        let json_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[5]];
         let expected: &[&str] = match kind {
             CodecKind::Hex => &CODEC_CLAUSES[..3],
             CodecKind::Base64 => &base64_expected[..],
             CodecKind::Binary => &binary_expected[..],
+            CodecKind::Json => &json_expected[..],
             _ => &CODEC_CLAUSES[..2],
         };
         assert_eq!(
@@ -641,6 +645,188 @@ fn binary_codec_refuses_truncated_and_oversized_sequences() {
         error
             .detail()
             .contains(&BINARY_VALUE_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+}
+
+#[test]
+fn json_codec_round_trips_the_compact_canonical_language() {
+    let vectors: [&str; 12] = [
+        "null",
+        "true",
+        "false",
+        "0",
+        "-1",
+        "9223372036854775807",
+        "-9223372036854775808",
+        "\"text\"",
+        "\"a\\nb\"",
+        "\"\\u0000\"",
+        "[1,2,3]",
+        "{\"a\":1,\"b\":[true,null]}",
+    ];
+    for text in vectors {
+        let value = match json_decode(text) {
+            Ok(value) => value,
+            Err(error) => panic!("`{text}` is admitted: {}", error.detail()),
+        };
+        let encoded = match json_encode(&value) {
+            Ok(encoded) => encoded,
+            Err(error) => panic!("a decoded vector encodes: {}", error.detail()),
+        };
+        assert_eq!(encoded, text, "encode of decode publishes the same text");
+        let round_trip = match json_decode(&encoded) {
+            Ok(value) => value,
+            Err(error) => panic!("an encode result is admitted: {}", error.detail()),
+        };
+        assert_eq!(
+            round_trip, value,
+            "decode of encode publishes the same value"
+        );
+    }
+    let value = JsonValue::Object(vec![
+        ("a".to_owned(), JsonValue::Integer(1)),
+        (
+            "b".to_owned(),
+            JsonValue::Array(vec![JsonValue::Bool(true), JsonValue::Null]),
+        ),
+    ]);
+    let encoded = match json_encode(&value) {
+        Ok(encoded) => encoded,
+        Err(error) => panic!("the declared value encodes: {}", error.detail()),
+    };
+    assert_eq!(encoded, "{\"a\":1,\"b\":[true,null]}");
+    assert_eq!(json_decode(&encoded), Ok(value));
+    assert_eq!(JsonValue::Null.node_count(), 1);
+    assert_eq!(JsonValue::Array(vec![JsonValue::Null; 3]).node_count(), 4);
+    assert_eq!(
+        JsonValue::Object(vec![("k".to_owned(), JsonValue::Null)]).node_count(),
+        3
+    );
+    assert_eq!(JsonValue::Null.container_depth(), 0);
+    assert_eq!(
+        JsonValue::Array(vec![JsonValue::Array(vec![JsonValue::Null])]).container_depth(),
+        2
+    );
+    let mut boundary = String::from("[");
+    for position in 0..JSON_NODE_BOUND - 1 {
+        if position > 0 {
+            boundary.push(',');
+        }
+        boundary.push('0');
+    }
+    boundary.push(']');
+    let decoded = match json_decode(&boundary) {
+        Ok(value) => value,
+        Err(error) => panic!(
+            "the node bound admits its boundary value: {}",
+            error.detail()
+        ),
+    };
+    assert_eq!(decoded.node_count(), JSON_NODE_BOUND);
+    assert_eq!(json_encode(&decoded), Ok(boundary));
+}
+
+#[test]
+fn json_codec_refuses_noncanonical_and_oversized_input() {
+    for (presented, index) in [
+        ("", 0_usize),
+        (" 1", 0),
+        ("01", 1),
+        ("-0", 1),
+        ("+1", 0),
+        ("1.", 1),
+        ("1e3", 1),
+        ("9223372036854775808", 0),
+        ("-9223372036854775809", 0),
+        ("[1,2", 4),
+        ("[1 2]", 2),
+        ("[1,]", 3),
+        ("{\"a\":1,\"a\":2}", 7),
+        ("{\"a\" 1}", 4),
+        ("nul", 3),
+        ("\"a\\/b\"", 3),
+        ("\"\\u0041\"", 5),
+        ("\"\\u001F\"", 6),
+        ("\"a\nb\"", 2),
+    ] {
+        let error = match json_decode(presented) {
+            Ok(value) => panic!("`{presented}` must be refused, got {value:?}"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), CodecDiagnosticCode::MalformedInput);
+        assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+        assert_eq!(error.category(), CodecCategory::MalformedInput);
+        assert!(
+            error.detail().contains(&format!("index {index}")),
+            "the refusal names the departure index: {}",
+            error.detail()
+        );
+    }
+    let oversized_text = "0".repeat(JSON_TEXT_OCTET_BOUND + 1);
+    let error = match json_decode(&oversized_text) {
+        Ok(value) => panic!("the oversized text must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+    assert_eq!(error.category(), CodecCategory::ResourceLimit);
+    assert!(
+        error.detail().contains(&oversized_text.len().to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains(&JSON_TEXT_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let mut oversubscribed = String::from("[");
+    for position in 0..JSON_NODE_BOUND {
+        if position > 0 {
+            oversubscribed.push(',');
+        }
+        oversubscribed.push('0');
+    }
+    oversubscribed.push(']');
+    let error = match json_decode(&oversubscribed) {
+        Ok(value) => panic!("the oversubscribed value must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    let depth = JSON_DEPTH_BOUND as usize + 1;
+    let too_deep_text = "[".repeat(depth) + "0" + &"]".repeat(depth);
+    let error = match json_decode(&too_deep_text) {
+        Ok(value) => panic!("the over-deep text must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    let too_many_nodes = JsonValue::Array(vec![JsonValue::Null; JSON_NODE_BOUND]);
+    let error = match json_encode(&too_many_nodes) {
+        Ok(value) => panic!("the oversubscribed value must be refused, got {value}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    let mut too_deep_value = JsonValue::Null;
+    for _ in 0..depth {
+        too_deep_value = JsonValue::Array(vec![too_deep_value]);
+    }
+    let error = match json_encode(&too_deep_value) {
+        Ok(value) => panic!("the over-deep value must be refused, got {value}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    let long_text = JsonValue::Text("x".repeat(JSON_TEXT_OCTET_BOUND));
+    let error = match json_encode(&long_text) {
+        Ok(value) => panic!("the over-long text must be refused, got {value}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    assert!(
+        error
+            .detail()
+            .contains(&(JSON_TEXT_OCTET_BOUND + 2).to_string()),
         "{}",
         error.detail()
     );

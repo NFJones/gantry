@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "576537f569741973ee05f1b096554c1868b278ff12935e59e7d5ef14412deeb6",
-  "byte_length": 1127256,
-  "line_count": 15725,
+  "specification_sha256": "055bbed598896e3da74a7946a52c745995562f783bb565f3a66158c9a142f20d",
+  "byte_length": 1133147,
+  "line_count": 15729,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "cac18ae08f6d6885c23532087b67d074a8ecef5589376f4dbe04bd809d7933ff",
+      "sha256": "7505e118ab669b025b9bdabb537de6c9abc093c3091190b9c8a2149ddf36a090",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15725,
-      "sha256": "1a74e8c73d59cc4f6a0a52513c44f8cff3220858823bd51aebdbd14065f40f88",
+      "end_line": 15729,
+      "sha256": "c11bd2f29552a883a88be1cd0357d8c15222b7634a31ce12cb8a9c61d9cfedc6",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "998b397decc81fc8cebd8760908d6711c6697b94d443d2f05882c4bcb7cc0682",
+      "span_sha256": "36a78d6ee81df0d9e3d2f9c88e9b710d660587deef1166906a89d2319d66ad11",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "7f5ca772e35704e90fcd3fc857917064881041d20d91fe678a18fa3205d937fc",
+      "body_sha256": "5e1ca3b7aae8727cb95aef40a55a3dad17f4d857877b0269bc3a16f6d0100126",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -43671,6 +43671,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/codec_foundation.rs#binary_codec_reads_and_writes_canonical_forms",
                 "crates/gantry-conformance/tests/codec_foundation.rs#binary_codec_refuses_truncated_and_oversized_sequences"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-42.5-bounded-dynamic-json",
+      "span_start_line": 15726,
+      "span_end_line": 15729,
+      "span_sha256": "78fa631f72fd8ee21cb37cb6a2d37f682951b9321284a15b9b2e291507e4972f",
+      "anchor_line": 15727,
+      "body_start_line": 15728,
+      "body_end_line": 15729,
+      "body_sha256": "a295b045c3707620c1a82faa390a0c2777bd4a91ad82e3c97865598b7cad4527",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15728,
+          "end_line": 15729,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/codec_foundation.rs#json_codec_round_trips_the_compact_canonical_language",
+                "crates/gantry-conformance/tests/codec_foundation.rs#json_codec_refuses_noncanonical_and_oversized_input"
               ],
               "rationale": null
             }
