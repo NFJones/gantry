@@ -7,9 +7,10 @@
 //! explicitly rather than acquired from ambient authority. Every kind is qualified by the one
 //! non-shipping `test` target kind of `GNT-16.6-target-kinds`, and a test requirement is bounded
 //! by the declared ceiling of the shipping target it exercises. The declared testing-support
-//! contract is published as a closed harness vocabulary, and the substitutions a run consumes
-//! are declared through a strict decoder. The surface declares facts only; the runtime harness
-//! that executes a test target is not part of this module.
+//! contract is published as a closed harness vocabulary, the execution rules a run obeys are
+//! declared the same way, the substitutions a run consumes are declared through a strict decoder,
+//! and declared tests are enumerated in a canonical discovery order. The surface declares facts
+//! only; the runtime harness that executes a test target is not part of this module.
 
 // The ceiling bound returns the landed package diagnostic, which deliberately carries full
 // identities so a rejected requirement reports the exact subject it disagreed with. Boxing those
@@ -289,7 +290,7 @@ impl TestHarnessCapability {
             Self::FakeClockRandomnessAndCapabilities => {
                 "fake-clocks-random-sources-and-host-capabilities"
             }
-            Self::ExpectedFailureAndTimeout => "expected-failure-and-timeout",
+            Self::ExpectedFailureAndTimeout => "expected-failure-and-timeout-support",
             Self::PropertyShrinking => "property-test-shrinking-contracts",
             Self::DurableReplayAndRecovery => "durable-replay-and-recovery-harnesses",
         }
@@ -349,5 +350,116 @@ pub fn declare_test_substitutions(
         declared.push(substitution);
     }
     declared.sort_by_key(|substitution| substitution.canonical_index());
+    Ok(declared)
+}
+
+/// One declared execution rule of the `std.test` harness, in the issue plan's declaration order.
+///
+/// The declared order is the order of the `GNT-GP-TEST-001` implementation bullet, each wire
+/// spelling is that rule in kebab case, and `requirement` returns the plan's own wording. The
+/// vocabulary is closed: an execution rule outside it is invalid rather than an extension point.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TestExecutionRule {
+    /// Deterministic discovery and ordering.
+    DeterministicDiscoveryAndOrdering,
+    /// Per-test isolation.
+    PerTestIsolation,
+    /// Bounded parallelism.
+    BoundedParallelism,
+    /// Timeouts.
+    Timeout,
+    /// Fixtures.
+    Fixture,
+    /// Temporary capability roots.
+    TemporaryCapabilityRoot,
+    /// Structured assertions.
+    StructuredAssertion,
+    /// Shrinking.
+    Shrinking,
+    /// Replay.
+    Replay,
+}
+
+impl TestExecutionRule {
+    /// The closed declared set, in the issue plan's declaration order.
+    pub const ALL: [TestExecutionRule; 9] = [
+        Self::DeterministicDiscoveryAndOrdering,
+        Self::PerTestIsolation,
+        Self::BoundedParallelism,
+        Self::Timeout,
+        Self::Fixture,
+        Self::TemporaryCapabilityRoot,
+        Self::StructuredAssertion,
+        Self::Shrinking,
+        Self::Replay,
+    ];
+
+    /// Returns the canonical wire spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::DeterministicDiscoveryAndOrdering => "deterministic-discovery-and-ordering",
+            Self::PerTestIsolation => "per-test-isolation",
+            Self::BoundedParallelism => "bounded-parallelism",
+            Self::Timeout => "timeout",
+            Self::Fixture => "fixture",
+            Self::TemporaryCapabilityRoot => "temporary-capability-root",
+            Self::StructuredAssertion => "structured-assertion",
+            Self::Shrinking => "shrinking",
+            Self::Replay => "replay",
+        }
+    }
+
+    /// Returns the declared requirement text of the issue plan.
+    #[must_use]
+    pub const fn requirement(self) -> &'static str {
+        match self {
+            Self::DeterministicDiscoveryAndOrdering => "deterministic discovery and ordering",
+            Self::PerTestIsolation => "per-test isolation",
+            Self::BoundedParallelism => "bounded parallelism",
+            Self::Timeout => "timeouts",
+            Self::Fixture => "fixtures",
+            Self::TemporaryCapabilityRoot => "temporary capability roots",
+            Self::StructuredAssertion => "structured assertions",
+            Self::Shrinking => "shrinking",
+            Self::Replay => "replay",
+        }
+    }
+
+    /// Decodes one canonical wire spelling; every other spelling is `None`.
+    #[must_use]
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|rule| rule.wire_name() == name)
+    }
+}
+
+/// Why one declared test discovery set is refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TestDiscoveryRefusal {
+    /// A declared test name is empty, so it names no test.
+    Empty,
+    /// A declared test name appears more than once in the same discovery set.
+    Duplicate,
+}
+
+/// Orders one declared test discovery set into the canonical discovery order.
+///
+/// Discovery is deterministic and independent of presentation order: the declared names are
+/// returned in ascending byte order, which is the declared canonical discovery order, so two runs
+/// that declare the same tests in different orders enumerate them identically. A name that is
+/// empty or declared twice is refused rather than repaired, so the enumerated set is exactly the
+/// declared one, and an empty declaration enumerates no test.
+pub fn declare_test_discovery<'a>(names: &[&'a str]) -> Result<Vec<&'a str>, TestDiscoveryRefusal> {
+    let mut declared = Vec::with_capacity(names.len());
+    for name in names {
+        if name.is_empty() {
+            return Err(TestDiscoveryRefusal::Empty);
+        }
+        if declared.contains(name) {
+            return Err(TestDiscoveryRefusal::Duplicate);
+        }
+        declared.push(*name);
+    }
+    declared.sort_unstable();
     Ok(declared)
 }

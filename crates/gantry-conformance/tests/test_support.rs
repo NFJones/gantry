@@ -4,7 +4,8 @@
 //! the deterministic substitutions a test run may consume. These rows require the package
 //! identity, the closed ordered vocabularies, the no-ambient-authority rule, the one non-shipping
 //! test target kind that qualifies every kind, the ceiling bound a test requirement obeys, and the
-//! declared testing-support harness contract with its strict substitution declaration.
+//! declared testing-support harness contract with its strict substitution declaration, plus the
+//! declared execution rules and the canonical discovery order a run enumerates.
 
 use std::collections::BTreeSet;
 
@@ -12,9 +13,10 @@ use gantry::ir::{
     DeclaredCeiling, ModeAdmission, NameClass, PackageError, PackageFamily, RequirementDemand,
     STD_TEST_ADMITTED_MODE, STD_TEST_CLASS, STD_TEST_NON_CLAIMS, STD_TEST_PACKAGE,
     STD_TEST_TARGET_KIND, STD_TEST_TIER, SemanticMode, StabilityTier, TargetKind,
-    TestHarnessCapability, TestKind, TestSubstitution, TestSubstitutionRefusal,
-    bound_test_requirement, declare_test_substitutions, may_acquire_ambient_authority,
-    std_test_family, test_target_is_shipping_authority,
+    TestDiscoveryRefusal, TestExecutionRule, TestHarnessCapability, TestKind, TestSubstitution,
+    TestSubstitutionRefusal, bound_test_requirement, declare_test_discovery,
+    declare_test_substitutions, may_acquire_ambient_authority, std_test_family,
+    test_target_is_shipping_authority,
 };
 
 #[test]
@@ -180,7 +182,7 @@ fn harness_capabilities_are_closed_in_requirement_order() {
             "assertion-and-comparison-diagnostics",
             "fixtures-and-temporary-capability-roots",
             "fake-clocks-random-sources-and-host-capabilities",
-            "expected-failure-and-timeout",
+            "expected-failure-and-timeout-support",
             "property-test-shrinking-contracts",
             "durable-replay-and-recovery-harnesses",
         ]
@@ -240,6 +242,72 @@ fn declared_substitutions_are_canonical_and_strictly_refused() -> Result<(), Tes
     assert!(matches!(
         declare_test_substitutions(&["clock", "clock"]),
         Err(TestSubstitutionRefusal::Duplicate)
+    ));
+    Ok(())
+}
+
+#[test]
+fn execution_rules_are_closed_in_plan_order() {
+    assert_eq!(TestExecutionRule::ALL.len(), 9);
+    let mut spellings = BTreeSet::new();
+    for rule in TestExecutionRule::ALL {
+        let spelling = rule.wire_name();
+        assert!(spellings.insert(spelling), "one spelling per rule");
+        assert_eq!(TestExecutionRule::from_wire_name(spelling), Some(rule));
+    }
+    assert_eq!(
+        TestExecutionRule::ALL
+            .map(TestExecutionRule::wire_name)
+            .to_vec(),
+        vec![
+            "deterministic-discovery-and-ordering",
+            "per-test-isolation",
+            "bounded-parallelism",
+            "timeout",
+            "fixture",
+            "temporary-capability-root",
+            "structured-assertion",
+            "shrinking",
+            "replay",
+        ]
+    );
+    assert_eq!(
+        TestExecutionRule::ALL
+            .map(TestExecutionRule::requirement)
+            .to_vec(),
+        vec![
+            "deterministic discovery and ordering",
+            "per-test isolation",
+            "bounded parallelism",
+            "timeouts",
+            "fixtures",
+            "temporary capability roots",
+            "structured assertions",
+            "shrinking",
+            "replay",
+        ]
+    );
+    assert!(TestExecutionRule::from_wire_name("ambient-parallelism").is_none());
+}
+
+#[test]
+fn declared_discovery_is_canonical_and_strictly_refused() -> Result<(), TestDiscoveryRefusal> {
+    assert_eq!(declare_test_discovery(&[])?, Vec::<&str>::new());
+    assert_eq!(
+        declare_test_discovery(&["crate-b", "crate-a"])?,
+        vec!["crate-a", "crate-b"]
+    );
+    assert_eq!(
+        declare_test_discovery(&["zeta", "alpha", "mid"])?,
+        declare_test_discovery(&["mid", "zeta", "alpha"])?
+    );
+    assert!(matches!(
+        declare_test_discovery(&[""]),
+        Err(TestDiscoveryRefusal::Empty)
+    ));
+    assert!(matches!(
+        declare_test_discovery(&["alpha", "alpha"]),
+        Err(TestDiscoveryRefusal::Duplicate)
     ));
     Ok(())
 }

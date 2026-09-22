@@ -438,8 +438,9 @@ pub use target::{
 };
 pub use test_support::{
     STD_TEST_ADMITTED_MODE, STD_TEST_CLASS, STD_TEST_NON_CLAIMS, STD_TEST_PACKAGE,
-    STD_TEST_TARGET_KIND, STD_TEST_TIER, TestHarnessCapability, TestKind, TestSubstitution,
-    TestSubstitutionRefusal, bound_test_requirement, declare_test_substitutions,
+    STD_TEST_TARGET_KIND, STD_TEST_TIER, TestDiscoveryRefusal, TestExecutionRule,
+    TestHarnessCapability, TestKind, TestSubstitution, TestSubstitutionRefusal,
+    bound_test_requirement, declare_test_discovery, declare_test_substitutions,
     may_acquire_ambient_authority, std_test_family, test_target_is_shipping_authority,
 };
 // The bounded untrusted compilation and cache model of SPEC.md Section 26 is published
