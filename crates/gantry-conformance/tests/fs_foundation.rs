@@ -1292,3 +1292,26 @@ fn fs_durable_carrier_is_the_reconstruction_record_only() {
         );
     }
 }
+
+#[test]
+fn fs_reader_note_pins_every_declared_clause_and_module() {
+    let note = read_text(&workspace_root().join("docs/filesystem-support.md"));
+    for anchor in FS_CLAUSES {
+        assert!(note.contains(anchor), "the reader note must name {anchor}");
+    }
+    for row in FS_ITEMS {
+        assert!(
+            note.contains(row.name),
+            "the reader note must name {}",
+            row.name
+        );
+    }
+    for rule in [
+        "a path spelling is never authority",
+        "exactly case-sensitive, never folded",
+        "The frozen\ndiagnostics of the section are exactly `fs-path-escape` and `fs-path-invalid`",
+        "No descriptor, open handle, adapter, host trait, capability grant, runtime availability, snapshot,",
+    ] {
+        assert!(note.contains(rule), "the reader note must state: {rule}");
+    }
+}
