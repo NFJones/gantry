@@ -22,6 +22,7 @@ mod callable_identity;
 mod canonical;
 mod codec;
 mod collections;
+mod console;
 mod constant;
 mod crypto;
 mod data;
@@ -205,6 +206,12 @@ pub use io::{
     IO_CLAUSES, IO_CONTRACT_VERSION, IO_ITEMS, IO_REQUEST_OCTET_BOUND, IO_SURFACE_MODES,
     IO_SURFACE_TARGETS, IoBackpressure, IoDiagnosticCode, IoError, IoItemRow, IoOperation,
     IoOutcome, IoRequest, admit_io_progress, admit_io_surface, declare_io_surface,
+};
+// Section 46 publishes the declared `std.console` module surface. It adds no terminal, adapter,
+// capability, or runtime availability.
+pub use console::{
+    CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS, ConsoleItemRow,
+    admit_console_surface, declare_console_surface,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and
