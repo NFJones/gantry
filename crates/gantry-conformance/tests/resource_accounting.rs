@@ -559,6 +559,12 @@ fn resource_model_note_is_current() {
                 .map(|action| action.wire_name().to_owned())
                 .to_vec(),
         ),
+        (
+            "## Resource carriers",
+            ResourceCarrier::ALL
+                .map(|carrier| carrier.wire_name().to_owned())
+                .to_vec(),
+        ),
     ] {
         assert_eq!(
             sorted_members(section_members(&note, heading)),
@@ -596,7 +602,13 @@ fn resources_are_carried_only_by_the_reconstruction_record() {
         spellings, sorted,
         "the carrier vocabulary is canonically ordered"
     );
-    assert_eq!(spellings.len(), ResourceCarrier::ALL.len());
+    let mut unique = sorted;
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        ResourceCarrier::ALL.len(),
+        "each carrier owns one distinct spelling"
+    );
 }
 
 /// Returns the backticked members one note section declares as its bullets, with multiplicity.

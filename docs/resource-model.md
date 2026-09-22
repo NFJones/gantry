@@ -55,3 +55,12 @@ note cannot drift from the model.
 - `move`
 - `release`
 - `update`
+
+## Resource carriers
+
+A resource's accounting facts are carried only by the declared reconstruction record of
+`GNT-28.7-durable-resource-reconstruction`. The declared carriers are:
+
+- `ordinary-durable-state`
+- `ordinary-serialization`
+- `reconstruction-record`
