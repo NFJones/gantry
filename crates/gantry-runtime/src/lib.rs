@@ -137,7 +137,7 @@ pub use recovery::{
     DurableOperationRecoveryV1, DurableRecoverySnapshotV3, RecoveredDurableStateV1,
     recover_authoritative_prefix, recover_authoritative_prefix_with_retained_program,
 };
-pub use resource::AdmittedResource;
+pub use resource::{AdmittedResource, PostFailureSettlementRefusal, ResourceSubjectBinding};
 pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,
     SessionCreationModeV1, SessionError, SessionEstablisher, SessionEstablishmentError,

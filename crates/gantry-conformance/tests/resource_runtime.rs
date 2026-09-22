@@ -5,13 +5,15 @@
 //! how semantic release stays independent of record retirement. They perform no
 //! durable I/O and claim no journal, checkpoint, evaluator, or host behavior.
 
+use gantry::ir::generated::RecoveryClass;
 use gantry::ir::{
-    Charge, DurableResourceRecord, EmergencyCleanupWitness, GracePolicy, LivenessRoot,
-    OwnerGeneration, Quota, QuotaFamily, QuotaOwner, ResourceAction, ResourceCarrier,
-    ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence, StopCause,
-    StopCoordinator, StopRequest, TaskStopState,
+    CanonicalPath, Charge, DurableResourceRecord, EmergencyCleanupWitness, FailureClass,
+    GracePolicy, LivenessRoot, OperationAbi, OperationKind, OwnerGeneration, PostFailureSettlement,
+    Quota, QuotaFamily, QuotaOwner, ReceiverOwnership, ResourceAction, ResourceCarrier,
+    ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence,
+    StaticSiteId, StopCause, StopCoordinator, StopRequest, StructuralPosition, TaskStopState,
 };
-use gantry::runtime::AdmittedResource;
+use gantry::runtime::{AdmittedResource, PostFailureSettlementRefusal, ResourceSubjectBinding};
 
 /// Fails to compile if the admitted account acquires a duplicating trait: a runtime
 /// account is uniquely owned, so copying one would create a second owner over one
@@ -61,14 +63,53 @@ fn ledger() -> ResourceLedger {
 fn admitted(
     carrier: ResourceCarrier,
     record: DurableResourceRecord,
+    subject: ResourceSubjectBinding,
 ) -> Result<AdmittedResource, ResourceError> {
-    AdmittedResource::admit(carrier, record)
+    AdmittedResource::admit(carrier, record, subject)
+}
+
+/// Derives the runtime subject of one fixture declaration and runtime generation.
+fn active_subject_at(declaration: &str, generation: u64) -> ResourceSubjectBinding {
+    let path = CanonicalPath::new(declaration)
+        .unwrap_or_else(|_| unreachable!("fixture path is canonical"));
+    let position = StructuralPosition::new(vec![45, 1])
+        .unwrap_or_else(|_| unreachable!("fixture position is canonical"));
+    ResourceSubjectBinding::derive(&path, path.clone(), position, generation)
+}
+
+fn active_subject() -> ResourceSubjectBinding {
+    active_subject_at("crate::resource_runtime", 1)
+}
+
+/// Issues one model settlement for one fixture declaration, site, generation, and failure class.
+fn failure_settlement_at(
+    declaration: &str,
+    position: Vec<u64>,
+    generation: u64,
+    failure: FailureClass,
+) -> PostFailureSettlement {
+    let path = CanonicalPath::new(declaration)
+        .unwrap_or_else(|_| unreachable!("fixture path is canonical"));
+    let position = StructuralPosition::new(position)
+        .unwrap_or_else(|_| unreachable!("fixture position is canonical"));
+    let site = StaticSiteId::new(path.clone(), position);
+    let operation = OperationAbi::new(
+        OperationKind::LiveResource,
+        &path,
+        &site,
+        generation,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|_| unreachable!("fixture operation is admissible"));
+    operation.settle_failure(failure)
 }
 
 fn admitted_active() -> AdmittedResource {
     admitted(
         ResourceCarrier::ReconstructionRecord,
         ledger().durable_record(),
+        active_subject(),
     )
     .unwrap_or_else(|error| panic!("the declared reconstruction record is admitted: {error:?}"))
 }
@@ -88,7 +129,7 @@ fn the_runtime_admits_only_the_declared_reconstruction_record() {
     ];
     let mut observed = Vec::new();
     for carrier in ResourceCarrier::ALL {
-        let admitted_ok = match AdmittedResource::admit(carrier, record.clone()) {
+        let admitted_ok = match AdmittedResource::admit(carrier, record.clone(), active_subject()) {
             Ok(admitted_resource) => {
                 assert_eq!(admitted_resource.durable_record(), record);
                 true
@@ -134,10 +175,12 @@ fn an_admitted_account_preserves_every_declared_recorded_fact() {
     assert!(source.close_liveness_root(LivenessRoot::Loan).is_ok());
     let record = source.durable_record();
 
-    let admitted_resource = admitted(ResourceCarrier::ReconstructionRecord, record.clone())
-        .unwrap_or_else(|error| {
-            panic!("the declared reconstruction record is admitted: {error:?}")
-        });
+    let admitted_resource = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        record.clone(),
+        active_subject(),
+    )
+    .unwrap_or_else(|error| panic!("the declared reconstruction record is admitted: {error:?}"));
 
     assert_eq!(admitted_resource.durable_record(), record);
     assert_eq!(admitted_resource.durable_record(), source.durable_record());
@@ -402,5 +445,78 @@ fn runtime_finalization_completion_requires_the_finishing_phase() {
     assert_eq!(
         admitted_resource.complete_finalization(21),
         Err(ResourceError::IllegalLifetimeTransition)
+    );
+}
+
+#[test]
+fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
+    let mut admitted_resource = admitted_active();
+    let before = admitted_resource.ledger().clone();
+
+    let foreign = failure_settlement_at(
+        "crate::resource_runtime_foreign",
+        vec![45, 1],
+        1,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        admitted_resource.settle_from_post_failure(&foreign, 21),
+        Err(PostFailureSettlementRefusal::ForeignOperation)
+    );
+    assert_eq!(admitted_resource.ledger(), &before);
+
+    let stale = failure_settlement_at(
+        "crate::resource_runtime",
+        vec![45, 1],
+        2,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        admitted_resource.settle_from_post_failure(&stale, 21),
+        Err(PostFailureSettlementRefusal::StaleGeneration)
+    );
+    assert_eq!(admitted_resource.ledger(), &before);
+
+    let non_poisoning = failure_settlement_at(
+        "crate::resource_runtime",
+        vec![45, 1],
+        1,
+        FailureClass::AdapterFailure,
+    );
+    assert_eq!(
+        admitted_resource.settle_from_post_failure(&non_poisoning, 21),
+        Err(PostFailureSettlementRefusal::Model(
+            ResourceError::FailureDoesNotPoisonResource
+        ))
+    );
+    assert_eq!(admitted_resource.ledger(), &before);
+
+    let settlement = failure_settlement_at(
+        "crate::resource_runtime",
+        vec![45, 1],
+        1,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        admitted_resource.subject().operation(),
+        settlement.operation()
+    );
+    assert_eq!(
+        admitted_resource.subject().generation(),
+        settlement.generation()
+    );
+    assert_eq!(
+        admitted_resource.settle_from_post_failure(&settlement, 21),
+        Ok(ResourceLifetimeState::Poisoned)
+    );
+    let baseline = admitted_resource
+        .ledger()
+        .settlement()
+        .unwrap_or_else(|| panic!("the poisoned lifetime retains its settlement baseline"));
+    assert_eq!(baseline.owner(), OwnerGeneration::new(4));
+    assert_eq!(baseline.settled_at(), 21);
+    assert_eq!(
+        admitted_resource.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(8)
     );
 }

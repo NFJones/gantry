@@ -18,19 +18,84 @@
 //!
 //! This module owns the admission boundary and the runtime's settlement step: an admitted
 //! resource settles through the model's own lifetime transitions, so the runtime never chooses a
-//! terminal disposition the model did not derive. Settlement from a model-issued post-failure
-//! settlement is deliberately not published here: such a proof names one logical operation and
-//! resource generation, and an admitted account carries no such identity to compare it with, so
-//! binding that subject before mutation is the next increment's obligation under the Section 20
-//! generation fence. It performs no durable or host I/O, decodes no record bytes, and publishes no
-//! journal, checkpoint, evaluator, or host behavior; those remain with the durable, recovery, and
-//! machine modules.
+//! terminal disposition the model did not derive. An admitted account carries the Section 20
+//! subject it was admitted under — the logical operation identity and resource generation derived
+//! from the operation's declared facts and the runtime's own per-site generation counter — so a
+//! model-issued post-failure settlement is applied only after its own operation and generation
+//! compare equal to that subject, and a foreign or stale settlement mutates nothing. It performs
+//! no durable or host I/O, decodes no record bytes, and publishes no journal, checkpoint,
+//! evaluator, or host behavior; those remain with the durable, recovery, and machine modules.
 
 use gantry_ir::{
-    DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness, Quota, QuotaFamily,
-    QuotaOwner, ResourceCarrier, ResourceError, ResourceLedger, ResourceLifetimeState,
-    admit_resource_carrier,
+    CanonicalPath, DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness,
+    LogicalOperationId, PoisonWitness, PostFailureSettlement, Quota, QuotaFamily, QuotaOwner,
+    ResourceCarrier, ResourceError, ResourceGenerationId, ResourceLedger, ResourceLifetimeState,
+    StaticSiteId, StructuralPosition, admit_resource_carrier,
 };
+
+/// One runtime-owned binding of an admitted account to its Section 20 subject.
+///
+/// The binding is derived, never chosen: one declared operation declaration path, the canonical
+/// workflow and structural position of the operation's site, and the runtime's own per-site
+/// generation counter decide the logical operation identity and the resource generation the
+/// account is admitted under, so no caller-supplied text can name another operation. The
+/// derivation is exactly the one the Section 20 operation ABI publishes, so a settlement the ABI
+/// issues for the same facts compares equal to this binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResourceSubjectBinding {
+    site: StaticSiteId,
+    operation: LogicalOperationId,
+    generation: ResourceGenerationId,
+}
+
+impl ResourceSubjectBinding {
+    /// Derives the binding of one declared operation site and one runtime generation.
+    #[must_use]
+    pub fn derive(
+        declaration: &CanonicalPath,
+        workflow: CanonicalPath,
+        position: StructuralPosition,
+        generation: u64,
+    ) -> Self {
+        let site = StaticSiteId::new(workflow, position);
+        let operation = LogicalOperationId::derive(declaration, &site);
+        let generation = ResourceGenerationId::derive(&operation, &site, generation);
+        Self {
+            site,
+            operation,
+            generation,
+        }
+    }
+
+    /// Returns the canonical operation site of this binding.
+    #[must_use]
+    pub const fn site(&self) -> &StaticSiteId {
+        &self.site
+    }
+
+    /// Returns the derived logical operation identity of this binding.
+    #[must_use]
+    pub const fn operation(&self) -> &LogicalOperationId {
+        &self.operation
+    }
+
+    /// Returns the derived resource generation of this binding.
+    #[must_use]
+    pub const fn generation(&self) -> &ResourceGenerationId {
+        &self.generation
+    }
+}
+
+/// Why the runtime refused to apply one model-issued post-failure settlement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PostFailureSettlementRefusal {
+    /// The settlement names another logical operation than this account's.
+    ForeignOperation,
+    /// The settlement names another resource generation of this account's site.
+    StaleGeneration,
+    /// The model refused the settlement under its own witness or lifetime rules.
+    Model(ResourceError),
+}
 
 /// One resource whose declared accounting facts the runtime has admitted.
 ///
@@ -46,6 +111,7 @@ use gantry_ir::{
 #[derive(Debug, Eq, PartialEq)]
 pub struct AdmittedResource {
     ledger: ResourceLedger,
+    subject: ResourceSubjectBinding,
 }
 
 impl AdmittedResource {
@@ -58,11 +124,19 @@ impl AdmittedResource {
     pub fn admit(
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
+        subject: ResourceSubjectBinding,
     ) -> Result<Self, ResourceError> {
         admit_resource_carrier(carrier)?;
         Ok(Self {
             ledger: ResourceLedger::reconstruct(record),
+            subject,
         })
+    }
+
+    /// Returns the Section 20 subject this account was admitted under.
+    #[must_use]
+    pub const fn subject(&self) -> &ResourceSubjectBinding {
+        &self.subject
     }
 
     /// Returns the reconstructed accounting ledger of this resource.
@@ -118,6 +192,34 @@ impl AdmittedResource {
         settled_at: u64,
     ) -> Result<ResourceLifetimeState, ResourceError> {
         self.ledger.finish(settled_at)?;
+        Ok(self.ledger.lifetime())
+    }
+
+    /// Settles one admitted resource from a model-issued post-failure settlement.
+    ///
+    /// The settlement must name exactly the logical operation and resource generation this
+    /// account was admitted under: a settlement naming another operation is refused with
+    /// [`PostFailureSettlementRefusal::ForeignOperation`] and one naming another generation of the
+    /// same site with [`PostFailureSettlementRefusal::StaleGeneration`], each before any lifetime
+    /// fact changes. Only then is the model's poisoning witness derived, so a settlement whose
+    /// derived state is not the poisoned state is refused with the model's own
+    /// `ResourceError::FailureDoesNotPoisonResource`.
+    pub fn settle_from_post_failure(
+        &mut self,
+        settlement: &PostFailureSettlement,
+        settled_at: u64,
+    ) -> Result<ResourceLifetimeState, PostFailureSettlementRefusal> {
+        if settlement.operation() != self.subject.operation() {
+            return Err(PostFailureSettlementRefusal::ForeignOperation);
+        }
+        if settlement.generation() != self.subject.generation() {
+            return Err(PostFailureSettlementRefusal::StaleGeneration);
+        }
+        let witness = PoisonWitness::from_post_failure(settlement, settled_at)
+            .map_err(PostFailureSettlementRefusal::Model)?;
+        self.ledger
+            .poison(witness)
+            .map_err(PostFailureSettlementRefusal::Model)?;
         Ok(self.ledger.lifetime())
     }
 
