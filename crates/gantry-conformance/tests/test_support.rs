@@ -484,50 +484,57 @@ fn testing_support_note_is_current() {
         assert!(note.contains(required), "the note names {required}");
     }
     assert_eq!(
-        section_members(&note, "## Test kinds"),
-        TestKind::ALL
-            .map(|kind| kind.wire_name().to_owned())
-            .into_iter()
-            .collect::<BTreeSet<_>>()
+        sorted_members(section_members(&note, "## Test kinds")),
+        sorted_members(
+            TestKind::ALL
+                .map(|kind| kind.wire_name().to_owned())
+                .to_vec()
+        )
     );
     assert_eq!(
-        section_members(&note, "## Declared substitutions"),
-        TestSubstitution::ALL
-            .map(|substitution| substitution.wire_name().to_owned())
-            .into_iter()
-            .collect::<BTreeSet<_>>()
+        sorted_members(section_members(&note, "## Declared substitutions")),
+        sorted_members(
+            TestSubstitution::ALL
+                .map(|substitution| substitution.wire_name().to_owned())
+                .to_vec()
+        )
     );
     assert_eq!(
-        section_members(&note, "## Harness capabilities"),
-        TestHarnessCapability::ALL
-            .map(|capability| capability.wire_name().to_owned())
-            .into_iter()
-            .collect::<BTreeSet<_>>()
+        sorted_members(section_members(&note, "## Harness capabilities")),
+        sorted_members(
+            TestHarnessCapability::ALL
+                .map(|capability| capability.wire_name().to_owned())
+                .to_vec()
+        )
     );
     assert_eq!(
-        section_members(&note, "## Execution rules"),
-        TestExecutionRule::ALL
-            .map(|rule| rule.wire_name().to_owned())
-            .into_iter()
-            .collect::<BTreeSet<_>>()
+        sorted_members(section_members(&note, "## Execution rules")),
+        sorted_members(
+            TestExecutionRule::ALL
+                .map(|rule| rule.wire_name().to_owned())
+                .to_vec()
+        )
     );
     assert_eq!(
-        section_members(&note, "## Non-claims"),
-        STD_TEST_NON_CLAIMS
-            .iter()
-            .map(|non_claim| (*non_claim).to_owned())
-            .collect::<BTreeSet<_>>()
+        sorted_members(section_members(&note, "## Non-claims")),
+        sorted_members(
+            STD_TEST_NON_CLAIMS
+                .iter()
+                .map(|non_claim| (*non_claim).to_owned())
+                .collect()
+        )
     );
 }
 
-/// Returns the backticked members one note section declares as its bullets.
+/// Returns the backticked members one note section declares as its bullets, with multiplicity.
 ///
 /// The note is compared section by section, so a vocabulary member removed from the model cannot
 /// survive as a stale bullet in the note: every compared section must list exactly the live
-/// members, no more and no fewer. Only bullet members are collected, so a prose sentence inside a
-/// section may still name an API without being mistaken for a declared member.
-fn section_members(note: &str, heading: &str) -> BTreeSet<String> {
-    let mut members = BTreeSet::new();
+/// members, no more and no fewer. One entry is collected per bullet, so a duplicated member also
+/// fails rather than being collapsed by set collection. Only bullet members are collected, so a
+/// prose sentence inside a section may still name an API without being mistaken for a member.
+fn section_members(note: &str, heading: &str) -> Vec<String> {
+    let mut members = Vec::new();
     let mut in_section = false;
     for line in note.lines() {
         if line.starts_with("## ") {
@@ -539,10 +546,16 @@ fn section_members(note: &str, heading: &str) -> BTreeSet<String> {
         }
         for (index, part) in line.split('`').enumerate() {
             if index % 2 == 1 && !part.is_empty() {
-                members.insert(part.to_owned());
+                members.push(part.to_owned());
             }
         }
     }
+    members
+}
+
+/// Returns the collected members in canonical order, preserving any duplication.
+fn sorted_members(mut members: Vec<String>) -> Vec<String> {
+    members.sort_unstable();
     members
 }
 
