@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "481f9ccaa079589dbeb021277b8a02f8fc5f84906fee04280585481b669eaaa0",
-  "byte_length": 1205709,
-  "line_count": 15789,
+  "specification_sha256": "ebbba65418a1f43e2ec0a4b53ba21b0529e5d2db551f754848849eeafcdd17ea",
+  "byte_length": 1212551,
+  "line_count": 15872,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "e6c59eae24f0512721a3272a64c6c289f9eea7906cd2f0d57f8feaf358ca609e",
+      "sha256": "a6b87843de3c755da64848b3586df05012e47ce7e18115cc351f25946c102932",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15789,
-      "sha256": "4861833441c303e5663e0b10121575d8cece8f701b05965d187f9c871f09d185",
+      "end_line": 15872,
+      "sha256": "903a4aaef5e745e6694e9655b474245a3e8ba5f946d7ec2085936d1decdbeac7",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "c4486f9d2dda47b4ee76e202ea26ad7604c38620754820294cd5d5fa446f9fc8",
+      "span_sha256": "161a550af5a11bd9f65ace4a5aa74040c5478d5f21026da3b925a0c2e125c3a4",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "d10b07b0ed78f085d729a8e0838d439cc558c840d25a172414f7b09733d20db4",
+      "body_sha256": "b9b91ba073de4d99473845a4cdb892b5c0e4941e9d9fb95148953b900066277d",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44313,6 +44313,90 @@
               "evidence": [
                 "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_clauses_are_published",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_non_claims_are_closed_and_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-45.0-common-io-foundation-scope",
+      "span_start_line": 15790,
+      "span_end_line": 15815,
+      "span_sha256": "3f13486413eddb2f8fea3975bc7423e9238a4340748853453d8194297f825523",
+      "anchor_line": 15793,
+      "body_start_line": 15794,
+      "body_end_line": 15815,
+      "body_sha256": "8c45bdcf779d3a4c34422353fffc19e811e3d504d769b327d932339ad0814f37",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15794,
+          "end_line": 15815,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/io_foundation.rs#io_contract_clauses_and_scope_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-45.1-bounded-one-call-io-contract",
+      "span_start_line": 15816,
+      "span_end_line": 15872,
+      "span_sha256": "ba0f752fdfd0b9eae11ea203c5d415825745dda7dbe5212bde71d18ea27a9f4b",
+      "anchor_line": 15817,
+      "body_start_line": 15818,
+      "body_end_line": 15872,
+      "body_sha256": "56bee0aec14b3b67893740771eb918b3ff9ae9986322d91f5dc9574daa21d3cf",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15818,
+          "end_line": 15872,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/io_foundation.rs#io_operation_vocabulary_is_closed_and_canonical",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_request_bound_is_inclusive_and_refuses_zero_and_one_more",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_progress_sets_are_closed_per_kind"
               ],
               "rationale": null
             }

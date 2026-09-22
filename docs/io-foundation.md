@@ -3,8 +3,8 @@
 This note records the `std.io` surface that the model already declares: its canonical package
 identity, the host-domain progress and error contract every Reader, Writer, and Seek operation
 consumes, the normative clauses already in force, and what the surface does not claim. It records
-declarations; it adds no operation, no per-call bound, and no adapter, and any operation a later
-clause declares must consume the landed host-domain facts below.
+declarations; the contract it publishes is exactly the one-call request contract below, and it
+adds no item row, no interface digest, and no adapter.
 
 ## Package identity
 
@@ -47,13 +47,24 @@ row. The common I/O layer therefore consumes the categories of the family an ope
 through the `GNT-29.3-portable-domain-error-envelope` envelope, and this surface claims no `io`
 category, no `io` target mapping, and no thirteenth host-domain family.
 
+## The declared one-call contract
+
+`GNT-45.0-common-io-foundation-scope` and `GNT-45.1-bounded-one-call-io-contract` publish the
+common I/O foundation. `crates/gantry-ir/src/io.rs` declares the closed operation vocabulary
+`read`, `seek`, and `write` in canonical order, the declared contract version
+`IO_CONTRACT_VERSION` (version `1`), and the declared finite octet bound `IO_REQUEST_OCTET_BOUND`
+that one read or write request must fall inside: a zero-octet request and a request beyond the
+bound are both refused under `io-request-bound`, an undeclared operation spelling is refused
+under `io-request-kind`, and a progress observation outside its kind's declared set is refused
+under `io-progress-inapplicable`. A seek request declares any nonnegative position. Each admitted
+request publishes exactly one progress observation of the landed `GNT-29.2` mapping, its outcome
+is exactly one of the `GNT-29.1` channels, and interruption, cancellation, and ambiguous
+settlement remain the Section 20 facts that own them.
+
 ## What this surface does not claim
 
-- It declares no concrete Reader, Writer, or Seek operation contract beyond the landed progress
-  mapping of `GNT-29.2-reader-writer-seek-progress`: no operation kinds, no signatures or items, no
-  per-call bound, no interruption, cancellation, or backpressure rule, no post-failure ownership
-  rule, and no refusal vocabulary of its own. Those need normative clauses before an implementation
-  may claim them.
+- It admits no streaming, incremental, chunked, or resumable contract and no buffering, queueing,
+  or wait behavior beyond the progress observation a single call publishes.
 - It declares no item or interface row for `std.io`, no interface digest, and no stability tier;
   `GNT-34.8-defining-identity-and-interface-digest` requires an item surface before either exists.
 - It grants no adapter, no host trait, no runtime availability, and no capability: adapters remain

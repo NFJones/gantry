@@ -10,17 +10,20 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::generated::HostDomainFamily;
 use gantry::ir::{
-    CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, HostProgress, PackageFamily, ProgressObservation,
-    STDLIB_CLAUSES,
+    CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, HostProgress, IO_CLAUSES, IO_CONTRACT_VERSION,
+    IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError, IoOperation, IoRequest, PackageFamily,
+    ProgressObservation, STDLIB_CLAUSES, admit_io_progress,
 };
 
-const REQUIRED_ANCHORS: [&str; 6] = [
+const REQUIRED_ANCHORS: [&str; 8] = [
     "GNT-29.1",
     "GNT-29.2",
     "GNT-29.3",
     "GNT-29.14",
     "GNT-29.15",
     "GNT-34.1",
+    "GNT-45.0",
+    "GNT-45.1",
 ];
 
 fn workspace_root() -> PathBuf {
@@ -47,7 +50,193 @@ fn declared_anchor(token: &str) -> bool {
         .iter()
         .chain(HOST_DOMAIN_CLAUSES.iter())
         .chain(CONSTANT_CLAUSES.iter())
+        .chain(IO_CLAUSES.iter())
         .any(|anchor| *anchor == token || anchor.starts_with(&introduced))
+}
+
+#[test]
+fn io_contract_clauses_and_scope_are_published() {
+    assert_eq!(
+        IO_CLAUSES,
+        [
+            "GNT-45.0-common-io-foundation-scope",
+            "GNT-45.1-bounded-one-call-io-contract",
+        ]
+    );
+    assert_eq!(IO_CONTRACT_VERSION, 1);
+    const {
+        assert!(IO_REQUEST_OCTET_BOUND > 0);
+    }
+
+    let note = read_text(&workspace_root().join("docs/io-foundation.md"));
+    let flat = flatten(&note);
+    assert!(
+        flat.contains("## The declared one-call contract"),
+        "the note must publish the landed one-call contract"
+    );
+    for anchor in ["GNT-45.0-common-io-foundation-scope", "GNT-45.1"] {
+        assert!(flat.contains(anchor), "the note must cite {anchor}");
+    }
+}
+
+#[test]
+fn io_operation_vocabulary_is_closed_and_canonical() {
+    assert_eq!(
+        IoOperation::ALL,
+        [IoOperation::Read, IoOperation::Seek, IoOperation::Write]
+    );
+    let spellings = IoOperation::ALL
+        .into_iter()
+        .map(IoOperation::wire_name)
+        .collect::<Vec<_>>();
+    assert_eq!(spellings, ["read", "seek", "write"]);
+    for operation in IoOperation::ALL {
+        assert_eq!(
+            IoOperation::from_wire_name(operation.wire_name()),
+            Some(operation)
+        );
+    }
+    assert_eq!(IoOperation::from_wire_name("seek-to"), None);
+    let refusal = IoRequest::admit_wire("seek-to", 1)
+        .err()
+        .unwrap_or_else(|| panic!("an undeclared spelling must be refused"));
+    assert_eq!(
+        refusal,
+        IoError::RequestKind {
+            observed: "seek-to".to_owned(),
+        }
+    );
+    assert_eq!(refusal.code(), IoDiagnosticCode::RequestKind);
+}
+
+#[test]
+fn io_request_bound_is_inclusive_and_refuses_zero_and_one_more() {
+    let bound = IO_REQUEST_OCTET_BOUND;
+    let admitted = IoRequest::read(bound).unwrap_or_else(|_| panic!("the bound is inclusive"));
+    assert_eq!(admitted.operation(), IoOperation::Read);
+    assert_eq!(admitted.quantity(), bound);
+    assert!(IoRequest::read(1).is_ok());
+    assert!(IoRequest::write(bound).is_ok());
+    assert_eq!(
+        IoRequest::read(0).err(),
+        Some(IoError::RequestBound {
+            operation: IoOperation::Read,
+            observed: 0,
+            maximum: bound,
+        })
+    );
+    assert_eq!(
+        IoRequest::read(bound + 1).err(),
+        Some(IoError::RequestBound {
+            operation: IoOperation::Read,
+            observed: bound + 1,
+            maximum: bound,
+        })
+    );
+    assert_eq!(
+        IoRequest::write(0).err(),
+        Some(IoError::RequestBound {
+            operation: IoOperation::Write,
+            observed: 0,
+            maximum: bound,
+        })
+    );
+    assert!(IoRequest::write(bound + 1).is_err());
+    let at_zero = IoRequest::seek(0);
+    assert_eq!(at_zero.quantity(), 0);
+    assert_eq!(IoRequest::seek(u64::MAX).quantity(), u64::MAX);
+    assert_eq!(
+        IoRequest::admit_wire("read", 0)
+            .err()
+            .map(|error| error.code()),
+        Some(IoDiagnosticCode::RequestBound)
+    );
+    assert!(IoRequest::admit_wire("seek", u64::MAX).is_ok());
+}
+
+#[test]
+fn io_progress_sets_are_closed_per_kind() {
+    let declared: [(IoOperation, [ProgressObservation; 4], usize); 3] = [
+        (
+            IoOperation::Read,
+            [
+                ProgressObservation::CommittedProgress,
+                ProgressObservation::Eof,
+                ProgressObservation::NotStarted,
+                ProgressObservation::ShortRead,
+            ],
+            4,
+        ),
+        (
+            IoOperation::Seek,
+            [
+                ProgressObservation::CommittedProgress,
+                ProgressObservation::NotStarted,
+                ProgressObservation::PartialAdvance,
+                ProgressObservation::PartialAdvance,
+            ],
+            2,
+        ),
+        (
+            IoOperation::Write,
+            [
+                ProgressObservation::CommittedProgress,
+                ProgressObservation::NotStarted,
+                ProgressObservation::ShortWrite,
+                ProgressObservation::PartialAdvance,
+            ],
+            3,
+        ),
+    ];
+    for (operation, expected, length) in declared {
+        assert_eq!(operation.admissible_progress(), &expected[..length]);
+        for observation in ProgressObservation::ALL {
+            let expected_admitted = expected[..length].contains(&observation);
+            let outcome = admit_io_progress(operation, observation);
+            if expected_admitted {
+                assert_eq!(outcome, Ok(()));
+            } else {
+                assert_eq!(
+                    outcome.err(),
+                    Some(IoError::ProgressInapplicable {
+                        operation,
+                        observation,
+                    })
+                );
+            }
+        }
+    }
+    for (operation, observation) in [
+        (IoOperation::Read, ProgressObservation::ShortWrite),
+        (IoOperation::Read, ProgressObservation::PartialAdvance),
+        (IoOperation::Write, ProgressObservation::Eof),
+        (IoOperation::Write, ProgressObservation::ShortRead),
+        (IoOperation::Seek, ProgressObservation::Eof),
+        (IoOperation::Seek, ProgressObservation::PartialAdvance),
+    ] {
+        let error = admit_io_progress(operation, observation)
+            .err()
+            .unwrap_or_else(|| panic!("{operation:?} must refuse {observation:?}"));
+        assert_eq!(error.code(), IoDiagnosticCode::ProgressInapplicable);
+    }
+    let codes = IoDiagnosticCode::ALL
+        .into_iter()
+        .map(IoDiagnosticCode::wire_name)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        codes,
+        [
+            "io-progress-inapplicable",
+            "io-request-bound",
+            "io-request-kind"
+        ]
+    );
+    for code in IoDiagnosticCode::ALL {
+        assert_eq!(
+            IoDiagnosticCode::from_wire_name(code.wire_name()),
+            Some(code)
+        );
+    }
 }
 
 #[test]
@@ -181,7 +370,7 @@ fn io_note_records_the_unlanded_contract_without_claiming_it() {
     let flat = flatten(&note);
 
     for needle in [
-        "It declares no concrete Reader, Writer, or Seek operation contract beyond the landed progress mapping of `GNT-29.2-reader-writer-seek-progress`: no operation kinds, no signatures or items, no per-call bound, no interruption, cancellation, or backpressure rule, no post-failure ownership rule, and no refusal vocabulary of its own.",
+        "It admits no streaming, incremental, chunked, or resumable contract and no buffering, queueing, or wait behavior beyond the progress observation a single call publishes.",
         "It declares no item or interface row for `std.io`, no interface digest, and no stability tier",
         "It grants no adapter, no host trait, no runtime availability, and no capability: adapters remain leaves",
     ] {

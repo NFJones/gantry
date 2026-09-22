@@ -34,6 +34,7 @@ pub mod generated;
 mod generic;
 mod host_domain;
 pub mod identifier;
+mod io;
 mod lifecycle;
 mod locale;
 mod manifest;
@@ -197,6 +198,12 @@ pub use host_domain::{
     HostDomainErrorKind, HostOperationFailure, HostOperationOutcome, HostProgress, HostSettlement,
     HostSettlementError, NativeMappingDeclaration, PORTABLE_MESSAGE_MAX_BYTES, ProcessConfinement,
     ProcessLifecycle, ProcessStdio, ProcessSupervision,
+};
+// Section 45 publishes the common I/O foundation: the closed operation vocabulary and the
+// versioned one-call request contract. It adds no adapter, host trait, or runtime availability.
+pub use io::{
+    IO_CLAUSES, IO_CONTRACT_VERSION, IO_REQUEST_OCTET_BOUND, IoDiagnosticCode, IoError,
+    IoOperation, IoRequest, admit_io_progress,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and

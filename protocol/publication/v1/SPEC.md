@@ -812,7 +812,7 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
-| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, and the cryptographic algorithm foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims` |
+| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, and the common I/O foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.1-bounded-one-call-io-contract` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -15787,3 +15787,86 @@ A name that denotes a declared callable or a declared action is refused as a val
 <a id="GNT-44.4-crypto-non-claims"></a>
 
 **[GNT-44.4-crypto-non-claims] Crypto non-claims.** This clause publishes the closed non-claim vocabulary of Section 44 and consolidates the section's published surface. The declared non-claims are exactly eight, in canonical wire-name order: `ambient-selection` — no ambient provider registry, display label, algorithm name, host facility, or environment selects an algorithm or version of this section, and every selection is the declared identity `GNT-44.1-crypto-algorithm-contract` admits; `boundary-encoding` — no digest, verdict, or refusal of this section is a canonical boundary encoding, no clause of this section is applied to the sealed canonical boundary of Section 5, and no canonical boundary operation invokes an algorithm of this section; `constant-time` — no clause of this section claims constant-time, side-channel-free, or timing-independent behavior, and although every digest, verdict, and refusal is decided by the presented octets alone, no timing, cache, power, or other side-channel property is claimed or published; `durable-eligibility` — no digest, verdict, or refusal of this section is durable state, carries a durable identity, or is admissible to the durable recovery projection of `GNT-3-D-REFINEMENT`; `external-eligibility` — no digest, verdict, or refusal of this section publishes an `ExternalValue` capability, a protected-data release, or a durable capability, and no value becomes admissible to a boundary or a recovery projection because an algorithm of this section observed it; `host-crypto-authority` — no platform cryptographic API, host crypto library, hardware facility, entropy source, random source, or ambient registry is a semantic authority for any operation of this section, and no operation of this section consults one; `secret-key-operations` — no algorithm of this section signs, decrypts, derives, imports, extracts, or accesses a secret key or a credential, and no signing, key-generation, key-formatting, or credential operation is published here; and `security-property` — no clause of this section claims collision, preimage, second-preimage, forgery, or any other cryptographic security property, and the admitted algorithms are decided by their exact declared definitions, declared vectors, and declared bounds alone. The vocabulary is closed, its canonical order is its canonical wire-name order, and the model's `CryptoNonClaim` and `CRYPTO_NON_CLAIMS` publish it; each declared non-claim is owned by this clause, which publishes no diagnostic of its own and adds no refusal to any other clause. This clause consolidates the section: the declared clauses are exactly `GNT-44.0-crypto-foundation-scope`, `GNT-44.1-crypto-algorithm-contract`, `GNT-44.2-content-hashing`, `GNT-44.3-signature-verification`, and this clause, in that specification order; the declared modules with their one declared algorithm each are the two module rows of `GNT-44.1-crypto-algorithm-contract`; the frozen diagnostics of the section remain exactly `crypto-unsupported-algorithm`, `crypto-malformed-input`, and `crypto-work-limit`, owned by `GNT-44.1-crypto-algorithm-contract`; the pure model of the section is `crates/gantry-ir/src/crypto.rs` and its analyzer evidence is `crates/gantry-conformance/tests/crypto_foundation.rs`; and no clause of this section is read as publishing, implying, or substituting a declared non-claim as a guarantee. This clause publishes the vocabulary and the consolidation only: it admits no new algorithm, module, identity, bound, refusal, diagnostic, vector, or operation, no change to any other clause of this section, no change to any value's validity, identity, equality, eligibility, or canonical encoding, no work limit, cancellation safe point, quota, suspension, schema, recovery, durability, boundary encoding, lowering, machine representation, external operation, protected-data release, or durable capability, and it claims no security property, performance, storage layout, or physical representation.
+
+## 45. Common I/O Foundation
+
+<a id="GNT-45.0-common-io-foundation-scope"></a>
+
+**[GNT-45.0-common-io-foundation-scope] Common I/O foundation scope.** This section publishes the
+common I/O foundation of `std.io`: the closed operation vocabulary one reader, writer, or seek
+contract is expressed with, the versioned one-call request contract under which one bounded read,
+write, or seek request is admitted, the progress observation of
+`GNT-29.2-reader-writer-seek-progress` that an admitted request publishes, the portable refusal
+set one inadmissible request publishes, and the separation among an admitted request's progress
+observation, the portable domain-error envelope of `GNT-29.3-portable-domain-error-envelope`, the
+operational adapter failure of `GNT-29.1-channel-separation`, and the operation identity,
+progress, settlement, effect certainty, post-failure state, and owner generation that Section 20
+owns. The section is a declaration contract: it creates no host adapter, host trait, host
+operation, capability grant, runtime availability, checkpoint, journal schema, or evaluator
+behavior, and it consumes no host or platform fact. Its pure model is `crates/gantry-ir/src/io.rs`
+and its analyzer evidence is `crates/gantry-conformance/tests/io_foundation.rs`. The frozen
+diagnostics of this section are `io-request-bound`, `io-request-kind`, and
+`io-progress-inapplicable`, all owned by `GNT-45.1-bounded-one-call-io-contract`; each names one
+owning clause and no spelling is shared by two clauses. This section introduces no second progress
+vocabulary, no second request bound, no streaming, incremental, chunked, or resumable contract, no
+suspension, no quota or charge, no work limit or cancellation safe point, no schema, recovery,
+durability, boundary encoding, lowering, machine representation, or family behavior, and no
+clause of this section may be read as publishing, implying, or substituting a facility this
+section does not declare.
+
+<a id="GNT-45.1-bounded-one-call-io-contract"></a>
+
+**[GNT-45.1-bounded-one-call-io-contract] Bounded one-call I/O contract.** This clause publishes
+the closed operation vocabulary and the versioned one-call request contract of `std.io`. The
+family is `std.io` of `GNT-34.1-canonical-hierarchy-and-package-names`, and the declared contract
+version is the model's `IO_CONTRACT_VERSION` — version `1` — which this clause declares alone; an
+identity naming another version is not declared here. The declared operation vocabulary is
+exactly three kinds — read, seek, and write, in that canonical order, spelled `read`, `seek`, and
+`write` — and the model's `IoOperation` and its `IoOperation::ALL` publish it: no other kind,
+alias, or spelling is declared, and a kind presented by an undeclared spelling is refused under
+`io-request-kind`, naming the observed spelling, rather than inferred, substituted, or guessed.
+
+A request declares exactly one declared operation kind and exactly one nonnegative logical
+quantity. A read or write request's quantity is the octet count it asks for: it must be at least
+one and at most `IO_REQUEST_OCTET_BOUND`, the declared finite bound of this clause, and a quantity
+outside that range is refused under `io-request-bound`, naming the observed quantity and the
+declared bound, before any part of the request is executed, so a zero-octet request and a request
+beyond the bound are both refused rather than clamped, split, truncated, or carried forward. A
+seek request's quantity is the nonnegative logical position it moves to, and the canonical
+nonnegative domain of that quantity is its only declared bound. The declared bound is a semantic
+limit of this contract alone: it is not a quota, a resource-accounting contract, a work limit, or
+a cancellation safe point, and none of those is published here.
+
+An admitted request publishes exactly one progress observation of the closed
+`GNT-29.2-reader-writer-seek-progress` vocabulary, decided by its operation kind and the advance
+it observes, and each kind's admissible set is closed. A read publishes `eof` when it observes the
+end of its stream, `short-read` when it advances by fewer octets than it asked for before any end,
+`committed-progress` when it advances by every octet it asked for, and `not-started` when it
+observes no advance. A write publishes `short-write` when it accepts fewer octets than were
+provided before any completion, `committed-progress` when it accepts every octet, and
+`not-started` when it observes no advance. A seek publishes `committed-progress` when it moves to
+its declared position and `not-started` when it is already there. A progress observation outside
+its kind's declared set is refused under `io-progress-inapplicable`, naming the kind and the
+observed observation, and the model's `admit_io_progress` publishes exactly that decision;
+interruption, cancellation, and ambiguous settlement are not progress observations of this
+contract and remain the Section 20 facts that own them.
+
+Every admitted request's outcome is exactly one of the `GNT-29.1-channel-separation` channels —
+success, one source-visible portable domain error, or one operational adapter failure — and its
+progress observation is not a channel, so a failure is never presented as progress and progress
+is never presented as a failure. A refusal publishes no progress observation, no partial result,
+and no state a later request observes or resumes, and a refused request is never implicitly
+retried, repaired, or partially executed. A portable domain error an operation publishes belongs
+to the family the operation was declared with; the host-domain family matrix of
+`GNT-29.4-console-contract` through `GNT-29.9-codec-contract` declares no `io` family, so this
+clause publishes no `io` category of its own, and the error carries only the envelope facts of
+`GNT-29.3-portable-domain-error-envelope` with native detail excluded under
+`GNT-29.14-native-detail-exclusion`. This clause publishes the operation vocabulary, the versioned
+one-call request contract, the progress sets, and the refusals only: it admits no streaming,
+incremental, chunked, or resumable contract, no buffering, queueing, or wait behavior beyond the
+progress observation a single call publishes, no suspension, no item or interface row for
+`std.io` and no interface digest or stability tier, no adapter, host trait, capability grant, or
+runtime availability, no work limit, cancellation safe point, quota, or charge, no schema,
+recovery, durability, boundary encoding, lowering, machine representation, or family behavior, no
+change to `GNT-29.2-reader-writer-seek-progress` or to any other clause of Section 29, and it
+claims no performance, storage layout, or physical representation.
