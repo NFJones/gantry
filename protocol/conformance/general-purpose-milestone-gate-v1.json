@@ -1,0 +1,205 @@
+{
+ "format": "gantry.general-purpose-milestone-gate-evidence/v1",
+ "gate": "GNT-GP-GATE-200",
+ "status": "verified",
+ "specification": {
+  "path": "SPEC.md",
+  "sha256": "481f9ccaa079589dbeb021277b8a02f8fc5f84906fee04280585481b669eaaa0"
+ },
+ "prerequisite_source": {
+  "path": "docs/reference/general-purpose-refactor-issue-plan.md",
+  "sha256": "70dd715a10a3c94a6ba71d03222ff8c2aa31685ce5baa8021013b868828e53b8"
+ },
+ "verifies": [
+  "artifact-digest-integrity",
+  "claim-posture",
+  "evidence-visibility",
+  "prerequisite-provenance",
+  "specification-binding",
+  "standard-library-surface-publication"
+ ],
+ "prerequisites": [
+  {
+   "issue": "0113b3f5-9177-4870-849a-8d72b8af2dec",
+   "commit": "82cd1ad",
+   "subject": "Share the immutable text value's storage across duplicates"
+  },
+  {
+   "issue": "015b197c-b484-4e04-a22c-4a180de447e3",
+   "commit": "7ea6a49",
+   "subject": "Correct the note's Boolean-key claim to noncanonical Bool payloads"
+  },
+  {
+   "issue": "062b99fd-c642-4a71-84f8-ac19904b7b38",
+   "commit": "1e24eb8",
+   "subject": "Publish the exact clause mapping of the std.collections items"
+  },
+  {
+   "issue": "152c8944-f974-4901-b7ce-dc0d7e46eecd",
+   "commit": "4a6d17c",
+   "subject": "State the durable-recording requirement as gated, not as landed behavior"
+  },
+  {
+   "issue": "181cb89d-1d1e-4643-a6fb-210b8c4c267a",
+   "commit": "7bfd6fa",
+   "subject": "Retain generated origins and declare checked examples"
+  },
+  {
+   "issue": "38ca21fb-8ab8-4a74-92a7-7f961bbf2929",
+   "commit": "99c4c4d",
+   "subject": "Regenerate the publication bundle after refreshing the conformance gate tables."
+  },
+  {
+   "issue": "4f129e96-9fe0-444b-88ba-023824530b6b",
+   "commit": "00b48d7",
+   "subject": "Publish the request and response values and the section non-claims"
+  },
+  {
+   "issue": "4fc80378-f38b-4c49-9f29-c024c7d47df2",
+   "commit": "dac079b",
+   "subject": "Qualify the mode totality and name overflow modes in the scope list"
+  },
+  {
+   "issue": "4ff620d7-48e3-4302-8c99-191a79614a65",
+   "commit": "a1c2d43",
+   "subject": "State the bound refusal once per case in the diagnostics row"
+  },
+  {
+   "issue": "5789eddc-1dfa-4e8d-b28a-68b8e456d328",
+   "commit": "9dab2b5",
+   "subject": "Preserve member multiplicity in the testing-support note pin"
+  },
+  {
+   "issue": "59b613ff-fd89-44a2-bf95-895d887569ac",
+   "commit": "d9065cb",
+   "subject": "Fold one operator continuation over an admitted propagation payload"
+  },
+  {
+   "issue": "6700f5ee-e62a-4652-8ae3-0cdb76c0dadf",
+   "commit": "07b331e",
+   "subject": "Refuse facade paths that collide with declared packages"
+  },
+  {
+   "issue": "6c821d63-37f7-45a3-91a8-d9a85e8b81a0",
+   "commit": "f1b8aef",
+   "subject": "Restore the external-eligibility admissibility sentence in the codec non-claim model"
+  },
+  {
+   "issue": "82d06478-08da-4eed-a870-4401b17ddf6f",
+   "commit": "939e9a2",
+   "subject": "Close package-identity collisions and version canonicality gaps in the workspace model."
+  },
+  {
+   "issue": "8516ff7e-feef-4a1b-a69c-b33bc73e9af0",
+   "commit": "ea5cc64",
+   "subject": "Clarify Section 35 ownership, aliasing permanence, and octet-count attribution"
+  },
+  {
+   "issue": "adfa200b-cdb1-4860-a60c-37338ffd0704",
+   "commit": "65156e4",
+   "subject": "Regenerate the publication set and point the lookup-guard comment correctly"
+  },
+  {
+   "issue": "c484efec-aec7-459b-a743-94f7a37df8b9",
+   "commit": "10cc6dd",
+   "subject": "Publish the crypto non-claim vocabulary and consolidate the section"
+  },
+  {
+   "issue": "d4aaa6ea-3f9f-44b3-bf27-fa8ad49598ea",
+   "commit": "b111b24",
+   "subject": "Pin the prelude closure in both directions and its spelling split"
+  },
+  {
+   "issue": "ebd70791-8676-424c-95d8-4f2e52371745",
+   "commit": "0836f2d",
+   "subject": "Name callable types in the template type-expression grammar"
+  },
+  {
+   "issue": "f3908168-98c6-4286-8b12-6864285dbc0c",
+   "commit": "e7ba6a2",
+   "subject": "Exercise cross-family pure composition over the aggregate hierarchy"
+  }
+ ],
+ "artifacts": [
+  {
+   "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
+   "sha256": "f8df87ee67a8b3f1f37f409e8857d11da6d4d46cd9d3850e5cc45638a0a653f5"
+  },
+  {
+   "path": "protocol/catalogs/std-test-surface-v1.json",
+   "sha256": "a67fbec536287df7136da5861b7b356340badbc46adb27d21ce96bdfaa1f4400"
+  },
+  {
+   "path": "protocol/catalogs/stdlib-hierarchy-v1.json",
+   "sha256": "346f4570eea94eb7aedb2370b3d87098d5940a8a4fc8da76f3ce0e50c1329719"
+  },
+  {
+   "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
+   "sha256": "b8155b38fb10235724c6a948c581c521e83ba1b00af438d605d8c04a8ccc1a2a"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "39ac3647fe2ba7995c4249b75bc96f97d9e573e9d9f7324dab26848fc176a1db"
+  }
+ ],
+ "evidence": [
+  {
+   "id": "conformance-publication",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/publication/v1/gantry.conformance.json"
+  },
+  {
+   "id": "foundation-gate-record",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/conformance/general-purpose-foundation-gate-v1.json"
+  },
+  {
+   "id": "preregistered-phase-index",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/catalogs/general-purpose-preregistration-v1.json"
+  },
+  {
+   "id": "requirement-ledger-tiling",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/requirements/reviewed-v1.json"
+  },
+  {
+   "id": "standard-library-hierarchy-catalog",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/catalogs/stdlib-hierarchy-v1.json"
+  },
+  {
+   "id": "testing-support-surface-catalog",
+   "state": "verified",
+   "visibility": "public-repository",
+   "path": "protocol/catalogs/std-test-surface-v1.json"
+  }
+ ],
+ "claim": {
+  "phase": "phase-1-deterministic-language",
+  "profiles": [],
+  "advertises_general_purpose": false,
+  "advertises_production_strategy": false,
+  "advertises_stable_edition": false,
+  "advertises_stable_standard_library": false
+ },
+ "validation_commands": [
+  "cargo run --locked -p xtask -- check generated",
+  "cargo run --locked -p xtask -- check governance",
+  "cargo run --locked -p xtask -- check workspace",
+  "cargo fmt --all -- --check",
+  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+  "cargo test --locked --workspace --all-targets --all-features --no-fail-fast"
+ ],
+ "environment_gaps": [
+  "Runtime-dependent Phase-1 arms are owned by Phase-2 issues and are qualifications of their prerequisites, not evidence here: TEXT-001 cancellation safe points, NUM-001 work limits, VALUE-PERF-001 recovery projection, and LINK-001 durable execution-state evidence are refiled as GNT-GP-RUNTIME-RESIDUAL-001 behind RESOURCE-001.",
+  "The standalone tooling and testing workflow arms are refiled as GNT-GP-TOOLING-RUNTIME-001 and GNT-GP-TEST-RUNTIME-001 behind this gate: the twelve build/run/test/doc/fmt/lint/LSP/package workflows and test-target execution need the Phase-2 artifact and runtime substrate.",
+  "Whole-application benchmark thresholds have no admitted measurement mechanism (GNT-GP-BENCH-001): the workspace forbids unsafe code, admits no benchmark harness dependency, and wall-clock thresholds are non-deterministic, so no performance claim is made here.",
+  "Reviewer panes are read-only: every independent review of a Phase-1 slice is static (bytes and digests), so executed evidence in this record is main-agent evidence."
+ ]
+}
