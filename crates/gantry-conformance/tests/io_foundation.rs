@@ -56,6 +56,7 @@ fn io_note_names_the_declared_capability_family() {
     let flat = flatten(&note);
 
     assert!(PackageFamily::ALL.contains(&PackageFamily::Io));
+    assert_eq!(PackageFamily::ALL.len(), 20);
     assert!(!PackageFamily::Io.is_pure());
     let package = PackageFamily::Io.package_name();
     assert!(
@@ -73,6 +74,10 @@ fn io_note_names_the_declared_capability_family() {
         )),
         "the note must name the declared wire spelling"
     );
+    assert!(
+        flat.contains("one of the twenty entries of `PackageFamily::ALL`"),
+        "the note must state the declared family count it claims"
+    );
 }
 
 #[test]
@@ -80,46 +85,73 @@ fn io_note_mirrors_the_declared_progress_mapping() {
     let note = read_text(&workspace_root().join("docs/io-foundation.md"));
     let flat = flatten(&note);
 
-    let declared = [
-        (HostProgress::Eof, ProgressObservation::Eof),
-        (HostProgress::ShortRead, ProgressObservation::ShortRead),
-        (HostProgress::ShortWrite, ProgressObservation::ShortWrite),
-        (HostProgress::NotStarted, ProgressObservation::NotStarted),
-        (
-            HostProgress::Complete,
-            ProgressObservation::CommittedProgress,
-        ),
-    ];
-    for (progress, observation) in declared {
-        assert_eq!(progress.observation(), observation);
-        let spelling = observation.wire_name();
+    assert_eq!(HostProgress::ALL.len(), 5);
+    let mut reached = Vec::new();
+    for progress in HostProgress::ALL {
+        let observation = progress.observation();
         assert!(
-            flat.contains(&format!(
-                "`HostProgress::{progress:?}` maps to `{spelling}`"
-            )),
-            "the note must state that `{progress:?}` maps to `{spelling}`"
+            !reached.contains(&observation),
+            "each declared progress member maps to its own observation"
         );
+        reached.push(observation);
+        let phrase = format!(
+            "`HostProgress::{progress:?}` maps to `{}`",
+            observation.wire_name()
+        );
+        assert_eq!(
+            flat.matches(&phrase).count(),
+            1,
+            "the note must state `{phrase}` exactly once"
+        );
+    }
+    for observation in ProgressObservation::ALL {
+        if observation == ProgressObservation::PartialAdvance {
+            assert!(
+                !reached.contains(&observation),
+                "the Section 20-only partial-advance observation is not reachable from the io progress vocabulary"
+            );
+        } else {
+            assert!(
+                reached.contains(&observation),
+                "every other declared observation must be reachable: {}",
+                observation.wire_name()
+            );
+        }
     }
 }
 
 #[test]
 fn io_surface_declares_no_host_domain_family() {
-    let names = HostDomainFamily::ALL
+    let declared = HostDomainFamily::ALL
         .into_iter()
         .map(HostDomainFamily::wire_name)
         .collect::<Vec<_>>();
-    assert_eq!(names.len(), 12);
-    assert!(
-        !names.contains(&"io"),
-        "the host-domain matrix must declare no io family while the note says so"
-    );
+    assert_eq!(declared.len(), 12);
+    assert!(!declared.contains(&"io"));
 
     let note = read_text(&workspace_root().join("docs/io-foundation.md"));
     let flat = flatten(&note);
+    let listed = flat
+        .split_once("declares twelve families in canonical order: ")
+        .unwrap_or_else(|| panic!("the note must list the declared host-domain families"))
+        .1
+        .split_once(". Those are exactly the entries of")
+        .unwrap_or_else(|| panic!("the note's family list must name its source"))
+        .0
+        .split(", ")
+        .map(|token| {
+            token
+                .trim_start_matches("and ")
+                .trim_matches('`')
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        listed, declared,
+        "the note's family list must equal the declared vocabulary exactly"
+    );
     assert!(
-        flat.contains(
-            "carries no `io` row: `HostDomainFamily::ALL` holds exactly those twelve entries"
-        ),
+        flat.contains("carries no `io` row"),
         "the note must state that no io host-domain row is declared"
     );
 }
@@ -149,7 +181,7 @@ fn io_note_records_the_unlanded_contract_without_claiming_it() {
     let flat = flatten(&note);
 
     for needle in [
-        "It declares no Reader, Writer, or Seek contract clause: no operation kinds, no per-call bound, no interruption, cancellation, backpressure, or post-failure ownership rule, and no refusal spellings.",
+        "It declares no concrete Reader, Writer, or Seek operation contract beyond the landed progress mapping of `GNT-29.2-reader-writer-seek-progress`: no operation kinds, no signatures or items, no per-call bound, no interruption, cancellation, or backpressure rule, no post-failure ownership rule, and no refusal vocabulary of its own.",
         "It declares no item or interface row for `std.io`, no interface digest, and no stability tier",
         "It grants no adapter, no host trait, no runtime availability, and no capability: adapters remain leaves",
     ] {

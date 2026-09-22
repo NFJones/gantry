@@ -3,7 +3,8 @@
 This note records the `std.io` surface that the model already declares: its canonical package
 identity, the host-domain progress and error contract every Reader, Writer, and Seek operation
 consumes, the normative clauses already in force, and what the surface does not claim. It records
-declarations; it does not add a Reader, Writer, or Seek contract, a per-call bound, or an adapter.
+declarations; it adds no operation, no per-call bound, and no adapter, and any operation a later
+clause declares must consume the landed host-domain facts below.
 
 ## Package identity
 
@@ -39,18 +40,20 @@ Three further declared rules bound every such operation:
 ## No `io` host-domain family is declared
 
 The host-domain family matrix of `GNT-29.4-console-contract` through
-`GNT-29.9-codec-contract` declares twelve families — `console`, `filesystem`, `environment`,
-`dns`, `socket`, `tls`, `http`, `process`, `time`, `randomness`, `secret`, and `codec` — and
-carries no `io` row: `HostDomainFamily::ALL` holds exactly those twelve entries. The common I/O
-layer therefore consumes the categories of the family an operation belongs to through the
-`GNT-29.3-portable-domain-error-envelope` envelope, and this surface claims no `io` category, no
-`io` target mapping, and no thirteenth host-domain family.
+`GNT-29.9-codec-contract` declares twelve families in canonical order: `codec`, `console`, `dns`,
+`environment`, `filesystem`, `http`, `process`, `randomness`, `secret`, `socket`, `time`, and
+`tls`. Those are exactly the entries of `HostDomainFamily::ALL`, and the matrix carries no `io`
+row. The common I/O layer therefore consumes the categories of the family an operation belongs to
+through the `GNT-29.3-portable-domain-error-envelope` envelope, and this surface claims no `io`
+category, no `io` target mapping, and no thirteenth host-domain family.
 
 ## What this surface does not claim
 
-- It declares no Reader, Writer, or Seek contract clause: no operation kinds, no per-call bound, no
-  interruption, cancellation, backpressure, or post-failure ownership rule, and no refusal
-  spellings. Those need normative clauses before an implementation may claim them.
+- It declares no concrete Reader, Writer, or Seek operation contract beyond the landed progress
+  mapping of `GNT-29.2-reader-writer-seek-progress`: no operation kinds, no signatures or items, no
+  per-call bound, no interruption, cancellation, or backpressure rule, no post-failure ownership
+  rule, and no refusal vocabulary of its own. Those need normative clauses before an implementation
+  may claim them.
 - It declares no item or interface row for `std.io`, no interface digest, and no stability tier;
   `GNT-34.8-defining-identity-and-interface-digest` requires an item surface before either exists.
 - It grants no adapter, no host trait, no runtime availability, and no capability: adapters remain

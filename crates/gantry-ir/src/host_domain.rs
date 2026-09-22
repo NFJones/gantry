@@ -152,6 +152,15 @@ pub enum HostProgress {
 }
 
 impl HostProgress {
+    /// Every declared member, in the canonical order of the observations it maps to.
+    pub const ALL: [Self; 5] = [
+        Self::Complete,
+        Self::Eof,
+        Self::NotStarted,
+        Self::ShortRead,
+        Self::ShortWrite,
+    ];
+
     /// Maps exactly to Section 20's progress observation vocabulary.
     #[must_use]
     pub const fn observation(self) -> ProgressObservation {
