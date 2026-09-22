@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "82779d7c16786d477311d08aea9dc818b953abbb5eb502aaa1509ba1f1503f51",
-  "byte_length": 1258429,
-  "line_count": 16429,
+  "specification_sha256": "17961afaffd5956d503fa09a90c9ef2ce7b5ce4b6f46fa421c301f5b8817d99f",
+  "byte_length": 1260621,
+  "line_count": 16457,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "b9249ca9b5ec2c7d788b810ec1a1e8d1016b2c909df80d7fa56b38a8928f81b9",
+      "sha256": "b1878b30dc3333e919606a6189d1986e858ca3c6a4e618f7a56efb8ac95b1608",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16429,
-      "sha256": "6bc5e3653b6a003465ede0a3bfbafae55ab19831f4fcadb57ab4cd4fc3209e99",
+      "end_line": 16457,
+      "sha256": "08926e3990d2fc31e4c24892ec8ea4de84cd368a76afdc769207a72cb9530ba0",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "871809e436eb83d01ee3f88106442f2ec90d48d30a386a98f2cdbedf7f9e68c0",
+      "span_sha256": "c11ba0276fa8aa141aa4da2822c3c1d0c55e110d517b43b55d8181f9b8f7907e",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "b7b1ad6d8248203db1c3fd30c713a9e9210e3bbcfde46f1a539f2102aa150a37",
+      "body_sha256": "413d38329b577765f18b752932b53e9fa8dd6a13b943da6b4de05c9b4f0b87e3",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45064,6 +45064,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_traversal_publishes_canonical_entry_order_and_refuses_outer_names"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.7-filesystem-action-grants",
+      "span_start_line": 16430,
+      "span_end_line": 16457,
+      "span_sha256": "324e1b383c2bf091c850cfe2dd6978e32e69de950d6b97e4624c42abd9862b61",
+      "anchor_line": 16431,
+      "body_start_line": 16432,
+      "body_end_line": 16457,
+      "body_sha256": "46900d4615774226d86d6f7f705059ce36d0f39d1aa607063c43eef1a2ecd4e1",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16432,
+          "end_line": 16457,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies"
               ],
               "rationale": null
             }

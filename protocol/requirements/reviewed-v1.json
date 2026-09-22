@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "82779d7c16786d477311d08aea9dc818b953abbb5eb502aaa1509ba1f1503f51",
+  "specification_sha256": "17961afaffd5956d503fa09a90c9ef2ce7b5ce4b6f46fa421c301f5b8817d99f",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16429,
+      "end_line": 16457,
       "rationale": null
     }
   ],
@@ -43817,6 +43817,45 @@
               "rationale": null,
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_traversal_publishes_canonical_entry_order_and_refuses_outer_names"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.7-filesystem-action-grants",
+      "span_start_line": 16430,
+      "span_end_line": 16457,
+      "anchor_line": 16431,
+      "body_start_line": 16432,
+      "body_end_line": 16457,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16432,
+          "end_line": 16457,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies"
               ]
             }
           ]

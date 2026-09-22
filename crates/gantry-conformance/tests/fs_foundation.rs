@@ -57,6 +57,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.4-filesystem-resource-operations",
             "GNT-47.5-filesystem-resource-state",
             "GNT-47.6-filesystem-traversal",
+            "GNT-47.7-filesystem-action-grants",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -98,6 +99,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.0-filesystem-foundation-scope",
                 "GNT-47.1-filesystem-modules-and-item-rows",
                 "GNT-47.3-filesystem-action-values",
+                "GNT-47.7-filesystem-action-grants",
             ],
             "std.fs::path" => &[
                 "GNT-47.0-filesystem-foundation-scope",
@@ -734,6 +736,62 @@ fn fs_traversal_publishes_canonical_entry_order_and_refuses_outer_names() {
         "no symbolic link, junction, or reparse point is followed by a rule of this clause",
         "no snapshot, atomicity, or isolation guarantee across entries",
         "no admitted request of `GNT-45.1-bounded-one-call-io-contract`",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies() {
+    let mutating = FsAction::ALL
+        .into_iter()
+        .filter(|action| action.declares_content_mutation())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        mutating,
+        [FsAction::Create, FsAction::Replace, FsAction::Remove],
+        "exactly a create, a replace, and a remove declare a content mutation"
+    );
+    for action in FsAction::ALL {
+        assert_eq!(
+            action.declares_content_mutation(),
+            action.declared_recovery_class() == RecoveryClass::NonIdempotent,
+            "the content-mutation fact and the recovery class agree for `{}`",
+            action.wire_name()
+        );
+    }
+    assert!(!FsAction::Read.declares_content_mutation());
+    assert!(!FsResourceOperation::Read.declares_content_mutation());
+    for operation in FsResourceOperation::ALL {
+        assert_eq!(
+            operation.declares_content_mutation(),
+            matches!(
+                operation,
+                FsResourceOperation::Write | FsResourceOperation::Truncate
+            ),
+            "the resource content-mutation fact is exactly a write and a truncate"
+        );
+    }
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in FS_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "a read-only grant refuses every action that declares an externally visible mutation of the object's content",
+        "this clause declares exactly `create`, `replace`, and `remove` as content-mutating",
+        "the model accessor `FsAction::declares_content_mutation` publishes exactly that decision",
+        "such an action is refused under a read-only grant rather than ignored, downgraded, renamed, or partially executed",
+        "A read declares no content mutation, so this grant rule refuses it under no grant",
+        "No action becomes a content mutation because a grant is read-only",
+        "neither vocabulary admits the other's members, and a grant refuses a content mutation in either one",
+        "the frozen registry of `GNT-47.0-filesystem-foundation-scope` is unchanged, and this clause adds no third code",
     ] {
         assert!(
             specification.contains(rule),

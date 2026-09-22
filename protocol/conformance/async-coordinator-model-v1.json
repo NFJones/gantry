@@ -1,6 +1,6 @@
 {
  "format": "gantry.async-coordinator-model-evidence/v1",
- "specification_sha256": "82779d7c16786d477311d08aea9dc818b953abbb5eb502aaa1509ba1f1503f51",
+ "specification_sha256": "17961afaffd5956d503fa09a90c9ef2ce7b5ce4b6f46fa421c301f5b8817d99f",
  "issue": "GNT-ASYNC-MODEL-001",
  "evidence_scope": "partial-property-evidence",
  "full_clause_proof": false,

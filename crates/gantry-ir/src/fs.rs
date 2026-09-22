@@ -3,10 +3,11 @@
 //! This module publishes the canonical module and item rows of the `std.fs` family and their
 //! applicability, the path value contract of `std.fs::path`, the whole-object action vocabulary of
 //! `std.fs::action`, and the resource operation vocabulary of `std.fs::resource` with its
-//! consumption of the common I/O contract and its content-mutation fact. It is not a descriptor, an
-//! open handle, a live resource instance, an adapter, a capability, or a runtime availability, and
-//! it performs no I/O: every decision it publishes is a deterministic function of its declared
-//! arguments alone. It also publishes the declared canonical traversal order of entry names.
+//! consumption of the common I/O contract and its content-mutation fact, the read-only grant
+//! refusal over both vocabularies, the declared instance state vocabulary, and the declared
+//! canonical traversal order of entry names. It is not a descriptor, an open handle, a live
+//! resource instance, an adapter, a capability, or a runtime availability, and it performs no I/O:
+//! every decision it publishes is a deterministic function of its declared arguments alone.
 
 use std::fmt;
 
@@ -20,7 +21,7 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 7] = [
+pub const FS_CLAUSES: [&str; 8] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
@@ -28,6 +29,7 @@ pub const FS_CLAUSES: [&str; 7] = [
     "GNT-47.4-filesystem-resource-operations",
     "GNT-47.5-filesystem-resource-state",
     "GNT-47.6-filesystem-traversal",
+    "GNT-47.7-filesystem-action-grants",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -64,6 +66,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.0-filesystem-foundation-scope",
             "GNT-47.1-filesystem-modules-and-item-rows",
             "GNT-47.3-filesystem-action-values",
+            "GNT-47.7-filesystem-action-grants",
         ],
     },
     FsItemRow {
@@ -504,6 +507,15 @@ impl FsAction {
             Self::Read => RecoveryClass::ReadOnly,
             Self::Create | Self::Replace | Self::Remove => RecoveryClass::NonIdempotent,
         }
+    }
+
+    /// Returns whether this action declares an externally visible mutation of the object's content.
+    ///
+    /// Exactly a create, a replace, and a remove declare one, so a read-only grant refuses exactly
+    /// those three; a read declares none, and a grant's read-only status never changes the fact.
+    #[must_use]
+    pub const fn declares_content_mutation(self) -> bool {
+        matches!(self, Self::Create | Self::Replace | Self::Remove)
     }
 }
 
