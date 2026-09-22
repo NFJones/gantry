@@ -16399,8 +16399,9 @@ performance, storage layout, or physical representation.
 **[GNT-47.6-filesystem-traversal] Filesystem traversal.** This clause declares the traversal
 contract of one path value of `GNT-47.2-filesystem-path-values`. A traversal publishes the declared
 names of the entries of the object the path value names, in exactly one canonical order: ascending
-by code unit over the declared name, never in the host's directory order, and never in an order
-that depends on the host, an adapter, a clock, a locale, or an environment fact. Two traversals of
+by Unicode scalar value over the declared name, never by a host collation, a locale, or a UTF-16
+code-unit order, never in the host's directory order, and never in an order that depends on the
+host, an adapter, a clock, a locale, or an environment fact. Two traversals of
 the same declared path value over the same declared object state publish the same sequence, and the
 model function `fs_traversal_order` of `crates/gantry-ir/src/fs.rs` publishes the order and the
 refusal.
@@ -16411,9 +16412,10 @@ components `.` and `..` are refused under the diagnostic of that clause rather t
 escaped, truncated, renamed, dropped, or silently skipped, and the refusal names the zero-based
 position of that entry within the traversal.
 
-A traversal publishes no entry kind, size, timestamp, link classification, or content, and it
-follows no symbolic link, junction, or reparse point implicitly. This clause publishes no
-link-following rule, no race outcome for a link or a target that changes during a traversal, no
+A traversal publishes no entry kind, size, timestamp, link classification, or content, and no
+symbolic link, junction, or reparse point is followed by a rule of this clause: whether such a link
+is followed, and what a link or a target that changes during a traversal does, are not published
+here. This clause publishes no race outcome, no
 snapshot, atomicity, or isolation guarantee across entries, no requirement that two traversals of a
 changing object agree, no case-folding or case-sensitivity rule, no host ordering, no bound on the
 number of entries, no admitted request of `GNT-45.1-bounded-one-call-io-contract`, no progress
@@ -16423,5 +16425,5 @@ This clause publishes the traversal order, the name-domain refusal, and the link
 non-claims only: it publishes no traversal procedure, no adapter, host trait, capability grant, or
 runtime availability, no schema, recovery, or durability mechanism, no boundary encoding, lowering,
 machine representation, or family behavior, no change to any other clause of this section or of
-Sections 20, 28, 29, or 45, and it claims no performance, storage layout, or physical
+Sections 29 or 45, and it claims no performance, storage layout, or physical
 representation.

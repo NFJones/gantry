@@ -660,19 +660,34 @@ fn fs_traversal_publishes_canonical_entry_order_and_refuses_outer_names() {
         fs_traversal_order(&["b", "a", "B", "10", "a1"])
             .unwrap_or_else(|error| panic!("declared names are admissible: {error:?}")),
         ["10", "B", "a", "a1", "b"],
-        "the declared order ascends by code unit and never uses a host order"
+        "the declared order ascends by scalar value and never uses a host order"
     );
     assert_eq!(
         fs_traversal_order(&["\u{e9}", "z"])
             .unwrap_or_else(|error| panic!("non-ASCII names are declared segments: {error:?}")),
         ["z", "\u{e9}"],
-        "a code-unit order places a multi-byte name after a one-byte name"
+        "a scalar-value order places a multi-byte name after a one-byte name"
+    );
+    assert_eq!(
+        fs_traversal_order(&["\u{10000}", "\u{e000}"])
+            .unwrap_or_else(|error| panic!("astral names are declared segments: {error:?}")),
+        ["\u{e000}", "\u{10000}"],
+        "the order is by scalar value, not by UTF-16 code unit, which would invert this pair"
     );
     assert!(
         fs_traversal_order(&[])
             .unwrap_or_else(|error| panic!("an empty object is admitted: {error:?}"))
             .is_empty()
     );
+    let many = (0..300)
+        .map(|index| format!("entry{index:03}"))
+        .collect::<Vec<String>>();
+    let many_refs = many.iter().map(String::as_str).collect::<Vec<&str>>();
+    let ordered_many = fs_traversal_order(&many_refs)
+        .unwrap_or_else(|error| panic!("a traversal carries no entry bound: {error:?}"));
+    assert_eq!(ordered_many.len(), 300, "no entry count is refused");
+    assert_eq!(ordered_many.first().map(String::as_str), Some("entry000"));
+    assert_eq!(ordered_many.last().map(String::as_str), Some("entry299"));
 
     let empty = match fs_traversal_order(&["a", ""]) {
         Ok(names) => panic!("an empty entry name must be refused, got {names:?}"),
@@ -710,13 +725,13 @@ fn fs_traversal_publishes_canonical_entry_order_and_refuses_outer_names() {
         );
     }
     for rule in [
-        "A traversal publishes the declared names of the entries of the object the path value names, in exactly one canonical order: ascending by code unit over the declared name",
-        "never in the host's directory order, and never in an order that depends on the host, an adapter, a clock, a locale, or an environment fact",
+        "A traversal publishes the declared names of the entries of the object the path value names, in exactly one canonical order: ascending by Unicode scalar value over the declared name",
+        "never by a host collation, a locale, or a UTF-16 code-unit order, never in the host's directory order",
         "Two traversals of the same declared path value over the same declared object state publish the same sequence",
         "the model function `fs_traversal_order` of `crates/gantry-ir/src/fs.rs` publishes the order and the refusal",
         "refused under the diagnostic of that clause rather than normalized, escaped, truncated, renamed, dropped, or silently skipped",
         "the refusal names the zero-based position of that entry within the traversal",
-        "it follows no symbolic link, junction, or reparse point implicitly",
+        "no symbolic link, junction, or reparse point is followed by a rule of this clause",
         "no snapshot, atomicity, or isolation guarantee across entries",
         "no admitted request of `GNT-45.1-bounded-one-call-io-contract`",
     ] {

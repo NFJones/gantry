@@ -413,31 +413,40 @@ fn validate_segments(segments: &[&str], base: u32) -> Result<(), FsError> {
         });
     }
     for (offset, segment) in segments.iter().enumerate() {
-        let position = base + offset as u32;
-        if *segment == "." || *segment == ".." {
-            return Err(FsError::PathEscape {
-                component: if *segment == "." { "." } else { ".." },
-                position,
-            });
-        }
-        if segment.is_empty() {
-            return Err(FsError::PathInvalid {
-                detail: "an empty declared segment".to_owned(),
-                position,
-            });
-        }
-        if segment.contains('/') || segment.contains('\\') {
-            return Err(FsError::PathInvalid {
-                detail: format!("the declared segment `{segment}` carries a separator"),
-                position,
-            });
-        }
-        if segment.chars().any(char::is_control) {
-            return Err(FsError::PathInvalid {
-                detail: format!("the declared segment `{segment}` carries a control scalar"),
-                position,
-            });
-        }
+        validate_portable_name(segment, base + offset as u32)?;
+    }
+    Ok(())
+}
+
+/// Validates one declared name against the declared segment domain of
+/// `GNT-47.2-filesystem-path-values`, naming `position` in a refusal.
+///
+/// The name domain carries no count rule: a path value bounds its own segment sequence, while a
+/// traversal publishes one name per entry and declares no bound on the number of entries.
+fn validate_portable_name(name: &str, position: u32) -> Result<(), FsError> {
+    if name == "." || name == ".." {
+        return Err(FsError::PathEscape {
+            component: if name == "." { "." } else { ".." },
+            position,
+        });
+    }
+    if name.is_empty() {
+        return Err(FsError::PathInvalid {
+            detail: "an empty declared segment".to_owned(),
+            position,
+        });
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err(FsError::PathInvalid {
+            detail: format!("the declared segment `{name}` carries a separator"),
+            position,
+        });
+    }
+    if name.chars().any(char::is_control) {
+        return Err(FsError::PathInvalid {
+            detail: format!("the declared segment `{name}` carries a control scalar"),
+            position,
+        });
     }
     Ok(())
 }
@@ -610,9 +619,10 @@ impl FsResourceOperation {
 
 /// Returns the declared canonical traversal order of `names`.
 ///
-/// The order is ascending by code unit over each declared name and is never a host directory order,
-/// and every name is checked against the declared segment domain of
-/// `GNT-47.2-filesystem-path-values` before it is published.
+/// The order is ascending by Unicode scalar value over each declared name and is never a host
+/// directory order, and every name is checked against the declared segment domain of
+/// `GNT-47.2-filesystem-path-values` before it is published. The traversal carries no bound on the
+/// number of entries.
 ///
 /// # Errors
 ///
@@ -621,7 +631,7 @@ impl FsResourceOperation {
 pub fn fs_traversal_order(names: &[&str]) -> Result<Vec<String>, FsError> {
     let mut ordered = Vec::with_capacity(names.len());
     for (position, name) in names.iter().enumerate() {
-        validate_segments(std::slice::from_ref(name), position as u32)?;
+        validate_portable_name(name, position as u32)?;
         ordered.push((*name).to_owned());
     }
     ordered.sort_unstable();

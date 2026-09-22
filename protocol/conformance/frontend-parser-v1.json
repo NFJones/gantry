@@ -1,6 +1,6 @@
 {
  "format": "gantry.frontend-parser-evidence/v1",
- "specification_sha256": "cf259d4172bee7a2f4dd1012ac59f84a042349bbff32b0d15a5b6484a9057673",
+ "specification_sha256": "82779d7c16786d477311d08aea9dc818b953abbb5eb502aaa1509ba1f1503f51",
  "issue": "GNT-FE-002",
  "grammar_entries": [
   {

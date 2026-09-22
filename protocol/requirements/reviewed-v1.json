@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "cf259d4172bee7a2f4dd1012ac59f84a042349bbff32b0d15a5b6484a9057673",
+  "specification_sha256": "82779d7c16786d477311d08aea9dc818b953abbb5eb502aaa1509ba1f1503f51",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16427,
+      "end_line": 16429,
       "rationale": null
     }
   ],
@@ -43794,15 +43794,15 @@
     {
       "id": "GNT-47.6-filesystem-traversal",
       "span_start_line": 16396,
-      "span_end_line": 16427,
+      "span_end_line": 16429,
       "anchor_line": 16397,
       "body_start_line": 16398,
-      "body_end_line": 16427,
+      "body_end_line": 16429,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16398,
-          "end_line": 16427,
+          "end_line": 16429,
           "profiles": [
             "analyzer"
           ],
