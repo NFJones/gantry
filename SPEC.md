@@ -16678,12 +16678,14 @@ consumption `GNT-47.4-filesystem-resource-operations` declares; the model's
 `FS_PARTIAL_PROGRESS_OPERATIONS` and the model accessor
 `FsResourceOperation::declares_partial_progress` publish exactly those three operations, in
 declared order: no other operation of this section declares a partial-progress observation, and no
-operation declares a second one. A transfer that commits fewer octets than its request named is one
-completed request and not a failure, a short transfer, or an interruption: its progress observation
-publishes exactly the octets it committed, no remainder is carried, reserved, or replayed, and this
-section performs no retry, re-issue, or re-resolution of that request. A second transfer of the
-remaining octets is a second declared operation with its own admitted request and its own admitted
-facts, never a continuation this section invents, infers, or appends.
+operation declares a second one. A transfer that commits fewer octets than its request named
+publishes exactly the progress observation that `GNT-45.3-io-progress-derivation` derives from that
+request's admitted facts for the octets it committed - the derived short-read or short-write
+observation, which remains progress and never becomes a completion - and this clause neither
+reclassifies, renames, nor upgrades that observation: no remainder is carried, reserved, or replayed
+by this section, and this section performs no retry, re-issue, or re-resolution of that request. A
+second transfer of the remaining octets is a second declared operation with its own admitted request
+and its own admitted facts, never a continuation this section invents, infers, or appends.
 
 A whole-object action of `GNT-47.3-filesystem-action-values` publishes one outcome for one object
 and no partial progress, exactly as that clause declares, and a replacement of

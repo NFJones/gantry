@@ -1215,8 +1215,10 @@ fn fs_partial_progress_is_declared_only_for_read_write_and_seek() {
     for rule in [
         "This clause publishes the partial-progress rule of the transfer operations of `GNT-47.4-filesystem-resource-operations` and the no-partial-progress rule of the whole-object actions of `GNT-47.3-filesystem-action-values`",
         "publish exactly those three operations, in declared order",
-        "A transfer that commits fewer octets than its request named is one completed request and not a failure, a short transfer, or an interruption",
-        "its progress observation publishes exactly the octets it committed, no remainder is carried, reserved, or replayed",
+        "A transfer that commits fewer octets than its request named publishes exactly the progress observation that `GNT-45.3-io-progress-derivation` derives from that request's admitted facts for the octets it committed",
+        "the derived short-read or short-write observation, which remains progress and never becomes a completion",
+        "this clause neither reclassifies, renames, nor upgrades that observation",
+        "no remainder is carried, reserved, or replayed by this section",
         "this section performs no retry, re-issue, or re-resolution of that request",
         "A second transfer of the remaining octets is a second declared operation with its own admitted request and its own admitted facts, never a continuation this section invents, infers, or appends",
         "this clause declares no action-side partial-progress observation, no action-side remainder, and no action-side continuation",
