@@ -511,7 +511,7 @@ fn validate_io_surface_package(graph: &StdGraph, package: &StdPackage) -> Result
 
 /// One declared kind whose peer can present a backpressure fact.
 ///
-/// A seek is never backpressured by `GNT-45.4-io-backpressure-and-chunk-settlement`: its progress
+/// A seek is never backpressured by `GNT-45.4-io-backpressure-fact`: its progress
 /// is a function of its declared target and its observed positions alone, so no seek fact is
 /// declared here and no other kind, alias, or spelling is admitted.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
