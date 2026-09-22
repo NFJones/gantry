@@ -23,6 +23,7 @@ mod canonical;
 mod codec;
 mod collections;
 mod constant;
+mod crypto;
 mod data;
 mod effects;
 pub mod error_semantics;
@@ -345,6 +346,15 @@ pub use data::{
     URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND, URL_SEGMENT_COUNT_BOUND,
     URL_SEGMENT_OCTET_BOUND, URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND, Url, UrlHost,
     canonical_data_hierarchy, declare_data_surface, message_framing,
+};
+// The Section 44 crypto foundation: the declared `std.crypto` family with its `hash` and
+// `signature` modules, the versioned algorithm identity and its exact admission rule, the frozen
+// refusal vocabulary with its declared refusal categories, and the separation between these pure
+// read-only algorithms and signing, secret-key material, credentials, and protected operations.
+pub use crypto::{
+    AlgorithmIdentity, CRYPTO_CLAUSES, CRYPTO_ITEMS, CryptoDiagnosticCode, CryptoError,
+    CryptoItemRow, CryptoModule, CryptoRefusalCategory, DECLARED_ALGORITHM_VERSION,
+    canonical_crypto_hierarchy, declare_crypto_surface,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,

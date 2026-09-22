@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "7446d0485da873ead15c7f5e70daa411ec4db5c302cfcfb368c52e5947e92c34",
-  "byte_length": 1175292,
-  "line_count": 15767,
+  "specification_sha256": "aa1e67fdb57999574b06d6a8251f7b36df8e1d5f1c980359ef2fd6968813b618",
+  "byte_length": 1182254,
+  "line_count": 15777,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "c30bf312a7f38fc13cd2f7f112b8d0f9d5db772b1b6b8dc90663c43e59f41f93",
+      "sha256": "7d27c4dd9cfae7adcb0cd6c1073f35c1eddfb9167026fcf1cbd2f55757a9eaec",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15767,
-      "sha256": "99cd73b83cb07e90899ebab1e0cd7ce732b29b241b086bee23046485ae8b8e9c",
+      "end_line": 15777,
+      "sha256": "5fea330a1f815ede2c96a2534bf2e77411d5d991f566e07e330d46a3c22cfdfb",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "e240017133ba2551131dc5b2cda54e81cec2dffd5256db94f8472f25ed49d24f",
+      "span_sha256": "ee1f199ad869c6bd41bbb86b5b12424e55cb54d1c720777e731e4d2a7e5a5b15",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "7798f298ae5fe547b3d915f3bdcec4e00dc1cfd828b4a18f9ae2210619c28f74",
+      "body_sha256": "b5f8469d2e6da68a7fa55c33a2b95e18300610151eea368979131c0fc7345d26",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44099,6 +44099,90 @@
                 "crates/gantry-conformance/tests/data_foundation.rs#request_and_response_values_are_constructed_from_declared_components",
                 "crates/gantry-conformance/tests/data_foundation.rs#request_and_response_refuse_noncanonical_components",
                 "crates/gantry-conformance/tests/data_foundation.rs#data_non_claims_are_closed_and_ordered"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.0-crypto-foundation-scope",
+      "span_start_line": 15768,
+      "span_end_line": 15773,
+      "span_sha256": "436438d58e457d2948d0751328a4c7b33f5c9bd9069efcf92583c1bc939da355",
+      "anchor_line": 15771,
+      "body_start_line": 15772,
+      "body_end_line": 15773,
+      "body_sha256": "31bb3c60899e58f3b95ac6be8a4d383d7138a30fc66c4887cd5833d552438789",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15772,
+          "end_line": 15773,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_clauses_are_published",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#crypto_surface_declares_the_two_modules"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.1-crypto-algorithm-contract",
+      "span_start_line": 15774,
+      "span_end_line": 15777,
+      "span_sha256": "781be78c8f1a202ae0f62edfa6147994a643969ec2f8738307aa67673fa0714e",
+      "anchor_line": 15775,
+      "body_start_line": 15776,
+      "body_end_line": 15777,
+      "body_sha256": "fa18ebe0819938a81d3610809089cbd790989ea37faec9a50fa7b51106488345",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15776,
+          "end_line": 15777,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#declared_algorithms_admit_exactly_the_declared_identity",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#refusals_are_frozen_and_classified"
               ],
               "rationale": null
             }

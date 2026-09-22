@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "7446d0485da873ead15c7f5e70daa411ec4db5c302cfcfb368c52e5947e92c34",
+  "specification_sha256": "aa1e67fdb57999574b06d6a8251f7b36df8e1d5f1c980359ef2fd6968813b618",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15767,
+      "end_line": 15777,
       "rationale": null
     }
   ],
@@ -42904,6 +42904,86 @@
                 "crates/gantry-conformance/tests/data_foundation.rs#request_and_response_values_are_constructed_from_declared_components",
                 "crates/gantry-conformance/tests/data_foundation.rs#request_and_response_refuse_noncanonical_components",
                 "crates/gantry-conformance/tests/data_foundation.rs#data_non_claims_are_closed_and_ordered"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.0-crypto-foundation-scope",
+      "span_start_line": 15768,
+      "span_end_line": 15773,
+      "anchor_line": 15771,
+      "body_start_line": 15772,
+      "body_end_line": 15773,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15772,
+          "end_line": 15773,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_clauses_are_published",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#crypto_surface_declares_the_two_modules"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.1-crypto-algorithm-contract",
+      "span_start_line": 15774,
+      "span_end_line": 15777,
+      "anchor_line": 15775,
+      "body_start_line": 15776,
+      "body_end_line": 15777,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15776,
+          "end_line": 15777,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#declared_algorithms_admit_exactly_the_declared_identity",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#refusals_are_frozen_and_classified"
               ],
               "rationale": null
             }
