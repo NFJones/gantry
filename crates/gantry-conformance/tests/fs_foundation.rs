@@ -371,11 +371,19 @@ fn fs_actions_are_closed_and_carry_recovery_classes() {
     for action in FsAction::ALL {
         assert_eq!(FsAction::from_wire_name(action.wire_name()), Some(action));
         assert_eq!(action.as_str(), action.wire_name());
-        assert_ne!(
-            action.declared_recovery_class(),
-            RecoveryClass::ReadOnly,
-            "no whole-object action is read_only"
-        );
+        if action == FsAction::Read {
+            assert_eq!(
+                action.declared_recovery_class(),
+                RecoveryClass::ReadOnly,
+                "a whole-object read makes no externally visible mutation"
+            );
+        } else {
+            assert_eq!(
+                action.declared_recovery_class(),
+                RecoveryClass::NonIdempotent,
+                "a create, a replace, and a remove may repeat externally"
+            );
+        }
     }
     assert_eq!(FsAction::from_wire_name("append"), None);
     assert_eq!(
@@ -385,11 +393,11 @@ fn fs_actions_are_closed_and_carry_recovery_classes() {
             .collect::<Vec<_>>(),
         [
             RecoveryClass::NonIdempotent,
-            RecoveryClass::Idempotent,
+            RecoveryClass::ReadOnly,
             RecoveryClass::NonIdempotent,
             RecoveryClass::NonIdempotent,
         ],
-        "a read is idempotent and a create, a replace, and a remove are not"
+        "a read is read_only and a create, a replace, and a remove are non_idempotent"
     );
 
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
@@ -400,8 +408,10 @@ fn fs_actions_are_closed_and_carry_recovery_classes() {
         );
     }
     for rule in [
-        "The declared actions are exactly four - create, read, replace, and remove, in that canonical order",
-        "a read is `idempotent`, while a create, a replace, and a remove are `non_idempotent`",
+        "The declared actions are exactly four - create, read, replace, and remove, in that canonical order, which is the declared whole-object lifecycle order and not wire-name order",
+        "a read is `read_only`",
+        "a repeated read observes the same declared object and publishes no second one",
+        "a create, a replace, and a remove are `non_idempotent`",
         "no action declares an implicit root, a default directory, or a search path",
         "declares no partial progress, no octet quantity, no request, no handle, and no resource state",
     ] {

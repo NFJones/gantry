@@ -2,7 +2,7 @@
   "catalog": "gantry.general-purpose-preregistration",
   "major": 1,
   "minor": 0,
-  "specification_revision": "7b5b96d1bb01680590d28475ded8b7b150dcd8ff57ea546ede1e64318a669bb4",
+  "specification_revision": "df74b7726b5033b372b4394180c8b3e08da6596239386dd35f2f691cf60573d9",
   "decision_record_template": [
     "compatibility-owner",
     "evidence-owner",

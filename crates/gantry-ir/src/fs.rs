@@ -435,7 +435,7 @@ fn validate_segments(segments: &[&str], base: u32) -> Result<(), FsError> {
 ///
 /// Each action consumes one path value of `GNT-47.2-filesystem-path-values` and no ambient
 /// location, and each states exactly one recovery class of the action-declaration rule: a read is
-/// `idempotent`, while a create, a replace, and a remove are `non_idempotent`.
+/// `read_only`, while a create, a replace, and a remove are `non_idempotent`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FsAction {
     /// Creates one object at a declared path.
@@ -481,7 +481,7 @@ impl FsAction {
     #[must_use]
     pub const fn declared_recovery_class(self) -> RecoveryClass {
         match self {
-            Self::Read => RecoveryClass::Idempotent,
+            Self::Read => RecoveryClass::ReadOnly,
             Self::Create | Self::Replace | Self::Remove => RecoveryClass::NonIdempotent,
         }
     }

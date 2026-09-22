@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "7b5b96d1bb01680590d28475ded8b7b150dcd8ff57ea546ede1e64318a669bb4",
-  "byte_length": 1248448,
-  "line_count": 16303,
+  "specification_sha256": "df74b7726b5033b372b4394180c8b3e08da6596239386dd35f2f691cf60573d9",
+  "byte_length": 1248769,
+  "line_count": 16306,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "fa2baff73c543c3750de74ae860f70a8968307bc5826bc5043c5210abffb9faf",
+      "sha256": "6e20178f21f42122cc5d1e76d01327d5c744d932e1ddf3f69c0cb00db50609d4",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16303,
-      "sha256": "34667b90316df293866459d916a82b46f15b776d20d1b455aa7a734646ed82aa",
+      "end_line": 16306,
+      "sha256": "4238afa957b615dacb9ca9bd6bbe96edade6f5c7f05afb8b4290d356ad7166ee",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "b18d3ef2d7776f28a040dcd0fbee00ec61a94eaa11797a6abd1fc59212b60a82",
+      "span_sha256": "c03a630766e2c329090a619800c646cc7d0aa4be5cc30eed1b25f98b76bddaad",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "05b5adc933bfe80899f222958c3ff10ee8469e55e90c47fb972bd80c227c38e0",
+      "body_sha256": "03c5d468f1859dd25e5248f43cdbb2b7832c42d97ee3b6c2ff4336863336b926",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44910,12 +44910,12 @@
     {
       "id": "GNT-47.3-filesystem-action-values",
       "span_start_line": 16281,
-      "span_end_line": 16303,
-      "span_sha256": "088b82d59ee50b6aef0cb2e2cb70ee8a08094780908d78886c03b0e377faf027",
+      "span_end_line": 16306,
+      "span_sha256": "d3e545a06ebe770d67ca4eb1c6b134708d732d057a967a53dd7198bda60346cf",
       "anchor_line": 16282,
       "body_start_line": 16283,
-      "body_end_line": 16303,
-      "body_sha256": "676cc4751bb26f08ff8ae7de5e8d4d5ee9002544e99884c6518ec354bf00cdb5",
+      "body_end_line": 16306,
+      "body_sha256": "d26cff71332dde6fe1d0208e8e3172cd3599d5bf39fefbff848e43abfb9c6728",
       "profiles": [
         "analyzer"
       ],
@@ -44927,7 +44927,7 @@
         {
           "key": "clause-001",
           "start_line": 16283,
-          "end_line": 16303,
+          "end_line": 16306,
           "profiles": [
             "analyzer"
           ],
