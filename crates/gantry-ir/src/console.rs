@@ -5,6 +5,8 @@
 //! renderer, and it performs no I/O: every decision is a deterministic function of the declared
 //! standard-library graph it is handed.
 
+use std::fmt;
+
 use crate::generated::RecoveryClass;
 use crate::io::IoOperation;
 use crate::operation::ProgressObservation;
@@ -16,12 +18,13 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 46 clauses implemented by this pure model, in declaration order.
-pub const CONSOLE_CLAUSES: [&str; 5] = [
+pub const CONSOLE_CLAUSES: [&str; 6] = [
     "GNT-46.0-console-foundation-scope",
     "GNT-46.1-console-modules-and-item-rows",
     "GNT-46.2-console-bounded-operations",
     "GNT-46.3-console-operation-recovery-and-accepted-input",
     "GNT-46.4-console-encoding-and-shutdown-settlement",
+    "GNT-46.5-console-terminal-observations",
 ];
 
 /// One declared console operation of `GNT-46.2-console-bounded-operations`.
@@ -233,6 +236,206 @@ impl ConsoleEnvelopeRule {
     }
 }
 
+/// One declared terminal detection fact of `GNT-46.5-console-terminal-observations`.
+///
+/// Detection is an observation and not a capability: it carries no terminal handle, no capability
+/// grant, no capability family, no escape sequence, and no terminal-control authority.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleDetection {
+    /// The console is attached to a terminal and publishes one dimension observation.
+    Attached,
+    /// The console is not attached to a terminal and publishes no dimension observation.
+    NotAttached,
+}
+
+impl ConsoleDetection {
+    /// Every declared detection fact, in canonical order.
+    pub const ALL: [Self; 2] = [Self::Attached, Self::NotAttached];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Attached => "terminal-attached",
+            Self::NotAttached => "terminal-not-attached",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|detection| detection.wire_name() == value)
+    }
+}
+
+/// The largest column or row count one console dimension observation may declare.
+pub const CONSOLE_DIMENSION_BOUND: u32 = 4096;
+
+/// One declared console refusal condition of `GNT-46.5-console-terminal-observations`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleDiagnosticCode {
+    /// A presented terminal observation fact lies outside its declared range.
+    ObservationInconsistent,
+}
+
+impl ConsoleDiagnosticCode {
+    /// Every declared code, in exact wire-name order.
+    pub const ALL: [Self; 1] = [Self::ObservationInconsistent];
+
+    /// Returns the registered diagnostic spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ObservationInconsistent => "console-observation-inconsistent",
+        }
+    }
+}
+
+/// One typed refusal from the console terminal-observation model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ConsoleError {
+    /// A presented dimension count lies outside its declared range.
+    ObservationInconsistent {
+        /// The presented fact's declared name.
+        fact: &'static str,
+        /// The observed count exactly as presented.
+        observed: u32,
+        /// The declared bound that fact admits.
+        maximum: u32,
+    },
+}
+
+impl ConsoleError {
+    /// Returns the registered diagnostic code of this refusal.
+    #[must_use]
+    pub const fn code(&self) -> ConsoleDiagnosticCode {
+        match self {
+            Self::ObservationInconsistent { .. } => ConsoleDiagnosticCode::ObservationInconsistent,
+        }
+    }
+
+    /// Returns the declared name of the presented fact.
+    #[must_use]
+    pub const fn fact(&self) -> &'static str {
+        match self {
+            Self::ObservationInconsistent { fact, .. } => fact,
+        }
+    }
+
+    /// Returns the observed count exactly as presented.
+    #[must_use]
+    pub const fn observed(&self) -> u32 {
+        match self {
+            Self::ObservationInconsistent { observed, .. } => *observed,
+        }
+    }
+
+    /// Returns the declared bound the fact admits.
+    #[must_use]
+    pub const fn maximum(&self) -> u32 {
+        match self {
+            Self::ObservationInconsistent { maximum, .. } => *maximum,
+        }
+    }
+}
+
+impl fmt::Display for ConsoleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ObservationInconsistent {
+                fact,
+                observed,
+                maximum,
+            } => write!(
+                formatter,
+                "the observed {fact} count {observed} is outside 1..={maximum}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ConsoleError {}
+
+/// One admitted console dimension observation of `GNT-46.5-console-terminal-observations`:
+/// a column count and a row count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConsoleDimensions {
+    columns: u32,
+    rows: u32,
+}
+
+impl ConsoleDimensions {
+    /// Admits one dimension observation whose two counts are inside the declared bound.
+    ///
+    /// A count of zero or a count beyond [`CONSOLE_DIMENSION_BOUND`] is refused under
+    /// `console-observation-inconsistent`, naming the observed count and its declared bound,
+    /// rather than clamped or defaulted.
+    pub fn new(columns: u32, rows: u32) -> Result<Self, ConsoleError> {
+        for (fact, observed) in [("column", columns), ("row", rows)] {
+            if observed == 0 || observed > CONSOLE_DIMENSION_BOUND {
+                return Err(ConsoleError::ObservationInconsistent {
+                    fact,
+                    observed,
+                    maximum: CONSOLE_DIMENSION_BOUND,
+                });
+            }
+        }
+        Ok(Self { columns, rows })
+    }
+
+    /// Returns the observed column count.
+    #[must_use]
+    pub const fn columns(self) -> u32 {
+        self.columns
+    }
+
+    /// Returns the observed row count.
+    #[must_use]
+    pub const fn rows(self) -> u32 {
+        self.rows
+    }
+}
+
+/// One declared console terminal report of `GNT-46.5-console-terminal-observations`.
+///
+/// A not-attached console publishes no dimension observation, and the [`Self::detection`] and
+/// [`Self::dimensions`] accessors decide the observation from the report alone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConsoleTerminalReport {
+    /// The console is attached to a terminal and publishes one dimension observation.
+    Attached(ConsoleDimensions),
+    /// The console is not attached to a terminal and publishes no dimension observation.
+    NotAttached,
+}
+
+impl ConsoleTerminalReport {
+    /// Returns the declared detection fact of this report.
+    #[must_use]
+    pub const fn detection(self) -> ConsoleDetection {
+        match self {
+            Self::Attached(_) => ConsoleDetection::Attached,
+            Self::NotAttached => ConsoleDetection::NotAttached,
+        }
+    }
+
+    /// Returns the dimension observation, when the console is attached.
+    #[must_use]
+    pub const fn dimensions(self) -> Option<ConsoleDimensions> {
+        match self {
+            Self::Attached(dimensions) => Some(dimensions),
+            Self::NotAttached => None,
+        }
+    }
+}
+
 /// The declared semantic mode of every `std.console` item row.
 pub const CONSOLE_SURFACE_MODES: [SemanticMode; 1] = [SemanticMode::Application];
 
@@ -300,6 +503,7 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
         clauses: &[
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
+            "GNT-46.5-console-terminal-observations",
         ],
     },
 ];

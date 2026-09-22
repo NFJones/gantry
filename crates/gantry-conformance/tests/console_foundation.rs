@@ -10,10 +10,12 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::generated::RecoveryClass;
 use gantry::ir::{
-    CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_OPERATION_FACTS, CONSOLE_SURFACE_MODES,
-    CONSOLE_SURFACE_TARGETS, ConsoleEnvelopeRule, ConsoleOperation, IoOperation, IoOutcome,
-    IoRequest, NameClass, PackageFamily, Prelude, ProgressObservation, StabilityTier, StdGraph,
-    StdItem, StdPackage, StdlibDiagnosticCode, admit_console_surface, declare_console_surface,
+    CONSOLE_CLAUSES, CONSOLE_DIMENSION_BOUND, CONSOLE_ITEMS, CONSOLE_OPERATION_FACTS,
+    CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS, ConsoleDetection, ConsoleDiagnosticCode,
+    ConsoleDimensions, ConsoleEnvelopeRule, ConsoleOperation, ConsoleTerminalReport, IoOperation,
+    IoOutcome, IoRequest, NameClass, PackageFamily, Prelude, ProgressObservation, StabilityTier,
+    StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_console_surface,
+    declare_console_surface,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -41,6 +43,7 @@ fn console_contract_clauses_and_scope_are_published() {
             "GNT-46.2-console-bounded-operations",
             "GNT-46.3-console-operation-recovery-and-accepted-input",
             "GNT-46.4-console-encoding-and-shutdown-settlement",
+            "GNT-46.5-console-terminal-observations",
         ]
     );
     assert_eq!(CONSOLE_SURFACE_MODES, [SemanticMode::Application]);
@@ -83,6 +86,11 @@ fn console_module_rows_are_closed_and_canonical() {
                 "GNT-46.2-console-bounded-operations",
                 "GNT-46.3-console-operation-recovery-and-accepted-input",
                 "GNT-46.4-console-encoding-and-shutdown-settlement",
+            ],
+            "std.console::terminal" => &[
+                "GNT-46.0-console-foundation-scope",
+                "GNT-46.1-console-modules-and-item-rows",
+                "GNT-46.5-console-terminal-observations",
             ],
             _ => &[
                 "GNT-46.0-console-foundation-scope",
@@ -387,6 +395,89 @@ fn console_envelope_rules_are_closed_and_canonical() {
         "no console write, read, or flush grants terminal-control authority, terminal control stays separately authorized",
         "not a second shutdown facility, and shutdown ownership rests with the owner that granted the access",
         "whose completed observation is exactly the `committed-progress` of `GNT-29.2-reader-writer-seek-progress`",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn console_terminal_observations_and_control_boundary_are_declared() {
+    assert_eq!(
+        ConsoleDetection::ALL,
+        [ConsoleDetection::Attached, ConsoleDetection::NotAttached]
+    );
+    let spellings = ConsoleDetection::ALL
+        .into_iter()
+        .map(ConsoleDetection::wire_name)
+        .collect::<Vec<_>>();
+    assert_eq!(spellings, ["terminal-attached", "terminal-not-attached"]);
+    for detection in ConsoleDetection::ALL {
+        assert_eq!(
+            ConsoleDetection::from_wire_name(detection.wire_name()),
+            Some(detection)
+        );
+        assert_eq!(detection.as_str(), detection.wire_name());
+    }
+    assert_eq!(ConsoleDetection::from_wire_name("terminal-unknown"), None);
+
+    assert_eq!(CONSOLE_DIMENSION_BOUND, 4096);
+    assert_eq!(
+        ConsoleDiagnosticCode::ALL,
+        [ConsoleDiagnosticCode::ObservationInconsistent]
+    );
+    assert_eq!(
+        ConsoleDiagnosticCode::ObservationInconsistent.as_str(),
+        "console-observation-inconsistent"
+    );
+
+    let admitted = ConsoleDimensions::new(80, 24)
+        .unwrap_or_else(|error| panic!("an 80 by 24 observation is admissible: {error}"));
+    assert_eq!(admitted.columns(), 80);
+    assert_eq!(admitted.rows(), 24);
+    // A count outside the declared bound is refused with its fact, observed value, and bound.
+    for (columns, rows) in [
+        (0, 24),
+        (80, 0),
+        (CONSOLE_DIMENSION_BOUND + 1, 24),
+        (80, CONSOLE_DIMENSION_BOUND + 1),
+    ] {
+        let error = ConsoleDimensions::new(columns, rows)
+            .err()
+            .unwrap_or_else(|| panic!("the {columns} by {rows} observation must be refused"));
+        assert_eq!(error.code(), ConsoleDiagnosticCode::ObservationInconsistent);
+        assert_eq!(error.observed(), if columns == 80 { rows } else { columns });
+        assert_eq!(error.maximum(), CONSOLE_DIMENSION_BOUND);
+        assert!(matches!(error.fact(), "column" | "row"));
+    }
+
+    let attached = ConsoleTerminalReport::Attached(admitted);
+    assert_eq!(attached.detection(), ConsoleDetection::Attached);
+    assert_eq!(attached.dimensions(), Some(admitted));
+    assert_eq!(
+        ConsoleTerminalReport::NotAttached.detection(),
+        ConsoleDetection::NotAttached
+    );
+    assert_eq!(
+        ConsoleTerminalReport::NotAttached.dimensions(),
+        None,
+        "a not-attached console publishes no dimension observation"
+    );
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in CONSOLE_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "spelled `terminal-attached` and `terminal-not-attached`",
+        "a count outside that range is refused under the frozen console diagnostic `console-observation-inconsistent`",
+        "consumes no admitted `std.io` request",
+        "that module row stays a declared name without a published contract until",
     ] {
         assert!(
             specification.contains(rule),

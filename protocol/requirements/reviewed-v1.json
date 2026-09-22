@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "2daf79d7b92d9792bc7b62228d01bdfb844c7800c1becb11738bdfa219e4c5c3",
+  "specification_sha256": "c31738787778d69c8f57d3b0f6285c9d48b29b3891ae7c5aaae34592f5c8418d",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16155,
+      "end_line": 16194,
       "rationale": null
     }
   ],
@@ -43503,6 +43503,45 @@
               "rationale": null,
               "evidence": [
                 "crates/gantry-conformance/tests/console_foundation.rs#console_envelope_rules_are_closed_and_canonical"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-46.5-console-terminal-observations",
+      "span_start_line": 16156,
+      "span_end_line": 16194,
+      "anchor_line": 16157,
+      "body_start_line": 16158,
+      "body_end_line": 16194,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16158,
+          "end_line": 16194,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/console_foundation.rs#console_terminal_observations_and_control_boundary_are_declared"
               ]
             }
           ]

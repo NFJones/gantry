@@ -812,7 +812,7 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
-| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, and the common I/O foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact`; `GNT-46.0-console-foundation-scope` through `GNT-46.4-console-encoding-and-shutdown-settlement` |
+| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, and the common I/O foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact`; `GNT-46.0-console-foundation-scope` through `GNT-46.5-console-terminal-observations` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -16153,3 +16153,42 @@ cancellation facility, quota, charge, buffer, streaming or backpressure contract
 `GNT-45.4-io-backpressure-fact`, schema, recovery, durability, boundary encoding, lowering, machine
 representation, or family behavior, no change to any other clause of this section or of Sections 20,
 29, 41, or 45, and it claims no performance, storage layout, or physical representation.
+
+<a id="GNT-46.5-console-terminal-observations"></a>
+
+**[GNT-46.5-console-terminal-observations] Terminal observations and the control boundary.** This
+clause publishes the terminal observation vocabulary of the `std.console::terminal` module declared
+by `GNT-46.1-console-modules-and-item-rows` and fixes the boundary of terminal control. The declared
+terminal detection facts are exactly two — attached and not attached, in that canonical order,
+spelled `terminal-attached` and `terminal-not-attached` — and the model's `ConsoleDetection` and its
+`ConsoleDetection::ALL` publish them, so an undeclared fact spelling is refused rather than inferred,
+substituted, or dropped. A console attached to a terminal publishes `terminal-attached` and one
+dimension observation; a console that is not attached publishes `terminal-not-attached` and no
+dimension observation, and a dimension observation presented for a not-attached console is refused
+rather than defaulted. A dimension observation declares exactly two counts — the column count and
+the row count, in that canonical order — and the model's `ConsoleDimensions` publishes them: each
+count is at least one and at most `CONSOLE_DIMENSION_BOUND`, and a count outside that range is
+refused under the frozen console diagnostic `console-observation-inconsistent`, naming the observed
+count and its declared bound, before any observation is admitted. The model's
+`ConsoleTerminalReport` publishes the two declared reports, and its `detection` and `dimensions`
+accessors decide the observation from the report alone, so no report carries a dimension
+observation for a not-attached console.
+
+A terminal observation is an observation and not a capability: it carries no terminal handle, no
+capability grant, no capability family, no escape sequence, no terminal-control authority, and no
+host-specific detail in the portable envelope of `GNT-29.4-console-contract`, and it neither widens
+nor restates that contract. A terminal observation is not an operation of
+`GNT-46.2-console-bounded-operations`: it consumes no admitted `std.io` request, publishes no
+observation of the `GNT-45.3-io-progress-derivation` derivation, declares no recovery class, and is
+never retried, replayed, or deduplicated. Terminal control through the `std.console::control` module
+declared by `GNT-46.1-console-modules-and-item-rows` remains separately authorized and outside this
+section: no console read, write, flush, detection, or dimension observation grants terminal-control
+authority, this section publishes no control operation, control sequence, escape spelling, or
+control capability, and that module row stays a declared name without a published contract until
+the owner that fixes terminal-control authority publishes one. This clause publishes the terminal
+observation vocabulary, its one refusal, and the control boundary only: it publishes no descriptor,
+terminal handle, terminal capability, capability family, adapter, host trait, operation, request,
+progress observation, cancellation safe point, quota, charge, buffer, streaming or backpressure
+contract, schema, recovery, durability, boundary encoding, lowering, machine representation, or
+family behavior, no change to any other clause of this section or of Sections 20, 29, or 45, and it
+claims no performance, storage layout, or physical representation.

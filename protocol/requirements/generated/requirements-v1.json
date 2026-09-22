@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "2daf79d7b92d9792bc7b62228d01bdfb844c7800c1becb11738bdfa219e4c5c3",
-  "byte_length": 1236046,
-  "line_count": 16155,
+  "specification_sha256": "c31738787778d69c8f57d3b0f6285c9d48b29b3891ae7c5aaae34592f5c8418d",
+  "byte_length": 1239390,
+  "line_count": 16194,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "44a469cfe681676249076f41c9911848423bf832ad43d1fee4cf3c30d1c835c4",
+      "sha256": "931453e067aca067e0c31dbb14637c95ed623d6d7de29d049397fa64ccf16e8e",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16155,
-      "sha256": "9c5fd76fea9e0d4941a44e8eb2644061dcc36564299e628592fc63399bf224c5",
+      "end_line": 16194,
+      "sha256": "fb4010bce894d3390505495a8c8c5f16ab403aed65ac3867a12b563b73197750",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "7d00ae87383b69222eee9978004a7ea4d075ce1c310751416153284e4a8c3926",
+      "span_sha256": "4aced1639e4cd7ef86f482becc0025edb37eefebbf939359b8fa380ab5fa5efb",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "e9356c16aca848d69a52134af80f87adea62acc92aa6dba7b30c3992306bed8b",
+      "body_sha256": "0629691979a31f3556b7340a9383b7fcd973f6474feccbbde300586758a17342",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44734,6 +44734,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/console_foundation.rs#console_envelope_rules_are_closed_and_canonical"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-46.5-console-terminal-observations",
+      "span_start_line": 16156,
+      "span_end_line": 16194,
+      "span_sha256": "26eaa95e1a4e5d3bae5db438dc15b5ce7b60fa08fd7b6aacb18df64f9d254eb5",
+      "anchor_line": 16157,
+      "body_start_line": 16158,
+      "body_end_line": 16194,
+      "body_sha256": "29c6fb935343d5a62b4a2e655c6e08f43a376a65cd222dcc53f71842fb397832",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16158,
+          "end_line": 16194,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/console_foundation.rs#console_terminal_observations_and_control_boundary_are_declared"
               ],
               "rationale": null
             }
