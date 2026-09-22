@@ -9,13 +9,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FS_CLAUSES, FS_ITEMS, FS_PARTIAL_PROGRESS_OPERATIONS, FS_PATH_SEGMENT_BOUND,
-    FS_REFUSAL_CONDITIONS, FS_REPLACEMENT_ACTION, FS_REPLACEMENT_OUTCOMES, FS_RESOLUTION_COUNT,
-    FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError, FsPath,
-    FsRefusalCondition, FsReplacementOutcome, FsResourceOperation, FsTargetState, IoOperation,
-    NameClass, PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState, StabilityTier,
-    StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface,
-    fs_traversal_order, generated::RecoveryClass,
+    FS_CLAUSES, FS_DURABLE_CARRIER, FS_ITEMS, FS_PARTIAL_PROGRESS_OPERATIONS,
+    FS_PATH_SEGMENT_BOUND, FS_REFUSAL_CONDITIONS, FS_REPLACEMENT_ACTION, FS_REPLACEMENT_OUTCOMES,
+    FS_RESOLUTION_COUNT, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError,
+    FsPath, FsRefusalCondition, FsReplacementOutcome, FsResourceOperation, FsTargetState,
+    IoOperation, NameClass, PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState,
+    StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface,
+    declare_fs_surface, fs_durable_carrier_is_admissible, fs_traversal_order,
+    generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -66,6 +67,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.11-filesystem-case-identity",
             "GNT-47.12-filesystem-operation-refusals",
             "GNT-47.13-filesystem-partial-progress-and-settlement",
+            "GNT-47.14-filesystem-durable-carriers",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -131,6 +133,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.10-filesystem-declared-limits",
                 "GNT-47.12-filesystem-operation-refusals",
                 "GNT-47.13-filesystem-partial-progress-and-settlement",
+                "GNT-47.14-filesystem-durable-carriers",
             ],
             other => panic!("the undeclared module row `{other}` must not exist"),
         };
@@ -987,6 +990,7 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
             "ALL",
             "ALL",
             "FS_CLAUSES",
+            "FS_DURABLE_CARRIER",
             "FS_ITEMS",
             "FS_PARTIAL_PROGRESS_OPERATIONS",
             "FS_PATH_SEGMENT_BOUND",
@@ -1235,6 +1239,50 @@ fn fs_partial_progress_is_declared_only_for_read_write_and_seek() {
         "this clause declares no action-side partial-progress observation, no action-side remainder, and no action-side continuation",
         "an interrupted or cancelled request is never published here as a progress observation, as a short transfer, or as a remainder a later operation completes",
         "no second request contract, no second octet bound, no second progress vocabulary",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_durable_carrier_is_the_reconstruction_record_only() {
+    assert_eq!(FS_DURABLE_CARRIER, ResourceCarrier::ReconstructionRecord);
+    assert_eq!(
+        ResourceCarrier::ALL.len(),
+        3,
+        "the carrier vocabulary is closed over exactly three members"
+    );
+    let admissible = ResourceCarrier::ALL
+        .into_iter()
+        .filter(|carrier| fs_durable_carrier_is_admissible(*carrier))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        admissible,
+        [ResourceCarrier::ReconstructionRecord],
+        "exactly the declared reconstruction record may carry an instance of this section"
+    );
+    for carrier in [
+        ResourceCarrier::OrdinaryDurableState,
+        ResourceCarrier::OrdinarySerialization,
+    ] {
+        assert!(
+            !fs_durable_carrier_is_admissible(carrier),
+            "an ordinary carrier carries no reconstruction contract"
+        );
+    }
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for rule in [
+        "This clause publishes which durable carrier may carry the declared facts of an admitted instance of this section",
+        "`ResourceCarrier` publishes the closed three-member carrier vocabulary - ordinary serialization, ordinary durable state, and the declared durable reconstruction record",
+        "which the model constant `FS_DURABLE_CARRIER` and the model predicate `fs_durable_carrier_is_admissible` publish",
+        "a durable record presenting an instance, a descriptor, a handle, or a path-resolving state under either carrier is refused rather than reconstructed, decoded, or repaired",
+        "Reconstruction reads exactly the facts `GNT-28.7-durable-resource-reconstruction` declares",
+        "this clause declares no second reconstruction model, no second record shape, no journal schema, and no runtime recovery",
+        "a record that names a stale owner generation, or that presents a fact this section does not declare, is refused rather than reinterpreted",
     ] {
         assert!(
             specification.contains(rule),

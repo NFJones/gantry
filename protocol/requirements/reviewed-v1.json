@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "ee67df7521538b9c14e4f64e92593795a242c7dcda4e1f87ffe4269fa87cb287",
+  "specification_sha256": "ee2403de357a411c03cf9069adf507bd6034cb62cb526fcfcf6a4b9dd0f6ecf6",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16718,
+      "end_line": 16747,
       "rationale": null
     }
   ],
@@ -44090,6 +44090,45 @@
               "rationale": null,
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_partial_progress_is_declared_only_for_read_write_and_seek"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.14-filesystem-durable-carriers",
+      "span_start_line": 16719,
+      "span_end_line": 16747,
+      "anchor_line": 16720,
+      "body_start_line": 16721,
+      "body_end_line": 16747,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16721,
+          "end_line": 16747,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_durable_carrier_is_the_reconstruction_record_only"
               ]
             }
           ]

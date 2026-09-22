@@ -16,6 +16,7 @@ use std::fmt;
 use crate::generated::RecoveryClass;
 use crate::io::IoOperation;
 use crate::package::TargetKind;
+use crate::resource::ResourceCarrier;
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
     StdlibError,
@@ -23,7 +24,7 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 14] = [
+pub const FS_CLAUSES: [&str; 15] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
@@ -38,6 +39,7 @@ pub const FS_CLAUSES: [&str; 14] = [
     "GNT-47.11-filesystem-case-identity",
     "GNT-47.12-filesystem-operation-refusals",
     "GNT-47.13-filesystem-partial-progress-and-settlement",
+    "GNT-47.14-filesystem-durable-carriers",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -108,6 +110,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.10-filesystem-declared-limits",
             "GNT-47.12-filesystem-operation-refusals",
             "GNT-47.13-filesystem-partial-progress-and-settlement",
+            "GNT-47.14-filesystem-durable-carriers",
         ],
     },
 ];
@@ -782,6 +785,20 @@ pub const FS_PARTIAL_PROGRESS_OPERATIONS: [FsResourceOperation; 3] = [
     FsResourceOperation::Write,
     FsResourceOperation::Seek,
 ];
+
+/// The one durable carrier admissible for an admitted instance of this section
+/// (`GNT-47.14-filesystem-durable-carriers`): the declared durable reconstruction record.
+pub const FS_DURABLE_CARRIER: ResourceCarrier = ResourceCarrier::ReconstructionRecord;
+
+/// Returns whether `carrier` may carry the declared facts of an admitted instance of this section.
+///
+/// Exactly the declared durable reconstruction record of
+/// `GNT-28.7-durable-resource-reconstruction` is admissible; ordinary serialization and ordinary
+/// durable state carry no reconstruction contract and are refused rather than decoded or repaired.
+#[must_use]
+pub const fn fs_durable_carrier_is_admissible(carrier: ResourceCarrier) -> bool {
+    matches!(carrier, ResourceCarrier::ReconstructionRecord)
+}
 
 /// Returns the declared canonical traversal order of `names`.
 ///

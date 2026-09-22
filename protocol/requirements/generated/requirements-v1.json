@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "ee67df7521538b9c14e4f64e92593795a242c7dcda4e1f87ffe4269fa87cb287",
-  "byte_length": 1281530,
-  "line_count": 16718,
+  "specification_sha256": "ee2403de357a411c03cf9069adf507bd6034cb62cb526fcfcf6a4b9dd0f6ecf6",
+  "byte_length": 1283713,
+  "line_count": 16747,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "a8e648a685a9aa30bc051405f94b58975e29ea55627220f51a8da9057a4a717e",
+      "sha256": "5f66fd8be847c9c3020deac3f1d253841e99dbf197eb8efc98279d6d1890e21d",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16718,
-      "sha256": "c736409d07c0fa0b206b150f39aba7ead711784d8aa820670b62d99ff94e9aee",
+      "end_line": 16747,
+      "sha256": "a39ed7b334d697c84140627f14e666465ef030727cc90f430b316a8dd2a780be",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "770852b24a76292ab7b91f96cfdc67d606e04d6ddccbf994c82322a975b2024a",
+      "span_sha256": "6e3de1d510b99f2066291b645f6d0f5aa6beafbd8f9f014ef450d8fe059f2c4f",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "a40983ec574fcfae4d0b0b5336db94444b71f89004533cb2f2d3f8e5953b34a8",
+      "body_sha256": "a98c5469b6b5b0a38b00d1f57cdf91d850b3eb4cefd03ad54a64ea6d43ddd0be",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45351,6 +45351,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_partial_progress_is_declared_only_for_read_write_and_seek"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.14-filesystem-durable-carriers",
+      "span_start_line": 16719,
+      "span_end_line": 16747,
+      "span_sha256": "5a0bf370a291bae7e0e8f2c965784228cf7e53501e12d02b6a643af25cb65a67",
+      "anchor_line": 16720,
+      "body_start_line": 16721,
+      "body_end_line": 16747,
+      "body_sha256": "e22b71f0a4fb28f1e8fb59c5e723dd9a9138e7e3d7c94d1d2739549e1797493c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16721,
+          "end_line": 16747,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_durable_carrier_is_the_reconstruction_record_only"
               ],
               "rationale": null
             }

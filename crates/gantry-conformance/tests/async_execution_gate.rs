@@ -45,75 +45,75 @@ const ARTIFACTS: [(&str, &str); 19] = [
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "527fede758cd75c7faf3c07916c88bc6dd4b7a797d313b79cf8e1759e5113354",
+        "f445a4fc1b18621e1c2071625d8df9700c33cb4d9a614e742df174daacbf8b75",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "d8db867b7987aa7c717e3199f6ddb23c7d5bd8123b76ba37967d1baaf44427ab",
+        "92016d2c0ae52e5c16151f3cce78f7ff06efe7816624fbcf038ce41f6e2a2f48",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
-        "7e249d6bdf6bf45e30e0aed0b4e416ce50900645fdd37b53ed8698961123ab5f",
+        "940fb3bc7077320153348b089e07322b650e4636f711aaa2493ea3d4b1c3f445",
     ),
     (
         "protocol/conformance/automatic-durable-root-v1.json",
-        "34a183841826df9a71992c43debdc4b6110af2d4b98e5d82a49f0bb14fe0f8b2",
+        "18c1b8690ef37bb441ea8d0aee6f19e9ee6077e67bd9a635f71d55837920a770",
     ),
     (
         "protocol/conformance/automatic-root-start-v1.json",
-        "e8166e8e1292dd2391190fb219d66f3c5a46a37b674d32e2ebc25a7c6d481139",
+        "6f028cb98971930773396262c0cd36b0f903abe8113df2bbe2b865744e30b0a1",
     ),
     (
         "protocol/conformance/durable-recovery-v1.json",
-        "cda87e7a8ce3e6ce36655acf416d0ad6f24ac1f6869b2f9831ca3ee9d2cb2ec7",
+        "88e60d689e3773cabf96e27d0b4cd7bf366dca6d41c93a3dc3f528847bd78dd5",
     ),
     (
         "protocol/conformance/durable-start-v1.json",
-        "0c9cf385508efc4591b3feb338a3ad64ffdf90414f66b4af5f08c0ca9fefabac",
+        "43b2324e6ee68c29d29bdb05286558db0044979c76bd027909b1f9bc824d225d",
     ),
     (
         "protocol/conformance/execution-api-v1.json",
-        "452e6ef37b3d815cae47538379e2e9de23c1835c9a6978919de57b72f357d592",
+        "df8b6137187b7a1b57fe580c34042f7d3357fb6de57d1a6a1a2f38d0341ad4b1",
     ),
     (
         "protocol/conformance/execution-coordinator-v1.json",
-        "be2c02f7046eb9df0ab86afc714ccf3ddebf0ef43a348bed414064037e424fd9",
+        "45efd49e05f514631b3282c04bdb6023bd23d59f1d155c8e28607583df623ab2",
     ),
     (
         "protocol/conformance/executor-services-v1.json",
-        "f07e15353999f81b6b27becb10c2a83c40cfb55d695a48f6f39cb5e10fd87cfd",
+        "e5260923615b5b373a1f974a6a467f8738c20fbd3f9e689e75214dcd7f67bb8d",
     ),
     (
         "protocol/conformance/interpreter-lifecycle-v1.json",
-        "8fc562768563846b178b2da710b524ee0f56f823ce2ba7c8dcf69965be54f5cf",
+        "86fb590622d88e4cc440c9556778791835193c592b02da5e6f0497aa96147858",
     ),
     (
         "protocol/conformance/interpreter-ownership-v1.json",
-        "bc1f6b41e6101b19d1a78d5022163cfa19c67761713c79da9645d9d9df5fefab",
+        "4c62a4b518d39dc5cc6d14bdca1168a4e8da8b70e6b8931e6f32ec3de9fb02b0",
     ),
     (
         "protocol/conformance/revent-ownership-v1.json",
-        "d07f9fff02c3f549d506c33619cf142f74a92389b1795db7c6c2429ea89a3e46",
+        "428a507c1ed713dd9340644bf1a417c5e3b2c9634136df25b8dae259cc413e75",
     ),
     (
         "protocol/conformance/runtime-sessions-v1.json",
-        "308524e93228989c210fd48486e232d198fd8d8184656eda70c81a3328139752",
+        "1d5e46e5ca2995b842a38f0943dda79e5bc034f46b16f212baf48a214e7809b1",
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "0c54c68a6f29caac7354268c3b963b0a3bd44a7b47459b031a1762f11c06ef21",
+        "91c39354b55ba6a370cb39f1ad8cb7743cc30bcaa402684c9ae69523c2df376b",
     ),
     (
         "protocol/conformance/task-driver-v1.json",
-        "358567959636951a0e1ee22a4c3d31350cafd11aecbece36fc166c118aa561e7",
+        "0d2b969048ded8b66f038eb9c1d0103b3b06da32e0a9a46cf58d6e06393e8b74",
     ),
     (
         "protocol/conformance/task-supervision-v1.json",
-        "8fdd640c95a934880ed52589eef9038068d17884a811a47532d8717e9ca2b475",
+        "eafb21688f42f25850fbb78ddc0ce9a02f2166ca9c2400d5a3c42433f450d4a2",
     ),
     (
         "protocol/conformance/tokio-executor-v1.json",
-        "83a97a78f00bb642726df4d27e55177e93fb596ac56974b5f540c84f24a11426",
+        "5fd9d4f3b37fe45ff2870395cba10da0d5442d68e89d581764dbb479ea19c020",
     ),
 ];
 const EVIDENCE: [(&str, &str); 21] = [
