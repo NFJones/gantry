@@ -233,6 +233,11 @@ pub enum ResourceRegistryRefusal {
 pub enum ResourceAdmissionRefusal {
     /// The machine holds no pending operation whose decoded metadata declares an action.
     NoPendingDeclaredOperation,
+    /// The presented declaration is not a live-resource operation.
+    NotLiveResource,
+    /// The presented declaration names another operation or generation than this machine's
+    /// pending subject.
+    ForeignDeclaration,
     /// The resource registry refused the admission.
     Registry(ResourceRegistryRefusal),
 }

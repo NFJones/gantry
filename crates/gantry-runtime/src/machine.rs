@@ -16,9 +16,9 @@ use gantry_core::value::{
 use gantry_ir::generated::Effect;
 use gantry_ir::{
     AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison, DurableResourceRecord,
-    ExecutableOperation, Instruction, InstructionKind, LoopPhase, MachineProgram, OwnershipClass,
-    Parameter, Primitive, Projection, ReceiverMode, ReceiverSource, ResourceCarrier,
-    StructuralPosition, TypeDescriptor,
+    ExecutableOperation, Instruction, InstructionKind, LoopPhase, MachineProgram, OperationAbi,
+    OperationKind, OwnershipClass, Parameter, Primitive, Projection, ReceiverMode, ReceiverSource,
+    ResourceCarrier, StructuralPosition, TypeDescriptor,
 };
 #[cfg(feature = "concurrent")]
 use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
@@ -2244,18 +2244,30 @@ impl Machine {
     /// operation subject.
     ///
     /// The subject is derived from the machine's own pending occurrence, so an operation whose
-    /// decoded metadata declares no action admits nothing. Live accounts are never durable values:
+    /// decoded metadata declares no action admits nothing. The presented Section 20 declaration
+    /// must be a live-resource operation and must name exactly this machine's pending operation
+    /// and generation — a value action, a protected operation, or a declaration of another site or
+    /// generation is refused before any registry mutation. Live accounts are never durable values:
     /// a recovered machine reconstructs them through this same boundary from their declared
     /// reconstruction records rather than restoring them from a checkpoint.
     pub fn admit_pending_resource(
         &self,
         resources: &mut ResourceRegistry,
+        declaration: &OperationAbi,
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<(), ResourceAdmissionRefusal> {
         let subject = self
             .pending_resource_subject()
             .ok_or(ResourceAdmissionRefusal::NoPendingDeclaredOperation)?;
+        if declaration.kind() != OperationKind::LiveResource {
+            return Err(ResourceAdmissionRefusal::NotLiveResource);
+        }
+        if declaration.operation() != subject.operation()
+            || declaration.generation() != subject.generation()
+        {
+            return Err(ResourceAdmissionRefusal::ForeignDeclaration);
+        }
         resources
             .admit(subject, carrier, record)
             .map_err(ResourceAdmissionRefusal::Registry)?;
