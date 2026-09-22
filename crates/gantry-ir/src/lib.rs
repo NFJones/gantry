@@ -303,12 +303,13 @@ pub use signature::{
 };
 // The Section 42 codec foundation: the declared `std.codec` family with its five modules, the
 // versioned codec identity and its exact admission rule, the frozen refusal vocabulary with its
-// codec categories of `GNT-29.9-codec-contract`, the canonical hex codec of `GNT-42.2-hex-codec`,
-// and the separation between application codecs and the sealed canonical boundary and durable
-// recovery projections.
+// codec categories of `GNT-29.9-codec-contract`, the canonical hex and base64 codecs of
+// `GNT-42.2-hex-codec` and `GNT-42.3-base64-codec`, and the separation between application codecs
+// and the sealed canonical boundary and durable recovery projections.
 pub use codec::{
-    CODEC_CLAUSES, CODEC_ITEMS, CodecCategory, CodecDiagnosticCode, CodecError, CodecItemRow,
-    CodecKind, CodecVersion, DECLARED_CODEC_VERSION, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND,
+    BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, CODEC_CLAUSES, CODEC_ITEMS, CodecCategory,
+    CodecDiagnosticCode, CodecError, CodecItemRow, CodecKind, CodecVersion, DECLARED_CODEC_VERSION,
+    HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, base64_decode, base64_encode,
     canonical_codec_hierarchy, declare_codec_surface, hex_decode, hex_encode,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised

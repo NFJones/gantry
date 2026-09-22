@@ -1,23 +1,25 @@
 //! The codec foundation of `GNT-42.0-codec-foundation-scope`,
-//! `GNT-42.1-versioned-codec-contract`, and `GNT-42.2-hex-codec`: the declared `std.codec`
-//! family with its five modules, the versioned codec identity and its exact admission rule, the
-//! frozen refusal vocabulary with its codec categories of `GNT-29.9-codec-contract`, the
-//! canonical hex codec, and the separation between application codecs and the sealed canonical
-//! boundary and durable recovery projections.
+//! `GNT-42.1-versioned-codec-contract`, `GNT-42.2-hex-codec`, and `GNT-42.3-base64-codec`: the
+//! declared `std.codec` family with its five modules, the versioned codec identity and its exact
+//! admission rule, the frozen refusal vocabulary with its codec categories of
+//! `GNT-29.9-codec-contract`, the canonical hex and base64 codecs, and the separation between
+//! application codecs and the sealed canonical boundary and durable recovery projections.
 //!
 //! The model is pure: it consumes no host codec library, host encoding facility, ambient
 //! registry, platform behavior, timing, or global mutable state, and the only concrete codec
-//! behavior it declares is the hex codec's, which `GNT-42.2-hex-codec` publishes.
+//! behavior it declares is that of the hex and base64 codecs, which `GNT-42.2-hex-codec` and
+//! `GNT-42.3-base64-codec` publish.
 
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
 };
 
 /// The declared clauses of Section 42, in specification order.
-pub const CODEC_CLAUSES: [&str; 3] = [
+pub const CODEC_CLAUSES: [&str; 4] = [
     "GNT-42.0-codec-foundation-scope",
     "GNT-42.1-versioned-codec-contract",
     "GNT-42.2-hex-codec",
+    "GNT-42.3-base64-codec",
 ];
 
 /// The one declared version of every codec in this revision
@@ -368,6 +370,7 @@ pub const CODEC_ITEMS: [CodecItemRow; 5] = [
         clauses: &[
             "GNT-42.0-codec-foundation-scope",
             "GNT-42.1-versioned-codec-contract",
+            "GNT-42.3-base64-codec",
         ],
     },
     CodecItemRow {
@@ -555,5 +558,202 @@ fn hex_digit(value: u8) -> char {
         char::from(b'0' + value)
     } else {
         char::from(b'a' + value - 10)
+    }
+}
+
+/// The declared value bound of `GNT-42.3-base64-codec`: the largest octet count a base64 value
+/// holds and a base64 encode admits.
+pub const BASE64_VALUE_OCTET_BOUND: usize = 65_536;
+
+/// The declared text bound of `GNT-42.3-base64-codec`: four symbols for each complete three-octet
+/// quantum plus the canonical final group, which is four times one third of the declared value
+/// bound rounded up.
+pub const BASE64_TEXT_OCTET_BOUND: usize = 4 * (BASE64_VALUE_OCTET_BOUND + 2) / 3;
+
+/// Decodes one base64 text under the declared admitted language of `GNT-42.3-base64-codec`.
+///
+/// The admitted language is exactly the canonical padded form over the declared alphabet: zero or
+/// more complete four-symbol groups, padding only in the final group and only in the declared
+/// counts, and the unused low bits of the final symbol before padding zero. A text holding more
+/// than `BASE64_TEXT_OCTET_BOUND` octets is refused under `codec-expansion-limit` before any part
+/// of it is examined, and a text outside the declared language is refused under
+/// `codec-malformed-input`, naming the zero-based octet index of the first position at which it
+/// departs from that language.
+pub fn base64_decode(text: &str) -> Result<Vec<u8>, CodecError> {
+    if text.len() > BASE64_TEXT_OCTET_BOUND {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::ExpansionLimit,
+            format!(
+                "the presented base64 text holds {} octets, beyond the declared bound {BASE64_TEXT_OCTET_BOUND}",
+                text.len()
+            ),
+        ));
+    }
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+
+    for (index, octet) in bytes.iter().enumerate() {
+        if base64_value(*octet).is_none() && *octet != b'=' {
+            return Err(base64_malformed_refusal(
+                index,
+                "the octet is outside the declared base64 alphabet and padding spelling",
+            ));
+        }
+    }
+
+    let final_group_start = if len >= 4 && len.is_multiple_of(4) {
+        Some(len - 4)
+    } else {
+        None
+    };
+    let canonical_final = match final_group_start {
+        Some(start) => {
+            let group = &bytes[start..];
+            let symbols = group.iter().take_while(|octet| **octet != b'=').count();
+            let pads = group.len() - symbols;
+            group[symbols..].iter().all(|octet| *octet == b'=')
+                && matches!((symbols, pads), (4, 0) | (3, 1) | (2, 2))
+        }
+        None => false,
+    };
+    if let Some(pad_index) = bytes.iter().position(|octet| *octet == b'=')
+        && (!canonical_final || final_group_start.is_some_and(|start| pad_index < start))
+    {
+        return Err(base64_malformed_refusal(
+            pad_index,
+            "the padding is not part of a canonical final base64 group",
+        ));
+    }
+    if !len.is_multiple_of(4) {
+        return Err(base64_malformed_refusal(
+            len,
+            "the text ends before its final base64 group is completed",
+        ));
+    }
+
+    let mut octets = Vec::with_capacity(len / 4 * 3);
+    for (chunk_index, chunk) in bytes.chunks(4).enumerate() {
+        let start = chunk_index * 4;
+        let symbols = chunk.iter().take_while(|octet| **octet != b'=').count();
+        let mut values = [0_u8; 4];
+        for (offset, octet) in chunk.iter().enumerate().take(symbols) {
+            let Some(value) = base64_value(*octet) else {
+                return Err(base64_malformed_refusal(
+                    start + offset,
+                    "the octet is outside the declared base64 alphabet",
+                ));
+            };
+            values[offset] = value;
+        }
+        let [first, second, third, fourth] = values;
+        match symbols {
+            4 => {
+                octets.push((first << 2) | (second >> 4));
+                octets.push(((second & 0x0f) << 4) | (third >> 2));
+                octets.push(((third & 0x03) << 6) | fourth);
+            }
+            3 => {
+                if third & 0x03 != 0 {
+                    return Err(base64_malformed_refusal(
+                        start + 2,
+                        "the final symbol's unused low bits are nonzero",
+                    ));
+                }
+                octets.push((first << 2) | (second >> 4));
+                octets.push(((second & 0x0f) << 4) | (third >> 2));
+            }
+            2 => {
+                if second & 0x0f != 0 {
+                    return Err(base64_malformed_refusal(
+                        start + 1,
+                        "the final symbol's unused low bits are nonzero",
+                    ));
+                }
+                octets.push((first << 2) | (second >> 4));
+            }
+            _ => {
+                return Err(base64_malformed_refusal(
+                    start,
+                    "the group is not a declared base64 group",
+                ));
+            }
+        }
+    }
+    Ok(octets)
+}
+
+/// Encodes one octet sequence under the declared canonical form of `GNT-42.3-base64-codec`.
+///
+/// Each complete three-octet quantum is spelled as four symbols of the declared alphabet, and a
+/// final one- or two-octet quantum is spelled as the declared group with its single `=` or `==`.
+/// A sequence holding more than `BASE64_VALUE_OCTET_BOUND` octets is refused under
+/// `codec-expansion-limit`, naming the observed octet count and the declared bound, before any
+/// part of a result is constructed.
+pub fn base64_encode(octets: &[u8]) -> Result<String, CodecError> {
+    if octets.len() > BASE64_VALUE_OCTET_BOUND {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::ExpansionLimit,
+            format!(
+                "the presented octet sequence holds {} octets, beyond the declared bound {BASE64_VALUE_OCTET_BOUND}",
+                octets.len()
+            ),
+        ));
+    }
+    let mut text = String::with_capacity(4 * octets.len().div_ceil(3));
+    for chunk in octets.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or(0);
+        let third = chunk.get(2).copied().unwrap_or(0);
+        text.push(base64_symbol(first >> 2));
+        text.push(base64_symbol(((first & 0x03) << 4) | (second >> 4)));
+        if chunk.len() > 1 {
+            text.push(base64_symbol(((second & 0x0f) << 2) | (third >> 6)));
+        } else {
+            text.push('=');
+        }
+        if chunk.len() > 2 {
+            text.push(base64_symbol(third & 0x3f));
+        } else {
+            text.push('=');
+        }
+    }
+    Ok(text)
+}
+
+/// Publishes the refusal of one presented base64 text outside the declared language of
+/// `GNT-42.3-base64-codec`, naming the zero-based octet index of the departure.
+fn base64_malformed_refusal(index: usize, reason: &str) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::MalformedInput,
+        format!(
+            "the presented base64 text departs from the declared base64 language at index {index}: {reason}"
+        ),
+    )
+}
+
+/// Returns the six-bit value of one declared base64 alphabet octet; every other octet is `None`.
+fn base64_value(octet: u8) -> Option<u8> {
+    match octet {
+        b'A'..=b'Z' => Some(octet - b'A'),
+        b'a'..=b'z' => Some(octet - b'a' + 26),
+        b'0'..=b'9' => Some(octet - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+/// Returns the declared base64 alphabet spelling of one six-bit value (below sixty-four).
+fn base64_symbol(value: u8) -> char {
+    if value < 26 {
+        char::from(b'A' + value)
+    } else if value < 52 {
+        char::from(b'a' + value - 26)
+    } else if value < 62 {
+        char::from(b'0' + value - 52)
+    } else if value == 62 {
+        '+'
+    } else {
+        '/'
     }
 }

@@ -1,21 +1,24 @@
-//! Public-facade conformance for the `GNT-42.0`-`GNT-42.2` codec foundation and hex codec.
+//! Public-facade conformance for the `GNT-42.0`-`GNT-42.3` codec foundation and hex and base64
+//! codecs.
 //!
 //! The section declares the `std.codec` family, its five module items, the versioned codec
 //! identity and its exact admission rule, the frozen refusal vocabulary with its codec categories
-//! of `GNT-29.9-codec-contract`, the canonical hex codec of `GNT-42.2-hex-codec`, and the
-//! separation between application codecs and the sealed canonical boundary and durable recovery
-//! projections: these lanes require every declared clause, module row, refusal, and category to
-//! be published in the specification and the model, and exercise the version-admission rule and
-//! the hex codec's canonical forms, bounds, and refusals directly.
+//! of `GNT-29.9-codec-contract`, the canonical hex and base64 codecs of `GNT-42.2-hex-codec` and
+//! `GNT-42.3-base64-codec`, and the separation between application codecs and the sealed
+//! canonical boundary and durable recovery projections: these lanes require every declared
+//! clause, module row, refusal, and category to be published in the specification and the model,
+//! and exercise the version-admission rule and the hex and base64 codecs' canonical forms,
+//! bounds, and refusals directly.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    CODEC_CLAUSES, CODEC_ITEMS, CodecCategory, CodecDiagnosticCode, CodecError, CodecKind,
-    CodecVersion, DECLARED_CODEC_VERSION, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, NameClass,
-    PackageFamily, StabilityTier, canonical_codec_hierarchy, canonical_pure_hierarchy, hex_decode,
+    BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, CODEC_CLAUSES, CODEC_ITEMS, CodecCategory,
+    CodecDiagnosticCode, CodecError, CodecKind, CodecVersion, DECLARED_CODEC_VERSION,
+    HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, NameClass, PackageFamily, StabilityTier,
+    base64_decode, base64_encode, canonical_codec_hierarchy, canonical_pure_hierarchy, hex_decode,
     hex_encode,
 };
 
@@ -31,7 +34,7 @@ fn workspace_root() -> PathBuf {
 fn section_42_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(CODEC_CLAUSES.len(), 3);
+    assert_eq!(CODEC_CLAUSES.len(), 4);
     let mut prior = 0_usize;
     for clause in CODEC_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -108,10 +111,11 @@ fn codec_surface_declares_the_five_modules() {
         assert_eq!(row.name, kind.module_name());
         assert_eq!(row.class, NameClass::Module, "`{}` is a module", row.name);
         assert_eq!(row.tier, StabilityTier::Stable, "`{}` is stable", row.name);
-        let expected = if kind == CodecKind::Hex {
-            &CODEC_CLAUSES[..]
-        } else {
-            &CODEC_CLAUSES[..2]
+        let base64_expected = [CODEC_CLAUSES[0], CODEC_CLAUSES[1], CODEC_CLAUSES[3]];
+        let expected: &[&str] = match kind {
+            CodecKind::Hex => &CODEC_CLAUSES[..3],
+            CodecKind::Base64 => &base64_expected[..],
+            _ => &CODEC_CLAUSES[..2],
         };
         assert_eq!(
             row.clauses, expected,
@@ -391,6 +395,139 @@ fn hex_codec_refuses_malformed_and_oversized_input() {
     );
     assert!(
         error.detail().contains(&HEX_VALUE_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+}
+
+#[test]
+fn base64_codec_encodes_and_decodes_canonical_forms() {
+    let vectors: [(&[u8], &str); 7] = [
+        (&[], ""),
+        (&[0x00], "AA=="),
+        (&[0xff], "/w=="),
+        (&[0xde, 0xad], "3q0="),
+        (&[0xde, 0xad, 0xbe], "3q2+"),
+        (&[0xde, 0xad, 0xbe, 0xef], "3q2+7w=="),
+        (&[0x00, 0x7f, 0x80, 0xff], "AH+A/w=="),
+    ];
+    for (octets, text) in vectors {
+        assert_eq!(base64_encode(octets), Ok(text.to_owned()));
+        assert_eq!(base64_decode(text), Ok(octets.to_vec()));
+        let encoded = match base64_encode(octets) {
+            Ok(encoded) => encoded,
+            Err(error) => panic!(
+                "the declared value bound admits every vector: {}",
+                error.detail()
+            ),
+        };
+        let decoded = match base64_decode(&encoded) {
+            Ok(decoded) => decoded,
+            Err(error) => panic!("an encode result is admitted text: {}", error.detail()),
+        };
+        assert_eq!(
+            decoded.as_slice(),
+            octets,
+            "decode of encode publishes the same octets"
+        );
+        let admitted = match base64_decode(text) {
+            Ok(admitted) => admitted,
+            Err(error) => panic!("the vector text is admitted: {}", error.detail()),
+        };
+        let spelled = match base64_encode(&admitted) {
+            Ok(spelled) => spelled,
+            Err(error) => panic!("a decoded vector is within the bound: {}", error.detail()),
+        };
+        assert_eq!(
+            spelled, text,
+            "encode of decode publishes the same text, symbol for symbol"
+        );
+    }
+    let bound_octets = vec![0xab; BASE64_VALUE_OCTET_BOUND];
+    let encoded = match base64_encode(&bound_octets) {
+        Ok(encoded) => encoded,
+        Err(error) => panic!(
+            "the declared value bound admits its encode: {}",
+            error.detail()
+        ),
+    };
+    assert_eq!(encoded.len(), BASE64_TEXT_OCTET_BOUND);
+    assert_eq!(base64_decode(&encoded), Ok(bound_octets));
+}
+
+#[test]
+fn base64_codec_refuses_malformed_and_oversized_input() {
+    for (presented, index) in [
+        ("A", 1_usize),
+        ("AA", 2),
+        ("AAA", 3),
+        ("AAAAA", 5),
+        ("AA=", 2),
+        ("A===", 1),
+        ("=AAA", 0),
+        ("AAAA=", 4),
+        ("AB==", 1),
+        ("ABC=", 2),
+        ("AA=A", 2),
+        ("AA_A", 2),
+        ("AB CD", 2),
+    ] {
+        let error = match base64_decode(presented) {
+            Ok(value) => panic!("`{presented}` must be refused, got {value:?}"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), CodecDiagnosticCode::MalformedInput);
+        assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+        assert_eq!(error.category(), CodecCategory::MalformedInput);
+        assert!(
+            error.detail().contains(&format!("index {index}")),
+            "the refusal names the departure index: {}",
+            error.detail()
+        );
+    }
+    let oversized_text = "A".repeat(BASE64_TEXT_OCTET_BOUND + 4);
+    let error = match base64_decode(&oversized_text) {
+        Ok(value) => panic!("the oversized text must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+    assert_eq!(error.category(), CodecCategory::ResourceLimit);
+    assert!(
+        error.detail().contains(&oversized_text.len().to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&BASE64_TEXT_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let ill_formed_and_oversized = "!".repeat(BASE64_TEXT_OCTET_BOUND + 4);
+    let error = match base64_decode(&ill_formed_and_oversized) {
+        Ok(value) => panic!("the over-long text must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    let oversized_octets = vec![0_u8; BASE64_VALUE_OCTET_BOUND + 1];
+    let error = match base64_encode(&oversized_octets) {
+        Ok(value) => panic!("the oversized input must be refused, got {value:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+    assert_eq!(error.category(), CodecCategory::ResourceLimit);
+    assert!(
+        error.detail().contains(&oversized_octets.len().to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&BASE64_VALUE_OCTET_BOUND.to_string()),
         "{}",
         error.detail()
     );
