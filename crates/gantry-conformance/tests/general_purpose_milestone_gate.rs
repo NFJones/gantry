@@ -161,7 +161,7 @@ fn milestone_gate_rejects_malformed_missing_cyclic_stale_and_overclaiming_record
     assert!(validate_manifest(&root, &unknown_disposition).is_err());
 
     let mut unowned = manifest.clone();
-    unowned.acceptance[1].owner = None;
+    unowned.acceptance[4].owner = None;
     assert!(validate_manifest(&root, &unowned).is_err());
 
     let mut owned_pass = manifest.clone();

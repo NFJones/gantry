@@ -187,10 +187,9 @@
    "evidence": "protocol/publication/verification-v1.json"
   },
   {
-   "item": "clean-incremental-parallel-separate-compilation-cross-target-arrangements",
-   "disposition": "qualified",
-   "evidence": "protocol/catalogs/general-purpose-preregistration-v1.json",
-   "owner": "000761b0 GNT-GP-TOOLING-RUNTIME-001"
+   "item": "clean-and-incremental-compilation-equivalence",
+   "disposition": "passed",
+   "evidence": "crates/gantry-conformance/tests/toolchain_bounded.rs"
   },
   {
    "item": "deterministic-library-vectors",
@@ -201,6 +200,12 @@
    "item": "package-workspace-and-lockfile-resolution",
    "disposition": "passed",
    "evidence": "crates/gantry-conformance/tests/workspace_lockfile.rs"
+  },
+  {
+   "item": "parallel-separate-compilation-and-cross-target-arrangements",
+   "disposition": "qualified",
+   "evidence": "protocol/catalogs/general-purpose-preregistration-v1.json",
+   "owner": "000761b0 GNT-GP-TOOLING-RUNTIME-001; 6503c841 GNT-GP-LINK-DEFER-001"
   },
   {
    "item": "prerequisite-provenance-authentication",
