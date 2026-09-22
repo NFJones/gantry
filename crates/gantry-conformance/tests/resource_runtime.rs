@@ -21,8 +21,7 @@ use gantry::portable::IdentityKind;
 use gantry::runtime::{
     AdmittedResource, ExecutionBudget, Instruction, InstructionKind, Machine, MachineCheckpointV3,
     MachineLabel, MachineLimits, MachineProgram, MachineStep, PostFailureSettlementRefusal,
-    ResourceAdmissionRefusal, ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
-    Workflow,
+    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding, Workflow,
 };
 use gantry::value::DEFAULT_VALUE_LIMITS;
 
@@ -167,25 +166,6 @@ fn failure_settlement_in(
     )
     .unwrap_or_else(|_| unreachable!("fixture operation is admissible"));
     operation.settle_failure(failure)
-}
-
-/// Builds one Section 20 declaration for the fixture site and generation.
-fn declaration_abi(kind: OperationKind, generation: u64) -> OperationAbi {
-    let workflow = CanonicalPath::new(FIXTURE_WORKFLOW)
-        .unwrap_or_else(|_| unreachable!("fixture workflow is canonical"));
-    let declaration = CanonicalPath::new(FIXTURE_DECLARATION)
-        .unwrap_or_else(|_| unreachable!("fixture declaration is canonical"));
-    let site = StructuralPosition::new(vec![FIXTURE_SITE])
-        .unwrap_or_else(|_| unreachable!("fixture site is canonical"));
-    OperationAbi::new(
-        kind,
-        &declaration,
-        &StaticSiteId::new(workflow, site),
-        generation,
-        RecoveryClass::Idempotent,
-        ReceiverOwnership::RetainedByCaller,
-    )
-    .unwrap_or_else(|_| unreachable!("fixture declaration is admissible"))
 }
 
 fn admitted_active() -> AdmittedResource {
@@ -781,126 +761,6 @@ fn resource_registry_gives_one_subject_exactly_one_account() {
             PostFailureSettlementRefusal::Model(ResourceError::IllegalLifetimeTransition)
         ))
     );
-}
-
-#[test]
-fn machine_admits_live_resources_only_for_its_pending_operation() {
-    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
-    let subject = subject.unwrap_or_else(|| panic!("the fixture operation declares an action"));
-
-    let declared = declaration_abi(OperationKind::LiveResource, 0);
-    let mut registry = ResourceRegistry::new();
-    machine
-        .admit_pending_resource(
-            &mut registry,
-            &declared,
-            ResourceCarrier::ReconstructionRecord,
-            ledger().durable_record(),
-        )
-        .unwrap_or_else(|error| {
-            panic!("the declared reconstruction record is admitted: {error:?}")
-        });
-    assert!(registry.account(&subject).is_some());
-
-    // A value action or a protected operation is refused before any registry mutation, and a
-    // declaration of another generation than the machine's own subject is refused too.
-    let mut refused_registry = ResourceRegistry::new();
-    for kind in [
-        OperationKind::ValueAction,
-        OperationKind::ProtectedOperation,
-    ] {
-        assert_eq!(
-            machine.admit_pending_resource(
-                &mut refused_registry,
-                &declaration_abi(kind, 0),
-                ResourceCarrier::ReconstructionRecord,
-                ledger().durable_record(),
-            ),
-            Err(ResourceAdmissionRefusal::NotLiveResource)
-        );
-    }
-    assert_eq!(
-        machine.admit_pending_resource(
-            &mut refused_registry,
-            &declaration_abi(OperationKind::LiveResource, 1),
-            ResourceCarrier::ReconstructionRecord,
-            ledger().durable_record(),
-        ),
-        Err(ResourceAdmissionRefusal::ForeignDeclaration)
-    );
-    assert!(refused_registry.account(&subject).is_none());
-    assert_eq!(
-        machine.admit_pending_resource(
-            &mut registry,
-            &declared,
-            ResourceCarrier::ReconstructionRecord,
-            ledger().durable_record(),
-        ),
-        Err(ResourceAdmissionRefusal::Registry(
-            ResourceRegistryRefusal::SecondAdmission
-        ))
-    );
-
-    let foreign = failure_settlement_in(
-        FIXTURE_WORKFLOW,
-        "crate::resource_runtime_foreign",
-        vec![FIXTURE_SITE],
-        0,
-        FailureClass::ResourceFailure,
-    );
-    assert_eq!(
-        registry.settle_from_post_failure(&foreign, 21),
-        Err(ResourceRegistryRefusal::UnknownSubject)
-    );
-    let matching = failure_settlement_in(
-        FIXTURE_WORKFLOW,
-        FIXTURE_DECLARATION,
-        vec![FIXTURE_SITE],
-        0,
-        FailureClass::ResourceFailure,
-    );
-    assert_eq!(
-        registry.settle_from_post_failure(&matching, 21),
-        Ok(ResourceLifetimeState::Poisoned)
-    );
-
-    let bytes = machine.checkpoint().canonical_bytes();
-    let decoded = MachineCheckpointV3::decode(&program, &bytes)
-        .unwrap_or_else(|error| panic!("the fixture checkpoint decodes: {error:?}"));
-    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
-        .unwrap_or_else(|error| panic!("the fixture budget snapshot recovers: {error:?}"));
-    let recovered = Machine::recover_from_checkpoint(program, decoded, budget)
-        .unwrap_or_else(|error| panic!("the fixture machine recovers: {error:?}"));
-    let mut recovered_registry = ResourceRegistry::new();
-    assert!(
-        recovered_registry.account(&subject).is_none(),
-        "a live account is never restored from a checkpoint"
-    );
-    recovered
-        .admit_pending_resource(
-            &mut recovered_registry,
-            &declared,
-            ResourceCarrier::ReconstructionRecord,
-            ledger().durable_record(),
-        )
-        .unwrap_or_else(|error| {
-            panic!("the recovered machine reconstructs its live account: {error:?}")
-        });
-    assert!(recovered_registry.account(&subject).is_some());
-
-    let (_program, bare_machine, none) = machine_with_declared_subject(None);
-    assert!(none.is_none());
-    let mut bare_registry = ResourceRegistry::new();
-    assert_eq!(
-        bare_machine.admit_pending_resource(
-            &mut bare_registry,
-            &declaration_abi(OperationKind::LiveResource, 0),
-            ResourceCarrier::ReconstructionRecord,
-            ledger().durable_record(),
-        ),
-        Err(ResourceAdmissionRefusal::NoPendingDeclaredOperation)
-    );
-    assert!(bare_registry.account(&subject).is_none());
 }
 
 #[test]

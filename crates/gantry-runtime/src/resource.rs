@@ -25,6 +25,13 @@
 //! compare equal to that subject, and a foreign or stale settlement mutates nothing. It performs
 //! no durable or host I/O, decodes no record bytes, and publishes no journal, checkpoint,
 //! evaluator, or host behavior; those remain with the durable, recovery, and machine modules.
+//!
+//! Live-resource admission at an operation boundary is deliberately not published here: no
+//! declared fact currently distinguishes a live-resource operation from a value action —
+//! `OperationSite`, `ActionInventory`, and `ExecutableOperation` carry no Section 20 operation
+//! kind and no live-handle type kind exists — so binding admission to an analyzer-authenticated
+//! kind is the next increment's obligation, and no caller-presented declaration may stand in for
+//! it.
 
 use std::collections::BTreeMap;
 
@@ -226,20 +233,6 @@ pub enum ResourceRegistryRefusal {
     Admission(ResourceError),
     /// The account's own settlement step refused the settlement.
     Settlement(PostFailureSettlementRefusal),
-}
-
-/// Why the runtime refused to admit a live resource at an operation boundary.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ResourceAdmissionRefusal {
-    /// The machine holds no pending operation whose decoded metadata declares an action.
-    NoPendingDeclaredOperation,
-    /// The presented declaration is not a live-resource operation.
-    NotLiveResource,
-    /// The presented declaration names another operation or generation than this machine's
-    /// pending subject.
-    ForeignDeclaration,
-    /// The resource registry refused the admission.
-    Registry(ResourceRegistryRefusal),
 }
 
 /// One resource whose declared accounting facts the runtime has admitted.
