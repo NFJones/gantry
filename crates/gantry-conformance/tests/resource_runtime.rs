@@ -2,7 +2,7 @@
 //!
 //! These rows exercise the runtime's admission boundary only: which declared carrier
 //! may present a resource's accounting facts, what an admitted account preserves, and
-//! how semantic release stays independent of physical reclamation. They perform no
+//! how semantic release stays independent of record retirement. They perform no
 //! durable I/O and claim no journal, checkpoint, evaluator, or host behavior.
 
 use gantry::ir::{
@@ -11,6 +11,26 @@ use gantry::ir::{
     ResourceState, RetentionFence,
 };
 use gantry::runtime::AdmittedResource;
+
+/// Fails to compile if the admitted account acquires a duplicating trait: a runtime
+/// account is uniquely owned, so copying one would create a second owner over one
+/// resource's lifetime without a second admitted reconstruction record.
+macro_rules! assert_not_impl_any {
+    ($type:ty: $($trait_name:path),+ $(,)?) => {
+        const _: fn() = || {
+            trait AmbiguousIfImpl<A> {
+                fn some_item() {}
+            }
+            impl<T: ?Sized> AmbiguousIfImpl<()> for T {}
+            $({
+                #[allow(dead_code)]
+                struct Invalid;
+                impl<T: ?Sized + $trait_name> AmbiguousIfImpl<Invalid> for T {}
+            })+
+            let _ = <$type as AmbiguousIfImpl<_>>::some_item;
+        };
+    };
+}
 
 const ROOTS: &[LivenessRoot] = &[
     LivenessRoot::Resource,
@@ -50,6 +70,11 @@ fn admitted_active() -> AdmittedResource {
         ledger().durable_record(),
     )
     .unwrap_or_else(|error| panic!("the declared reconstruction record is admitted: {error:?}"))
+}
+
+#[test]
+fn the_admitted_account_is_not_copyable() {
+    assert_not_impl_any!(AdmittedResource: Clone, Copy);
 }
 
 #[test]
@@ -158,7 +183,7 @@ fn an_admitted_account_preserves_every_declared_recorded_fact() {
 }
 
 #[test]
-fn semantic_release_is_independent_of_physical_reclamation() {
+fn semantic_release_is_independent_of_record_retirement() {
     let mut admitted_resource = admitted_active();
 
     assert!(admitted_resource.ledger_mut().begin_finish().is_ok());

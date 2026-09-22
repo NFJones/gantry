@@ -8,11 +8,13 @@
 //! `ResourceError::OrdinaryCarrierRefused` before any recorded fact is reconstructed:
 //! a resource can never enter the runtime unowned or without a terminal disposition.
 //!
-//! Semantic release and physical reclamation stay distinct here. Finishing, poisoning,
+//! Semantic release and record retirement stay distinct here. Finishing, poisoning,
 //! or emergency release settles the resource's lifetime while every declared quota
-//! fact remains observable, and reclamation is refused until every retained liveness
-//! root has closed and the declared retention fence of
-//! `GNT-28.8-retention-and-compaction-fences` has expired.
+//! fact remains observable, and retirement of the retained reconstruction record is
+//! refused until every declared liveness root has closed and the retention fence of
+//! `GNT-28.8-retention-and-compaction-fences` has expired; host allocation behavior,
+//! runtime compaction, and host-resource reconstruction stay outside this model under
+//! `GNT-28.10-resource-accounting-non-claims`.
 //!
 //! This module owns the admission boundary only. It performs no durable or host I/O,
 //! decodes no record bytes, and publishes no journal, checkpoint, evaluator, or host
@@ -28,7 +30,13 @@ use gantry_ir::{
 /// The account is reconstructible only from the declared durable reconstruction
 /// record: the ledger is private and [`AdmittedResource::admit`] is the only
 /// constructor, so no ordinary carrier can produce a runtime account.
-#[derive(Clone, Debug, Eq, PartialEq)]
+///
+/// The account is uniquely owned and deliberately not copyable: it implements no
+/// `Clone`, so a second account over one resource's lifetime requires a second admitted
+/// reconstruction record of `GNT-28.7-durable-resource-reconstruction`, and
+/// `GNT-28.9-retirement-deletion-and-stale-owner-fences` admits a genuinely later
+/// owner only through a distinct declared resource record.
+#[derive(Debug, Eq, PartialEq)]
 pub struct AdmittedResource {
     ledger: ResourceLedger,
 }
