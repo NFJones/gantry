@@ -15838,18 +15838,22 @@ limit of this contract alone: it is not a quota, a resource-accounting contract,
 a cancellation safe point, and none of those is published here.
 
 An admitted request publishes exactly one progress observation of the closed
-`GNT-29.2-reader-writer-seek-progress` vocabulary, decided by its operation kind and the advance
-it observes, and each kind's admissible set is closed. A read publishes `eof` when it observes the
-end of its stream, `short-read` when it advances by fewer octets than it asked for before any end,
-`committed-progress` when it advances by every octet it asked for, and `not-started` when it
-observes no advance. A write publishes `short-write` when it accepts fewer octets than were
-provided before any completion, `committed-progress` when it accepts every octet, and
-`not-started` when it observes no advance. A seek publishes `committed-progress` when it moves to
-its declared position and `not-started` when it is already there. A progress observation outside
-its kind's declared set is refused under `io-progress-inapplicable`, naming the kind and the
-observed observation, and the model's `admit_io_progress` publishes exactly that decision;
-interruption, cancellation, and ambiguous settlement are not progress observations of this
-contract and remain the Section 20 facts that own them.
+`GNT-29.2-reader-writer-seek-progress` vocabulary, and each kind's admissible set is closed: a
+read admits `committed-progress`, `eof`, `not-started`, and `short-read`; a write admits
+`committed-progress`, `not-started`, and `short-write`; and a seek admits `committed-progress` and
+`not-started`. Where a presented observation satisfies more than one declared meaning of its kind,
+this clause declares the precedence: an observation that observes the end of a stream is `eof`
+even when it advances no octet, `not-started` is published only when no advance and no end of
+stream are observed, a read or write that advances or accepts every octet it asked for before any
+end or completion is `committed-progress`, and a seek already at its declared position is
+`not-started` while a seek that moves to that position is `committed-progress`. A progress
+observation outside its kind's declared set is refused under `io-progress-inapplicable`, naming
+the kind and the observed observation, and the model's `admit_io_progress` publishes exactly that
+decision; interruption, cancellation, and ambiguous settlement are not progress observations of
+this contract and remain the Section 20 facts that own them. This clause publishes the closed
+admitted sets and the declared precedence among their members only: it publishes no derivation of
+an observation from a presented quantity or end-of-stream fact, and a later clause of this section
+may publish that derivation.
 
 Every admitted request's outcome is exactly one of the `GNT-29.1-channel-separation` channels —
 success, one source-visible portable domain error, or one operational adapter failure — and its

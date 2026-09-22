@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "ebbba65418a1f43e2ec0a4b53ba21b0529e5d2db551f754848849eeafcdd17ea",
-  "byte_length": 1212551,
-  "line_count": 15872,
+  "specification_sha256": "80719f552c6701b1e681a5c0d519dfe27aba94631729303974ab9d84a39eddc8",
+  "byte_length": 1212919,
+  "line_count": 15876,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15872,
-      "sha256": "903a4aaef5e745e6694e9655b474245a3e8ba5f946d7ec2085936d1decdbeac7",
+      "end_line": 15876,
+      "sha256": "8be9dad35a3a79151ba3ec23de03c8f6d70305d8f1828b8e3341869ac2a59815",
       "rationale": null
     }
   ],
@@ -44364,12 +44364,12 @@
     {
       "id": "GNT-45.1-bounded-one-call-io-contract",
       "span_start_line": 15816,
-      "span_end_line": 15872,
-      "span_sha256": "ba0f752fdfd0b9eae11ea203c5d415825745dda7dbe5212bde71d18ea27a9f4b",
+      "span_end_line": 15876,
+      "span_sha256": "71849f92c33de135f3db66430d6ea3b3f0b3d4c505fa7480fd8c155b5687290c",
       "anchor_line": 15817,
       "body_start_line": 15818,
-      "body_end_line": 15872,
-      "body_sha256": "56bee0aec14b3b67893740771eb918b3ff9ae9986322d91f5dc9574daa21d3cf",
+      "body_end_line": 15876,
+      "body_sha256": "73af77a11f14498274b33e162145c86f83cd44135f1f87bb064c1f9baeb60698",
       "profiles": [
         "analyzer"
       ],
@@ -44381,7 +44381,7 @@
         {
           "key": "clause-001",
           "start_line": 15818,
-          "end_line": 15872,
+          "end_line": 15876,
           "profiles": [
             "analyzer"
           ],

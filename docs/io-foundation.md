@@ -57,9 +57,14 @@ that one read or write request must fall inside: a zero-octet request and a requ
 bound are both refused under `io-request-bound`, an undeclared operation spelling is refused
 under `io-request-kind`, and a progress observation outside its kind's declared set is refused
 under `io-progress-inapplicable`. A seek request declares any nonnegative position. Each admitted
-request publishes exactly one progress observation of the landed `GNT-29.2` mapping, its outcome
-is exactly one of the `GNT-29.1` channels, and interruption, cancellation, and ambiguous
-settlement remain the Section 20 facts that own them.
+kind's admitted set is closed, and where a presented observation satisfies more than one declared
+meaning, `eof` takes precedence over `not-started`: a read that observes the end of its stream is
+`eof` even when it advances no octet, and `not-started` is published only when no advance and no
+end of stream are observed. This revision publishes the closed sets and that precedence only;
+derivation from a presented quantity is left to a later clause. Each admitted request publishes
+exactly one progress observation of the landed `GNT-29.2` mapping, its outcome is exactly one of
+the `GNT-29.1` channels, and interruption, cancellation, and ambiguous settlement remain the
+Section 20 facts that own them.
 
 ## What this surface does not claim
 

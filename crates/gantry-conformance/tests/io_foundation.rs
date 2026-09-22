@@ -240,6 +240,30 @@ fn io_progress_sets_are_closed_per_kind() {
 }
 
 #[test]
+fn io_progress_precedence_and_derivation_scope_are_published() {
+    let root = workspace_root();
+    let specification = flatten(&read_text(&root.join("SPEC.md")));
+    let note = flatten(&read_text(&root.join("docs/io-foundation.md")));
+
+    for needle in [
+        "an observation that observes the end of a stream is `eof` even when it advances no octet",
+        "`not-started` is published only when no advance and no end of stream are observed",
+        "it publishes no derivation of an observation from a presented quantity or end-of-stream fact",
+    ] {
+        assert!(
+            specification.contains(needle),
+            "the clause must state: {needle}"
+        );
+    }
+    for needle in [
+        "`eof` takes precedence over `not-started`",
+        "derivation from a presented quantity is left to a later clause",
+    ] {
+        assert!(note.contains(needle), "the note must state: {needle}");
+    }
+}
+
+#[test]
 fn io_note_names_the_declared_capability_family() {
     let note = read_text(&workspace_root().join("docs/io-foundation.md"));
     let flat = flatten(&note);

@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "ebbba65418a1f43e2ec0a4b53ba21b0529e5d2db551f754848849eeafcdd17ea",
+  "specification_sha256": "80719f552c6701b1e681a5c0d519dfe27aba94631729303974ab9d84a39eddc8",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15872,
+      "end_line": 15876,
       "rationale": null
     }
   ],
@@ -43157,10 +43157,10 @@
     {
       "id": "GNT-45.1-bounded-one-call-io-contract",
       "span_start_line": 15816,
-      "span_end_line": 15872,
+      "span_end_line": 15876,
       "anchor_line": 15817,
       "body_start_line": 15818,
-      "body_end_line": 15872,
+      "body_end_line": 15876,
       "profiles": [
         "analyzer"
       ],
@@ -43172,7 +43172,7 @@
         {
           "key": "clause-001",
           "start_line": 15818,
-          "end_line": 15872,
+          "end_line": 15876,
           "profiles": [
             "analyzer"
           ],
