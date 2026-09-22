@@ -415,12 +415,13 @@ pub use std_hierarchy::canonical_std_hierarchy;
 pub use stdlib::{
     CANONICAL_PRELUDE_EDITION, CANONICAL_PRELUDE_MEMBERS, FacadeReexport, FeatureSelection,
     MAX_STD_NAME_BYTES, MAX_STD_PACKAGES, NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude,
-    PreludeBinding, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
-    SelectedInstance, StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation,
-    StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest, StdManifestEntry,
-    StdName, StdPackage, StdPathInspection, StdPresentation, StdlibDiagnosticCode, StdlibError,
-    StdlibNonClaim, StdlibNonClaimAssertion, canonical_pure_hierarchy, check_layout_identity,
-    check_stdlib_non_claims, inspect_presentation, require_applicable,
+    PreludeBinding, Relocation, STD_PRESENTATION_REFUSALS, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER,
+    STDLIB_NON_CLAIMS, SelectedInstance, StabilityTier, StabilityTransition, StdContractVersion,
+    StdDeprecation, StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest,
+    StdManifestEntry, StdName, StdPackage, StdPathInspection, StdPresentation,
+    StdlibDiagnosticCode, StdlibError, StdlibNonClaim, StdlibNonClaimAssertion,
+    canonical_pure_hierarchy, check_layout_identity, check_stdlib_non_claims, inspect_presentation,
+    require_applicable,
 };
 pub use target::{
     AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,

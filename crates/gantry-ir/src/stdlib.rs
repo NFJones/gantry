@@ -1043,6 +1043,9 @@ pub enum StdPresentation {
 }
 
 impl StdPresentation {
+    /// The closed declared set, in canonical wire-name order.
+    pub const ALL: [StdPresentation; 2] = [Self::Defining, Self::Facade];
+
     /// Returns the exact portable spelling.
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
@@ -1052,6 +1055,17 @@ impl StdPresentation {
         }
     }
 }
+
+/// The diagnostic codes one presentation inspection can publish, in canonical wire-name order.
+///
+/// An admitted presentation publishes no refusal at all; these are exactly the refusals an
+/// inspection can report, and the set is closed: `inspect_presentation` names no other code.
+pub const STD_PRESENTATION_REFUSALS: [StdlibDiagnosticCode; 4] = [
+    StdlibDiagnosticCode::FacadeIdentityLoss,
+    StdlibDiagnosticCode::InvalidPackageName,
+    StdlibDiagnosticCode::LayoutDerivedIdentity,
+    StdlibDiagnosticCode::UnknownEdge,
+];
 
 /// The declared identity one presented path carries, as tooling reports it.
 ///

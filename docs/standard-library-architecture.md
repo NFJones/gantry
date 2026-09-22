@@ -160,3 +160,26 @@ The declaration is a claim about architecture only. Its declared non-claims are:
 
 The declaration resolves, downloads, loads, generates, links, and publishes nothing, and model
 facts and tests must never be presented as those guarantees.
+
+## Tooling presentation kinds
+
+`inspect_presentation` in `crates/gantry-ir/src/stdlib.rs` reports the defining identity of one
+presented path for tooling display, and never reports physical repository layout as an identity.
+The declared presentation kinds are:
+
+- `defining`
+- `facade`
+
+## Tooling presentation refusals
+
+An admitted presentation publishes no refusal at all. The refusals an inspection can report are
+exactly:
+
+- `std-facade-identity-loss`
+- `std-invalid-package-name`
+- `std-layout-derived-identity`
+- `std-unknown-edge`
+
+A facade presentation carries the defining package and the re-exported item; a facade whose
+defining side is undeclared or unexported is refused under `std-facade-identity-loss`, and a
+presentation naming physical repository layout is refused under `std-layout-derived-identity`.

@@ -13,10 +13,10 @@ use serde_json::Value;
 
 use gantry::ir::{
     CANONICAL_PRELUDE_EDITION, CANONICAL_PRELUDE_MEMBERS, FacadeReexport, FeatureSelection,
-    NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude, Relocation, STDLIB_CLAUSES,
-    STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance, SemanticMode, StabilityTier,
-    StabilityTransition, StdContractVersion, StdDeprecation, StdGraph, StdItem, StdName,
-    StdPackage, StdPresentation, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
+    NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude, Relocation, STD_PRESENTATION_REFUSALS,
+    STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance, SemanticMode,
+    StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation, StdGraph, StdItem,
+    StdName, StdPackage, StdPresentation, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
     StdlibNonClaimAssertion, TargetKind, canonical_codec_hierarchy,
     canonical_collections_hierarchy, canonical_crypto_hierarchy, canonical_data_hierarchy,
     canonical_pure_hierarchy, canonical_std_hierarchy, check_layout_identity,
@@ -2286,4 +2286,58 @@ fn facades_without_a_declared_exported_defining_side_are_refused() {
         "an undeclared defining package",
     );
     assert_eq!(error.code(), StdlibDiagnosticCode::UnknownEdge);
+}
+
+#[test]
+fn standard_library_architecture_note_publishes_the_tooling_inspection_surface() {
+    let note = fs::read_to_string(workspace_root().join("docs/standard-library-architecture.md"))
+        .unwrap_or_else(|error| panic!("the architecture note is readable: {error}"));
+    assert_eq!(
+        sorted_members(section_members(&note, "## Tooling presentation kinds")),
+        sorted_members(
+            StdPresentation::ALL
+                .map(|presentation| presentation.wire_name().to_owned())
+                .to_vec()
+        )
+    );
+    assert_eq!(
+        sorted_members(section_members(&note, "## Tooling presentation refusals")),
+        sorted_members(
+            STD_PRESENTATION_REFUSALS
+                .iter()
+                .map(|code| code.as_str().to_owned())
+                .collect()
+        )
+    );
+}
+
+/// Returns the backticked members one note section declares as its bullets, with multiplicity.
+///
+/// One entry is collected per bullet, so a duplicated member fails rather than being collapsed;
+/// only bullet members are collected, so prose inside a section may name an API without being
+/// mistaken for a declared member.
+fn section_members(note: &str, heading: &str) -> Vec<String> {
+    let mut members = Vec::new();
+    let mut in_section = false;
+    for line in note.lines() {
+        if line.starts_with("## ") {
+            in_section = line.trim_end() == heading;
+            continue;
+        }
+        if !in_section || !line.starts_with("- ") {
+            continue;
+        }
+        for (index, part) in line.split('`').enumerate() {
+            if index % 2 == 1 && !part.is_empty() {
+                members.push(part.to_owned());
+            }
+        }
+    }
+    members
+}
+
+/// Returns the collected members in canonical order, preserving any duplication.
+fn sorted_members(mut members: Vec<String>) -> Vec<String> {
+    members.sort_unstable();
+    members
 }
