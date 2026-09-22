@@ -19,8 +19,9 @@ use gantry::ir::{
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    AdmittedResource, Instruction, InstructionKind, Machine, MachineLabel, MachineLimits,
-    MachineProgram, MachineStep, PostFailureSettlementRefusal, ResourceSubjectBinding, Workflow,
+    AdmittedResource, ExecutionBudget, Instruction, InstructionKind, Machine, MachineCheckpointV3,
+    MachineLabel, MachineLimits, MachineProgram, MachineStep, PostFailureSettlementRefusal,
+    ResourceSubjectBinding, Workflow,
 };
 use gantry::value::DEFAULT_VALUE_LIMITS;
 
@@ -85,7 +86,7 @@ const FIXTURE_SITE: u64 = 45;
 /// machine itself issues for that operation.
 fn machine_with_declared_subject(
     action_path: Option<&str>,
-) -> (Machine, Option<ResourceSubjectBinding>) {
+) -> (Arc<MachineProgram>, Machine, Option<ResourceSubjectBinding>) {
     let workflow = CanonicalPath::new(FIXTURE_WORKFLOW)
         .unwrap_or_else(|_| unreachable!("fixture workflow is canonical"));
     let site = StructuralPosition::new(vec![FIXTURE_SITE])
@@ -117,19 +118,26 @@ fn machine_with_declared_subject(
         .unwrap_or_else(|error| panic!("fixture execution identity is valid: {error}"));
     let limits = MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
         .unwrap_or_else(|| panic!("fixture machine limits are positive"));
-    let mut machine = Machine::new(Arc::new(program), &workflow, Vec::new(), execution, limits)
-        .unwrap_or_else(|error| panic!("fixture machine construction succeeds: {error:?}"));
+    let program = Arc::new(program);
+    let mut machine = Machine::new(
+        Arc::clone(&program),
+        &workflow,
+        Vec::new(),
+        execution,
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("fixture machine construction succeeds: {error:?}"));
     match machine.step() {
         MachineStep::Transition(MachineLabel::OperationPrepared(_)) => {}
         other => panic!("unexpected machine step: {other:?}"),
     }
     let subject = machine.pending_resource_subject();
-    (machine, subject)
+    (program, machine, subject)
 }
 
 /// Returns the machine-issued subject of the fixture declared operation.
 fn active_subject() -> ResourceSubjectBinding {
-    let (_machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let (_program, _machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
     subject.unwrap_or_else(|| panic!("the fixture operation declares an action"))
 }
 
@@ -613,7 +621,7 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
 
 #[test]
 fn runtime_subject_requires_the_declared_operation_action() {
-    let (_machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let (_program, _machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
     let subject =
         subject.unwrap_or_else(|| panic!("metadata with a declared action carries a subject"));
     let model_issued = failure_settlement_in(
@@ -628,9 +636,57 @@ fn runtime_subject_requires_the_declared_operation_action() {
     assert_eq!(subject.site().workflow().as_str(), FIXTURE_WORKFLOW);
     assert_eq!(subject.site().position().components(), &[FIXTURE_SITE]);
 
-    let (_machine, none) = machine_with_declared_subject(None);
+    let (_program, _machine, none) = machine_with_declared_subject(None);
     assert!(
         none.is_none(),
         "an operation without a declared action has no Section 20 subject"
+    );
+}
+
+#[test]
+fn runtime_subject_survives_checkpoint_recovery() {
+    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("the fixture operation declares an action"));
+
+    let bytes = machine.checkpoint().canonical_bytes();
+    let decoded = MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("the fixture checkpoint decodes: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("the fixture budget snapshot recovers: {error:?}"));
+    let recovered = Machine::recover_from_checkpoint(program, decoded, budget)
+        .unwrap_or_else(|error| panic!("the fixture machine recovers: {error:?}"));
+
+    assert_eq!(recovered.pending_resource_subject(), Some(subject.clone()));
+
+    let mut admitted_resource = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        recovered
+            .pending_resource_subject()
+            .unwrap_or_else(|| panic!("the recovered machine still declares its subject")),
+    )
+    .unwrap_or_else(|error| panic!("the declared reconstruction record is admitted: {error:?}"));
+
+    let stale = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        1,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        admitted_resource.settle_from_post_failure(&stale, 21),
+        Err(PostFailureSettlementRefusal::StaleGeneration)
+    );
+    let matching = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        admitted_resource.settle_from_post_failure(&matching, 21),
+        Ok(ResourceLifetimeState::Poisoned)
     );
 }
