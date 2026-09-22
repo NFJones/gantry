@@ -592,15 +592,16 @@ pub fn base64_decode(text: &str) -> Result<Vec<u8>, CodecError> {
     let bytes = text.as_bytes();
     let len = bytes.len();
 
-    for (index, octet) in bytes.iter().enumerate() {
-        if base64_value(*octet).is_none() && *octet != b'=' {
-            return Err(base64_malformed_refusal(
-                index,
-                "the octet is outside the declared base64 alphabet and padding spelling",
-            ));
-        }
+    let mut candidates: Vec<(usize, &'static str)> = Vec::new();
+    if let Some(index) = bytes
+        .iter()
+        .position(|octet| base64_value(*octet).is_none() && *octet != b'=')
+    {
+        candidates.push((
+            index,
+            "the octet is outside the declared base64 alphabet and padding spelling",
+        ));
     }
-
     let final_group_start = if len >= 4 && len.is_multiple_of(4) {
         Some(len - 4)
     } else {
@@ -619,16 +620,38 @@ pub fn base64_decode(text: &str) -> Result<Vec<u8>, CodecError> {
     if let Some(pad_index) = bytes.iter().position(|octet| *octet == b'=')
         && (!canonical_final || final_group_start.is_some_and(|start| pad_index < start))
     {
-        return Err(base64_malformed_refusal(
+        candidates.push((
             pad_index,
             "the padding is not part of a canonical final base64 group",
         ));
     }
     if !len.is_multiple_of(4) {
-        return Err(base64_malformed_refusal(
+        candidates.push((
             len,
             "the text ends before its final base64 group is completed",
         ));
+    }
+    if canonical_final && let Some(start) = final_group_start {
+        let symbols = bytes[start..]
+            .iter()
+            .take_while(|octet| **octet != b'=')
+            .count();
+        let last_symbol_index = start + symbols - 1;
+        let last_value = base64_value(bytes[last_symbol_index]).unwrap_or(0);
+        let unused_mask = match symbols {
+            3 => 0x03,
+            2 => 0x0f,
+            _ => 0,
+        };
+        if last_value & unused_mask != 0 {
+            candidates.push((
+                last_symbol_index,
+                "the final symbol's unused low bits are nonzero",
+            ));
+        }
+    }
+    if let Some((index, reason)) = candidates.into_iter().min_by_key(|(index, _)| *index) {
+        return Err(base64_malformed_refusal(index, reason));
     }
 
     let mut octets = Vec::with_capacity(len / 4 * 3);
@@ -653,22 +676,10 @@ pub fn base64_decode(text: &str) -> Result<Vec<u8>, CodecError> {
                 octets.push(((third & 0x03) << 6) | fourth);
             }
             3 => {
-                if third & 0x03 != 0 {
-                    return Err(base64_malformed_refusal(
-                        start + 2,
-                        "the final symbol's unused low bits are nonzero",
-                    ));
-                }
                 octets.push((first << 2) | (second >> 4));
                 octets.push(((second & 0x0f) << 4) | (third >> 2));
             }
             2 => {
-                if second & 0x0f != 0 {
-                    return Err(base64_malformed_refusal(
-                        start + 1,
-                        "the final symbol's unused low bits are nonzero",
-                    ));
-                }
                 octets.push((first << 2) | (second >> 4));
             }
             _ => {

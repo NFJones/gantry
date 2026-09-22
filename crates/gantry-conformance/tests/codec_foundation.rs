@@ -471,6 +471,8 @@ fn base64_codec_refuses_malformed_and_oversized_input() {
         ("AA=A", 2),
         ("AA_A", 2),
         ("AB CD", 2),
+        ("AAAA=!", 4),
+        ("A=!A", 1),
     ] {
         let error = match base64_decode(presented) {
             Ok(value) => panic!("`{presented}` must be refused, got {value:?}"),
