@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "17961afaffd5956d503fa09a90c9ef2ce7b5ce4b6f46fa421c301f5b8817d99f",
-  "byte_length": 1260621,
-  "line_count": 16457,
+  "specification_sha256": "4e81bbf4f6b07b2a3a7157e6474eec4c889c70d4decbda08f2a7b750e220c9ee",
+  "byte_length": 1260662,
+  "line_count": 16458,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16457,
-      "sha256": "08926e3990d2fc31e4c24892ec8ea4de84cd368a76afdc769207a72cb9530ba0",
+      "end_line": 16458,
+      "sha256": "dfb43a0756aaf21a153ef714b5f90f8c3032bd0ced9813b8ce2329e304873644",
       "rationale": null
     }
   ],
@@ -45074,12 +45074,12 @@
     {
       "id": "GNT-47.7-filesystem-action-grants",
       "span_start_line": 16430,
-      "span_end_line": 16457,
-      "span_sha256": "324e1b383c2bf091c850cfe2dd6978e32e69de950d6b97e4624c42abd9862b61",
+      "span_end_line": 16458,
+      "span_sha256": "934132af8576e30b9296d78cbeb4c321b2bb7c53e5fa3dad614b20d358632911",
       "anchor_line": 16431,
       "body_start_line": 16432,
-      "body_end_line": 16457,
-      "body_sha256": "46900d4615774226d86d6f7f705059ce36d0f39d1aa607063c43eef1a2ecd4e1",
+      "body_end_line": 16458,
+      "body_sha256": "67117d944dcb415a9256a30aae4d5fd145c3ce3c0dc0caf53a8f57db3e4b5c76",
       "profiles": [
         "analyzer"
       ],
@@ -45091,7 +45091,7 @@
         {
           "key": "clause-001",
           "start_line": 16432,
-          "end_line": 16457,
+          "end_line": 16458,
           "profiles": [
             "analyzer"
           ],

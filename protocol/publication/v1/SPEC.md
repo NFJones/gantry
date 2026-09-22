@@ -16438,14 +16438,15 @@ action that declares an externally visible mutation of the object's content: thi
 exactly `create`, `replace`, and `remove` as content-mutating, the model accessor
 `FsAction::declares_content_mutation` publishes exactly that decision, and such an action is refused
 under a read-only grant rather than ignored, downgraded, renamed, or partially executed. A read
-declares no content mutation, so this grant rule refuses it under no grant: whether a read is
-admitted is decided by the clause that publishes its contract, and this clause adds no condition to
-it. No action becomes a content mutation because a grant is read-only.
+declares no content mutation, so this rule never refuses a read: whether a read is admitted is
+decided by the clause that publishes its contract, and this clause adds no condition to it. No
+action becomes a content mutation because a grant is read-only.
 
 The refusal is the same refusal this section publishes for the resource operations of
 `GNT-47.4-filesystem-resource-operations` in `GNT-47.5-filesystem-resource-state`: each vocabulary
 declares which of its own members mutates the object's content, neither vocabulary admits the
-other's members, and a grant refuses a content mutation in either one.
+other's members even though the `read` spelling is declared by both, and a grant refuses a content
+mutation in either one.
 
 This clause publishes the action-side grant rule and the content-mutation facts only: it publishes
 no grant spelling, no grant identity, no capability requirement, right, or admission, no authority,

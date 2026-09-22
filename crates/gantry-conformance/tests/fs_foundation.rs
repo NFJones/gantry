@@ -755,14 +755,9 @@ fn fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies() {
         [FsAction::Create, FsAction::Replace, FsAction::Remove],
         "exactly a create, a replace, and a remove declare a content mutation"
     );
-    for action in FsAction::ALL {
-        assert_eq!(
-            action.declares_content_mutation(),
-            action.declared_recovery_class() == RecoveryClass::NonIdempotent,
-            "the content-mutation fact and the recovery class agree for `{}`",
-            action.wire_name()
-        );
-    }
+    // The content-mutation fact of `GNT-47.7` and the recovery class of `GNT-47.3` are independent
+    // declarations that coincide for today's four actions; they are pinned separately here and in
+    // `fs_action_values_are_closed_and_classified` rather than equated.
     assert!(!FsAction::Read.declares_content_mutation());
     assert!(!FsResourceOperation::Read.declares_content_mutation());
     for operation in FsResourceOperation::ALL {
@@ -788,9 +783,9 @@ fn fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies() {
         "this clause declares exactly `create`, `replace`, and `remove` as content-mutating",
         "the model accessor `FsAction::declares_content_mutation` publishes exactly that decision",
         "such an action is refused under a read-only grant rather than ignored, downgraded, renamed, or partially executed",
-        "A read declares no content mutation, so this grant rule refuses it under no grant",
+        "A read declares no content mutation, so this rule never refuses a read",
         "No action becomes a content mutation because a grant is read-only",
-        "neither vocabulary admits the other's members, and a grant refuses a content mutation in either one",
+        "neither vocabulary admits the other's members even though the `read` spelling is declared by both, and a grant refuses a content mutation in either one",
         "the frozen registry of `GNT-47.0-filesystem-foundation-scope` is unchanged, and this clause adds no third code",
     ] {
         assert!(
