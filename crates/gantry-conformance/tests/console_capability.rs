@@ -3,7 +3,8 @@
 //! The lane reads the published note and requires it to name the declared package family with its
 //! wire spelling, the declared host-domain family with its application-only applicability and
 //! closed categories, the declared operations with their recovery classes and the requirement shape
-//! they admit, and only specification anchors that the model's clause vocabularies declare.
+//! they admit, and only specification anchors that either the model's clause vocabularies declare or
+//! the specification itself publishes.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -61,6 +62,14 @@ fn declared_anchor(token: &str) -> bool {
         .any(|anchor| *anchor == token || anchor.starts_with(&introduced))
 }
 
+/// Returns whether the specification publishes the anchor `token` or an anchor introduced by
+/// `token-`, so a citation outside the checked clause vocabularies still names a real anchor.
+fn specification_anchor(root: &Path, token: &str) -> bool {
+    let specification = read_text(&root.join("SPEC.md"));
+    specification.contains(&format!("<a id=\"{token}\"></a>"))
+        || specification.contains(&format!("<a id=\"{token}-"))
+}
+
 #[test]
 fn console_capability_note_names_the_declared_family_and_applicability() {
     let note = read_text(&workspace_root().join("docs/console-capability.md"));
@@ -105,7 +114,8 @@ fn console_capability_note_names_the_declared_family_and_applicability() {
 
 #[test]
 fn console_capability_note_cites_only_declared_anchors() {
-    let note = read_text(&workspace_root().join("docs/console-capability.md"));
+    let root = workspace_root();
+    let note = read_text(&root.join("docs/console-capability.md"));
     for token in REQUIRED_ANCHORS {
         assert!(note.contains(token), "the note must cite {token}");
         assert!(
@@ -113,6 +123,13 @@ fn console_capability_note_cites_only_declared_anchors() {
             "the note cites an anchor no declared vocabulary publishes: {token}"
         );
     }
+    // The abstract-requirement contract is the one citation outside the checked clause
+    // vocabularies, so the specification itself must publish its anchor.
+    assert!(note.contains("GNT-6.5"), "the note must cite GNT-6.5");
+    assert!(
+        specification_anchor(&root, "GNT-6.5"),
+        "the cited abstract-requirement anchor must be published by the specification"
+    );
     assert_eq!(CONSOLE_CLAUSES.len(), 6);
     for clause in CONSOLE_CLAUSES {
         assert!(
@@ -160,9 +177,30 @@ fn console_capability_note_agrees_with_the_declared_operations() {
     }
     assert!(
         flattened.contains(
-            "A console capability requirement therefore names the declared family spelling `console` together with one of the three recovery classes"
+            "A public capability requirement is one four-part identity: the package-qualified declaration path, the complete canonical typed signature, the capability family, and the recovery class"
         ),
-        "the note must publish the shape a console capability requirement may name"
+        "the note must publish the four-part requirement identity"
+    );
+    assert!(
+        flattened.contains(
+            "the two classes its declared operations state — `idempotent` for a flush and `non_idempotent` for a read or a write"
+        ),
+        "the note must publish exactly the two admissible recovery classes"
+    );
+    assert!(
+        flattened.contains("never carry the excluded `read_only` class"),
+        "the note must exclude read_only from the admissible set"
+    );
+    let mut recovered = CONSOLE_OPERATION_FACTS
+        .iter()
+        .map(|facts| facts.recovery)
+        .collect::<Vec<_>>();
+    recovered.sort_unstable();
+    recovered.dedup();
+    assert_eq!(
+        recovered.len(),
+        2,
+        "the declared operations state exactly two distinct recovery classes"
     );
 }
 

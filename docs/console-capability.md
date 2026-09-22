@@ -35,13 +35,17 @@ read identity to its exact result may retry a read.
 
 ## The shape of a console capability requirement
 
-`GNT-6.5` item 5a and `crates/gantry-ir/src/authority.rs` compose one public capability requirement
-from a canonical signature, a capability family, and a recovery class, and the authority model
-validates an owner-supplied family spelling. A console capability requirement therefore names the
-declared family spelling `console` together with one of the three recovery classes that the
-declared console operations state, so a requirement can never carry a class no console operation
-declares. This note publishes no right spelling and declares no console requirement identity,
-because the authority layer owns that vocabulary and no typed console signature exists yet.
+A public capability requirement is one four-part identity: the package-qualified declaration path,
+the complete canonical typed signature, the capability family, and the recovery class, which
+`crates/gantry-ir/src/authority.rs` composes in `AuthorityRequirementId::new` and the
+abstract-requirement contract of `GNT-6.5` owns. The console surface declares two of those parts
+today: the capability family spelling `console`, and the admissible recovery classes, which are the
+two classes its declared operations state — `idempotent` for a flush and `non_idempotent` for a
+read or a write, because no console operation is `read_only`. A console capability requirement can
+therefore never carry the excluded `read_only` class. The declaration path and the typed console
+operation signature are declared nowhere in the repository, so this note publishes no right
+spelling, mints no requirement identity, and records those two missing parts as an obligation
+rather than a claim.
 
 ## Normative bounds already in force
 
@@ -73,7 +77,8 @@ no console clause is a release authority, a redaction rule, or an implicit decla
 ## What this surface does not claim
 
 - It declares no right spelling, no console capability requirement identity, and no authority-layer
-  family declaration; the requirement shape above is a derivation rule, not a minted identity.
+  family declaration: the declaration path and the typed console operation signature are undecided,
+  and this note records that gap instead of claiming the requirement identity.
 - It grants no terminal-control capability: no console read, write, flush, detection, or dimension
   observation carries terminal-control authority, and the `std.console::control` row stays a
   declared name without a published contract.
