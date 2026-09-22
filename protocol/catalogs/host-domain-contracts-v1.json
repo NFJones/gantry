@@ -4,7 +4,7 @@
   "minor": 0,
   "schema": "gantry.host-domain-contracts/v1",
   "schema_path": "protocol/schemas/host-domain-contracts-v1.schema.json",
-  "specification_revision": "d60cc068af398e6f6fcfb8dba3a8de5e6509b44505ccf4717004e42f829dd39c",
+  "specification_revision": "fed274fd8cc7c941e3b5c848058fa03ad67b05422dbad9f0096e0e629b02a6a5",
   "families": [
     {
       "wire": "codec",

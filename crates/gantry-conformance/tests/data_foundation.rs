@@ -13,13 +13,14 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataModule,
-    DataRefusalCategory, DataVersion, MIME_PARAMETER_COUNT_BOUND, MIME_PARAMETER_NAME_TOKEN_BOUND,
-    MIME_PARAMETER_VALUE_OCTET_BOUND, MIME_SUBTYPE_TOKEN_BOUND, MIME_TEXT_OCTET_BOUND,
-    MIME_TYPE_TOKEN_BOUND, MimeType, NameClass, PackageFamily, StabilityTier,
-    URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND, URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND,
-    URL_SCHEME_SCALAR_BOUND, URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND,
-    URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND, Url, UrlHost, canonical_data_hierarchy,
-    canonical_pure_hierarchy,
+    DataRefusalCategory, DataVersion, HEADER_FIELD_COUNT_BOUND, HEADER_NAME_TOKEN_BOUND,
+    HEADER_TEXT_OCTET_BOUND, HEADER_VALUE_OCTET_BOUND, HeaderField, HeaderFieldList,
+    MIME_PARAMETER_COUNT_BOUND, MIME_PARAMETER_NAME_TOKEN_BOUND, MIME_PARAMETER_VALUE_OCTET_BOUND,
+    MIME_SUBTYPE_TOKEN_BOUND, MIME_TEXT_OCTET_BOUND, MIME_TYPE_TOKEN_BOUND, MimeType, NameClass,
+    PackageFamily, StabilityTier, URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND,
+    URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND,
+    URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND, URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND,
+    Url, UrlHost, canonical_data_hierarchy, canonical_pure_hierarchy,
 };
 
 fn workspace_root() -> PathBuf {
@@ -34,7 +35,7 @@ fn workspace_root() -> PathBuf {
 fn section_43_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(DATA_CLAUSES.len(), 4);
+    assert_eq!(DATA_CLAUSES.len(), 5);
     let mut prior = 0_usize;
     for clause in DATA_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -132,6 +133,22 @@ fn section_43_clauses_are_published() {
     ] {
         assert!(mime.contains(term), "the MIME clause must name {term}");
     }
+    let header_start = spec
+        .find(&format!("<a id=\"{}\"></a>", DATA_CLAUSES[4]))
+        .unwrap_or_else(|| panic!("the header clause anchor is published"));
+    let header = &spec[header_start..];
+    for term in [
+        "`std.data::http`",
+        "`GNT-43.1-data-value-model-contract`",
+        "`HEADER_TEXT_OCTET_BOUND`",
+        "`HEADER_NAME_TOKEN_BOUND`",
+        "`HEADER_VALUE_OCTET_BOUND`",
+        "`HEADER_FIELD_COUNT_BOUND`",
+        "`data-malformed-input`",
+        "`data-expansion-limit`",
+    ] {
+        assert!(header.contains(term), "the header clause must name {term}");
+    }
 }
 
 #[test]
@@ -177,7 +194,7 @@ fn data_surface_declares_the_three_modules() {
         let expected: &[&str] = match module {
             DataModule::Url => &[DATA_CLAUSES[0], DATA_CLAUSES[1], DATA_CLAUSES[2]],
             DataModule::Mime => &[DATA_CLAUSES[0], DATA_CLAUSES[1], DATA_CLAUSES[3]],
-            DataModule::Http => &DATA_CLAUSES[..2],
+            DataModule::Http => &[DATA_CLAUSES[0], DATA_CLAUSES[1], DATA_CLAUSES[4]],
         };
         assert_eq!(
             row.clauses, expected,
@@ -967,6 +984,20 @@ fn mime_refuses_noncanonical_spellings_and_indexes_the_departure() {
             error.detail()
         );
     }
+    let ordered = mime_refusal(MimeType::parse("text/plain; b=x; a=\"x\\y\""));
+    assert_eq!(ordered.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        ordered.detail().starts_with("octet 17: "),
+        "the name order departs before the value is examined: {}",
+        ordered.detail()
+    );
+    let repeated = mime_refusal(MimeType::parse("text/plain; a=x; a=\"b\\c\""));
+    assert_eq!(repeated.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        repeated.detail().starts_with("octet 17: "),
+        "the repeated name departs before the value is examined: {}",
+        repeated.detail()
+    );
 }
 
 #[test]
@@ -1130,6 +1161,354 @@ fn mime_bounds_are_declared_and_enforced() {
     );
     assert!(
         error.detail().contains(&MIME_TEXT_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let over_quoted = format!(
+        "text/plain; a=\"{}\\q\"",
+        "b".repeat(MIME_PARAMETER_VALUE_OCTET_BOUND + 1)
+    );
+    let error = mime_refusal(MimeType::parse(&over_quoted));
+    assert_eq!(
+        error.code(),
+        DataDiagnosticCode::ExpansionLimit,
+        "the bound is refused before the malformed tail is examined: {}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains("a parameter value"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&(MIME_PARAMETER_VALUE_OCTET_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+}
+
+fn header_field_refusal(result: Result<HeaderField, DataError>) -> DataError {
+    match result {
+        Ok(value) => panic!("the field must be refused: {}", value.canonical_text()),
+        Err(error) => error,
+    }
+}
+
+fn header_list_refusal(result: Result<HeaderFieldList, DataError>) -> DataError {
+    match result {
+        Ok(value) => panic!("the list must be refused: {}", value.canonical_text()),
+        Err(error) => error,
+    }
+}
+
+#[test]
+fn header_parses_and_displays_the_canonical_form() {
+    for text in [
+        "content-type: text/plain",
+        "x-empty:",
+        "a: 1\nb: 2",
+        "a: 1\na: 2",
+        "cache-control: no-cache, no-store",
+        "a: x  y",
+    ] {
+        let list = match HeaderFieldList::parse(text) {
+            Ok(value) => value,
+            Err(error) => panic!("`{text}` must be admitted: {}", error.detail()),
+        };
+        assert_eq!(
+            list.canonical_text(),
+            text,
+            "the canonical form is the text"
+        );
+        assert_eq!(
+            list.to_string(),
+            text,
+            "display publishes the canonical form"
+        );
+        let reparsed = match HeaderFieldList::parse(&list.canonical_text()) {
+            Ok(value) => value,
+            Err(error) => panic!("the canonical form must round-trip: {}", error.detail()),
+        };
+        assert_eq!(reparsed, list, "a parse of the canonical form is the value");
+    }
+    let field = match HeaderField::parse("content-type: text/plain") {
+        Ok(value) => value,
+        Err(error) => panic!("the field must be admitted: {}", error.detail()),
+    };
+    assert_eq!(field.name(), "content-type");
+    assert_eq!(field.value(), "text/plain");
+    let empty = match HeaderField::parse("x-empty:") {
+        Ok(value) => value,
+        Err(error) => panic!("the empty value must be admitted: {}", error.detail()),
+    };
+    assert_eq!(empty.value(), "");
+    assert_eq!(empty.canonical_text(), "x-empty:");
+    let list = match HeaderFieldList::parse("a: 1\nb: 2") {
+        Ok(value) => value,
+        Err(error) => panic!("the list must be admitted: {}", error.detail()),
+    };
+    assert_eq!(list.fields().len(), 2);
+    assert_eq!(list.fields()[0].name(), "a");
+    assert_eq!(list.fields()[1].value(), "2");
+    let empty_list = match HeaderFieldList::parse("") {
+        Ok(value) => value,
+        Err(error) => panic!("the empty list must be admitted: {}", error.detail()),
+    };
+    assert!(empty_list.fields().is_empty());
+    assert_eq!(empty_list.canonical_text(), "");
+    let single = match HeaderFieldList::parse("a: 1") {
+        Ok(value) => value,
+        Err(error) => panic!("the single field must be admitted: {}", error.detail()),
+    };
+    assert_ne!(single, list, "one field and two fields are distinct");
+    assert_ne!(
+        HeaderFieldList::parse("a: 1").unwrap_or_else(|error| panic!("{}", error.detail())),
+        HeaderFieldList::parse("a: 1\na: 2").unwrap_or_else(|error| panic!("{}", error.detail())),
+        "a repeated name is a distinct list"
+    );
+}
+
+#[test]
+fn header_refuses_noncanonical_spellings_and_indexes_the_departure() {
+    let cases: [(&str, usize); 12] = [
+        ("Content-Type: text/plain", 0),
+        ("content-type:text/plain", 13),
+        ("content-type:  text/plain", 14),
+        ("content-type: ", 13),
+        ("content-type: text/plain ", 24),
+        ("b: 1\na: 2", 5),
+        ("a: x\nB: y", 5),
+        ("a\nb: 1", 1),
+        ("a: 1\n", 5),
+        ("\na: 1", 0),
+        ("a: x\ty", 4),
+        ("a: é", 3),
+    ];
+    for (text, index) in cases {
+        let error = header_list_refusal(HeaderFieldList::parse(text));
+        assert_eq!(error.code(), DataDiagnosticCode::MalformedInput, "{text}");
+        assert_eq!(error.requirement(), DATA_CLAUSES[1], "{text}");
+        assert_eq!(
+            error.category(),
+            DataRefusalCategory::MalformedInput,
+            "{text}"
+        );
+        assert!(
+            error.detail().starts_with(&format!("octet {index}: ")),
+            "`{text}` departs at octet {index}: {}",
+            error.detail()
+        );
+    }
+}
+
+#[test]
+fn header_construction_admits_only_canonical_components() {
+    let field = match HeaderField::new("a", "x") {
+        Ok(value) => value,
+        Err(error) => panic!("the components must be admitted: {}", error.detail()),
+    };
+    assert_eq!(field.canonical_text(), "a: x");
+    let parsed = match HeaderField::parse("a: x") {
+        Ok(value) => value,
+        Err(error) => panic!("the field must be admitted: {}", error.detail()),
+    };
+    assert_eq!(field, parsed, "equality is component equality");
+    let empty = match HeaderField::new("a", "") {
+        Ok(value) => value,
+        Err(error) => panic!("the empty value must be admitted: {}", error.detail()),
+    };
+    assert_eq!(empty.canonical_text(), "a:");
+    let empty_parsed = match HeaderField::parse("a:") {
+        Ok(value) => value,
+        Err(error) => panic!("the empty field must be admitted: {}", error.detail()),
+    };
+    assert_eq!(empty, empty_parsed);
+    let list = match HeaderFieldList::new(vec![
+        match HeaderField::new("a", "1") {
+            Ok(value) => value,
+            Err(error) => panic!("the field must be admitted: {}", error.detail()),
+        },
+        match HeaderField::new("a", "2") {
+            Ok(value) => value,
+            Err(error) => panic!("the field must be admitted: {}", error.detail()),
+        },
+        match HeaderField::new("b", "3") {
+            Ok(value) => value,
+            Err(error) => panic!("the field must be admitted: {}", error.detail()),
+        },
+    ]) {
+        Ok(value) => value,
+        Err(error) => panic!("the fields must be admitted: {}", error.detail()),
+    };
+    assert_eq!(list.canonical_text(), "a: 1\na: 2\nb: 3");
+    let reparsed = match HeaderFieldList::parse(&list.canonical_text()) {
+        Ok(value) => value,
+        Err(error) => panic!("the constructed list must round-trip: {}", error.detail()),
+    };
+    assert_eq!(reparsed, list);
+    for (result, index) in [
+        (HeaderField::new("A", "x"), 0_usize),
+        (HeaderField::new("a", " x"), 0),
+        (HeaderField::new("a", "x "), 1),
+        (HeaderField::new("a", "x\ty"), 1),
+        (HeaderField::new("a", "x\u{7f}y"), 1),
+    ] {
+        let error = header_field_refusal(result);
+        assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+        assert_eq!(error.requirement(), DATA_CLAUSES[1]);
+        assert!(
+            error.detail().starts_with(&format!("octet {index}: ")),
+            "the refusal names the component index: {}",
+            error.detail()
+        );
+    }
+    let first = match HeaderField::new("b", "1") {
+        Ok(value) => value,
+        Err(error) => panic!("the field must be admitted: {}", error.detail()),
+    };
+    let second = match HeaderField::new("a", "2") {
+        Ok(value) => value,
+        Err(error) => panic!("the field must be admitted: {}", error.detail()),
+    };
+    let error = header_list_refusal(HeaderFieldList::new(vec![first, second]));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("octet 0: "),
+        "an out-of-order list is refused: {}",
+        error.detail()
+    );
+    let empty_list = match HeaderFieldList::new(Vec::new()) {
+        Ok(value) => value,
+        Err(error) => panic!("the empty list must be admitted: {}", error.detail()),
+    };
+    assert_ne!(
+        empty_list,
+        match HeaderFieldList::new(vec![match HeaderField::new("a", "") {
+            Ok(value) => value,
+            Err(error) => panic!("the field must be admitted: {}", error.detail()),
+        }]) {
+            Ok(value) => value,
+            Err(error) => panic!("the list must be admitted: {}", error.detail()),
+        },
+        "an empty list and one empty-valued field are distinct"
+    );
+}
+
+#[test]
+fn header_bounds_are_declared_and_enforced() {
+    let field_text = format!("a: {}", "b".repeat(HEADER_VALUE_OCTET_BOUND));
+    let list_text = format!("{field_text}\n{field_text}");
+    let error = header_list_refusal(HeaderFieldList::parse(&list_text));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the presented text"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains(&list_text.len().to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&HEADER_TEXT_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let long_name = format!("{}: x", "a".repeat(HEADER_NAME_TOKEN_BOUND + 1));
+    let error = header_field_refusal(HeaderField::parse(&long_name));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the field name"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&(HEADER_NAME_TOKEN_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+    let long_value = format!("a: {}", "b".repeat(HEADER_VALUE_OCTET_BOUND + 1));
+    let error = header_field_refusal(HeaderField::parse(&long_value));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the field value"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&(HEADER_VALUE_OCTET_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+    let many = vec!["a: 1"; HEADER_FIELD_COUNT_BOUND + 1].join("\n");
+    let error = header_list_refusal(HeaderFieldList::parse(&many));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the field count"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&(HEADER_FIELD_COUNT_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+    let fields = (0..HEADER_FIELD_COUNT_BOUND)
+        .map(
+            |_| match HeaderField::new("a", &"b".repeat(HEADER_VALUE_OCTET_BOUND)) {
+                Ok(value) => value,
+                Err(error) => panic!("the field must be admitted: {}", error.detail()),
+            },
+        )
+        .collect::<Vec<_>>();
+    let error = header_list_refusal(HeaderFieldList::new(fields));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the canonical form"),
+        "{}",
+        error.detail()
+    );
+    let extra = (0..HEADER_FIELD_COUNT_BOUND + 1)
+        .map(|_| match HeaderField::new("a", "1") {
+            Ok(value) => value,
+            Err(error) => panic!("the field must be admitted: {}", error.detail()),
+        })
+        .collect::<Vec<_>>();
+    let error = header_list_refusal(HeaderFieldList::new(extra));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the field count"),
+        "{}",
+        error.detail()
+    );
+    let over_name = format!("{}!: x", "a".repeat(HEADER_NAME_TOKEN_BOUND + 1));
+    let error = header_field_refusal(HeaderField::parse(&over_name));
+    assert_eq!(
+        error.code(),
+        DataDiagnosticCode::ExpansionLimit,
+        "the bound is refused before the malformed tail is examined: {}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains("the field name"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&(HEADER_NAME_TOKEN_BOUND + 1).to_string()),
         "{}",
         error.detail()
     );

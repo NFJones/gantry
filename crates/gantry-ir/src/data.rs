@@ -16,11 +16,12 @@ use crate::stdlib::{
 };
 
 /// The declared clauses of Section 43, in specification order.
-pub const DATA_CLAUSES: [&str; 4] = [
+pub const DATA_CLAUSES: [&str; 5] = [
     "GNT-43.0-data-family-scope",
     "GNT-43.1-data-value-model-contract",
     "GNT-43.2-url-value-model",
     "GNT-43.3-mime-type-and-parameter-model",
+    "GNT-43.4-header-field-and-field-list-model",
 ];
 
 /// The one declared version of every value model in this revision
@@ -353,6 +354,7 @@ pub const DATA_ITEMS: [DataItemRow; 3] = [
         clauses: &[
             "GNT-43.0-data-family-scope",
             "GNT-43.1-data-value-model-contract",
+            "GNT-43.4-header-field-and-field-list-model",
         ],
     },
     DataItemRow {
@@ -1462,10 +1464,7 @@ impl MimeType {
                 "the presented text",
             ));
         }
-        let mut index = 0_usize;
-        while index < bytes.len() && is_mime_token_octet(bytes[index]) {
-            index += 1;
-        }
+        let mut index = scan_mime_token(bytes, 0, MIME_TYPE_TOKEN_BOUND, "the type")?;
         let media_type = &text[..index];
         admit_mime_token(media_type, 0, MIME_TYPE_TOKEN_BOUND, "the type")?;
         if bytes.get(index) != Some(&b'/') {
@@ -1476,9 +1475,7 @@ impl MimeType {
         }
         index += 1;
         let subtype_start = index;
-        while index < bytes.len() && is_mime_token_octet(bytes[index]) {
-            index += 1;
-        }
+        index = scan_mime_token(bytes, index, MIME_SUBTYPE_TOKEN_BOUND, "the subtype")?;
         let subtype = &text[subtype_start..index];
         admit_mime_token(
             subtype,
@@ -1500,10 +1497,20 @@ impl MimeType {
                 ));
             }
             index += 2;
-            let name_start = index;
-            while index < bytes.len() && is_mime_token_octet(bytes[index]) {
-                index += 1;
+            if parameters.len() + 1 > MIME_PARAMETER_COUNT_BOUND {
+                return Err(mime_bound(
+                    parameters.len() + 1,
+                    MIME_PARAMETER_COUNT_BOUND,
+                    "the parameter count",
+                ));
             }
+            let name_start = index;
+            index = scan_mime_token(
+                bytes,
+                index,
+                MIME_PARAMETER_NAME_TOKEN_BOUND,
+                "the parameter name",
+            )?;
             let name = &text[name_start..index];
             admit_mime_token(
                 name,
@@ -1511,12 +1518,6 @@ impl MimeType {
                 MIME_PARAMETER_NAME_TOKEN_BOUND,
                 "the parameter name",
             )?;
-            if bytes.get(index) != Some(&b'=') {
-                return Err(mime_malformed(index, "a parameter name is followed by `=`"));
-            }
-            index += 1;
-            let (value, next) = admit_mime_parameter_value(text, bytes, index)?;
-            index = next;
             let previous = parameters.last().map(|(previous, _)| previous.as_str());
             if previous.is_some_and(|previous| name <= previous) {
                 let detail = if previous == Some(name) {
@@ -1526,13 +1527,12 @@ impl MimeType {
                 };
                 return Err(mime_malformed(name_start, detail));
             }
-            if parameters.len() + 1 > MIME_PARAMETER_COUNT_BOUND {
-                return Err(mime_bound(
-                    parameters.len() + 1,
-                    MIME_PARAMETER_COUNT_BOUND,
-                    "the parameter count",
-                ));
+            if bytes.get(index) != Some(&b'=') {
+                return Err(mime_malformed(index, "a parameter name is followed by `=`"));
             }
+            index += 1;
+            let (value, next) = admit_mime_parameter_value(text, bytes, index)?;
+            index = next;
             parameters.push((name.to_owned(), value));
         }
         Ok(Self {
@@ -1663,6 +1663,26 @@ fn is_mime_token(text: &str) -> bool {
         && bytes.iter().all(|byte| is_mime_token_octet(*byte))
 }
 
+/// Scans one declared MIME token, refusing as soon as its declared bound is exceeded
+/// (`GNT-43.3-mime-type-and-parameter-model`).
+fn scan_mime_token(
+    bytes: &[u8],
+    start: usize,
+    bound: usize,
+    what: &'static str,
+) -> Result<usize, DataError> {
+    let mut index = start;
+    let mut scalars = 0_usize;
+    while index < bytes.len() && is_mime_token_octet(bytes[index]) {
+        scalars += 1;
+        if scalars > bound {
+            return Err(mime_bound(scalars, bound, what));
+        }
+        index += 1;
+    }
+    Ok(index)
+}
+
 /// Admits one declared MIME token (`GNT-43.3-mime-type-and-parameter-model`).
 fn admit_mime_token(
     text: &str,
@@ -1722,6 +1742,7 @@ fn admit_mime_parameter_value(
 ) -> Result<(String, usize), DataError> {
     if bytes.get(start) == Some(&b'"') {
         let mut carried = String::new();
+        let mut carried_octets = 0_usize;
         let mut index = start + 1;
         loop {
             let Some(byte) = bytes.get(index) else {
@@ -1740,6 +1761,14 @@ fn admit_mime_parameter_value(
                         return Err(mime_malformed(index + 1, "an escape holds `\"` or `\\`"));
                     }
                     carried.push(char::from(*escaped));
+                    carried_octets += 1;
+                    if carried_octets > MIME_PARAMETER_VALUE_OCTET_BOUND {
+                        return Err(mime_bound(
+                            carried_octets,
+                            MIME_PARAMETER_VALUE_OCTET_BOUND,
+                            "a parameter value",
+                        ));
+                    }
                     index += 2;
                 }
                 _ => {
@@ -1750,6 +1779,14 @@ fn admit_mime_parameter_value(
                         ));
                     }
                     carried.push(char::from(*byte));
+                    carried_octets += 1;
+                    if carried_octets > MIME_PARAMETER_VALUE_OCTET_BOUND {
+                        return Err(mime_bound(
+                            carried_octets,
+                            MIME_PARAMETER_VALUE_OCTET_BOUND,
+                            "a parameter value",
+                        ));
+                    }
                     index += 1;
                 }
             }
@@ -1770,7 +1807,16 @@ fn admit_mime_parameter_value(
         return Ok((carried, index));
     }
     let mut index = start;
+    let mut octets = 0_usize;
     while index < bytes.len() && is_mime_token_octet(bytes[index]) {
+        octets += 1;
+        if octets > MIME_PARAMETER_VALUE_OCTET_BOUND {
+            return Err(mime_bound(
+                octets,
+                MIME_PARAMETER_VALUE_OCTET_BOUND,
+                "a parameter value",
+            ));
+        }
         index += 1;
     }
     if index == start || !bytes[start].is_ascii_lowercase() {
@@ -1788,4 +1834,333 @@ fn admit_mime_parameter_value(
         ));
     }
     Ok((carried, index))
+}
+
+/// The declared text bound of `GNT-43.4-header-field-and-field-list-model`.
+pub const HEADER_TEXT_OCTET_BOUND: usize = 8_192;
+
+/// The declared name-token scalar bound of `GNT-43.4-header-field-and-field-list-model`.
+pub const HEADER_NAME_TOKEN_BOUND: usize = 64;
+
+/// The declared value octet bound of `GNT-43.4-header-field-and-field-list-model`.
+pub const HEADER_VALUE_OCTET_BOUND: usize = 4_096;
+
+/// The declared field-count bound of `GNT-43.4-header-field-and-field-list-model`.
+pub const HEADER_FIELD_COUNT_BOUND: usize = 64;
+
+/// One header field of `GNT-43.4-header-field-and-field-list-model`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeaderField {
+    name: String,
+    value: String,
+}
+
+impl HeaderField {
+    /// Constructs one header field from its declared components
+    /// (`GNT-43.4-header-field-and-field-list-model`).
+    pub fn new(name: &str, value: &str) -> Result<Self, DataError> {
+        admit_header_name(name, 0)?;
+        admit_header_value(value, 0)?;
+        Ok(Self {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        })
+    }
+
+    /// Parses the canonical form of one header field
+    /// (`GNT-43.4-header-field-and-field-list-model`).
+    pub fn parse(text: &str) -> Result<Self, DataError> {
+        let bytes = text.as_bytes();
+        if bytes.len() > HEADER_TEXT_OCTET_BOUND {
+            return Err(header_bound(
+                bytes.len(),
+                HEADER_TEXT_OCTET_BOUND,
+                "the presented text",
+            ));
+        }
+        parse_header_field(text, 0)
+    }
+
+    /// Returns the declared name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the declared value.
+    #[must_use]
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// Publishes the canonical form of this field
+    /// (`GNT-43.4-header-field-and-field-list-model`).
+    #[must_use]
+    pub fn canonical_text(&self) -> String {
+        if self.value.is_empty() {
+            format!("{}:", self.name)
+        } else {
+            format!("{}: {}", self.name, self.value)
+        }
+    }
+}
+
+impl std::fmt::Display for HeaderField {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.canonical_text())
+    }
+}
+
+/// One header field list of `GNT-43.4-header-field-and-field-list-model`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeaderFieldList {
+    fields: Vec<HeaderField>,
+}
+
+impl HeaderFieldList {
+    /// Constructs one header field list from declared fields
+    /// (`GNT-43.4-header-field-and-field-list-model`).
+    pub fn new(fields: Vec<HeaderField>) -> Result<Self, DataError> {
+        if fields.len() > HEADER_FIELD_COUNT_BOUND {
+            return Err(header_bound(
+                fields.len(),
+                HEADER_FIELD_COUNT_BOUND,
+                "the field count",
+            ));
+        }
+        for pair in fields.windows(2) {
+            if pair[1].name < pair[0].name {
+                return Err(header_malformed(
+                    0,
+                    "the field names follow the canonical order",
+                ));
+            }
+        }
+        let value = Self { fields };
+        let text = value.canonical_text();
+        if text.len() > HEADER_TEXT_OCTET_BOUND {
+            return Err(header_bound(
+                text.len(),
+                HEADER_TEXT_OCTET_BOUND,
+                "the canonical form",
+            ));
+        }
+        Ok(value)
+    }
+
+    /// Parses the canonical form of one header field list
+    /// (`GNT-43.4-header-field-and-field-list-model`).
+    pub fn parse(text: &str) -> Result<Self, DataError> {
+        let bytes = text.as_bytes();
+        if bytes.len() > HEADER_TEXT_OCTET_BOUND {
+            return Err(header_bound(
+                bytes.len(),
+                HEADER_TEXT_OCTET_BOUND,
+                "the presented text",
+            ));
+        }
+        let mut fields = Vec::new();
+        if text.is_empty() {
+            return Ok(Self { fields });
+        }
+        let mut offset = 0_usize;
+        for piece in text.split('\n') {
+            if fields.len() + 1 > HEADER_FIELD_COUNT_BOUND {
+                return Err(header_bound(
+                    fields.len() + 1,
+                    HEADER_FIELD_COUNT_BOUND,
+                    "the field count",
+                ));
+            }
+            let field = parse_header_field(piece, offset)?;
+            if fields
+                .last()
+                .is_some_and(|previous: &HeaderField| field.name() < previous.name())
+            {
+                return Err(header_malformed(
+                    offset,
+                    "the field names follow the canonical order",
+                ));
+            }
+            fields.push(field);
+            offset += piece.len() + 1;
+        }
+        Ok(Self { fields })
+    }
+
+    /// Returns the declared fields, in canonical order.
+    #[must_use]
+    pub fn fields(&self) -> &[HeaderField] {
+        &self.fields
+    }
+
+    /// Publishes the canonical form of this list
+    /// (`GNT-43.4-header-field-and-field-list-model`).
+    #[must_use]
+    pub fn canonical_text(&self) -> String {
+        let mut text = String::new();
+        for (index, field) in self.fields.iter().enumerate() {
+            if index > 0 {
+                text.push('\n');
+            }
+            text.push_str(&field.canonical_text());
+        }
+        text
+    }
+}
+
+impl std::fmt::Display for HeaderFieldList {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.canonical_text())
+    }
+}
+
+/// Publishes one malformed-input refusal for the header value model
+/// (`GNT-43.4-header-field-and-field-list-model`).
+fn header_malformed(index: usize, detail: &'static str) -> DataError {
+    DataError::new(
+        DataDiagnosticCode::MalformedInput,
+        format!("octet {index}: {detail}"),
+    )
+}
+
+/// Publishes one expansion-limit refusal for the header value model
+/// (`GNT-43.4-header-field-and-field-list-model`).
+fn header_bound(observed: usize, declared: usize, what: &'static str) -> DataError {
+    DataError::new(
+        DataDiagnosticCode::ExpansionLimit,
+        format!("{what} holds {observed}; the declared bound is {declared}"),
+    )
+}
+
+/// Returns whether the octet is a declared header name octet
+/// (`GNT-43.4-header-field-and-field-list-model`).
+fn is_header_name_octet(byte: u8) -> bool {
+    byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_' | b'.')
+}
+
+/// Admits one declared header name (`GNT-43.4-header-field-and-field-list-model`).
+fn admit_header_name(text: &str, base: usize) -> Result<(), DataError> {
+    let bytes = text.as_bytes();
+    let scalars = text.chars().count();
+    if scalars > HEADER_NAME_TOKEN_BOUND {
+        return Err(header_bound(
+            scalars,
+            HEADER_NAME_TOKEN_BOUND,
+            "the field name",
+        ));
+    }
+    if !bytes.first().is_some_and(u8::is_ascii_lowercase) {
+        return Err(header_malformed(
+            base,
+            "a field name begins with a lowercase ASCII letter",
+        ));
+    }
+    for (index, byte) in bytes.iter().enumerate().skip(1) {
+        if !is_header_name_octet(*byte) {
+            return Err(header_malformed(
+                base + index,
+                "a field name holds lowercase letters, digits, `-`, `_`, and `.`",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Admits one declared header value (`GNT-43.4-header-field-and-field-list-model`).
+fn admit_header_value(text: &str, base: usize) -> Result<(), DataError> {
+    let bytes = text.as_bytes();
+    if bytes.len() > HEADER_VALUE_OCTET_BOUND {
+        return Err(header_bound(
+            bytes.len(),
+            HEADER_VALUE_OCTET_BOUND,
+            "the field value",
+        ));
+    }
+    for (index, byte) in bytes.iter().enumerate() {
+        if !matches!(*byte, 0x20..=0x7E) {
+            return Err(header_malformed(
+                base + index,
+                "a field value holds the visible octets U+0020 through U+007E",
+            ));
+        }
+    }
+    if bytes.first() == Some(&b' ') {
+        return Err(header_malformed(
+            base,
+            "a field value begins with an octet that is not a space",
+        ));
+    }
+    if bytes.last() == Some(&b' ') {
+        return Err(header_malformed(
+            base + bytes.len() - 1,
+            "a field value ends with an octet that is not a space",
+        ));
+    }
+    Ok(())
+}
+
+/// Parses one header field at one base offset
+/// (`GNT-43.4-header-field-and-field-list-model`).
+fn parse_header_field(text: &str, base: usize) -> Result<HeaderField, DataError> {
+    let bytes = text.as_bytes();
+    let Some(colon) = text.find(':') else {
+        let mut position = 0_usize;
+        let mut scalars = 0_usize;
+        while position < bytes.len()
+            && if position == 0 {
+                bytes[position].is_ascii_lowercase()
+            } else {
+                is_header_name_octet(bytes[position])
+            }
+        {
+            if bytes[position] & 0xC0 != 0x80 {
+                scalars += 1;
+                if scalars > HEADER_NAME_TOKEN_BOUND {
+                    return Err(header_bound(
+                        scalars,
+                        HEADER_NAME_TOKEN_BOUND,
+                        "the field name",
+                    ));
+                }
+            }
+            position += 1;
+        }
+        return Err(header_malformed(
+            base + position,
+            "a header field names its field with `:`",
+        ));
+    };
+    let mut position = 0_usize;
+    let mut scalars = 0_usize;
+    while position < colon {
+        if bytes[position] & 0xC0 != 0x80 {
+            scalars += 1;
+            if scalars > HEADER_NAME_TOKEN_BOUND {
+                return Err(header_bound(
+                    scalars,
+                    HEADER_NAME_TOKEN_BOUND,
+                    "the field name",
+                ));
+            }
+        }
+        position += 1;
+    }
+    admit_header_name(&text[..colon], base)?;
+    let index = colon + 1;
+    let value = if bytes.get(index) == Some(&b' ') && index + 1 < bytes.len() {
+        admit_header_value(&text[index + 1..], base + index + 1)?;
+        text[index + 1..].to_owned()
+    } else if index == bytes.len() {
+        String::new()
+    } else {
+        return Err(header_malformed(
+            base + index,
+            "a single space precedes a non-empty value and an empty value follows `:` alone",
+        ));
+    };
+    Ok(HeaderField {
+        name: text[..colon].to_owned(),
+        value,
+    })
 }

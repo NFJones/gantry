@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "d60cc068af398e6f6fcfb8dba3a8de5e6509b44505ccf4717004e42f829dd39c",
-  "byte_length": 1161032,
-  "line_count": 15755,
+  "specification_sha256": "fed274fd8cc7c941e3b5c848058fa03ad67b05422dbad9f0096e0e629b02a6a5",
+  "byte_length": 1166411,
+  "line_count": 15759,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "ac0b188abf1a2b6ce661f43ea07c34297a7788e4547eee7d7468b4e6bcff7a79",
+      "sha256": "6407df343bd39a9794102438fd60fd741960ae5d31e3b57394205597e6cc6b47",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15755,
-      "sha256": "0b41d2f1646603676126509fed899310cf5b9cdd2fb6f0f18c7335a3443b0305",
+      "end_line": 15759,
+      "sha256": "faf98b3a28e389c69a4afd5e1f577989311d4f891641348be0dab890ba5b3384",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "7a9e6fd8e6d9ed9d872a4996b8e89e4d08f7543e39779c6a0804916fe85e1ce6",
+      "span_sha256": "cd46d11e43aec00ee5fe9061beb1de5cbb024a9f3ff8bdb32e467a9bbf0820dd",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "055c5160caee717088a90e1d5606c6bafab9b268e4c290f073616ff2e61f7746",
+      "body_sha256": "285ab3fbf84377d0fc35bf26d3e0a878dd5e0a21a9d145d7a39ad8f72689ebd0",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -43969,6 +43969,50 @@
                 "crates/gantry-conformance/tests/data_foundation.rs#mime_refuses_noncanonical_spellings_and_indexes_the_departure",
                 "crates/gantry-conformance/tests/data_foundation.rs#mime_construction_admits_only_canonical_components",
                 "crates/gantry-conformance/tests/data_foundation.rs#mime_bounds_are_declared_and_enforced"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-43.4-header-field-and-field-list-model",
+      "span_start_line": 15756,
+      "span_end_line": 15759,
+      "span_sha256": "316299c18fea68a9c020175a3329a68b990eb8823081c7f93eb0b2f090ed3638",
+      "anchor_line": 15757,
+      "body_start_line": 15758,
+      "body_end_line": 15759,
+      "body_sha256": "a44b2f44c66a8d8e4dc1d54626c2e991c0c7d64b48aac799ca208c0f85440145",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15758,
+          "end_line": 15759,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/data_foundation.rs#header_parses_and_displays_the_canonical_form",
+                "crates/gantry-conformance/tests/data_foundation.rs#header_refuses_noncanonical_spellings_and_indexes_the_departure",
+                "crates/gantry-conformance/tests/data_foundation.rs#header_construction_admits_only_canonical_components",
+                "crates/gantry-conformance/tests/data_foundation.rs#header_bounds_are_declared_and_enforced"
               ],
               "rationale": null
             }

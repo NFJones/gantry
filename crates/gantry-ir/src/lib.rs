@@ -326,14 +326,18 @@ pub use codec::{
 // The Section 43 data foundation: the declared `std.data` family with its `http`, `mime`, and
 // `url` modules, the versioned value-model identity and its exact admission rule, the frozen
 // refusal vocabulary with its declared refusal categories, the URL value model of
-// `GNT-43.2-url-value-model`, and the separation between these pure value models and the
-// capability-backed network contracts of `GNT-29.6-dns-socket-tls-and-http-contracts`.
+// `GNT-43.2-url-value-model`, the MIME type value model of `GNT-43.3-mime-type-and-parameter-model`,
+// the header field and field list model of `GNT-43.4-header-field-and-field-list-model`, and the
+// separation between these pure value models and the capability-backed network contracts of
+// `GNT-29.6-dns-socket-tls-and-http-contracts`.
 pub use data::{
     DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataItemRow,
-    DataModule, DataRefusalCategory, DataVersion, MIME_PARAMETER_COUNT_BOUND,
-    MIME_PARAMETER_NAME_TOKEN_BOUND, MIME_PARAMETER_VALUE_OCTET_BOUND, MIME_SUBTYPE_TOKEN_BOUND,
-    MIME_TEXT_OCTET_BOUND, MIME_TYPE_TOKEN_BOUND, MimeType, URL_FRAGMENT_OCTET_BOUND,
-    URL_HOST_SCALAR_BOUND, URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND,
+    DataModule, DataRefusalCategory, DataVersion, HEADER_FIELD_COUNT_BOUND,
+    HEADER_NAME_TOKEN_BOUND, HEADER_TEXT_OCTET_BOUND, HEADER_VALUE_OCTET_BOUND, HeaderField,
+    HeaderFieldList, MIME_PARAMETER_COUNT_BOUND, MIME_PARAMETER_NAME_TOKEN_BOUND,
+    MIME_PARAMETER_VALUE_OCTET_BOUND, MIME_SUBTYPE_TOKEN_BOUND, MIME_TEXT_OCTET_BOUND,
+    MIME_TYPE_TOKEN_BOUND, MimeType, URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND,
+    URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND,
     URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND, URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND,
     Url, UrlHost, canonical_data_hierarchy, declare_data_surface,
 };

@@ -4,7 +4,7 @@
  "status": "verified",
  "specification": {
   "path": "SPEC.md",
-  "sha256": "d60cc068af398e6f6fcfb8dba3a8de5e6509b44505ccf4717004e42f829dd39c"
+  "sha256": "fed274fd8cc7c941e3b5c848058fa03ad67b05422dbad9f0096e0e629b02a6a5"
  },
  "prerequisite_source": {
   "path": "docs/reference/general-purpose-refactor-issue-plan.md",
@@ -147,19 +147,19 @@
  "artifacts": [
   {
    "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-   "sha256": "35f35d59cf256cbc36fb25c459c8bb1777e84c5d21695e7425c1cf5ece467b4e"
+   "sha256": "a71d13fcc3abb155bd28c8c6ac233333f11f4c5ed8d4f7ef28cb10eb05e4d91d"
   },
   {
    "path": "protocol/conformance/async-execution-adoption-v1.json",
-   "sha256": "00815fc7985ffd54d6221c05afe67b893cd687a721f48fbe32f7c680ac326416"
+   "sha256": "7dca9918772c0fef1c5658aeec05133e1e17d823542a66b52a17d331e1f26a59"
   },
   {
    "path": "protocol/conformance/general-purpose-preregistration-gate-v1.json",
-   "sha256": "f624106e9be8c8e1811c4014260bf934d50bc138cc4537d5a32f137f900d00fb"
+   "sha256": "19a25799bdc2c883ee698b32b344fc4bef573413f85692e353b6cc5a73879cde"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "33f93751448d92abfd633f9e683bb7e682729f6b66e74bb37d05be457ecc8557"
+   "sha256": "f805efc3d81f68ef367379ab50485786c62f6ee8fa1c195ac428fb19a161b6d5"
   }
  ],
  "evidence": [
