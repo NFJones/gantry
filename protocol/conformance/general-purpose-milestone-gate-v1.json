@@ -4,11 +4,11 @@
  "status": "verified",
  "specification": {
   "path": "SPEC.md",
-  "sha256": "d5854d4ce1aa8cf07951f25e9e0a20260af78ed899eea834b0e00385f650ce5f"
+  "sha256": "724e3ad92c9edd588723071f86f8c0e7341a67166827712f56df709756812bbe"
  },
  "prerequisite_source": {
   "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-  "sha256": "872afbdcffb7596681f7af6f9733b038efc294f487147b613367a5f3ce7cd799"
+  "sha256": "fd746c2efc2d489af53e468f39969de480674638851a36b6b3607bb8a047cbea"
  },
  "verifies": [
   "artifact-digest-integrity",
@@ -123,7 +123,7 @@
  "artifacts": [
   {
    "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-   "sha256": "872afbdcffb7596681f7af6f9733b038efc294f487147b613367a5f3ce7cd799"
+   "sha256": "fd746c2efc2d489af53e468f39969de480674638851a36b6b3607bb8a047cbea"
   },
   {
    "path": "protocol/catalogs/std-test-surface-v1.json",
@@ -135,11 +135,11 @@
   },
   {
    "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
-   "sha256": "c8b09cbb51c3fc609ac57b7bdc0c4c6df0ab77e534842e9cd52712cf6b5952e4"
+   "sha256": "bb0407c1bb87fb0eac39bb37a1dc0e27a03e00a53722d1dc5473d22ee20a35d5"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "e6281450e4b74a60205caee04356ae9d68801a481c1a61449d2046c7dbea87a4"
+   "sha256": "d941dc8bfb81a45da3048956849dc05648c97dbd43649d4b715c91ed6da863b0"
   }
  ],
  "evidence": [

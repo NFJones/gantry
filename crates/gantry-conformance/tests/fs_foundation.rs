@@ -168,6 +168,31 @@ fn fs_surface_admission_is_closed_and_exact() {
         "a declared name outside the three modules is refused"
     );
 
+    // A partially declared surface is refused rather than completed or repaired.
+    let mut partial = StdGraph::new(Prelude::canonical());
+    assert!(
+        partial
+            .declare(family_package(
+                &[SemanticMode::Application],
+                &[TargetKind::Library, TargetKind::Binary],
+            ))
+            .is_ok()
+    );
+    let single = StdItem::new(
+        "std.fs::action",
+        NameClass::Module,
+        StabilityTier::Stable,
+        &[SemanticMode::Application],
+        &[TargetKind::Library, TargetKind::Binary],
+    )
+    .unwrap_or_else(|error| panic!("the single-row declaration is admissible: {error:?}"));
+    assert!(partial.declare_item(single).is_ok());
+    assert_eq!(
+        admit_fs_surface(&partial).err().map(|error| error.code()),
+        Some(StdlibDiagnosticCode::InvalidNameClassification),
+        "a partially declared surface is refused"
+    );
+
     let mut mismatched = StdGraph::new(Prelude::canonical());
     assert!(
         mismatched
