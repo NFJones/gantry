@@ -14,7 +14,10 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{
     DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataModule,
     DataRefusalCategory, DataVersion, NameClass, PackageFamily, StabilityTier,
-    canonical_data_hierarchy, canonical_pure_hierarchy,
+    URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND, URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND,
+    URL_SCHEME_SCALAR_BOUND, URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND,
+    URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND, Url, UrlHost, canonical_data_hierarchy,
+    canonical_pure_hierarchy,
 };
 
 fn workspace_root() -> PathBuf {
@@ -29,7 +32,7 @@ fn workspace_root() -> PathBuf {
 fn section_43_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(DATA_CLAUSES.len(), 2);
+    assert_eq!(DATA_CLAUSES.len(), 3);
     let mut prior = 0_usize;
     for clause in DATA_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -86,6 +89,28 @@ fn section_43_clauses_are_published() {
             "the contract clause must name {term}"
         );
     }
+    let url_start = spec
+        .find(&format!("<a id=\"{}\"></a>", DATA_CLAUSES[2]))
+        .unwrap_or_else(|| panic!("the URL clause anchor is published"));
+    let url = &spec[url_start..];
+    for term in [
+        "`std.data::url`",
+        "`GNT-43.1-data-value-model-contract`",
+        "`URL_TEXT_OCTET_BOUND`",
+        "`URL_SCHEME_SCALAR_BOUND`",
+        "`URL_HOST_SCALAR_BOUND`",
+        "`URL_LABEL_SCALAR_BOUND`",
+        "`URL_ZONE_SCALAR_BOUND`",
+        "`URL_SEGMENT_COUNT_BOUND`",
+        "`URL_SEGMENT_OCTET_BOUND`",
+        "`URL_QUERY_OCTET_BOUND`",
+        "`URL_FRAGMENT_OCTET_BOUND`",
+        "`%25`",
+        "`data-malformed-input`",
+        "`data-expansion-limit`",
+    ] {
+        assert!(url.contains(term), "the URL clause must name {term}");
+    }
 }
 
 #[test]
@@ -128,9 +153,12 @@ fn data_surface_declares_the_three_modules() {
         assert_eq!(row.name, module.module_name());
         assert_eq!(row.class, NameClass::Module, "`{}` is a module", row.name);
         assert_eq!(row.tier, StabilityTier::Stable, "`{}` is stable", row.name);
+        let expected: &[&str] = match module {
+            DataModule::Url => &DATA_CLAUSES[..],
+            DataModule::Http | DataModule::Mime => &DATA_CLAUSES[..2],
+        };
         assert_eq!(
-            row.clauses,
-            &DATA_CLAUSES[..],
+            row.clauses, expected,
             "`{}` publishes exactly the clauses that publish facts about its surface",
             row.name
         );
@@ -303,4 +331,439 @@ fn refusals_are_frozen_and_classified() {
         );
     }
     assert!(DataRefusalCategory::from_wire_name("not-a-category").is_none());
+}
+
+fn refusal(result: Result<Url, DataError>) -> DataError {
+    match result {
+        Ok(value) => panic!("the value must be refused: {}", value.canonical_text()),
+        Err(error) => error,
+    }
+}
+
+#[test]
+fn url_parses_and_displays_the_canonical_form() {
+    for text in [
+        "https://example.test/",
+        "https://example.test/a/b?x=1#frag",
+        "http://127.0.0.1:8080/p",
+        "http://[::1]/",
+        "http://[fe80::1%25eth0]/",
+        "http://[2001:db8::1]:443/x",
+        "ssh://h/",
+        "https://example.test/%2Fescaped?p=%20#f%20g",
+    ] {
+        let value = match Url::parse(text) {
+            Ok(value) => value,
+            Err(error) => panic!("`{text}` must be admitted: {}", error.detail()),
+        };
+        assert_eq!(
+            value.canonical_text(),
+            text,
+            "the canonical form is the text"
+        );
+        assert_eq!(
+            value.to_string(),
+            text,
+            "display publishes the canonical form"
+        );
+        let reparsed = match Url::parse(&value.canonical_text()) {
+            Ok(value) => value,
+            Err(error) => panic!("the canonical form must round-trip: {}", error.detail()),
+        };
+        assert_eq!(
+            reparsed, value,
+            "a parse of the canonical form is the value"
+        );
+    }
+    let zoned = match Url::parse("http://[fe80::1%25eth0]:80/x") {
+        Ok(value) => value,
+        Err(error) => panic!("the zoned literal must be admitted: {}", error.detail()),
+    };
+    assert_eq!(zoned.scheme(), "http");
+    assert_eq!(zoned.port(), Some(80));
+    assert_eq!(
+        zoned.host(),
+        &UrlHost::Ipv6 {
+            groups: [0xfe80, 0, 0, 0, 0, 0, 0, 1],
+            zone: Some("eth0".to_owned()),
+        }
+    );
+    assert_eq!(zoned.segments().len(), 1);
+    assert_eq!(zoned.segments()[0], "x");
+    assert_eq!(zoned.query(), None);
+    assert_eq!(zoned.fragment(), None);
+    let v4 = match Url::parse("http://127.0.0.1:8080/p") {
+        Ok(value) => value,
+        Err(error) => panic!("the IPv4 literal must be admitted: {}", error.detail()),
+    };
+    assert_eq!(v4.host(), &UrlHost::Ipv4([127, 0, 0, 1]));
+    let parts = match Url::parse("https://example.test/a/b?x=1#frag") {
+        Ok(value) => value,
+        Err(error) => panic!("the components must be admitted: {}", error.detail()),
+    };
+    assert_eq!(parts.host(), &UrlHost::RegName("example.test".to_owned()));
+    assert_eq!(parts.segments(), ["a", "b"]);
+    assert_eq!(parts.query(), Some("x=1"));
+    assert_eq!(parts.fragment(), Some("frag"));
+    let root = match Url::parse("https://example.test/") {
+        Ok(value) => value,
+        Err(error) => panic!("the empty segment must be admitted: {}", error.detail()),
+    };
+    assert_eq!(root.segments().len(), 1);
+    assert_eq!(root.segments()[0], "");
+}
+
+#[test]
+fn url_refuses_noncanonical_spellings_and_indexes_the_departure() {
+    let cases: [(&str, usize); 21] = [
+        ("HTTP://h/", 0),
+        ("https://Example.test/", 8),
+        ("https://ex%41mple.test/", 10),
+        ("https://h:0/", 10),
+        ("https://h:080/", 10),
+        ("https://h:65536/", 14),
+        ("https://h:/", 10),
+        ("https://h", 9),
+        ("https://h?x", 9),
+        ("https://h/./x", 10),
+        ("https://h/../x", 10),
+        ("https://h/a%2fb/", 13),
+        ("https://h/a%41b/", 11),
+        ("https://[0:0:0:0:0:0:0:1]/", 9),
+        ("https://[::1%eth0]/", 12),
+        ("https://[fe80::1%25ET]/", 19),
+        ("https://h/p?a b", 13),
+        ("https://user@h/", 12),
+        ("https://10.0.0.256/", 17),
+        ("https://10.0.0.01/", 16),
+        ("https://10.0.0/", 14),
+    ];
+    for (text, index) in cases {
+        let error = refusal(Url::parse(text));
+        assert_eq!(error.code(), DataDiagnosticCode::MalformedInput, "{text}");
+        assert_eq!(error.requirement(), DATA_CLAUSES[1], "{text}");
+        assert_eq!(
+            error.category(),
+            DataRefusalCategory::MalformedInput,
+            "{text}"
+        );
+        assert!(
+            error.detail().starts_with(&format!("octet {index}: ")),
+            "`{text}` departs at octet {index}: {}",
+            error.detail()
+        );
+    }
+}
+
+#[test]
+fn url_construction_admits_only_canonical_components() {
+    let bare = match Url::new(
+        "https",
+        UrlHost::RegName("h".to_owned()),
+        None,
+        Vec::new(),
+        None,
+        None,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("the components must be admitted: {}", error.detail()),
+    };
+    assert_eq!(bare.canonical_text(), "https://h/");
+    let empty_query = match Url::new(
+        "https",
+        UrlHost::RegName("h".to_owned()),
+        None,
+        Vec::new(),
+        Some(String::new()),
+        None,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("the empty query must be admitted: {}", error.detail()),
+    };
+    assert_eq!(empty_query.canonical_text(), "https://h/?");
+    let empty_fragment = match Url::new(
+        "https",
+        UrlHost::RegName("h".to_owned()),
+        None,
+        Vec::new(),
+        None,
+        Some(String::new()),
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("the empty fragment must be admitted: {}", error.detail()),
+    };
+    assert_eq!(empty_fragment.canonical_text(), "https://h/#");
+    let with_port = match Url::new(
+        "https",
+        UrlHost::RegName("h".to_owned()),
+        Some(443),
+        Vec::new(),
+        None,
+        None,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("the port must be admitted: {}", error.detail()),
+    };
+    assert_ne!(bare, empty_query, "absent and empty are distinct");
+    assert_ne!(bare, empty_fragment, "absent and empty are distinct");
+    assert_ne!(empty_query, empty_fragment);
+    assert_ne!(bare, with_port);
+    let same = match Url::new(
+        "https",
+        UrlHost::RegName("h".to_owned()),
+        None,
+        Vec::new(),
+        None,
+        None,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("the components must be admitted: {}", error.detail()),
+    };
+    assert_eq!(bare, same, "equality is component equality");
+    let composed = match Url::new(
+        "http",
+        UrlHost::Ipv6 {
+            groups: [0xfe80, 0, 0, 0, 0, 0, 0, 1],
+            zone: Some("eth0".to_owned()),
+        },
+        Some(8080),
+        vec!["a".to_owned(), "b".to_owned()],
+        Some("x=1".to_owned()),
+        Some("f".to_owned()),
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("the components must be admitted: {}", error.detail()),
+    };
+    assert_eq!(
+        composed.canonical_text(),
+        "http://[fe80::1%25eth0]:8080/a/b?x=1#f"
+    );
+    for (value, expected) in [
+        (
+            Url::new(
+                "HTTPS",
+                UrlHost::RegName("h".to_owned()),
+                None,
+                Vec::new(),
+                None,
+                None,
+            ),
+            0_usize,
+        ),
+        (
+            Url::new(
+                "https",
+                UrlHost::RegName("Example".to_owned()),
+                None,
+                Vec::new(),
+                None,
+                None,
+            ),
+            0,
+        ),
+        (
+            Url::new(
+                "https",
+                UrlHost::RegName("h".to_owned()),
+                None,
+                vec![".".to_owned()],
+                None,
+                None,
+            ),
+            0,
+        ),
+        (
+            Url::new(
+                "https",
+                UrlHost::RegName("h".to_owned()),
+                None,
+                vec!["a%2f".to_owned()],
+                None,
+                None,
+            ),
+            3,
+        ),
+        (
+            Url::new(
+                "https",
+                UrlHost::RegName("h".to_owned()),
+                None,
+                Vec::new(),
+                Some("a b".to_owned()),
+                None,
+            ),
+            1,
+        ),
+        (
+            Url::new(
+                "https",
+                UrlHost::RegName("h".to_owned()),
+                None,
+                Vec::new(),
+                None,
+                Some("a b".to_owned()),
+            ),
+            1,
+        ),
+    ] {
+        let error = refusal(value);
+        assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+        assert!(
+            error.detail().starts_with(&format!("octet {expected}: ")),
+            "the refusal names the component index: {}",
+            error.detail()
+        );
+    }
+    let error = refusal(Url::new(
+        "https",
+        UrlHost::RegName("h".to_owned()),
+        Some(0),
+        Vec::new(),
+        None,
+        None,
+    ));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert_eq!(error.requirement(), DATA_CLAUSES[1]);
+    let error = refusal(Url::new(
+        "HTTPS",
+        UrlHost::RegName("h".to_owned()),
+        None,
+        Vec::new(),
+        None,
+        None,
+    ));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+}
+
+#[test]
+fn url_bounds_are_declared_and_enforced() {
+    let over_text = format!("https://h/{}", "a".repeat(URL_TEXT_OCTET_BOUND));
+    let error = refusal(Url::parse(&over_text));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the presented text"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains(&over_text.len().to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains(&URL_TEXT_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let long_scheme = format!("{}://h/", "a".repeat(URL_SCHEME_SCALAR_BOUND + 1));
+    let error = refusal(Url::parse(&long_scheme));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(error.detail().contains("the scheme"), "{}", error.detail());
+    assert!(
+        error
+            .detail()
+            .contains(&(URL_SCHEME_SCALAR_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&URL_SCHEME_SCALAR_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let long_label = format!("https://{}.test/", "a".repeat(URL_LABEL_SCALAR_BOUND + 1));
+    let error = refusal(Url::parse(&long_label));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("a host label"),
+        "{}",
+        error.detail()
+    );
+    let long_host = format!(
+        "https://{}/",
+        vec!["a".repeat(URL_LABEL_SCALAR_BOUND); 5].join(".")
+    );
+    let error = refusal(Url::parse(&long_host));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the reg-name host"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains(&URL_HOST_SCALAR_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let long_segment = format!("https://h/{}", "a".repeat(URL_SEGMENT_OCTET_BOUND + 1));
+    let error = refusal(Url::parse(&long_segment));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("a path segment"),
+        "{}",
+        error.detail()
+    );
+    let many_segments = format!(
+        "https://h/{}",
+        vec!["a"; URL_SEGMENT_COUNT_BOUND + 1].join("/")
+    );
+    let error = refusal(Url::parse(&many_segments));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the path segment count"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error
+            .detail()
+            .contains(&(URL_SEGMENT_COUNT_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+    let long_query = format!("https://h/?{}", "a".repeat(URL_QUERY_OCTET_BOUND + 1));
+    let error = refusal(Url::parse(&long_query));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(error.detail().contains("the query"), "{}", error.detail());
+    let long_fragment = format!("https://h/#{}", "a".repeat(URL_FRAGMENT_OCTET_BOUND + 1));
+    let error = refusal(Url::parse(&long_fragment));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the fragment"),
+        "{}",
+        error.detail()
+    );
+    let long_zone = format!(
+        "https://[fe80::1%25{}]/",
+        "a".repeat(URL_ZONE_SCALAR_BOUND + 1)
+    );
+    let error = refusal(Url::parse(&long_zone));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the zone identifier"),
+        "{}",
+        error.detail()
+    );
+    let segments = vec!["a".repeat(URL_SEGMENT_OCTET_BOUND); 65];
+    let error = refusal(Url::new(
+        "https",
+        UrlHost::RegName("h".to_owned()),
+        None,
+        segments,
+        None,
+        None,
+    ));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().contains("the canonical form"),
+        "{}",
+        error.detail()
+    );
+    assert!(
+        error.detail().contains(&URL_TEXT_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
 }

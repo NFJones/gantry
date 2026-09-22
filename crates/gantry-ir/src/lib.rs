@@ -325,12 +325,15 @@ pub use codec::{
 };
 // The Section 43 data foundation: the declared `std.data` family with its `http`, `mime`, and
 // `url` modules, the versioned value-model identity and its exact admission rule, the frozen
-// refusal vocabulary with its declared refusal categories, and the separation between these pure
-// value models and the capability-backed network contracts of
-// `GNT-29.6-dns-socket-tls-and-http-contracts`.
+// refusal vocabulary with its declared refusal categories, the URL value model of
+// `GNT-43.2-url-value-model`, and the separation between these pure value models and the
+// capability-backed network contracts of `GNT-29.6-dns-socket-tls-and-http-contracts`.
 pub use data::{
     DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataItemRow,
-    DataModule, DataRefusalCategory, DataVersion, canonical_data_hierarchy, declare_data_surface,
+    DataModule, DataRefusalCategory, DataVersion, URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND,
+    URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND,
+    URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND, URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND,
+    Url, UrlHost, canonical_data_hierarchy, declare_data_surface,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,

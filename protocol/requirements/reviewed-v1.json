@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "816a1d8cce04a8f304bd6df1093efbab3f1266a724bcff0d9f3fa6d2fbaea8f3",
+  "specification_sha256": "9b87f0d2c859999da07541d303912190cb5a9cf027d2e08a8d00d52e9ac46abe",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15747,
+      "end_line": 15751,
       "rationale": null
     }
   ],
@@ -42696,6 +42696,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/data_foundation.rs#declared_versions_admit_exactly_the_declared_identity",
                 "crates/gantry-conformance/tests/data_foundation.rs#refusals_are_frozen_and_classified"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-43.2-url-value-model",
+      "span_start_line": 15748,
+      "span_end_line": 15751,
+      "anchor_line": 15749,
+      "body_start_line": 15750,
+      "body_end_line": 15751,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15750,
+          "end_line": 15751,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/data_foundation.rs#url_parses_and_displays_the_canonical_form",
+                "crates/gantry-conformance/tests/data_foundation.rs#url_refuses_noncanonical_spellings_and_indexes_the_departure",
+                "crates/gantry-conformance/tests/data_foundation.rs#url_construction_admits_only_canonical_components",
+                "crates/gantry-conformance/tests/data_foundation.rs#url_bounds_are_declared_and_enforced"
               ],
               "rationale": null
             }
