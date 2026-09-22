@@ -652,7 +652,7 @@ fn binary_codec_refuses_truncated_and_oversized_sequences() {
 
 #[test]
 fn json_codec_round_trips_the_compact_canonical_language() {
-    let vectors: [&str; 12] = [
+    let vectors: [&str; 13] = [
         "null",
         "true",
         "false",
@@ -663,6 +663,7 @@ fn json_codec_round_trips_the_compact_canonical_language() {
         "\"text\"",
         "\"a\\nb\"",
         "\"\\u0000\"",
+        "\"\\u000b\"",
         "[1,2,3]",
         "{\"a\":1,\"b\":[true,null]}",
     ];
@@ -749,6 +750,11 @@ fn json_codec_refuses_noncanonical_and_oversized_input() {
         ("\"a\\/b\"", 3),
         ("\"\\u0041\"", 5),
         ("\"\\u001F\"", 6),
+        ("\"\\u0008\"", 6),
+        ("\"\\u0009\"", 6),
+        ("\"\\u000a\"", 6),
+        ("\"\\u000c\"", 6),
+        ("\"\\u000d\"", 6),
         ("\"a\nb\"", 2),
     ] {
         let error = match json_decode(presented) {
@@ -830,4 +836,32 @@ fn json_codec_refuses_noncanonical_and_oversized_input() {
         "{}",
         error.detail()
     );
+}
+
+#[test]
+fn json_encode_refuses_a_value_whose_object_repeats_a_member_key() {
+    let repeated = JsonValue::Object(vec![
+        ("a".to_owned(), JsonValue::Integer(1)),
+        ("a".to_owned(), JsonValue::Integer(2)),
+    ]);
+    let error = match json_encode(&repeated) {
+        Ok(value) => panic!("the repeated key must be refused, got {value}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::MalformedInput);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
+    assert_eq!(error.category(), CodecCategory::MalformedInput);
+    assert!(error.detail().contains("`a`"), "{}", error.detail());
+    assert!(error.detail().contains("position 1"), "{}", error.detail());
+    let nested = JsonValue::Array(vec![repeated]);
+    let error = match json_encode(&nested) {
+        Ok(value) => panic!("the nested repeated key must be refused, got {value}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::MalformedInput);
+    let distinct = JsonValue::Object(vec![
+        ("a".to_owned(), JsonValue::Integer(1)),
+        ("b".to_owned(), JsonValue::Integer(2)),
+    ]);
+    assert_eq!(json_encode(&distinct), Ok("{\"a\":1,\"b\":2}".to_owned()));
 }

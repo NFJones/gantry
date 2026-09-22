@@ -1013,6 +1013,14 @@ pub fn json_decode(text: &str) -> Result<JsonValue, CodecError> {
 /// `JSON_DEPTH_BOUND` containers deep, or whose canonical text would hold more than
 /// `JSON_TEXT_OCTET_BOUND` octets is refused under `codec-expansion-limit`.
 pub fn json_encode(value: &JsonValue) -> Result<String, CodecError> {
+    if let Some((position, key)) = json_repeated_key(value) {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::MalformedInput,
+            format!(
+                "the presented dynamic value repeats the member key `{key}` at member position {position}"
+            ),
+        ));
+    }
     if value.node_count() > JSON_NODE_BOUND {
         return Err(json_node_refusal(
             "presented dynamic value",
@@ -1262,6 +1270,12 @@ impl JsonParser<'_> {
             self.index = digits_start + 2;
             return Err(self.malformed("a canonical unicode escape denotes U+0000 to U+001F only"));
         }
+        if matches!(code, 0x0008 | 0x0009 | 0x000a | 0x000c | 0x000d) {
+            self.index = digits_start + 3;
+            return Err(self.malformed(
+                "a canonical unicode escape is not used for a scalar that has a shorter escape",
+            ));
+        }
         let Some(scalar) = char::from_u32(code) else {
             self.index = digits_start + 2;
             return Err(self.malformed("the escape denotes no Unicode scalar value"));
@@ -1373,6 +1387,29 @@ fn json_lowercase_hex(octet: u8) -> Option<u8> {
     match octet {
         b'0'..=b'9' => Some(octet - b'0'),
         b'a'..=b'f' => Some(octet - b'a' + 10),
+        _ => None,
+    }
+}
+
+/// Returns the first repeated member key of one dynamic value in member order, with the
+/// zero-based position of the repeating member within its own object.
+fn json_repeated_key(value: &JsonValue) -> Option<(usize, String)> {
+    match value {
+        JsonValue::Array(items) => items.iter().find_map(json_repeated_key),
+        JsonValue::Object(members) => {
+            for (position, (key, member)) in members.iter().enumerate() {
+                if members[..position]
+                    .iter()
+                    .any(|(present, _)| present == key)
+                {
+                    return Some((position, key.clone()));
+                }
+                if let Some(found) = json_repeated_key(member) {
+                    return Some(found);
+                }
+            }
+            None
+        }
         _ => None,
     }
 }

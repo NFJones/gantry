@@ -2,7 +2,7 @@
  "format": "gantry.async-execution-adoption/v1",
  "gate": "GNT-ASYNC-GATE-000",
  "status": "verified",
- "specification_sha256": "055bbed598896e3da74a7946a52c745995562f783bb565f3a66158c9a142f20d",
+ "specification_sha256": "d33758f0831187388dfb74181f0eb20894b6365036bd994876c564bbbeb7ea65",
  "amended_profiles": [
   "analyzer",
   "concurrent-evaluator",
