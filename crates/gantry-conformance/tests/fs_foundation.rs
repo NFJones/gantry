@@ -891,8 +891,8 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
     assert_eq!(FS_PATH_SEGMENT_BOUND, 256);
     assert_eq!(FS_RESOLUTION_COUNT, 1);
 
-    // Every public constant of the model module is declared here, so a bound added in any spelling
-    // fails this lane until the clause that publishes it lands.
+    // Every public constant of the model module is declared here, so any public constant added to
+    // or renamed in this module fails this lane regardless of how its value is spelled.
     let model = read_text(&workspace_root().join("crates/gantry-ir/src/fs.rs"));
     let mut constants = Vec::new();
     for line in model.lines() {
@@ -959,7 +959,7 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
     for rule in [
         "This clause publishes the quantitative limits this section declares, so that no reader infers a bound this section does not publish",
         "Exactly three quantitative bounds on the values of this section and on the work one operation may do are declared",
-        "Identity, uniqueness, and closed-vocabulary counts are not limits in this clause's sense",
+        "Identity, uniqueness, and closed-vocabulary counts are not limits in this clause's sense: for example",
         "at most `FS_PATH_SEGMENT_BOUND` segments, the declared bound of `GNT-47.2-filesystem-path-values`, which is `256`",
         "a read, a write, and a seek each consume exactly one admitted request of `GNT-45.1-bounded-one-call-io-contract`, the declared count of `GNT-47.4-filesystem-resource-operations`",
         "whose declared quantity is bounded by that contract's `IO_REQUEST_OCTET_BOUND` alone",

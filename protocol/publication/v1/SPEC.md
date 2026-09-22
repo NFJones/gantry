@@ -16530,13 +16530,17 @@ declared limit names the limit and the value observed against it, exactly as
 `GNT-47.2-filesystem-path-values` declares of a segment count outside its range, and this clause
 publishes no refusal of its own: a refusal a declared limit produced is never published as a
 refusal an implementation produced, and no refusal of another clause becomes a refusal of this one.
-Identity, uniqueness, and closed-vocabulary counts are not limits in this clause's sense: the single
-declared generation and the single declared owner generation of
+Identity, uniqueness, and closed-vocabulary counts are not limits in this clause's sense: for
+example, the single declared generation and the single declared owner generation of
 `GNT-47.5-filesystem-resource-state`, the single declared outcome of
 `GNT-47.9-filesystem-replacement`, the single recovery class each declared action states of
-`GNT-47.3-filesystem-action-values`, and the closed module, action, operation, and diagnostic sets
-of this section are identity or vocabulary facts, and they bound neither the cardinality of a value
-nor the work one operation may do.
+`GNT-47.3-filesystem-action-values`, the single value a constructor of
+`GNT-47.2-filesystem-path-values` admits, the single outcome a whole-object action of
+`GNT-47.3-filesystem-action-values` publishes for one object, closed subsets and imported
+vocabularies such as the content-mutating subset of `GNT-47.7-filesystem-action-grants` and the
+lifetime-state list of `GNT-47.5-filesystem-resource-state`, and the closed module, action,
+operation, and diagnostic sets of this section are identity, uniqueness, or vocabulary facts, and
+none of them bounds the cardinality of a value or the work one operation may do.
 
 No other quantitative limit is declared here, and this clause's silence is not a limit: this
 section declares no limit on traversal entries, on entry-name length beyond the declared segment
