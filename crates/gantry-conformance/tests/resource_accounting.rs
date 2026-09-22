@@ -11,9 +11,10 @@ use gantry::ir::generated::RecoveryClass;
 use gantry::ir::{
     CanonicalPath, Charge, EmergencyReleaseWitness, FailureClass, GracePolicy, LivenessRoot,
     LogicalMeasure, OperationAbi, OperationKind, OwnerGeneration, PoisonWitness, Quota,
-    QuotaFamily, QuotaOwner, RESOURCE_CLAUSES, ReceiverOwnership, ResourceAction, ResourceError,
-    ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence, StaticSiteId, StopCause,
-    StopCoordinator, StopError, StopRequest, StructuralPosition, TaskStopState,
+    QuotaFamily, QuotaOwner, RESOURCE_CLAUSES, ReceiverOwnership, ResourceAction, ResourceCarrier,
+    ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence,
+    StaticSiteId, StopCause, StopCoordinator, StopError, StopRequest, StructuralPosition,
+    TaskStopState, admit_resource_carrier,
 };
 
 #[test]
@@ -565,6 +566,37 @@ fn resource_model_note_is_current() {
             "{heading} names exactly the live members"
         );
     }
+}
+
+#[test]
+fn resources_are_carried_only_by_the_reconstruction_record() {
+    let mut spellings = Vec::new();
+    for carrier in ResourceCarrier::ALL {
+        spellings.push(carrier.wire_name());
+        assert_eq!(
+            carrier.carries_resources(),
+            carrier == ResourceCarrier::ReconstructionRecord,
+            "only the declared reconstruction record carries resources"
+        );
+        let outcome = admit_resource_carrier(carrier);
+        if carrier.carries_resources() {
+            assert!(outcome.is_ok(), "{} is admitted", carrier.wire_name());
+        } else {
+            assert_eq!(
+                refusal(outcome),
+                ResourceError::OrdinaryCarrierRefused,
+                "{} is refused",
+                carrier.wire_name()
+            );
+        }
+    }
+    let mut sorted = spellings.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        spellings, sorted,
+        "the carrier vocabulary is canonically ordered"
+    );
+    assert_eq!(spellings.len(), ResourceCarrier::ALL.len());
 }
 
 /// Returns the backticked members one note section declares as its bullets, with multiplicity.

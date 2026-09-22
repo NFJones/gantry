@@ -359,6 +359,56 @@ impl DurableResourceRecord {
     }
 }
 
+/// One declared carrier that may hold a resource's accounting facts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResourceCarrier {
+    /// Ordinary serialization of source or application values.
+    OrdinarySerialization,
+    /// Ordinary durable state, which carries no reconstruction contract.
+    OrdinaryDurableState,
+    /// The declared durable reconstruction record of `GNT-28.7-durable-resource-reconstruction`.
+    ReconstructionRecord,
+}
+
+impl ResourceCarrier {
+    /// The closed declared set, in canonical wire-name order.
+    pub const ALL: [ResourceCarrier; 3] = [
+        Self::OrdinaryDurableState,
+        Self::OrdinarySerialization,
+        Self::ReconstructionRecord,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::OrdinarySerialization => "ordinary-serialization",
+            Self::OrdinaryDurableState => "ordinary-durable-state",
+            Self::ReconstructionRecord => "reconstruction-record",
+        }
+    }
+
+    /// Returns whether this carrier may hold a resource's facts.
+    #[must_use]
+    pub const fn carries_resources(self) -> bool {
+        matches!(self, Self::ReconstructionRecord)
+    }
+}
+
+/// Admits one declared carrier for a resource's accounting facts, or refuses it.
+///
+/// A resource's facts are carried only by the declared reconstruction record of
+/// `GNT-28.7-durable-resource-reconstruction`: ordinary serialization and ordinary durable state
+/// carry no owner generation, lifetime, quota, or root witness, so a resource admitted through
+/// them would have no owner and no terminal disposition. The refusal grants nothing and admits no
+/// second carrier.
+pub fn admit_resource_carrier(carrier: ResourceCarrier) -> Result<(), ResourceError> {
+    if carrier.carries_resources() {
+        return Ok(());
+    }
+    Err(ResourceError::OrdinaryCarrierRefused)
+}
+
 /// The explicit retained baseline from which a terminal lifetime may retire.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SettlementBaseline {
@@ -777,4 +827,6 @@ pub enum ResourceError {
     CompactionDoesNotPreserve,
     /// A presented failure settlement does not derive a poisoned resource state.
     FailureDoesNotPoisonResource,
+    /// An ordinary serialization or ordinary durable-state carrier was asked to carry a resource.
+    OrdinaryCarrierRefused,
 }

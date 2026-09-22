@@ -293,8 +293,9 @@ pub use protected::{
 // model and does not add runtime registry, evaluator, journal, or host behavior.
 pub use resource::{
     Charge, DurableResourceRecord, EmergencyReleaseWitness, LivenessRoot, LogicalMeasure,
-    PoisonWitness, Quota, QuotaFamily, QuotaOwner, RESOURCE_CLAUSES, ResourceAction, ResourceError,
-    ResourceLedger, ResourceLifetimeState, RetentionFence, SettlementBaseline,
+    PoisonWitness, Quota, QuotaFamily, QuotaOwner, RESOURCE_CLAUSES, ResourceAction,
+    ResourceCarrier, ResourceError, ResourceLedger, ResourceLifetimeState, RetentionFence,
+    SettlementBaseline, admit_resource_carrier,
 };
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
 pub use secret::{
