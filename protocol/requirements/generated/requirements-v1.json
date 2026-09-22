@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "c04a0af3b2cec32c7c0f1621a95c26c4f6833e162ed0404f4f2889ab88496f43",
-  "byte_length": 1228230,
-  "line_count": 16066,
+  "specification_sha256": "1b6db32ae689e4d7b55e0184613f6417d88a22f92ab2db9cf73b745dd674950b",
+  "byte_length": 1235148,
+  "line_count": 16144,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "e6df8daa5158f6532e0cd813212e5aee3e4d4f56d6650fd96cc18b5c35ea1411",
+      "sha256": "44a469cfe681676249076f41c9911848423bf832ad43d1fee4cf3c30d1c835c4",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16066,
-      "sha256": "c9067388705fd63b143b0a7a7136d2f79f09444e5e3359f8edbb0548a855be82",
+      "end_line": 16144,
+      "sha256": "12525a8e65a84593fe229cc4b41923080dee15b0dd6149bcf87b8661ef111ca6",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "c20b3341fd40e830bca2a8ffb22dc2a72282d84f8921e00c643a45b3c5c76c3a",
+      "span_sha256": "7d00ae87383b69222eee9978004a7ea4d075ce1c310751416153284e4a8c3926",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "e2a81fb6c27070e77a921af28a23d6cc10a820ee5ed1304172b45b26043a95ce",
+      "body_sha256": "e9356c16aca848d69a52134af80f87adea62acc92aa6dba7b30c3992306bed8b",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44652,6 +44652,88 @@
               "evidence": [
                 "crates/gantry-conformance/tests/console_foundation.rs#console_operations_are_closed_and_consume_io_requests",
                 "crates/gantry-conformance/tests/console_foundation.rs#console_module_rows_are_closed_and_canonical"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-46.3-console-operation-recovery-and-accepted-input",
+      "span_start_line": 16067,
+      "span_end_line": 16108,
+      "span_sha256": "19fb7fa7a3625fb0666034c972b16fa9f72131279a90479fe4d231dd86ad9bc3",
+      "anchor_line": 16068,
+      "body_start_line": 16069,
+      "body_end_line": 16108,
+      "body_sha256": "e7090e07f606546ec3f90820e8d87e84600d47cdabacf820b82f7d850820450e",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16069,
+          "end_line": 16108,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/console_foundation.rs#console_operation_recovery_and_accepted_input_are_declared"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-46.4-console-encoding-and-shutdown-settlement",
+      "span_start_line": 16109,
+      "span_end_line": 16144,
+      "span_sha256": "f374b30cb6c795c208335afbed94503d0f92c6ae84d37a37f4d771291ef7f4af",
+      "anchor_line": 16110,
+      "body_start_line": 16111,
+      "body_end_line": 16144,
+      "body_sha256": "0f57c459ffc2314338f27a44671fad573f53038aee5622eb6d3d67bd16fc3f06",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16111,
+          "end_line": 16144,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/console_foundation.rs#console_envelope_rules_are_closed_and_canonical"
               ],
               "rationale": null
             }

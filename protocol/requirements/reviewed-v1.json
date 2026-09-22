@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "c04a0af3b2cec32c7c0f1621a95c26c4f6833e162ed0404f4f2889ab88496f43",
+  "specification_sha256": "1b6db32ae689e4d7b55e0184613f6417d88a22f92ab2db9cf73b745dd674950b",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16066,
+      "end_line": 16144,
       "rationale": null
     }
   ],
@@ -43425,6 +43425,84 @@
               "evidence": [
                 "crates/gantry-conformance/tests/console_foundation.rs#console_operations_are_closed_and_consume_io_requests",
                 "crates/gantry-conformance/tests/console_foundation.rs#console_module_rows_are_closed_and_canonical"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-46.3-console-operation-recovery-and-accepted-input",
+      "span_start_line": 16067,
+      "span_end_line": 16108,
+      "anchor_line": 16068,
+      "body_start_line": 16069,
+      "body_end_line": 16108,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16069,
+          "end_line": 16108,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/console_foundation.rs#console_operation_recovery_and_accepted_input_are_declared"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-46.4-console-encoding-and-shutdown-settlement",
+      "span_start_line": 16109,
+      "span_end_line": 16144,
+      "anchor_line": 16110,
+      "body_start_line": 16111,
+      "body_end_line": 16144,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16111,
+          "end_line": 16144,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/console_foundation.rs#console_envelope_rules_are_closed_and_canonical"
               ]
             }
           ]

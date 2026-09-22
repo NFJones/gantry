@@ -1,18 +1,19 @@
 //! Conformance for the declared `std.console` surface.
 //!
-//! The lane pins the declared console clauses, the closed module-row set, and the exact
-//! declaration and admission behavior of `crates/gantry-ir/src/console.rs` over one
-//! standard-library graph. It performs no host I/O and claims no terminal, adapter, or runtime
-//! behavior.
+//! The lane pins the declared console clauses, the closed module-row set, the declared operation
+//! settlement facts, and the exact declaration and admission behavior of
+//! `crates/gantry-ir/src/console.rs` over one standard-library graph. It performs no host I/O and
+//! claims no terminal, adapter, or runtime behavior.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use gantry::ir::generated::RecoveryClass;
 use gantry::ir::{
-    CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS,
-    ConsoleOperation, IoOperation, IoOutcome, IoRequest, NameClass, PackageFamily, Prelude,
-    ProgressObservation, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
-    admit_console_surface, declare_console_surface,
+    CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_OPERATION_FACTS, CONSOLE_SURFACE_MODES,
+    CONSOLE_SURFACE_TARGETS, ConsoleEnvelopeRule, ConsoleOperation, IoOperation, IoOutcome,
+    IoRequest, NameClass, PackageFamily, Prelude, ProgressObservation, StabilityTier, StdGraph,
+    StdItem, StdPackage, StdlibDiagnosticCode, admit_console_surface, declare_console_surface,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -38,6 +39,8 @@ fn console_contract_clauses_and_scope_are_published() {
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
             "GNT-46.2-console-bounded-operations",
+            "GNT-46.3-console-operation-recovery-and-accepted-input",
+            "GNT-46.4-console-encoding-and-shutdown-settlement",
         ]
     );
     assert_eq!(CONSOLE_SURFACE_MODES, [SemanticMode::Application]);
@@ -78,6 +81,8 @@ fn console_module_rows_are_closed_and_canonical() {
                 "GNT-46.0-console-foundation-scope",
                 "GNT-46.1-console-modules-and-item-rows",
                 "GNT-46.2-console-bounded-operations",
+                "GNT-46.3-console-operation-recovery-and-accepted-input",
+                "GNT-46.4-console-encoding-and-shutdown-settlement",
             ],
             _ => &[
                 "GNT-46.0-console-foundation-scope",
@@ -251,4 +256,141 @@ fn console_operations_are_closed_and_consume_io_requests() {
         }),
         Ok(ProgressObservation::ShortRead)
     );
+}
+
+#[test]
+fn console_operation_recovery_and_accepted_input_are_declared() {
+    let operations = CONSOLE_OPERATION_FACTS
+        .iter()
+        .map(|facts| facts.operation)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        operations,
+        [
+            ConsoleOperation::Read,
+            ConsoleOperation::Write,
+            ConsoleOperation::Flush,
+        ]
+    );
+    let classes = CONSOLE_OPERATION_FACTS
+        .iter()
+        .map(|facts| facts.recovery)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        classes,
+        [
+            RecoveryClass::NonIdempotent,
+            RecoveryClass::NonIdempotent,
+            RecoveryClass::Idempotent,
+        ],
+        "a read consumes a cursor and a write may duplicate output; a repeated flush adds nothing"
+    );
+    for facts in CONSOLE_OPERATION_FACTS {
+        assert_ne!(
+            facts.recovery,
+            RecoveryClass::ReadOnly,
+            "no console operation is read_only, because a console read consumes an input cursor"
+        );
+        assert_eq!(facts.recovery, facts.operation.declared_recovery_class());
+        assert_eq!(
+            facts.consumes_input_cursor,
+            facts.operation.consumes_input_cursor()
+        );
+        assert_eq!(
+            facts.consumes_input_cursor,
+            facts.operation.returns_octets()
+        );
+    }
+    // Only the cursor-consuming read and the possibly duplicating write need an adapter-owned
+    // deduplication proof and may present an unknown outcome.
+    assert_eq!(
+        CONSOLE_OPERATION_FACTS
+            .iter()
+            .map(|facts| (
+                facts.deduplication_is_adapter_owned,
+                facts.admits_unknown_outcome
+            ))
+            .collect::<Vec<_>>(),
+        [(true, true), (true, true), (false, false)]
+    );
+    assert!(ConsoleOperation::Write.accepts_octets());
+    assert!(!ConsoleOperation::Flush.accepts_octets());
+    assert!(!ConsoleOperation::Write.returns_octets());
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in CONSOLE_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "the console publishes no deduplication, no replay source, and no duplicate record",
+        "An accepted console read is nontransactional and is never implicitly retried, replayed, repaired",
+        "is a new request of a new stable operation identity that consumes the cursor again",
+        "The `interrupted` category of `GNT-29.4-console-contract` stays a category of the console family's portable envelope and is never a progress observation",
+        "a flush of the `idempotent` class presents no ambiguous outcome",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn console_envelope_rules_are_closed_and_canonical() {
+    assert_eq!(
+        ConsoleEnvelopeRule::ALL,
+        [
+            ConsoleEnvelopeRule::OctetsOnlyPayload,
+            ConsoleEnvelopeRule::EncodingIsTextFamilyOwned,
+            ConsoleEnvelopeRule::ProtectedValueIsNotAnOctetSource,
+            ConsoleEnvelopeRule::AccessIsRequesterArranged,
+        ]
+    );
+    let spellings = ConsoleEnvelopeRule::ALL
+        .into_iter()
+        .map(ConsoleEnvelopeRule::wire_name)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        spellings,
+        [
+            "octets-only-payload",
+            "encoding-is-text-family-owned",
+            "protected-value-is-not-an-octet-source",
+            "access-is-requester-arranged",
+        ]
+    );
+    for rule in ConsoleEnvelopeRule::ALL {
+        assert_eq!(
+            ConsoleEnvelopeRule::from_wire_name(rule.wire_name()),
+            Some(rule)
+        );
+        assert_eq!(rule.as_str(), rule.wire_name());
+    }
+    assert_eq!(ConsoleEnvelopeRule::from_wire_name("octets-only"), None);
+
+    assert_eq!(
+        ConsoleOperation::ALL
+            .into_iter()
+            .filter(|operation| operation.completed_observation().is_some())
+            .collect::<Vec<_>>(),
+        [ConsoleOperation::Flush],
+        "only a flush publishes a completion observation without an octet count"
+    );
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for rule in [
+        "The declared console envelope rules are exactly four",
+        "A protected value, protected envelope, credential, or key is not an octet source for a console operation",
+        "Terminal detection, terminal dimensions, and terminal control remain outside this section",
+        "no console write, read, or flush grants terminal-control authority, terminal control stays separately authorized",
+        "not a second shutdown facility, and shutdown ownership rests with the owner that granted the access",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
 }

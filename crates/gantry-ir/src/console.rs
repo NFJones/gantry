@@ -5,6 +5,7 @@
 //! renderer, and it performs no I/O: every decision is a deterministic function of the declared
 //! standard-library graph it is handed.
 
+use crate::generated::RecoveryClass;
 use crate::io::IoOperation;
 use crate::operation::ProgressObservation;
 use crate::package::TargetKind;
@@ -15,10 +16,12 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 46 clauses implemented by this pure model, in declaration order.
-pub const CONSOLE_CLAUSES: [&str; 3] = [
+pub const CONSOLE_CLAUSES: [&str; 5] = [
     "GNT-46.0-console-foundation-scope",
     "GNT-46.1-console-modules-and-item-rows",
     "GNT-46.2-console-bounded-operations",
+    "GNT-46.3-console-operation-recovery-and-accepted-input",
+    "GNT-46.4-console-encoding-and-shutdown-settlement",
 ];
 
 /// One declared console operation of `GNT-46.2-console-bounded-operations`.
@@ -94,6 +97,142 @@ impl ConsoleOperation {
             Self::Read | Self::Write => None,
         }
     }
+
+    /// Returns the declared recovery class of
+    /// `GNT-46.3-console-operation-recovery-and-accepted-input`.
+    ///
+    /// A read consumes a nontransactional input cursor and a write may duplicate output, so both
+    /// declare `non_idempotent`; a repeated flush delivers no additional octet, so a flush declares
+    /// `idempotent`. No console operation is `read_only`, and the console publishes no
+    /// deduplication that would relabel a write.
+    #[must_use]
+    pub const fn declared_recovery_class(self) -> RecoveryClass {
+        match self {
+            Self::Read | Self::Write => RecoveryClass::NonIdempotent,
+            Self::Flush => RecoveryClass::Idempotent,
+        }
+    }
+
+    /// Returns whether the operation consumes a nontransactional input cursor.
+    #[must_use]
+    pub const fn consumes_input_cursor(self) -> bool {
+        matches!(self, Self::Read)
+    }
+
+    /// Returns whether the operation accepts octets from its caller.
+    #[must_use]
+    pub const fn accepts_octets(self) -> bool {
+        matches!(self, Self::Write)
+    }
+
+    /// Returns whether the operation returns octets to its caller.
+    #[must_use]
+    pub const fn returns_octets(self) -> bool {
+        matches!(self, Self::Read)
+    }
+}
+
+/// One declared console operation's recovery and accepted-input facts
+/// (`GNT-46.3-console-operation-recovery-and-accepted-input`).
+///
+/// The declared recovery class is one member of the landed `read_only`, `idempotent`, and
+/// `non_idempotent` vocabulary. A read consumes a nontransactional input cursor, so an accepted read
+/// is never replayed, retried, repaired, or deduplicated by the console; suppressing a duplicate is
+/// an adapter obligation keyed by a stable operation identity; and an ambiguous read or write is
+/// presented under the Section 20 unknown-outcome contract rather than settled here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConsoleOperationFacts {
+    /// The declared console operation.
+    pub operation: ConsoleOperation,
+    /// The declared recovery class of the operation.
+    pub recovery: RecoveryClass,
+    /// Whether the operation consumes a nontransactional input cursor.
+    pub consumes_input_cursor: bool,
+    /// Whether suppressing a duplicate is an adapter obligation keyed by a stable operation
+    /// identity.
+    pub deduplication_is_adapter_owned: bool,
+    /// Whether an ambiguous outcome of the operation is presented as an unknown outcome.
+    pub admits_unknown_outcome: bool,
+}
+
+/// The declared facts of every console operation, in canonical operation order.
+pub const CONSOLE_OPERATION_FACTS: [ConsoleOperationFacts; 3] = [
+    ConsoleOperationFacts {
+        operation: ConsoleOperation::Read,
+        recovery: RecoveryClass::NonIdempotent,
+        consumes_input_cursor: true,
+        deduplication_is_adapter_owned: true,
+        admits_unknown_outcome: true,
+    },
+    ConsoleOperationFacts {
+        operation: ConsoleOperation::Write,
+        recovery: RecoveryClass::NonIdempotent,
+        consumes_input_cursor: false,
+        deduplication_is_adapter_owned: true,
+        admits_unknown_outcome: true,
+    },
+    ConsoleOperationFacts {
+        operation: ConsoleOperation::Flush,
+        recovery: RecoveryClass::Idempotent,
+        consumes_input_cursor: false,
+        deduplication_is_adapter_owned: false,
+        admits_unknown_outcome: false,
+    },
+];
+
+/// One declared console envelope rule
+/// (`GNT-46.4-console-encoding-and-shutdown-settlement`).
+///
+/// The rules are published by that clause alone: a console operation carries octets and no second
+/// payload vocabulary, decoding belongs to the family that owns it, a protected value is not an
+/// octet source, and the console owns no descriptor, background flusher, or work that outlives the
+/// access its requester arranged.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleEnvelopeRule {
+    /// A console operation carries octets and no second payload vocabulary.
+    OctetsOnlyPayload,
+    /// Text, scalar, line, and codec decoding is the owning family's, so an encoding error is not a
+    /// console category.
+    EncodingIsTextFamilyOwned,
+    /// A protected value, protected envelope, credential, or key is not an octet source for a
+    /// console operation.
+    ProtectedValueIsNotAnOctetSource,
+    /// Arranging console access belongs to its requester, so the console owns no descriptor and no
+    /// work that outlives the access it was granted.
+    AccessIsRequesterArranged,
+}
+
+impl ConsoleEnvelopeRule {
+    /// Every declared rule, in canonical order.
+    pub const ALL: [Self; 4] = [
+        Self::OctetsOnlyPayload,
+        Self::EncodingIsTextFamilyOwned,
+        Self::ProtectedValueIsNotAnOctetSource,
+        Self::AccessIsRequesterArranged,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::OctetsOnlyPayload => "octets-only-payload",
+            Self::EncodingIsTextFamilyOwned => "encoding-is-text-family-owned",
+            Self::ProtectedValueIsNotAnOctetSource => "protected-value-is-not-an-octet-source",
+            Self::AccessIsRequesterArranged => "access-is-requester-arranged",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|rule| rule.wire_name() == value)
+    }
 }
 
 /// The declared semantic mode of every `std.console` item row.
@@ -140,6 +279,8 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
             "GNT-46.2-console-bounded-operations",
+            "GNT-46.3-console-operation-recovery-and-accepted-input",
+            "GNT-46.4-console-encoding-and-shutdown-settlement",
         ],
     },
     ConsoleItemRow {
@@ -150,6 +291,8 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
             "GNT-46.2-console-bounded-operations",
+            "GNT-46.3-console-operation-recovery-and-accepted-input",
+            "GNT-46.4-console-encoding-and-shutdown-settlement",
         ],
     },
     ConsoleItemRow {

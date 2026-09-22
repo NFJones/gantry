@@ -812,7 +812,7 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
-| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, and the common I/O foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact`; `GNT-46.0-console-foundation-scope` through `GNT-46.2-console-bounded-operations` |
+| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, and the common I/O foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact`; `GNT-46.0-console-foundation-scope` through `GNT-46.4-console-encoding-and-shutdown-settlement` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -16064,3 +16064,81 @@ escape sequence, encoding, replay, or duplicate rule, no cancellation safe point
 no schema, recovery, durability, boundary encoding, lowering, machine representation, or family
 behavior, no change to any other clause of this section or of Section 45, and it claims no
 performance, storage layout, or physical representation.
+
+<a id="GNT-46.3-console-operation-recovery-and-accepted-input"></a>
+
+**[GNT-46.3-console-operation-recovery-and-accepted-input] Console operation recovery and accepted
+input.** This clause publishes the declared recovery class and the accepted-input settlement of the
+console operations of `GNT-46.2-console-bounded-operations`. Each declared console operation states
+exactly one recovery class of the action-declaration rule — `read_only`, `idempotent`, or
+`non_idempotent` — and the model's `CONSOLE_OPERATION_FACTS` and its `ConsoleOperationFacts` rows
+publish it: a read is `non_idempotent`, a write is `non_idempotent`, and a flush is `idempotent`, in
+the canonical operation order of that clause. No console operation is `read_only`, because a console
+read consumes an input cursor even though it writes no octet, and no console operation becomes
+`idempotent` merely because repeating it is convenient: the console publishes no deduplication, no
+replay source, and no duplicate record, so the declared class of a console write stays
+`non_idempotent`, and a write is `idempotent` only within an adapter declaration of
+`GNT-29.11-adapter-declaration-obligations` that deduplicates by a stable operation identity, which
+that adapter owns and this clause does not publish.
+
+An accepted console read is nontransactional and is never implicitly retried, replayed, repaired,
+deduplicated, or restored: this section returns no cursor position a read consumed, a request
+presented again after an accepted read is a new request of a new stable operation identity that
+consumes the cursor again, and no console clause presents a replayed read as the same operation, as
+a duplicate of one, or as an outcome of one. Because cursor consumption and byte delivery are not
+made atomic with an operation's committed outcome by this section, an ambiguous console read or
+write — one whose effect may have begun and whose outcome the operation cannot decide — is presented
+under the ambiguous-effect classification and retry eligibility of
+`GNT-20.6-ambiguous-effect-classification-and-retry-eligibility` and settles under the Section 20
+operation ownership that owns it; a call that definitely did not start is not presented as
+ambiguous, a flush of the `idempotent` class presents no ambiguous outcome, and this clause
+publishes no second effect classification, retry eligibility, deduplication proof, or settlement.
+The `interrupted` category of `GNT-29.4-console-contract` stays a category of the console family's
+portable envelope and is never a progress observation: an interrupted console call publishes no
+observation of the `GNT-45.3-io-progress-derivation` derivation, becomes no `committed-progress`, no
+partial result, and no state a later request observes or resumes, and no interruption of this
+section is a cancellation facility or a cancellation safe point, neither of which Sections 20 and 45
+delegates here. This clause publishes the declared recovery class, the accepted-input rule, and the
+interruption non-claim only: it publishes no descriptor, terminal handle, terminal capability,
+adapter, host trait, terminal detection or dimensions, escape sequence, encoding rule, replay
+source, deduplication proof or record, cancellation safe point or facility, quota, charge, buffer,
+streaming or backpressure contract beyond `GNT-45.4-io-backpressure-fact`, schema, recovery,
+durability, boundary encoding, lowering, machine representation, or family behavior, no change to
+any other clause of this section or of Sections 20, 29, or 45, and it claims no performance, storage
+layout, or physical representation.
+
+<a id="GNT-46.4-console-encoding-and-shutdown-settlement"></a>
+
+**[GNT-46.4-console-encoding-and-shutdown-settlement] Console encoding, protected data, and
+shutdown settlement.** This clause publishes the payload, encoding, protected-data, flush, and
+shutdown facts of the console operations of `GNT-46.2-console-bounded-operations`. The declared
+console envelope rules are exactly four — octets only, encoding owned by the text family, protected
+values not an octet source, and access arranged by its requester, in that canonical order — and the
+model's `ConsoleEnvelopeRule` and its `ConsoleEnvelopeRule::ALL` publish them, so an undeclared rule
+spelling is refused rather than inferred, substituted, or dropped. A console read returns octets and
+a console write accepts octets, and each carries no second payload vocabulary: a read's octets are
+never implicitly decoded, converted, normalized, or split into lines, and every text, scalar, line,
+or codec decoding of them consumes the family that owns it rather than this section, so an encoding
+error is not a console category and no console operation adds a member to the closed categories of
+`GNT-29.4-console-contract`. A protected value, protected envelope, credential, or key is not an
+octet source for a console operation: no console read publishes one, no console write or flush
+releases one, no console clause is a redaction rule, release authority, or implicit declassification,
+and a value whose owner does not offer octets to a console operation stays refused by that owner
+rather than rendered here. Arranging console access belongs to the requester that arranges it and is
+not published here: whether an input stream is redirected or interactive, which descriptor carries
+output, and when access begins and ends are that requester's declaration, and this section publishes
+no descriptor, no ambient standard descriptor, no terminal handle, no background flusher, and no
+console-owned work, cursor, buffer, or partial result that outlives the access it was granted. A
+final flush at shutdown is a flush of the declared operation vocabulary whose completed observation
+is exactly `committed-progress` with no octet count, not a second shutdown facility, and shutdown
+ownership rests with the owner that granted the access. Terminal detection, terminal dimensions, and
+terminal control remain outside this section: no console write, read, or flush grants
+terminal-control authority, terminal control stays separately authorized, and no clause of this
+section publishes an escape sequence, a terminal value, or a control authority. This clause
+publishes the envelope rules, the flush observation, and the shutdown non-claim only: it publishes
+no descriptor, terminal handle or capability, adapter, host trait, terminal detection or dimensions,
+escape sequence, encoding implementation, conversion rule, redaction rule, release authority,
+cancellation facility, quota, charge, buffer, streaming or backpressure contract beyond
+`GNT-45.4-io-backpressure-fact`, schema, recovery, durability, boundary encoding, lowering, machine
+representation, or family behavior, no change to any other clause of this section or of Sections 20,
+29, 41, or 45, and it claims no performance, storage layout, or physical representation.

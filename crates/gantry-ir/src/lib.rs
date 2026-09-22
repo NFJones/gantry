@@ -210,8 +210,9 @@ pub use io::{
 // Section 46 publishes the declared `std.console` module surface. It adds no terminal, adapter,
 // capability, or runtime availability.
 pub use console::{
-    CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS, ConsoleItemRow,
-    ConsoleOperation, admit_console_surface, declare_console_surface,
+    CONSOLE_CLAUSES, CONSOLE_ITEMS, CONSOLE_OPERATION_FACTS, CONSOLE_SURFACE_MODES,
+    CONSOLE_SURFACE_TARGETS, ConsoleEnvelopeRule, ConsoleItemRow, ConsoleOperation,
+    ConsoleOperationFacts, admit_console_surface, declare_console_surface,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and
