@@ -60,6 +60,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.7-filesystem-action-grants",
             "GNT-47.8-filesystem-link-policy",
             "GNT-47.9-filesystem-replacement",
+            "GNT-47.10-filesystem-declared-limits",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -110,6 +111,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.1-filesystem-modules-and-item-rows",
                 "GNT-47.2-filesystem-path-values",
                 "GNT-47.6-filesystem-traversal",
+                "GNT-47.10-filesystem-declared-limits",
             ],
             "std.fs::resource" => &[
                 "GNT-47.0-filesystem-foundation-scope",
@@ -117,6 +119,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.4-filesystem-resource-operations",
                 "GNT-47.5-filesystem-resource-state",
                 "GNT-47.8-filesystem-link-policy",
+                "GNT-47.10-filesystem-declared-limits",
             ],
             other => panic!("the undeclared module row `{other}` must not exist"),
         };
@@ -874,6 +877,67 @@ fn fs_replacement_publishes_no_staging_or_partial_object() {
         "the single-resolution and link rules of `GNT-47.8-filesystem-link-policy` apply to it unchanged",
         "no durability, commit point, ordering, flush or sync requirement, journal, recovery, reclamation, or crash behavior",
         "no visibility, isolation, or observation rule for another process, another operation, another handle, or a later operation",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution_count() {
+    assert_eq!(FS_PATH_SEGMENT_BOUND, 256);
+    assert_eq!(FS_RESOLUTION_COUNT, 1);
+
+    // The section's declared quantitative facts are exactly the numeric constants the model
+    // exports, so a third numeric constant fails this lane until its clause publishes it.
+    let model = read_text(&workspace_root().join("crates/gantry-ir/src/fs.rs"));
+    let mut declared = Vec::new();
+    for line in model.lines() {
+        let Some(rest) = line.strip_prefix("pub const FS_") else {
+            continue;
+        };
+        let Some((name, remainder)) = rest.split_once(": ") else {
+            continue;
+        };
+        let Some((_kind, value)) = remainder.split_once(" = ") else {
+            continue;
+        };
+        let Ok(number) = value.trim_end_matches(';').parse::<u64>() else {
+            continue;
+        };
+        declared.push((format!("FS_{name}"), number));
+    }
+    declared.sort_unstable();
+    assert_eq!(
+        declared,
+        [
+            ("FS_PATH_SEGMENT_BOUND".to_owned(), 256),
+            ("FS_RESOLUTION_COUNT".to_owned(), 1),
+        ],
+        "the section declares exactly these two numeric limits"
+    );
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for anchor in FS_CLAUSES {
+        assert!(
+            specification.contains(anchor),
+            "the specification must declare {anchor}"
+        );
+    }
+    for rule in [
+        "This clause publishes the quantitative limits this section declares, so that no reader infers a bound this section does not publish",
+        "Exactly three quantitative facts of this section are declared as limits or counts",
+        "at most `FS_PATH_SEGMENT_BOUND` segments, the declared bound of `GNT-47.2-filesystem-path-values`, which is `256`",
+        "a read, a write, and a seek each consume exactly one admitted request of `GNT-45.1-bounded-one-call-io-contract`, the declared count of `GNT-47.4-filesystem-resource-operations`",
+        "whose declared quantity is bounded by that contract's `IO_REQUEST_OCTET_BOUND` alone",
+        "an operation resolves an entry exactly once, the declared count `FS_RESOLUTION_COUNT` of `GNT-47.8-filesystem-link-policy`, which is `1`",
+        "a refusal a declared limit produced is never published as a refusal an implementation produced",
+        "this clause's silence is not a limit",
+        "this section declares no limit on traversal entries",
+        "a quantity this clause does not declare is unbounded by this section",
+        "MUST NOT be presented as one, published as a portable diagnostic, or relied on as a portable fact",
     ] {
         assert!(
             specification.contains(rule),

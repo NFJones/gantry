@@ -1,6 +1,6 @@
 {
  "format": "gantry.concurrent-refinement-evidence/v1",
- "specification_sha256": "801a21c882c5e41f9a3d829bbebe29b33f44835e5be85fd82acb09ab0f3556d1",
+ "specification_sha256": "03cc7a6674d4b3581f0615170f7822249e79ee9f2efbb005cec72aabfd62d09d",
  "issue": "GNT-CON-005",
  "profile": "concurrent-evaluator",
  "argument": "docs/concurrent-evaluator-refinement.md",
