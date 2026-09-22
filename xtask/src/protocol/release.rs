@@ -487,6 +487,7 @@ fn source_ownership(root: &Path) -> Result<BTreeMap<&'static str, Vec<String>>, 
     for path in [
         "protocol/catalogs/ir-contracts-v1.json",
         "protocol/catalogs/host-domain-contracts-v1.json",
+        "protocol/catalogs/stdlib-hierarchy-v1.json",
         "protocol/goldens/ir-artifact-vectors-v1.json",
         "protocol/goldens/ir-contracts-v1.canonical.json",
         "protocol/goldens/host-domain-contracts-v1.canonical.json",

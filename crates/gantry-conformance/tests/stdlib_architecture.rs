@@ -9,15 +9,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
 use gantry::ir::{
-    CANONICAL_PRELUDE_MEMBERS, FacadeReexport, FeatureSelection, NameClass, PRELUDE_BINDINGS,
-    PackageFamily, Prelude, Relocation, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
-    SelectedInstance, SemanticMode, StabilityTier, StabilityTransition, StdContractVersion,
-    StdDeprecation, StdGraph, StdItem, StdName, StdPackage, StdlibDiagnosticCode, StdlibError,
-    StdlibNonClaim, StdlibNonClaimAssertion, TargetKind, canonical_codec_hierarchy,
-    canonical_collections_hierarchy, canonical_crypto_hierarchy, canonical_data_hierarchy,
-    canonical_pure_hierarchy, canonical_std_hierarchy, check_layout_identity,
-    check_stdlib_non_claims, require_applicable,
+    CANONICAL_PRELUDE_EDITION, CANONICAL_PRELUDE_MEMBERS, FacadeReexport, FeatureSelection,
+    NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude, Relocation, STDLIB_CLAUSES,
+    STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance, SemanticMode, StabilityTier,
+    StabilityTransition, StdContractVersion, StdDeprecation, StdGraph, StdItem, StdName,
+    StdPackage, StdlibDiagnosticCode, StdlibError, StdlibNonClaim, StdlibNonClaimAssertion,
+    TargetKind, canonical_codec_hierarchy, canonical_collections_hierarchy,
+    canonical_crypto_hierarchy, canonical_data_hierarchy, canonical_pure_hierarchy,
+    canonical_std_hierarchy, check_layout_identity, check_stdlib_non_claims, require_applicable,
 };
 
 const CORE: &str = "std.core";
@@ -1372,6 +1374,62 @@ fn aggregate_hierarchy_composes_every_declared_family_surface() {
             .is_none(),
         "repository layout is never a standard-package identity"
     );
+}
+
+#[test]
+fn aggregate_manifest_catalog_matches_the_live_hierarchy() {
+    let document =
+        fs::read_to_string(workspace_root().join("protocol/catalogs/stdlib-hierarchy-v1.json"))
+            .unwrap_or_else(|error| panic!("the aggregate manifest catalog reads: {error}"));
+    let catalog: Value = serde_json::from_str(&document)
+        .unwrap_or_else(|error| panic!("the aggregate manifest catalog is JSON: {error}"));
+    assert_eq!(catalog["format"], Value::from("gantry-stdlib-hierarchy-v1"));
+    assert_eq!(
+        catalog["prelude_edition"],
+        Value::from(CANONICAL_PRELUDE_EDITION)
+    );
+    assert_eq!(catalog["contract"]["major"], Value::from(1));
+    assert_eq!(catalog["contract"]["minor"], Value::from(0));
+    let aggregate = canonical_std_hierarchy()
+        .unwrap_or_else(|error| panic!("the aggregate hierarchy is declared: {error}"));
+    let contract = StdContractVersion::new(1, 0)
+        .unwrap_or_else(|error| panic!("the catalog contract version is valid: {error}"));
+    let manifest = aggregate
+        .manifest(contract)
+        .unwrap_or_else(|error| panic!("the aggregate manifest is valid: {error}"));
+    assert_eq!(manifest.prelude_edition(), CANONICAL_PRELUDE_EDITION);
+    let entries = catalog["packages"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the catalog publishes its packages as an array"));
+    assert_eq!(entries.len(), manifest.entries().len());
+    let mut prior: Option<&str> = None;
+    for declared in entries {
+        let name = declared["name"]
+            .as_str()
+            .unwrap_or_else(|| panic!("every declared package names itself"));
+        if let Some(previous) = prior {
+            assert!(
+                previous < name,
+                "the catalog lists packages in canonical order"
+            );
+        }
+        prior = Some(name);
+        let entry = manifest
+            .entries()
+            .iter()
+            .find(|entry| entry.name() == name)
+            .unwrap_or_else(|| panic!("`{name}` is declared in the aggregate manifest"));
+        assert_eq!(
+            declared["class"],
+            Value::from(entry.class().wire_name()),
+            "`{name}` publishes its class"
+        );
+        assert_eq!(
+            declared["tier"],
+            Value::from(entry.tier().wire_name()),
+            "`{name}` publishes its tier"
+        );
+    }
 }
 
 #[test]

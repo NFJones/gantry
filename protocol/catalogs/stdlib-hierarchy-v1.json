@@ -1,0 +1,45 @@
+{
+  "format": "gantry-stdlib-hierarchy-v1",
+  "prelude_edition": "2026",
+  "contract": {
+    "major": 1,
+    "minor": 0
+  },
+  "packages": [
+    {
+      "name": "std.codec",
+      "class": "package",
+      "tier": "stable"
+    },
+    {
+      "name": "std.collections",
+      "class": "package",
+      "tier": "stable"
+    },
+    {
+      "name": "std.core",
+      "class": "package",
+      "tier": "foundational"
+    },
+    {
+      "name": "std.crypto",
+      "class": "package",
+      "tier": "stable"
+    },
+    {
+      "name": "std.data",
+      "class": "package",
+      "tier": "stable"
+    },
+    {
+      "name": "std.num",
+      "class": "package",
+      "tier": "stable"
+    },
+    {
+      "name": "std.text",
+      "class": "package",
+      "tier": "stable"
+    }
+  ]
+}
