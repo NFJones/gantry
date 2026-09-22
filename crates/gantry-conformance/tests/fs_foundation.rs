@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_REPLACEMENT_ACTION, FS_RESOLUTION_COUNT,
-    FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsPath, FsResourceOperation,
-    IoOperation, NameClass, PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState,
-    StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface,
-    declare_fs_surface, fs_traversal_order, generated::RecoveryClass,
+    FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError, FsPath,
+    FsResourceOperation, IoOperation, NameClass, PackageFamily, Prelude, ResourceCarrier,
+    ResourceLifetimeState, StabilityTier, StdGraph, StdItem, StdPackage, StdlibDiagnosticCode,
+    admit_fs_surface, declare_fs_surface, fs_traversal_order, generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -61,6 +61,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.8-filesystem-link-policy",
             "GNT-47.9-filesystem-replacement",
             "GNT-47.10-filesystem-declared-limits",
+            "GNT-47.11-filesystem-case-identity",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -113,6 +114,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.2-filesystem-path-values",
                 "GNT-47.6-filesystem-traversal",
                 "GNT-47.10-filesystem-declared-limits",
+                "GNT-47.11-filesystem-case-identity",
             ],
             "std.fs::resource" => &[
                 "GNT-47.0-filesystem-foundation-scope",
@@ -970,6 +972,47 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
         "a quantity this clause does not declare is unbounded by this section",
         "MUST NOT be presented as one, published as a portable diagnostic, or relied on as a portable fact",
         "no host-enforced bound participates in admitting or refusing a portable program",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_path_value_case_identity_is_exact_and_never_folded() {
+    // A declared segment keeps its own case: two path values that differ only in the case of one
+    // segment are two declared values, and neither spelling is preferred or merged.
+    let upper = FsPath::rooted("root", &["Report"])
+        .unwrap_or_else(|error| panic!("an upper-case segment is declared: {error:?}"));
+    let lower = FsPath::rooted("root", &["report"])
+        .unwrap_or_else(|error| panic!("a lower-case segment is declared: {error:?}"));
+    assert_ne!(upper, lower, "case decides no declared segment identity");
+    assert_eq!(upper.canonical_spelling(), "root/Report");
+    assert_eq!(lower.canonical_spelling(), "root/report");
+    assert_ne!(upper.canonical_spelling(), lower.canonical_spelling());
+
+    // An upper-case root is not the lower-case root: the portable-name domain refuses it rather
+    // than folding it into the domain.
+    let refused = match FsPath::rooted("Root", &["report"]) {
+        Err(error) => error,
+        Ok(value) => panic!("an upper-case root must be refused rather than folded: {value:?}"),
+    };
+    assert!(
+        matches!(refused, FsError::PathInvalid { .. }),
+        "the root refusal is the declared diagnostic: {refused:?}"
+    );
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for rule in [
+        "Two path values are equal exactly when their declared roots and their declared segment sequences are equal as sequences of Unicode scalar values",
+        "the comparison is exactly case-sensitive, it never folds, and it never consults a locale, a host collation, a display form, or a case-insensitive lookup key",
+        "`Report` and `report` are two declared segments and two declared path values that no clause of this section merges, normalizes, folds, renames, or substitutes, and neither spelling is preferred",
+        "two directory states that differ only in the case of an entry name publish two different sequences and never one sequence with a preferred spelling",
+        "A target's own case behaviour is not a fact of this section",
+        "the outcome is the refusal the clause publishing that operation declares, published before the object is changed, and never a merge, a rename, a substitution, a normalization, or a success",
+        "adds no diagnostic to the frozen registry of `GNT-47.0-filesystem-foundation-scope`",
     ] {
         assert!(
             specification.contains(rule),

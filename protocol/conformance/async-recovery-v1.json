@@ -1,6 +1,6 @@
 {
  "format": "gantry.async-recovery-evidence/v1",
- "specification_sha256": "dd76efb29b53b74b78979c7f9799ab50682ee3904c505a820ed7a3c857e4abb2",
+ "specification_sha256": "29bca419a291b2cd2f2d891fe6112034a26058203f8bee9b2cdd64a2ea71d720",
  "issue": "GNT-ASYNC-REC-001",
  "requirements": [
   {

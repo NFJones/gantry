@@ -22,7 +22,7 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 11] = [
+pub const FS_CLAUSES: [&str; 12] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
@@ -34,6 +34,7 @@ pub const FS_CLAUSES: [&str; 11] = [
     "GNT-47.8-filesystem-link-policy",
     "GNT-47.9-filesystem-replacement",
     "GNT-47.10-filesystem-declared-limits",
+    "GNT-47.11-filesystem-case-identity",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -86,6 +87,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.2-filesystem-path-values",
             "GNT-47.6-filesystem-traversal",
             "GNT-47.10-filesystem-declared-limits",
+            "GNT-47.11-filesystem-case-identity",
         ],
     },
     FsItemRow {

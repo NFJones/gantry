@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "dd76efb29b53b74b78979c7f9799ab50682ee3904c505a820ed7a3c857e4abb2",
-  "byte_length": 1269037,
-  "line_count": 16563,
+  "specification_sha256": "29bca419a291b2cd2f2d891fe6112034a26058203f8bee9b2cdd64a2ea71d720",
+  "byte_length": 1271869,
+  "line_count": 16598,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "da77f04ddf4e7b792536739eadd0d8a5f52b6ee5d75e83ed8b8b76c0254b7d9d",
+      "sha256": "16390c8a830d73e328f7a22c6dc23406a58c44743dc60c6acf02ba573a94a9f9",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16563,
-      "sha256": "f5903e647d5acb0c5d319f377d1cf81e6b280be1177843a7b05a8d127a90424b",
+      "end_line": 16598,
+      "sha256": "547838ee8b74c5ff2080545f5d9223a4c81e23035eafa3822d1fac60dd670160",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "13cf8a79dc1bcdd6fbe9c8c38bbb305faab471605552d19063bb182fc39dc053",
+      "span_sha256": "f2f3abec16686d6708256832cb1775a7d96bab59909786923e94a7f268d7f272",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "fe61a84879b9595ca29f7ffdb69bde8874410101a9165571d6c5cea15b81d15f",
+      "body_sha256": "2735e458a20a25b392e2778bfae8dab1a22cd92cbee4ddd002ed0f4ad864966b",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45228,6 +45228,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution_count"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.11-filesystem-case-identity",
+      "span_start_line": 16564,
+      "span_end_line": 16598,
+      "span_sha256": "d89c5772c04be6fb258ca331a95436ec34ba068529d7cc93fbd7ab7dce1c9501",
+      "anchor_line": 16565,
+      "body_start_line": 16566,
+      "body_end_line": 16598,
+      "body_sha256": "72fd4fb085a6cc3312dd4bb8be4146c6e2ddc3870f3206882667186bf1747b6a",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16566,
+          "end_line": 16598,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_path_value_case_identity_is_exact_and_never_folded"
               ],
               "rationale": null
             }
