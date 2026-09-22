@@ -142,7 +142,8 @@ impl IoDiagnosticCode {
     }
 }
 
-/// One refusal of `GNT-45.1-bounded-one-call-io-contract`.
+/// One refusal of the Section 45 one-call contract; each variant is owned by the clause that
+/// declares its code.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IoError {
     /// A presented observation fact lies outside its declared range.
@@ -153,7 +154,7 @@ pub enum IoError {
         fact: &'static str,
         /// The observed value exactly as presented.
         observed: u64,
-        /// The declared range's inclusive upper bound for that fact.
+        /// The declared bound or exact value that fact admits.
         maximum: u64,
     },
     /// A read or write request declared a quantity that is zero or beyond the declared bound.
@@ -348,7 +349,7 @@ pub fn declare_io_surface(graph: &mut StdGraph) -> Result<(), StdlibError> {
                 format!("`{owner}` is not declared, so its item surface cannot be declared"),
             )
         })?;
-        validate_io_surface_package(package)?;
+        validate_io_surface_package(graph, package)?;
         (
             package.modes().iter().copied().collect::<Vec<_>>(),
             package.targets().iter().copied().collect::<Vec<_>>(),
@@ -385,7 +386,7 @@ pub fn admit_io_surface(graph: &StdGraph) -> Result<(), StdlibError> {
             format!("`{owner}` is not declared, so its item surface cannot be admitted"),
         )
     })?;
-    validate_io_surface_package(package)?;
+    validate_io_surface_package(graph, package)?;
     if IO_ITEMS.iter().any(|row| package.item(row.name).is_none()) {
         return Err(StdlibError::new(
             StdlibDiagnosticCode::InvalidNameClassification,
@@ -396,7 +397,7 @@ pub fn admit_io_surface(graph: &StdGraph) -> Result<(), StdlibError> {
 }
 
 /// Validates the declared applicability, the closed item set, and the surface's atomicity.
-fn validate_io_surface_package(package: &StdPackage) -> Result<(), StdlibError> {
+fn validate_io_surface_package(graph: &StdGraph, package: &StdPackage) -> Result<(), StdlibError> {
     if package.modes().iter().copied().ne(IO_SURFACE_MODES)
         || package.targets().iter().copied().ne(IO_SURFACE_TARGETS)
     {
@@ -406,6 +407,13 @@ fn validate_io_surface_package(package: &StdPackage) -> Result<(), StdlibError> 
                 "`{}` must declare exactly the application mode over the library and binary targets",
                 package.name()
             ),
+        ));
+    }
+    let owner = package.name();
+    if graph.names().iter().any(|name| name.owner() == owner) {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            format!("`{owner}` declares a name outside its three declared modules"),
         ));
     }
     let present = IO_ITEMS
@@ -424,6 +432,25 @@ fn validate_io_surface_package(package: &StdPackage) -> Result<(), StdlibError> 
             "the std.io item surface is partially declared".to_owned(),
         ));
     }
+    for row in IO_ITEMS {
+        let Some(item) = package.item(row.name) else {
+            continue;
+        };
+        if item.class() != row.class || item.tier() != row.tier {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidNameClassification,
+                format!("`{}` does not declare its row's class and tier", row.name),
+            ));
+        }
+        if item.modes().iter().copied().ne(IO_SURFACE_MODES)
+            || item.targets().iter().copied().ne(IO_SURFACE_TARGETS)
+        {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::UnsupportedApplicability,
+                format!("`{}` does not declare its row's applicability", row.name),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -439,12 +466,14 @@ pub enum IoOutcome {
         /// Whether the read observed the end of its stream.
         ended: bool,
     },
-    /// A seek observed its declared target position and the position it observed.
+    /// A seek observed its declared target, its pre-call position, and its post-call position.
     Seek {
         /// The declared target position.
         target: u64,
-        /// The position the call observed.
-        current: u64,
+        /// The position the call held before it ran.
+        from: u64,
+        /// The position the call observed after it ran.
+        to: u64,
     },
     /// A write observed its provided count and its accepted count.
     Write {
@@ -530,8 +559,16 @@ impl IoOutcome {
                 }
                 Ok(ProgressObservation::ShortWrite)
             }
-            Self::Seek { target, current } => {
-                if current == target {
+            Self::Seek { target, from, to } => {
+                if to != target {
+                    return Err(IoError::ObservationInconsistent {
+                        operation: IoOperation::Seek,
+                        fact: "to",
+                        observed: to,
+                        maximum: target,
+                    });
+                }
+                if from == target {
                     Ok(ProgressObservation::NotStarted)
                 } else {
                     Ok(ProgressObservation::CommittedProgress)

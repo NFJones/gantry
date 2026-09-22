@@ -15806,8 +15806,9 @@ operation, capability grant, runtime availability, checkpoint, journal schema, o
 behavior, and it consumes no host or platform fact. Its pure model is `crates/gantry-ir/src/io.rs`
 and its analyzer evidence is `crates/gantry-conformance/tests/io_foundation.rs`. The frozen
 diagnostics of this section are `io-request-bound`, `io-request-kind`, and
-`io-progress-inapplicable`, all owned by `GNT-45.1-bounded-one-call-io-contract`; each names one
-owning clause and no spelling is shared by two clauses. This section introduces no second progress
+`io-progress-inapplicable`, owned by `GNT-45.1-bounded-one-call-io-contract`, and
+`io-observation-inconsistent`, owned by `GNT-45.3-io-progress-derivation`; each names one owning
+clause and no spelling is shared by two clauses. This section introduces no second progress
 vocabulary, no second request bound, no streaming, incremental, chunked, or resumable contract, no
 suspension, no quota or charge, no work limit or cancellation safe point, no schema, recovery,
 durability, boundary encoding, lowering, machine representation, or family behavior, and no
@@ -15921,15 +15922,20 @@ facts are admitted only within their declared ranges: an advanced count greater 
 read asked for, an accepted count greater than the count a write was provided, and any other fact
 outside its declared range are refused under `io-observation-inconsistent`, naming the observed
 fact and the declared range, before any observation is derived, so a read's asked-for count and a
-write's provided count are each admitted only inside `IO_REQUEST_OCTET_BOUND`. The decision is
+write's provided count are each admitted only inside `IO_REQUEST_OCTET_BOUND`. A seek observes
+exactly three: its declared target position, the position it held before the call, and the
+position it observed after the call. The decision is
 total over admitted facts and preserves every precedence of
 `GNT-45.1-bounded-one-call-io-contract`: a read that observed the end of its stream is `eof`
 whatever it advanced, a read that observed no advance and no end is `not-started`, a read that
 advanced every octet it asked for without an end is `committed-progress`, and any other read is
 `short-read`; a write that accepted every octet it was provided is `committed-progress`, a write
-that accepted none is `not-started`, and any other write is `short-write`; and a seek whose
-observed position is its declared target is `not-started`, while any other seek is
-`committed-progress`. The model's `IoOutcome` publishes the facts and `derive_progress` publishes
+that accepted none is `not-started`, and any other write is `short-write`; a seek that observed
+its declared target position after having been elsewhere is `committed-progress`, a seek already
+at its declared position is `not-started`, and a seek whose post-call position is not its
+declared target is refused under `io-observation-inconsistent`, naming the observed position and
+the declared target, because no progress observation of this contract is published for a seek
+that did not reach its target. The model's `IoOutcome` publishes the facts and `derive_progress` publishes
 exactly this decision, so no caller can present an observation its facts do not decide: the
 derivation is a deterministic function of the admitted facts alone, never of a host, an adapter,
 timing, a prior call, or global mutable state, and two derivations of equal facts publish equal

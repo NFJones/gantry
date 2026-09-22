@@ -13,7 +13,7 @@ use gantry::ir::{
     CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, HostProgress, IO_CLAUSES, IO_CONTRACT_VERSION, IO_ITEMS,
     IO_REQUEST_OCTET_BOUND, IO_SURFACE_MODES, IO_SURFACE_TARGETS, IoDiagnosticCode, IoError,
     IoOperation, IoOutcome, IoRequest, NameClass, PackageFamily, Prelude, ProgressObservation,
-    STDLIB_CLAUSES, SemanticMode, StabilityTier, StdGraph, StdItem, StdPackage,
+    STDLIB_CLAUSES, SemanticMode, StabilityTier, StdGraph, StdItem, StdName, StdPackage,
     StdlibDiagnosticCode, TargetKind, admit_io_progress, admit_io_surface, declare_io_surface,
 };
 
@@ -437,6 +437,91 @@ fn io_surface_admission_is_closed_and_exact() {
         .package(&owner)
         .unwrap_or_else(|| panic!("the family package is declared"));
     assert_eq!(after.items().len(), 1, "the refusal mutates nothing");
+
+    let mut named = fixture(
+        &[SemanticMode::Application],
+        &[TargetKind::Library, TargetKind::Binary],
+    );
+    assert!(declare_io_surface(&mut named).is_ok());
+    named
+        .declare_name(
+            StdName::new("std.io::invented", NameClass::Module, "std.io")
+                .unwrap_or_else(|error| panic!("the fixture name is admissible: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("the fixture name is admissible: {error:?}"));
+    assert_eq!(
+        admit_io_surface(&named).err().map(|error| error.code()),
+        Some(StdlibDiagnosticCode::InvalidNameClassification),
+        "a graph name outside the declared modules is refused"
+    );
+    assert_eq!(
+        declare_io_surface(&mut named)
+            .err()
+            .map(|error| error.code()),
+        Some(StdlibDiagnosticCode::InvalidNameClassification),
+        "the preflight refuses a graph name outside the declared modules"
+    );
+
+    let mut mistiered = fixture(
+        &[SemanticMode::Application],
+        &[TargetKind::Library, TargetKind::Binary],
+    );
+    for row in IO_ITEMS {
+        let tier = if row.operation == IoOperation::Read {
+            StabilityTier::Experimental
+        } else {
+            row.tier
+        };
+        mistiered
+            .declare_item(
+                StdItem::new(
+                    row.name,
+                    row.class,
+                    tier,
+                    &[SemanticMode::Application],
+                    &[TargetKind::Library, TargetKind::Binary],
+                )
+                .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}")),
+            )
+            .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}"));
+    }
+    assert_eq!(
+        admit_io_surface(&mistiered).err().map(|error| error.code()),
+        Some(StdlibDiagnosticCode::InvalidNameClassification),
+        "a row with another tier is refused"
+    );
+
+    let mut misapplicable = fixture(
+        &[SemanticMode::Application],
+        &[TargetKind::Library, TargetKind::Binary],
+    );
+    let row = IO_ITEMS[0];
+    for item_name in [row.name, IO_ITEMS[1].name, IO_ITEMS[2].name] {
+        let modes: &[SemanticMode] = if item_name == row.name {
+            &[SemanticMode::Application, SemanticMode::Portable]
+        } else {
+            &[SemanticMode::Application]
+        };
+        misapplicable
+            .declare_item(
+                StdItem::new(
+                    item_name,
+                    NameClass::Module,
+                    StabilityTier::Stable,
+                    modes,
+                    &[TargetKind::Library, TargetKind::Binary],
+                )
+                .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}")),
+            )
+            .unwrap_or_else(|error| panic!("the fixture item is admissible: {error:?}"));
+    }
+    assert_eq!(
+        admit_io_surface(&misapplicable)
+            .err()
+            .map(|error| error.code()),
+        Some(StdlibDiagnosticCode::UnsupportedApplicability),
+        "a row with another applicability is refused"
+    );
 }
 
 #[test]
@@ -588,14 +673,16 @@ fn io_progress_derivation_is_total_and_precedence_preserving() {
         (
             IoOutcome::Seek {
                 target: 4,
-                current: 4,
+                from: 4,
+                to: 4,
             },
             ProgressObservation::NotStarted,
         ),
         (
             IoOutcome::Seek {
                 target: 4,
-                current: 9,
+                from: 1,
+                to: 4,
             },
             ProgressObservation::CommittedProgress,
         ),
@@ -665,6 +752,16 @@ fn io_observation_facts_outside_their_ranges_are_refused() {
             "provided",
             bound + 1,
             bound,
+        ),
+        (
+            IoOutcome::Seek {
+                target: 4,
+                from: 1,
+                to: 9,
+            },
+            "to",
+            9,
+            4,
         ),
     ];
     for (outcome, fact, observed, maximum) in cases {
