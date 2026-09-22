@@ -843,6 +843,9 @@ fn read_operation(reader: &mut Reader<'_>) -> Result<ExecutableOperation, Machin
     let attempted = reader.boolean()?;
     Ok(ExecutableOperation {
         kind,
+        // The retained program format does not carry the Section 20 kind yet; the decoded value
+        // stays explicitly unauthenticated rather than defaulted.
+        section20_kind: None,
         result_type,
         action,
         template_segments,

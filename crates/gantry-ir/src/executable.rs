@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::generated::{Effect, OperationSiteKind, RecoveryClass};
+use crate::operation::OperationKind;
 use crate::{
     ActionParameter, CanonicalCallableIdentity, CanonicalPath, CanonicalSignature, EffectSet,
     OwnershipClass, StructuralPosition, TypeDescriptor,
@@ -30,6 +31,13 @@ pub struct ExecutableAction {
 pub struct ExecutableOperation {
     /// Prompt, decision, or harness-action classification.
     pub kind: OperationSiteKind,
+    /// The Section 20 operation kind (`GNT-20.1`/`OperationKind`) an authenticated analysis
+    /// published for this operation, or `None` when no layer authenticated one yet.
+    ///
+    /// This is a different fact from [`Self::kind`]: the hook-site classification never stands in
+    /// for the Section 20 kind, and a consumer that needs the Section 20 kind must refuse rather
+    /// than assume one when this is `None`.
+    pub section20_kind: Option<OperationKind>,
     /// Exact successful operation result type before optional `attempt` wrapping.
     pub result_type: TypeDescriptor,
     /// Action-specific metadata, present only for an action invocation.

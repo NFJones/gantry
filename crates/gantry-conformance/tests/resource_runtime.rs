@@ -196,6 +196,7 @@ fn operation_metadata(action_path: Option<&str>) -> ExecutableOperation {
     });
     ExecutableOperation {
         kind: OperationSiteKind::Action,
+        section20_kind: None,
         result_type: TypeDescriptor::UNIT,
         action,
         template_segments: Vec::new(),
@@ -206,6 +207,21 @@ fn operation_metadata(action_path: Option<&str>) -> ExecutableOperation {
         session_mode: None,
         attempted: false,
     }
+}
+
+#[test]
+fn an_operation_without_an_authenticated_section20_kind_is_explicit() {
+    let metadata = operation_metadata(None);
+    assert_eq!(metadata.kind, OperationSiteKind::Action);
+    assert_eq!(
+        metadata.section20_kind, None,
+        "an action site does not authenticate a Section 20 kind by itself"
+    );
+    assert_eq!(
+        OperationKind::ALL.len(),
+        3,
+        "the Section 20 kind vocabulary is closed over three members"
+    );
 }
 
 #[test]

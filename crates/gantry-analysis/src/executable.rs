@@ -3260,6 +3260,10 @@ impl Compiler<'_> {
             .transpose()?;
         let metadata = ExecutableOperation {
             kind: site.kind,
+            // The analyzer does not yet authenticate the Section 20 kind
+            // (GNT-GP-OPKIND-001 slice 2); the field stays explicitly unauthenticated rather than
+            // defaulted.
+            section20_kind: None,
             result_type,
             action,
             template_segments: operation_template_segments(self.tree, &actual_node),
