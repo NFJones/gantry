@@ -328,20 +328,23 @@ pub use codec::{
 // refusal vocabulary with its declared refusal categories, the URL value model of
 // `GNT-43.2-url-value-model`, the MIME type value model of `GNT-43.3-mime-type-and-parameter-model`,
 // the header field and field list model of `GNT-43.4-header-field-and-field-list-model`, the
-// framing model of `GNT-43.5-message-framing-model`, and the separation between these pure value
-// models and the capability-backed network contracts of
+// framing model of `GNT-43.5-message-framing-model`, the request and response value models and
+// non-claim vocabulary of `GNT-43.6-request-and-response-value-model`, and the separation between
+// these pure value models and the capability-backed network contracts of
 // `GNT-29.6-dns-socket-tls-and-http-contracts`.
 pub use data::{
-    DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataItemRow,
-    DataModule, DataRefusalCategory, DataVersion, FRAMING_BODY_OCTET_BOUND, FRAMING_CHUNKED_CODING,
-    HEADER_FIELD_COUNT_BOUND, HEADER_NAME_TOKEN_BOUND, HEADER_TEXT_OCTET_BOUND,
-    HEADER_VALUE_OCTET_BOUND, HeaderField, HeaderFieldList, MIME_PARAMETER_COUNT_BOUND,
-    MIME_PARAMETER_NAME_TOKEN_BOUND, MIME_PARAMETER_VALUE_OCTET_BOUND, MIME_SUBTYPE_TOKEN_BOUND,
-    MIME_TEXT_OCTET_BOUND, MIME_TYPE_TOKEN_BOUND, MessageFraming, MimeType,
-    URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND, URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND,
-    URL_SCHEME_SCALAR_BOUND, URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND,
-    URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND, Url, UrlHost, canonical_data_hierarchy,
-    declare_data_surface, message_framing,
+    DATA_CLAUSES, DATA_ITEMS, DATA_NON_CLAIMS, DECLARED_DATA_VERSION, DataDiagnosticCode,
+    DataError, DataItemRow, DataModule, DataNonClaim, DataRefusalCategory, DataVersion,
+    FRAMING_BODY_OCTET_BOUND, FRAMING_CHUNKED_CODING, HEADER_FIELD_COUNT_BOUND,
+    HEADER_NAME_TOKEN_BOUND, HEADER_TEXT_OCTET_BOUND, HEADER_VALUE_OCTET_BOUND,
+    HTTP_METHOD_SCALAR_BOUND, HTTP_REASON_OCTET_BOUND, HTTP_STATUS_MAXIMUM, HTTP_STATUS_MINIMUM,
+    HeaderField, HeaderFieldList, HttpMethod, HttpRequest, HttpResponse, HttpStatus,
+    MIME_PARAMETER_COUNT_BOUND, MIME_PARAMETER_NAME_TOKEN_BOUND, MIME_PARAMETER_VALUE_OCTET_BOUND,
+    MIME_SUBTYPE_TOKEN_BOUND, MIME_TEXT_OCTET_BOUND, MIME_TYPE_TOKEN_BOUND, MessageFraming,
+    MimeType, URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND, URL_LABEL_SCALAR_BOUND,
+    URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND, URL_SEGMENT_COUNT_BOUND,
+    URL_SEGMENT_OCTET_BOUND, URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND, Url, UrlHost,
+    canonical_data_hierarchy, declare_data_surface, message_framing,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,

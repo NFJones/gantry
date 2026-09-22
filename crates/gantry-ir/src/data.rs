@@ -16,13 +16,14 @@ use crate::stdlib::{
 };
 
 /// The declared clauses of Section 43, in specification order.
-pub const DATA_CLAUSES: [&str; 6] = [
+pub const DATA_CLAUSES: [&str; 7] = [
     "GNT-43.0-data-family-scope",
     "GNT-43.1-data-value-model-contract",
     "GNT-43.2-url-value-model",
     "GNT-43.3-mime-type-and-parameter-model",
     "GNT-43.4-header-field-and-field-list-model",
     "GNT-43.5-message-framing-model",
+    "GNT-43.6-request-and-response-value-model",
 ];
 
 /// The one declared version of every value model in this revision
@@ -357,6 +358,7 @@ pub const DATA_ITEMS: [DataItemRow; 3] = [
             "GNT-43.1-data-value-model-contract",
             "GNT-43.4-header-field-and-field-list-model",
             "GNT-43.5-message-framing-model",
+            "GNT-43.6-request-and-response-value-model",
         ],
     },
     DataItemRow {
@@ -2305,4 +2307,363 @@ fn parse_framing_length(value: &str, position: usize) -> Result<u64, DataError> 
         }
     }
     Ok(integer)
+}
+
+/// The declared method-token scalar bound of `GNT-43.6-request-and-response-value-model`.
+pub const HTTP_METHOD_SCALAR_BOUND: usize = 32;
+
+/// The declared status minimum of `GNT-43.6-request-and-response-value-model`.
+pub const HTTP_STATUS_MINIMUM: u16 = 100;
+
+/// The declared status maximum of `GNT-43.6-request-and-response-value-model`.
+pub const HTTP_STATUS_MAXIMUM: u16 = 599;
+
+/// The declared reason octet bound of `GNT-43.6-request-and-response-value-model`.
+pub const HTTP_REASON_OCTET_BOUND: usize = 256;
+
+/// One request method of `GNT-43.6-request-and-response-value-model`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpMethod(String);
+
+impl HttpMethod {
+    /// Constructs one request method (`GNT-43.6-request-and-response-value-model`).
+    pub fn new(text: &str) -> Result<Self, DataError> {
+        admit_http_method(text)?;
+        Ok(Self(text.to_owned()))
+    }
+
+    /// Returns the method spelling.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for HttpMethod {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// One response status of `GNT-43.6-request-and-response-value-model`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HttpStatus(u16);
+
+impl HttpStatus {
+    /// Constructs one response status (`GNT-43.6-request-and-response-value-model`).
+    pub fn new(code: u16) -> Result<Self, DataError> {
+        if !(HTTP_STATUS_MINIMUM..=HTTP_STATUS_MAXIMUM).contains(&code) {
+            return Err(http_malformed(
+                0,
+                "a status is an integer from 100 through 599",
+            ));
+        }
+        Ok(Self(code))
+    }
+
+    /// Returns the status code.
+    #[must_use]
+    pub const fn code(self) -> u16 {
+        self.0
+    }
+
+    /// Publishes the canonical three-digit spelling of this status
+    /// (`GNT-43.6-request-and-response-value-model`).
+    #[must_use]
+    pub fn canonical_text(self) -> String {
+        format!("{:03}", self.0)
+    }
+}
+
+impl std::fmt::Display for HttpStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.canonical_text())
+    }
+}
+
+/// One request value of `GNT-43.6-request-and-response-value-model`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpRequest {
+    method: HttpMethod,
+    target: Url,
+    headers: HeaderFieldList,
+}
+
+impl HttpRequest {
+    /// Constructs one request value from declared components
+    /// (`GNT-43.6-request-and-response-value-model`).
+    #[must_use]
+    pub fn new(method: HttpMethod, target: Url, headers: HeaderFieldList) -> Self {
+        Self {
+            method,
+            target,
+            headers,
+        }
+    }
+
+    /// Returns the declared method.
+    #[must_use]
+    pub fn method(&self) -> &HttpMethod {
+        &self.method
+    }
+
+    /// Returns the declared target.
+    #[must_use]
+    pub fn target(&self) -> &Url {
+        &self.target
+    }
+
+    /// Returns the declared header field list.
+    #[must_use]
+    pub fn headers(&self) -> &HeaderFieldList {
+        &self.headers
+    }
+
+    /// Publishes the canonical text of this request
+    /// (`GNT-43.6-request-and-response-value-model`).
+    #[must_use]
+    pub fn canonical_text(&self) -> String {
+        format!(
+            "{} {}\n{}",
+            self.method.as_str(),
+            self.target.canonical_text(),
+            self.headers.canonical_text()
+        )
+    }
+}
+
+impl std::fmt::Display for HttpRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.canonical_text())
+    }
+}
+
+/// One response value of `GNT-43.6-request-and-response-value-model`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpResponse {
+    status: HttpStatus,
+    reason: Option<String>,
+    headers: HeaderFieldList,
+}
+
+impl HttpResponse {
+    /// Constructs one response value from declared components
+    /// (`GNT-43.6-request-and-response-value-model`).
+    pub fn new(
+        status: HttpStatus,
+        reason: Option<&str>,
+        headers: HeaderFieldList,
+    ) -> Result<Self, DataError> {
+        if let Some(reason) = reason {
+            admit_http_reason(reason)?;
+        }
+        Ok(Self {
+            status,
+            reason: reason.map(str::to_owned),
+            headers,
+        })
+    }
+
+    /// Returns the declared status.
+    #[must_use]
+    pub const fn status(&self) -> HttpStatus {
+        self.status
+    }
+
+    /// Returns the declared reason, when the value holds one.
+    #[must_use]
+    pub fn reason(&self) -> Option<&str> {
+        self.reason.as_deref()
+    }
+
+    /// Returns the declared header field list.
+    #[must_use]
+    pub fn headers(&self) -> &HeaderFieldList {
+        &self.headers
+    }
+
+    /// Publishes the canonical text of this response
+    /// (`GNT-43.6-request-and-response-value-model`).
+    #[must_use]
+    pub fn canonical_text(&self) -> String {
+        match &self.reason {
+            Some(reason) => format!(
+                "{} {}\n{}",
+                self.status.canonical_text(),
+                reason,
+                self.headers.canonical_text()
+            ),
+            None => format!(
+                "{}\n{}",
+                self.status.canonical_text(),
+                self.headers.canonical_text()
+            ),
+        }
+    }
+}
+
+impl std::fmt::Display for HttpResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.canonical_text())
+    }
+}
+
+/// One declared non-claim of Section 43 (`GNT-43.6-request-and-response-value-model`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DataNonClaim {
+    /// No ambient registry is a semantic authority.
+    AmbientRegistry,
+    /// No value model publishes an external, protected, or durable capability.
+    ExternalEligibility,
+    /// No host, platform, or environment behavior is a semantic authority.
+    HostAuthority,
+    /// No value model is applied implicitly.
+    ImplicitApplication,
+    /// No value model performs network I/O or connection handling.
+    NetworkDispatch,
+    /// No platform parser, locale, timing, or filesystem influences a value.
+    PlatformParser,
+    /// No recovery step invokes a value model.
+    Recovery,
+    /// No clause publishes wire syntax or wire framing.
+    WireFraming,
+}
+
+impl DataNonClaim {
+    /// The closed declared set, in canonical wire-name order.
+    pub const ALL: [DataNonClaim; 8] = [
+        Self::AmbientRegistry,
+        Self::ExternalEligibility,
+        Self::HostAuthority,
+        Self::ImplicitApplication,
+        Self::NetworkDispatch,
+        Self::PlatformParser,
+        Self::Recovery,
+        Self::WireFraming,
+    ];
+
+    /// Returns the canonical wire spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::AmbientRegistry => "ambient-registry",
+            Self::ExternalEligibility => "external-eligibility",
+            Self::HostAuthority => "host-authority",
+            Self::ImplicitApplication => "implicit-application",
+            Self::NetworkDispatch => "network-dispatch",
+            Self::PlatformParser => "platform-parser",
+            Self::Recovery => "recovery",
+            Self::WireFraming => "wire-framing",
+        }
+    }
+
+    /// Returns the declared statement of this non-claim.
+    #[must_use]
+    pub const fn statement(self) -> &'static str {
+        NON_CLAIM_STATEMENTS[self as usize]
+    }
+
+    /// Decodes one canonical wire spelling; every other spelling is `None`.
+    #[must_use]
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|claim| claim.wire_name() == name)
+    }
+}
+
+/// The declared statements of the non-claims, in canonical wire-name order.
+const NON_CLAIM_STATEMENTS: [&str; 8] = [
+    "No ambient URL, MIME, header, port, or character-set registry is a semantic authority for any value of this section.",
+    "No value model of this section publishes an `ExternalValue` capability, a protected-data release, or a durable capability, and no value becomes admissible to a boundary or a recovery projection because a model of this section admitted it.",
+    "No host, platform, or environment behavior is a semantic authority for any value of this section.",
+    "No value model of this section is applied implicitly to any network operation, boundary encoding, journal artifact, or recovery projection.",
+    "No value model of this section performs network I/O, resolves a name, opens a socket, negotiates a transport or security, or recovers a connection.",
+    "No platform parser, platform name resolution, locale, timing, or filesystem influences any value of this section.",
+    "No step of the recovery projection invokes a value model of this section, and no refusal of this section is a recovery cut.",
+    "No clause of this section publishes wire syntax, message framing on the wire, or connection behavior, and the framing decision of `GNT-43.5-message-framing-model` is a pure function of declared fields alone.",
+];
+
+/// The closed declared non-claim set of Section 43 in canonical wire-name order
+/// (`GNT-43.6-request-and-response-value-model`).
+pub const DATA_NON_CLAIMS: [DataNonClaim; 8] = DataNonClaim::ALL;
+
+/// Publishes one malformed-input refusal for the message value models
+/// (`GNT-43.6-request-and-response-value-model`).
+fn http_malformed(index: usize, detail: &'static str) -> DataError {
+    DataError::new(
+        DataDiagnosticCode::MalformedInput,
+        format!("octet {index}: {detail}"),
+    )
+}
+
+/// Publishes one expansion-limit refusal for the message value models
+/// (`GNT-43.6-request-and-response-value-model`).
+fn http_bound(observed: usize, declared: usize, what: &'static str) -> DataError {
+    DataError::new(
+        DataDiagnosticCode::ExpansionLimit,
+        format!("{what} holds {observed}; the declared bound is {declared}"),
+    )
+}
+
+/// Admits one request method (`GNT-43.6-request-and-response-value-model`).
+fn admit_http_method(text: &str) -> Result<(), DataError> {
+    let bytes = text.as_bytes();
+    if bytes.is_empty() {
+        return Err(http_malformed(
+            0,
+            "a method begins with an uppercase ASCII letter",
+        ));
+    }
+    let mut scalars = 0_usize;
+    for (index, byte) in bytes.iter().enumerate() {
+        let admitted = if index == 0 {
+            byte.is_ascii_uppercase()
+        } else {
+            byte.is_ascii_uppercase() || byte.is_ascii_digit() || *byte == b'-'
+        };
+        if !admitted {
+            return Err(http_malformed(
+                index,
+                "a method begins with an uppercase ASCII letter and holds uppercase letters, digits, and `-`",
+            ));
+        }
+        scalars += 1;
+        if scalars > HTTP_METHOD_SCALAR_BOUND {
+            return Err(http_bound(scalars, HTTP_METHOD_SCALAR_BOUND, "the method"));
+        }
+    }
+    Ok(())
+}
+
+/// Admits one response reason (`GNT-43.6-request-and-response-value-model`).
+fn admit_http_reason(text: &str) -> Result<(), DataError> {
+    let bytes = text.as_bytes();
+    if bytes.is_empty() {
+        return Err(http_malformed(0, "a reason holds one or more octets"));
+    }
+    if bytes.first() == Some(&b' ') {
+        return Err(http_malformed(
+            0,
+            "a reason begins with an octet that is not a space",
+        ));
+    }
+    for (index, byte) in bytes.iter().enumerate() {
+        if !matches!(*byte, 0x20..=0x7E) {
+            return Err(http_malformed(
+                index,
+                "a reason holds the visible octets U+0020 through U+007E",
+            ));
+        }
+        if index + 1 > HTTP_REASON_OCTET_BOUND {
+            return Err(http_bound(index + 1, HTTP_REASON_OCTET_BOUND, "the reason"));
+        }
+    }
+    if bytes.last() == Some(&b' ') {
+        return Err(http_malformed(
+            bytes.len() - 1,
+            "a reason ends with an octet that is not a space",
+        ));
+    }
+    Ok(())
 }

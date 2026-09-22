@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "fce0d5e1e4c69808ab82f1106f34e46a1fb9b9b8c5a91e88cf69f24a384e7652",
+  "specification_sha256": "7446d0485da873ead15c7f5e70daa411ec4db5c302cfcfb368c52e5947e92c34",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15763,
+      "end_line": 15767,
       "rationale": null
     }
   ],
@@ -42863,6 +42863,47 @@
                 "crates/gantry-conformance/tests/data_foundation.rs#framing_decides_from_the_declared_fields",
                 "crates/gantry-conformance/tests/data_foundation.rs#framing_refuses_smuggling_shapes_with_exact_positions",
                 "crates/gantry-conformance/tests/data_foundation.rs#framing_refuses_noncanonical_content_length_and_its_bound"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-43.6-request-and-response-value-model",
+      "span_start_line": 15764,
+      "span_end_line": 15767,
+      "anchor_line": 15765,
+      "body_start_line": 15766,
+      "body_end_line": 15767,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15766,
+          "end_line": 15767,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/data_foundation.rs#request_and_response_values_are_constructed_from_declared_components",
+                "crates/gantry-conformance/tests/data_foundation.rs#request_and_response_refuse_noncanonical_components",
+                "crates/gantry-conformance/tests/data_foundation.rs#data_non_claims_are_closed_and_ordered"
               ],
               "rationale": null
             }

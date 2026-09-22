@@ -12,14 +12,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataModule,
-    DataRefusalCategory, DataVersion, FRAMING_BODY_OCTET_BOUND, FRAMING_CHUNKED_CODING,
-    HEADER_FIELD_COUNT_BOUND, HEADER_NAME_TOKEN_BOUND, HEADER_TEXT_OCTET_BOUND,
-    HEADER_VALUE_OCTET_BOUND, HeaderField, HeaderFieldList, MIME_PARAMETER_COUNT_BOUND,
-    MIME_PARAMETER_NAME_TOKEN_BOUND, MIME_PARAMETER_VALUE_OCTET_BOUND, MIME_SUBTYPE_TOKEN_BOUND,
-    MIME_TEXT_OCTET_BOUND, MIME_TYPE_TOKEN_BOUND, MessageFraming, MimeType, NameClass,
-    PackageFamily, StabilityTier, URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND,
-    URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND,
+    DATA_CLAUSES, DATA_ITEMS, DATA_NON_CLAIMS, DECLARED_DATA_VERSION, DataDiagnosticCode,
+    DataError, DataModule, DataNonClaim, DataRefusalCategory, DataVersion,
+    FRAMING_BODY_OCTET_BOUND, FRAMING_CHUNKED_CODING, HEADER_FIELD_COUNT_BOUND,
+    HEADER_NAME_TOKEN_BOUND, HEADER_TEXT_OCTET_BOUND, HEADER_VALUE_OCTET_BOUND,
+    HTTP_METHOD_SCALAR_BOUND, HTTP_REASON_OCTET_BOUND, HTTP_STATUS_MAXIMUM, HTTP_STATUS_MINIMUM,
+    HeaderField, HeaderFieldList, HttpMethod, HttpRequest, HttpResponse, HttpStatus,
+    MIME_PARAMETER_COUNT_BOUND, MIME_PARAMETER_NAME_TOKEN_BOUND, MIME_PARAMETER_VALUE_OCTET_BOUND,
+    MIME_SUBTYPE_TOKEN_BOUND, MIME_TEXT_OCTET_BOUND, MIME_TYPE_TOKEN_BOUND, MessageFraming,
+    MimeType, NameClass, PackageFamily, StabilityTier, URL_FRAGMENT_OCTET_BOUND,
+    URL_HOST_SCALAR_BOUND, URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND,
     URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND, URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND,
     Url, UrlHost, canonical_data_hierarchy, canonical_pure_hierarchy, message_framing,
 };
@@ -36,7 +38,7 @@ fn workspace_root() -> PathBuf {
 fn section_43_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(DATA_CLAUSES.len(), 6);
+    assert_eq!(DATA_CLAUSES.len(), 7);
     let mut prior = 0_usize;
     for clause in DATA_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -169,6 +171,27 @@ fn section_43_clauses_are_published() {
             "the framing clause must name {term}"
         );
     }
+    let messages_start = spec
+        .find(&format!("<a id=\"{}\"></a>", DATA_CLAUSES[6]))
+        .unwrap_or_else(|| panic!("the request/response clause anchor is published"));
+    let messages = &spec[messages_start..];
+    for term in [
+        "`Url`",
+        "`HTTP_METHOD_SCALAR_BOUND`",
+        "`HTTP_STATUS_MINIMUM`",
+        "`HTTP_STATUS_MAXIMUM`",
+        "`HTTP_REASON_OCTET_BOUND`",
+        "`DataNonClaim`",
+        "`DATA_NON_CLAIMS`",
+        "`ambient-registry`",
+        "`wire-framing`",
+        "`ExternalValue`",
+    ] {
+        assert!(
+            messages.contains(term),
+            "the request/response clause must name {term}"
+        );
+    }
 }
 
 #[test]
@@ -219,6 +242,7 @@ fn data_surface_declares_the_three_modules() {
                 DATA_CLAUSES[1],
                 DATA_CLAUSES[4],
                 DATA_CLAUSES[5],
+                DATA_CLAUSES[6],
             ],
         };
         assert_eq!(
@@ -1737,4 +1761,175 @@ fn framing_refuses_noncanonical_content_length_and_its_bound() {
     )])));
     assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
     assert!(error.detail().contains("999999"), "{}", error.detail());
+}
+
+fn http_refusal<T>(result: Result<T, DataError>) -> DataError {
+    match result {
+        Ok(_) => panic!("the value must be refused"),
+        Err(error) => error,
+    }
+}
+
+#[test]
+fn request_and_response_values_are_constructed_from_declared_components() {
+    let target = match Url::parse("https://example.test/a?x=1") {
+        Ok(value) => value,
+        Err(error) => panic!("the target must be admitted: {}", error.detail()),
+    };
+    let headers = header_list_of(vec![header_field_of("content-length", "0")]);
+    let method = match HttpMethod::new("POST") {
+        Ok(value) => value,
+        Err(error) => panic!("the method must be admitted: {}", error.detail()),
+    };
+    let request = HttpRequest::new(method, target, headers.clone());
+    assert_eq!(request.method().as_str(), "POST");
+    assert_eq!(
+        request.target().canonical_text(),
+        "https://example.test/a?x=1"
+    );
+    assert_eq!(request.headers().fields().len(), 1);
+    assert_eq!(
+        request.canonical_text(),
+        "POST https://example.test/a?x=1\ncontent-length: 0"
+    );
+    assert_eq!(request.to_string(), request.canonical_text());
+    let status = match HttpStatus::new(200) {
+        Ok(value) => value,
+        Err(error) => panic!("the status must be admitted: {}", error.detail()),
+    };
+    assert_eq!(status.code(), 200);
+    assert_eq!(status.canonical_text(), "200");
+    let no_reason = match HttpResponse::new(status, None, headers.clone()) {
+        Ok(value) => value,
+        Err(error) => panic!("the response must be admitted: {}", error.detail()),
+    };
+    assert_eq!(no_reason.reason(), None);
+    assert_eq!(no_reason.canonical_text(), "200\ncontent-length: 0");
+    let with_reason = match HttpResponse::new(status, Some("OK"), headers.clone()) {
+        Ok(value) => value,
+        Err(error) => panic!("the response must be admitted: {}", error.detail()),
+    };
+    assert_eq!(with_reason.reason(), Some("OK"));
+    assert_eq!(with_reason.canonical_text(), "200 OK\ncontent-length: 0");
+    assert_ne!(
+        no_reason, with_reason,
+        "a reason present and a reason absent are distinct"
+    );
+    let not_found_status = match HttpStatus::new(404) {
+        Ok(value) => value,
+        Err(error) => panic!("the status must be admitted: {}", error.detail()),
+    };
+    let not_found = match HttpResponse::new(not_found_status, Some("Not Found"), headers) {
+        Ok(value) => value,
+        Err(error) => panic!("the response must be admitted: {}", error.detail()),
+    };
+    assert_ne!(not_found, with_reason);
+}
+
+#[test]
+fn request_and_response_refuse_noncanonical_components() {
+    for (text, index) in [
+        ("get", 0_usize),
+        ("Post", 1),
+        ("1ET", 0),
+        ("", 0),
+        ("P0ST ", 4),
+    ] {
+        let error = http_refusal(HttpMethod::new(text));
+        assert_eq!(error.code(), DataDiagnosticCode::MalformedInput, "{text}");
+        assert!(
+            error.detail().starts_with(&format!("octet {index}: ")),
+            "`{text}` departs at octet {index}: {}",
+            error.detail()
+        );
+    }
+    let long_method = "A".repeat(HTTP_METHOD_SCALAR_BOUND + 1);
+    let error = http_refusal(HttpMethod::new(&long_method));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error
+            .detail()
+            .contains(&(HTTP_METHOD_SCALAR_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+    assert_eq!(
+        http_refusal(HttpStatus::new(HTTP_STATUS_MINIMUM - 1)).code(),
+        DataDiagnosticCode::MalformedInput
+    );
+    assert_eq!(
+        http_refusal(HttpStatus::new(HTTP_STATUS_MAXIMUM + 1)).code(),
+        DataDiagnosticCode::MalformedInput
+    );
+    let headers = header_list_of(Vec::new());
+    let status = match HttpStatus::new(200) {
+        Ok(value) => value,
+        Err(error) => panic!("the status must be admitted: {}", error.detail()),
+    };
+    for (reason, index) in [("", 0_usize), (" ok", 0), ("ok ", 2), ("o\tk", 1)] {
+        let error = http_refusal(HttpResponse::new(status, Some(reason), headers.clone()));
+        assert_eq!(
+            error.code(),
+            DataDiagnosticCode::MalformedInput,
+            "{reason:?}"
+        );
+        assert!(
+            error.detail().starts_with(&format!("octet {index}: ")),
+            "the reason departs at octet {index}: {}",
+            error.detail()
+        );
+    }
+    let long_reason = "o".repeat(HTTP_REASON_OCTET_BOUND + 1);
+    let error = http_refusal(HttpResponse::new(status, Some(&long_reason), headers));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error
+            .detail()
+            .contains(&(HTTP_REASON_OCTET_BOUND + 1).to_string()),
+        "{}",
+        error.detail()
+    );
+}
+
+#[test]
+fn data_non_claims_are_closed_and_ordered() {
+    assert_eq!(DataNonClaim::ALL.len(), 8);
+    assert_eq!(DATA_NON_CLAIMS.len(), DataNonClaim::ALL.len());
+    let mut prior: Option<&str> = None;
+    let mut wire_names = BTreeSet::new();
+    let mut statements = BTreeSet::new();
+    for claim in DataNonClaim::ALL {
+        let wire_name = claim.wire_name();
+        if let Some(previous) = prior {
+            assert!(
+                previous < wire_name,
+                "the non-claim registry is sorted: {previous} then {wire_name}"
+            );
+        }
+        prior = Some(wire_name);
+        assert!(
+            wire_names.insert(wire_name),
+            "one wire spelling per non-claim"
+        );
+        assert_eq!(DataNonClaim::from_wire_name(wire_name), Some(claim));
+        assert!(
+            !claim.statement().is_empty(),
+            "every non-claim publishes a statement"
+        );
+        assert!(
+            statements.insert(claim.statement()),
+            "one statement per non-claim"
+        );
+    }
+    assert!(DataNonClaim::from_wire_name("not-a-non-claim").is_none());
+    assert!(
+        DataNonClaim::WireFraming
+            .statement()
+            .contains("GNT-43.5-message-framing-model")
+    );
+    assert!(
+        DataNonClaim::ExternalEligibility
+            .statement()
+            .contains("ExternalValue")
+    );
 }

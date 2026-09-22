@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "fce0d5e1e4c69808ab82f1106f34e46a1fb9b9b8c5a91e88cf69f24a384e7652",
-  "byte_length": 1170031,
-  "line_count": 15763,
+  "specification_sha256": "7446d0485da873ead15c7f5e70daa411ec4db5c302cfcfb368c52e5947e92c34",
+  "byte_length": 1175292,
+  "line_count": 15767,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "540ce969856a5c9de2b1d0b9e503b06858ee34ba1f6fc32854d975f9e4519681",
+      "sha256": "c30bf312a7f38fc13cd2f7f112b8d0f9d5db772b1b6b8dc90663c43e59f41f93",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15763,
-      "sha256": "b855e281e391cd27a9f3265aa76416fb80e9df46ea93a8d35e1978292a1d6019",
+      "end_line": 15767,
+      "sha256": "99cd73b83cb07e90899ebab1e0cd7ce732b29b241b086bee23046485ae8b8e9c",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "0faa0b377f926ee94e8a8b449c7ac4fcb49623aff9072297a5fcf3a18fec939d",
+      "span_sha256": "e240017133ba2551131dc5b2cda54e81cec2dffd5256db94f8472f25ed49d24f",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "d94622a73e193d1f299004c47b7a3ef8615facb0bbbcb584309921d0bf5b584f",
+      "body_sha256": "7798f298ae5fe547b3d915f3bdcec4e00dc1cfd828b4a18f9ae2210619c28f74",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44056,6 +44056,49 @@
                 "crates/gantry-conformance/tests/data_foundation.rs#framing_decides_from_the_declared_fields",
                 "crates/gantry-conformance/tests/data_foundation.rs#framing_refuses_smuggling_shapes_with_exact_positions",
                 "crates/gantry-conformance/tests/data_foundation.rs#framing_refuses_noncanonical_content_length_and_its_bound"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-43.6-request-and-response-value-model",
+      "span_start_line": 15764,
+      "span_end_line": 15767,
+      "span_sha256": "552872398a3b175adb75282771d6fdf6dbe621133705dd5cc5276c45e46bc555",
+      "anchor_line": 15765,
+      "body_start_line": 15766,
+      "body_end_line": 15767,
+      "body_sha256": "44b2087040176f12dd4dd643809d14bc1e56a04b1fdc54f502aac856b96b0ce7",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15766,
+          "end_line": 15767,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/data_foundation.rs#request_and_response_values_are_constructed_from_declared_components",
+                "crates/gantry-conformance/tests/data_foundation.rs#request_and_response_refuse_noncanonical_components",
+                "crates/gantry-conformance/tests/data_foundation.rs#data_non_claims_are_closed_and_ordered"
               ],
               "rationale": null
             }
