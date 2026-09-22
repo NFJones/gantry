@@ -10,7 +10,9 @@
 //! contract is published as a closed harness vocabulary, the execution rules a run obeys are
 //! declared the same way, the substitutions a run consumes are declared through a strict decoder,
 //! and declared tests are enumerated in a canonical discovery order. The surface declares facts
-//! only; the runtime harness that executes a test target is not part of this module.
+//! only; every wire spelling of the harness and execution-rule vocabularies is its declared
+//! requirement text in canonical kebab case, and that identity rule is executable below. The
+//! runtime harness that executes a test target is not part of this module.
 
 // The ceiling bound returns the landed package diagnostic, which deliberately carries full
 // identities so a rejected requirement reports the exact subject it disagreed with. Boxing those
@@ -301,7 +303,7 @@ impl TestHarnessCapability {
             }
             Self::ExpectedFailureAndTimeout => "expected-failure-and-timeout-support",
             Self::PropertyShrinking => "property-test-shrinking-contracts",
-            Self::DurableReplayAndRecovery => "durable-replay-and-recovery-harnesses",
+            Self::DurableReplayAndRecovery => "durable-replay-and-recovery-test-harnesses",
         }
     }
 
@@ -549,4 +551,28 @@ pub fn declare_test_run(
         kinds: declared_kinds,
         substitutions: declared_substitutions,
     })
+}
+
+/// Renders one declared requirement text as its canonical wire spelling.
+///
+/// The declared identity rule of this module is that a vocabulary's wire spelling is its declared
+/// requirement text in kebab case: ASCII lowercase, every comma dropped, and every run of
+/// whitespace rendered as one `-`. No other transformation is declared, so a spelling that differs
+/// from this rendering is a different identity rather than a formatting choice.
+#[must_use]
+pub fn canonical_wire_name(requirement: &str) -> String {
+    let mut rendered = String::with_capacity(requirement.len());
+    let mut separator = false;
+    for character in requirement.chars() {
+        if character == ',' || character.is_ascii_whitespace() {
+            separator = !rendered.is_empty();
+            continue;
+        }
+        if separator {
+            rendered.push('-');
+            separator = false;
+        }
+        rendered.push(character.to_ascii_lowercase());
+    }
+    rendered
 }

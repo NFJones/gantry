@@ -6,7 +6,8 @@
 //! test target kind that qualifies every kind, the ceiling bound a test requirement obeys, and the
 //! declared testing-support harness contract with its strict substitution declaration, plus the
 //! declared execution rules, the canonical discovery order a run enumerates, and the declared run
-//! plan that binds kinds and substitutions to those rules.
+//! plan that binds kinds and substitutions to those rules. Every declared identity is checked
+//! against the module's executable kebab-case identity rule.
 
 use std::collections::BTreeSet;
 
@@ -16,7 +17,7 @@ use gantry::ir::{
     STD_TEST_TARGET_KIND, STD_TEST_TIER, SemanticMode, StabilityTier, TargetKind,
     TestDiscoveryRefusal, TestExecutionRule, TestHarnessCapability, TestKind, TestRunPlan,
     TestRunRefusal, TestSubstitution, TestSubstitutionRefusal, bound_test_requirement,
-    declare_test_discovery, declare_test_run, declare_test_substitutions,
+    canonical_wire_name, declare_test_discovery, declare_test_run, declare_test_substitutions,
     may_acquire_ambient_authority, std_test_family, test_target_is_shipping_authority,
 };
 
@@ -185,7 +186,7 @@ fn harness_capabilities_are_closed_in_requirement_order() {
             "fake-clocks-random-sources-and-host-capabilities",
             "expected-failure-and-timeout-support",
             "property-test-shrinking-contracts",
-            "durable-replay-and-recovery-harnesses",
+            "durable-replay-and-recovery-test-harnesses",
         ]
     );
     assert_eq!(
@@ -354,4 +355,35 @@ fn declared_run_plans_are_canonical_and_strictly_refused() -> Result<(), TestRun
     ));
     let _: fn(&[&str], &[&str]) -> Result<TestRunPlan, TestRunRefusal> = declare_test_run;
     Ok(())
+}
+
+#[test]
+fn declared_identities_are_the_kebab_case_of_their_requirement() {
+    assert_eq!(canonical_wire_name(""), "");
+    assert_eq!(
+        canonical_wire_name("expected-failure and timeout support"),
+        "expected-failure-and-timeout-support"
+    );
+    assert_eq!(
+        canonical_wire_name("fake clocks, random sources, and host capabilities"),
+        "fake-clocks-random-sources-and-host-capabilities"
+    );
+    assert_eq!(canonical_wire_name("  spaced\tname  "), "spaced-name");
+
+    for capability in TestHarnessCapability::ALL {
+        assert_eq!(
+            capability.wire_name(),
+            canonical_wire_name(capability.requirement()),
+            "{}",
+            capability.wire_name()
+        );
+    }
+    for rule in TestExecutionRule::ALL {
+        assert_eq!(
+            rule.wire_name(),
+            canonical_wire_name(rule.requirement()),
+            "{}",
+            rule.wire_name()
+        );
+    }
 }
