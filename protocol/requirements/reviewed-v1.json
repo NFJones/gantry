@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "cb53e53b08b7a63a585cf8e3bddb1e2a3a958280648caa32ed50d83f24d12f70",
+  "specification_sha256": "00e354b876055ea059b23906e7f347aec6dd1c3b7505202b4478c5cde179d284",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15777,
+      "end_line": 15781,
       "rationale": null
     }
   ],
@@ -42984,6 +42984,48 @@
               "evidence": [
                 "crates/gantry-conformance/tests/crypto_foundation.rs#declared_algorithms_admit_exactly_the_declared_identity",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#refusals_are_frozen_and_classified"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.2-content-hashing",
+      "span_start_line": 15778,
+      "span_end_line": 15781,
+      "anchor_line": 15779,
+      "body_start_line": 15780,
+      "body_end_line": 15781,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15780,
+          "end_line": 15781,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_clauses_are_published",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_digests_match_the_declared_vectors",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_input_bound_is_declared_and_enforced",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_digest_is_pure_and_canonical"
               ],
               "rationale": null
             }

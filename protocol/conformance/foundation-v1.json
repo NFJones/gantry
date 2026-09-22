@@ -18,7 +18,7 @@
   },
   {
    "path": "SPEC.md",
-   "sha256": "cb53e53b08b7a63a585cf8e3bddb1e2a3a958280648caa32ed50d83f24d12f70"
+   "sha256": "00e354b876055ea059b23906e7f347aec6dd1c3b7505202b4478c5cde179d284"
   },
   {
    "path": "crates/gantry-adapter-tokio/Cargo.toml",
@@ -142,11 +142,11 @@
   },
   {
    "path": "crates/gantry-core/src/generated/portable.rs",
-   "sha256": "024df9aee85d56c7d96b51aa08d79fbc6645515143e0d794057a77df1afab12d"
+   "sha256": "de6d50d5e9006a22536363acb1b75ca76cf1a220b9076d37bbf2e4f0bc7585d5"
   },
   {
    "path": "crates/gantry-core/src/generated/profiles.rs",
-   "sha256": "6a8fad682036a32864812ee926e225a9a1c1fc4ff87389abad3a1237cc8f3ad0"
+   "sha256": "5dc428acbc01ade1f59ba2367f9e69a77545899c44fd0c4c5fb54ae4cd356fe7"
   },
   {
    "path": "crates/gantry-core/src/generated/unicode.rs",
@@ -154,7 +154,7 @@
   },
   {
    "path": "crates/gantry-host/src/generated/embedding.rs",
-   "sha256": "3e5570020e00ea13900457da0b2e4b5c3fe525575d1e963a6fbcdf624cf163ee"
+   "sha256": "2b3e60edf38e4f2fbaa9d28fbb707f70765a520952ea3a0ad4598d9389012ac0"
   },
   {
    "path": "crates/gantry-ir/Cargo.toml",
@@ -198,127 +198,127 @@
   },
   {
    "path": "protocol/catalogs/embedding-contracts-v1.json",
-   "sha256": "3f3a97723edc93b721efd231705e2d43de4740fcf50ae120f11ddfa6da56b158"
+   "sha256": "003c97a30740304e3ecb9021fe2629ea93350ba0067b193c69fc17001d2b79f7"
   },
   {
    "path": "protocol/catalogs/ir-contracts-v1.json",
-   "sha256": "e68be9b9cb2e8024b31e143a3fe6aa79f219e1c86e3f1d4ee098f142347912b1"
+   "sha256": "d20512de5aba4d848d6eb93ec79528d47551806536bbd271251bb4f734e4c039"
   },
   {
    "path": "protocol/catalogs/portable-contracts-v1.json",
-   "sha256": "cc225ccd7a1a42f4d0ba5bd0e1acbb76f22902fed5676458c00165b1a98f5b6c"
+   "sha256": "36698cddf6193fb25ac6b27ed53edb07a2e6029ae9b0f53767fbd9f1c256f814"
   },
   {
    "path": "protocol/catalogs/profiles-v1.json",
-   "sha256": "09be2c926bef7edff1975b39a85237289a2efa1688055fbc801a4ea2a3a691e4"
+   "sha256": "611b54d2b8091dacc1c16ec8e463f4e0a12f4cf04b4a8a1a7c13c15fbf87627e"
   },
   {
    "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "9c35218b4673a3b277d1fe5286ff62020cf0ef71baec793152ce84a5d2e8e952"
+   "sha256": "c4c3e286109cb65f6a616c8a63a6ae7c000cb69f613aea4fedd85cdc8c66a08f"
   },
   {
    "path": "protocol/conformance/analyzer-ir-v1.json",
-   "sha256": "943ccdfb499cfa1dcf9e0501e2682c21c4e2cfbcbbbfd956b27bb9d14a4a3ad1"
+   "sha256": "9bc14270bdd77e5c96c6b3131e6174e75f1adaaeea8ae2bfdaac1f7c607325d4"
   },
   {
    "path": "protocol/conformance/analyzer-lowering-v1.json",
-   "sha256": "3ee02a685b91516a6dfee530aafbb3127411f85a136400e108a21ba94a0a6c4e"
+   "sha256": "f03a1ec16ade2a886ff1d6be7b672e302c259f1ac0d6e60dd43d393aa547d383"
   },
   {
    "path": "protocol/conformance/analyzer-package-v1.json",
-   "sha256": "4d5f8b81446a37e6ddedc9bb63dbdc628e38f18dfc5d105d8391bb9ae6d08287"
+   "sha256": "d8329daf63f09e2ffd909ab675b5ca26d3099d933e12a0e734eb05c9092272e7"
   },
   {
    "path": "protocol/conformance/analyzer-symbols-v1.json",
-   "sha256": "eccd5284a8a9498bddda9f21150f8fe34353919a333e54d12ba78eef2ccb3aec"
+   "sha256": "2120a82eb4ccd0da0c90d6a9116f852007a491dbf15ce951063601d6ea5249f6"
   },
   {
    "path": "protocol/conformance/analyzer-types-v1.json",
-   "sha256": "8e52f8f0d4d54413cbabcf97fb1160ddf7bd71dfc5d6a6293bcdb672e29004cd"
+   "sha256": "7bce5525b41f52d7fb63654ad32972d2fd395173e4bff5b849e0f6ac62cd0240"
   },
   {
    "path": "protocol/conformance/analyzer-validity-v1.json",
-   "sha256": "2263de3675a3e3e10bd20deaf715eb3c2c326ed34c0720510b9a74abde6332d4"
+   "sha256": "a0bd084744f912c3e54916fa26e9ec539928f49177b959d096f784382357d95e"
   },
   {
    "path": "protocol/conformance/analyzer-workflows-v1.json",
-   "sha256": "99ed59ab7896ef5cc6ca7376fb6ce5a35fb36f1ed689cbf03995744358f70d49"
+   "sha256": "34067c8059101397fc46397fec2b644500618a93f29910432e8bbff4a4ee8400"
   },
   {
    "path": "protocol/conformance/combined-gate-v1.json",
-   "sha256": "b74e43e88c0e8715da3a6b3a86a088e6fd580399008ea08784ecab9ff91c5b36"
+   "sha256": "ec7b66b23384cd70bf670e9a7a50e097b277b5ff803b503c5235425381620092"
   },
   {
    "path": "protocol/conformance/concurrent-executor-v1.json",
-   "sha256": "7785bcfff0ab667f44da2b7557f1dfddd5d06a610da802f2223c223bb29020f4"
+   "sha256": "7136e6cdd7af4f9af93092a5257ffc995dc4ac19c876310cf45a5029d61a77cc"
   },
   {
    "path": "protocol/conformance/concurrent-gate-v1.json",
-   "sha256": "5e54dcb2bbfa560b04998e7595773e5f321a4faac219920fef2b1fe6be3d6805"
+   "sha256": "6b59e6905fe7eb36a2bd08dbfaddb8298a69ff82da2808c987803e18f6e6c63f"
   },
   {
    "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
-   "sha256": "bbc4071fba22194ead75939206351ff024b7403d0dac8972e23ec20d510a392b"
+   "sha256": "2947d352e778d409512047bf2b217c9465d109c206c8ee1b454dec4f396c3b44"
   },
   {
    "path": "protocol/conformance/concurrent-lifecycle-v1.json",
-   "sha256": "733904f61022c8d2a4fd78d78c11499307038ee9ed4a5464f28769c1d2d16ac0"
+   "sha256": "9985b4c52306545fc304eeb3a598798b576ff75bd5c652c8b5ade9a8b0d8b873"
   },
   {
    "path": "protocol/conformance/concurrent-refinement-v1.json",
-   "sha256": "1013a8fe2169503014d24fd56daa18ca60cf05af32d3207d312446db31d5c892"
+   "sha256": "e8e681e5f7ade4c928d5a808f7d72015036fdb4d8f081f3c8c3cf232af90fba4"
   },
   {
    "path": "protocol/conformance/concurrent-task-state-v1.json",
-   "sha256": "2ec38ea5f6af8f1831f5053a8d7583b5fcd7e7f98a901392601c847297d065b8"
+   "sha256": "3c729496270c7c13ac99e0c1cefab740a4f23fb8730f57ceb56be3ca2e3c5a6c"
   },
   {
    "path": "protocol/conformance/durable-events-v1.json",
-   "sha256": "238dcc6ca3297b265f75d506b5fc68ff4883a1e724f3d0a3cd5f9252db698f46"
+   "sha256": "715083dfa0a34ea8367da993a22fb20ce6728c69236abe78d95ed6579f8d7aec"
   },
   {
    "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "cdd085bad0c14520bf4a93f692c34db5c7744d2569a6eefa2f4f87a955e815d6"
+   "sha256": "3259b491029ec3deed8b7a4882e0c1d5d8d6cb783e9620176f440566cc1d85b4"
   },
   {
    "path": "protocol/conformance/durable-recovery-v1.json",
-   "sha256": "ddd3bba16715a3679613e7c503c15c4fb21d60c32cb872aecfd4838afc53edff"
+   "sha256": "ae0cd09880fdd9630e87ba78386e46e7f8dae1f5d9b591b0842c4b83d376c9c0"
   },
   {
    "path": "protocol/conformance/durable-start-v1.json",
-   "sha256": "512c202e8fbb5e131a00c9e0ab376bf8c311aafe6963267bff3849db46f98e39"
+   "sha256": "688f4367ff64355a850f062b5af8300730df7d61a4da43c14432790dc155552f"
   },
   {
    "path": "protocol/conformance/executor-services-v1.json",
-   "sha256": "d78e7d545ce5bdfb98a228b5b468a695427fc8fd2158f9a8f87ff034854f5297"
+   "sha256": "0f92ff1b0aad6957c7f9e5993edae8ad4e46dc5472bad1a1adff576ca107c608"
   },
   {
    "path": "protocol/conformance/interpreter-lifecycle-v1.json",
-   "sha256": "a135639a989c6a776854b17581f21d35d5980e07d0fbea11e9eeb20c94f32843"
+   "sha256": "071aaf2b500816723e9bfa645421958485c8c4a318d0fa0d50b8bcd9922f7fb3"
   },
   {
    "path": "protocol/conformance/journal-storage-v1.json",
-   "sha256": "5ebc6cf5af680b792e5c3907696b7f07d4366ae33e8c3d913c50eb95ecadeea7"
+   "sha256": "8352e204110d86bf3f5771ec38eb4494042cc39c5382fc10ac328ec880375135"
   },
   {
    "path": "protocol/conformance/persistent-values-v1.json",
-   "sha256": "496ca7c26315b8d6e405815da764b5fc15d17a4fcca7d7408908025fab47d009"
+   "sha256": "722b05e7ef1fc886b0e310920a4d1789f0f358834ef7cafd7bf209f73711e62e"
   },
   {
    "path": "protocol/conformance/sequential-evaluator-refinement-v1.json",
-   "sha256": "d933b1fff077d670c0b0ab70000199df151a1bbf002eb8daf4588cf9354cf52d"
+   "sha256": "cd3f96f6b52b0967e945c8ba3720c547495301ed0f70a4a6095768475148f133"
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "94fecbf86d14ade5859ad5bbdfc516b126ca0d74a7aba359ca3e4ab4ed858887"
+   "sha256": "4c9fa2805e1f586264a8c1d48ab0e0767097ecd2fe945b925cb2301ff29a1caa"
   },
   {
    "path": "protocol/conformance/sequential-machine-v1.json",
-   "sha256": "c711cb45da6cae6e4902285479e9210e6c71ab082a3d4d02b187e558a96defb6"
+   "sha256": "d8c71f26bcc69714c3370cce30b10c6c611362fd8f6375d81c48d0dff4a1c613"
   },
   {
    "path": "protocol/conformance/value-kernel-v1.json",
-   "sha256": "aeb6e111bc156fcdedb95e3714279ec7eb7ba1bc67e980aecf6b877d2d78082d"
+   "sha256": "d9218cb74aa9023b576816b523818059e420267146b1fe8a40449fbff3d42bc2"
   },
   {
    "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -362,7 +362,7 @@
   },
   {
    "path": "protocol/goldens/embedding-contracts-v1.canonical.json",
-   "sha256": "e5a0744d1bc3ed8173ddb2c408f1341df67c4afb2b432733479996544accbc7f"
+   "sha256": "feb2be2ab7f7d0c98f5bfd6b95e7340ba9414bfdc097faea707587063f7e5932"
   },
   {
    "path": "protocol/goldens/embedding-envelope-negatives-v1.json",
@@ -378,7 +378,7 @@
   },
   {
    "path": "protocol/goldens/ir-contracts-v1.canonical.json",
-   "sha256": "79dc47126f819f3a4fab88501f09fd5ea7327c46b5267277a5479ecde0670e36"
+   "sha256": "751d1182f1cfd79033129ce39c1734e2d8772c40ab0a5507d9f8cb07f8d6d1b7"
   },
   {
    "path": "protocol/goldens/journal-storage-v1.json",
@@ -398,11 +398,11 @@
   },
   {
    "path": "protocol/goldens/portable-contracts-v1.canonical.json",
-   "sha256": "0166dfd77071e251f030edb28dd3a63c52ccd255b5ce80abd3d4ec9f769b17e9"
+   "sha256": "f41b8003c0ecde835d98f2b25eb148f8d0981163d8a80ab9cecfe619f943a13d"
   },
   {
    "path": "protocol/goldens/profiles-v1.canonical.json",
-   "sha256": "239c25b6da9f8c19c5540a35dfafcdf79a007314cd9845f5498522e3b62d312c"
+   "sha256": "e2008eac74d903c6eaef7a95e0600f0f735bf45692f6bac4c14bcfa16f10fe5b"
   },
   {
    "path": "protocol/goldens/sequential-evaluator-model-v1.json",
@@ -430,15 +430,15 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "56a049537f5a056cbd4d9abb2f89a5bd4bd69ee1dce36034c5b90b773743c091"
+   "sha256": "4978844133478b27a85f7d466db9b85ea7a379ff875e884a3f0f3f4782baf101"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "4653136e324c2e8803a94084023fcaaa379f3578c8f623f8d01ab6d6185e6d79"
+   "sha256": "e37869ca68602f246bcbf3ba85312f2dc5efb9d7f89526696795f8420dd79cfd"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
-   "sha256": "ecec0c5bad200ba78c5ac40533835ad00ba01e6fc092a5e305aa37fde7c7d227"
+   "sha256": "3e8665bf150b2ae037cc7003072a30581a01e7cdbde9845acaa3857461a9fd97"
   },
   {
    "path": "protocol/schemas/activity-observation-v1.schema.json",
@@ -789,15 +789,15 @@
   "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"
  },
  "requirements": {
-  "clause_count": 879,
+  "clause_count": 880,
   "path": "protocol/requirements/generated/requirements-v1.json",
-  "requirement_count": 595,
+  "requirement_count": 596,
   "section14_excerpt_count": 51,
-  "sha256": "56a049537f5a056cbd4d9abb2f89a5bd4bd69ee1dce36034c5b90b773743c091"
+  "sha256": "4978844133478b27a85f7d466db9b85ea7a379ff875e884a3f0f3f4782baf101"
  },
  "specification": {
   "path": "SPEC.md",
-  "sha256": "cb53e53b08b7a63a585cf8e3bddb1e2a3a958280648caa32ed50d83f24d12f70"
+  "sha256": "00e354b876055ea059b23906e7f347aec6dd1c3b7505202b4478c5cde179d284"
  },
  "status": "verified",
  "validation_commands": [

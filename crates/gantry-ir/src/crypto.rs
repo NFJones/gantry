@@ -7,22 +7,32 @@
 //!
 //! The model is pure: it consumes no platform cryptographic API, host crypto library, hardware
 //! facility, ambient provider registry, random source, timing, environment, locale, filesystem,
-//! or global mutable state. No concrete algorithm behavior is declared here; each algorithm's own
-//! clause publishes its digest or verification contract, vectors, and bounds.
+//! or global mutable state. The content-hashing algorithm of `GNT-44.2-content-hashing` is
+//! declared here; every other algorithm's own clause publishes its digest or verification
+//! contract, vectors, and bounds.
 
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
 };
 
 /// The declared clauses of Section 44, in specification order.
-pub const CRYPTO_CLAUSES: [&str; 2] = [
+pub const CRYPTO_CLAUSES: [&str; 3] = [
     "GNT-44.0-crypto-foundation-scope",
     "GNT-44.1-crypto-algorithm-contract",
+    "GNT-44.2-content-hashing",
 ];
 
 /// The one declared version of every algorithm in this revision
 /// (`GNT-44.1-crypto-algorithm-contract`).
 pub const DECLARED_ALGORITHM_VERSION: u16 = 1;
+
+/// The declared input octet bound of the content-hashing algorithm
+/// (`GNT-44.2-content-hashing`): the largest octet count a content-hashing operation admits.
+pub const SHA256_INPUT_OCTET_BOUND: usize = 1_048_576;
+
+/// The declared digest octet length of the content-hashing algorithm
+/// (`GNT-44.2-content-hashing`).
+pub const SHA256_DIGEST_OCTET_LENGTH: usize = 32;
 
 /// One declared module of the `std.crypto` family (`GNT-44.1-crypto-algorithm-contract`).
 ///
@@ -330,6 +340,132 @@ impl CryptoError {
     }
 }
 
+/// The declared initial hash values of the content-hashing algorithm
+/// (`GNT-44.2-content-hashing`).
+const SHA256_INITIAL_HASH_VALUES: [u32; 8] = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+];
+
+/// The declared round constants of the content-hashing algorithm
+/// (`GNT-44.2-content-hashing`).
+const SHA256_ROUND_CONSTANTS: [u32; 64] = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+/// One content digest of `GNT-44.2-content-hashing`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Sha256Digest {
+    octets: [u8; SHA256_DIGEST_OCTET_LENGTH],
+}
+
+impl Sha256Digest {
+    /// Returns the digest's declared octets (`GNT-44.2-content-hashing`): the eight digest state
+    /// words in order, each as four big-endian octets.
+    #[must_use]
+    pub const fn octets(&self) -> &[u8; SHA256_DIGEST_OCTET_LENGTH] {
+        &self.octets
+    }
+}
+
+/// Publishes the content digest of one octet sequence under the declared algorithm of
+/// `GNT-44.2-content-hashing`.
+///
+/// The digest is the declared algorithm's decision over the presented octets: an admitted
+/// sequence publishes exactly one thirty-two-octet digest, decided by those octets alone. A
+/// sequence holding more than `SHA256_INPUT_OCTET_BOUND` octets is refused under
+/// `crypto-work-limit`, naming the observed octet count and the declared bound, before any part
+/// of the excess is examined and before any digest state is initialized.
+pub fn sha256_digest(octets: &[u8]) -> Result<Sha256Digest, CryptoError> {
+    if octets.len() > SHA256_INPUT_OCTET_BOUND {
+        return Err(CryptoError::new(
+            CryptoDiagnosticCode::WorkLimit,
+            format!(
+                "the presented octet sequence holds {} octets, beyond the declared bound {SHA256_INPUT_OCTET_BOUND}",
+                octets.len()
+            ),
+        ));
+    }
+    let mut padded = Vec::with_capacity(octets.len() + 72);
+    padded.extend_from_slice(octets);
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&((octets.len() as u64) * 8).to_be_bytes());
+    let mut state = SHA256_INITIAL_HASH_VALUES;
+    for block in padded.chunks_exact(64) {
+        sha256_compress(&mut state, block);
+    }
+    let mut digest = [0_u8; SHA256_DIGEST_OCTET_LENGTH];
+    for (index, word) in state.iter().enumerate() {
+        digest[index * 4..index * 4 + 4].copy_from_slice(&word.to_be_bytes());
+    }
+    Ok(Sha256Digest { octets: digest })
+}
+
+/// Compresses one padded-message block into the digest state (`GNT-44.2-content-hashing`).
+fn sha256_compress(state: &mut [u32; 8], block: &[u8]) {
+    let mut words = [0_u32; 64];
+    for (index, chunk) in block.chunks_exact(4).enumerate() {
+        words[index] = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+    }
+    for index in 16..64 {
+        let schedule_upper = words[index - 15].rotate_right(7)
+            ^ words[index - 15].rotate_right(18)
+            ^ (words[index - 15] >> 3);
+        let schedule_lower = words[index - 2].rotate_right(17)
+            ^ words[index - 2].rotate_right(19)
+            ^ (words[index - 2] >> 10);
+        words[index] = words[index - 16]
+            .wrapping_add(schedule_upper)
+            .wrapping_add(words[index - 7])
+            .wrapping_add(schedule_lower);
+    }
+    let mut a = state[0];
+    let mut b = state[1];
+    let mut c = state[2];
+    let mut d = state[3];
+    let mut e = state[4];
+    let mut f = state[5];
+    let mut g = state[6];
+    let mut h = state[7];
+    for (index, word) in words.iter().enumerate() {
+        let choose = (e & f) ^ (!e & g);
+        let majority = (a & b) ^ (a & c) ^ (b & c);
+        let upper = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+        let lower = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+        let first = h
+            .wrapping_add(upper)
+            .wrapping_add(choose)
+            .wrapping_add(SHA256_ROUND_CONSTANTS[index])
+            .wrapping_add(*word);
+        let second = lower.wrapping_add(majority);
+        h = g;
+        g = f;
+        f = e;
+        e = d.wrapping_add(first);
+        d = c;
+        c = b;
+        b = a;
+        a = first.wrapping_add(second);
+    }
+    state[0] = state[0].wrapping_add(a);
+    state[1] = state[1].wrapping_add(b);
+    state[2] = state[2].wrapping_add(c);
+    state[3] = state[3].wrapping_add(d);
+    state[4] = state[4].wrapping_add(e);
+    state[5] = state[5].wrapping_add(f);
+    state[6] = state[6].wrapping_add(g);
+    state[7] = state[7].wrapping_add(h);
+}
+
 /// One declared public item of `std.crypto` (`GNT-34.6-stability-tiers`,
 /// `GNT-34.8-defining-identity-and-interface-digest`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -356,6 +492,7 @@ pub const CRYPTO_ITEMS: [CryptoItemRow; 2] = [
         clauses: &[
             "GNT-44.0-crypto-foundation-scope",
             "GNT-44.1-crypto-algorithm-contract",
+            "GNT-44.2-content-hashing",
         ],
     },
     CryptoItemRow {

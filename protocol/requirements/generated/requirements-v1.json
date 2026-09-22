@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "cb53e53b08b7a63a585cf8e3bddb1e2a3a958280648caa32ed50d83f24d12f70",
-  "byte_length": 1182321,
-  "line_count": 15777,
+  "specification_sha256": "00e354b876055ea059b23906e7f347aec6dd1c3b7505202b4478c5cde179d284",
+  "byte_length": 1189676,
+  "line_count": 15781,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "7d27c4dd9cfae7adcb0cd6c1073f35c1eddfb9167026fcf1cbd2f55757a9eaec",
+      "sha256": "8af6f4804fc636d08feabdb2d7d0c77570098d456aad1909a09a553f6493110d",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15777,
-      "sha256": "977c772f4736ddc8de4d1bff7a005b7417a9920b1fbe0d79b37886d35e450e71",
+      "end_line": 15781,
+      "sha256": "b23fb45f6832afc204f47505045a1d548d198af281e2f92828a9c6ebd7250c15",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "ee1f199ad869c6bd41bbb86b5b12424e55cb54d1c720777e731e4d2a7e5a5b15",
+      "span_sha256": "6322f3b3f7ff5dc91167fbbc582b6e4ab5b4ca7dd9ecae67dbdddab6b48aee0d",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "b5f8469d2e6da68a7fa55c33a2b95e18300610151eea368979131c0fc7345d26",
+      "body_sha256": "b481856d8633023e513bc448cefad88394a0cc4bb936d1a30bbf12430adddbe2",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44183,6 +44183,50 @@
               "evidence": [
                 "crates/gantry-conformance/tests/crypto_foundation.rs#declared_algorithms_admit_exactly_the_declared_identity",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#refusals_are_frozen_and_classified"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.2-content-hashing",
+      "span_start_line": 15778,
+      "span_end_line": 15781,
+      "span_sha256": "46fdf15288325eb44177ac65725863fc9aaa37b08e70fe8206775c1d3341b29d",
+      "anchor_line": 15779,
+      "body_start_line": 15780,
+      "body_end_line": 15781,
+      "body_sha256": "c01577c152e32312412fa639e7a6a67963e70bfff4018b971b96f62b17bef8de",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15780,
+          "end_line": 15781,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_clauses_are_published",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_digests_match_the_declared_vectors",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_input_bound_is_declared_and_enforced",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#sha256_digest_is_pure_and_canonical"
               ],
               "rationale": null
             }
