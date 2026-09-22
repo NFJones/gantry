@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "49597fe35a1b9267aa6bd62ecf7901d892ddd24ca6d5efea78047c7d3e238b4f",
-  "byte_length": 1239641,
-  "line_count": 16197,
+  "specification_sha256": "d5854d4ce1aa8cf07951f25e9e0a20260af78ed899eea834b0e00385f650ce5f",
+  "byte_length": 1242998,
+  "line_count": 16238,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "931453e067aca067e0c31dbb14637c95ed623d6d7de29d049397fa64ccf16e8e",
+      "sha256": "2e163f198af6e2073b408793345fe436d72efd22268144e4084e5078989c0c5f",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16197,
-      "sha256": "0e47c37c18a07e10d8b3fefff55eb1856b9cb9c90ba1b3d021255e03a7cb256a",
+      "end_line": 16238,
+      "sha256": "09b9d2188b0d81021ed11d3f7e6c0f96b2a8cb66e155857b5fd00674465f5d28",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "4aced1639e4cd7ef86f482becc0025edb37eefebbf939359b8fa380ab5fa5efb",
+      "span_sha256": "14b4701fc96bf7f0388fdf8d20a8b63fff884799f848ba4dde0fd3ac793e5884",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "0629691979a31f3556b7340a9383b7fcd973f6474feccbbde300586758a17342",
+      "body_sha256": "5caae5ea37552885caf956c7dac34cbf81b9516acfbd4ba5d309d8670429910a",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44775,6 +44775,90 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/console_foundation.rs#console_terminal_observations_and_control_boundary_are_declared"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.0-filesystem-foundation-scope",
+      "span_start_line": 16198,
+      "span_end_line": 16213,
+      "span_sha256": "7f5e99de2c31254343e931780867c499c1eb3065ddbe462f34d57f6a94fd2049",
+      "anchor_line": 16199,
+      "body_start_line": 16200,
+      "body_end_line": 16213,
+      "body_sha256": "adb20c3b1daae6c3c9c0f00b2d2a58d15cad26d95ac7a485e90088b61af8464a",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16200,
+          "end_line": 16213,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_contract_clauses_and_scope_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.1-filesystem-modules-and-item-rows",
+      "span_start_line": 16214,
+      "span_end_line": 16238,
+      "span_sha256": "f45b6151505aae6ad7de22f70f15207b61e6468c8f8f6cf6d216a8a827ce91b1",
+      "anchor_line": 16215,
+      "body_start_line": 16216,
+      "body_end_line": 16238,
+      "body_sha256": "e8e52715007ad7b478b3a8f548239afda354f2a4f601fbbde9ed09c98ebac747",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16216,
+          "end_line": 16238,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_module_rows_are_closed_and_canonical",
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_surface_declaration_requires_the_family_package",
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_surface_admission_is_closed_and_exact"
               ],
               "rationale": null
             }

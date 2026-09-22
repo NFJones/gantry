@@ -31,6 +31,7 @@ pub mod error_semantics;
 mod executable;
 mod facts;
 pub mod fault;
+mod fs;
 pub mod generated;
 mod generic;
 mod host_domain;
@@ -214,6 +215,12 @@ pub use console::{
     CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS, ConsoleDetection, ConsoleDiagnosticCode,
     ConsoleDimensions, ConsoleEnvelopeRule, ConsoleError, ConsoleItemRow, ConsoleOperation,
     ConsoleOperationFacts, ConsoleTerminalReport, admit_console_surface, declare_console_surface,
+};
+// Section 47 publishes the declared `std.fs` module surface. It adds no path, descriptor, resource,
+// adapter, capability, or runtime availability.
+pub use fs::{
+    FS_CLAUSES, FS_ITEMS, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsItemRow, admit_fs_surface,
+    declare_fs_surface,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and

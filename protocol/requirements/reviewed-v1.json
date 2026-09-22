@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "49597fe35a1b9267aa6bd62ecf7901d892ddd24ca6d5efea78047c7d3e238b4f",
+  "specification_sha256": "d5854d4ce1aa8cf07951f25e9e0a20260af78ed899eea834b0e00385f650ce5f",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16197,
+      "end_line": 16238,
       "rationale": null
     }
   ],
@@ -43542,6 +43542,86 @@
               "rationale": null,
               "evidence": [
                 "crates/gantry-conformance/tests/console_foundation.rs#console_terminal_observations_and_control_boundary_are_declared"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.0-filesystem-foundation-scope",
+      "span_start_line": 16198,
+      "span_end_line": 16213,
+      "anchor_line": 16199,
+      "body_start_line": 16200,
+      "body_end_line": 16213,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16200,
+          "end_line": 16213,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_contract_clauses_and_scope_are_published"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.1-filesystem-modules-and-item-rows",
+      "span_start_line": 16214,
+      "span_end_line": 16238,
+      "anchor_line": 16215,
+      "body_start_line": 16216,
+      "body_end_line": 16238,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16216,
+          "end_line": 16238,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_module_rows_are_closed_and_canonical",
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_surface_declaration_requires_the_family_package",
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_surface_admission_is_closed_and_exact"
               ]
             }
           ]
