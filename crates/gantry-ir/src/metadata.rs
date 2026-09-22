@@ -44,11 +44,28 @@ macro_rules! closed {
 }
 
 closed!(DocumentationFormat, [Markdown => "markdown", PlainText => "plain-text"]);
+closed!(DocumentationBoundary, [Leading => "leading", Trailing => "trailing", Detached => "detached"]);
 closed!(ExampleMode, [Compile => "compile", CompileFail => "compile-fail", DisplayOnly => "display-only"]);
 closed!(SemanticAttribute, [Entry => "entry", Export => "export", Test => "test"]);
 closed!(LintSeverity, [Allow => "allow", Deny => "deny", Forbid => "forbid", Warn => "warn"]);
 closed!(LintScope, [Dependency => "dependency", Item => "item", Package => "package"]);
 closed!(DependencyWarningPolicy, [Deny => "deny", Ignore => "ignore", Inherit => "inherit", Warn => "warn"]);
+
+/// Admits one presented compiler-owned semantic attribute (`GNT-31.5`).
+///
+/// The declared attribute set is closed and payload-free: an unknown spelling or any presented
+/// payload is refused rather than preserved for a future compiler.
+pub fn admit_semantic_attribute(
+    spelling: &str,
+    payload: Option<&str>,
+) -> Result<SemanticAttribute, MetadataError> {
+    let attribute = SemanticAttribute::from_wire_name(spelling)
+        .ok_or(MetadataError::UnknownSemanticAttribute)?;
+    if payload.is_some() {
+        return Err(MetadataError::UnknownSemanticAttribute);
+    }
+    Ok(attribute)
+}
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MetadataSubject(String);
@@ -349,6 +366,20 @@ impl MetadataDeclarations {
             return Err(MetadataError::InvalidDocumentationAttachment);
         }
         Ok(())
+    }
+    /// Attaches one documentation comment at its presented declaration boundary (`GNT-31.1`).
+    ///
+    /// Only the leading boundary is admissible: a trailing or detached comment is refused, and a
+    /// duplicate or reattached comment for the same subject is refused by the leading admission.
+    pub fn attach_at_boundary(
+        &mut self,
+        comment: DocumentationComment,
+        boundary: DocumentationBoundary,
+    ) -> Result<(), MetadataError> {
+        if boundary != DocumentationBoundary::Leading {
+            return Err(MetadataError::InvalidDocumentationAttachment);
+        }
+        self.attach(comment)
     }
     pub fn insert_tool_metadata(
         &mut self,

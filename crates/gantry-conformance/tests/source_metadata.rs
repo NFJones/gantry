@@ -7,11 +7,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    DependencyWarningPolicy, Deprecation, DocumentationComment, DocumentationFormat,
-    DocumentationLink, ExampleDeclaration, ExampleMode, GeneratedOrigin, LintDeclaration, LintId,
-    LintScope, LintSeverity, MetadataDeclarations, MetadataDiagnosticCode, MetadataError,
-    MetadataSubject, SOURCE_METADATA_CLAUSES, SemanticAttribute, SemanticMode, ToolMetadata,
-    admit_lint_control,
+    DependencyWarningPolicy, Deprecation, DocumentationBoundary, DocumentationComment,
+    DocumentationFormat, DocumentationLink, ExampleDeclaration, ExampleMode, GeneratedOrigin,
+    LintDeclaration, LintId, LintScope, LintSeverity, MetadataDeclarations, MetadataDiagnosticCode,
+    MetadataError, MetadataSubject, SOURCE_METADATA_CLAUSES, SemanticAttribute, SemanticMode,
+    ToolMetadata, admit_lint_control, admit_semantic_attribute,
 };
 
 fn root() -> PathBuf {
@@ -192,5 +192,76 @@ fn deprecations_tool_metadata_lints_policies_and_origins_preserve_identity() {
     assert_eq!(
         GeneratedOrigin::new(new.clone(), new, "generator"),
         Err(MetadataError::InvalidGeneratedOrigin)
+    );
+}
+
+#[test]
+fn semantic_attributes_are_closed_and_payload_free() {
+    let spec = fs::read_to_string(root().join("SPEC.md"))
+        .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
+    assert!(spec.contains("`metadata-unknown-semantic-attribute`"));
+    assert_eq!(
+        SemanticAttribute::ALL.map(SemanticAttribute::wire_name),
+        ["entry", "export", "test"]
+    );
+    for attribute in SemanticAttribute::ALL {
+        assert_eq!(
+            admit_semantic_attribute(attribute.wire_name(), None),
+            Ok(attribute)
+        );
+    }
+    for spelling in ["inline", "derive", "Entry", "", "entry "] {
+        assert_eq!(
+            admit_semantic_attribute(spelling, None),
+            Err(MetadataError::UnknownSemanticAttribute),
+            "{spelling:?} is not a declared semantic attribute"
+        );
+    }
+    for payload in [Some(""), Some("true"), Some("x")] {
+        for attribute in SemanticAttribute::ALL {
+            assert_eq!(
+                admit_semantic_attribute(attribute.wire_name(), payload),
+                Err(MetadataError::UnknownSemanticAttribute),
+                "a payload for {} is refused",
+                attribute.wire_name()
+            );
+        }
+    }
+    assert_eq!(
+        MetadataDiagnosticCode::UnknownSemanticAttribute.as_str(),
+        "metadata-unknown-semantic-attribute"
+    );
+}
+
+#[test]
+fn documentation_attaches_only_at_the_leading_boundary() {
+    assert_eq!(
+        DocumentationBoundary::ALL.map(DocumentationBoundary::wire_name),
+        ["leading", "trailing", "detached"]
+    );
+    let comment = DocumentationComment::new(
+        subject("std.core::Option"),
+        DocumentationFormat::Markdown,
+        "An option.",
+        vec![],
+    )
+    .unwrap_or_else(|error| panic!("comment: {error:?}"));
+    let mut declarations = MetadataDeclarations::default();
+    assert_eq!(
+        declarations.attach_at_boundary(comment.clone(), DocumentationBoundary::Trailing),
+        Err(MetadataError::InvalidDocumentationAttachment)
+    );
+    assert_eq!(
+        declarations.attach_at_boundary(comment.clone(), DocumentationBoundary::Detached),
+        Err(MetadataError::InvalidDocumentationAttachment)
+    );
+    assert!(
+        declarations
+            .attach_at_boundary(comment.clone(), DocumentationBoundary::Leading)
+            .is_ok()
+    );
+    assert_eq!(
+        declarations.attach_at_boundary(comment, DocumentationBoundary::Leading),
+        Err(MetadataError::InvalidDocumentationAttachment)
     );
 }

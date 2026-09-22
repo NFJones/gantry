@@ -234,10 +234,11 @@ pub use locale::{
 // Section 31 declares bounded source metadata records only; parsing, rendering,
 // lint execution, generators, and editor services remain downstream owners.
 pub use metadata::{
-    DependencyWarningPolicy, Deprecation, DocumentationComment, DocumentationFormat,
-    DocumentationLink, ExampleDeclaration, ExampleMode, GeneratedOrigin, LintDeclaration, LintId,
-    LintScope, LintSeverity, MetadataDeclarations, MetadataDiagnosticCode, MetadataError,
-    MetadataSubject, SOURCE_METADATA_CLAUSES, SemanticAttribute, ToolMetadata, admit_lint_control,
+    DependencyWarningPolicy, Deprecation, DocumentationBoundary, DocumentationComment,
+    DocumentationFormat, DocumentationLink, ExampleDeclaration, ExampleMode, GeneratedOrigin,
+    LintDeclaration, LintId, LintScope, LintSeverity, MetadataDeclarations, MetadataDiagnosticCode,
+    MetadataError, MetadataSubject, SOURCE_METADATA_CLAUSES, SemanticAttribute, ToolMetadata,
+    admit_lint_control, admit_semantic_attribute,
 };
 pub use operation::{
     AdapterInstance, CrashCutClassification, DedupRecord, DedupRecordState, DedupRetentionBounds,
