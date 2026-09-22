@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "5a3ebf3381d7dd7cf838e3b706b7d10491d1e9f65aaa6d793994c5e3a4eb3bf7",
-  "byte_length": 1277337,
-  "line_count": 16664,
+  "specification_sha256": "76c4500c19ce3c58f532e5a1a46afd8ecc88df157fbea73b367d9bac8d49efc6",
+  "byte_length": 1280572,
+  "line_count": 16707,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "e14bbc85d48429baf8f1fae27ae66807941cdaa2e650c97b708864d9f2469000",
+      "sha256": "a8e648a685a9aa30bc051405f94b58975e29ea55627220f51a8da9057a4a717e",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16664,
-      "sha256": "4d25e476b5bdb9d56686fbfd3ee8b7e3be004ac692ba84bf8bb27a4bc38589cc",
+      "end_line": 16707,
+      "sha256": "d4f528906d7e56047e099273e20d558e2cdc3e7bc8b39e2d3e8fd9ee5015d14a",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "a64c91bff556e658a56f27aee168a437239ce7401a2b50e42bfd8fa312653ec3",
+      "span_sha256": "770852b24a76292ab7b91f96cfdc67d606e04d6ddccbf994c82322a975b2024a",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "50d62afc9c0af358f931c23b9546cddb16149fd72006c6cf63e05eeecacc1e0f",
+      "body_sha256": "a40983ec574fcfae4d0b0b5336db94444b71f89004533cb2f2d3f8e5953b34a8",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45310,6 +45310,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_operation_refusals_name_one_target_state_and_add_no_diagnostic_spelling"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.13-filesystem-partial-progress-and-settlement",
+      "span_start_line": 16665,
+      "span_end_line": 16707,
+      "span_sha256": "4b5a700ac04804ad471b18218d5a315deafc23fd4c92aa180c0b1ebc56149b26",
+      "anchor_line": 16666,
+      "body_start_line": 16667,
+      "body_end_line": 16707,
+      "body_sha256": "80f91d9f4176d563a612cce7a853b4701cfe4b8ef4eb6d4a094b954ec9a536cc",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16667,
+          "end_line": 16707,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_partial_progress_is_declared_only_for_read_write_and_seek"
               ],
               "rationale": null
             }

@@ -17,35 +17,35 @@ const PREREQUISITES: [(&str, &str, &str, &str, &str); 5] = [
         "3892895c41d1f8290e97da09ce32260c51a1d74d",
         "Isolate package work behind bounded blocking admission.",
         "protocol/conformance/blocking-work-v1.json",
-        "bcee6f4d1767a577b7217d283dabf4a3199a07cb09c1361a595f1381c381e624",
+        "8388502f0133980229604e92bca185ef3b6d98b5642e0a095d58725f68d65ec8",
     ),
     (
         "GNT-ASYNC-CLI-001",
         "98d91f33e6206688a5354dc7d5260dbc1afaf5d6",
         "Adopt multithread CLI runtime policy",
         "protocol/conformance/cli-runtime-policy-v1.json",
-        "27ffc696c7abc99459c003ac3a96435723a96303a9403d36d3ec1869be4ca6bc",
+        "f9f4646e79c2aec21d98d73850c9a4b823bb006008a3f568bc2a1d229de5e408",
     ),
     (
         "GNT-ASYNC-GATE-200",
         "a6915ef212b9e245da00fd383f79bc81f05c3556",
         "Close the native source concurrency evidence gate.",
         "protocol/conformance/native-source-concurrency-gate-v1.json",
-        "3c83fbd80886cf4c51da474c291803325e6bef47569a86bac0deb841a2677019",
+        "95f996babb192b349161ae5dfcfa4be60884e89504529ebc383383ce14cdb764",
     ),
     (
         "GNT-ASYNC-PROOF-001",
         "ca413e8e23f714e33d72511a74f02a2eeccc4032",
         "Compose async execution refinements",
         "protocol/conformance/async-execution-refinement-v1.json",
-        "2f9d9383cd50d30bb076ca0b35f8073dc813b86dc11e8cb2ad6416c1c3fcbe14",
+        "668f6d5e0ce0dd7961bb8d873bbf6fcf3fbe7734bac56195e21ed9f8e3ce6e91",
     ),
     (
         "GNT-ASYNC-REC-001",
         "d5d34c22107d8f16739b21baf6a0f6f773de276a",
         "Qualify executor-backed recovery",
         "protocol/conformance/async-recovery-v1.json",
-        "baf375e31bb30213086f9ad32ac322bc101cb0d9b94b822c7d8cfadbabd7a3e6",
+        "bbe9b807ba719ad39508befd8ceed8a94815c73db0ad57039826a50e8b754bd4",
     ),
 ];
 const ARTIFACTS: [(&str, &str); 8] = [
@@ -55,19 +55,19 @@ const ARTIFACTS: [(&str, &str); 8] = [
     ),
     (
         "protocol/catalogs/profiles-v1.json",
-        "55669a438378c8b1d6928bea8b24f46a78ead8a6c5dd551c96f76011438793c8",
+        "54f81bc4c6bce973efab3130f9b55f3ca5a4c2728b77f9c198d6f6b49daa4abe",
     ),
     (
         "protocol/conformance/async-execution-adoption-v1.json",
-        "4038327af8d950b59df733595612fba137d78c4b711c88ce69c67ad206d10397",
+        "8d9e705671b5b9d9355733870d0a0664796644b9a129f328fc5c76e3babff205",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "376939fd357470dd0d0302655b649abcaf679273bd8c03d1533c41dca999f5a1",
+        "f2ccdc7951e6df1dd9a2737b3912e242a3989e0c90ab9cb290ff6c0d5ceab71d",
     ),
     (
         "protocol/conformance/async-execution-gate-v1.json",
-        "138dc40e1e1ae94d56c0368cc752b74b90b5cde3c88dafeaf87c2ab14c7a9a34",
+        "37e0bb4ce48265adec6b1eb99b961ef098a94f32a815dd5e59b933d187c5690b",
     ),
     (
         "protocol/goldens/concurrent-refinement-model-v1.json",

@@ -9,12 +9,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    FS_CLAUSES, FS_ITEMS, FS_PATH_SEGMENT_BOUND, FS_REFUSAL_CONDITIONS, FS_REPLACEMENT_ACTION,
-    FS_RESOLUTION_COUNT, FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError,
-    FsPath, FsRefusalCondition, FsResourceOperation, FsTargetState, IoOperation, NameClass,
-    PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState, StabilityTier, StdGraph,
-    StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface,
-    fs_traversal_order, generated::RecoveryClass,
+    FS_CLAUSES, FS_ITEMS, FS_PARTIAL_PROGRESS_OPERATIONS, FS_PATH_SEGMENT_BOUND,
+    FS_REFUSAL_CONDITIONS, FS_REPLACEMENT_ACTION, FS_RESOLUTION_COUNT, FS_SURFACE_MODES,
+    FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError, FsPath, FsRefusalCondition,
+    FsResourceOperation, FsTargetState, IoOperation, NameClass, PackageFamily, Prelude,
+    ResourceCarrier, ResourceLifetimeState, StabilityTier, StdGraph, StdItem, StdPackage,
+    StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface, fs_traversal_order,
+    generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -64,6 +65,7 @@ fn fs_contract_clauses_and_scope_are_published() {
             "GNT-47.10-filesystem-declared-limits",
             "GNT-47.11-filesystem-case-identity",
             "GNT-47.12-filesystem-operation-refusals",
+            "GNT-47.13-filesystem-partial-progress-and-settlement",
         ]
     );
     assert_eq!(FS_SURFACE_MODES, [SemanticMode::Application]);
@@ -110,6 +112,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.9-filesystem-replacement",
                 "GNT-47.10-filesystem-declared-limits",
                 "GNT-47.12-filesystem-operation-refusals",
+                "GNT-47.13-filesystem-partial-progress-and-settlement",
             ],
             "std.fs::path" => &[
                 "GNT-47.0-filesystem-foundation-scope",
@@ -127,6 +130,7 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.8-filesystem-link-policy",
                 "GNT-47.10-filesystem-declared-limits",
                 "GNT-47.12-filesystem-operation-refusals",
+                "GNT-47.13-filesystem-partial-progress-and-settlement",
             ],
             other => panic!("the undeclared module row `{other}` must not exist"),
         };
@@ -974,6 +978,7 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
             "ALL",
             "FS_CLAUSES",
             "FS_ITEMS",
+            "FS_PARTIAL_PROGRESS_OPERATIONS",
             "FS_PATH_SEGMENT_BOUND",
             "FS_REFUSAL_CONDITIONS",
             "FS_REPLACEMENT_ACTION",
@@ -1168,6 +1173,55 @@ fn fs_operation_refusals_name_one_target_state_and_add_no_diagnostic_spelling() 
         "the model accessors `FsAction::refusal_conditions` and `FsResourceOperation::refusal_conditions` publish exactly that condition set for the two vocabularies",
         "it publishes no folded spelling, no preferred spelling, no lookup key, and no identity of a fold",
         "an operation refused because the declared target state does not admit it is never published as refused for a collision",
+    ] {
+        assert!(
+            specification.contains(rule),
+            "the specification must pin: {rule}"
+        );
+    }
+}
+
+#[test]
+fn fs_partial_progress_is_declared_only_for_read_write_and_seek() {
+    assert_eq!(
+        FS_PARTIAL_PROGRESS_OPERATIONS,
+        [
+            FsResourceOperation::Read,
+            FsResourceOperation::Write,
+            FsResourceOperation::Seek,
+        ]
+    );
+    for operation in FsResourceOperation::ALL {
+        let declares = matches!(
+            operation,
+            FsResourceOperation::Read | FsResourceOperation::Write | FsResourceOperation::Seek
+        );
+        assert_eq!(
+            operation.declares_partial_progress(),
+            declares,
+            "{}",
+            operation.as_str()
+        );
+        // A partial-progress declaration and a consumed request coincide exactly.
+        assert_eq!(
+            operation.declares_partial_progress(),
+            operation.declared_request_kind().is_some(),
+            "{}",
+            operation.as_str()
+        );
+    }
+
+    let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
+    for rule in [
+        "This clause publishes the partial-progress rule of the transfer operations of `GNT-47.4-filesystem-resource-operations` and the no-partial-progress rule of the whole-object actions of `GNT-47.3-filesystem-action-values`",
+        "publish exactly those three operations, in declared order",
+        "A transfer that commits fewer octets than its request named is one completed request and not a failure, a short transfer, or an interruption",
+        "its progress observation publishes exactly the octets it committed, no remainder is carried, reserved, or replayed",
+        "this section performs no retry, re-issue, or re-resolution of that request",
+        "A second transfer of the remaining octets is a second declared operation with its own admitted request and its own admitted facts, never a continuation this section invents, infers, or appends",
+        "this clause declares no action-side partial-progress observation, no action-side remainder, and no action-side continuation",
+        "an interrupted or cancelled request is never published here as a progress observation, as a short transfer, or as a remainder a later operation completes",
+        "no second request contract, no second octet bound, no second progress vocabulary",
     ] {
         assert!(
             specification.contains(rule),

@@ -1,6 +1,6 @@
 {
  "format": "gantry.durable-start-evidence/v1",
- "specification_sha256": "5a3ebf3381d7dd7cf838e3b706b7d10491d1e9f65aaa6d793994c5e3a4eb3bf7",
+ "specification_sha256": "76c4500c19ce3c58f532e5a1a46afd8ecc88df157fbea73b367d9bac8d49efc6",
  "issue": "GNT-DUR-003",
  "capabilities": [
   {

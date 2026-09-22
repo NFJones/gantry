@@ -23,7 +23,7 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 13] = [
+pub const FS_CLAUSES: [&str; 14] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
@@ -37,6 +37,7 @@ pub const FS_CLAUSES: [&str; 13] = [
     "GNT-47.10-filesystem-declared-limits",
     "GNT-47.11-filesystem-case-identity",
     "GNT-47.12-filesystem-operation-refusals",
+    "GNT-47.13-filesystem-partial-progress-and-settlement",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -78,6 +79,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.9-filesystem-replacement",
             "GNT-47.10-filesystem-declared-limits",
             "GNT-47.12-filesystem-operation-refusals",
+            "GNT-47.13-filesystem-partial-progress-and-settlement",
         ],
     },
     FsItemRow {
@@ -105,6 +107,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.8-filesystem-link-policy",
             "GNT-47.10-filesystem-declared-limits",
             "GNT-47.12-filesystem-operation-refusals",
+            "GNT-47.13-filesystem-partial-progress-and-settlement",
         ],
     },
 ];
@@ -708,6 +711,15 @@ impl FsResourceOperation {
         matches!(self, Self::Write | Self::Truncate)
     }
 
+    /// Returns whether this operation declares a partial-progress observation.
+    ///
+    /// Exactly a read, a write, and a seek declare one: no other declared operation publishes a
+    /// partial-progress observation, and no operation publishes a second one.
+    #[must_use]
+    pub const fn declares_partial_progress(self) -> bool {
+        matches!(self, Self::Read | Self::Write | Self::Seek)
+    }
+
     /// Returns the declared target state this operation does not admit, if any.
     ///
     /// Only `open` names one: it is refused when the declared target state is absent. The nine
@@ -746,6 +758,17 @@ impl FsResourceOperation {
         }
     }
 }
+
+/// The declared partial-progress operations of
+/// `GNT-47.13-filesystem-partial-progress-and-settlement`, in declared order.
+///
+/// Each one consumes exactly one admitted request of `GNT-45.1-bounded-one-call-io-contract` and
+/// publishes exactly one progress observation; no other declared operation publishes one.
+pub const FS_PARTIAL_PROGRESS_OPERATIONS: [FsResourceOperation; 3] = [
+    FsResourceOperation::Read,
+    FsResourceOperation::Write,
+    FsResourceOperation::Seek,
+];
 
 /// Returns the declared canonical traversal order of `names`.
 ///
