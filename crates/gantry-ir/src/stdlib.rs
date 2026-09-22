@@ -1119,7 +1119,8 @@ impl StdPathInspection {
 ///
 /// A presentation may be a declared package name (`std.core`) or a declared convenience facade
 /// path (`std.io::option`); `::` and `.` are the same separator, as everywhere else in this
-/// module. A facade presentation is reported with the defining package and re-exported item it
+/// module. A declared package is always reported as its own defining identity, so a facade never
+/// erases one; a facade presentation is reported with the defining package and re-exported item it
 /// carries and is never reported as an identity of its own, and its defining side must be declared
 /// and exported by the graph. Physical repository layout — a presentation containing a path
 /// separator or ending in `.rs` — is refused rather than reinterpreted as an identity, because
@@ -1144,6 +1145,14 @@ pub fn inspect_presentation(
         ));
     }
     let canonical = canonical_std_path(named);
+    if graph.package(&canonical).is_some() {
+        return Ok(StdPathInspection {
+            presented: named.to_owned(),
+            presentation: StdPresentation::Defining,
+            defining_package: canonical,
+            facade_item: None,
+        });
+    }
     if let Some(facade) = facades
         .iter()
         .find(|facade| canonical_std_path(facade.path()) == canonical)
@@ -1154,14 +1163,6 @@ pub fn inspect_presentation(
             presentation: StdPresentation::Facade,
             defining_package: facade.defining_package().to_owned(),
             facade_item: Some(facade.item().to_owned()),
-        });
-    }
-    if graph.package(&canonical).is_some() {
-        return Ok(StdPathInspection {
-            presented: named.to_owned(),
-            presentation: StdPresentation::Defining,
-            defining_package: canonical,
-            facade_item: None,
         });
     }
     Err(StdlibError::new(
@@ -1175,18 +1176,30 @@ pub fn inspect_presentation(
 /// A tool validates its inputs before use: every declared facade in the set must carry a defining
 /// side that the graph declares and exports (the landed admission check, reused unchanged), and no
 /// two facades may share one canonical path, because a set that names a path twice cannot be
-/// displayed or enumerated deterministically. The gate grants nothing, inspects no physical
-/// layout, and returns no authority: an empty set is admitted.
+/// displayed or enumerated deterministically. A facade whose canonical path names a declared
+/// package is refused too, because such a presentation is ambiguous rather than a second
+/// identity. The gate grants nothing, inspects no physical layout, and returns no authority: an
+/// empty set is admitted.
 pub fn admit_tooling_inputs(
     graph: &StdGraph,
     facades: &[FacadeReexport],
 ) -> Result<(), StdlibError> {
     let mut seen: BTreeSet<String> = BTreeSet::new();
     for facade in facades {
-        if !seen.insert(canonical_std_path(facade.path())) {
+        let canonical = canonical_std_path(facade.path());
+        if !seen.insert(canonical.clone()) {
             return Err(StdlibError::new(
                 StdlibDiagnosticCode::DuplicatePackage,
                 format!("`{}` is declared twice", facade.path()),
+            ));
+        }
+        if graph.package(&canonical).is_some() {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidNameClassification,
+                format!(
+                    "`{}` names a declared package and a facade at once",
+                    facade.path()
+                ),
             ));
         }
         facade.admit(graph, &facade.defining_identity())?;

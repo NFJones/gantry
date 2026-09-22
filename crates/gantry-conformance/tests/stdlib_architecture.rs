@@ -2374,3 +2374,29 @@ fn tooling_inputs_admit_only_distinct_facades_with_exported_defining_sides() {
     );
     assert_eq!(error.code(), StdlibDiagnosticCode::FacadeIdentityLoss);
 }
+
+#[test]
+fn ambiguous_presentations_prefer_the_defining_package_and_are_refused_as_inputs() {
+    let graph = graph_with(&[package(
+        PackageFamily::Core,
+        StabilityTier::Stable,
+        &[],
+        &[OPTION_ITEM],
+    )]);
+    let ambiguous = FacadeReexport::new(CORE, CORE, OPTION_ITEM)
+        .unwrap_or_else(|error| panic!("the fixture facade is valid: {error}"));
+    let inspection = inspect_presentation(&graph, std::slice::from_ref(&ambiguous), CORE)
+        .unwrap_or_else(|error| panic!("the package presentation is inspected: {error}"));
+    assert_eq!(inspection.presentation(), StdPresentation::Defining);
+    assert_eq!(inspection.defining_package(), CORE);
+    assert_eq!(inspection.facade_item(), None);
+
+    let error = refuse(
+        admit_tooling_inputs(&graph, std::slice::from_ref(&ambiguous)),
+        "a facade path that names a declared package",
+    );
+    assert_eq!(
+        error.code(),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
+}
