@@ -437,8 +437,10 @@ pub use target::{
     TargetMatrixState, TargetPredicate, TargetPredicateName, ToolchainIdentity,
 };
 pub use test_support::{
-    STD_TEST_CLASS, STD_TEST_NON_CLAIMS, STD_TEST_PACKAGE, STD_TEST_TIER, TestKind,
-    TestSubstitution, ambient_authority_is_never_acquired, std_test_family,
+    STD_TEST_ADMITTED_MODE, STD_TEST_CLASS, STD_TEST_NON_CLAIMS, STD_TEST_PACKAGE,
+    STD_TEST_TARGET_KIND, STD_TEST_TIER, TestKind, TestSubstitution,
+    ambient_authority_is_never_acquired, bound_test_requirement, std_test_family,
+    test_target_is_shipping_authority,
 };
 // The bounded untrusted compilation and cache model of SPEC.md Section 26 is published
 // here, except for its `ToolchainIdentity`, which the landed target model already

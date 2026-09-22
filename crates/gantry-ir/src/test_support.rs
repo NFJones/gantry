@@ -4,10 +4,21 @@
 //!
 //! The package is a capability package: every kind below consumes production package, artifact,
 //! authority, runtime, and standard-library interfaces, and every substitution is declared
-//! explicitly rather than acquired from ambient authority. The surface declares facts only; the
-//! runtime harness that executes a test target is not part of this module.
+//! explicitly rather than acquired from ambient authority. Every kind is qualified by the one
+//! non-shipping `test` target kind of `GNT-16.6-target-kinds`, and a test requirement is bounded
+//! by the declared ceiling of the shipping target it exercises. The surface declares facts only;
+//! the runtime harness that executes a test target is not part of this module.
 
+// The ceiling bound returns the landed package diagnostic, which deliberately carries full
+// identities so a rejected requirement reports the exact subject it disagreed with. Boxing those
+// fields would hide identity behind an allocation at every construction and match site, so this
+// module answers the size lint explicitly instead of weakening the diagnostic.
+#![allow(clippy::result_large_err)]
+
+use crate::SemanticMode;
+use crate::package::{DeclaredCeiling, PackageError, RequirementDemand, TargetKind, check_ceiling};
 use crate::stdlib::{NameClass, PackageFamily, StabilityTier};
+use crate::target::ModeAdmission;
 
 /// The canonical package name of the target-qualified test package.
 pub const STD_TEST_PACKAGE: &str = "std.test";
@@ -23,6 +34,20 @@ pub const STD_TEST_CLASS: NameClass = NameClass::Package;
 pub const fn std_test_family() -> PackageFamily {
     PackageFamily::Test
 }
+
+/// The single target kind every kind of `std.test` is qualified by.
+///
+/// `GNT-16.6-target-kinds` closes the target-kind vocabulary at `library`, `binary`, `test`,
+/// `example`, and `benchmark`: a test kind is a kind *within* the test package and never a
+/// target kind of its own, so every declared test kind is qualified by exactly this kind.
+pub const STD_TEST_TARGET_KIND: TargetKind = TargetKind::Test;
+
+/// The single semantic mode the qualifying test target admits.
+///
+/// `GNT-17.10-target-selected-mode-admission` admits exactly one mode for one selected target
+/// and target kind, and `GNT-16.6-target-kinds` makes a `test` target non-shipping and
+/// bounded-authority, so only the portable mode of `GNT-3.1` is admitted here.
+pub const STD_TEST_ADMITTED_MODE: SemanticMode = SemanticMode::Portable;
 
 /// One declared test kind of `std.test`, in canonical wire-name order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -81,6 +106,21 @@ impl TestKind {
     #[must_use]
     pub fn from_wire_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.wire_name() == name)
+    }
+
+    /// Returns the target kind this test kind is qualified by.
+    ///
+    /// Every kind is qualified by the one non-shipping `test` target kind, so a test kind never
+    /// declares a second target identity of its own.
+    #[must_use]
+    pub const fn target_kind(self) -> TargetKind {
+        STD_TEST_TARGET_KIND
+    }
+
+    /// Returns the modes the qualifying test target admits, in `GNT-3.1` order.
+    #[must_use]
+    pub fn admitted_modes(self) -> &'static [SemanticMode] {
+        ModeAdmission::admitted_modes(self.target_kind())
     }
 }
 
@@ -165,4 +205,27 @@ pub const STD_TEST_NON_CLAIMS: [&str; 4] = [
 #[must_use]
 pub const fn ambient_authority_is_never_acquired() -> bool {
     false
+}
+
+/// Returns whether `std.test` is shipping authority (`GNT-16.6-target-kinds`).
+///
+/// A test target is non-shipping: its items never appear in another target's public interface,
+/// are never exported by a shipping target, and are never represented as shipping authority.
+#[must_use]
+pub const fn test_target_is_shipping_authority() -> bool {
+    STD_TEST_TARGET_KIND.is_shipping()
+}
+
+/// Bounds one test requirement by the ceiling declared for the shipping target it exercises.
+///
+/// `GNT-16.6-target-kinds` bounds a non-shipping test target's capability ceiling by the declared
+/// ceiling of the shipping target it exercises: the test target never widens that target's
+/// authority closure, capability requirements, or exported interface. The landed one-directional
+/// `check_ceiling` is reused unchanged, so a requirement outside the declared subject or above
+/// the declared strength fails here and the bound grants nothing.
+pub fn bound_test_requirement(
+    declared: &DeclaredCeiling,
+    required: &RequirementDemand,
+) -> Result<(), PackageError> {
+    check_ceiling(declared, required)
 }
