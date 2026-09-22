@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "9865109f920bf1b2a1de5b8166bc13f3216db3ed74d65b56e85f854ab853c5f0",
-  "byte_length": 1246001,
-  "line_count": 16274,
+  "specification_sha256": "3066140bf5934c3f71c815e22aa8cf64e285ec18249db6655159cc88b35361e7",
+  "byte_length": 1246455,
+  "line_count": 16280,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16274,
-      "sha256": "ae57c3e99b221ddaf31f6d0854abca46290fe63ae94a8c770d30640a99699ec0",
+      "end_line": 16280,
+      "sha256": "1f2fc7c0364ddd6a23b9d0f9f8e0fa334d896374d2ff745d70cc7d0d70493af4",
       "rationale": null
     }
   ],
@@ -44786,11 +44786,11 @@
       "id": "GNT-47.0-filesystem-foundation-scope",
       "span_start_line": 16198,
       "span_end_line": 16215,
-      "span_sha256": "b56997083da41c224932e08be914ed06b89923f18a47a8d6379ef971169f979a",
+      "span_sha256": "a2ea46d22616d28036c5ec42044c67ef146894aea5a2c1508f235ba5e1d2a34b",
       "anchor_line": 16199,
       "body_start_line": 16200,
       "body_end_line": 16215,
-      "body_sha256": "ea42072cab26748b8a55c2fed8e851b45abf91f21afaf5f8dc6f7781461dbb33",
+      "body_sha256": "990a6070b141e4cacd681b91735393dad40f5de39f07e8863680045582c47eb3",
       "profiles": [
         "analyzer"
       ],
@@ -44869,12 +44869,12 @@
     {
       "id": "GNT-47.2-filesystem-path-values",
       "span_start_line": 16241,
-      "span_end_line": 16274,
-      "span_sha256": "07d0afdb61b7953a6619c61504cfb31c5495723d6ef913cdda969ebc37054cc5",
+      "span_end_line": 16280,
+      "span_sha256": "27ace8bc100f1fa0b1b0c89f468a527dfe940d76f8bf80231467691f3a1f3947",
       "anchor_line": 16242,
       "body_start_line": 16243,
-      "body_end_line": 16274,
-      "body_sha256": "65db4c598a433b0814b47bde982f511fc38108eb34c1f3fde72db7019966496a",
+      "body_end_line": 16280,
+      "body_sha256": "c653654be1b9c0ee2aa11c37f96404e74514980321ec2fa7b47b0cad295dc824",
       "profiles": [
         "analyzer"
       ],
@@ -44886,7 +44886,7 @@
         {
           "key": "clause-001",
           "start_line": 16243,
-          "end_line": 16274,
+          "end_line": 16280,
           "profiles": [
             "analyzer"
           ],

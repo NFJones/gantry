@@ -70,7 +70,7 @@ fn fs_contract_clauses_and_scope_are_published() {
     assert!(specification.contains("consumes and never restates or widens"));
     assert!(
         specification.contains(
-            "The frozen diagnostics of this section are `fs-path-invalid` and `fs-path-escape`"
+            "The frozen diagnostics of this section are `fs-path-escape` and `fs-path-invalid`"
         ),
         "the section must publish its frozen diagnostic registry"
     );
@@ -282,9 +282,14 @@ fn fs_path_values_are_bounded_and_escape_free() {
         ("work/space", vec!["a"]),
         ("~home", vec!["a"]),
         ("$HOME", vec!["a"]),
+        ("%HOME%", vec!["a"]),
+        ("Workspace", vec!["a"]),
+        ("has space", vec!["a"]),
+        ("unicode\u{e9}", vec!["a"]),
         ("workspace", Vec::new()),
         ("workspace", vec![""]),
         ("workspace", vec!["a/b"]),
+        ("workspace", vec!["a\\b"]),
         ("workspace", vec!["a\u{7}b"]),
     ] {
         let error = FsPath::rooted(root, &declared)
@@ -293,6 +298,14 @@ fn fs_path_values_are_bounded_and_escape_free() {
         assert_eq!(error.code(), FsDiagnosticCode::PathInvalid);
         assert_eq!(error.component(), None);
     }
+    let error = FsPath::rooted("workspace", &[])
+        .err()
+        .unwrap_or_else(|| panic!("an empty segment sequence must be refused"));
+    assert!(
+        error.detail().contains('0') && error.detail().contains("256"),
+        "the empty-sequence refusal names the count and its bound: {}",
+        error.detail()
+    );
 
     // The declared segment bound is enforced rather than truncated.
     let admitted = vec!["segment"; FS_PATH_SEGMENT_BOUND];
@@ -321,6 +334,9 @@ fn fs_path_values_are_bounded_and_escape_free() {
         "at most `FS_PATH_SEGMENT_BOUND` segments",
         "refused under `fs-path-escape` naming the reserved component and its position",
         "refused under `fs-path-invalid` naming the segment and its position",
+        "A declared root is a portable name of ASCII lower-case letters, digits, and `_` whose first scalar is a lower-case letter",
+        "the separator scalar `/` or `\\`",
+        "`canonical_spelling` renders the declared root followed by each declared segment separated by `/`",
     ] {
         assert!(
             specification.contains(rule),

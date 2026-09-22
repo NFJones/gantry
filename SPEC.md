@@ -16210,8 +16210,8 @@ restates or widens. Its pure model is `crates/gantry-ir/src/fs.rs` and its analy
 creates no path value, rooted directory, descriptor, adapter, host trait, capability grant, runtime
 availability, operation or request vocabulary, resource, traversal, snapshot, receipt, or machine
 behavior, and no clause of this section may be read as publishing, implying, or substituting a
-facility this section does not declare. The frozen diagnostics of this section are `fs-path-invalid`
-and `fs-path-escape`, both owned by `GNT-47.2-filesystem-path-values`; each diagnostic names one
+facility this section does not declare. The frozen diagnostics of this section are `fs-path-escape` and
+`fs-path-invalid`, both owned by `GNT-47.2-filesystem-path-values`; each diagnostic names one
 owning clause and no spelling is shared by two refusal conditions.
 
 <a id="GNT-47.1-filesystem-modules-and-item-rows"></a>
@@ -16243,28 +16243,34 @@ representation.
 
 **[GNT-47.2-filesystem-path-values] Filesystem path values.** This clause publishes the declared value
 contract of the `std.fs::path` module. A path value is one declared root together with its ordered
-segments, and the root is the grant that was presented for it: a path spelling is never authority,
+segments, and the root names the grant the caller presented while the value carries no grant of its
+own: a path spelling is never authority,
 no path value is presented without a root, and no clause of this section presents a spelling as a
 capability, a permission, a binding, or a resource. A path value is portable and target-independent:
-this clause publishes no separator convention, no case rule, no encoding, and no reserved native
-name, so equal declared roots and equal declared segment sequences are one path value whatever a
-target would spell them.
+this clause publishes no platform separator convention, no case rule, no encoding, and no reserved
+native name, so equal declared roots and equal declared segment sequences are one path value
+whatever a target would spell them; the canonical rendering named below is a declaration-level
+spelling and not a platform path.
 
 A path value declares at least one segment and at most `FS_PATH_SEGMENT_BOUND` segments, and a
 sequence outside that range is refused under `fs-path-invalid` naming the count and its declared
 bound rather than truncated or padded. A segment is one component: an empty segment, a segment
-carrying a separator, and a segment carrying a control scalar are each refused under
+carrying the separator scalar `/` or `\`, and a segment carrying a control scalar are each refused
+under
 `fs-path-invalid` naming the segment and its position, and the reserved components `.` and `..` are
 refused under `fs-path-escape` naming the reserved component and its position, rather than
 normalized, collapsed, or resolved, so no sequence of declared segments can leave the declared root.
-A declared root is a non-empty portable name that carries no separator, no leading separator, and no
-home or environment marker; a root that does not is refused under `fs-path-invalid` naming the root
-rather than expanded, defaulted, or resolved against an ambient location. The model FsPath publishes
+A declared root is a portable name of ASCII lower-case letters, digits, and `_` whose first scalar
+is a lower-case letter; a root spelled otherwise - including an empty root, a root carrying a
+separator, and a root carrying a home or environment marker such as a leading `~`, `$`, or `%` - is
+refused under `fs-path-invalid` naming the root rather than expanded, defaulted, or resolved against
+an ambient location. The model FsPath publishes
 the admitted value: its `rooted` constructor admits exactly one value or refuses the segment, root,
 or count that the rules above refuse, its `join` extends one admitted value with declared segments
 and admits exactly one value or refuses under the same rules, and its `root`, `segments`, and
-`canonical_spelling` accessors publish the declared facts alone, so no operation silently drops,
-normalizes, or rewrites a segment.
+`canonical_spelling` accessors publish the declared facts alone: `canonical_spelling` renders the
+declared root followed by each declared segment separated by `/`, that rendering is never parsed
+back into a value, and no operation silently drops, normalizes, or rewrites a segment.
 
 This clause publishes the path value contract and its two refusals only: it publishes no descriptor,
 open handle, resource, traversal, watch, snapshot, receipt, quota, adapter, host trait, capability

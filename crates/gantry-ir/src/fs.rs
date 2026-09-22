@@ -361,23 +361,22 @@ impl FsPath {
 }
 
 /// Validates one declared root under the rules of `GNT-47.2-filesystem-path-values`.
+///
+/// A root is a portable name: ASCII lower-case letters, digits, and `_`, whose first scalar is a
+/// lower-case letter. An empty root, a root carrying a separator, and a root carrying a home or
+/// environment marker are all refused by that one predicate rather than by a second rule.
 fn validate_root(root: &str) -> Result<(), FsError> {
-    let invalid = |detail: String| FsError::PathInvalid {
-        detail,
-        position: 0,
+    let mut scalars = root.chars();
+    let portable = match scalars.next() {
+        Some(first) if first.is_ascii_lowercase() => scalars
+            .all(|scalar| scalar.is_ascii_lowercase() || scalar.is_ascii_digit() || scalar == '_'),
+        _ => false,
     };
-    if root.is_empty() {
-        return Err(invalid("an empty declared root".to_owned()));
-    }
-    if root.contains('/') {
-        return Err(invalid(format!(
-            "the declared root `{root}` carries a separator"
-        )));
-    }
-    if root.starts_with('~') || root.starts_with('$') {
-        return Err(invalid(format!(
-            "the declared root `{root}` carries a home or environment marker"
-        )));
+    if !portable {
+        return Err(FsError::PathInvalid {
+            detail: format!("the declared root `{root}` is not a portable name"),
+            position: 0,
+        });
     }
     Ok(())
 }
@@ -386,7 +385,7 @@ fn validate_root(root: &str) -> Result<(), FsError> {
 fn validate_segments(segments: &[&str], base: u32) -> Result<(), FsError> {
     if segments.is_empty() {
         return Err(FsError::PathInvalid {
-            detail: "a path value declares at least one segment".to_owned(),
+            detail: format!("the declared segment count 0 is outside 1..={FS_PATH_SEGMENT_BOUND}"),
             position: base,
         });
     }
@@ -413,7 +412,7 @@ fn validate_segments(segments: &[&str], base: u32) -> Result<(), FsError> {
                 position,
             });
         }
-        if segment.contains('/') {
+        if segment.contains('/') || segment.contains('\\') {
             return Err(FsError::PathInvalid {
                 detail: format!("the declared segment `{segment}` carries a separator"),
                 position,
