@@ -6,8 +6,10 @@
 //! authority, runtime, and standard-library interfaces, and every substitution is declared
 //! explicitly rather than acquired from ambient authority. Every kind is qualified by the one
 //! non-shipping `test` target kind of `GNT-16.6-target-kinds`, and a test requirement is bounded
-//! by the declared ceiling of the shipping target it exercises. The surface declares facts only;
-//! the runtime harness that executes a test target is not part of this module.
+//! by the declared ceiling of the shipping target it exercises. The declared testing-support
+//! contract is published as a closed harness vocabulary, and the substitutions a run consumes
+//! are declared through a strict decoder. The surface declares facts only; the runtime harness
+//! that executes a test target is not part of this module.
 
 // The ceiling bound returns the landed package diagnostic, which deliberately carries full
 // identities so a rejected requirement reports the exact subject it disagreed with. Boxing those
@@ -187,6 +189,15 @@ impl TestSubstitution {
             .into_iter()
             .find(|substitution| substitution.wire_name() == name)
     }
+
+    /// Returns this substitution's index in the canonical declaration order.
+    #[must_use]
+    pub fn canonical_index(self) -> usize {
+        Self::ALL
+            .into_iter()
+            .position(|candidate| candidate == self)
+            .unwrap_or(Self::ALL.len())
+    }
 }
 
 /// The closed declared non-claims of `std.test`, in canonical wire-name order.
@@ -201,9 +212,11 @@ pub const STD_TEST_NON_CLAIMS: [&str; 4] = [
 ///
 /// Every kind and substitution above consumes explicitly declared authority only: no test kind
 /// reads the ambient environment, the host clock, host entropy, a real provider, an ambient
-/// scheduler, or a host failure facility, and no test kind changes language semantics.
+/// scheduler, or a host failure facility, and no test kind changes language semantics. The
+/// declared non-claim `ambient-authority` is exactly this answer, so the predicate is the
+/// positive acquisition question and it answers `false`.
 #[must_use]
-pub const fn ambient_authority_is_never_acquired() -> bool {
+pub const fn may_acquire_ambient_authority() -> bool {
     false
 }
 
@@ -228,4 +241,113 @@ pub fn bound_test_requirement(
     required: &RequirementDemand,
 ) -> Result<(), PackageError> {
     check_ceiling(declared, required)
+}
+
+/// One declared harness capability of the testing-support contract, in requirement order.
+///
+/// The declared order is the bullet order of the testing-support contract, each wire spelling is
+/// that contract's requirement in kebab case, and `requirement` returns the contract's own
+/// wording. The vocabulary is closed: a harness capability outside it is invalid rather than an
+/// extension point.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TestHarnessCapability {
+    /// Deterministic test ordering and isolation.
+    DeterministicOrderingAndIsolation,
+    /// Assertion and comparison diagnostics.
+    AssertionDiagnostics,
+    /// Fixtures and temporary capability roots.
+    FixturesAndTemporaryCapabilityRoots,
+    /// Fake clocks, random sources, and host capabilities.
+    FakeClockRandomnessAndCapabilities,
+    /// Expected-failure and timeout support.
+    ExpectedFailureAndTimeout,
+    /// Property-test shrinking contracts.
+    PropertyShrinking,
+    /// Durable replay and recovery test harnesses.
+    DurableReplayAndRecovery,
+}
+
+impl TestHarnessCapability {
+    /// The closed declared set, in the testing-support contract's requirement order.
+    pub const ALL: [TestHarnessCapability; 7] = [
+        Self::DeterministicOrderingAndIsolation,
+        Self::AssertionDiagnostics,
+        Self::FixturesAndTemporaryCapabilityRoots,
+        Self::FakeClockRandomnessAndCapabilities,
+        Self::ExpectedFailureAndTimeout,
+        Self::PropertyShrinking,
+        Self::DurableReplayAndRecovery,
+    ];
+
+    /// Returns the canonical wire spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::DeterministicOrderingAndIsolation => "deterministic-test-ordering-and-isolation",
+            Self::AssertionDiagnostics => "assertion-and-comparison-diagnostics",
+            Self::FixturesAndTemporaryCapabilityRoots => "fixtures-and-temporary-capability-roots",
+            Self::FakeClockRandomnessAndCapabilities => {
+                "fake-clocks-random-sources-and-host-capabilities"
+            }
+            Self::ExpectedFailureAndTimeout => "expected-failure-and-timeout",
+            Self::PropertyShrinking => "property-test-shrinking-contracts",
+            Self::DurableReplayAndRecovery => "durable-replay-and-recovery-harnesses",
+        }
+    }
+
+    /// Returns the declared requirement text of the testing-support contract.
+    #[must_use]
+    pub const fn requirement(self) -> &'static str {
+        match self {
+            Self::DeterministicOrderingAndIsolation => "deterministic test ordering and isolation",
+            Self::AssertionDiagnostics => "assertion and comparison diagnostics",
+            Self::FixturesAndTemporaryCapabilityRoots => "fixtures and temporary capability roots",
+            Self::FakeClockRandomnessAndCapabilities => {
+                "fake clocks, random sources, and host capabilities"
+            }
+            Self::ExpectedFailureAndTimeout => "expected-failure and timeout support",
+            Self::PropertyShrinking => "property-test shrinking contracts",
+            Self::DurableReplayAndRecovery => "durable replay and recovery test harnesses",
+        }
+    }
+
+    /// Decodes one canonical wire spelling; every other spelling is `None`.
+    #[must_use]
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|capability| capability.wire_name() == name)
+    }
+}
+
+/// Why one declared test-run substitution set is refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TestSubstitutionRefusal {
+    /// A declared spelling is not one of the closed substitutions of `std.test`.
+    Unknown,
+    /// A declared spelling appears more than once in the same declaration.
+    Duplicate,
+}
+
+/// Decodes one declared test-run substitution set into canonical declaration order.
+///
+/// A run declares the substitutions it consumes instead of acquiring ambient authority: every
+/// spelling must be one of the closed `TestSubstitution` set, no spelling may appear twice, and
+/// the returned set is in the canonical declaration order of `TestSubstitution::ALL` rather than
+/// the presentation order, so two runs declaring the same set in different orders publish the
+/// same declaration. An empty declaration is admitted and declares no substitution.
+pub fn declare_test_substitutions(
+    names: &[&str],
+) -> Result<Vec<TestSubstitution>, TestSubstitutionRefusal> {
+    let mut declared = Vec::with_capacity(names.len());
+    for name in names {
+        let substitution =
+            TestSubstitution::from_wire_name(name).ok_or(TestSubstitutionRefusal::Unknown)?;
+        if declared.contains(&substitution) {
+            return Err(TestSubstitutionRefusal::Duplicate);
+        }
+        declared.push(substitution);
+    }
+    declared.sort_by_key(|substitution| substitution.canonical_index());
+    Ok(declared)
 }

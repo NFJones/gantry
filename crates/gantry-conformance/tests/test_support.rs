@@ -3,16 +3,18 @@
 //! The surface declares the target-qualified test package, its closed test-kind vocabulary, and
 //! the deterministic substitutions a test run may consume. These rows require the package
 //! identity, the closed ordered vocabularies, the no-ambient-authority rule, the one non-shipping
-//! test target kind that qualifies every kind, and the ceiling bound a test requirement obeys.
+//! test target kind that qualifies every kind, the ceiling bound a test requirement obeys, and the
+//! declared testing-support harness contract with its strict substitution declaration.
 
 use std::collections::BTreeSet;
 
 use gantry::ir::{
     DeclaredCeiling, ModeAdmission, NameClass, PackageError, PackageFamily, RequirementDemand,
     STD_TEST_ADMITTED_MODE, STD_TEST_CLASS, STD_TEST_NON_CLAIMS, STD_TEST_PACKAGE,
-    STD_TEST_TARGET_KIND, STD_TEST_TIER, SemanticMode, StabilityTier, TargetKind, TestKind,
-    TestSubstitution, ambient_authority_is_never_acquired, bound_test_requirement, std_test_family,
-    test_target_is_shipping_authority,
+    STD_TEST_TARGET_KIND, STD_TEST_TIER, SemanticMode, StabilityTier, TargetKind,
+    TestHarnessCapability, TestKind, TestSubstitution, TestSubstitutionRefusal,
+    bound_test_requirement, declare_test_substitutions, may_acquire_ambient_authority,
+    std_test_family, test_target_is_shipping_authority,
 };
 
 #[test]
@@ -79,7 +81,7 @@ fn substitutions_are_closed_explicit_and_never_ambient() {
     }
     assert!(TestSubstitution::from_wire_name("network").is_none());
     assert!(
-        !ambient_authority_is_never_acquired(),
+        !may_acquire_ambient_authority(),
         "a test run never acquires ambient authority"
     );
     assert_eq!(
@@ -153,6 +155,91 @@ fn test_requirements_are_bounded_by_the_exercised_shipping_ceiling() -> Result<(
     assert!(matches!(
         bound_test_requirement(&declared, &foreign),
         Err(PackageError::RequirementExceedsCeiling { .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn harness_capabilities_are_closed_in_requirement_order() {
+    assert_eq!(TestHarnessCapability::ALL.len(), 7);
+    let mut spellings = BTreeSet::new();
+    for capability in TestHarnessCapability::ALL {
+        let spelling = capability.wire_name();
+        assert!(spellings.insert(spelling), "one spelling per capability");
+        assert_eq!(
+            TestHarnessCapability::from_wire_name(spelling),
+            Some(capability)
+        );
+    }
+    assert_eq!(
+        TestHarnessCapability::ALL
+            .map(TestHarnessCapability::wire_name)
+            .to_vec(),
+        vec![
+            "deterministic-test-ordering-and-isolation",
+            "assertion-and-comparison-diagnostics",
+            "fixtures-and-temporary-capability-roots",
+            "fake-clocks-random-sources-and-host-capabilities",
+            "expected-failure-and-timeout",
+            "property-test-shrinking-contracts",
+            "durable-replay-and-recovery-harnesses",
+        ]
+    );
+    assert_eq!(
+        TestHarnessCapability::ALL
+            .map(TestHarnessCapability::requirement)
+            .to_vec(),
+        vec![
+            "deterministic test ordering and isolation",
+            "assertion and comparison diagnostics",
+            "fixtures and temporary capability roots",
+            "fake clocks, random sources, and host capabilities",
+            "expected-failure and timeout support",
+            "property-test shrinking contracts",
+            "durable replay and recovery test harnesses",
+        ]
+    );
+    assert!(TestHarnessCapability::from_wire_name("ambient-host-network").is_none());
+}
+
+#[test]
+fn declared_substitutions_are_canonical_and_strictly_refused() -> Result<(), TestSubstitutionRefusal>
+{
+    assert_eq!(declare_test_substitutions(&[])?, Vec::new());
+    assert_eq!(
+        declare_test_substitutions(&["prng", "clock", "capability"])?,
+        vec![
+            TestSubstitution::Capability,
+            TestSubstitution::Clock,
+            TestSubstitution::Prng
+        ]
+    );
+    assert_eq!(
+        declare_test_substitutions(&[
+            "storage-fault",
+            "scheduler",
+            "provider",
+            "prng",
+            "clock",
+            "capability",
+        ])?,
+        TestSubstitution::ALL.to_vec()
+    );
+    assert_eq!(
+        declare_test_substitutions(&["clock", "prng"])?,
+        declare_test_substitutions(&["prng", "clock"])?
+    );
+    assert!(matches!(
+        declare_test_substitutions(&["network"]),
+        Err(TestSubstitutionRefusal::Unknown)
+    ));
+    assert!(matches!(
+        declare_test_substitutions(&["clock", "nope"]),
+        Err(TestSubstitutionRefusal::Unknown)
+    ));
+    assert!(matches!(
+        declare_test_substitutions(&["clock", "clock"]),
+        Err(TestSubstitutionRefusal::Duplicate)
     ));
     Ok(())
 }
