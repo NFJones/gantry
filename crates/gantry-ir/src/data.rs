@@ -16,12 +16,13 @@ use crate::stdlib::{
 };
 
 /// The declared clauses of Section 43, in specification order.
-pub const DATA_CLAUSES: [&str; 5] = [
+pub const DATA_CLAUSES: [&str; 6] = [
     "GNT-43.0-data-family-scope",
     "GNT-43.1-data-value-model-contract",
     "GNT-43.2-url-value-model",
     "GNT-43.3-mime-type-and-parameter-model",
     "GNT-43.4-header-field-and-field-list-model",
+    "GNT-43.5-message-framing-model",
 ];
 
 /// The one declared version of every value model in this revision
@@ -355,6 +356,7 @@ pub const DATA_ITEMS: [DataItemRow; 3] = [
             "GNT-43.0-data-family-scope",
             "GNT-43.1-data-value-model-contract",
             "GNT-43.4-header-field-and-field-list-model",
+            "GNT-43.5-message-framing-model",
         ],
     },
     DataItemRow {
@@ -1972,16 +1974,18 @@ impl HeaderFieldList {
                     "the field count",
                 ));
             }
-            let field = parse_header_field(piece, offset)?;
+            let colon = header_field_name(piece, offset)?;
+            let name = &piece[..colon];
             if fields
                 .last()
-                .is_some_and(|previous: &HeaderField| field.name() < previous.name())
+                .is_some_and(|previous: &HeaderField| name < previous.name())
             {
                 return Err(header_malformed(
                     offset,
                     "the field names follow the canonical order",
                 ));
             }
+            let field = header_field_value(piece, offset, colon)?;
             fields.push(field);
             offset += piece.len() + 1;
         }
@@ -2042,25 +2046,26 @@ fn is_header_name_octet(byte: u8) -> bool {
 /// Admits one declared header name (`GNT-43.4-header-field-and-field-list-model`).
 fn admit_header_name(text: &str, base: usize) -> Result<(), DataError> {
     let bytes = text.as_bytes();
-    let scalars = text.chars().count();
-    if scalars > HEADER_NAME_TOKEN_BOUND {
-        return Err(header_bound(
-            scalars,
-            HEADER_NAME_TOKEN_BOUND,
-            "the field name",
-        ));
-    }
     if !bytes.first().is_some_and(u8::is_ascii_lowercase) {
         return Err(header_malformed(
             base,
             "a field name begins with a lowercase ASCII letter",
         ));
     }
-    for (index, byte) in bytes.iter().enumerate().skip(1) {
-        if !is_header_name_octet(*byte) {
+    let mut scalars = 0_usize;
+    for (index, byte) in bytes.iter().enumerate() {
+        if index > 0 && !is_header_name_octet(*byte) {
             return Err(header_malformed(
                 base + index,
                 "a field name holds lowercase letters, digits, `-`, `_`, and `.`",
+            ));
+        }
+        scalars += 1;
+        if scalars > HEADER_NAME_TOKEN_BOUND {
+            return Err(header_bound(
+                scalars,
+                HEADER_NAME_TOKEN_BOUND,
+                "the field name",
             ));
         }
     }
@@ -2070,11 +2075,10 @@ fn admit_header_name(text: &str, base: usize) -> Result<(), DataError> {
 /// Admits one declared header value (`GNT-43.4-header-field-and-field-list-model`).
 fn admit_header_value(text: &str, base: usize) -> Result<(), DataError> {
     let bytes = text.as_bytes();
-    if bytes.len() > HEADER_VALUE_OCTET_BOUND {
-        return Err(header_bound(
-            bytes.len(),
-            HEADER_VALUE_OCTET_BOUND,
-            "the field value",
+    if bytes.first() == Some(&b' ') {
+        return Err(header_malformed(
+            base,
+            "a field value begins with an octet that is not a space",
         ));
     }
     for (index, byte) in bytes.iter().enumerate() {
@@ -2084,12 +2088,13 @@ fn admit_header_value(text: &str, base: usize) -> Result<(), DataError> {
                 "a field value holds the visible octets U+0020 through U+007E",
             ));
         }
-    }
-    if bytes.first() == Some(&b' ') {
-        return Err(header_malformed(
-            base,
-            "a field value begins with an octet that is not a space",
-        ));
+        if index + 1 > HEADER_VALUE_OCTET_BOUND {
+            return Err(header_bound(
+                index + 1,
+                HEADER_VALUE_OCTET_BOUND,
+                "the field value",
+            ));
+        }
     }
     if bytes.last() == Some(&b' ') {
         return Err(header_malformed(
@@ -2103,50 +2108,28 @@ fn admit_header_value(text: &str, base: usize) -> Result<(), DataError> {
 /// Parses one header field at one base offset
 /// (`GNT-43.4-header-field-and-field-list-model`).
 fn parse_header_field(text: &str, base: usize) -> Result<HeaderField, DataError> {
-    let bytes = text.as_bytes();
+    let colon = header_field_name(text, base)?;
+    header_field_value(text, base, colon)
+}
+
+/// Admits the name of one header field and returns the index of its `:`
+/// (`GNT-43.4-header-field-and-field-list-model`).
+fn header_field_name(text: &str, base: usize) -> Result<usize, DataError> {
     let Some(colon) = text.find(':') else {
-        let mut position = 0_usize;
-        let mut scalars = 0_usize;
-        while position < bytes.len()
-            && if position == 0 {
-                bytes[position].is_ascii_lowercase()
-            } else {
-                is_header_name_octet(bytes[position])
-            }
-        {
-            if bytes[position] & 0xC0 != 0x80 {
-                scalars += 1;
-                if scalars > HEADER_NAME_TOKEN_BOUND {
-                    return Err(header_bound(
-                        scalars,
-                        HEADER_NAME_TOKEN_BOUND,
-                        "the field name",
-                    ));
-                }
-            }
-            position += 1;
-        }
+        admit_header_name(text, base)?;
         return Err(header_malformed(
-            base + position,
+            base + text.len(),
             "a header field names its field with `:`",
         ));
     };
-    let mut position = 0_usize;
-    let mut scalars = 0_usize;
-    while position < colon {
-        if bytes[position] & 0xC0 != 0x80 {
-            scalars += 1;
-            if scalars > HEADER_NAME_TOKEN_BOUND {
-                return Err(header_bound(
-                    scalars,
-                    HEADER_NAME_TOKEN_BOUND,
-                    "the field name",
-                ));
-            }
-        }
-        position += 1;
-    }
     admit_header_name(&text[..colon], base)?;
+    Ok(colon)
+}
+
+/// Parses the separator and value of one header field whose name ends at `colon`
+/// (`GNT-43.4-header-field-and-field-list-model`).
+fn header_field_value(text: &str, base: usize, colon: usize) -> Result<HeaderField, DataError> {
+    let bytes = text.as_bytes();
     let index = colon + 1;
     let value = if bytes.get(index) == Some(&b' ') && index + 1 < bytes.len() {
         admit_header_value(&text[index + 1..], base + index + 1)?;
@@ -2163,4 +2146,163 @@ fn parse_header_field(text: &str, base: usize) -> Result<HeaderField, DataError>
         name: text[..colon].to_owned(),
         value,
     })
+}
+
+/// The declared body octet bound of `GNT-43.5-message-framing-model`.
+pub const FRAMING_BODY_OCTET_BOUND: u64 = 262_144;
+
+/// The one declared transfer-coding spelling of `GNT-43.5-message-framing-model`.
+pub const FRAMING_CHUNKED_CODING: &str = "chunked";
+
+/// One framing decision of `GNT-43.5-message-framing-model`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageFraming {
+    /// A declared body octet count.
+    Length {
+        /// The declared body octet count.
+        octets: u64,
+    },
+    /// The declared transfer-coding spelling.
+    Chunked,
+    /// No framing declaration; the frame is the connection's close.
+    UntilClose,
+}
+
+/// Decides the framing of one header field list (`GNT-43.5-message-framing-model`).
+///
+/// The decision is the declared examination of the list alone: the first declaration shape the
+/// clause admits decides the frame, and every other shape is refused under the declared
+/// malformed-input or expansion-limit refusal, naming the field's position within the list and,
+/// where the value itself departs, the index within that value.
+pub fn message_framing(headers: &HeaderFieldList) -> Result<MessageFraming, DataError> {
+    let mut length: Option<u64> = None;
+    let mut declared_length: Option<usize> = None;
+    let mut declared_coding: Option<usize> = None;
+    for (position, field) in headers.fields().iter().enumerate() {
+        match field.name() {
+            "content-length" => {
+                if declared_coding.is_some() {
+                    return Err(framing_field(
+                        position,
+                        "a list declares either `content-length` or `transfer-encoding`, not both",
+                    ));
+                }
+                let value = parse_framing_length(field.value(), position)?;
+                match declared_length {
+                    None => {
+                        declared_length = Some(position);
+                        length = Some(value);
+                    }
+                    Some(_) => {
+                        if Some(value) != length {
+                            return Err(framing_field(
+                                position,
+                                "repeated `content-length` fields agree",
+                            ));
+                        }
+                    }
+                }
+            }
+            "transfer-encoding" => {
+                if declared_length.is_some() {
+                    return Err(framing_field(
+                        position,
+                        "a list declares either `content-length` or `transfer-encoding`, not both",
+                    ));
+                }
+                if declared_coding.is_some() {
+                    return Err(framing_field(
+                        position,
+                        "a list declares one `transfer-encoding` field",
+                    ));
+                }
+                if field.value() != FRAMING_CHUNKED_CODING {
+                    return Err(framing_malformed(
+                        position,
+                        first_departure(field.value(), FRAMING_CHUNKED_CODING),
+                        "the declared transfer-coding spelling is `chunked`",
+                    ));
+                }
+                declared_coding = Some(position);
+            }
+            _ => {}
+        }
+    }
+    if let Some(octets) = length {
+        return Ok(MessageFraming::Length { octets });
+    }
+    if declared_coding.is_some() {
+        return Ok(MessageFraming::Chunked);
+    }
+    Ok(MessageFraming::UntilClose)
+}
+
+/// Publishes one framing refusal naming the field's position within the list
+/// (`GNT-43.5-message-framing-model`).
+fn framing_field(position: usize, detail: &'static str) -> DataError {
+    DataError::new(
+        DataDiagnosticCode::MalformedInput,
+        format!("field {position}: {detail}"),
+    )
+}
+
+/// Publishes one framing refusal naming the field's position and the index within its value
+/// (`GNT-43.5-message-framing-model`).
+fn framing_malformed(position: usize, index: usize, detail: &'static str) -> DataError {
+    DataError::new(
+        DataDiagnosticCode::MalformedInput,
+        format!("field {position} octet {index}: {detail}"),
+    )
+}
+
+/// Returns the index of the first octet at which one value departs from another
+/// (`GNT-43.5-message-framing-model`).
+fn first_departure(value: &str, expected: &str) -> usize {
+    let limit = value.len().min(expected.len());
+    let mut index = 0_usize;
+    while index < limit && value.as_bytes()[index] == expected.as_bytes()[index] {
+        index += 1;
+    }
+    index
+}
+
+/// Admits one declared `content-length` value (`GNT-43.5-message-framing-model`).
+fn parse_framing_length(value: &str, position: usize) -> Result<u64, DataError> {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return Err(framing_malformed(
+            position,
+            0,
+            "a `content-length` value holds the canonical decimal spelling of an integer",
+        ));
+    }
+    let mut integer = 0_u64;
+    for (index, byte) in bytes.iter().enumerate() {
+        if !byte.is_ascii_digit() {
+            return Err(framing_malformed(
+                position,
+                index,
+                "a `content-length` value holds the canonical decimal spelling of an integer",
+            ));
+        }
+        if index == 0 && *byte == b'0' && bytes.len() > 1 {
+            return Err(framing_malformed(
+                position,
+                1,
+                "a `content-length` value holds no leading zero",
+            ));
+        }
+        integer = integer
+            .saturating_mul(10)
+            .saturating_add(u64::from(*byte - b'0'));
+        if integer > FRAMING_BODY_OCTET_BOUND {
+            return Err(DataError::new(
+                DataDiagnosticCode::ExpansionLimit,
+                format!(
+                    "field {position}: the `content-length` value {integer} exceeds the declared bound {FRAMING_BODY_OCTET_BOUND}"
+                ),
+            ));
+        }
+    }
+    Ok(integer)
 }

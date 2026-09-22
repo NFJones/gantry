@@ -13,14 +13,15 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     DATA_CLAUSES, DATA_ITEMS, DECLARED_DATA_VERSION, DataDiagnosticCode, DataError, DataModule,
-    DataRefusalCategory, DataVersion, HEADER_FIELD_COUNT_BOUND, HEADER_NAME_TOKEN_BOUND,
-    HEADER_TEXT_OCTET_BOUND, HEADER_VALUE_OCTET_BOUND, HeaderField, HeaderFieldList,
-    MIME_PARAMETER_COUNT_BOUND, MIME_PARAMETER_NAME_TOKEN_BOUND, MIME_PARAMETER_VALUE_OCTET_BOUND,
-    MIME_SUBTYPE_TOKEN_BOUND, MIME_TEXT_OCTET_BOUND, MIME_TYPE_TOKEN_BOUND, MimeType, NameClass,
+    DataRefusalCategory, DataVersion, FRAMING_BODY_OCTET_BOUND, FRAMING_CHUNKED_CODING,
+    HEADER_FIELD_COUNT_BOUND, HEADER_NAME_TOKEN_BOUND, HEADER_TEXT_OCTET_BOUND,
+    HEADER_VALUE_OCTET_BOUND, HeaderField, HeaderFieldList, MIME_PARAMETER_COUNT_BOUND,
+    MIME_PARAMETER_NAME_TOKEN_BOUND, MIME_PARAMETER_VALUE_OCTET_BOUND, MIME_SUBTYPE_TOKEN_BOUND,
+    MIME_TEXT_OCTET_BOUND, MIME_TYPE_TOKEN_BOUND, MessageFraming, MimeType, NameClass,
     PackageFamily, StabilityTier, URL_FRAGMENT_OCTET_BOUND, URL_HOST_SCALAR_BOUND,
     URL_LABEL_SCALAR_BOUND, URL_QUERY_OCTET_BOUND, URL_SCHEME_SCALAR_BOUND,
     URL_SEGMENT_COUNT_BOUND, URL_SEGMENT_OCTET_BOUND, URL_TEXT_OCTET_BOUND, URL_ZONE_SCALAR_BOUND,
-    Url, UrlHost, canonical_data_hierarchy, canonical_pure_hierarchy,
+    Url, UrlHost, canonical_data_hierarchy, canonical_pure_hierarchy, message_framing,
 };
 
 fn workspace_root() -> PathBuf {
@@ -35,7 +36,7 @@ fn workspace_root() -> PathBuf {
 fn section_43_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(DATA_CLAUSES.len(), 5);
+    assert_eq!(DATA_CLAUSES.len(), 6);
     let mut prior = 0_usize;
     for clause in DATA_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -149,6 +150,25 @@ fn section_43_clauses_are_published() {
     ] {
         assert!(header.contains(term), "the header clause must name {term}");
     }
+    let framing_start = spec
+        .find(&format!("<a id=\"{}\"></a>", DATA_CLAUSES[5]))
+        .unwrap_or_else(|| panic!("the framing clause anchor is published"));
+    let framing = &spec[framing_start..];
+    for term in [
+        "`std.data::http`",
+        "`GNT-43.1-data-value-model-contract`",
+        "`FRAMING_BODY_OCTET_BOUND`",
+        "`content-length`",
+        "`transfer-encoding`",
+        "`chunked`",
+        "`data-malformed-input`",
+        "`data-expansion-limit`",
+    ] {
+        assert!(
+            framing.contains(term),
+            "the framing clause must name {term}"
+        );
+    }
 }
 
 #[test]
@@ -194,7 +214,12 @@ fn data_surface_declares_the_three_modules() {
         let expected: &[&str] = match module {
             DataModule::Url => &[DATA_CLAUSES[0], DATA_CLAUSES[1], DATA_CLAUSES[2]],
             DataModule::Mime => &[DATA_CLAUSES[0], DATA_CLAUSES[1], DATA_CLAUSES[3]],
-            DataModule::Http => &[DATA_CLAUSES[0], DATA_CLAUSES[1], DATA_CLAUSES[4]],
+            DataModule::Http => &[
+                DATA_CLAUSES[0],
+                DATA_CLAUSES[1],
+                DATA_CLAUSES[4],
+                DATA_CLAUSES[5],
+            ],
         };
         assert_eq!(
             row.clauses, expected,
@@ -1272,7 +1297,7 @@ fn header_parses_and_displays_the_canonical_form() {
 
 #[test]
 fn header_refuses_noncanonical_spellings_and_indexes_the_departure() {
-    let cases: [(&str, usize); 12] = [
+    let cases: [(&str, usize); 13] = [
         ("Content-Type: text/plain", 0),
         ("content-type:text/plain", 13),
         ("content-type:  text/plain", 14),
@@ -1285,6 +1310,7 @@ fn header_refuses_noncanonical_spellings_and_indexes_the_departure() {
         ("\na: 1", 0),
         ("a: x\ty", 4),
         ("a: é", 3),
+        ("b: x\na: \t", 5),
     ];
     for (text, index) in cases {
         let error = header_list_refusal(HeaderFieldList::parse(text));
@@ -1512,4 +1538,203 @@ fn header_bounds_are_declared_and_enforced() {
         "{}",
         error.detail()
     );
+    let mixed_name = format!("A{}: x", "a".repeat(HEADER_NAME_TOKEN_BOUND));
+    let error = header_field_refusal(HeaderField::parse(&mixed_name));
+    assert_eq!(
+        error.code(),
+        DataDiagnosticCode::MalformedInput,
+        "the malformed first octet precedes the name bound: {}",
+        error.detail()
+    );
+    assert!(
+        error.detail().starts_with("octet 0: "),
+        "{}",
+        error.detail()
+    );
+    let mixed_value = format!("a: \t{}", "b".repeat(HEADER_VALUE_OCTET_BOUND));
+    let error = header_field_refusal(HeaderField::parse(&mixed_value));
+    assert_eq!(
+        error.code(),
+        DataDiagnosticCode::MalformedInput,
+        "the malformed octet precedes the value bound: {}",
+        error.detail()
+    );
+    assert!(
+        error.detail().starts_with("octet 3: "),
+        "{}",
+        error.detail()
+    );
+}
+
+fn framing_refusal(result: Result<MessageFraming, DataError>) -> DataError {
+    match result {
+        Ok(framing) => panic!("the framing must be refused: {framing:?}"),
+        Err(error) => error,
+    }
+}
+
+fn header_field_of(name: &str, value: &str) -> HeaderField {
+    match HeaderField::new(name, value) {
+        Ok(field) => field,
+        Err(error) => panic!("the field must be admitted: {}", error.detail()),
+    }
+}
+
+fn header_list_of(fields: Vec<HeaderField>) -> HeaderFieldList {
+    match HeaderFieldList::new(fields) {
+        Ok(list) => list,
+        Err(error) => panic!("the list must be admitted: {}", error.detail()),
+    }
+}
+
+#[test]
+fn framing_decides_from_the_declared_fields() {
+    assert_eq!(
+        message_framing(&header_list_of(Vec::new())),
+        Ok(MessageFraming::UntilClose)
+    );
+    assert_eq!(
+        message_framing(&header_list_of(vec![header_field_of("x-unrelated", "y")])),
+        Ok(MessageFraming::UntilClose)
+    );
+    assert_eq!(
+        message_framing(&header_list_of(vec![header_field_of(
+            "transfer-encoding",
+            FRAMING_CHUNKED_CODING,
+        )])),
+        Ok(MessageFraming::Chunked)
+    );
+    assert_eq!(
+        message_framing(&header_list_of(vec![header_field_of(
+            "content-length",
+            "0"
+        )])),
+        Ok(MessageFraming::Length { octets: 0 })
+    );
+    assert_eq!(
+        message_framing(&header_list_of(vec![header_field_of(
+            "content-length",
+            "12"
+        )])),
+        Ok(MessageFraming::Length { octets: 12 })
+    );
+    assert_eq!(
+        message_framing(&header_list_of(vec![
+            header_field_of("content-length", "5"),
+            header_field_of("content-length", "5"),
+        ])),
+        Ok(MessageFraming::Length { octets: 5 })
+    );
+    let at_bound = FRAMING_BODY_OCTET_BOUND.to_string();
+    assert_eq!(
+        message_framing(&header_list_of(vec![header_field_of(
+            "content-length",
+            &at_bound,
+        )])),
+        Ok(MessageFraming::Length {
+            octets: FRAMING_BODY_OCTET_BOUND
+        })
+    );
+    assert_eq!(
+        message_framing(&header_list_of(vec![
+            header_field_of("content-length", "7"),
+            header_field_of("x-unrelated", "y"),
+        ])),
+        Ok(MessageFraming::Length { octets: 7 })
+    );
+}
+
+#[test]
+fn framing_refuses_smuggling_shapes_with_exact_positions() {
+    let both = header_list_of(vec![
+        header_field_of("content-length", "5"),
+        header_field_of("transfer-encoding", FRAMING_CHUNKED_CODING),
+    ]);
+    let error = framing_refusal(message_framing(&both));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("field 1: "),
+        "{}",
+        error.detail()
+    );
+    let differing = header_list_of(vec![
+        header_field_of("content-length", "5"),
+        header_field_of("content-length", "6"),
+    ]);
+    let error = framing_refusal(message_framing(&differing));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("field 1: "),
+        "{}",
+        error.detail()
+    );
+    let unknown = header_list_of(vec![header_field_of("transfer-encoding", "gzip")]);
+    let error = framing_refusal(message_framing(&unknown));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("field 0 octet 0: "),
+        "{}",
+        error.detail()
+    );
+    let trailing = header_list_of(vec![header_field_of("transfer-encoding", "chunkedd")]);
+    let error = framing_refusal(message_framing(&trailing));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("field 0 octet 7: "),
+        "{}",
+        error.detail()
+    );
+    let repeated = header_list_of(vec![
+        header_field_of("transfer-encoding", FRAMING_CHUNKED_CODING),
+        header_field_of("transfer-encoding", FRAMING_CHUNKED_CODING),
+    ]);
+    let error = framing_refusal(message_framing(&repeated));
+    assert_eq!(error.code(), DataDiagnosticCode::MalformedInput);
+    assert!(
+        error.detail().starts_with("field 1: "),
+        "{}",
+        error.detail()
+    );
+}
+
+#[test]
+fn framing_refuses_noncanonical_content_length_and_its_bound() {
+    for (value, prefix) in [
+        ("", "field 0 octet 0: "),
+        ("05", "field 0 octet 1: "),
+        ("+5", "field 0 octet 0: "),
+        ("5x", "field 0 octet 1: "),
+    ] {
+        let error = framing_refusal(message_framing(&header_list_of(vec![header_field_of(
+            "content-length",
+            value,
+        )])));
+        assert_eq!(error.code(), DataDiagnosticCode::MalformedInput, "{value}");
+        assert!(error.detail().starts_with(prefix), "{}", error.detail());
+    }
+    let over = (FRAMING_BODY_OCTET_BOUND + 1).to_string();
+    let error = framing_refusal(message_framing(&header_list_of(vec![header_field_of(
+        "content-length",
+        &over,
+    )])));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(
+        error.detail().starts_with("field 0: "),
+        "{}",
+        error.detail()
+    );
+    assert!(error.detail().contains(&over), "{}", error.detail());
+    assert!(
+        error
+            .detail()
+            .contains(&FRAMING_BODY_OCTET_BOUND.to_string()),
+        "{}",
+        error.detail()
+    );
+    let error = framing_refusal(message_framing(&header_list_of(vec![header_field_of(
+        "content-length",
+        "9999999",
+    )])));
+    assert_eq!(error.code(), DataDiagnosticCode::ExpansionLimit);
+    assert!(error.detail().contains("999999"), "{}", error.detail());
 }

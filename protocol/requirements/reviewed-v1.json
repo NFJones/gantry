@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "fed274fd8cc7c941e3b5c848058fa03ad67b05422dbad9f0096e0e629b02a6a5",
+  "specification_sha256": "fce0d5e1e4c69808ab82f1106f34e46a1fb9b9b8c5a91e88cf69f24a384e7652",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15759,
+      "end_line": 15763,
       "rationale": null
     }
   ],
@@ -42822,6 +42822,47 @@
                 "crates/gantry-conformance/tests/data_foundation.rs#header_refuses_noncanonical_spellings_and_indexes_the_departure",
                 "crates/gantry-conformance/tests/data_foundation.rs#header_construction_admits_only_canonical_components",
                 "crates/gantry-conformance/tests/data_foundation.rs#header_bounds_are_declared_and_enforced"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-43.5-message-framing-model",
+      "span_start_line": 15760,
+      "span_end_line": 15763,
+      "anchor_line": 15761,
+      "body_start_line": 15762,
+      "body_end_line": 15763,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15762,
+          "end_line": 15763,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/data_foundation.rs#framing_decides_from_the_declared_fields",
+                "crates/gantry-conformance/tests/data_foundation.rs#framing_refuses_smuggling_shapes_with_exact_positions",
+                "crates/gantry-conformance/tests/data_foundation.rs#framing_refuses_noncanonical_content_length_and_its_bound"
               ],
               "rationale": null
             }
