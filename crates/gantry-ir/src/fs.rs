@@ -453,12 +453,15 @@ fn validate_root(root: &str) -> Result<(), FsError> {
     Ok(())
 }
 
-/// Validates declared segments, offsetting reported positions by `base`.
+/// Validates declared segments of `GNT-47.2-filesystem-path-values`.
+///
+/// A refused segment names its position within the declared value, offset by `base`; a refusal the
+/// declared count produced names zero rather than a segment position, whatever the offset.
 fn validate_segments(segments: &[&str], base: u32) -> Result<(), FsError> {
     if segments.is_empty() {
         return Err(FsError::PathInvalid {
             detail: format!("the declared segment count 0 is outside 1..={FS_PATH_SEGMENT_BOUND}"),
-            position: base,
+            position: 0,
         });
     }
     let total = base as usize + segments.len();
@@ -467,7 +470,7 @@ fn validate_segments(segments: &[&str], base: u32) -> Result<(), FsError> {
             detail: format!(
                 "the declared segment count {total} is outside 1..={FS_PATH_SEGMENT_BOUND}"
             ),
-            position: base,
+            position: 0,
         });
     }
     for (offset, segment) in segments.iter().enumerate() {

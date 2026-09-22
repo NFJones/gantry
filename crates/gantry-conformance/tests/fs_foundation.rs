@@ -382,6 +382,11 @@ fn fs_path_values_are_bounded_and_escape_free() {
         "the empty-sequence refusal names the count and its bound: {}",
         error.detail()
     );
+    assert_eq!(
+        error.position(),
+        0,
+        "a refusal the declared count produced names zero: {error:?}"
+    );
 
     // The declared segment bound is enforced rather than truncated.
     let admitted = vec!["segment"; FS_PATH_SEGMENT_BOUND];
@@ -396,6 +401,53 @@ fn fs_path_values_are_bounded_and_escape_free() {
         error.detail().contains("257"),
         "the refusal names the declared count: {}",
         error.detail()
+    );
+    assert_eq!(
+        error.position(),
+        0,
+        "a refusal the declared count produced names zero: {error:?}"
+    );
+
+    // A count refusal names zero whatever value it was produced against, while a segment refusal
+    // still names the position of the refused segment within the declared value.
+    let joined = FsPath::rooted("workspace", &["a"])
+        .unwrap_or_else(|error| panic!("one declared segment is admitted: {error:?}"));
+    let error = joined
+        .join(&[])
+        .err()
+        .unwrap_or_else(|| panic!("an empty added sequence must be refused"));
+    assert_eq!(error.code(), FsDiagnosticCode::PathInvalid);
+    assert_eq!(
+        error.position(),
+        0,
+        "a count refusal names zero on a join too: {error:?}"
+    );
+    let error = joined
+        .join(&["b/c"])
+        .err()
+        .unwrap_or_else(|| panic!("a separator segment must be refused"));
+    assert_eq!(error.code(), FsDiagnosticCode::PathInvalid);
+    assert_eq!(
+        error.position(),
+        1,
+        "a refused segment names its own position in the joined value: {error:?}"
+    );
+    let full = FsPath::rooted("workspace", &vec!["segment"; FS_PATH_SEGMENT_BOUND])
+        .unwrap_or_else(|error| panic!("the declared bound is admitted: {error:?}"));
+    let error = full
+        .join(&["segment"])
+        .err()
+        .unwrap_or_else(|| panic!("a join beyond the bound must be refused"));
+    assert_eq!(error.code(), FsDiagnosticCode::PathInvalid);
+    assert!(
+        error.detail().contains("257"),
+        "the join refusal names the declared count: {}",
+        error.detail()
+    );
+    assert_eq!(
+        error.position(),
+        0,
+        "a join count refusal names zero: {error:?}"
     );
 
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
