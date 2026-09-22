@@ -4,6 +4,9 @@
 //! instants only. They neither create runtime resources nor claim evaluator, journal,
 //! checkpoint, or host integration.
 
+use std::fs;
+use std::path::Path;
+
 use gantry::ir::generated::RecoveryClass;
 use gantry::ir::{
     CanonicalPath, Charge, EmergencyReleaseWitness, FailureClass, GracePolicy, LivenessRoot,
@@ -510,4 +513,89 @@ fn terminal_transition_matrix_refuses_delete_retire_and_charge() {
             state: ResourceLifetimeState::Deleted,
         }
     );
+}
+
+#[test]
+fn resource_model_note_is_current() {
+    let note = read_note();
+    assert_eq!(
+        sorted_members(section_members(&note, "## Clauses")),
+        sorted_members(
+            RESOURCE_CLAUSES
+                .iter()
+                .map(|clause| (*clause).to_owned())
+                .collect()
+        )
+    );
+    for (heading, expected) in [
+        (
+            "## Liveness roots",
+            LivenessRoot::ALL
+                .map(|root| root.wire_name().to_owned())
+                .to_vec(),
+        ),
+        (
+            "## Logical measures",
+            LogicalMeasure::ALL
+                .map(|measure| measure.wire_name().to_owned())
+                .to_vec(),
+        ),
+        (
+            "## Quota families",
+            QuotaFamily::ALL
+                .map(|family| family.wire_name().to_owned())
+                .to_vec(),
+        ),
+        (
+            "## Quota owners",
+            QuotaOwner::ALL
+                .map(|owner| owner.wire_name().to_owned())
+                .to_vec(),
+        ),
+        (
+            "## Resource actions",
+            ResourceAction::ALL
+                .map(|action| action.wire_name().to_owned())
+                .to_vec(),
+        ),
+    ] {
+        assert_eq!(
+            sorted_members(section_members(&note, heading)),
+            sorted_members(expected),
+            "{heading} names exactly the live members"
+        );
+    }
+}
+
+/// Returns the backticked members one note section declares as its bullets, with multiplicity.
+fn section_members(note: &str, heading: &str) -> Vec<String> {
+    let mut members = Vec::new();
+    let mut in_section = false;
+    for line in note.lines() {
+        if line.starts_with("## ") {
+            in_section = line.trim_end() == heading;
+            continue;
+        }
+        if !in_section || !line.starts_with("- ") {
+            continue;
+        }
+        for (index, part) in line.split('`').enumerate() {
+            if index % 2 == 1 && !part.is_empty() {
+                members.push(part.to_owned());
+            }
+        }
+    }
+    members
+}
+
+/// Returns the collected members in canonical order, preserving any duplication.
+fn sorted_members(mut members: Vec<String>) -> Vec<String> {
+    members.sort_unstable();
+    members
+}
+
+/// Returns the committed Section 28 resource-model note.
+fn read_note() -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/resource-model.md");
+    fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
