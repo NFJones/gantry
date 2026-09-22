@@ -306,17 +306,19 @@ pub use signature::{
 // codec categories of `GNT-29.9-codec-contract`, the canonical hex, base64, binary, dynamic JSON,
 // and compression codecs of `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
 // `GNT-42.4-binary-endian-readers-and-writers`, `GNT-42.5-bounded-dynamic-json`, and
-// `GNT-42.6-compression-codec`, and the separation between application codecs and the sealed
-// canonical boundary and durable recovery projections.
+// `GNT-42.6-compression-codec`, the closed non-claim vocabulary of `GNT-42.7-codec-non-claims`,
+// and the separation between application codecs and the sealed canonical boundary and durable
+// recovery projections.
 pub use codec::{
     BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, BINARY_VALUE_OCTET_BOUND, CODEC_CLAUSES,
-    CODEC_ITEMS, COMPRESSION_ALGORITHM_VERSION, COMPRESSION_ENCODED_OCTET_BOUND,
+    CODEC_ITEMS, CODEC_NON_CLAIMS, COMPRESSION_ALGORITHM_VERSION, COMPRESSION_ENCODED_OCTET_BOUND,
     COMPRESSION_VALUE_OCTET_BOUND, CodecCategory, CodecDiagnosticCode, CodecError, CodecItemRow,
-    CodecKind, CodecVersion, DECLARED_CODEC_VERSION, Endian, HEX_TEXT_OCTET_BOUND,
-    HEX_VALUE_OCTET_BOUND, JSON_DEPTH_BOUND, JSON_NODE_BOUND, JSON_TEXT_OCTET_BOUND, JsonValue,
-    base64_decode, base64_encode, canonical_codec_hierarchy, compression_decode,
-    compression_encode, declare_codec_surface, hex_decode, hex_encode, json_decode, json_encode,
-    read_u16, read_u32, read_u64, write_u16, write_u32, write_u64,
+    CodecKind, CodecNonClaim, CodecNonClaimAssertion, CodecVersion, DECLARED_CODEC_VERSION, Endian,
+    HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, JSON_DEPTH_BOUND, JSON_NODE_BOUND,
+    JSON_TEXT_OCTET_BOUND, JsonValue, base64_decode, base64_encode, canonical_codec_hierarchy,
+    check_codec_non_claims, compression_decode, compression_encode, declare_codec_surface,
+    hex_decode, hex_encode, json_decode, json_encode, read_u16, read_u32, read_u64, write_u16,
+    write_u32, write_u64,
 };
 // The Section 39 collection foundation: the key contract and canonical order, the recognised
 // collection type identities, the `Map`, `Set`, and `Range` value model with its accounting,

@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "943957090e15bb12beaec38098f99e47afddc01256131f16c97fb3ea2bda6a24",
+  "specification_sha256": "af5f3aa6b9e1c6bd1bdb9f30649e32a7a40da636fcf282a2a424662355535b6c",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15733,
+      "end_line": 15737,
       "rationale": null
     }
   ],
@@ -42576,6 +42576,46 @@
               "evidence": [
                 "crates/gantry-conformance/tests/codec_foundation.rs#compression_codec_round_trips_the_declared_stored_form",
                 "crates/gantry-conformance/tests/codec_foundation.rs#compression_codec_refuses_undeclared_versions_and_expansion_bombs"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-42.7-codec-non-claims",
+      "span_start_line": 15734,
+      "span_end_line": 15737,
+      "anchor_line": 15735,
+      "body_start_line": 15736,
+      "body_end_line": 15737,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15736,
+          "end_line": 15737,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/codec_foundation.rs#codec_non_claims_are_closed_and_never_presented_as_guarantees",
+                "crates/gantry-conformance/tests/codec_foundation.rs#codec_family_note_is_current"
               ],
               "rationale": null
             }

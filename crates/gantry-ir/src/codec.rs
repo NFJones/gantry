@@ -1,11 +1,13 @@
 //! The codec foundation of `GNT-42.0-codec-foundation-scope`,
 //! `GNT-42.1-versioned-codec-contract`, `GNT-42.2-hex-codec`, `GNT-42.3-base64-codec`,
-//! `GNT-42.4-binary-endian-readers-and-writers`, `GNT-42.5-bounded-dynamic-json`, and
-//! `GNT-42.6-compression-codec`: the declared `std.codec` family with its five modules, the
+//! `GNT-42.4-binary-endian-readers-and-writers`, `GNT-42.5-bounded-dynamic-json`,
+//! `GNT-42.6-compression-codec`, and `GNT-42.7-codec-non-claims`: the declared `std.codec` family
+//! with its five modules, the
 //! versioned codec identity and its exact admission rule, the frozen refusal vocabulary with its
 //! codec categories of `GNT-29.9-codec-contract`, the canonical hex, base64, and binary codecs,
 //! the bounded dynamic JSON codec, the declared stored compression codec, and the separation
-//! between application codecs and the sealed canonical boundary and durable recovery projections.
+//! between application codecs and the sealed canonical boundary and durable recovery projections,
+//! together with the closed non-claim vocabulary of `GNT-42.7-codec-non-claims`.
 //!
 //! The model is pure: it consumes no host codec library, host encoding facility, ambient
 //! registry, platform behavior, timing, or global mutable state, and the only concrete codec
@@ -19,7 +21,7 @@ use crate::stdlib::{
 };
 
 /// The declared clauses of Section 42, in specification order.
-pub const CODEC_CLAUSES: [&str; 7] = [
+pub const CODEC_CLAUSES: [&str; 8] = [
     "GNT-42.0-codec-foundation-scope",
     "GNT-42.1-versioned-codec-contract",
     "GNT-42.2-hex-codec",
@@ -27,6 +29,7 @@ pub const CODEC_CLAUSES: [&str; 7] = [
     "GNT-42.4-binary-endian-readers-and-writers",
     "GNT-42.5-bounded-dynamic-json",
     "GNT-42.6-compression-codec",
+    "GNT-42.7-codec-non-claims",
 ];
 
 /// The one declared version of every codec in this revision
@@ -241,13 +244,16 @@ pub enum CodecDiagnosticCode {
     MalformedInput,
     /// An operation beyond a codec's declared expansion bound.
     ExpansionLimit,
+    /// A non-claim of Section 42 presented as a guarantee.
+    NonClaimAsGuarantee,
 }
 
 impl CodecDiagnosticCode {
     /// The closed declared set, in canonical spelling order.
-    pub const ALL: [CodecDiagnosticCode; 3] = [
+    pub const ALL: [CodecDiagnosticCode; 4] = [
         Self::ExpansionLimit,
         Self::MalformedInput,
+        Self::NonClaimAsGuarantee,
         Self::UnsupportedVersion,
     ];
 
@@ -258,6 +264,7 @@ impl CodecDiagnosticCode {
             Self::UnsupportedVersion => "codec-unsupported-version",
             Self::MalformedInput => "codec-malformed-input",
             Self::ExpansionLimit => "codec-expansion-limit",
+            Self::NonClaimAsGuarantee => "codec-non-claim-as-guarantee",
         }
     }
 
@@ -274,14 +281,19 @@ impl CodecDiagnosticCode {
             Self::ExpansionLimit => {
                 "An operation beyond a codec's declared expansion bound is refused."
             }
+            Self::NonClaimAsGuarantee => "A non-claim of Section 42 is presented as a guarantee.",
         }
     }
 
     /// Returns the one owning clause of this refusal
-    /// (`GNT-42.1-versioned-codec-contract`).
+    /// (`GNT-42.1-versioned-codec-contract`, or `GNT-42.7-codec-non-claims` for the non-claim
+    /// refusal).
     #[must_use]
     pub const fn requirement(self) -> &'static str {
-        "GNT-42.1-versioned-codec-contract"
+        match self {
+            Self::NonClaimAsGuarantee => "GNT-42.7-codec-non-claims",
+            _ => "GNT-42.1-versioned-codec-contract",
+        }
     }
 
     /// Returns the one codec category this refusal classifies under
@@ -292,6 +304,7 @@ impl CodecDiagnosticCode {
             Self::UnsupportedVersion => CodecCategory::Decode,
             Self::MalformedInput => CodecCategory::MalformedInput,
             Self::ExpansionLimit => CodecCategory::ResourceLimit,
+            Self::NonClaimAsGuarantee => CodecCategory::Unclassified,
         }
     }
 }
@@ -1593,5 +1606,163 @@ fn compression_malformed_refusal(index: usize, reason: &str) -> CodecError {
         format!(
             "the presented compression stream departs from the declared stored form at index {index}: {reason}"
         ),
+    )
+}
+
+/// One declared non-claim of Section 42 (`GNT-42.7-codec-non-claims`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CodecNonClaim {
+    /// No codec interprets, substitutes for, or extends the sealed canonical boundary encoding.
+    BoundaryEncoding,
+    /// Codec input and output are never durable state and never carry durable identity.
+    DurableEligibility,
+    /// No codec publishes an `ExternalValue`, protected-data release, or durable capability.
+    ExternalEligibility,
+    /// No host facility is a semantic authority for any operation of the section.
+    HostLibraryAuthority,
+    /// No codec is applied implicitly; every operation is invoked explicitly.
+    ImplicitApplication,
+    /// No recovery step invokes a codec, and no refusal is a recovery cut.
+    RecoveryInvocation,
+    /// Every operation is bounded by the declared bounds of its codec's clause.
+    UnboundedExpansion,
+    /// No codec negotiates, upgrades, downgrades, or falls back to another version.
+    VersionNegotiation,
+}
+
+impl CodecNonClaim {
+    /// The closed declared set, in canonical wire-name order.
+    pub const ALL: [CodecNonClaim; 8] = [
+        Self::BoundaryEncoding,
+        Self::DurableEligibility,
+        Self::ExternalEligibility,
+        Self::HostLibraryAuthority,
+        Self::ImplicitApplication,
+        Self::RecoveryInvocation,
+        Self::UnboundedExpansion,
+        Self::VersionNegotiation,
+    ];
+
+    /// Returns the canonical wire name.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::BoundaryEncoding => "boundary-encoding",
+            Self::DurableEligibility => "durable-eligibility",
+            Self::ExternalEligibility => "external-eligibility",
+            Self::HostLibraryAuthority => "host-library-authority",
+            Self::ImplicitApplication => "implicit-application",
+            Self::RecoveryInvocation => "recovery-invocation",
+            Self::UnboundedExpansion => "unbounded-expansion",
+            Self::VersionNegotiation => "version-negotiation",
+        }
+    }
+
+    /// Returns the published statement of this non-claim.
+    #[must_use]
+    pub const fn statement(self) -> &'static str {
+        match self {
+            Self::BoundaryEncoding => {
+                "No codec of Section 42 interprets, substitutes for, extends, or is applied to the sealed canonical boundary encoding of Section 5."
+            }
+            Self::DurableEligibility => {
+                "Codec input and output are never durable state, never carry a durable identity, and never make a value or an operation eligible for recovery."
+            }
+            Self::ExternalEligibility => {
+                "A codec of Section 42 never publishes an ExternalValue capability, a protected-data release, or a durable capability."
+            }
+            Self::HostLibraryAuthority => {
+                "No host codec library, host encoding facility, platform compressor, ambient registry, locale, or platform behavior is a semantic authority for any operation of Section 42."
+            }
+            Self::ImplicitApplication => {
+                "No codec of Section 42 is applied implicitly to any value, boundary encoding, journal artifact, or recovery projection; every codec operation is invoked explicitly."
+            }
+            Self::RecoveryInvocation => {
+                "No step of the recovery projection invokes a codec of Section 42, and no refusal of Section 42 is a recovery cut."
+            }
+            Self::UnboundedExpansion => {
+                "Every operation of Section 42 is bounded by the declared bounds of its codec's clause, and no operation expands without a declared bound or defers its bound to a host facility."
+            }
+            Self::VersionNegotiation => {
+                "No codec of Section 42 negotiates, upgrades, downgrades, or falls back to a version other than the declared version identity."
+            }
+        }
+    }
+
+    /// Decodes one canonical wire name; every other spelling is `None`.
+    #[must_use]
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|claim| claim.wire_name() == name)
+    }
+}
+
+/// The declared non-claims of Section 42, in canonical wire-name order
+/// (`GNT-42.7-codec-non-claims`), aligned with `CodecNonClaim::ALL`.
+pub const CODEC_NON_CLAIMS: [&str; 8] = [
+    "No codec of Section 42 interprets, substitutes for, extends, or is applied to the sealed canonical boundary encoding of Section 5.",
+    "Codec input and output are never durable state, never carry a durable identity, and never make a value or an operation eligible for recovery.",
+    "A codec of Section 42 never publishes an ExternalValue capability, a protected-data release, or a durable capability.",
+    "No host codec library, host encoding facility, platform compressor, ambient registry, locale, or platform behavior is a semantic authority for any operation of Section 42.",
+    "No codec of Section 42 is applied implicitly to any value, boundary encoding, journal artifact, or recovery projection; every codec operation is invoked explicitly.",
+    "No step of the recovery projection invokes a codec of Section 42, and no refusal of Section 42 is a recovery cut.",
+    "Every operation of Section 42 is bounded by the declared bounds of its codec's clause, and no operation expands without a declared bound or defers its bound to a host facility.",
+    "No codec of Section 42 negotiates, upgrades, downgrades, or falls back to a version other than the declared version identity.",
+];
+
+/// One declared non-claim assertion of `GNT-42.7-codec-non-claims`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CodecNonClaimAssertion {
+    /// The declared non-claim this assertion speaks about.
+    pub name: CodecNonClaim,
+    /// Whether the assertion presents the non-claim as a guarantee.
+    pub claims_as_guarantee: bool,
+}
+
+impl CodecNonClaimAssertion {
+    /// Publishes one declared assertion.
+    #[must_use]
+    pub const fn new(name: CodecNonClaim, claims_as_guarantee: bool) -> Self {
+        Self {
+            name,
+            claims_as_guarantee,
+        }
+    }
+}
+
+/// Refuses one assertion set of `GNT-42.7-codec-non-claims`.
+///
+/// An assertion that presents a declared non-claim as a guarantee is refused under
+/// `codec-non-claim-as-guarantee`, naming the presented non-claim; an assertion set that omits a
+/// declared non-claim is refused under the same diagnostic, naming the first omitted non-claim in
+/// canonical order.
+pub fn check_codec_non_claims(assertions: &[CodecNonClaimAssertion]) -> Result<(), CodecError> {
+    if let Some(assertion) = assertions
+        .iter()
+        .find(|assertion| assertion.claims_as_guarantee)
+    {
+        return Err(codec_non_claim_refusal(
+            assertion.name,
+            "presented as a guarantee",
+        ));
+    }
+    if let Some(missing) = CodecNonClaim::ALL
+        .into_iter()
+        .find(|claim| !assertions.iter().any(|assertion| assertion.name == *claim))
+    {
+        return Err(codec_non_claim_refusal(
+            missing,
+            "omitted from the assertion set",
+        ));
+    }
+    Ok(())
+}
+
+/// Publishes the refusal of one non-claim assertion departure.
+fn codec_non_claim_refusal(claim: CodecNonClaim, reason: &str) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::NonClaimAsGuarantee,
+        format!("the non-claim `{}` is {reason}", claim.wire_name()),
     )
 }

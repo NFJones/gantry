@@ -18,13 +18,14 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     BASE64_TEXT_OCTET_BOUND, BASE64_VALUE_OCTET_BOUND, BINARY_VALUE_OCTET_BOUND, CODEC_CLAUSES,
-    CODEC_ITEMS, COMPRESSION_ALGORITHM_VERSION, COMPRESSION_ENCODED_OCTET_BOUND,
+    CODEC_ITEMS, CODEC_NON_CLAIMS, COMPRESSION_ALGORITHM_VERSION, COMPRESSION_ENCODED_OCTET_BOUND,
     COMPRESSION_VALUE_OCTET_BOUND, CodecCategory, CodecDiagnosticCode, CodecError, CodecKind,
-    CodecVersion, DECLARED_CODEC_VERSION, Endian, HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND,
-    JSON_DEPTH_BOUND, JSON_NODE_BOUND, JSON_TEXT_OCTET_BOUND, JsonValue, NameClass, PackageFamily,
-    StabilityTier, base64_decode, base64_encode, canonical_codec_hierarchy,
-    canonical_pure_hierarchy, compression_decode, compression_encode, hex_decode, hex_encode,
-    json_decode, json_encode, read_u16, read_u32, read_u64, write_u16, write_u32, write_u64,
+    CodecNonClaim, CodecNonClaimAssertion, CodecVersion, DECLARED_CODEC_VERSION, Endian,
+    HEX_TEXT_OCTET_BOUND, HEX_VALUE_OCTET_BOUND, JSON_DEPTH_BOUND, JSON_NODE_BOUND,
+    JSON_TEXT_OCTET_BOUND, JsonValue, NameClass, PackageFamily, StabilityTier, base64_decode,
+    base64_encode, canonical_codec_hierarchy, canonical_pure_hierarchy, check_codec_non_claims,
+    compression_decode, compression_encode, hex_decode, hex_encode, json_decode, json_encode,
+    read_u16, read_u32, read_u64, write_u16, write_u32, write_u64,
 };
 
 fn workspace_root() -> PathBuf {
@@ -39,7 +40,7 @@ fn workspace_root() -> PathBuf {
 fn section_42_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(CODEC_CLAUSES.len(), 7);
+    assert_eq!(CODEC_CLAUSES.len(), 8);
     let mut prior = 0_usize;
     for clause in CODEC_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -253,7 +254,11 @@ fn refusals_are_frozen_and_classified() {
             !code.meaning().is_empty(),
             "every refusal publishes a meaning"
         );
-        assert_eq!(code.requirement(), CODEC_CLAUSES[1]);
+        let expected_owner = match code {
+            CodecDiagnosticCode::NonClaimAsGuarantee => CODEC_CLAUSES[7],
+            _ => CODEC_CLAUSES[1],
+        };
+        assert_eq!(code.requirement(), expected_owner);
         assert!(CODEC_CLAUSES.contains(&code.requirement()));
     }
     assert_eq!(spellings.len(), CodecDiagnosticCode::ALL.len());
@@ -268,6 +273,10 @@ fn refusals_are_frozen_and_classified() {
     assert_eq!(
         CodecDiagnosticCode::ExpansionLimit.category(),
         CodecCategory::ResourceLimit
+    );
+    assert_eq!(
+        CodecDiagnosticCode::NonClaimAsGuarantee.category(),
+        CodecCategory::Unclassified
     );
     let error = CodecError::new(CodecDiagnosticCode::MalformedInput, "octet 3");
     assert_eq!(error.code(), CodecDiagnosticCode::MalformedInput);
@@ -981,4 +990,84 @@ fn compression_codec_refuses_undeclared_versions_and_expansion_bombs() {
     assert_eq!(error.code(), CodecDiagnosticCode::ExpansionLimit);
     assert_eq!(error.requirement(), CODEC_CLAUSES[1]);
     assert_eq!(error.category(), CodecCategory::ResourceLimit);
+}
+
+#[test]
+fn codec_non_claims_are_closed_and_never_presented_as_guarantees() {
+    assert_eq!(CodecNonClaim::ALL.len(), CODEC_NON_CLAIMS.len());
+    assert_eq!(
+        CodecDiagnosticCode::NonClaimAsGuarantee.requirement(),
+        CODEC_CLAUSES[7]
+    );
+    let mut wire_names = BTreeSet::new();
+    for (position, claim) in CodecNonClaim::ALL.into_iter().enumerate() {
+        assert_eq!(claim.statement(), CODEC_NON_CLAIMS[position]);
+        assert!(!claim.statement().is_empty());
+        assert!(wire_names.insert(claim.wire_name()));
+        assert_eq!(
+            CodecNonClaim::from_wire_name(claim.wire_name()),
+            Some(claim)
+        );
+    }
+    assert_eq!(wire_names.len(), CodecNonClaim::ALL.len());
+    assert_eq!(CodecNonClaim::from_wire_name("not-a-non-claim"), None);
+    let conforming: Vec<CodecNonClaimAssertion> = CodecNonClaim::ALL
+        .into_iter()
+        .map(|name| CodecNonClaimAssertion::new(name, false))
+        .collect();
+    assert_eq!(check_codec_non_claims(&conforming), Ok(()));
+    let mut overclaim = conforming.clone();
+    overclaim[2].claims_as_guarantee = true;
+    let error = match check_codec_non_claims(&overclaim) {
+        Ok(()) => panic!("an overclaiming assertion must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::NonClaimAsGuarantee);
+    assert_eq!(error.requirement(), CODEC_CLAUSES[7]);
+    assert_eq!(error.category(), CodecCategory::Unclassified);
+    assert!(
+        error.detail().contains(CodecNonClaim::ALL[2].wire_name()),
+        "the refusal names the presented non-claim: {}",
+        error.detail()
+    );
+    let mut omitted = conforming;
+    omitted.retain(|assertion| assertion.name != CodecNonClaim::HostLibraryAuthority);
+    let error = match check_codec_non_claims(&omitted) {
+        Ok(()) => panic!("an omitted non-claim must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), CodecDiagnosticCode::NonClaimAsGuarantee);
+    assert!(
+        error
+            .detail()
+            .contains(CodecNonClaim::HostLibraryAuthority.wire_name()),
+        "the refusal names the omitted non-claim: {}",
+        error.detail()
+    );
+}
+
+#[test]
+fn codec_family_note_is_current() {
+    let note = fs::read_to_string(workspace_root().join("docs/codec-family.md"))
+        .unwrap_or_else(|error| panic!("docs/codec-family.md: {error}"));
+    for clause in CODEC_CLAUSES {
+        assert!(note.contains(clause), "the note names {clause}");
+    }
+    for row in CODEC_ITEMS {
+        assert!(note.contains(row.name), "the note names {}", row.name);
+    }
+    for code in CodecDiagnosticCode::ALL {
+        assert!(
+            note.contains(code.as_str()),
+            "the note names the diagnostic {}",
+            code.as_str()
+        );
+    }
+    for claim in CodecNonClaim::ALL {
+        assert!(
+            note.contains(claim.wire_name()),
+            "the note names the non-claim {}",
+            claim.wire_name()
+        );
+    }
 }
