@@ -1,21 +1,23 @@
-//! The codec foundation of `GNT-42.0-codec-foundation-scope` and
-//! `GNT-42.1-versioned-codec-contract`: the declared `std.codec` family with its five modules,
-//! the versioned codec identity and its exact admission rule, the frozen refusal vocabulary and
-//! its codec categories of `GNT-29.9-codec-contract`, and the separation between application
-//! codecs and the sealed canonical boundary and durable recovery projections.
+//! The codec foundation of `GNT-42.0-codec-foundation-scope`,
+//! `GNT-42.1-versioned-codec-contract`, and `GNT-42.2-hex-codec`: the declared `std.codec`
+//! family with its five modules, the versioned codec identity and its exact admission rule, the
+//! frozen refusal vocabulary with its codec categories of `GNT-29.9-codec-contract`, the
+//! canonical hex codec, and the separation between application codecs and the sealed canonical
+//! boundary and durable recovery projections.
 //!
 //! The model is pure: it consumes no host codec library, host encoding facility, ambient
-//! registry, platform behavior, timing, or global mutable state, and it declares no concrete
-//! codec behavior, which each codec's own clause of Section 42 publishes.
+//! registry, platform behavior, timing, or global mutable state, and the only concrete codec
+//! behavior it declares is the hex codec's, which `GNT-42.2-hex-codec` publishes.
 
 use crate::stdlib::{
     NameClass, PackageFamily, StabilityTier, StdGraph, StdItem, StdlibDiagnosticCode, StdlibError,
 };
 
 /// The declared clauses of Section 42, in specification order.
-pub const CODEC_CLAUSES: [&str; 2] = [
+pub const CODEC_CLAUSES: [&str; 3] = [
     "GNT-42.0-codec-foundation-scope",
     "GNT-42.1-versioned-codec-contract",
+    "GNT-42.2-hex-codec",
 ];
 
 /// The one declared version of every codec in this revision
@@ -396,6 +398,7 @@ pub const CODEC_ITEMS: [CodecItemRow; 5] = [
         clauses: &[
             "GNT-42.0-codec-foundation-scope",
             "GNT-42.1-versioned-codec-contract",
+            "GNT-42.2-hex-codec",
         ],
     },
     CodecItemRow {
@@ -451,4 +454,106 @@ pub fn canonical_codec_hierarchy() -> Result<StdGraph, StdlibError> {
     let mut graph = crate::stdlib::canonical_pure_hierarchy()?;
     declare_codec_surface(&mut graph)?;
     Ok(graph)
+}
+
+/// The declared value bound of `GNT-42.2-hex-codec`: the largest octet count a hex value holds
+/// and a hex encode admits.
+pub const HEX_VALUE_OCTET_BOUND: usize = 65_536;
+
+/// The declared text bound of `GNT-42.2-hex-codec`: the largest octet count an admitted hex text
+/// holds, exactly twice the declared value bound.
+pub const HEX_TEXT_OCTET_BOUND: usize = 2 * HEX_VALUE_OCTET_BOUND;
+
+/// Decodes one hex text under the declared admitted language of `GNT-42.2-hex-codec`.
+///
+/// The admitted language is exactly the sequences of zero or more pairs of lowercase hexadecimal
+/// digits, and an admitted text decodes to the octet sequence its digit pairs denote. A text
+/// holding more than `HEX_TEXT_OCTET_BOUND` octets is refused under `codec-expansion-limit`
+/// before any part of it is examined, and a text outside the declared language is refused under
+/// `codec-malformed-input`, naming the zero-based octet index of the first position at which it
+/// departs from that language.
+pub fn hex_decode(text: &str) -> Result<Vec<u8>, CodecError> {
+    if text.len() > HEX_TEXT_OCTET_BOUND {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::ExpansionLimit,
+            format!(
+                "the presented hex text holds {} octets, beyond the declared bound {HEX_TEXT_OCTET_BOUND}",
+                text.len()
+            ),
+        ));
+    }
+    let mut octets = Vec::with_capacity(text.len() / 2);
+    let mut high: Option<u8> = None;
+    for (index, octet) in text.as_bytes().iter().enumerate() {
+        let Some(digit) = hex_digit_value(*octet) else {
+            return Err(hex_malformed_refusal(
+                index,
+                "the octet is not a lowercase hexadecimal digit",
+            ));
+        };
+        match high.take() {
+            None => high = Some(digit),
+            Some(first) => octets.push(first * 16 + digit),
+        }
+    }
+    if high.is_some() {
+        return Err(hex_malformed_refusal(
+            text.len() - 1,
+            "the final digit has no paired digit",
+        ));
+    }
+    Ok(octets)
+}
+
+/// Encodes one octet sequence under the declared canonical form of `GNT-42.2-hex-codec`.
+///
+/// Every octet is spelled as exactly two lowercase hexadecimal digits, high digit first. A
+/// sequence holding more than `HEX_VALUE_OCTET_BOUND` octets is refused under
+/// `codec-expansion-limit`, naming the observed octet count and the declared bound, before any
+/// part of a result is constructed.
+pub fn hex_encode(octets: &[u8]) -> Result<String, CodecError> {
+    if octets.len() > HEX_VALUE_OCTET_BOUND {
+        return Err(CodecError::new(
+            CodecDiagnosticCode::ExpansionLimit,
+            format!(
+                "the presented octet sequence holds {} octets, beyond the declared bound {HEX_VALUE_OCTET_BOUND}",
+                octets.len()
+            ),
+        ));
+    }
+    let mut text = String::with_capacity(octets.len() * 2);
+    for octet in octets {
+        text.push(hex_digit(octet >> 4));
+        text.push(hex_digit(octet & 0x0f));
+    }
+    Ok(text)
+}
+
+/// Publishes the refusal of one presented hex text outside the declared language of
+/// `GNT-42.2-hex-codec`, naming the zero-based octet index of the departure.
+fn hex_malformed_refusal(index: usize, reason: &str) -> CodecError {
+    CodecError::new(
+        CodecDiagnosticCode::MalformedInput,
+        format!(
+            "the presented hex text departs from the declared hex language at index {index}: {reason}"
+        ),
+    )
+}
+
+/// Returns the value of one lowercase hexadecimal digit octet; every other octet is `None`.
+fn hex_digit_value(octet: u8) -> Option<u8> {
+    match octet {
+        b'0'..=b'9' => Some(octet - b'0'),
+        b'a'..=b'f' => Some(octet - b'a' + 10),
+        _ => None,
+    }
+}
+
+/// Returns the lowercase hexadecimal digit spelling one value below sixteen.
+fn hex_digit(value: u8) -> char {
+    if value < 10 {
+        char::from(b'0' + value)
+    } else {
+        char::from(b'a' + value - 10)
+    }
 }
