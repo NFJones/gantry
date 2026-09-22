@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "5d4f3c05ac170fac4b07a62cd483448d3c358cb94af91576680f31e0bfb3b770",
+  "specification_sha256": "00d7ab3be6c52bfc3cdeec28cff5d875d98c7b2901a76a526eda5ff02ce52712",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16487,
+      "end_line": 16515,
       "rationale": null
     }
   ],
@@ -43895,6 +43895,45 @@
               "rationale": null,
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_link_policy_refuses_links_without_resolution_or_reread"
+              ]
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ]
+    },
+    {
+      "id": "GNT-47.9-filesystem-replacement",
+      "span_start_line": 16488,
+      "span_end_line": 16515,
+      "anchor_line": 16489,
+      "body_start_line": 16490,
+      "body_end_line": 16515,
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16490,
+          "end_line": 16515,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_replacement_publishes_no_staging_or_partial_object"
               ]
             }
           ]

@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "5d4f3c05ac170fac4b07a62cd483448d3c358cb94af91576680f31e0bfb3b770",
-  "byte_length": 1262916,
-  "line_count": 16487,
+  "specification_sha256": "00d7ab3be6c52bfc3cdeec28cff5d875d98c7b2901a76a526eda5ff02ce52712",
+  "byte_length": 1265042,
+  "line_count": 16515,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "8ba32d18c7d46f0adc6861f36f646cca0c90797b8c8aa9e5ace309c12e4a312d",
+      "sha256": "ffe7e7fd92a425a10c3cd1fca2a41ad81bd058a3d3b13bfe0cd8988ce9e68dae",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16487,
-      "sha256": "a6cf4176b3f044e63225c9357db8005191191e9a65d55a84408b34927e41e438",
+      "end_line": 16515,
+      "sha256": "3ac78fecda058e38eb89fead4a7a1739b1dd1e45c4faabc8a049750d78b39f15",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "64747fb374f101ba417a864bf070ae00e5fd2d9e2ca388007136f4a125854281",
+      "span_sha256": "a466c8e97aef79cd38129e19825e17bb1c4c2a45d93fc55ace03dc4151063efe",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "3d357a2bf206f74c9f3865044e3c9fd44b821b93b83040a05670a3d34c3908e2",
+      "body_sha256": "98471858118c6919b0752d1ec07101e7105f8edd9caa3b0b174f57e569aea83d",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45146,6 +45146,47 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_link_policy_refuses_links_without_resolution_or_reread"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-47.9-filesystem-replacement",
+      "span_start_line": 16488,
+      "span_end_line": 16515,
+      "span_sha256": "fc121df5b5d9084580455fa0876f37529b7de9386b153c37370a121a60ffcc01",
+      "anchor_line": 16489,
+      "body_start_line": 16490,
+      "body_end_line": 16515,
+      "body_sha256": "2ba7491b8713c0dbcd57717a0425fbe305c95dcd27bd8489e2809b50dbf821ee",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16490,
+          "end_line": 16515,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/fs_foundation.rs#fs_replacement_publishes_no_staging_or_partial_object"
               ],
               "rationale": null
             }

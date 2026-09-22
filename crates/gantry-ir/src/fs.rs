@@ -22,7 +22,7 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 47 clauses implemented by this pure model, in declaration order.
-pub const FS_CLAUSES: [&str; 9] = [
+pub const FS_CLAUSES: [&str; 10] = [
     "GNT-47.0-filesystem-foundation-scope",
     "GNT-47.1-filesystem-modules-and-item-rows",
     "GNT-47.2-filesystem-path-values",
@@ -32,6 +32,7 @@ pub const FS_CLAUSES: [&str; 9] = [
     "GNT-47.6-filesystem-traversal",
     "GNT-47.7-filesystem-action-grants",
     "GNT-47.8-filesystem-link-policy",
+    "GNT-47.9-filesystem-replacement",
 ];
 
 /// The declared semantic mode of every `std.fs` item row.
@@ -70,6 +71,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
             "GNT-47.3-filesystem-action-values",
             "GNT-47.7-filesystem-action-grants",
             "GNT-47.8-filesystem-link-policy",
+            "GNT-47.9-filesystem-replacement",
         ],
     },
     FsItemRow {
@@ -525,6 +527,12 @@ impl FsAction {
         matches!(self, Self::Create | Self::Replace | Self::Remove)
     }
 }
+
+/// The declared replacement action of `GNT-47.9-filesystem-replacement`.
+pub const FS_REPLACEMENT_ACTION: FsAction = FsAction::Replace;
+
+/// Whether the declared replacement publishes a staging spelling: it declares none.
+pub const FS_REPLACEMENT_DECLARES_STAGING: bool = false;
 
 /// One declared resource operation of `GNT-47.4-filesystem-resource-operations`.
 ///
