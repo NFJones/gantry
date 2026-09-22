@@ -207,21 +207,21 @@ impl OperationKind {
         Self::ValueAction,
     ];
 
-    /// Returns the kind one analyzed value-resource classification authenticates.
+    /// Returns the kind one analyzed value-resource classification authenticates, if any.
     ///
-    /// A value that contains no live source resource authenticates a value action, and one that
-    /// contains a live source resource authenticates a live-resource operation. A result's resource
-    /// class never authenticates a protected operation, so this function never returns one; where
-    /// the analysis cannot determine the class, the caller publishes no kind at all rather than
-    /// assuming one.
+    /// A value that contains a live source resource authenticates a live-resource operation. A
+    /// value that contains none authenticates nothing: a non-live result is either a value action
+    /// or a protected operation, and the resource class alone never distinguishes them, so the
+    /// caller must not assume either one. A declaration-level fact that also separates protection
+    /// is needed before the non-live arm can be authenticated by anyone.
     #[must_use]
     pub const fn for_value_resource_class(
         class: crate::type_properties::ValueResourceClass,
     ) -> Option<Self> {
-        Some(match class {
-            crate::type_properties::ValueResourceClass::NonLiveResource => Self::ValueAction,
-            crate::type_properties::ValueResourceClass::LiveResource => Self::LiveResource,
-        })
+        match class {
+            crate::type_properties::ValueResourceClass::LiveResource => Some(Self::LiveResource),
+            crate::type_properties::ValueResourceClass::NonLiveResource => None,
+        }
     }
 
     /// Returns the exact portable spelling.
