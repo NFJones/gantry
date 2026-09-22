@@ -413,6 +413,8 @@ fn fs_path_values_are_bounded_and_escape_free() {
         "A declared root is a portable name of ASCII lower-case letters, digits, and `_` whose first scalar is a lower-case letter",
         "the separator scalar `/` or `\\`",
         "`canonical_spelling` renders the declared root followed by each declared segment separated by `/`",
+        "The position a refusal of this clause names is zero-based within the declared value",
+        "a refusal a segment produced names that segment's position, and a refusal the declared count or the declared root produced names zero rather than a segment position",
     ] {
         assert!(
             specification.contains(rule),
@@ -596,8 +598,9 @@ fn fs_resource_operations_are_closed_and_consume_io_requests() {
     }
     for rule in [
         "The declared operations are exactly ten - open, read, write, seek, flush, sync, truncate, close, lock, and watch, in that canonical order",
-        "which is the declared resource-operation order - opening, transfer and positioning, settlement, release, exclusion, and observation, in the order those phases are declared - and not wire-name order",
+        "which is the declared resource-operation order - opening, transfer and positioning, mutation and settlement, release, exclusion, and observation, in the order those phases are declared - and not wire-name order",
         "it publishes no sequencing, lifetime, precedence, or mutual-exclusion rule between two operations",
+        "mutation and settlement, release, exclusion, and observation, in the order those phases are declared",
         "the model's `FsResourceOperation` and its `FsResourceOperation::ALL` publish them",
         "A spelling outside the declared ten - including a settlement spelling such as `finish` and a text-reading spelling such as `read_text` - is not declared by this clause",
         "no streaming-segment spelling and no implicit native or text conversion",
@@ -810,7 +813,7 @@ fn fs_action_grant_rule_refuses_read_only_mutations_in_both_vocabularies() {
     );
     // The content-mutation fact of `GNT-47.7` and the recovery class of `GNT-47.3` are independent
     // declarations that coincide for today's four actions; they are pinned separately here and in
-    // `fs_action_values_are_closed_and_classified` rather than equated.
+    // `fs_actions_are_closed_and_carry_recovery_classes` rather than equated.
     assert!(!FsAction::Read.declares_content_mutation());
     assert!(!FsResourceOperation::Read.declares_content_mutation());
     for operation in FsResourceOperation::ALL {
@@ -1014,7 +1017,7 @@ fn fs_path_value_case_identity_is_exact_and_never_folded() {
 
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
     for rule in [
-        "the declaration-layer case rule that `GNT-47.2-filesystem-path-values` leaves to it",
+        "the declaration-layer case rule that `GNT-47.2-filesystem-path-values` does not publish",
         "The path-value identity of `GNT-47.2-filesystem-path-values` is decided by scalar-value sequence equality of the declared root and the declared segments",
         "the comparison is exactly case-sensitive, it never folds, and it never consults a locale, a host collation, a display form, or a case-insensitive lookup key",
         "`Report` and `report` are two declared segments and two declared path values that no clause of this section merges, normalizes, folds, renames, or substitutes, and neither spelling is preferred",

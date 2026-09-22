@@ -16264,7 +16264,9 @@ A declared root is a portable name of ASCII lower-case letters, digits, and `_` 
 is a lower-case letter; a root spelled otherwise - including an empty root, a root carrying a
 separator, and a root carrying a home or environment marker such as a leading `~`, `$`, or `%` - is
 refused under `fs-path-invalid` naming the root rather than expanded, defaulted, or resolved against
-an ambient location. The model FsPath publishes
+an ambient location. The position a refusal of this clause names is zero-based within the declared
+value: a refusal a segment produced names that segment's position, and a refusal the declared count
+or the declared root produced names zero rather than a segment position. The model FsPath publishes
 the admitted value: its `rooted` constructor admits exactly one value or refuses the segment, root,
 or count that the rules above refuse, its `join` extends one admitted value with declared segments
 and admits exactly one value or refuses under the same rules, and its `root`, `segments`, and
@@ -16311,7 +16313,7 @@ Section 29, and it claims no performance, storage layout, or physical representa
 resource operation vocabulary of the `std.fs::resource` module. The declared operations are exactly
 ten - open, read, write, seek, flush, sync, truncate, close, lock, and watch, in that canonical
 order, which is the declared resource-operation order - opening, transfer and positioning,
-settlement, release, exclusion, and observation, in the order those phases are declared - and not
+mutation and settlement, release, exclusion, and observation, in the order those phases are declared - and not
 wire-name order, spelled `open`, `read`, `write`, `seek`, `flush`, `sync`, `truncate`, `close`,
 `lock`, and `watch` - and the model's `FsResourceOperation` and its `FsResourceOperation::ALL`
 publish them: no other operation, alias, or spelling is declared, and an operation presented by an
@@ -16565,7 +16567,7 @@ section, and it claims no performance, storage layout, or physical representatio
 <a id="GNT-47.11-filesystem-case-identity"></a>
 
 **[GNT-47.11-filesystem-case-identity] Filesystem case identity.** This clause publishes the
-declaration-layer case rule that `GNT-47.2-filesystem-path-values` leaves to it, for the path values
+declaration-layer case rule that `GNT-47.2-filesystem-path-values` does not publish, for the path values
 of that clause and for the entry names a traversal of `GNT-47.6-filesystem-traversal` publishes. The
 path-value identity of `GNT-47.2-filesystem-path-values` is decided by scalar-value sequence
 equality of the declared root and the declared segments, exactly as
