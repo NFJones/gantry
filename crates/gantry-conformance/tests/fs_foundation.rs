@@ -1279,10 +1279,12 @@ fn fs_durable_carrier_is_the_reconstruction_record_only() {
         "This clause publishes which durable carrier may carry the declared facts of an admitted instance of this section",
         "`ResourceCarrier` publishes the closed three-member carrier vocabulary - ordinary serialization, ordinary durable state, and the declared durable reconstruction record",
         "which the model constant `FS_DURABLE_CARRIER` and the model predicate `fs_durable_carrier_is_admissible` publish",
-        "a durable record presenting an instance, a descriptor, a handle, or a path-resolving state under either carrier is refused rather than reconstructed, decoded, or repaired",
-        "Reconstruction reads exactly the facts `GNT-28.7-durable-resource-reconstruction` declares",
-        "this clause declares no second reconstruction model, no second record shape, no journal schema, and no runtime recovery",
-        "a record that names a stale owner generation, or that presents a fact this section does not declare, is refused rather than reinterpreted",
+        "a durable record presenting an instance, a descriptor, a handle, or a path-resolving state under either carrier is not a record of this section",
+        "this clause declares no way to decode, repair, or reconstruct it",
+        "Reconstruction reads the facts the declared durable reconstruction record of `GNT-28.7-durable-resource-reconstruction` carries, whatever that clause declares them to be",
+        "this clause declares no second reconstruction model, no second record shape, no journal schema, and no recovery procedure",
+        "This clause also declares no admission point and no refusal of its own",
+        "whether a record is reconstructed, and what a stale owner generation does, is decided by `GNT-28.7-durable-resource-reconstruction` and `GNT-28.9-retirement-deletion-and-stale-owner-fences` and by the runtime owner of recovery",
     ] {
         assert!(
             specification.contains(rule),

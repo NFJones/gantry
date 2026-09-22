@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "ee2403de357a411c03cf9069adf507bd6034cb62cb526fcfcf6a4b9dd0f6ecf6",
+  "specification_sha256": "a7acf14bed22680e0bb0932c5add87e00fa8701f56159afc59750306fcdb02f7",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16747,
+      "end_line": 16750,
       "rationale": null
     }
   ],
@@ -44106,15 +44106,15 @@
     {
       "id": "GNT-47.14-filesystem-durable-carriers",
       "span_start_line": 16719,
-      "span_end_line": 16747,
+      "span_end_line": 16750,
       "anchor_line": 16720,
       "body_start_line": 16721,
-      "body_end_line": 16747,
+      "body_end_line": 16750,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16721,
-          "end_line": 16747,
+          "end_line": 16750,
           "profiles": [
             "analyzer"
           ],

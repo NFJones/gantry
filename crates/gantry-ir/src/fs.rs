@@ -794,7 +794,8 @@ pub const FS_DURABLE_CARRIER: ResourceCarrier = ResourceCarrier::ReconstructionR
 ///
 /// Exactly the declared durable reconstruction record of
 /// `GNT-28.7-durable-resource-reconstruction` is admissible; ordinary serialization and ordinary
-/// durable state carry no reconstruction contract and are refused rather than decoded or repaired.
+/// durable state carry no reconstruction contract and are inadmissible for an instance of this
+/// section.
 #[must_use]
 pub const fn fs_durable_carrier_is_admissible(carrier: ResourceCarrier) -> bool {
     matches!(carrier, ResourceCarrier::ReconstructionRecord)

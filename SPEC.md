@@ -16729,15 +16729,18 @@ admissible here: the declared durable reconstruction record of
 model predicate `fs_durable_carrier_is_admissible` publish. Ordinary serialization and ordinary
 durable state carry no reconstruction contract and are inadmissible for an instance of this section:
 a durable record presenting an instance, a descriptor, a handle, or a path-resolving state under
-either carrier is refused rather than reconstructed, decoded, or repaired.
+either carrier is not a record of this section, and this clause declares no way to decode, repair,
+or reconstruct it.
 
-Reconstruction reads exactly the facts `GNT-28.7-durable-resource-reconstruction` declares - the
-owner generation, the whole-resource lifetime state, the distinct operation state, and the quota
-map - and this clause declares no second reconstruction model, no second record shape, no journal
-schema, and no runtime recovery: a record that names a stale owner generation, or that presents a
-fact this section does not declare, is refused rather than reinterpreted, exactly as
-`GNT-47.5-filesystem-resource-state` refuses a stale generation and
-`GNT-28.9-retirement-deletion-and-stale-owner-fences` refuses a stale owner.
+Reconstruction reads the facts the declared durable reconstruction record of
+`GNT-28.7-durable-resource-reconstruction` carries, whatever that clause declares them to be, and
+this clause declares no second reconstruction model, no second record shape, no journal schema, and
+no recovery procedure. This clause also declares no admission point and no refusal of its own:
+whether a record is reconstructed, and what a stale owner generation does, is decided by
+`GNT-28.7-durable-resource-reconstruction` and
+`GNT-28.9-retirement-deletion-and-stale-owner-fences` and by the runtime owner of recovery, exactly
+as `GNT-47.5-filesystem-resource-state` refuses a stale generation, and this clause adds no
+condition to any of them.
 
 This clause publishes the admissible durable carrier only: it publishes no descriptor, handle, live
 instance, adapter, host trait, capability grant, or runtime availability, no durable encoding,
