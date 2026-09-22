@@ -221,6 +221,14 @@ impl ExampleDeclaration {
     pub const fn semantic_mode(&self) -> Option<SemanticMode> {
         self.semantic_mode
     }
+    /// Returns whether this declaration is a checked example (`GNT-31.3`).
+    ///
+    /// Only `compile` and `compile-fail` declarations are checked; a `display-only` declaration
+    /// carries bounded text and is never represented as checked.
+    #[must_use]
+    pub const fn is_checked(&self) -> bool {
+        matches!(self.mode, ExampleMode::Compile | ExampleMode::CompileFail)
+    }
     #[must_use]
     pub fn source(&self) -> &str {
         &self.source
@@ -459,6 +467,11 @@ impl GeneratedOrigin {
     pub fn source(&self) -> &MetadataSubject {
         &self.source
     }
+    /// Returns the declared generator identity.
+    #[must_use]
+    pub fn generator(&self) -> &str {
+        &self.generator
+    }
 }
 
 #[derive(Default)]
@@ -468,7 +481,7 @@ pub struct MetadataDeclarations {
     tool_keys: BTreeSet<(MetadataSubject, String, String)>,
     lints: BTreeSet<(MetadataSubject, LintId)>,
     dependency_policies: BTreeMap<MetadataSubject, DependencyWarningPolicy>,
-    generated: BTreeSet<MetadataSubject>,
+    generated: BTreeMap<MetadataSubject, GeneratedOrigin>,
 }
 impl MetadataDeclarations {
     pub fn attach(&mut self, comment: DocumentationComment) -> Result<(), MetadataError> {
@@ -535,10 +548,17 @@ impl MetadataDeclarations {
         Ok(())
     }
     pub fn insert_origin(&mut self, origin: &GeneratedOrigin) -> Result<(), MetadataError> {
-        if !self.generated.insert(origin.generated.clone()) {
+        let key = origin.generated.clone();
+        if self.generated.contains_key(&key) {
             return Err(MetadataError::InvalidGeneratedOrigin);
         }
+        self.generated.insert(key, origin.clone());
         Ok(())
+    }
+    /// Returns the generated-origin record of one generated subject, when declared (`GNT-31.10`).
+    #[must_use]
+    pub fn origin_for(&self, subject: &MetadataSubject) -> Option<&GeneratedOrigin> {
+        self.generated.get(subject)
     }
 }
 

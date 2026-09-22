@@ -445,3 +445,45 @@ fn lint_controls_apply_only_declared_scoped_severities() {
         Err(MetadataError::UnsuppressibleLint)
     );
 }
+
+#[test]
+fn checked_examples_and_generated_origins_preserve_their_declared_identities() {
+    let compile = ExampleDeclaration::new(
+        ExampleMode::Compile,
+        Some(SemanticMode::Portable),
+        "fn main() {}",
+    )
+    .unwrap_or_else(|error| panic!("compile example: {error:?}"));
+    assert!(compile.is_checked());
+    assert_eq!(compile.semantic_mode(), Some(SemanticMode::Portable));
+    let compile_fail = ExampleDeclaration::new(
+        ExampleMode::CompileFail,
+        Some(SemanticMode::Application),
+        "not source",
+    )
+    .unwrap_or_else(|error| panic!("compile-fail example: {error:?}"));
+    assert!(compile_fail.is_checked());
+    let display_only = ExampleDeclaration::new(ExampleMode::DisplayOnly, None, "text")
+        .unwrap_or_else(|error| panic!("display-only example: {error:?}"));
+    assert!(!display_only.is_checked());
+    assert_eq!(display_only.semantic_mode(), None);
+
+    let generated = subject("generated::item");
+    let source = subject("src::item");
+    let origin = GeneratedOrigin::new(generated.clone(), source.clone(), "schema-v1")
+        .unwrap_or_else(|error| panic!("origin: {error:?}"));
+    assert_eq!(origin.generator(), "schema-v1");
+    let mut declarations = MetadataDeclarations::default();
+    assert!(declarations.insert_origin(&origin).is_ok());
+    let stored = declarations
+        .origin_for(&generated)
+        .unwrap_or_else(|| panic!("the origin record is retained"));
+    assert_eq!(stored.generated(), &generated);
+    assert_eq!(stored.source(), &source);
+    assert_eq!(stored.generator(), "schema-v1");
+    assert!(declarations.origin_for(&source).is_none());
+    assert_eq!(
+        declarations.insert_origin(&origin),
+        Err(MetadataError::InvalidGeneratedOrigin)
+    );
+}
