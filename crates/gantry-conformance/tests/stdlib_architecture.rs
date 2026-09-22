@@ -1429,6 +1429,48 @@ fn aggregate_manifest_catalog_matches_the_live_hierarchy() {
             Value::from(entry.tier().wire_name()),
             "`{name}` publishes its tier"
         );
+        let modes: Vec<&str> = entry.modes().iter().map(|mode| mode.wire_name()).collect();
+        let declared_modes: Vec<&str> = declared["modes"]
+            .as_array()
+            .unwrap_or_else(|| panic!("`{name}` publishes its modes as an array"))
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert_eq!(
+            declared_modes, modes,
+            "`{name}` publishes its applicability modes"
+        );
+        let targets: Vec<&str> = entry
+            .targets()
+            .iter()
+            .map(|target| target.wire_name())
+            .collect();
+        let declared_targets: Vec<&str> = declared["targets"]
+            .as_array()
+            .unwrap_or_else(|| panic!("`{name}` publishes its targets as an array"))
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert_eq!(
+            declared_targets, targets,
+            "`{name}` publishes its applicability targets"
+        );
+        let dependencies: Vec<&str> = entry.dependencies().iter().map(String::as_str).collect();
+        let declared_dependencies: Vec<&str> = declared["dependencies"]
+            .as_array()
+            .unwrap_or_else(|| panic!("`{name}` publishes its dependencies as an array"))
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert_eq!(
+            declared_dependencies, dependencies,
+            "`{name}` publishes its dependency edges"
+        );
+        assert_eq!(
+            declared["interface_digest"],
+            Value::from(entry.identity().as_str()),
+            "`{name}` publishes its interface digest"
+        );
     }
 }
 

@@ -9,37 +9,127 @@
     {
       "name": "std.codec",
       "class": "package",
-      "tier": "stable"
+      "tier": "stable",
+      "modes": [
+        "portable",
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [
+        "std.collections",
+        "std.core",
+        "std.text"
+      ],
+      "interface_digest": "9119d15daf6f71458856cad21cfa744817d2b1fbbbe91fd0f250fe43d318daef"
     },
     {
       "name": "std.collections",
       "class": "package",
-      "tier": "stable"
+      "tier": "stable",
+      "modes": [
+        "portable",
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [
+        "std.core"
+      ],
+      "interface_digest": "57980b3fa64f4147e0b33dbf74b433d52fe2feda9a469eb613f3dc4ecc9961fc"
     },
     {
       "name": "std.core",
       "class": "package",
-      "tier": "foundational"
+      "tier": "foundational",
+      "modes": [
+        "portable",
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [],
+      "interface_digest": "161852803da016fdb4551e7848540e9c98ebe93b96e882fc64791687f6a58f04"
     },
     {
       "name": "std.crypto",
       "class": "package",
-      "tier": "stable"
+      "tier": "stable",
+      "modes": [
+        "portable",
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [
+        "std.codec",
+        "std.core",
+        "std.num"
+      ],
+      "interface_digest": "dcaa6d846bcdde15cfe4d773b95ba68f63f35528e979189f4524800dba77ebb2"
     },
     {
       "name": "std.data",
       "class": "package",
-      "tier": "stable"
+      "tier": "stable",
+      "modes": [
+        "portable",
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [
+        "std.codec",
+        "std.collections",
+        "std.core",
+        "std.text"
+      ],
+      "interface_digest": "2289cb5b4d1e9cbf097ecc35f366beab43edafab41284146a9a530a9068d49f7"
     },
     {
       "name": "std.num",
       "class": "package",
-      "tier": "stable"
+      "tier": "stable",
+      "modes": [
+        "portable",
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [
+        "std.core"
+      ],
+      "interface_digest": "d7b103bc2a9f9408afbd3dec3a47a8f367a460023acc14ac792bba56470b49d6"
     },
     {
       "name": "std.text",
       "class": "package",
-      "tier": "stable"
+      "tier": "stable",
+      "modes": [
+        "portable",
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [
+        "std.collections",
+        "std.core"
+      ],
+      "interface_digest": "3de353720b239a858e1fa41aaaedb470f0d2254b3b526df6fe9e9a8f147e61ec"
     }
   ]
 }
