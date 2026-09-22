@@ -602,6 +602,19 @@ impl FsAction {
 /// The declared replacement action of `GNT-47.9-filesystem-replacement`.
 pub const FS_REPLACEMENT_ACTION: FsAction = FsAction::Replace;
 
+/// One declared outcome of the replacement contract of `GNT-47.9-filesystem-replacement`.
+///
+/// The vocabulary has exactly one member and publishes no spelling of it: the outcome is a
+/// declaration-layer name rather than a wire spelling, an event name, or a diagnostic.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FsReplacementOutcome {
+    /// The complete declared object replaced the complete named object.
+    Replaced,
+}
+
+/// Every declared replacement outcome of `GNT-47.9-filesystem-replacement`, in declaration order.
+pub const FS_REPLACEMENT_OUTCOMES: [FsReplacementOutcome; 1] = [FsReplacementOutcome::Replaced];
+
 /// One declared resource operation of `GNT-47.4-filesystem-resource-operations`.
 ///
 /// Each operation names one path value of `GNT-47.2-filesystem-path-values` and the grant the

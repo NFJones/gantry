@@ -2,7 +2,7 @@
 // Source: protocol/catalogs/embedding-contracts-v1.json. Do not edit manually.
 
 /// SHA-256 of the reviewed specification revision.
-pub const EMBEDDING_SPECIFICATION_REVISION: &str = "08c4253939610b53eada02b62ed9d95438ef8764efc86a44344b7a56cd4b882a";
+pub const EMBEDDING_SPECIFICATION_REVISION: &str = "cb7b5405e7fab1ed1fe25a4cc83189482d07de13a2f82a59632243562ef21131";
 
 /// Structured fields returned by successful semantic analysis.
 pub const ANALYSIS_RESULT_FIELDS: &[&str] = &[

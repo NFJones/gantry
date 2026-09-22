@@ -10,12 +10,12 @@ use std::path::{Path, PathBuf};
 
 use gantry::ir::{
     FS_CLAUSES, FS_ITEMS, FS_PARTIAL_PROGRESS_OPERATIONS, FS_PATH_SEGMENT_BOUND,
-    FS_REFUSAL_CONDITIONS, FS_REPLACEMENT_ACTION, FS_RESOLUTION_COUNT, FS_SURFACE_MODES,
-    FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError, FsPath, FsRefusalCondition,
-    FsResourceOperation, FsTargetState, IoOperation, NameClass, PackageFamily, Prelude,
-    ResourceCarrier, ResourceLifetimeState, StabilityTier, StdGraph, StdItem, StdPackage,
-    StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface, fs_traversal_order,
-    generated::RecoveryClass,
+    FS_REFUSAL_CONDITIONS, FS_REPLACEMENT_ACTION, FS_REPLACEMENT_OUTCOMES, FS_RESOLUTION_COUNT,
+    FS_SURFACE_MODES, FS_SURFACE_TARGETS, FsAction, FsDiagnosticCode, FsError, FsPath,
+    FsRefusalCondition, FsReplacementOutcome, FsResourceOperation, FsTargetState, IoOperation,
+    NameClass, PackageFamily, Prelude, ResourceCarrier, ResourceLifetimeState, StabilityTier,
+    StdGraph, StdItem, StdPackage, StdlibDiagnosticCode, admit_fs_surface, declare_fs_surface,
+    fs_traversal_order, generated::RecoveryClass,
 };
 use gantry::ir::{SemanticMode, TargetKind};
 
@@ -923,6 +923,12 @@ fn fs_replacement_publishes_no_staging_or_partial_object() {
     );
     assert!(FsAction::ALL.contains(&FS_REPLACEMENT_ACTION));
     assert!(FS_REPLACEMENT_ACTION.declares_content_mutation());
+    assert_eq!(
+        FS_REPLACEMENT_OUTCOMES,
+        [FsReplacementOutcome::Replaced],
+        "the declared replacement outcome vocabulary has exactly its one member"
+    );
+    assert_eq!(FS_REPLACEMENT_OUTCOMES.len(), 1);
 
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
     for anchor in FS_CLAUSES {
@@ -937,6 +943,9 @@ fn fs_replacement_publishes_no_staging_or_partial_object() {
         "it has exactly one declared outcome for the object the path value names: the complete declared object replaces the complete named object",
         "This clause publishes no intermediate, partial, spliced, or staged outcome, no mixed old and new content, no partially replaced object, no resume, and no rollback of the replaced object",
         "a replacement that the implementation refuses publishes the declared refusal rather than a partially replaced object",
+        "The declared outcome vocabulary of this clause is exactly one member, and the model's `FsReplacementOutcome` and its `FS_REPLACEMENT_OUTCOMES` publish it",
+        "no second outcome is declared, and no spelling of that member is published, so the one outcome is a declaration-layer name rather than a wire spelling, an event name, or a diagnostic",
+        "A replacement publishes that outcome or the declared refusal of `GNT-47.12-filesystem-operation-refusals`, and this clause declares no third result",
         "A replacement is one declared operation and never a declared sequence of them",
         "this clause publishes no staging, temporary, backup, sibling, or intermediate path spelling, no renaming step, no multi-step order, and no shell or host convention for one",
         "The read-only grant rule of `GNT-47.7-filesystem-action-grants` refuses a replacement presented under a read-only grant",
@@ -982,6 +991,7 @@ fn fs_declared_limits_are_exactly_the_segment_bound_request_count_and_resolution
             "FS_PATH_SEGMENT_BOUND",
             "FS_REFUSAL_CONDITIONS",
             "FS_REPLACEMENT_ACTION",
+            "FS_REPLACEMENT_OUTCOMES",
             "FS_RESOLUTION_COUNT",
             "FS_SURFACE_MODES",
             "FS_SURFACE_TARGETS",

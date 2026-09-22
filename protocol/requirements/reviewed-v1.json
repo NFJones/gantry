@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "08c4253939610b53eada02b62ed9d95438ef8764efc86a44344b7a56cd4b882a",
+  "specification_sha256": "cb7b5405e7fab1ed1fe25a4cc83189482d07de13a2f82a59632243562ef21131",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 16709,
+      "end_line": 16716,
       "rationale": null
     }
   ],
@@ -43911,15 +43911,15 @@
     {
       "id": "GNT-47.9-filesystem-replacement",
       "span_start_line": 16490,
-      "span_end_line": 16517,
+      "span_end_line": 16524,
       "anchor_line": 16491,
       "body_start_line": 16492,
-      "body_end_line": 16517,
+      "body_end_line": 16524,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16492,
-          "end_line": 16517,
+          "end_line": 16524,
           "profiles": [
             "analyzer"
           ],
@@ -43949,16 +43949,16 @@
     },
     {
       "id": "GNT-47.10-filesystem-declared-limits",
-      "span_start_line": 16518,
-      "span_end_line": 16565,
-      "anchor_line": 16519,
-      "body_start_line": 16520,
-      "body_end_line": 16565,
+      "span_start_line": 16525,
+      "span_end_line": 16572,
+      "anchor_line": 16526,
+      "body_start_line": 16527,
+      "body_end_line": 16572,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16520,
-          "end_line": 16565,
+          "start_line": 16527,
+          "end_line": 16572,
           "profiles": [
             "analyzer"
           ],
@@ -43988,16 +43988,16 @@
     },
     {
       "id": "GNT-47.11-filesystem-case-identity",
-      "span_start_line": 16566,
-      "span_end_line": 16603,
-      "anchor_line": 16567,
-      "body_start_line": 16568,
-      "body_end_line": 16603,
+      "span_start_line": 16573,
+      "span_end_line": 16610,
+      "anchor_line": 16574,
+      "body_start_line": 16575,
+      "body_end_line": 16610,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16568,
-          "end_line": 16603,
+          "start_line": 16575,
+          "end_line": 16610,
           "profiles": [
             "analyzer"
           ],
@@ -44027,16 +44027,16 @@
     },
     {
       "id": "GNT-47.12-filesystem-operation-refusals",
-      "span_start_line": 16604,
-      "span_end_line": 16664,
-      "anchor_line": 16605,
-      "body_start_line": 16606,
-      "body_end_line": 16664,
+      "span_start_line": 16611,
+      "span_end_line": 16671,
+      "anchor_line": 16612,
+      "body_start_line": 16613,
+      "body_end_line": 16671,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16606,
-          "end_line": 16664,
+          "start_line": 16613,
+          "end_line": 16671,
           "profiles": [
             "analyzer"
           ],
@@ -44066,16 +44066,16 @@
     },
     {
       "id": "GNT-47.13-filesystem-partial-progress-and-settlement",
-      "span_start_line": 16665,
-      "span_end_line": 16709,
-      "anchor_line": 16666,
-      "body_start_line": 16667,
-      "body_end_line": 16709,
+      "span_start_line": 16672,
+      "span_end_line": 16716,
+      "anchor_line": 16673,
+      "body_start_line": 16674,
+      "body_end_line": 16716,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 16667,
-          "end_line": 16709,
+          "start_line": 16674,
+          "end_line": 16716,
           "profiles": [
             "analyzer"
           ],

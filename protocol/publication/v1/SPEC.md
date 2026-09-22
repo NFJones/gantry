@@ -16500,6 +16500,13 @@ rollback of the replaced object, and it declares no diagnostic of
 `GNT-47.0-filesystem-foundation-scope` for such an outcome: a replacement that the implementation
 refuses publishes the declared refusal rather than a partially replaced object.
 
+The declared outcome vocabulary of this clause is exactly one member, and the model's
+`FsReplacementOutcome` and its `FS_REPLACEMENT_OUTCOMES` publish it: no second outcome is declared,
+and no spelling of that member is published, so the one outcome is a declaration-layer name rather
+than a wire spelling, an event name, or a diagnostic. A replacement publishes that outcome or the
+declared refusal of `GNT-47.12-filesystem-operation-refusals`, and this clause declares no third
+result.
+
 A replacement is one declared operation and never a declared sequence of them: this clause publishes
 no staging, temporary, backup, sibling, or intermediate path spelling, no renaming step, no
 multi-step order, and no shell or host convention for one, and a name that is not a path value of
