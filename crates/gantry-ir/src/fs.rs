@@ -48,8 +48,9 @@ pub struct FsItemRow {
 
 /// The declared public modules of `std.fs`, in canonical name order.
 ///
-/// The rows are declared by `GNT-47.1-filesystem-modules-and-item-rows` alone; the family carries no
-/// second vocabulary, no path value, no descriptor, and no resource, and every row's applicability
+/// The rows are declared by `GNT-47.1-filesystem-modules-and-item-rows`, and each row lists the
+/// clauses that publish its own contract, in specification order; the family carries no second
+/// vocabulary, no path value, no descriptor, and no live resource, and every row's applicability
 /// is its owning package's application-mode applicability over the library and binary targets.
 pub const FS_ITEMS: [FsItemRow; 3] = [
     FsItemRow {
@@ -79,6 +80,7 @@ pub const FS_ITEMS: [FsItemRow; 3] = [
         clauses: &[
             "GNT-47.0-filesystem-foundation-scope",
             "GNT-47.1-filesystem-modules-and-item-rows",
+            "GNT-47.4-filesystem-resource-operations",
         ],
     },
 ];
@@ -496,7 +498,9 @@ impl FsAction {
 /// Each operation names one path value of `GNT-47.2-filesystem-path-values` and the grant the
 /// caller presents. A read, a write, and a seek each consume exactly one admitted request of the
 /// common I/O contract of `GNT-45.1-bounded-one-call-io-contract`; no other operation consumes a
-/// request, declares an octet quantity, or publishes a progress observation here.
+/// request, declares an octet quantity, or publishes a progress observation here. The declared
+/// order is the clause's declared resource-operation order, not wire-name order, and it publishes
+/// no sequencing or precedence rule between two operations.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FsResourceOperation {
     /// The declared `open` operation.

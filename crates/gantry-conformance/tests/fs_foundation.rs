@@ -101,12 +101,20 @@ fn fs_module_rows_are_closed_and_canonical() {
                 "GNT-47.1-filesystem-modules-and-item-rows",
                 "GNT-47.2-filesystem-path-values",
             ],
-            _ => &[
+            "std.fs::resource" => &[
                 "GNT-47.0-filesystem-foundation-scope",
                 "GNT-47.1-filesystem-modules-and-item-rows",
+                "GNT-47.4-filesystem-resource-operations",
             ],
+            other => panic!("the undeclared module row `{other}` must not exist"),
         };
         assert_eq!(row.clauses, expected);
+    }
+    for clause in FS_CLAUSES {
+        assert!(
+            FS_ITEMS.iter().any(|row| row.clauses.contains(&clause)),
+            "some declared module row must register the clause {clause}"
+        );
     }
 }
 
@@ -508,9 +516,15 @@ fn fs_resource_operations_are_closed_and_consume_io_requests() {
             operation.wire_name()
         );
     }
+    let resource = FS_ITEMS
+        .iter()
+        .find(|row| row.name == "std.fs::resource")
+        .unwrap_or_else(|| panic!("the `std.fs::resource` module row must be declared"));
     assert!(
-        FS_ITEMS.iter().any(|row| row.name == "std.fs::resource"),
-        "the declared resource operation vocabulary belongs to the `std.fs::resource` row"
+        resource
+            .clauses
+            .contains(&"GNT-47.4-filesystem-resource-operations"),
+        "the resource row must register the clause that declares its vocabulary"
     );
 
     let specification = flatten(&read_text(&workspace_root().join("SPEC.md")));
@@ -522,6 +536,8 @@ fn fs_resource_operations_are_closed_and_consume_io_requests() {
     }
     for rule in [
         "The declared operations are exactly ten - open, read, write, seek, flush, sync, truncate, close, lock, and watch, in that canonical order",
+        "which is the declared resource-operation order - opening, transfer and positioning, settlement, release, exclusion, and observation, in the order those phases are declared - and not wire-name order",
+        "it publishes no sequencing, lifetime, precedence, or mutual-exclusion rule between two operations",
         "the model's `FsResourceOperation` and its `FsResourceOperation::ALL` publish them",
         "A spelling outside the declared ten - including a settlement spelling such as `finish` and a text-reading spelling such as `read_text` - is not declared by this clause",
         "no streaming-segment spelling and no implicit native or text conversion",

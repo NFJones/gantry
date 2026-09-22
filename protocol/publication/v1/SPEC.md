@@ -16310,10 +16310,15 @@ Section 29, and it claims no performance, storage layout, or physical representa
 **[GNT-47.4-filesystem-resource-operations] Filesystem resource operations.** This clause declares the
 resource operation vocabulary of the `std.fs::resource` module. The declared operations are exactly
 ten - open, read, write, seek, flush, sync, truncate, close, lock, and watch, in that canonical
-order, spelled `open`, `read`, `write`, `seek`, `flush`, `sync`, `truncate`, `close`, `lock`, and
-`watch` - and the model's `FsResourceOperation` and its `FsResourceOperation::ALL` publish them: no
-other operation, alias, or spelling is declared, and an operation presented by an undeclared
-spelling is refused rather than inferred or substituted. A spelling outside the declared ten -
+order, which is the declared resource-operation order - opening, transfer and positioning,
+settlement, release, exclusion, and observation, in the order those phases are declared - and not
+wire-name order, spelled `open`, `read`, `write`, `seek`, `flush`, `sync`, `truncate`, `close`,
+`lock`, and `watch` - and the model's `FsResourceOperation` and its `FsResourceOperation::ALL`
+publish them: no other operation, alias, or spelling is declared, and an operation presented by an
+undeclared spelling is refused rather than inferred or substituted. The declared order fixes the
+enumeration order of this clause alone: it publishes no sequencing, lifetime, precedence, or
+mutual-exclusion rule between two operations, and no operation is admitted, refused, or ordered
+because of its position here. A spelling outside the declared ten -
 including a settlement spelling such as `finish` and a text-reading spelling such as `read_text` -
 is not declared by this clause and is refused rather than inferred, substituted, or normalized into
 one of the ten: this clause declares no streaming-segment spelling and no implicit native or text
