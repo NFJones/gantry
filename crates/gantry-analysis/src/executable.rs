@@ -3260,9 +3260,11 @@ impl Compiler<'_> {
             .transpose()?;
         let metadata = ExecutableOperation {
             kind: site.kind,
-            // The analyzer does not yet authenticate the Section 20 kind
-            // (GNT-GP-OPKIND-001 slice 2); the field stays explicitly unauthenticated rather than
-            // defaulted.
+            // The analysis can authenticate the Section 20 kind from the result type's resource
+            // class (`OperationKind::for_value_resource_class`), but the retained-program format
+            // does not carry the field yet, so emitting it here would be silently lost on encode
+            // or resume. The field stays explicitly unauthenticated until the wire carriage lands
+            // (GNT-GP-OPKIND-001 slice 3).
             section20_kind: None,
             result_type,
             action,

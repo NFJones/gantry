@@ -222,6 +222,16 @@ fn an_operation_without_an_authenticated_section20_kind_is_explicit() {
         3,
         "the Section 20 kind vocabulary is closed over three members"
     );
+    // The kind is authenticated from the analyzed result type's resource class, and a class never
+    // authenticates a protected operation.
+    assert_eq!(
+        OperationKind::for_value_resource_class(gantry::ir::ValueResourceClass::NonLiveResource),
+        Some(OperationKind::ValueAction)
+    );
+    assert_eq!(
+        OperationKind::for_value_resource_class(gantry::ir::ValueResourceClass::LiveResource),
+        Some(OperationKind::LiveResource)
+    );
 }
 
 #[test]
