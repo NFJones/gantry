@@ -42,6 +42,8 @@ const EXPECTED_VERIFIES_FLOOR: usize = 5;
 
 const EXPECTED_EVIDENCE_FLOOR: usize = 4;
 
+const EXPECTED_ACCEPTANCE_FLOOR: usize = 10;
+
 const EXPECTED_PHASE: &str = "phase-1-deterministic-language";
 
 #[derive(Clone, Debug, Deserialize)]
@@ -56,6 +58,7 @@ struct Manifest {
     prerequisites: Vec<Prerequisite>,
     artifacts: Vec<FileDigest>,
     evidence: Vec<Evidence>,
+    acceptance: Vec<Acceptance>,
     claim: Claim,
     validation_commands: Vec<String>,
     environment_gaps: Vec<String>,
@@ -83,6 +86,15 @@ struct Evidence {
     state: String,
     visibility: String,
     path: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Acceptance {
+    item: String,
+    disposition: String,
+    evidence: String,
+    owner: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -143,6 +155,18 @@ fn milestone_gate_rejects_malformed_missing_cyclic_stale_and_overclaiming_record
         .evidence
         .truncate(EXPECTED_EVIDENCE_FLOOR - 1);
     assert!(validate_manifest(&root, &missing_evidence).is_err());
+
+    let mut unknown_disposition = manifest.clone();
+    unknown_disposition.acceptance[0].disposition = "assumed".to_owned();
+    assert!(validate_manifest(&root, &unknown_disposition).is_err());
+
+    let mut unowned = manifest.clone();
+    unowned.acceptance[1].owner = None;
+    assert!(validate_manifest(&root, &unowned).is_err());
+
+    let mut owned_pass = manifest.clone();
+    owned_pass.acceptance[0].owner = Some("ownerless".to_owned());
+    assert!(validate_manifest(&root, &owned_pass).is_err());
 
     let mut overclaim = manifest.clone();
     overclaim.claim.advertises_general_purpose = true;
@@ -235,6 +259,34 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         })
     {
         return Err("milestone gate evidence is incomplete".to_owned());
+    }
+    ordered_unique(
+        manifest
+            .acceptance
+            .iter()
+            .map(|acceptance| acceptance.item.as_str()),
+        "acceptance",
+    )?;
+    if manifest.acceptance.len() < EXPECTED_ACCEPTANCE_FLOOR {
+        return Err("milestone gate records too few acceptance items".to_owned());
+    }
+    for acceptance in &manifest.acceptance {
+        if !root.join(&acceptance.evidence).is_file() {
+            return Err(format!(
+                "acceptance evidence is missing: {}",
+                acceptance.item
+            ));
+        }
+        match (acceptance.disposition.as_str(), acceptance.owner.as_deref()) {
+            ("passed", None) => {}
+            ("qualified", Some(owner)) if !owner.trim().is_empty() => {}
+            _ => {
+                return Err(format!(
+                    "acceptance disposition or owner is invalid: {}",
+                    acceptance.item
+                ));
+            }
+        }
     }
     if manifest.claim.phase != EXPECTED_PHASE
         || !manifest.claim.profiles.is_empty()

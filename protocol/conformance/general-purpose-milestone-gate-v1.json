@@ -180,6 +180,71 @@
    "path": "protocol/catalogs/std-test-surface-v1.json"
   }
  ],
+ "acceptance": [
+  {
+   "item": "artifact-reproducibility-and-publication-set",
+   "disposition": "passed",
+   "evidence": "protocol/publication/verification-v1.json"
+  },
+  {
+   "item": "clean-incremental-parallel-separate-compilation-cross-target-arrangements",
+   "disposition": "qualified",
+   "evidence": "protocol/catalogs/general-purpose-preregistration-v1.json",
+   "owner": "000761b0 GNT-GP-TOOLING-RUNTIME-001"
+  },
+  {
+   "item": "deterministic-library-vectors",
+   "disposition": "passed",
+   "evidence": "crates/gantry-conformance/tests/scalar_foundation.rs"
+  },
+  {
+   "item": "package-workspace-and-lockfile-resolution",
+   "disposition": "passed",
+   "evidence": "crates/gantry-conformance/tests/workspace_lockfile.rs"
+  },
+  {
+   "item": "prerequisite-provenance-authentication",
+   "disposition": "passed",
+   "evidence": "protocol/catalogs/general-purpose-preregistration-v1.json"
+  },
+  {
+   "item": "registry-authentication-and-round-trips",
+   "disposition": "passed",
+   "evidence": "crates/gantry-conformance/tests/registry_trust.rs"
+  },
+  {
+   "item": "requirement-mapped-evidence",
+   "disposition": "passed",
+   "evidence": "protocol/requirements/reviewed-v1.json"
+  },
+  {
+   "item": "runtime-execution-and-durable-replay",
+   "disposition": "qualified",
+   "evidence": "protocol/catalogs/general-purpose-preregistration-v1.json",
+   "owner": "f3667613 GNT-GP-TEST-RUNTIME-001"
+  },
+  {
+   "item": "semantic-resource-bounds",
+   "disposition": "passed",
+   "evidence": "crates/gantry-conformance/tests/resource_accounting.rs"
+  },
+  {
+   "item": "standard-library-hierarchy-and-interface-identity",
+   "disposition": "passed",
+   "evidence": "protocol/catalogs/stdlib-hierarchy-v1.json"
+  },
+  {
+   "item": "testing-support-surface",
+   "disposition": "passed",
+   "evidence": "protocol/catalogs/std-test-surface-v1.json"
+  },
+  {
+   "item": "whole-application-benchmark-thresholds",
+   "disposition": "qualified",
+   "evidence": "protocol/catalogs/general-purpose-preregistration-v1.json",
+   "owner": "f4d5e02c GNT-GP-BENCH-001"
+  }
+ ],
  "claim": {
   "phase": "phase-1-deterministic-language",
   "profiles": [],
