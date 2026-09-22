@@ -135,11 +135,11 @@
   },
   {
    "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
-   "sha256": "5d88e1c2b035ee95ffe942c033ed1d4c2285f744935689b87917850e9976caab"
+   "sha256": "7a821ba02120d71b70e88cf66247cef2fe11ae8eeaca6615f68299db84c72615"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "d6a543e70621eac14a263cc30307750cf75d535e6ffab6f0f3a567218780e302"
+   "sha256": "7a62cf74f940249e848c1133f8f07104453038e355a01a3999b0bedbfd2629f3"
   }
  ],
  "evidence": [

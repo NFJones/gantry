@@ -44395,8 +44395,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/io_foundation.rs#io_operation_vocabulary_is_closed_and_canonical",
-                "crates/gantry-conformance/tests/io_foundation.rs#io_request_bound_is_inclusive_and_refuses_zero_and_one_more",
-                "crates/gantry-conformance/tests/io_foundation.rs#io_progress_sets_are_closed_per_kind"
+                "crates/gantry-conformance/tests/io_foundation.rs#io_progress_precedence_and_derivation_scope_are_published",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_progress_sets_are_closed_per_kind",
+                "crates/gantry-conformance/tests/io_foundation.rs#io_request_bound_is_inclusive_and_refuses_zero_and_one_more"
               ],
               "rationale": null
             }
