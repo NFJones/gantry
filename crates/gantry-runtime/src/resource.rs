@@ -28,9 +28,9 @@
 
 use gantry_ir::{
     CanonicalPath, DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness,
-    LogicalOperationId, PoisonWitness, PostFailureSettlement, Quota, QuotaFamily, QuotaOwner,
-    ResourceCarrier, ResourceError, ResourceGenerationId, ResourceLedger, ResourceLifetimeState,
-    StaticSiteId, StructuralPosition, admit_resource_carrier,
+    ExecutableOperation, LogicalOperationId, PoisonWitness, PostFailureSettlement, Quota,
+    QuotaFamily, QuotaOwner, ResourceCarrier, ResourceError, ResourceGenerationId, ResourceLedger,
+    ResourceLifetimeState, StaticSiteId, StructuralPosition, admit_resource_carrier,
 };
 
 /// One runtime-owned binding of an admitted account to its Section 20 subject.
@@ -38,9 +38,16 @@ use gantry_ir::{
 /// The binding is derived, never chosen: one declared operation declaration path, the canonical
 /// workflow and structural position of the operation's site, and the runtime's own per-site
 /// generation counter decide the logical operation identity and the resource generation the
-/// account is admitted under, so no caller-supplied text can name another operation. The
-/// derivation is exactly the one the Section 20 operation ABI publishes, so a settlement the ABI
-/// issues for the same facts compares equal to this binding.
+/// account is admitted under. The derivation is exactly the one the Section 20 operation ABI
+/// publishes, so a settlement the ABI issues for the same facts compares equal to this binding.
+///
+/// Construction is crate-private: the only public source of a binding is the machine's own
+/// pending-operation accessor, so a caller outside this crate cannot supply or forge a subject.
+///
+/// ```compile_fail
+/// // The derivation constructor is crate-private and unnameable from outside the crate.
+/// let _ = gantry_runtime::ResourceSubjectBinding::derive;
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResourceSubjectBinding {
     site: StaticSiteId,
@@ -51,7 +58,7 @@ pub struct ResourceSubjectBinding {
 impl ResourceSubjectBinding {
     /// Derives the binding of one declared operation site and one runtime generation.
     #[must_use]
-    pub fn derive(
+    pub(crate) fn derive(
         declaration: &CanonicalPath,
         workflow: CanonicalPath,
         position: StructuralPosition,
@@ -65,6 +72,27 @@ impl ResourceSubjectBinding {
             operation,
             generation,
         }
+    }
+
+    /// Derives the binding one decoded operation metadata declares at one site.
+    ///
+    /// The declaration is the metadata's canonical action path, so an operation whose decoded
+    /// metadata declares no action has no Section 20 resource subject and yields `None` rather
+    /// than a substituted identity.
+    #[must_use]
+    pub(crate) fn from_declared_operation(
+        workflow: &CanonicalPath,
+        position: &StructuralPosition,
+        metadata: &ExecutableOperation,
+        generation: u64,
+    ) -> Option<Self> {
+        let action = metadata.action.as_ref()?;
+        Some(Self::derive(
+            &action.path,
+            workflow.clone(),
+            position.clone(),
+            generation,
+        ))
     }
 
     /// Returns the canonical operation site of this binding.

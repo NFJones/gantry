@@ -5,15 +5,24 @@
 //! how semantic release stays independent of record retirement. They perform no
 //! durable I/O and claim no journal, checkpoint, evaluator, or host behavior.
 
-use gantry::ir::generated::RecoveryClass;
+use std::sync::Arc;
+
+use gantry::identity::ProtocolIdentity;
+use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry::ir::{
-    CanonicalPath, Charge, DurableResourceRecord, EmergencyCleanupWitness, FailureClass,
-    GracePolicy, LivenessRoot, OperationAbi, OperationKind, OwnerGeneration, PostFailureSettlement,
-    Quota, QuotaFamily, QuotaOwner, ReceiverOwnership, ResourceAction, ResourceCarrier,
-    ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence,
-    StaticSiteId, StopCause, StopCoordinator, StopRequest, StructuralPosition, TaskStopState,
+    CanonicalPath, CanonicalSignature, Charge, DurableResourceRecord, EffectSet,
+    EmergencyCleanupWitness, ExecutableAction, ExecutableOperation, FailureClass, GracePolicy,
+    LivenessRoot, OperationAbi, OperationKind, OwnerGeneration, PostFailureSettlement, Quota,
+    QuotaFamily, QuotaOwner, ReceiverOwnership, ResourceAction, ResourceCarrier, ResourceError,
+    ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence, StaticSiteId, StopCause,
+    StopCoordinator, StopRequest, StructuralPosition, TaskStopState, TypeDescriptor,
 };
-use gantry::runtime::{AdmittedResource, PostFailureSettlementRefusal, ResourceSubjectBinding};
+use gantry::portable::IdentityKind;
+use gantry::runtime::{
+    AdmittedResource, Instruction, InstructionKind, Machine, MachineLabel, MachineLimits,
+    MachineProgram, MachineStep, PostFailureSettlementRefusal, ResourceSubjectBinding, Workflow,
+};
+use gantry::value::DEFAULT_VALUE_LIMITS;
 
 /// Fails to compile if the admitted account acquires a duplicating trait: a runtime
 /// account is uniquely owned, so copying one would create a second owner over one
@@ -68,31 +77,77 @@ fn admitted(
     AdmittedResource::admit(carrier, record, subject)
 }
 
-/// Derives the runtime subject of one fixture declaration and runtime generation.
-fn active_subject_at(declaration: &str, generation: u64) -> ResourceSubjectBinding {
-    let path = CanonicalPath::new(declaration)
-        .unwrap_or_else(|_| unreachable!("fixture path is canonical"));
-    let position = StructuralPosition::new(vec![45, 1])
-        .unwrap_or_else(|_| unreachable!("fixture position is canonical"));
-    ResourceSubjectBinding::derive(&path, path.clone(), position, generation)
+const FIXTURE_WORKFLOW: &str = "crate::main";
+const FIXTURE_DECLARATION: &str = "crate::resource_runtime_metadata";
+const FIXTURE_SITE: u64 = 45;
+
+/// Builds the fixture machine, drives it to the prepared operation, and takes the subject the
+/// machine itself issues for that operation.
+fn machine_with_declared_subject(
+    action_path: Option<&str>,
+) -> (Machine, Option<ResourceSubjectBinding>) {
+    let workflow = CanonicalPath::new(FIXTURE_WORKFLOW)
+        .unwrap_or_else(|_| unreachable!("fixture workflow is canonical"));
+    let site = StructuralPosition::new(vec![FIXTURE_SITE])
+        .unwrap_or_else(|_| unreachable!("fixture site is canonical"));
+    let program = MachineProgram::new(vec![Workflow {
+        path: workflow.clone(),
+        parameters: Vec::new(),
+        result: TypeDescriptor::UNIT,
+        effects: EffectSet::default(),
+        instructions: vec![
+            Instruction {
+                site,
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::OperationCall {
+                    operation: operation_metadata(action_path),
+                    operands: 0,
+                },
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![FIXTURE_SITE + 1])
+                    .unwrap_or_else(|_| unreachable!("fixture return site is canonical")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Return,
+            },
+        ],
+    }])
+    .unwrap_or_else(|error| panic!("fixture machine program is valid: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [9; 32])
+        .unwrap_or_else(|error| panic!("fixture execution identity is valid: {error}"));
+    let limits = MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("fixture machine limits are positive"));
+    let mut machine = Machine::new(Arc::new(program), &workflow, Vec::new(), execution, limits)
+        .unwrap_or_else(|error| panic!("fixture machine construction succeeds: {error:?}"));
+    match machine.step() {
+        MachineStep::Transition(MachineLabel::OperationPrepared(_)) => {}
+        other => panic!("unexpected machine step: {other:?}"),
+    }
+    let subject = machine.pending_resource_subject();
+    (machine, subject)
 }
 
+/// Returns the machine-issued subject of the fixture declared operation.
 fn active_subject() -> ResourceSubjectBinding {
-    active_subject_at("crate::resource_runtime", 1)
+    let (_machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    subject.unwrap_or_else(|| panic!("the fixture operation declares an action"))
 }
 
-/// Issues one model settlement for one fixture declaration, site, generation, and failure class.
-fn failure_settlement_at(
+/// Issues one model settlement for one containing workflow, declaration, site, and generation.
+fn failure_settlement_in(
+    workflow: &str,
     declaration: &str,
     position: Vec<u64>,
     generation: u64,
     failure: FailureClass,
 ) -> PostFailureSettlement {
+    let workflow = CanonicalPath::new(workflow)
+        .unwrap_or_else(|_| unreachable!("fixture workflow is canonical"));
     let path = CanonicalPath::new(declaration)
-        .unwrap_or_else(|_| unreachable!("fixture path is canonical"));
+        .unwrap_or_else(|_| unreachable!("fixture declaration is canonical"));
     let position = StructuralPosition::new(position)
         .unwrap_or_else(|_| unreachable!("fixture position is canonical"));
-    let site = StaticSiteId::new(path.clone(), position);
+    let site = StaticSiteId::new(workflow, position);
     let operation = OperationAbi::new(
         OperationKind::LiveResource,
         &path,
@@ -112,6 +167,37 @@ fn admitted_active() -> AdmittedResource {
         active_subject(),
     )
     .unwrap_or_else(|error| panic!("the declared reconstruction record is admitted: {error:?}"))
+}
+
+/// Builds one decoded operation metadata value with an optional declared action.
+fn operation_metadata(action_path: Option<&str>) -> ExecutableOperation {
+    let action = action_path.map(|declaration| {
+        let path = CanonicalPath::new(declaration)
+            .unwrap_or_else(|_| unreachable!("fixture action path is canonical"));
+        ExecutableAction {
+            path: path.clone(),
+            signature: CanonicalSignature::action(
+                RecoveryClass::Idempotent,
+                &path,
+                &[],
+                &TypeDescriptor::UNIT,
+            ),
+            recovery: RecoveryClass::Idempotent,
+            parameters: Vec::new(),
+        }
+    });
+    ExecutableOperation {
+        kind: OperationSiteKind::Action,
+        result_type: TypeDescriptor::UNIT,
+        action,
+        template_segments: Vec::new(),
+        interpolation_types: Vec::new(),
+        named_input_names: Vec::new(),
+        named_input_types: Vec::new(),
+        retry_limit: None,
+        session_mode: None,
+        attempted: false,
+    }
 }
 
 #[test]
@@ -453,10 +539,11 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     let mut admitted_resource = admitted_active();
     let before = admitted_resource.ledger().clone();
 
-    let foreign = failure_settlement_at(
+    let foreign = failure_settlement_in(
+        FIXTURE_WORKFLOW,
         "crate::resource_runtime_foreign",
-        vec![45, 1],
-        1,
+        vec![FIXTURE_SITE],
+        0,
         FailureClass::ResourceFailure,
     );
     assert_eq!(
@@ -465,10 +552,11 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     );
     assert_eq!(admitted_resource.ledger(), &before);
 
-    let stale = failure_settlement_at(
-        "crate::resource_runtime",
-        vec![45, 1],
-        2,
+    let stale = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        1,
         FailureClass::ResourceFailure,
     );
     assert_eq!(
@@ -477,10 +565,11 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     );
     assert_eq!(admitted_resource.ledger(), &before);
 
-    let non_poisoning = failure_settlement_at(
-        "crate::resource_runtime",
-        vec![45, 1],
-        1,
+    let non_poisoning = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
         FailureClass::AdapterFailure,
     );
     assert_eq!(
@@ -491,10 +580,11 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     );
     assert_eq!(admitted_resource.ledger(), &before);
 
-    let settlement = failure_settlement_at(
-        "crate::resource_runtime",
-        vec![45, 1],
-        1,
+    let settlement = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
         FailureClass::ResourceFailure,
     );
     assert_eq!(
@@ -518,5 +608,29 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     assert_eq!(
         admitted_resource.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
         Some(8)
+    );
+}
+
+#[test]
+fn runtime_subject_requires_the_declared_operation_action() {
+    let (_machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject =
+        subject.unwrap_or_else(|| panic!("metadata with a declared action carries a subject"));
+    let model_issued = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(subject.operation(), model_issued.operation());
+    assert_eq!(subject.generation(), model_issued.generation());
+    assert_eq!(subject.site().workflow().as_str(), FIXTURE_WORKFLOW);
+    assert_eq!(subject.site().position().components(), &[FIXTURE_SITE]);
+
+    let (_machine, none) = machine_with_declared_subject(None);
+    assert!(
+        none.is_none(),
+        "an operation without a declared action has no Section 20 subject"
     );
 }

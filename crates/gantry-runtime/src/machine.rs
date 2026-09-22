@@ -22,6 +22,7 @@ use gantry_ir::{
 #[cfg(feature = "concurrent")]
 use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 
+use crate::resource::ResourceSubjectBinding;
 use crate::session::SessionCreationModeV1;
 #[cfg(feature = "concurrent")]
 use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskJoinFailureV1};
@@ -2210,6 +2211,31 @@ impl Machine {
             remaining_transitions,
             remaining_operations,
             self.remaining_loop_iterations,
+        )
+    }
+
+    /// Derives the Section 20 resource subject of the pending operation occurrence.
+    ///
+    /// The subject is derived from this machine's own occurrence facts — the pending operation's
+    /// canonical workflow, structural site, and decoded operation metadata — and the machine's own
+    /// per-site counter that numbered that occurrence, so no caller can name another operation. An
+    /// occurrence whose decoded metadata declares no action has no resource subject.
+    #[must_use]
+    pub fn pending_resource_subject(&self) -> Option<ResourceSubjectBinding> {
+        let occurrence = self
+            .pending_operation
+            .as_ref()
+            .map(|pending| &pending.occurrence)?;
+        let metadata = occurrence.metadata.as_deref()?;
+        let generation = self
+            .counters
+            .get(&self.counter_key("operation", &occurrence.workflow, &occurrence.site))?
+            .checked_sub(1)?;
+        ResourceSubjectBinding::from_declared_operation(
+            &occurrence.workflow,
+            &occurrence.site,
+            metadata,
+            generation,
         )
     }
 
