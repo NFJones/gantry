@@ -1170,6 +1170,30 @@ pub fn inspect_presentation(
     ))
 }
 
+/// Admits the declared convenience set one tool is about to display, or reports the first refusal.
+///
+/// A tool validates its inputs before use: every declared facade in the set must carry a defining
+/// side that the graph declares and exports (the landed admission check, reused unchanged), and no
+/// two facades may share one canonical path, because a set that names a path twice cannot be
+/// displayed or enumerated deterministically. The gate grants nothing, inspects no physical
+/// layout, and returns no authority: an empty set is admitted.
+pub fn admit_tooling_inputs(
+    graph: &StdGraph,
+    facades: &[FacadeReexport],
+) -> Result<(), StdlibError> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for facade in facades {
+        if !seen.insert(canonical_std_path(facade.path())) {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::DuplicatePackage,
+                format!("`{}` is declared twice", facade.path()),
+            ));
+        }
+        facade.admit(graph, &facade.defining_identity())?;
+    }
+    Ok(())
+}
+
 /// One declared facade re-export of `GNT-34.5-facade-and-reexport-identity`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FacadeReexport {

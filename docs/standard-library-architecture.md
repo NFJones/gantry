@@ -180,6 +180,7 @@ exactly:
 - `std-layout-derived-identity`
 - `std-unknown-edge`
 
-A facade presentation carries the defining package and the re-exported item; a facade whose
-defining side is undeclared or unexported is refused under `std-facade-identity-loss`, and a
-presentation naming physical repository layout is refused under `std-layout-derived-identity`.
+A facade presentation carries the defining package and the re-exported item, and its defining side
+must be declared and exported: an undeclared defining package and an unexported item are distinct
+refusals, so the refusal names whichever of the closed refusals above applies. A presentation
+naming physical repository layout is refused under `std-layout-derived-identity`.

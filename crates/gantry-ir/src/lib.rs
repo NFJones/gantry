@@ -420,8 +420,8 @@ pub use stdlib::{
     StdDeprecation, StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest,
     StdManifestEntry, StdName, StdPackage, StdPathInspection, StdPresentation,
     StdlibDiagnosticCode, StdlibError, StdlibNonClaim, StdlibNonClaimAssertion,
-    canonical_pure_hierarchy, check_layout_identity, check_stdlib_non_claims, inspect_presentation,
-    require_applicable,
+    admit_tooling_inputs, canonical_pure_hierarchy, check_layout_identity, check_stdlib_non_claims,
+    inspect_presentation, require_applicable,
 };
 pub use target::{
     AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,

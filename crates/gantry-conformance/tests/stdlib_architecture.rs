@@ -17,7 +17,7 @@ use gantry::ir::{
     STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS, SelectedInstance, SemanticMode,
     StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation, StdGraph, StdItem,
     StdName, StdPackage, StdPresentation, StdlibDiagnosticCode, StdlibError, StdlibNonClaim,
-    StdlibNonClaimAssertion, TargetKind, canonical_codec_hierarchy,
+    StdlibNonClaimAssertion, TargetKind, admit_tooling_inputs, canonical_codec_hierarchy,
     canonical_collections_hierarchy, canonical_crypto_hierarchy, canonical_data_hierarchy,
     canonical_pure_hierarchy, canonical_std_hierarchy, check_layout_identity,
     check_stdlib_non_claims, hex_decode, hex_encode, inspect_presentation, require_applicable,
@@ -2340,4 +2340,37 @@ fn section_members(note: &str, heading: &str) -> Vec<String> {
 fn sorted_members(mut members: Vec<String>) -> Vec<String> {
     members.sort_unstable();
     members
+}
+
+#[test]
+fn tooling_inputs_admit_only_distinct_facades_with_exported_defining_sides() {
+    let graph = graph_with(&[package(
+        PackageFamily::Core,
+        StabilityTier::Stable,
+        &[],
+        &[OPTION_ITEM],
+    )]);
+    let valid = FacadeReexport::new("std.io::option", CORE, OPTION_ITEM)
+        .unwrap_or_else(|error| panic!("the fixture facade is valid: {error}"));
+    assert_eq!(admit_tooling_inputs(&graph, &[]), Ok(()));
+    assert_eq!(
+        admit_tooling_inputs(&graph, std::slice::from_ref(&valid)),
+        Ok(())
+    );
+
+    let spelled_differently = FacadeReexport::new("std.io.option", CORE, OPTION_ITEM)
+        .unwrap_or_else(|error| panic!("the fixture facade is valid: {error}"));
+    let error = refuse(
+        admit_tooling_inputs(&graph, &[valid.clone(), spelled_differently]),
+        "one canonical path declared twice",
+    );
+    assert_eq!(error.code(), StdlibDiagnosticCode::DuplicatePackage);
+
+    let unexported = FacadeReexport::new("std.io::absent", CORE, "std.core::absent")
+        .unwrap_or_else(|error| panic!("the fixture facade is valid: {error}"));
+    let error = refuse(
+        admit_tooling_inputs(&graph, &[unexported]),
+        "an unexported defining side",
+    );
+    assert_eq!(error.code(), StdlibDiagnosticCode::FacadeIdentityLoss);
 }
