@@ -13,11 +13,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    AlgorithmIdentity, CRYPTO_CLAUSES, CRYPTO_ITEMS, CryptoDiagnosticCode, CryptoError,
-    CryptoModule, CryptoRefusalCategory, DECLARED_ALGORITHM_VERSION, ED25519_MESSAGE_OCTET_BOUND,
-    ED25519_PUBLIC_KEY_OCTET_LENGTH, ED25519_SIGNATURE_OCTET_LENGTH, Ed25519Verdict, NameClass,
-    PackageFamily, SHA256_DIGEST_OCTET_LENGTH, SHA256_INPUT_OCTET_BOUND, StabilityTier,
-    canonical_crypto_hierarchy, canonical_pure_hierarchy, ed25519_verify, sha256_digest,
+    AlgorithmIdentity, CRYPTO_CLAUSES, CRYPTO_ITEMS, CRYPTO_NON_CLAIMS, CryptoDiagnosticCode,
+    CryptoError, CryptoModule, CryptoNonClaim, CryptoRefusalCategory, DECLARED_ALGORITHM_VERSION,
+    ED25519_MESSAGE_OCTET_BOUND, ED25519_PUBLIC_KEY_OCTET_LENGTH, ED25519_SIGNATURE_OCTET_LENGTH,
+    Ed25519Verdict, NameClass, PackageFamily, SHA256_DIGEST_OCTET_LENGTH, SHA256_INPUT_OCTET_BOUND,
+    StabilityTier, canonical_crypto_hierarchy, canonical_pure_hierarchy, ed25519_verify,
+    sha256_digest,
 };
 
 fn workspace_root() -> PathBuf {
@@ -32,7 +33,7 @@ fn workspace_root() -> PathBuf {
 fn section_44_clauses_are_published() {
     let spec = fs::read_to_string(workspace_root().join("SPEC.md"))
         .unwrap_or_else(|error| panic!("SPEC.md: {error}"));
-    assert_eq!(CRYPTO_CLAUSES.len(), 4);
+    assert_eq!(CRYPTO_CLAUSES.len(), 5);
     let mut prior = 0_usize;
     for clause in CRYPTO_CLAUSES {
         let anchor = format!("<a id=\"{clause}\"></a>");
@@ -120,7 +121,11 @@ fn section_44_clauses_are_published() {
             "the content-hashing clause must name {term}"
         );
     }
-    let signature = &spec[signature_start..];
+    let non_claims_start = spec
+        .find(&format!("<a id=\"{}\"></a>", CRYPTO_CLAUSES[4]))
+        .unwrap_or_else(|| panic!("the non-claims anchor is published"));
+    assert!(signature_start < non_claims_start);
+    let signature = &spec[signature_start..non_claims_start];
     for term in [
         "`std.crypto::signature::ed25519@1`",
         "`ED25519_PUBLIC_KEY_OCTET_LENGTH`",
@@ -148,6 +153,32 @@ fn section_44_clauses_are_published() {
         assert!(
             signature.contains(term),
             "the signature-verification clause must name {term}"
+        );
+    }
+    let non_claims = &spec[non_claims_start..];
+    for term in [
+        "GNT-44.4-crypto-non-claims",
+        "`CryptoNonClaim`",
+        "`CRYPTO_NON_CLAIMS`",
+        "`ambient-selection`",
+        "`boundary-encoding`",
+        "`constant-time`",
+        "`durable-eligibility`",
+        "`external-eligibility`",
+        "`host-crypto-authority`",
+        "`secret-key-operations`",
+        "`security-property`",
+        "`crypto-unsupported-algorithm`",
+        "`crypto-malformed-input`",
+        "`crypto-work-limit`",
+        "`GNT-3-D-REFINEMENT`",
+        "`ExternalValue`",
+        "`crates/gantry-ir/src/crypto.rs`",
+        "`crates/gantry-conformance/tests/crypto_foundation.rs`",
+    ] {
+        assert!(
+            non_claims.contains(term),
+            "the non-claims clause must name {term}"
         );
     }
 }
@@ -183,8 +214,18 @@ fn crypto_surface_declares_the_two_modules() {
         "the family declares exactly one module item per declared module"
     );
     let expected_clauses: [&[&str]; 2] = [
-        &[CRYPTO_CLAUSES[0], CRYPTO_CLAUSES[1], CRYPTO_CLAUSES[2]],
-        &[CRYPTO_CLAUSES[0], CRYPTO_CLAUSES[1], CRYPTO_CLAUSES[3]],
+        &[
+            CRYPTO_CLAUSES[0],
+            CRYPTO_CLAUSES[1],
+            CRYPTO_CLAUSES[2],
+            CRYPTO_CLAUSES[4],
+        ],
+        &[
+            CRYPTO_CLAUSES[0],
+            CRYPTO_CLAUSES[1],
+            CRYPTO_CLAUSES[3],
+            CRYPTO_CLAUSES[4],
+        ],
     ];
     for (index, (row, module)) in CRYPTO_ITEMS.iter().zip(CryptoModule::ALL).enumerate() {
         assert_eq!(row.module, module);
@@ -604,4 +645,47 @@ fn ed25519_refusals_are_declared_and_indexed() {
     let verdict = ed25519_verify(&public_key, &admitted, &signature)
         .unwrap_or_else(|error| panic!("the declared bound is admitted: {error:?}"));
     assert_eq!(verdict, Ed25519Verdict::Refused);
+}
+
+#[test]
+fn section_44_non_claims_are_closed_and_published() {
+    assert_eq!(CRYPTO_NON_CLAIMS.len(), 8);
+    assert_eq!(CryptoNonClaim::ALL.len(), CRYPTO_NON_CLAIMS.len());
+    let mut prior: Option<&str> = None;
+    let mut spellings = BTreeSet::new();
+    for non_claim in CRYPTO_NON_CLAIMS {
+        let spelling = non_claim.wire_name();
+        if let Some(previous) = prior {
+            assert!(
+                previous < spelling,
+                "the vocabulary is sorted: {previous} then {spelling}"
+            );
+        }
+        prior = Some(spelling);
+        assert!(
+            spellings.insert(spelling),
+            "one distinct spelling per non-claim"
+        );
+        assert!(
+            !non_claim.meaning().is_empty(),
+            "every non-claim publishes a meaning"
+        );
+        assert_eq!(non_claim.requirement(), CRYPTO_CLAUSES[4]);
+        assert_eq!(CryptoNonClaim::from_wire_name(spelling), Some(non_claim));
+    }
+    assert_eq!(
+        spellings.iter().copied().collect::<Vec<_>>(),
+        vec![
+            "ambient-selection",
+            "boundary-encoding",
+            "constant-time",
+            "durable-eligibility",
+            "external-eligibility",
+            "host-crypto-authority",
+            "secret-key-operations",
+            "security-property",
+        ]
+    );
+    assert!(CryptoNonClaim::from_wire_name("unbounded-expansion").is_none());
+    assert!(CryptoNonClaim::from_wire_name("not-a-non-claim").is_none());
 }

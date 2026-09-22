@@ -16,11 +16,12 @@ use crate::stdlib::{
 };
 
 /// The declared clauses of Section 44, in specification order.
-pub const CRYPTO_CLAUSES: [&str; 4] = [
+pub const CRYPTO_CLAUSES: [&str; 5] = [
     "GNT-44.0-crypto-foundation-scope",
     "GNT-44.1-crypto-algorithm-contract",
     "GNT-44.2-content-hashing",
     "GNT-44.3-signature-verification",
+    "GNT-44.4-crypto-non-claims",
 ];
 
 /// The one declared version of every algorithm in this revision
@@ -72,6 +73,105 @@ impl Ed25519Verdict {
         }
     }
 }
+
+/// One declared non-claim of Section 44 (`GNT-44.4-crypto-non-claims`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CryptoNonClaim {
+    /// No ambient registry, display label, or host facility selects an algorithm or version.
+    AmbientSelection,
+    /// No observation of this section is a canonical boundary encoding.
+    BoundaryEncoding,
+    /// No clause of this section claims a timing or side-channel property.
+    ConstantTime,
+    /// No observation of this section is durable state or a recovery input.
+    DurableEligibility,
+    /// No observation of this section is an `ExternalValue`, a protected release, or a capability.
+    ExternalEligibility,
+    /// No platform or host cryptographic facility is a semantic authority.
+    HostCryptoAuthority,
+    /// No algorithm of this section signs, decrypts, or touches a secret key or credential.
+    SecretKeyOperations,
+    /// No clause of this section claims a cryptographic security property.
+    SecurityProperty,
+}
+
+impl CryptoNonClaim {
+    /// The closed declared set, in canonical wire-name order.
+    pub const ALL: [CryptoNonClaim; 8] = [
+        Self::AmbientSelection,
+        Self::BoundaryEncoding,
+        Self::ConstantTime,
+        Self::DurableEligibility,
+        Self::ExternalEligibility,
+        Self::HostCryptoAuthority,
+        Self::SecretKeyOperations,
+        Self::SecurityProperty,
+    ];
+
+    /// Returns the canonical wire spelling (`GNT-44.4-crypto-non-claims`).
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::AmbientSelection => "ambient-selection",
+            Self::BoundaryEncoding => "boundary-encoding",
+            Self::ConstantTime => "constant-time",
+            Self::DurableEligibility => "durable-eligibility",
+            Self::ExternalEligibility => "external-eligibility",
+            Self::HostCryptoAuthority => "host-crypto-authority",
+            Self::SecretKeyOperations => "secret-key-operations",
+            Self::SecurityProperty => "security-property",
+        }
+    }
+
+    /// Returns the published meaning of this non-claim.
+    #[must_use]
+    pub const fn meaning(self) -> &'static str {
+        match self {
+            Self::AmbientSelection => {
+                "No ambient registry, display label, or host facility selects an algorithm or version."
+            }
+            Self::BoundaryEncoding => {
+                "No digest, verdict, or refusal of this section is a canonical boundary encoding."
+            }
+            Self::ConstantTime => {
+                "No clause of this section claims a timing or side-channel property."
+            }
+            Self::DurableEligibility => {
+                "No digest, verdict, or refusal of this section is durable state or a recovery input."
+            }
+            Self::ExternalEligibility => {
+                "No digest, verdict, or refusal of this section is an `ExternalValue`, a protected release, or a capability."
+            }
+            Self::HostCryptoAuthority => {
+                "No platform cryptographic API, host crypto library, hardware facility, or entropy source is a semantic authority."
+            }
+            Self::SecretKeyOperations => {
+                "No algorithm of this section signs, decrypts, or touches a secret key or credential."
+            }
+            Self::SecurityProperty => {
+                "No clause of this section claims a cryptographic security property."
+            }
+        }
+    }
+
+    /// Decodes one canonical wire spelling; every other spelling is `None`.
+    #[must_use]
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|non_claim| non_claim.wire_name() == name)
+    }
+
+    /// Returns the one owning clause of this non-claim.
+    #[must_use]
+    pub const fn requirement(self) -> &'static str {
+        "GNT-44.4-crypto-non-claims"
+    }
+}
+
+/// The declared non-claims of Section 44, in canonical wire-name order
+/// (`GNT-44.4-crypto-non-claims`).
+pub const CRYPTO_NON_CLAIMS: [CryptoNonClaim; 8] = CryptoNonClaim::ALL;
 
 /// One declared module of the `std.crypto` family (`GNT-44.1-crypto-algorithm-contract`).
 ///
@@ -1262,6 +1362,7 @@ pub const CRYPTO_ITEMS: [CryptoItemRow; 2] = [
             "GNT-44.0-crypto-foundation-scope",
             "GNT-44.1-crypto-algorithm-contract",
             "GNT-44.2-content-hashing",
+            "GNT-44.4-crypto-non-claims",
         ],
     },
     CryptoItemRow {
@@ -1273,6 +1374,7 @@ pub const CRYPTO_ITEMS: [CryptoItemRow; 2] = [
             "GNT-44.0-crypto-foundation-scope",
             "GNT-44.1-crypto-algorithm-contract",
             "GNT-44.3-signature-verification",
+            "GNT-44.4-crypto-non-claims",
         ],
     },
 ];

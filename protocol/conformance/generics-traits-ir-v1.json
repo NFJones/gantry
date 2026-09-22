@@ -1,6 +1,6 @@
 {
  "format": "gantry.generics-traits-ir-evidence/v1",
- "specification_sha256": "f85623052e3ff665d4ba643b40c63f124b72fd209d4632a0280ae59779e9dc33",
+ "specification_sha256": "481f9ccaa079589dbeb021277b8a02f8fc5f84906fee04280585481b669eaaa0",
  "issue": "GNT-GEN-IR-001",
  "capabilities": [
   {

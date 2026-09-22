@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "f85623052e3ff665d4ba643b40c63f124b72fd209d4632a0280ae59779e9dc33",
-  "byte_length": 1201662,
-  "line_count": 15785,
+  "specification_sha256": "481f9ccaa079589dbeb021277b8a02f8fc5f84906fee04280585481b669eaaa0",
+  "byte_length": 1205709,
+  "line_count": 15789,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8300,
-      "sha256": "83a0061ad5847cc8c46d7f96d5c40fac7512aa6f7cdf53d42aba498ca20c98a7",
+      "sha256": "e6c59eae24f0512721a3272a64c6c289f9eea7906cd2f0d57f8feaf358ca609e",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15785,
-      "sha256": "c4d7c34017f3ec1f393e7cecd649959e87dcdb73cc9612f528bd3f7345e1721f",
+      "end_line": 15789,
+      "sha256": "4861833441c303e5663e0b10121575d8cece8f701b05965d187f9c871f09d185",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 768,
       "span_end_line": 828,
-      "span_sha256": "8a7075b5ca06b7bfcb98ddffae22d48837cf355c1b75b5b2f57ffcf5536dd370",
+      "span_sha256": "c4486f9d2dda47b4ee76e202ea26ad7604c38620754820294cd5d5fa446f9fc8",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 828,
-      "body_sha256": "223aabf3dbfcaced4149f46fdba3b9fc4fb8cd0be4912c1aa70bafc303f42053",
+      "body_sha256": "d10b07b0ed78f085d729a8e0838d439cc558c840d25a172414f7b09733d20db4",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -44271,6 +44271,48 @@
                 "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_verifies_the_declared_vectors",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_refuses_tampered_presentations",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_refusals_are_declared_and_indexed"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.4-crypto-non-claims",
+      "span_start_line": 15786,
+      "span_end_line": 15789,
+      "span_sha256": "6cd4589eab06688fe8a35da85f48587a78de90f02bbddbeda0a976501bfca400",
+      "anchor_line": 15787,
+      "body_start_line": 15788,
+      "body_end_line": 15789,
+      "body_sha256": "0e99482fbbe167fce821a47d8b3c41421658d43d79c2b96cf71ae6a034a554b6",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15788,
+          "end_line": 15789,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_clauses_are_published",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_non_claims_are_closed_and_published"
               ],
               "rationale": null
             }

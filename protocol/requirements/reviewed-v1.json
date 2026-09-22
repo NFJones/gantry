@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "f85623052e3ff665d4ba643b40c63f124b72fd209d4632a0280ae59779e9dc33",
+  "specification_sha256": "481f9ccaa079589dbeb021277b8a02f8fc5f84906fee04280585481b669eaaa0",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9504,
-      "end_line": 15785,
+      "end_line": 15789,
       "rationale": null
     }
   ],
@@ -43068,6 +43068,46 @@
                 "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_verifies_the_declared_vectors",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_refuses_tampered_presentations",
                 "crates/gantry-conformance/tests/crypto_foundation.rs#ed25519_refusals_are_declared_and_indexed"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-44.4-crypto-non-claims",
+      "span_start_line": 15786,
+      "span_end_line": 15789,
+      "anchor_line": 15787,
+      "body_start_line": 15788,
+      "body_end_line": 15789,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 15788,
+          "end_line": 15789,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_clauses_are_published",
+                "crates/gantry-conformance/tests/crypto_foundation.rs#section_44_non_claims_are_closed_and_published"
               ],
               "rationale": null
             }
