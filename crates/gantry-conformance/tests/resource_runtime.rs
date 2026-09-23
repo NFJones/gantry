@@ -74,7 +74,7 @@ fn admitted(
     carrier: ResourceCarrier,
     record: DurableResourceRecord,
     subject: ResourceSubjectBinding,
-) -> Result<AdmittedResource, ResourceError> {
+) -> Result<AdmittedResource, ResourceRegistryRefusal> {
     AdmittedResource::admit(carrier, record, subject)
 }
 
@@ -83,7 +83,8 @@ const FIXTURE_DECLARATION: &str = "crate::resource_runtime_metadata";
 const FIXTURE_SITE: u64 = 45;
 
 /// An operation whose Section 20 kind is not authenticated cannot be admitted as a live resource:
-/// the admission boundary reads the authenticated fact rather than defaulting one.
+/// the admission boundary reads the authenticated fact rather than defaulting one, on every
+/// account-construction path.
 #[test]
 fn an_unauthenticated_operation_kind_is_refused_at_resource_admission() {
     let (_program, _machine, subject) =
@@ -94,15 +95,28 @@ fn an_unauthenticated_operation_kind_is_refused_at_resource_admission() {
         None,
         "the fixture leaves the Section 20 kind unauthenticated"
     );
+    assert_eq!(
+        AdmittedResource::admit(
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            subject.clone(),
+        ),
+        Err(ResourceRegistryRefusal::UnauthenticatedOperationKind),
+        "the account constructor refuses an unauthenticated subject"
+    );
     let mut registry = ResourceRegistry::new();
     assert_eq!(
         registry.admit(
-            subject,
+            subject.clone(),
             ResourceCarrier::ReconstructionRecord,
             ledger().durable_record(),
         ),
         Err(ResourceRegistryRefusal::UnauthenticatedOperationKind),
         "no account may stand in for an unauthenticated Section 20 operation kind"
+    );
+    assert!(
+        registry.account(&subject).is_none(),
+        "a refused admission creates no account"
     );
 }
 
@@ -299,7 +313,7 @@ fn the_runtime_admits_only_the_declared_reconstruction_record() {
             Err(error) => {
                 assert_eq!(
                     error,
-                    ResourceError::OrdinaryCarrierRefused,
+                    ResourceRegistryRefusal::Admission(ResourceError::OrdinaryCarrierRefused),
                     "carrier {}",
                     carrier.wire_name()
                 );

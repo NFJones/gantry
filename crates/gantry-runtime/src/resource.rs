@@ -30,8 +30,9 @@
 //! `ExecutableOperation` carries an optional kind and the retained-program `GNTPRG05` wire
 //! round-trips it (see `docs/operation-kind-carriage.md`); the machine derives the subject from the
 //! decoded metadata, so the subject carries the kind the program authenticated, and
-//! [`ResourceRegistry::admit`] refuses a subject whose operation carries no live-resource kind with
-//! [`ResourceRegistryRefusal::UnauthenticatedOperationKind`] before any account exists. The kind is
+//! every account-construction path refuses a subject whose operation carries no live-resource kind
+//! with [`ResourceRegistryRefusal::UnauthenticatedOperationKind`], so no account can exist for it:
+//! the registry checks its own keys first and the constructor enforces the kind. The kind is
 //! authenticated by analysis - `GNT-6.2j` declares the `live_resource` struct modifier - and is
 //! never inferred from a caller-presented declaration, an effect row, or the hook-site kind.
 
@@ -185,17 +186,13 @@ impl ResourceRegistry {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
-        if subject.operation_kind() != Some(OperationKind::LiveResource) {
-            return Err(ResourceRegistryRefusal::UnauthenticatedOperationKind);
-        }
         let key = (subject.operation().clone(), subject.generation().clone());
         match self.accounts.entry(key) {
             std::collections::btree_map::Entry::Occupied(_) => {
                 Err(ResourceRegistryRefusal::SecondAdmission)
             }
             std::collections::btree_map::Entry::Vacant(slot) => {
-                let account = AdmittedResource::admit(carrier, record, subject)
-                    .map_err(ResourceRegistryRefusal::Admission)?;
+                let account = AdmittedResource::admit(carrier, record, subject)?;
                 Ok(slot.insert(account))
             }
         }
@@ -260,7 +257,9 @@ pub enum ResourceRegistryRefusal {
 ///
 /// The account is reconstructible only from the declared durable reconstruction
 /// record: the ledger is private and [`AdmittedResource::admit`] is the only
-/// constructor, so no ordinary carrier can produce a runtime account.
+/// constructor, so no ordinary carrier can produce a runtime account. That constructor admits
+/// only a subject whose operation carries an authenticated live-resource Section 20 kind, so no
+/// construction path can open an account for an unauthenticated operation.
 ///
 /// The account is uniquely owned and deliberately not copyable: it implements no
 /// `Clone`, so a second account over one resource's lifetime requires a second admitted
@@ -284,8 +283,11 @@ impl AdmittedResource {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
         subject: ResourceSubjectBinding,
-    ) -> Result<Self, ResourceError> {
-        admit_resource_carrier(carrier)?;
+    ) -> Result<Self, ResourceRegistryRefusal> {
+        if subject.operation_kind() != Some(OperationKind::LiveResource) {
+            return Err(ResourceRegistryRefusal::UnauthenticatedOperationKind);
+        }
+        admit_resource_carrier(carrier).map_err(ResourceRegistryRefusal::Admission)?;
         Ok(Self {
             ledger: ResourceLedger::reconstruct(record),
             subject,
