@@ -1360,6 +1360,97 @@ mod tests {
     }
 
     #[test]
+    fn v5_is_selected_when_only_a_task_body_operation_is_authenticated() {
+        let path = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("path failed: {error}"));
+        let caller = CanonicalCallableIdentity::free(&path, &[]);
+        let result = TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::INT);
+        let body_identity = TaskBodyIdentity::new(
+            caller.clone(),
+            StructuralPosition::new(vec![1])
+                .unwrap_or_else(|error| panic!("spawn site failed: {error}")),
+        );
+        let instruction = |site, ty, kind| Instruction {
+            site: StructuralPosition::new(site)
+                .unwrap_or_else(|error| panic!("instruction site failed: {error}")),
+            ty,
+            kind,
+        };
+        let operation = ExecutableOperation {
+            kind: OperationSiteKind::Action,
+            section20_kind: Some(OperationKind::LiveResource),
+            result_type: result.clone(),
+            action: None,
+            template_segments: Vec::new(),
+            interpolation_types: Vec::new(),
+            named_input_names: Vec::new(),
+            named_input_types: Vec::new(),
+            retry_limit: None,
+            session_mode: None,
+            attempted: false,
+        };
+        let body = ExecutableTaskBody::new(
+            body_identity.clone(),
+            result.clone(),
+            Vec::new(),
+            ExecutableTaskContext::v1(),
+            vec![
+                instruction(
+                    vec![1, 0],
+                    result.clone(),
+                    InstructionKind::OperationCall {
+                        operation,
+                        operands: 0,
+                    },
+                ),
+                instruction(vec![1, 1], result.clone(), InstructionKind::TaskComplete),
+            ],
+        )
+        .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
+        let program = MachineProgram::with_task_bodies(
+            vec![(
+                caller,
+                Workflow {
+                    path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        instruction(
+                            vec![0],
+                            result.clone(),
+                            InstructionKind::BranchResult {
+                                when_ok: 1,
+                                when_err: 1,
+                            },
+                        ),
+                        instruction(
+                            vec![1],
+                            TypeDescriptor::UNIT,
+                            InstructionKind::Spawn {
+                                handle: ExecutableTaskHandle::new(Arc::from("child"), result)
+                                    .unwrap_or_else(|error| panic!("handle failed: {error:?}")),
+                                body: body_identity,
+                            },
+                        ),
+                        instruction(vec![2], TypeDescriptor::UNIT, InstructionKind::Return),
+                    ],
+                },
+            )],
+            vec![body],
+        )
+        .unwrap_or_else(|error| panic!("task-body program failed: {error:?}"));
+
+        let encoded = encode_machine_program(&program);
+        assert_eq!(
+            encoded.get(..8),
+            Some(b"GNTPRG05".as_slice()),
+            "an authenticated task-body operation selects the V5 wire"
+        );
+        assert_eq!(decode_machine_program(&encoded), Ok(program));
+    }
+
+    #[test]
     fn executable_program_codec_preserves_closed_generic_callable_identities() {
         let main_path = CanonicalPath::new("crate::main")
             .unwrap_or_else(|error| panic!("main path failed: {error}"));
