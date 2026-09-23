@@ -468,3 +468,176 @@ fn runtime_harness_cancels_a_target_that_reaches_its_bound() {
         "a harness that declares no reason keeps stopping at the bound"
     );
 }
+
+#[test]
+fn runtime_harness_refuses_a_zero_parallelism_declaration() {
+    let harness = TestHarness::new(limits(8));
+    assert_eq!(
+        harness.parallelism(),
+        1,
+        "a harness runs one target at a time until a width is declared"
+    );
+    assert!(
+        matches!(
+            harness.clone().parallel(0),
+            Err(TestHarnessRefusal::ZeroParallelism)
+        ),
+        "a declared width of zero would run no target and is refused"
+    );
+    let widened = harness
+        .parallel(3)
+        .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}"));
+    assert_eq!(
+        widened.parallelism(),
+        3,
+        "an accepted width is the one the harness reports"
+    );
+}
+
+#[test]
+fn runtime_harness_arranges_targets_up_to_its_declared_parallelism() {
+    let mut sequential = TestHarness::new(limits(8));
+    let names = ["alpha", "beta", "gamma", "delta", "epsilon"];
+    for (name, byte) in names.iter().zip(0x60_u8..) {
+        assert!(
+            sequential
+                .admit(name, returning_program(), workflow(), execution(byte))
+                .is_ok()
+        );
+    }
+    let plan = declare_test_run(&["unit"], &[])
+        .unwrap_or_else(|error| panic!("fixture plan is declared: {error:?}"));
+    let run = |harness: &TestHarness| {
+        harness
+            .run(&plan)
+            .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"))
+    };
+
+    let one = run(&sequential);
+    assert_eq!(
+        one.peak_in_flight(),
+        1,
+        "a harness that declares no width runs one target at a time"
+    );
+    assert!(one.is_clean());
+
+    let four = run(&sequential
+        .clone()
+        .parallel(4)
+        .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}")));
+    assert_eq!(
+        four.peak_in_flight(),
+        4,
+        "every arranged worker holds a target at once, so the observed peak is the arranged width"
+    );
+
+    let wider_than_the_targets = run(&sequential
+        .clone()
+        .parallel(64)
+        .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}")));
+    assert_eq!(
+        wider_than_the_targets.peak_in_flight(),
+        5,
+        "the arranged width is bounded by the admitted target count"
+    );
+
+    assert_eq!(
+        four.results(),
+        one.results(),
+        "a parallel arrangement changes nothing about the results"
+    );
+    assert_eq!(wider_than_the_targets.results(), one.results());
+    assert_eq!(
+        four.results()
+            .iter()
+            .map(|result| result.name())
+            .collect::<Vec<_>>(),
+        vec!["alpha", "beta", "delta", "epsilon", "gamma"],
+        "results stay in canonical name order under every arrangement"
+    );
+    for result in four.results() {
+        assert_eq!(
+            result.outcome(),
+            &TestTargetOutcome::Completed { steps: 4 },
+            "each target keeps its own machine and its own transition count"
+        );
+    }
+
+    // The harness stays replayable at a declared width: the same width reports the same report.
+    let repeated = run(&sequential
+        .clone()
+        .parallel(4)
+        .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}")));
+    assert_eq!(
+        repeated, four,
+        "two runs at one width report the same report"
+    );
+}
+
+#[test]
+fn runtime_harness_keeps_each_target_isolated_under_a_parallel_arrangement() {
+    let mut harness = TestHarness::new(limits(8));
+    assert!(
+        harness
+            .admit("alpha", failing_program(), workflow(), execution(0x71))
+            .is_ok()
+    );
+    assert!(
+        harness
+            .admit("beta", operation_program(), workflow(), execution(0x72))
+            .is_ok()
+    );
+    assert!(
+        harness
+            .admit("gamma", returning_program(), workflow(), execution(0x73))
+            .is_ok()
+    );
+    let plan = declare_test_run(&["unit"], &[])
+        .unwrap_or_else(|error| panic!("fixture plan is declared: {error:?}"));
+
+    let sequential = harness
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    let arranged = harness
+        .clone()
+        .parallel(3)
+        .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}"))
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+
+    assert_eq!(
+        arranged.peak_in_flight(),
+        3,
+        "all three targets are arranged at once"
+    );
+    assert_eq!(
+        arranged.results(),
+        sequential.results(),
+        "one target's outcome never depends on what runs beside it"
+    );
+    assert!(
+        !arranged.is_clean(),
+        "a failing target is never arranged into a pass"
+    );
+    match arranged.results()[0].outcome() {
+        TestTargetOutcome::Failed { steps, failure } => {
+            assert_eq!(
+                *steps, 1,
+                "the failure still costs its own target one transition"
+            );
+            assert_eq!(failure.code.wire_name(), "source-panic");
+        }
+        other => panic!("a panicking target still reports its structured failure: {other:?}"),
+    }
+    assert!(matches!(
+        arranged.results()[1].outcome(),
+        TestTargetOutcome::Undriveable {
+            stop: TestHarnessStop::HostDispatchPending,
+            ..
+        }
+    ));
+    assert!(matches!(
+        arranged.results()[2].outcome(),
+        TestTargetOutcome::Completed { .. }
+    ));
+}

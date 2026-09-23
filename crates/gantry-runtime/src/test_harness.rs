@@ -13,7 +13,8 @@
 //! entry cannot drive is reported as undriveable rather than as a pass.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Barrier};
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_ir::{CanonicalPath, MachineProgram, TestKind, TestRunPlan, TestSubstitution};
@@ -53,6 +54,8 @@ pub enum TestHarnessRefusal {
     UnboundedStepBound,
     /// The machine refused to start the presented target, so the target cannot be admitted.
     TargetRejected(MachineBuildError),
+    /// A declared parallelism of zero would run no target at all.
+    ZeroParallelism,
 }
 
 /// Where one target stopped in a state this entry cannot drive.
@@ -146,6 +149,7 @@ impl TestTargetResult {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TestRunReport {
     results: Vec<TestTargetResult>,
+    peak_in_flight: u64,
 }
 
 impl TestRunReport {
@@ -161,6 +165,18 @@ impl TestRunReport {
         self.results
             .iter()
             .all(|result| matches!(result.outcome, TestTargetOutcome::Completed { .. }))
+    }
+
+    /// Returns the greatest number of targets this run had in flight at once.
+    ///
+    /// This is the width the harness arranged rather than a scheduling accident: every worker holds
+    /// one target at the start gate, so all arranged workers are in flight together before any target
+    /// runs, and no more workers exist than the declared ceiling. The peak is therefore the declared
+    /// ceiling bounded by the admitted target count on every run, and a harness that runs one target
+    /// at a time reports one.
+    #[must_use]
+    pub const fn peak_in_flight(&self) -> u64 {
+        self.peak_in_flight
     }
 }
 
@@ -182,6 +198,7 @@ struct AdmittedTestTarget {
 pub struct TestHarness {
     limits: MachineLimits,
     cancel_at_bound: Option<Arc<str>>,
+    parallelism: u64,
     targets: BTreeMap<String, AdmittedTestTarget>,
 }
 
@@ -196,8 +213,35 @@ impl TestHarness {
         Self {
             limits,
             cancel_at_bound: None,
+            parallelism: 1,
             targets: BTreeMap::new(),
         }
+    }
+
+    /// Declares the greatest number of targets this harness may run at once.
+    ///
+    /// Each target still runs in its own machine under the same limits, step bound, and cancellation
+    /// policy, and the report's ordering and per-target outcomes are independent of the parallelism:
+    /// only the arrangement of the work changes. The report states that arrangement as its
+    /// `peak_in_flight` observation. A declared parallelism of zero would run no target at all and is
+    /// refused rather than treated as sequential, so the harness never silently ignores a caller's
+    /// declaration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestHarnessRefusal::ZeroParallelism`] for a declared zero.
+    pub fn parallel(mut self, limit: u64) -> Result<Self, TestHarnessRefusal> {
+        if limit == 0 {
+            return Err(TestHarnessRefusal::ZeroParallelism);
+        }
+        self.parallelism = limit;
+        Ok(self)
+    }
+
+    /// Returns the declared parallelism ceiling of this harness.
+    #[must_use]
+    pub const fn parallelism(&self) -> u64 {
+        self.parallelism
     }
 
     /// Declares that this harness cancels a target that reaches its bound, under one reason.
@@ -282,7 +326,9 @@ impl TestHarness {
     /// [`TEST_EXECUTED_KINDS`] is refused as `UnsupportedKind` and a declared substitution is refused
     /// as `UnsupportedSubstitution`, because this entry provides no substitution machinery. An empty
     /// harness is refused as `NoTargets`. Otherwise every admitted target runs, in canonical
-    /// name order, each in its own machine and under the harness's step bound.
+    /// name order, each in its own machine and under the harness's step bound. The targets are
+    /// arranged across the harness's declared parallelism, which changes how the work is scheduled
+    /// and nothing else: the report's results and their order are the same at any width.
     ///
     /// The step bound is the machine's declared transition budget, counted in labelled transitions.
     /// A cooperative yield is not a labelled transition: the machine is resumed and the bound counts
@@ -311,24 +357,99 @@ impl TestHarness {
         let Some(bound) = self.limits.maximum_deterministic_transitions.maximum() else {
             return Err(TestHarnessRefusal::UnboundedStepBound);
         };
-        let mut results = Vec::with_capacity(self.targets.len());
-        for (name, target) in &self.targets {
-            let mut machine = match Machine::new(
-                Arc::clone(&target.program),
-                &target.workflow,
-                Vec::new(),
-                target.execution,
-                self.limits,
-            ) {
-                Ok(machine) => machine,
-                Err(error) => return Err(TestHarnessRefusal::TargetRejected(error)),
-            };
-            results.push(TestTargetResult {
-                name: name.clone(),
-                outcome: execute(&mut machine, bound, self.cancel_at_bound.as_ref()),
-            });
+        let queue: Vec<(&str, &AdmittedTestTarget)> = self
+            .targets
+            .iter()
+            .map(|(name, target)| (name.as_str(), target))
+            .collect();
+        let workers = usize::try_from(
+            self.parallelism
+                .min(u64::try_from(queue.len()).unwrap_or(u64::MAX))
+                .max(1),
+        )
+        .unwrap_or(1);
+        let next = AtomicUsize::new(0);
+        let in_flight = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let gate = Barrier::new(workers);
+        let mut collected: Vec<TestTargetResult> = Vec::with_capacity(queue.len());
+        let mut refusal: Option<TestHarnessRefusal> = None;
+        std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(workers);
+            for _ in 0..workers {
+                handles.push(scope.spawn(|| {
+                    let mut local = Vec::new();
+                    let mut failure = None;
+                    loop {
+                        let index = next.fetch_add(1, Ordering::SeqCst);
+                        let Some((name, target)) = queue.get(index) else {
+                            break;
+                        };
+                        let current = in_flight.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+                        peak.fetch_max(current, Ordering::SeqCst);
+                        if index < workers {
+                            // Every worker holds its first claim at the gate, so all arranged workers
+                            // are in flight together before any target runs. Only infallible work
+                            // happens between claiming and gating, so the gate cannot be abandoned.
+                            gate.wait();
+                        }
+                        let outcome = self.run_target(target, bound);
+                        in_flight.fetch_sub(1, Ordering::SeqCst);
+                        match outcome {
+                            Ok(outcome) => local.push(TestTargetResult {
+                                name: (*name).to_owned(),
+                                outcome,
+                            }),
+                            Err(error) => {
+                                failure = Some(error);
+                                break;
+                            }
+                        }
+                    }
+                    (local, failure)
+                }));
+            }
+            for handle in handles {
+                match handle.join() {
+                    Ok((local, failure)) => {
+                        collected.extend(local);
+                        if refusal.is_none() {
+                            refusal = failure;
+                        }
+                    }
+                    // A worker panic is a harness fault, not a target result or a caller-visible
+                    // refusal, so it is resumed unchanged rather than reclassified.
+                    Err(payload) => std::panic::resume_unwind(payload),
+                }
+            }
+        });
+        if let Some(refusal) = refusal {
+            return Err(refusal);
         }
-        Ok(TestRunReport { results })
+        collected.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(TestRunReport {
+            results: collected,
+            peak_in_flight: u64::try_from(peak.load(Ordering::SeqCst)).unwrap_or(u64::MAX),
+        })
+    }
+
+    /// Runs one admitted target in its own machine under this harness's limits, bound, and policy.
+    fn run_target(
+        &self,
+        target: &AdmittedTestTarget,
+        bound: u64,
+    ) -> Result<TestTargetOutcome, TestHarnessRefusal> {
+        let mut machine = match Machine::new(
+            Arc::clone(&target.program),
+            &target.workflow,
+            Vec::new(),
+            target.execution,
+            self.limits,
+        ) {
+            Ok(machine) => machine,
+            Err(error) => return Err(TestHarnessRefusal::TargetRejected(error)),
+        };
+        Ok(execute(&mut machine, bound, self.cancel_at_bound.as_ref()))
     }
 }
 
