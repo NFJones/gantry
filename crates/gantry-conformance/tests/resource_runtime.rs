@@ -2550,36 +2550,70 @@ fn runtime_cohort_emergency_cleanup_reports_its_settled_prefix() {
                 panic!("the declared reconstruction record is admitted: {error:?}")
             });
     }
-    let unknown = unauthenticated_fixture_subject(UNAUTHENTICATED_FIXTURE_DECLARATION);
+    // A refusal that follows a successful settlement preserves exactly the settled prefix, and the
+    // registry keeps the lifetimes the progress reports.
+    let mut ordered = [&first, &second];
+    ordered.sort_by(|left, right| {
+        (left.operation(), left.generation()).cmp(&(right.operation(), right.generation()))
+    });
+    let earlier = (*ordered[0]).clone();
+    let later = (*ordered[1]).clone();
+    assert_eq!(
+        partial.settle_from_emergency_cleanup(&later, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased),
+        "the later account settles before the sweep, so the sweep meets it after a settlement"
+    );
     let swept = partial.settle_cohort_from_emergency_cleanup(vec![
-        (second.clone(), emergency_cleanup()),
-        (unknown.clone(), emergency_cleanup()),
-        (first.clone(), emergency_cleanup()),
+        (later.clone(), emergency_cleanup()),
+        (earlier.clone(), emergency_cleanup()),
     ]);
     assert!(!swept.is_complete());
-    assert!(matches!(
-        swept.refusal(),
-        Some((subject, ResourceRegistryRefusal::UnknownSubject))
-            if subject.operation() == unknown.operation()
-    ));
-    let unknown_key = (unknown.operation().clone(), unknown.generation().clone());
-    let prefix = [&first, &second]
-        .into_iter()
-        .filter(|subject| {
-            (subject.operation(), subject.generation()) < (&unknown_key.0, &unknown_key.1)
-        })
-        .count();
     assert_eq!(
-        swept.settled().len(),
-        prefix,
-        "exactly the accounts sorting before the unknown subject settle"
-    );
-    assert!(
         swept
             .settled()
             .iter()
-            .all(|settlement| settlement.lifetime() == ResourceLifetimeState::EmergencyReleased)
+            .map(|settlement| settlement.subject().operation().clone())
+            .collect::<Vec<_>>(),
+        vec![earlier.operation().clone()],
+        "the sweep settles exactly the account that sorts before the refusal"
     );
+    assert_eq!(
+        swept.settled()[0].lifetime(),
+        ResourceLifetimeState::EmergencyReleased
+    );
+    assert!(matches!(
+        swept.refusal(),
+        Some((
+            subject,
+            ResourceRegistryRefusal::EmergencyRelease(ResourceError::IllegalLifetimeTransition)
+        )) if subject.operation() == later.operation()
+    ));
+    assert_eq!(
+        partial
+            .account(&earlier)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::EmergencyReleased),
+        "the account the sweep settled keeps its released lifetime"
+    );
+    assert_eq!(
+        partial
+            .account(&later)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::EmergencyReleased),
+        "the refused account keeps the lifetime it already reached"
+    );
+
+    // A cohort whose only subject this registry does not hold settles nothing and reports it.
+    let unknown = unauthenticated_fixture_subject(UNAUTHENTICATED_FIXTURE_DECLARATION);
+    let missing = ResourceRegistry::new()
+        .settle_cohort_from_emergency_cleanup(vec![(unknown.clone(), emergency_cleanup())]);
+    assert!(!missing.is_complete());
+    assert!(missing.settled().is_empty());
+    assert!(matches!(
+        missing.refusal(),
+        Some((subject, ResourceRegistryRefusal::UnknownSubject))
+            if subject.operation() == unknown.operation()
+    ));
 }
 
 /// Returns the workspace root of this repository.
@@ -2927,7 +2961,8 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
         "No public route hands out a mutable registry-held account",
         "the private subject-binding constructor",
         "the removed raw ledger accessor",
-        "one witness settles exactly one account",
+        "each witness authorizes at most one settlement attempt",
+        "a witness that reaches no ledger is dropped rather than returned",
     ] {
         assert!(
             flattened.contains(&flatten(statement)),

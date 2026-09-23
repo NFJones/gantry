@@ -764,16 +764,21 @@ impl ResourceRegistry {
 
     /// Settles every account of one hard-cancelled cohort from that cohort's sealed cleanup witnesses.
     ///
-    /// The model's emergency-release witness is sealed and single-use, so one witness settles exactly
-    /// one account: the sweep takes one witness per account, which is the shape a halted cohort has
-    /// after each of its escalations admitted cleanup. Accounts settle in canonical subject order
-    /// rather than the order the caller presents, and each account's own ledger decides whether it
-    /// admits an emergency release, exactly as [`Self::settle_from_emergency_cleanup`] documents. An
-    /// account this registry does not hold is refused with
-    /// [`ResourceRegistryRefusal::UnknownSubject`], and a subject presented more than once settles
-    /// once, with the extra witness never reaching a ledger. Two things are runtime policy: that order,
-    /// and the progress contract that stops at the first refusal without rolling back an account that
-    /// already settled, because an emergency release is one-way.
+    /// The model's emergency-release witness is sealed and single-use, so the sweep takes one witness
+    /// per account, which is the shape a halted cohort has after each of its escalations admitted
+    /// cleanup. Each presented witness authorizes at most one settlement attempt: it is consumed by
+    /// that attempt whether the attempt succeeds or is refused, and a witness that reaches no ledger -
+    /// because the sweep stopped earlier, because its subject was presented more than once, or because
+    /// this registry holds no account for its subject - is dropped. The progress reports no unprocessed
+    /// witnesses, so retrying an unsettled account needs a fresh witness for it.
+    ///
+    /// Accounts settle in canonical subject order rather than the order the caller presents, and each
+    /// account's own ledger decides whether it admits an emergency release, exactly as
+    /// [`Self::settle_from_emergency_cleanup`] documents. A subject presented more than once settles
+    /// once, under the witness the stable sort retains for it, and an account this registry does not
+    /// hold is refused with [`ResourceRegistryRefusal::UnknownSubject`]. Two things are runtime policy:
+    /// that order, and the progress contract that stops at the first refusal without rolling back an
+    /// account that already settled, because an emergency release is one-way.
     pub fn settle_cohort_from_emergency_cleanup(
         &mut self,
         cleanups: Vec<(ResourceSubjectBinding, EmergencyCleanupWitness)>,

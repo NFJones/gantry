@@ -56,9 +56,11 @@ the private subject-binding constructor, the removed mutable registry-held accou
 unqualified finish and finalization steps, and the removed raw ledger accessor, so those specific
 transitions are unnameable outside the crate rather than merely unused.
 
-The sealed emergency-release witness is single-use, so one witness settles exactly one account: the
-cohort sweep takes one witness per account, settles the presented subjects in canonical order, and
-stops at the first refusal without rolling back an account that already settled.
+The sealed emergency-release witness is single-use, so the cohort sweep takes one witness per account
+and each witness authorizes at most one settlement attempt: it is consumed by that attempt whether it
+succeeds or is refused, and a witness that reaches no ledger is dropped rather than returned, so
+retrying an unsettled account needs a fresh witness. The sweep settles the presented subjects in
+canonical order and stops at the first refusal without rolling back an account that already settled.
 
 ## Non-claims
 
