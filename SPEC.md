@@ -3607,11 +3607,11 @@ Ownership classification distinguishes `Copyable`, `AffineDroppable`, and
 `NonLiveResource`/`LiveResource`; protection: `Unsealed`/`Sealed`; recovery:
 `SealedValue`/`Unavailable`. Aggregates fold all stored fields and enum payloads conservatively:
 restrictive classes dominate permissive empty identities under associative, commutative, and
-idempotent combine. Every v1 value is `Copyable`, `IsolatedTaskCapture`, and `SealedValue`, and is
-`NonLiveResource` unless its declared type carries the `live_resource` modifier of item 2j of
-Section 6, which seeds `LiveResource`; values storing `Decision` or `OperationError` are `Sealed`.
-`Unsealed` never means transport data is nonsensitive; no class grants live resources, moves,
-loans, release authority, or runtime recovery.
+idempotent combine. The empty-aggregate identity is `Copyable`, `IsolatedTaskCapture`,
+`NonLiveResource`, and `SealedValue`; the ownership modifiers of items 2c and 2d seed their own
+ownership class, a `live_resource struct` of item 2j seeds `LiveResource`, and values storing
+`Decision` or `OperationError` are `Sealed`. `Unsealed` never means transport data is
+nonsensitive; no class grants live resources, moves, loans, release authority, or runtime recovery.
 
 A generic direct self-recursive occurrence MUST use the same declared
 constructor with the same parameter ordinals in the same order and MUST remain

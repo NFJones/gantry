@@ -5008,9 +5008,9 @@ fn must_consume_structs_fold_ownership_class_and_generics() {
 }
 
 /// A `live_resource struct` seeds `LiveResource`: the declared type, an empty declaration, a
-/// generic declaration, and every enclosing stored aggregate report the absorbing resource
-/// class, unrelated declarations keep the empty identity, and the seed leaves the ownership
-/// and transfer axes to the ordinary stored-member fold.
+/// closed generic application and a wrapper storing one, and every enclosing stored aggregate
+/// report the absorbing resource class, unrelated declarations keep the empty identity, and the
+/// seed leaves the ownership and transfer axes to the ordinary stored-member fold.
 #[test]
 fn live_resource_structs_seed_the_resource_class_and_fold_stored_members() {
     use gantry::ir::{OwnershipClass, TypeDescriptor, ValueResourceClass};
@@ -5023,6 +5023,7 @@ fn live_resource_structs_seed_the_resource_class_and_fold_stored_members() {
          live_resource struct Holder { token: Token }\n\
          struct Plain { value: Int }\n\
          struct Wrapped { handle: Handle }\n\
+         struct HoldsGeneric { inner: Generic<Int> }\n\
          struct Nested { wrapped: Wrapped }\n\
          struct Unrelated { plain: Plain }\n\
          fn main() {}",
@@ -5042,6 +5043,16 @@ fn live_resource_structs_seed_the_resource_class_and_fold_stored_members() {
         ),
         (
             "crate::Empty",
+            ValueResourceClass::LiveResource,
+            OwnershipClass::Copyable,
+        ),
+        (
+            "crate::Generic<Int>",
+            ValueResourceClass::LiveResource,
+            OwnershipClass::Copyable,
+        ),
+        (
+            "crate::HoldsGeneric",
             ValueResourceClass::LiveResource,
             OwnershipClass::Copyable,
         ),
