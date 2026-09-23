@@ -24,7 +24,7 @@ use crate::bodies::{
     BodyAnalysis, BoolFact, EffectNode, SpawnCaptureMetadata, annotation_is_contextual_self,
     bool_fact,
 };
-use crate::generics::{GenericDeclarationShape, prove_ownership_class};
+use crate::generics::{GenericDeclarationShape, prove_ownership_class, prove_resource_class};
 use crate::{AnalysisError, TypeFact};
 use gantry_ir::ReceiverSource;
 
@@ -211,6 +211,7 @@ pub(crate) fn lower_executable_program(
                 .ok_or(AnalysisError::Invariant)?,
             struct_fields: &body.struct_fields,
             facts,
+            capability_declarations,
             receiver_type: metadata.receiver.as_ref(),
             result: &metadata.result,
             effects: metadata.effects,
@@ -269,6 +270,7 @@ pub(crate) fn lower_executable_program(
             body_types: &metadata.expression_types,
             struct_fields: &body.struct_fields,
             facts,
+            capability_declarations,
             receiver_type: metadata.receiver.as_ref(),
             result: &metadata.result,
             effects,
@@ -337,6 +339,7 @@ struct Compiler<'a> {
     body_types: &'a BTreeMap<NodeId, TypeDescriptor>,
     struct_fields: &'a BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, TypeDescriptor>>,
     facts: &'a WorkflowFacts,
+    capability_declarations: &'a BTreeMap<String, GenericDeclarationShape>,
     receiver_type: Option<&'a TypeDescriptor>,
     result: &'a TypeDescriptor,
     effects: EffectSet,
@@ -425,6 +428,7 @@ impl Compiler<'_> {
             body_types: self.body_types,
             struct_fields: self.struct_fields,
             facts: self.facts,
+            capability_declarations: self.capability_declarations,
             receiver_type: self.receiver_type,
             result: &result,
             effects: self.effects,
@@ -3263,11 +3267,14 @@ impl Compiler<'_> {
             // Only the live-resource arm is authenticated from the analyzed result type's resource
             // class; a non-live result is either a value action or a protected operation and no
             // analyzed fact separates those two, so it stays explicitly unauthenticated rather than
-            // assumed. The V5 retained-program wire carries whatever is authenticated here, and
-            // predecessor wires decode it as unauthenticated.
-            section20_kind: result_type.primitive_properties().and_then(|properties| {
-                gantry_ir::OperationKind::for_value_resource_class(properties.resource_class())
-            }),
+            // assumed. The class comes from the same stored-member fold the public type-property
+            // surface publishes, so a declared or generic result type authenticates exactly as its
+            // analyzed properties report; a fold that refuses the descriptor leaves the kind
+            // unauthenticated rather than guessed. The V5 retained-program wire carries whatever is
+            // authenticated here, and predecessor wires decode it as unauthenticated.
+            section20_kind: prove_resource_class(&result_type, self.capability_declarations)
+                .ok()
+                .and_then(gantry_ir::OperationKind::for_value_resource_class),
             result_type,
             action,
             template_segments: operation_template_segments(self.tree, &actual_node),

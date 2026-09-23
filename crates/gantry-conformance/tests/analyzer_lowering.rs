@@ -387,6 +387,42 @@ fn artifacts(source: &str) -> (Vec<u8>, Vec<u8>) {
     )
 }
 
+/// A source operation whose analyzed result type carries the live-resource class authenticates
+/// that arm of the Section 20 kind, while an operation whose result carries no such class stays
+/// explicitly unauthenticated (`GNT-20.1`, `GNT-6.2j`).
+#[test]
+fn live_resource_result_authenticates_the_section20_kind_and_non_live_stays_unauthenticated() {
+    use gantry::ir::{InstructionKind, OperationKind};
+
+    let package = analyze(
+        "live_resource struct Handle { token: Int }\n\
+         fn main() { discard prompt \"x\" -> Handle; discard prompt \"y\" -> String; }",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| unreachable!("a valid package retains its executable program"));
+    let mut kinds = Vec::new();
+    for workflow in program.workflows() {
+        for instruction in &workflow.instructions {
+            if let InstructionKind::OperationCall { operation, .. } = &instruction.kind {
+                kinds.push(operation.section20_kind);
+            }
+        }
+    }
+    assert_eq!(
+        kinds,
+        [Some(OperationKind::LiveResource), None],
+        "the live-resource result authenticates its arm and every other result stays unauthenticated"
+    );
+}
+
 fn analyze(source: &str) -> TypedPackage {
     let phase = syntax(source);
     analyze_package_types(&phase)

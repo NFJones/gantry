@@ -21,6 +21,7 @@ use gantry_ir::{
     CallableKind, EFFECT_ORDER, EffectSet, ImplementationHead, IndependentTypeProperties,
     OwnershipClass, Predicate, PrimitiveTypeProperties, ReceiverMode, TraitContract,
     TraitMethodContract, TraitReference, TransferEligibility, TypeDescriptor, TypeExpression,
+    ValueResourceClass,
 };
 
 use crate::types::{
@@ -2280,6 +2281,19 @@ pub(crate) fn prove_ownership_class(
     let mut memo = BTreeMap::new();
     prove_independent_type_properties(root, declarations, &mut None, &mut memo)
         .map(IndependentTypeProperties::ownership_class)
+}
+
+/// Proves the live source-resource classification of one retained closed type with an uncounted fold.
+///
+/// A refusal is not a classification: a caller that needs the authenticated live arm treats a
+/// refused fold as unauthenticated rather than as a non-live value.
+pub(crate) fn prove_resource_class(
+    root: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+) -> Result<ValueResourceClass, AnalysisError> {
+    let mut memo = BTreeMap::new();
+    prove_independent_type_properties(root, declarations, &mut None, &mut memo)
+        .map(IndependentTypeProperties::resource_class)
 }
 
 /// Proves source-task transfer eligibility for one retained closed type with an uncounted fold.

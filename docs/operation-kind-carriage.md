@@ -14,12 +14,12 @@ carried it and no machine-retained metadata recorded it. This note records what 
 - **Analysis rule.** Lowering authenticates only the live-resource arm, from the result type's
   resource class through `OperationKind::for_value_resource_class`: a `LiveResource` class yields
   `Some(LiveResource)`, while a non-live class yields `None`, because the resource class cannot
-  distinguish a value action from a protected operation. The rule reads
-  `result_type.primitive_properties()`, which publishes properties for the compiler-owned primitive
-  kinds only; a declared result type exposes none, so the class the declaration below makes
-  reachable still does not reach this expression, and lowering publishes `None` for an operation
-  whose result type is a declared `live_resource struct`. Emitting the authenticated kind for those
-  operations is owned by `a0257d36` `GNT-GP-LIVERES-001`, not by this carriage.
+  distinguish a value action from a protected operation. The class comes from
+  `prove_resource_class`, the same uncounted stored-member fold the public type-property surface
+  publishes, so an operation whose analyzed result type carries the declaration below - a declared
+  `live_resource struct` or a closed generic application of one - authenticates its arm, while a
+  fold that refuses the descriptor leaves the kind unauthenticated rather than guessed, and a
+  non-live result stays `None`.
 - **Declaration surface.** `GNT-6.2j` declares the `live_resource` struct modifier: it seeds the
   `LiveResource` resource class of `GNT-5.20-parametric-types` for its declared type, an empty
   declaration remains `LiveResource`, a stored member that is itself `LiveResource` makes every
@@ -47,19 +47,23 @@ Codec tests in `crates/gantry-runtime/src/machine/program_codec.rs` (compiled un
 `v5_keeps_a_non_copyable_caller_place_admission`. These exercise the carrier and the wire with
 hand-built operations; none of them demonstrates an analyzer-produced `Some(LiveResource)` from
 source, and none demonstrates a runtime decision taken from the field, so they are carrier evidence
-rather than authentication or consumption evidence.
+rather than authentication or consumption evidence. The analyzer-produced kind is evidenced
+separately by
+`crates/gantry-conformance/tests/analyzer_lowering.rs#live_resource_result_authenticates_the_section20_kind_and_non_live_stays_unauthenticated`,
+which lowers a source operation returning a `live_resource struct` and asserts the authenticated arm
+beside an unauthenticated non-live result. No lane yet carries an analyzer-produced program through
+the wire itself: the program codec is crate-private to `gantry-runtime`, and no runtime decision
+reads the field yet.
 
 ## Handoff
 
 What is in place: `ExecutableOperation` can express the kind and publishes no unauthenticated
 default; analysis has one declared rule for producing it; the `GNTPRG05` wire round-trips whatever
 is authenticated while `GNTPRG02`-`GNTPRG04` keep decoding; and `GNT-6.2j` gives one source
-declaration that reports the analyzed class the rule consumes. What is **not** in place: (a) the
-emission itself - lowering reads only primitive properties, so an operation whose declared result
-type is a `live_resource struct` still publishes `None`, and `a0257d36` `GNT-GP-LIVERES-001` owns
-that emission, and (b) a runtime boundary consumer - `gantry-runtime` selects the wire and
-round-trips the field, but no admission path reads it. The retry condition recorded on `b87d011f`
-`GNT-GP-RESOURCE-RUNTIME-001`
-is therefore only **partially** satisfied: carriage is done, the boundary consumption belongs to
-that issue's own integration scope, and the analyzed class now has a declaration while the emission
-it feeds stays with `a0257d36`.
+declaration that reports the analyzed class the rule consumes, and lowering emits the authenticated
+kind for it. What is **not** in place: a runtime boundary consumer - `gantry-runtime` selects the
+wire and round-trips the field, but no admission path reads it, and no lane yet carries an
+analyzer-produced program through the wire itself (`a0257d36` `GNT-GP-LIVERES-001` records that
+gap). The retry condition recorded on `b87d011f` `GNT-GP-RESOURCE-RUNTIME-001` is therefore only
+**partially** satisfied: carriage and emission are done, and the boundary consumption belongs to
+that issue's own integration scope.
