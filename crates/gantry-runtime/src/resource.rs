@@ -35,6 +35,16 @@
 //! the registry checks its own keys first and the constructor enforces the kind. The kind is
 //! authenticated by analysis - `GNT-6.2j` declares the `live_resource` struct modifier - and is
 //! never inferred from a caller-presented declaration, an effect row, or the hook-site kind.
+//!
+//! Recovery reconstructs through one declared entry as well. [`ResourceRegistry::reconstruct`] takes
+//! the records one recovery pass presents - each a subject's declared reconstruction record, under
+//! its declared carrier and with the owner generation that pass holds for it - and publishes a
+//! registry only when every presented record was admitted under exactly that owner generation. An
+//! ordinary carrier, a subject whose operation carries no authenticated live-resource kind, a
+//! repeated subject, a record naming a generation the pass does not hold, and an exceeded
+//! live-resource limit each refuse the whole set, so recovery never publishes a partially
+//! reconstructed registry. Carrying those records through journal, checkpoint, and durable-state
+//! formats remains with the durable, recovery, and machine modules.
 
 use std::collections::BTreeMap;
 
@@ -173,6 +183,63 @@ pub struct ResourceRegistry {
     live_limit: Option<u64>,
 }
 
+/// One declared reconstruction record as a recovery pass presents it.
+///
+/// A recovery pass holds two independent facts per resource: the declared durable reconstruction
+/// record of `GNT-28.7-durable-resource-reconstruction` and the owner generation that pass holds
+/// for the resource. Presenting them together is what lets [`ResourceRegistry::reconstruct`] refuse
+/// a record whose own owner generation is any other generation, so no superseded record is silently
+/// re-adopted and no record naming a generation the pass has not reached is adopted either.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveredResourceRecord {
+    subject: ResourceSubjectBinding,
+    carrier: ResourceCarrier,
+    owner: OwnerGeneration,
+    record: DurableResourceRecord,
+}
+
+impl RecoveredResourceRecord {
+    /// Pairs one declared reconstruction record with the recovered owner generation of its subject.
+    #[must_use]
+    pub fn new(
+        subject: ResourceSubjectBinding,
+        carrier: ResourceCarrier,
+        owner: OwnerGeneration,
+        record: DurableResourceRecord,
+    ) -> Self {
+        Self {
+            subject,
+            carrier,
+            owner,
+            record,
+        }
+    }
+
+    /// Returns the subject this record is presented for.
+    #[must_use]
+    pub const fn subject(&self) -> &ResourceSubjectBinding {
+        &self.subject
+    }
+
+    /// Returns the declared carrier this record is presented under.
+    #[must_use]
+    pub const fn carrier(&self) -> ResourceCarrier {
+        self.carrier
+    }
+
+    /// Returns the owner generation the recovery pass holds for this subject.
+    #[must_use]
+    pub const fn owner(&self) -> OwnerGeneration {
+        self.owner
+    }
+
+    /// Returns the declared durable reconstruction record.
+    #[must_use]
+    pub const fn record(&self) -> &DurableResourceRecord {
+        &self.record
+    }
+}
+
 impl ResourceRegistry {
     /// Creates an empty registry.
     #[must_use]
@@ -263,6 +330,66 @@ impl ResourceRegistry {
                 Ok(slot.insert(account))
             }
         }
+    }
+
+    /// Reconstructs a whole registry from the records one recovery pass presents.
+    ///
+    /// Every presented record enters through the same admission path a live admission uses: the
+    /// subject's authenticated live-resource Section 20 kind is checked first, the declared carrier
+    /// is admitted through the model's `admit_resource_carrier`, and the record's own owner
+    /// generation is then compared with the generation the pass holds for that subject. A record
+    /// naming any other generation is refused with the model's own `ResourceError::StaleOwner`
+    /// through [`ResourceRegistryRefusal::Admission`], because the pass does not hold that resource
+    /// under the generation the record describes.
+    ///
+    /// The reconstruction is one unit: a registry is published only when every presented record was
+    /// admitted, so a refused record publishes no account at all and recovery never continues from a
+    /// partially reconstructed registry. Refusals keep their own precedence within each record: a
+    /// repeated subject first, then the account's own construction, then the owner generation, and
+    /// the declared `live_limit` last over the accounts that are still live.
+    pub fn reconstruct(
+        live_limit: Option<u64>,
+        recovered: impl IntoIterator<Item = RecoveredResourceRecord>,
+    ) -> Result<Self, ResourceRegistryRefusal> {
+        let mut accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource> =
+            BTreeMap::new();
+        let mut live = 0_u64;
+        for presented in recovered {
+            let key = (
+                presented.subject.operation().clone(),
+                presented.subject.generation().clone(),
+            );
+            if accounts.contains_key(&key) {
+                return Err(ResourceRegistryRefusal::SecondAdmission);
+            }
+            let account =
+                AdmittedResource::admit(presented.carrier, presented.record, presented.subject)?;
+            let current = account.ledger().owner();
+            if current != presented.owner {
+                return Err(ResourceRegistryRefusal::Admission(
+                    ResourceError::StaleOwner {
+                        presented: presented.owner,
+                        current,
+                    },
+                ));
+            }
+            if matches!(
+                account.ledger().lifetime(),
+                ResourceLifetimeState::Active | ResourceLifetimeState::Finishing
+            ) {
+                if let Some(limit) = live_limit
+                    && live >= limit
+                {
+                    return Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit });
+                }
+                live = live.saturating_add(1);
+            }
+            accounts.insert(key, account);
+        }
+        Ok(Self {
+            accounts,
+            live_limit,
+        })
     }
 
     /// Returns the account one subject owns, when any.
@@ -386,7 +513,7 @@ impl ResourceRegistry {
 /// Why the runtime resource registry refused an admission or a settlement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceRegistryRefusal {
-    /// The subject already owns an admitted account.
+    /// The subject already owns an admitted account, or was presented twice in one reconstruction.
     SecondAdmission,
     /// The subject's operation carries no authenticated live-resource Section 20 kind.
     UnauthenticatedOperationKind,
@@ -403,7 +530,7 @@ pub enum ResourceRegistryRefusal {
     },
     /// The registry holds no account for the settlement's own operation and generation.
     UnknownSubject,
-    /// The model refused the carrier or the reconstruction record at admission.
+    /// The model refused the carrier, the reconstruction record, or its presented owner generation.
     Admission(ResourceError),
     /// The account's own settlement step refused the settlement.
     Settlement(PostFailureSettlementRefusal),

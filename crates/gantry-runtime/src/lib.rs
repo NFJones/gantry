@@ -141,8 +141,8 @@ pub use recovery::{
     recover_authoritative_prefix, recover_authoritative_prefix_with_retained_program,
 };
 pub use resource::{
-    AdmittedResource, PostFailureSettlementRefusal, ResourceRegistry, ResourceRegistryRefusal,
-    ResourceSubjectBinding,
+    AdmittedResource, PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRegistry,
+    ResourceRegistryRefusal, ResourceSubjectBinding,
 };
 pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,

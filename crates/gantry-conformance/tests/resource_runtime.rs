@@ -12,16 +12,18 @@ use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry::ir::{
     CanonicalPath, CanonicalSignature, Charge, DurableResourceRecord, EffectSet,
     EmergencyCleanupWitness, ExecutableAction, ExecutableOperation, FailureClass, GracePolicy,
-    LivenessRoot, OperationAbi, OperationKind, OwnerGeneration, PostFailureSettlement, Quota,
-    QuotaFamily, QuotaOwner, ReceiverOwnership, ResourceAction, ResourceCarrier, ResourceError,
-    ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence, StaticSiteId, StopCause,
-    StopCoordinator, StopRequest, StructuralPosition, TaskStopState, TypeDescriptor,
+    LivenessRoot, OperationAbi, OperationKind, OwnerGeneration, PoisonWitness,
+    PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ReceiverOwnership, ResourceAction,
+    ResourceCarrier, ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState,
+    RetentionFence, StaticSiteId, StopCause, StopCoordinator, StopRequest, StructuralPosition,
+    TaskStopState, TypeDescriptor,
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
     AdmittedResource, ExecutionBudget, Instruction, InstructionKind, Machine, MachineCheckpointV3,
     MachineLabel, MachineLimits, MachineProgram, MachineStep, PostFailureSettlementRefusal,
-    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding, Workflow,
+    RecoveredResourceRecord, ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
+    Workflow,
 };
 use gantry::value::DEFAULT_VALUE_LIMITS;
 
@@ -81,6 +83,8 @@ fn admitted(
 const FIXTURE_WORKFLOW: &str = "crate::main";
 const FIXTURE_DECLARATION: &str = "crate::resource_runtime_metadata";
 const SECOND_FIXTURE_DECLARATION: &str = "crate::resource_runtime_second_metadata";
+const UNAUTHENTICATED_FIXTURE_DECLARATION: &str =
+    "crate::resource_runtime_unauthenticated_metadata";
 const FIXTURE_SITE: u64 = 45;
 
 /// An operation whose Section 20 kind is not authenticated cannot be admitted as a live resource:
@@ -380,8 +384,49 @@ fn machine_with_subject(
 
 /// Returns the machine-issued subject of the fixture declared operation.
 fn active_subject() -> ResourceSubjectBinding {
-    let (_program, _machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    declared_subject(FIXTURE_DECLARATION)
+}
+
+/// Returns the machine-issued subject of one declared fixture operation.
+fn declared_subject(declaration: &str) -> ResourceSubjectBinding {
+    let (_program, _machine, subject) = machine_with_declared_subject(Some(declaration));
     subject.unwrap_or_else(|| panic!("the fixture operation declares an action"))
+}
+
+/// Returns the machine-issued subject of one fixture operation whose Section 20 kind is left
+/// unauthenticated, so no account and no reconstruction may be created for it.
+fn unauthenticated_fixture_subject(declaration: &str) -> ResourceSubjectBinding {
+    let (_program, _machine, subject) = machine_with_unauthenticated_subject(Some(declaration));
+    subject.unwrap_or_else(|| panic!("the fixture operation declares an action"))
+}
+
+/// Presents one declared reconstruction record under the fixture owner generation the record itself
+/// names, which is the generation a matching recovery pass holds.
+fn presented(
+    subject: ResourceSubjectBinding,
+    carrier: ResourceCarrier,
+    record: DurableResourceRecord,
+) -> RecoveredResourceRecord {
+    RecoveredResourceRecord::new(subject, carrier, OwnerGeneration::new(4), record)
+}
+
+/// Returns one declared reconstruction record whose lifetime has already settled, so it holds no
+/// live place while every declared fact remains.
+fn settled_record() -> DurableResourceRecord {
+    let mut ledger = ResourceLedger::reconstruct(ledger().durable_record());
+    let settlement = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    let witness = PoisonWitness::from_post_failure(&settlement, 21)
+        .unwrap_or_else(|error| panic!("the fixture settlement poisons the record: {error:?}"));
+    ledger
+        .poison(witness)
+        .unwrap_or_else(|error| panic!("the fixture record is poisoned: {error:?}"));
+    ledger.durable_record()
 }
 
 /// Issues one model settlement for one containing workflow, declaration, site, and generation.
@@ -1295,4 +1340,258 @@ fn resource_registry_uniqueness_is_per_registry_until_one_owner_is_wired() {
             )
         });
     assert!(second.account(&subject).is_some());
+}
+
+/// Recovery publishes one registry from every declared record it presents: each account keeps its
+/// own subject and declared facts, and a repeated subject or an unauthenticated operation refuses
+/// the whole set instead of producing a partial registry.
+#[test]
+fn recovery_reconstructs_every_presented_record_or_refuses_the_whole_set() {
+    let first = declared_subject(FIXTURE_DECLARATION);
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+    assert_ne!(first.operation(), second.operation());
+
+    let recovered = ResourceRegistry::reconstruct(
+        None,
+        vec![
+            presented(
+                first.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            ),
+            presented(
+                second.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            ),
+        ],
+    )
+    .unwrap_or_else(|error| panic!("both declared records reconstruct: {error:?}"));
+
+    assert_eq!(recovered.live_limit(), None);
+    assert_eq!(
+        recovered.live_resources(),
+        2,
+        "both reconstructed accounts live"
+    );
+    for subject in [&first, &second] {
+        let account = recovered
+            .account(subject)
+            .unwrap_or_else(|| panic!("the reconstructed registry holds every presented subject"));
+        assert_eq!(account.ledger().owner(), OwnerGeneration::new(4));
+        assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Active);
+        assert_eq!(
+            account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+            Some(8)
+        );
+    }
+
+    assert_eq!(
+        ResourceRegistry::reconstruct(
+            None,
+            vec![
+                presented(
+                    first.clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                ),
+                presented(
+                    first.clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                ),
+            ],
+        )
+        .err(),
+        Some(ResourceRegistryRefusal::SecondAdmission),
+        "one subject is presented at most once in one reconstruction"
+    );
+
+    assert_eq!(
+        ResourceRegistry::reconstruct(
+            None,
+            vec![
+                presented(
+                    second.clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                ),
+                presented(
+                    unauthenticated_fixture_subject(UNAUTHENTICATED_FIXTURE_DECLARATION),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                ),
+            ],
+        )
+        .err(),
+        Some(ResourceRegistryRefusal::UnauthenticatedOperationKind),
+        "a record for an unauthenticated operation refuses the whole set"
+    );
+}
+
+/// A presented record is reconstructed only under the owner generation the pass holds: a record
+/// naming another generation is refused with the model's own stale-owner reason, in either
+/// presentation order, and the matching presentation reconstructs the very same records.
+#[test]
+fn reconstruction_refuses_a_stale_owner_generation_without_publishing_an_account() {
+    let first = declared_subject(FIXTURE_DECLARATION);
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let stale = || {
+        RecoveredResourceRecord::new(
+            first.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            OwnerGeneration::new(3),
+            ledger().durable_record(),
+        )
+    };
+    let fresh = || {
+        presented(
+            second.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+    };
+    let expected = Some(ResourceRegistryRefusal::Admission(
+        ResourceError::StaleOwner {
+            presented: OwnerGeneration::new(3),
+            current: OwnerGeneration::new(4),
+        },
+    ));
+
+    assert_eq!(
+        ResourceRegistry::reconstruct(None, vec![stale(), fresh()]).err(),
+        expected.clone(),
+        "a stale record presented first refuses the reconstruction"
+    );
+    assert_eq!(
+        ResourceRegistry::reconstruct(None, vec![fresh(), stale()]).err(),
+        expected,
+        "a stale record presented last refuses the reconstruction"
+    );
+
+    let recovered = ResourceRegistry::reconstruct(
+        None,
+        vec![
+            presented(
+                first.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            ),
+            fresh(),
+        ],
+    )
+    .unwrap_or_else(|error| panic!("the matching owner generation reconstructs both: {error:?}"));
+    assert_eq!(
+        recovered.live_resources(),
+        2,
+        "the same records reconstruct once the pass holds their own owner generation"
+    );
+}
+
+/// The verified carrier is the declared reconstruction record alone: an ordinary serialization or
+/// ordinary durable-state carrier refuses the whole reconstruction instead of contributing a
+/// resource.
+#[test]
+fn reconstruction_refuses_an_ordinary_carrier_for_the_whole_set() {
+    let first = declared_subject(FIXTURE_DECLARATION);
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+
+    for carrier in [
+        ResourceCarrier::OrdinarySerialization,
+        ResourceCarrier::OrdinaryDurableState,
+    ] {
+        assert_eq!(
+            ResourceRegistry::reconstruct(
+                None,
+                vec![
+                    presented(
+                        first.clone(),
+                        ResourceCarrier::ReconstructionRecord,
+                        ledger().durable_record(),
+                    ),
+                    presented(second.clone(), carrier, ledger().durable_record()),
+                ],
+            )
+            .err(),
+            Some(ResourceRegistryRefusal::Admission(
+                ResourceError::OrdinaryCarrierRefused
+            )),
+            "an ordinary carrier refuses the reconstruction rather than contributing an account"
+        );
+    }
+
+    let recovered = ResourceRegistry::reconstruct(
+        None,
+        vec![
+            presented(
+                first.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            ),
+            presented(
+                second.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            ),
+        ],
+    )
+    .unwrap_or_else(|error| panic!("the declared carrier reconstructs both records: {error:?}"));
+    assert_eq!(recovered.live_resources(), 2);
+}
+
+/// Reconstruction honors the declared live-resource limit over the accounts that are still live: a
+/// settled record keeps every declared fact without holding a place, so a settled and a live record
+/// coexist under a limit of one, while two live records refuse the whole set.
+#[test]
+fn reconstruction_honors_the_declared_live_limit_over_live_records_only() {
+    let first = declared_subject(FIXTURE_DECLARATION);
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+
+    let recovered = ResourceRegistry::reconstruct(
+        Some(1),
+        vec![
+            presented(
+                first.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                settled_record(),
+            ),
+            presented(
+                second.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            ),
+        ],
+    )
+    .unwrap_or_else(|error| panic!("a settled record frees the live place: {error:?}"));
+
+    assert_eq!(recovered.live_limit(), Some(1));
+    assert_eq!(recovered.live_resources(), 1);
+    assert_eq!(
+        recovered
+            .account(&first)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Poisoned),
+        "the settled record is reconstructed with its own terminal lifetime"
+    );
+
+    assert_eq!(
+        ResourceRegistry::reconstruct(
+            Some(1),
+            vec![
+                presented(
+                    first.clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                ),
+                presented(
+                    second.clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                ),
+            ],
+        )
+        .err(),
+        Some(ResourceRegistryRefusal::LiveResourceLimitReached { limit: 1 }),
+        "two live records refuse a reconstruction that declares one place"
+    );
 }
