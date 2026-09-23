@@ -419,3 +419,72 @@ fn public_parser_rejects_stacked_ownership_struct_modifiers() {
         );
     }
 }
+
+/// `live_resource` is a contextual struct modifier, not a reserved word, and stays a valid
+/// identifier in every other position.
+#[test]
+fn public_parser_accepts_live_resource_struct_and_keeps_it_contextual() {
+    let source = r#"live_resource struct Handle { token: Int }
+live_resource struct Box<T> { value: T }
+struct Ordinary { value: Int }
+fn main(live_resource: Int, handle: Handle) -> Int { let live_resource_again: Int = live_resource; discard handle; live_resource_again }
+"#;
+    let outcome = parse(source, 512, 16);
+    assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+    let tree = outcome.tree().unwrap_or_else(|| unreachable!("valid tree"));
+    let live_resource_structs = tree
+        .nodes()
+        .iter()
+        .filter(|node| {
+            matches!(node.form(), SyntaxForm::StructDeclaration)
+                && node.children().iter().any(|child| {
+                    tree.node(*child)
+                        .is_some_and(|n| matches!(n.form(), SyntaxForm::LiveResourceStructModifier))
+                })
+        })
+        .count();
+    assert_eq!(live_resource_structs, 2);
+}
+
+/// `live_resource` without a following `struct` is a syntax fault at item position.
+#[test]
+fn public_parser_rejects_live_resource_without_struct() {
+    for source in [
+        "live_resource Token { value: Int }",
+        "live_resource enum State { Ready }",
+    ] {
+        let outcome = parse(source, 64, 4);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        assert!(
+            outcome.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code.as_str() == "unexpected-token"
+                    && diagnostic.fields.get("expected").map(AsRef::as_ref) == Some("struct")
+            }),
+            "{source}: {:?}",
+            outcome.diagnostics()
+        );
+    }
+}
+
+/// A struct declaration names at most one modifier: a second one is a syntax fault, whichever
+/// order the two modifiers are written in.
+#[test]
+fn public_parser_rejects_stacked_struct_modifiers() {
+    for source in [
+        "live_resource affine struct Token { value: Int }",
+        "affine live_resource struct Token { value: Int }",
+        "live_resource must_consume struct Token { value: Int }",
+        "must_consume live_resource struct Token { value: Int }",
+    ] {
+        let outcome = parse(source, 64, 4);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        assert!(
+            outcome.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code.as_str() == "unexpected-token"
+                    && diagnostic.fields.get("expected").map(AsRef::as_ref) == Some("struct")
+            }),
+            "{source}: {:?}",
+            outcome.diagnostics()
+        );
+    }
+}

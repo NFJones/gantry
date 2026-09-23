@@ -5007,6 +5007,96 @@ fn must_consume_structs_fold_ownership_class_and_generics() {
     }
 }
 
+/// A `live_resource struct` seeds `LiveResource`: the declared type, an empty declaration, a
+/// generic declaration, and every enclosing stored aggregate report the absorbing resource
+/// class, unrelated declarations keep the empty identity, and the seed leaves the ownership
+/// and transfer axes to the ordinary stored-member fold.
+#[test]
+fn live_resource_structs_seed_the_resource_class_and_fold_stored_members() {
+    use gantry::ir::{OwnershipClass, TypeDescriptor, ValueResourceClass};
+
+    let package = analyze(
+        "live_resource struct Handle { token: Int }\n\
+         live_resource struct Empty {}\n\
+         live_resource struct Generic<T> { value: T }\n\
+         must_consume struct Token { value: Int }\n\
+         live_resource struct Holder { token: Token }\n\
+         struct Plain { value: Int }\n\
+         struct Wrapped { handle: Handle }\n\
+         struct Nested { wrapped: Wrapped }\n\
+         struct Unrelated { plain: Plain }\n\
+         fn main() {}",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    let policy = analysis_limits(64, 100);
+    for (name, resource, ownership) in [
+        (
+            "crate::Handle",
+            ValueResourceClass::LiveResource,
+            OwnershipClass::Copyable,
+        ),
+        (
+            "crate::Empty",
+            ValueResourceClass::LiveResource,
+            OwnershipClass::Copyable,
+        ),
+        (
+            "crate::Holder",
+            ValueResourceClass::LiveResource,
+            OwnershipClass::MustConsume,
+        ),
+        (
+            "crate::Wrapped",
+            ValueResourceClass::LiveResource,
+            OwnershipClass::Copyable,
+        ),
+        (
+            "crate::Nested",
+            ValueResourceClass::LiveResource,
+            OwnershipClass::Copyable,
+        ),
+        (
+            "crate::Plain",
+            ValueResourceClass::NonLiveResource,
+            OwnershipClass::Copyable,
+        ),
+        (
+            "crate::Unrelated",
+            ValueResourceClass::NonLiveResource,
+            OwnershipClass::Copyable,
+        ),
+    ] {
+        let ty = TypeDescriptor::from_canonical_string(name)
+            .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+        let properties = package
+            .type_capabilities(&ty, policy)
+            .unwrap_or_else(|error| panic!("query failed for {name}: {error:?}"));
+        assert_eq!(properties.resource_class(), resource, "{name}");
+        assert_eq!(
+            properties.is_live_resource(),
+            resource == ValueResourceClass::LiveResource,
+            "{name}"
+        );
+        assert_eq!(properties.ownership_class(), ownership, "{name}");
+    }
+    let ty = TypeDescriptor::from_canonical_string("crate::Handle")
+        .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+    let properties = package
+        .type_capabilities(&ty, policy)
+        .unwrap_or_else(|error| panic!("query failed: {error:?}"));
+    assert!(
+        properties.is_task_capturable(),
+        "the live-resource seed admits no transfer contract of its own"
+    );
+    assert!(properties.has_sealed_recovery_projection());
+    assert!(!properties.is_source_protected());
+}
+
 /// A live `MustConsume` place is discharged only by an `owned self` admission: a projection read, a
 /// copied argument, a discard, one branch, a loop iteration, and reuse are all rejected.
 #[test]

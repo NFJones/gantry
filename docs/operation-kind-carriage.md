@@ -11,15 +11,23 @@ carried it and no machine-retained metadata recorded it. This note records what 
   (`crates/gantry-ir/src/executable.rs`) records the kind an analysis authenticated. `None` means no
   layer authenticated one, and a consumer that needs the kind must fail closed rather than assume
   one: the hook-site `OperationSiteKind` is a different fact and never stands in for it.
-- **Analysis rule.** Lowering authenticates only the live-resource arm, from the analyzed result
-  type's resource class through `OperationKind::for_value_resource_class`: a `LiveResource` class
-  yields `Some(LiveResource)`, while a non-live class yields `None`, because the resource class
-  cannot distinguish a value action from a protected operation. **No analyzed type carries the
-  live-resource class today**: every primitive's independent properties are seeded
-  `NonLiveResource` and a structural or declared result type exposes no primitive properties, so
-  lowering currently publishes `None` for every source operation. The rule is ready but unreached,
-  and the declaration or type fact that would reach it is owned by the type-property surface, not
-  by this carriage.
+- **Analysis rule.** Lowering authenticates only the live-resource arm, from the result type's
+  resource class through `OperationKind::for_value_resource_class`: a `LiveResource` class yields
+  `Some(LiveResource)`, while a non-live class yields `None`, because the resource class cannot
+  distinguish a value action from a protected operation. The rule reads
+  `result_type.primitive_properties()`, which publishes properties for the compiler-owned primitive
+  kinds only; a declared result type exposes none, so the class the declaration below makes
+  reachable still does not reach this expression, and lowering publishes `None` for an operation
+  whose result type is a declared `live_resource struct`. Emitting the authenticated kind for those
+  operations is owned by `a0257d36` `GNT-GP-LIVERES-001`, not by this carriage.
+- **Declaration surface.** `GNT-6.2j` declares the `live_resource` struct modifier: it seeds the
+  `LiveResource` resource class of `GNT-5.20-parametric-types` for its declared type, an empty
+  declaration remains `LiveResource`, a stored member that is itself `LiveResource` makes every
+  enclosing stored aggregate `LiveResource`, no ownership class or transfer contract is admitted,
+  and a declaration stacking it with `affine` or `must_consume` is rejected at syntax time.
+  An analyzed `live_resource struct` therefore reports `ValueResourceClass::LiveResource` through
+  `type_capabilities`; the declaration creates no resource, value, handle, or operation and decides
+  no operation kind.
 - **Retained-program wire.** The `GNTPRG05` form carries the kind as an optional wire name
   (`write_operation` writes it, `read_operation` decodes it strictly and refuses an unknown
   spelling). `GNTPRG02`, `GNTPRG03`, and `GNTPRG04` keep their byte layout and decode the field as
@@ -45,10 +53,13 @@ rather than authentication or consumption evidence.
 
 What is in place: `ExecutableOperation` can express the kind and publishes no unauthenticated
 default; analysis has one declared rule for producing it; the `GNTPRG05` wire round-trips whatever
-is authenticated while `GNTPRG02`-`GNTPRG04` keep decoding. What is **not** in place: (a) an
-analyzer-reachable live-resource type fact, so no source operation emits `Some(...)` yet, and (b) a
-runtime boundary consumer - `gantry-runtime` selects the wire and round-trips the field, but no
-admission path reads it. The retry condition recorded on `b87d011f` `GNT-GP-RESOURCE-RUNTIME-001`
+is authenticated while `GNTPRG02`-`GNTPRG04` keep decoding; and `GNT-6.2j` gives one source
+declaration that reports the analyzed class the rule consumes. What is **not** in place: (a) the
+emission itself - lowering reads only primitive properties, so an operation whose declared result
+type is a `live_resource struct` still publishes `None`, and `a0257d36` `GNT-GP-LIVERES-001` owns
+that emission, and (b) a runtime boundary consumer - `gantry-runtime` selects the wire and
+round-trips the field, but no admission path reads it. The retry condition recorded on `b87d011f`
+`GNT-GP-RESOURCE-RUNTIME-001`
 is therefore only **partially** satisfied: carriage is done, the boundary consumption belongs to
-that issue's own integration scope, and the source-level live-resource fact needs a declaration
-owner before any of it can fire.
+that issue's own integration scope, and the analyzed class now has a declaration while the emission
+it feeds stays with `a0257d36`.

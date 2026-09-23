@@ -1942,6 +1942,7 @@ pub(crate) struct GenericDeclarationShape {
     predicates: Vec<CapabilityPredicate>,
     affine: bool,
     must_consume: bool,
+    live_resource: bool,
     expandable: bool,
 }
 
@@ -1949,6 +1950,11 @@ impl GenericDeclarationShape {
     /// Returns whether later analysis may instantiate this declaration's members.
     pub(crate) const fn is_expandable(&self) -> bool {
         self.expandable
+    }
+
+    /// Returns whether the declaration is a `live_resource struct`.
+    pub(crate) const fn is_live_resource(&self) -> bool {
+        self.live_resource
     }
 
     /// Returns whether the declaration is an `affine struct`.
@@ -2168,6 +2174,8 @@ pub(crate) fn collect_generic_declaration_shapes(
                 && direct_child(tree, owner, SyntaxForm::AffineStructModifier).is_some();
             let must_consume = matches!(node.form(), SyntaxForm::StructDeclaration)
                 && direct_child(tree, owner, SyntaxForm::MustConsumeStructModifier).is_some();
+            let live_resource = matches!(node.form(), SyntaxForm::StructDeclaration)
+                && direct_child(tree, owner, SyntaxForm::LiveResourceStructModifier).is_some();
             declarations.insert(
                 symbol.path.as_str().to_owned(),
                 GenericDeclarationShape {
@@ -2177,6 +2185,7 @@ pub(crate) fn collect_generic_declaration_shapes(
                     predicates,
                     affine,
                     must_consume,
+                    live_resource,
                     expandable: !rejected_declarations.contains(symbol.path.as_str()),
                 },
             );
@@ -2283,6 +2292,13 @@ pub(crate) fn prove_transfer_eligibility(
         .map(IndependentTypeProperties::transfer_eligibility)
 }
 
+/// The class seeds one struct declaration contributes, independently of its stored members.
+#[derive(Clone, Copy)]
+struct DeclaredClasses {
+    ownership: Option<OwnershipClass>,
+    live_resource: bool,
+}
+
 /// Algebra and cache policy for one proof over the retained stored-member graph.
 trait StoredMemberProperty {
     type Value: Copy;
@@ -2291,7 +2307,7 @@ trait StoredMemberProperty {
     fn primitive(&self, properties: PrimitiveTypeProperties) -> Self::Value;
     fn opaque(&self) -> Result<Self::Value, AnalysisError>;
     fn combine(&self, left: Self::Value, right: Self::Value) -> Self::Value;
-    fn declaration_seed(&self, class: OwnershipClass) -> Self::Value;
+    fn declaration_seed(&self, declared: DeclaredClasses) -> Self::Value;
     fn is_absorbing(&self, value: Self::Value) -> bool;
     fn cached(&self, key: &str) -> Option<Self::Value>;
     fn cache(&mut self, key: String, value: Self::Value);
@@ -2325,7 +2341,7 @@ impl StoredMemberProperty for CapabilityProperty<'_> {
         left && right
     }
 
-    fn declaration_seed(&self, _class: OwnershipClass) -> Self::Value {
+    fn declaration_seed(&self, _declared: DeclaredClasses) -> Self::Value {
         self.identity()
     }
 
@@ -2365,8 +2381,15 @@ impl StoredMemberProperty for IndependentProperty<'_> {
         left.combine(right)
     }
 
-    fn declaration_seed(&self, class: OwnershipClass) -> Self::Value {
-        IndependentTypeProperties::ownership_seed(class)
+    fn declaration_seed(&self, declared: DeclaredClasses) -> Self::Value {
+        let mut seed = IndependentTypeProperties::empty_aggregate();
+        if let Some(ownership) = declared.ownership {
+            seed = seed.combine(IndependentTypeProperties::ownership_seed(ownership));
+        }
+        if declared.live_resource {
+            seed = seed.combine(IndependentTypeProperties::live_resource());
+        }
+        seed
     }
 
     fn is_absorbing(&self, _value: Self::Value) -> bool {
@@ -2442,11 +2465,10 @@ fn prove_stored_member_property<Property: StoredMemberProperty>(
                 }
                 StoredMemberNode::Members(mut members) => {
                     members.sort_by_key(TypeDescriptor::canonical_string);
-                    if let Some(class) =
-                        declared_ownership_class(&stack[index].descriptor, declarations)
-                    {
-                        stack[index].value =
-                            property.combine(stack[index].value, property.declaration_seed(class));
+                    let declared = declared_classes(&stack[index].descriptor, declarations);
+                    if declared.ownership.is_some() || declared.live_resource {
+                        stack[index].value = property
+                            .combine(stack[index].value, property.declaration_seed(declared));
                     }
                     stack[index].members = Some(members);
                 }
@@ -2505,19 +2527,28 @@ fn prove_stored_member_property<Property: StoredMemberProperty>(
     }
 }
 
-fn declared_ownership_class(
+fn declared_classes(
     descriptor: &TypeDescriptor,
     declarations: &BTreeMap<String, GenericDeclarationShape>,
-) -> Option<OwnershipClass> {
-    let shape = descriptor
+) -> DeclaredClasses {
+    let Some(shape) = descriptor
         .declared_path()
-        .and_then(|path| declarations.get(path.as_str()))?;
-    if shape.is_must_consume() {
-        Some(OwnershipClass::MustConsume)
-    } else if shape.is_affine() {
-        Some(OwnershipClass::AffineDroppable)
-    } else {
-        None
+        .and_then(|path| declarations.get(path.as_str()))
+    else {
+        return DeclaredClasses {
+            ownership: None,
+            live_resource: false,
+        };
+    };
+    DeclaredClasses {
+        ownership: if shape.is_must_consume() {
+            Some(OwnershipClass::MustConsume)
+        } else if shape.is_affine() {
+            Some(OwnershipClass::AffineDroppable)
+        } else {
+            None
+        },
+        live_resource: shape.is_live_resource(),
     }
 }
 

@@ -3607,9 +3607,11 @@ Ownership classification distinguishes `Copyable`, `AffineDroppable`, and
 `NonLiveResource`/`LiveResource`; protection: `Unsealed`/`Sealed`; recovery:
 `SealedValue`/`Unavailable`. Aggregates fold all stored fields and enum payloads conservatively:
 restrictive classes dominate permissive empty identities under associative, commutative, and
-idempotent combine. All v1 values are `Copyable`, `IsolatedTaskCapture`, `NonLiveResource`, and
-`SealedValue`; values storing `Decision` or `OperationError` are `Sealed`. `Unsealed` never means
-transport data is nonsensitive; no class grants live resources, moves, loans, release authority, or runtime recovery.
+idempotent combine. Every v1 value is `Copyable`, `IsolatedTaskCapture`, and `SealedValue`, and is
+`NonLiveResource` unless its declared type carries the `live_resource` modifier of item 2j of
+Section 6, which seeds `LiveResource`; values storing `Decision` or `OperationError` are `Sealed`.
+`Unsealed` never means transport data is nonsensitive; no class grants live resources, moves,
+loans, release authority, or runtime recovery.
 
 A generic direct self-recursive occurrence MUST use the same declared
 constructor with the same parameter ordinals in the same order and MUST remain
@@ -3904,6 +3906,27 @@ item 2d consumption obligation.
 Moving a captured owned value into a child task, channel transfer, and the
 unwind, cancellation, and suspension duties the other items of this section own
 remain excluded.
+
+<a id="GNT-6.2j"></a>
+
+2j. A struct declaration MAY be prefixed with `live_resource`. A `live_resource struct`
+admits the `LiveResource` resource class of `GNT-5.20-parametric-types`: its declared
+type reports that class in place of the empty-aggregate identity, an empty `live_resource
+struct` remains `LiveResource`, and a stored member whose declared type is `LiveResource`
+makes every enclosing stored aggregate `LiveResource` under that clause's fold.
+
+A `live_resource struct` seeds the resource axis only. It admits no ownership class and
+no transfer contract, so its ownership and transfer axes are the ordinary stored-member
+fold of `GNT-5.20-parametric-types`, and a declaration that names `live_resource`
+together with `affine` or `must_consume` names two modifiers and MUST be rejected at
+syntax time, exactly as a declaration naming both ownership modifiers is.
+
+Classification is the whole of the declaration: it creates, admits, or transfers no
+resource, value, handle, or operation, grants no cleanup, release, or acquisition
+authority and no admission at any boundary, and states no analysis, evaluator, journal,
+adapter, or durable behavior. The closed operation-kind vocabulary of
+`GNT-20.1-operation-kinds` and the kind of any operation remain owned by Section 20, and
+this declaration decides no kind.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
@@ -7635,12 +7658,14 @@ effect_name             = "prompt" | "decide"
                         | "spawn" | "join" | "background"
                         | "session" | "attempt" ;
 
-struct_declaration      = [ ownership_modifier ], "struct", identifier_token,
+struct_declaration      = [ struct_modifier ], "struct", identifier_token,
                           [ type_parameter_list ], [ where_clause ], "{",
                           [ struct_field_list ], "}" ;
+struct_modifier         = ownership_modifier | "live_resource" ;
 ownership_modifier      = "affine" | "must_consume" ;
-`ownership_modifier` is a contextual identifier spelling, not a reserved word: it is
-recognized only immediately before `struct` and remains an ordinary identifier elsewhere.
+`struct_modifier` and `ownership_modifier` are contextual identifier spellings, not
+reserved words: each is recognized only immediately before `struct` and remains an
+ordinary identifier elsewhere. A struct declaration names at most one `struct_modifier`.
 struct_field_list       = struct_field, { ",", struct_field }, [ "," ] ;
 struct_field            = identifier_token, ":", value_type,
                           [ "=", field_default ] ;

@@ -553,6 +553,7 @@ impl<'a> Machine<'a> {
         } else if self.at_word("struct")
             || self.at_identifier_named("affine")
             || self.at_identifier_named("must_consume")
+            || self.at_identifier_named("live_resource")
         {
             self.parse_struct_declaration()?;
         } else if self.at_word("enum") {
@@ -598,6 +599,10 @@ impl<'a> Machine<'a> {
             self.finish().map_err(|_| self.invariant_fault())?;
         } else if self.at_identifier_named("must_consume") {
             self.begin(SyntaxForm::MustConsumeStructModifier);
+            self.consume_current()?;
+            self.finish().map_err(|_| self.invariant_fault())?;
+        } else if self.at_identifier_named("live_resource") {
+            self.begin(SyntaxForm::LiveResourceStructModifier);
             self.consume_current()?;
             self.finish().map_err(|_| self.invariant_fault())?;
         }

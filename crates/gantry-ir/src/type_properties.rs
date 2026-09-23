@@ -186,6 +186,18 @@ impl IndependentTypeProperties {
         Self::ownership_seed(OwnershipClass::MustConsume)
     }
 
+    /// Seed contributed by a `live_resource struct` declaration independent of its members.
+    ///
+    /// The declaration seeds the resource axis only: the ownership, transfer, source-protection,
+    /// and recovery axes keep their empty-aggregate identities and fold with the stored members.
+    #[must_use]
+    pub const fn live_resource() -> Self {
+        Self {
+            resource: ValueResourceClass::LiveResource,
+            ..Self::empty_aggregate()
+        }
+    }
+
     /// Seed contributed by an ownership-modifier declaration independent of its members.
     ///
     /// The only task transfer a spawned block admits is an independent logical copy, so an
