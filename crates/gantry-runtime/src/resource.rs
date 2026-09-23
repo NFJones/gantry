@@ -177,6 +177,10 @@ pub enum PostFailureSettlementRefusal {
 /// [`ResourceRegistryRefusal::LiveResourceLimitReached`] once that many live accounts exist - a
 /// lifetime is live exactly while it is `Active` or `Finishing` - and a settlement releases the
 /// place immediately, so the later retention states never take it back.
+///
+/// Every mutating route of this type is owner-qualified: charging, renewal, and both finish steps
+/// require the owner generation their caller presents to equal the account's current one, so a
+/// superseded owner can neither spend, renew, enter, nor complete the finish path.
 #[derive(Debug, Default)]
 pub struct ResourceRegistry {
     accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
@@ -532,6 +536,54 @@ impl ResourceRegistry {
             .renew(presented_owner, owner, family, increase)
             .map_err(ResourceRegistryRefusal::Renewal)
     }
+
+    /// Advances one admitted account to finishing for the owner generation its caller presents.
+    ///
+    /// The account is selected by the subject's own operation and generation, so a subject this
+    /// registry holds no account for is refused with [`ResourceRegistryRefusal::UnknownSubject`]. The
+    /// presented owner generation must then be the account's current one: any other presentation is
+    /// refused with the model's own `ResourceError::StaleOwner` through
+    /// [`ResourceRegistryRefusal::Finish`] before any lifetime fact changes, so a superseded owner can
+    /// neither enter nor complete the finish path. Only then does the model's own transition rule
+    /// decide the advance, and a finishing account keeps its live place.
+    pub fn begin_finish(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+    ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .begin_finish_for(presented_owner)
+            .map_err(ResourceRegistryRefusal::Finish)
+    }
+
+    /// Completes finalization of one admitted account for the owner generation its caller presents.
+    ///
+    /// The account is selected and its presented owner generation checked exactly as
+    /// [`Self::begin_finish`] does, so a subject this registry holds no account for is refused with
+    /// [`ResourceRegistryRefusal::UnknownSubject`] and any other presentation with the model's own
+    /// `ResourceError::StaleOwner` through [`ResourceRegistryRefusal::Finish`]. The model's own
+    /// transition rule then refuses a lifetime that is not finishing, so one resource settles once and
+    /// no second completion is admitted.
+    pub fn complete_finalization(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+        settled_at: u64,
+    ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .complete_finalization_for(presented_owner, settled_at)
+            .map_err(ResourceRegistryRefusal::Finish)
+    }
 }
 
 /// Why the runtime resource registry refused an admission or a settlement.
@@ -547,6 +599,8 @@ pub enum ResourceRegistryRefusal {
     Charge(ResourceError),
     /// The account's own ledger refused the presented renewal.
     Renewal(ResourceError),
+    /// The account's own finish step refused the presented owner or the lifetime transition.
+    Finish(ResourceError),
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
         /// The declared limit.
@@ -650,6 +704,18 @@ impl AdmittedResource {
         self.ledger.durable_record()
     }
 
+    /// Advances to finishing from the only ordinary active state.
+    ///
+    /// The model's two-phase lifetime of
+    /// `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` is entered here rather than by a
+    /// caller reaching into the ledger: any other lifetime is refused by the model's own transition
+    /// rule, no quota fact changes, and a finishing account keeps its live place because `Finishing` is
+    /// live.
+    pub fn begin_finish(&mut self) -> Result<ResourceLifetimeState, ResourceError> {
+        self.ledger.begin_finish()?;
+        Ok(self.ledger.lifetime())
+    }
+
     /// Records that finalization of one admitted resource completed.
     ///
     /// The resource must already be finishing: the model's two-phase lifetime of
@@ -663,6 +729,45 @@ impl AdmittedResource {
     ) -> Result<ResourceLifetimeState, ResourceError> {
         self.ledger.finish(settled_at)?;
         Ok(self.ledger.lifetime())
+    }
+
+    /// Advances to finishing for one presented owner generation.
+    ///
+    /// The presented generation must be this account's current one: any other is refused with the
+    /// model's own `ResourceError::StaleOwner` before any lifetime fact changes, so a superseded owner
+    /// generation can never enter the finish path.
+    pub fn begin_finish_for(
+        &mut self,
+        presented_owner: OwnerGeneration,
+    ) -> Result<ResourceLifetimeState, ResourceError> {
+        self.require_current_owner(presented_owner)?;
+        self.begin_finish()
+    }
+
+    /// Completes finalization for one presented owner generation.
+    ///
+    /// The presented generation must be this account's current one, exactly as
+    /// [`Self::begin_finish_for`] requires: any other is refused with the model's own
+    /// `ResourceError::StaleOwner` before any lifetime fact changes.
+    pub fn complete_finalization_for(
+        &mut self,
+        presented_owner: OwnerGeneration,
+        settled_at: u64,
+    ) -> Result<ResourceLifetimeState, ResourceError> {
+        self.require_current_owner(presented_owner)?;
+        self.complete_finalization(settled_at)
+    }
+
+    /// Refuses a presented owner generation that is not this account's current one.
+    fn require_current_owner(&self, presented_owner: OwnerGeneration) -> Result<(), ResourceError> {
+        let current = self.ledger.owner();
+        if presented_owner != current {
+            return Err(ResourceError::StaleOwner {
+                presented: presented_owner,
+                current,
+            });
+        }
+        Ok(())
     }
 
     /// Settles one admitted resource from a model-issued post-failure settlement.

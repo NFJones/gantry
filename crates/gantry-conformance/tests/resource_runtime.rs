@@ -1737,3 +1737,169 @@ fn a_capture_carries_each_accounts_own_owner_generation() {
         "a capture round-trips through reconstruction as the identical declared records"
     );
 }
+
+/// The registry owns the whole two-phase finish path: a finishing account keeps its live place, its
+/// completion records the settlement baseline and releases the place while every declared quota fact
+/// stays observable, and no second completion is admitted.
+#[test]
+fn registry_advances_and_completes_the_two_phase_finish() {
+    let subject = declared_subject(FIXTURE_DECLARATION);
+    let other = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the declared record is admitted: {error:?}"));
+
+    assert_eq!(
+        registry.begin_finish(&other, OwnerGeneration::new(4)),
+        Err(ResourceRegistryRefusal::UnknownSubject),
+        "a subject this registry holds no account for changes nothing"
+    );
+    assert_eq!(
+        registry.begin_finish(&subject, OwnerGeneration::new(4)),
+        Ok(ResourceLifetimeState::Finishing)
+    );
+    assert_eq!(
+        registry.live_resources(),
+        1,
+        "a finishing lifetime still holds its live place"
+    );
+    assert_eq!(
+        registry.complete_finalization(&subject, OwnerGeneration::new(4), 20),
+        Ok(ResourceLifetimeState::Finished)
+    );
+    assert_eq!(
+        registry.live_resources(),
+        0,
+        "the completed lifetime releases its place"
+    );
+
+    let account = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("the subject still owns its retained account"));
+    assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Finished);
+    let settlement = match account.ledger().settlement() {
+        Some(settlement) => settlement,
+        None => panic!("the finished lifetime retains its settlement baseline"),
+    };
+    assert_eq!(settlement.owner(), OwnerGeneration::new(4));
+    assert_eq!(settlement.settled_at(), 20);
+    assert_eq!(
+        account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(8),
+        "semantic release keeps every declared quota fact observable"
+    );
+    assert_eq!(
+        registry.complete_finalization(&subject, OwnerGeneration::new(4), 21),
+        Err(ResourceRegistryRefusal::Finish(
+            ResourceError::IllegalLifetimeTransition
+        )),
+        "a settled resource is never settled a second time"
+    );
+}
+
+/// Both finish steps are owner-qualified: a superseded owner generation is refused before any
+/// lifetime fact changes, and the account's current generation then advances and completes it.
+#[test]
+fn finish_refuses_a_stale_owner_generation_without_mutating() {
+    let subject = declared_subject(FIXTURE_DECLARATION);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the declared record is admitted: {error:?}"));
+
+    assert_eq!(
+        registry.begin_finish(&subject, OwnerGeneration::new(3)),
+        Err(ResourceRegistryRefusal::Finish(ResourceError::StaleOwner {
+            presented: OwnerGeneration::new(3),
+            current: OwnerGeneration::new(4),
+        }))
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Active),
+        "the refused presentation changes no lifetime fact"
+    );
+
+    assert_eq!(
+        registry.begin_finish(&subject, OwnerGeneration::new(4)),
+        Ok(ResourceLifetimeState::Finishing),
+        "the current owner generation enters the finish path"
+    );
+    assert_eq!(
+        registry.complete_finalization(&subject, OwnerGeneration::new(3), 20),
+        Err(ResourceRegistryRefusal::Finish(ResourceError::StaleOwner {
+            presented: OwnerGeneration::new(3),
+            current: OwnerGeneration::new(4),
+        }))
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Finishing),
+        "the refused presentation leaves the finishing lifetime unfinished"
+    );
+    assert_eq!(
+        registry.complete_finalization(&subject, OwnerGeneration::new(4), 20),
+        Ok(ResourceLifetimeState::Finished),
+        "the current owner generation completes the same account"
+    );
+}
+
+/// A poisoned resource has one terminal disposition: neither finish step can be entered or completed
+/// after the model's poisoning witness fixed it.
+#[test]
+fn a_poisoned_account_cannot_enter_or_complete_the_finish_path() {
+    let subject = declared_subject(FIXTURE_DECLARATION);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the declared record is admitted: {error:?}"));
+    let settlement = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        registry.settle_from_post_failure(&settlement, 21),
+        Ok(ResourceLifetimeState::Poisoned)
+    );
+
+    assert_eq!(
+        registry.begin_finish(&subject, OwnerGeneration::new(4)),
+        Err(ResourceRegistryRefusal::Finish(
+            ResourceError::IllegalLifetimeTransition
+        )),
+        "a poisoned lifetime never enters finishing"
+    );
+    assert_eq!(
+        registry.complete_finalization(&subject, OwnerGeneration::new(4), 22),
+        Err(ResourceRegistryRefusal::Finish(
+            ResourceError::IllegalLifetimeTransition
+        )),
+        "a poisoned lifetime never finishes"
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Poisoned)
+    );
+}
