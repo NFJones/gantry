@@ -10,13 +10,13 @@ use std::sync::Arc;
 use gantry::identity::ProtocolIdentity;
 use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry::ir::{
-    CanonicalPath, CanonicalSignature, Charge, DurableResourceRecord, EffectSet,
-    EmergencyCleanupWitness, ExecutableAction, ExecutableOperation, FailureClass, GracePolicy,
-    LivenessRoot, OperationAbi, OperationKind, OwnerGeneration, PoisonWitness,
-    PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ReceiverOwnership, ResourceAction,
-    ResourceCarrier, ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState,
-    RetentionFence, StaticSiteId, StopCause, StopCoordinator, StopRequest, StructuralPosition,
-    TaskStopState, TypeDescriptor,
+    CanonicalPath, CanonicalSignature, Charge, Completion, ContainmentError, DurableResourceRecord,
+    EffectSet, EffectState, EmergencyCleanupWitness, ExecutableAction, ExecutableOperation,
+    ExternalOutcome, FailureClass, GracePolicy, LivenessRoot, MalformedCompletion, OperationAbi,
+    OperationKind, OwnerGeneration, PoisonWitness, PostFailureSettlement, Quota, QuotaFamily,
+    QuotaOwner, ReceiverOwnership, ResourceAction, ResourceCarrier, ResourceError, ResourceLedger,
+    ResourceLifetimeState, ResourceState, RetentionFence, StaticSiteId, StopCause, StopCoordinator,
+    StopRequest, StructuralPosition, TaskStopState, TypeDescriptor,
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
@@ -2057,5 +2057,133 @@ fn the_registry_mutation_surface_refuses_a_superseded_owner_generation() {
     assert_eq!(
         registry.delete(&subject, owner),
         Ok(ResourceLifetimeState::Deleted)
+    );
+}
+
+/// One admitted operation owns exactly one Section 23 containment settlement, and the model's own
+/// order decides every refusal: a malformed completion first, then a repeated completion, then a
+/// generation the operation does not hold, with a definite accepted outcome never presented over an
+/// ambiguous effect, and no refusal changing the settled outcome or the held effect state.
+#[test]
+fn runtime_containment_settlement_settles_one_operation_once() {
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let stale = OwnerGeneration::new(3);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+
+    assert_eq!(
+        registry.settle_containment(
+            &subject,
+            stale,
+            Completion::malformed(MalformedCompletion::NoOutcome),
+        ),
+        Err(ResourceRegistryRefusal::Containment(
+            ContainmentError::MalformedCompletion {
+                cause: MalformedCompletion::NoOutcome,
+            }
+        )),
+        "a malformed completion is refused before the stale generation it also names"
+    );
+    assert_eq!(
+        registry.settle_containment(
+            &subject,
+            stale,
+            Completion::observed(ExternalOutcome::Rejected, EffectState::DefiniteRejection),
+        ),
+        Err(ResourceRegistryRefusal::Containment(
+            ContainmentError::StaleGeneration {
+                presented: stale,
+                held: owner,
+            }
+        )),
+        "a generation the operation does not hold is refused while the operation is unsettled"
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.containment().is_settled()),
+        Some(false),
+        "no refusal settles the operation"
+    );
+
+    assert_eq!(
+        registry.settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        ),
+        Ok(ExternalOutcome::Accepted)
+    );
+    assert_eq!(
+        registry.settle_containment(
+            &subject,
+            stale,
+            Completion::observed(ExternalOutcome::Rejected, EffectState::DefiniteRejection),
+        ),
+        Err(ResourceRegistryRefusal::Containment(
+            ContainmentError::SecondSettlement {
+                settled: ExternalOutcome::Accepted,
+            }
+        )),
+        "a repeated completion is refused as a second settlement before its stale generation"
+    );
+    assert_eq!(
+        ResourceRegistry::new().settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        ),
+        Err(ResourceRegistryRefusal::UnknownSubject),
+        "a registry holding no account for the subject refuses the settlement"
+    );
+
+    let mut ambiguous = ResourceRegistry::new();
+    ambiguous
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert_eq!(
+        ambiguous.settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::Ambiguous),
+        ),
+        Err(ResourceRegistryRefusal::Containment(
+            ContainmentError::AmbiguousOutcomeRefused {
+                outcome: ExternalOutcome::Accepted,
+                held: EffectState::Ambiguous,
+            }
+        )),
+        "a definite accepted outcome is never presented over an ambiguous effect"
+    );
+    assert_eq!(
+        ambiguous.settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Rejected, EffectState::Ambiguous),
+        ),
+        Ok(ExternalOutcome::Rejected),
+        "the ambiguous effect settles once as an outcome that claims no acceptance"
+    );
+    assert_eq!(
+        ambiguous
+            .account(&subject)
+            .map(|account| account.containment().effect_state()),
+        Some(Some(EffectState::Ambiguous)),
+        "the settled operation keeps the ambiguous effect state the boundary observed"
     );
 }

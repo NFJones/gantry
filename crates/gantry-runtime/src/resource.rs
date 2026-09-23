@@ -49,8 +49,9 @@
 use std::collections::BTreeMap;
 
 use gantry_ir::{
-    CanonicalPath, Charge, DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness,
-    ExecutableOperation, LivenessRoot, LogicalOperationId, OperationKind, OwnerGeneration,
+    CanonicalPath, Charge, Completion, ContainmentError, ContainmentSettlement,
+    DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness, ExecutableOperation,
+    ExternalOutcome, LivenessRoot, LogicalOperationId, OperationKind, OwnerGeneration,
     PoisonWitness, PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ResourceAction,
     ResourceCarrier, ResourceError, ResourceGenerationId, ResourceLedger, ResourceLifetimeState,
     RetentionFence, StaticSiteId, StructuralPosition, admit_resource_carrier,
@@ -662,6 +663,32 @@ impl ResourceRegistry {
             .delete_for(presented_owner)
             .map_err(ResourceRegistryRefusal::Deletion)
     }
+
+    /// Settles one admitted operation's Section 23 containment path from one completion.
+    ///
+    /// The account is selected by the subject's own operation and generation, so a subject this
+    /// registry holds no account for is refused with [`ResourceRegistryRefusal::UnknownSubject`]. The
+    /// account's own containment settlement then decides in the model's declared order - a malformed
+    /// completion, then a completion presented to an already-settled operation, then a completion
+    /// naming a generation the operation does not hold, then the refinement of the held effect state,
+    /// and only then a definite accepted outcome over an ambiguous effect - and every refusal is
+    /// reported with the model's own reason through [`ResourceRegistryRefusal::Containment`] without
+    /// changing the account's settled facts.
+    pub fn settle_containment(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+        completion: Completion,
+    ) -> Result<ExternalOutcome, ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .settle_containment(presented_owner, completion)
+            .map_err(ResourceRegistryRefusal::Containment)
+    }
 }
 
 /// Why the runtime resource registry refused an admission or a settlement.
@@ -685,6 +712,8 @@ pub enum ResourceRegistryRefusal {
     Retirement(ResourceError),
     /// The account's own deletion rule refused the presented owner generation.
     Deletion(ResourceError),
+    /// The account's own Section 23 containment settlement refused the presented completion.
+    Containment(ContainmentError),
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
         /// The declared limit.
@@ -711,6 +740,11 @@ pub enum ResourceRegistryRefusal {
 /// reconstruction record of `GNT-28.7-durable-resource-reconstruction`, and
 /// `GNT-28.9-retirement-deletion-and-stale-owner-fences` admits a genuinely later
 /// owner only through a distinct declared resource record.
+///
+/// The account also owns exactly one Section 23 containment settlement of its operation, opened
+/// under the owner generation its declared reconstruction record names, so one contained operation
+/// settles once, and a malformed, repeated, or stale completion is refused without changing the
+/// settled facts.
 ///
 /// The account's whole mutation surface is owner-qualified and its ledger is crate-private, so no
 /// caller outside this crate can reach an unfenced transition:
@@ -744,6 +778,7 @@ pub enum ResourceRegistryRefusal {
 pub struct AdmittedResource {
     ledger: ResourceLedger,
     subject: ResourceSubjectBinding,
+    containment: ContainmentSettlement,
 }
 
 impl AdmittedResource {
@@ -764,9 +799,12 @@ impl AdmittedResource {
             return Err(ResourceRegistryRefusal::UnauthenticatedOperationKind);
         }
         admit_resource_carrier(carrier).map_err(ResourceRegistryRefusal::Admission)?;
+        let ledger = ResourceLedger::reconstruct(record);
+        let containment = ContainmentSettlement::open(ledger.owner());
         Ok(Self {
-            ledger: ResourceLedger::reconstruct(record),
+            ledger,
             subject,
+            containment,
         })
     }
 
@@ -809,6 +847,34 @@ impl AdmittedResource {
     #[must_use]
     pub fn durable_record(&self) -> DurableResourceRecord {
         self.ledger.durable_record()
+    }
+
+    /// Returns the Section 23 containment settlement of this operation.
+    ///
+    /// The settlement is opened under the owner generation the reconstruction record names, so the
+    /// operation it owns is exactly this account's operation, and it holds the single outcome and the
+    /// refined effect state of one settled operation.
+    #[must_use]
+    pub const fn containment(&self) -> &ContainmentSettlement {
+        &self.containment
+    }
+
+    /// Settles this operation's containment path from one completion a boundary observed.
+    ///
+    /// The model's own settlement decides in its declared order: a completion that declares no
+    /// outcome or more than one outcome is refused first as `MalformedCompletion`, then a completion
+    /// presented to an already-settled operation as `SecondSettlement`, then a completion naming a
+    /// generation the operation does not hold as `StaleGeneration`, then the held effect state is
+    /// refined, and only then is a definite accepted outcome over an ambiguous effect refused as
+    /// `AmbiguousOutcomeRefused`. This route delegates rather than restating those decisions, so it
+    /// adds no fence that could reorder them, and no refusal writes the owner generation, the held
+    /// effect state, or the settled outcome.
+    pub fn settle_containment(
+        &mut self,
+        presented_owner: OwnerGeneration,
+        completion: Completion,
+    ) -> Result<ExternalOutcome, ContainmentError> {
+        self.containment.settle(presented_owner, completion)
     }
 
     /// Advances to finishing from the only ordinary active state.
