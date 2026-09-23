@@ -56,8 +56,11 @@ impl ProgramWire {
     }
 
     /// Returns whether this wire carries the ownership class of a caller-place admission.
+    ///
+    /// V5 is a successor of V4 and therefore carries everything V4 carries, including the
+    /// caller-place ownership class, alongside the authenticated Section 20 kind.
     const fn carries_caller_place_ownership(self) -> bool {
-        matches!(self, Self::V4)
+        matches!(self, Self::V4 | Self::V5)
     }
 
     /// Returns whether this wire carries the authenticated Section 20 operation kind.
@@ -67,16 +70,27 @@ impl ProgramWire {
 }
 
 /// Returns whether any operation of the program records an authenticated Section 20 kind.
+///
+/// Workflow and spawned task-body instructions are scanned alike, because both are encoded on the
+/// selected wire.
 fn program_carries_section20_kind(program: &MachineProgram) -> bool {
-    program.workflows().iter().any(|workflow| {
-        workflow.instructions.iter().any(|instruction| {
+    program
+        .workflows()
+        .iter()
+        .flat_map(|workflow| workflow.instructions.iter())
+        .chain(
+            program
+                .task_bodies()
+                .iter()
+                .flat_map(|body| body.instructions().iter()),
+        )
+        .any(|instruction| {
             matches!(
                 &instruction.kind,
                 InstructionKind::OperationCall { operation, .. }
                     if operation.section20_kind.is_some()
             )
         })
-    })
 }
 
 fn program_uses_successor_wire(program: &MachineProgram) -> bool {
