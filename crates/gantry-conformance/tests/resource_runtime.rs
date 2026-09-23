@@ -893,6 +893,88 @@ fn registry_charges_declared_quotas_on_the_live_path() {
     assert_eq!(headroom(&registry), Some(5));
 }
 
+/// Bounded renewal is enforced on the registry's live path: one declared renewal raises exactly one
+/// ceiling and consumes one allowance, an exhausted allowance, an undeclared key, and a stale owner
+/// are refused with the model's own reasons, an unknown subject is refused, and a refused renewal
+/// changes nothing.
+#[test]
+fn registry_renews_one_declared_quota_and_refuses_exhaustion() {
+    let subject = active_subject();
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    let owner = OwnerGeneration::new(4);
+    let headroom = |registry: &ResourceRegistry| {
+        registry
+            .account(&subject)
+            .and_then(|account| account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes))
+    };
+    assert_eq!(headroom(&registry), Some(8));
+    assert!(
+        registry
+            .renew(&subject, owner, QuotaOwner::Owner, QuotaFamily::Bytes, 4)
+            .is_ok()
+    );
+    assert_eq!(
+        headroom(&registry),
+        Some(12),
+        "the renewal raises exactly that ceiling"
+    );
+    assert_eq!(
+        registry.renew(&subject, owner, QuotaOwner::Owner, QuotaFamily::Bytes, 4),
+        Err(ResourceRegistryRefusal::Renewal(
+            ResourceError::RenewalExhausted
+        )),
+        "the declared allowance admits exactly one renewal"
+    );
+    assert_eq!(
+        headroom(&registry),
+        Some(12),
+        "a refused renewal changes nothing"
+    );
+    assert_eq!(
+        registry.renew(
+            &subject,
+            owner,
+            QuotaOwner::DurableRecord,
+            QuotaFamily::Bytes,
+            1,
+        ),
+        Err(ResourceRegistryRefusal::Renewal(
+            ResourceError::UndeclaredQuota
+        )),
+        "an undeclared owner and family key is refused"
+    );
+    assert!(matches!(
+        registry.renew(
+            &subject,
+            OwnerGeneration::new(5),
+            QuotaOwner::Owner,
+            QuotaFamily::Bytes,
+            1,
+        ),
+        Err(ResourceRegistryRefusal::Renewal(
+            ResourceError::StaleOwner { .. }
+        ))
+    ));
+    let (_program, _machine, other) =
+        machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let other = other.unwrap_or_else(|| panic!("the second fixture operation declares an action"));
+    assert_eq!(
+        registry.renew(&other, owner, QuotaOwner::Owner, QuotaFamily::Bytes, 1),
+        Err(ResourceRegistryRefusal::UnknownSubject),
+        "a subject this registry holds no account for changes nothing"
+    );
+    assert_eq!(headroom(&registry), Some(12));
+}
+
 fn emergency_cleanup() -> EmergencyCleanupWitness {
     let policy =
         GracePolicy::new(1, 1).unwrap_or_else(|_| unreachable!("fixture stop policy is bounded"));

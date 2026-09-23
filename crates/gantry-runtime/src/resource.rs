@@ -353,6 +353,34 @@ impl ResourceRegistry {
             .charge(presented_owner, action, charges)
             .map_err(ResourceRegistryRefusal::Charge)
     }
+
+    /// Renews exactly one declared quota of one admitted account through the current owner.
+    ///
+    /// The caller names the subject, so the account is selected by the subject's own operation and
+    /// generation and a subject this registry holds no account for is refused with
+    /// [`ResourceRegistryRefusal::UnknownSubject`]. The account's own ledger then decides: a stale
+    /// presented owner, an undeclared owner-and-family key, an exhausted renewal allowance, an
+    /// overflowing ceiling, and a lifetime that admits no charge are each refused with the model's
+    /// own reason through [`ResourceRegistryRefusal::Renewal`], and a refused renewal changes
+    /// nothing.
+    pub fn renew(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+        owner: QuotaOwner,
+        family: QuotaFamily,
+        increase: u64,
+    ) -> Result<(), ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .ledger_mut()
+            .renew(presented_owner, owner, family, increase)
+            .map_err(ResourceRegistryRefusal::Renewal)
+    }
 }
 
 /// Why the runtime resource registry refused an admission or a settlement.
@@ -366,6 +394,8 @@ pub enum ResourceRegistryRefusal {
     EmergencyRelease(ResourceError),
     /// The account's own ledger refused the presented charge.
     Charge(ResourceError),
+    /// The account's own ledger refused the presented renewal.
+    Renewal(ResourceError),
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
         /// The declared limit.
