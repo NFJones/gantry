@@ -73,10 +73,13 @@ pub enum TestHarnessStop {
 pub enum TestTargetOutcome {
     /// The machine fixed a successful outcome for the target.
     Completed {
-        /// Labelled transitions the machine emitted before its outcome was fixed.
+        /// Labelled transitions the harness observed before it stopped.
         ///
-        /// A fixed success can be recognized when the bound is reached rather than only at the
-        /// machine's completing observation, so this count need not include that observation.
+        /// The count includes any terminal bookkeeping labels the machine emits after fixing its
+        /// outcome, and it excludes the completing observation itself. The same target can therefore
+        /// report different counts at different bounds even though its outcome is fixed at the same
+        /// point, which is why the fixed-success regression pins one bound and the ordinary
+        /// regression pins another.
         steps: u64,
     },
     /// The machine fixed a task-local failure for the target.

@@ -188,6 +188,11 @@ fn runtime_harness_executes_declared_plans_over_admitted_targets() {
         "both returning targets complete: {report:?}"
     );
     assert_eq!(
+        report.results()[0].outcome(),
+        &TestTargetOutcome::Completed { steps: 4 },
+        "the count covers every labelled transition observed before the completing observation"
+    );
+    assert_eq!(
         report
             .results()
             .iter()
