@@ -2187,3 +2187,100 @@ fn runtime_containment_settlement_settles_one_operation_once() {
         "the settled operation keeps the ambiguous effect state the boundary observed"
     );
 }
+
+/// The containment settlement is runtime state of one admitted account value, not a declared durable
+/// fact: a subject rebuilt from its declared capture, and the same subject readmitted after physical
+/// reclamation, each hold a fresh unsettled settlement, so the runtime publishes no cross-recovery
+/// single-settlement claim.
+#[test]
+fn runtime_containment_settlement_restarts_with_the_account_value() {
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert_eq!(
+        registry.settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        ),
+        Ok(ExternalOutcome::Accepted)
+    );
+
+    let captured = registry.declared_records();
+    let mut rebuilt = ResourceRegistry::reconstruct(None, captured)
+        .unwrap_or_else(|error| panic!("the declared capture reconstructs: {error:?}"));
+    assert_eq!(
+        rebuilt
+            .account(&subject)
+            .map(|account| account.containment().is_settled()),
+        Some(false),
+        "a rebuilt account value holds a fresh unsettled settlement"
+    );
+    assert_eq!(
+        rebuilt.settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Rejected, EffectState::DefiniteRejection),
+        ),
+        Ok(ExternalOutcome::Rejected),
+        "the rebuilt account value settles its own operation once"
+    );
+
+    let mut reclaimed = ResourceRegistry::new();
+    reclaimed
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert!(reclaimed.begin_finish(&subject, owner).is_ok());
+    assert!(reclaimed.complete_finalization(&subject, owner, 20).is_ok());
+    for root in ROOTS {
+        assert!(
+            reclaimed
+                .close_liveness_root(&subject, owner, *root)
+                .is_ok()
+        );
+    }
+    let fence = RetentionFence::new(2, 10).unwrap_or_else(|_| unreachable!("bounded fence"));
+    assert!(
+        reclaimed
+            .retire(&subject, fence, owner, OwnerGeneration::new(5), 35)
+            .is_ok()
+    );
+    assert_eq!(
+        reclaimed.delete(&subject, owner),
+        Ok(ResourceLifetimeState::Deleted)
+    );
+    assert_eq!(
+        reclaimed.reap_deleted(),
+        1,
+        "reaping frees the deleted account's key"
+    );
+    reclaimed
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the reclaimed subject is readmitted: {error:?}"));
+    assert_eq!(
+        reclaimed
+            .account(&subject)
+            .map(|account| account.containment().is_settled()),
+        Some(false),
+        "a readmitted account value holds a fresh unsettled settlement"
+    );
+}

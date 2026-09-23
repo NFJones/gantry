@@ -673,7 +673,9 @@ impl ResourceRegistry {
     /// naming a generation the operation does not hold, then the refinement of the held effect state,
     /// and only then a definite accepted outcome over an ambiguous effect - and every refusal is
     /// reported with the model's own reason through [`ResourceRegistryRefusal::Containment`] without
-    /// changing the account's settled facts.
+    /// changing the account's settled facts. The settlement belongs to the account value this registry
+    /// holds at that moment, so a subject reconstructed, or reclaimed and readmitted, is a fresh account
+    /// value with a fresh unsettled settlement.
     pub fn settle_containment(
         &mut self,
         subject: &ResourceSubjectBinding,
@@ -741,10 +743,12 @@ pub enum ResourceRegistryRefusal {
 /// `GNT-28.9-retirement-deletion-and-stale-owner-fences` admits a genuinely later
 /// owner only through a distinct declared resource record.
 ///
-/// The account also owns exactly one Section 23 containment settlement of its operation, opened
-/// under the owner generation its declared reconstruction record names, so one contained operation
-/// settles once, and a malformed, repeated, or stale completion is refused without changing the
-/// settled facts.
+/// The account also owns exactly one Section 23 containment settlement, opened under the owner
+/// generation its declared reconstruction record names, so one contained operation settles once for
+/// the lifetime of this account value and a malformed, repeated, or stale completion is refused
+/// without changing the settled facts. The settlement is runtime state rather than a declared
+/// durable fact, so a reconstructed or reclaimed-and-readmitted subject is a fresh account value with
+/// a fresh unsettled settlement: the runtime publishes no cross-recovery single-settlement claim.
 ///
 /// The account's whole mutation surface is owner-qualified and its ledger is crate-private, so no
 /// caller outside this crate can reach an unfenced transition:
@@ -852,8 +856,8 @@ impl AdmittedResource {
     /// Returns the Section 23 containment settlement of this operation.
     ///
     /// The settlement is opened under the owner generation the reconstruction record names, so the
-    /// operation it owns is exactly this account's operation, and it holds the single outcome and the
-    /// refined effect state of one settled operation.
+    /// operation it owns is the same operation this account value was admitted under, and it holds
+    /// that value's single settled outcome and refined effect state.
     #[must_use]
     pub const fn containment(&self) -> &ContainmentSettlement {
         &self.containment
