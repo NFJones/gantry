@@ -96,6 +96,7 @@ fn admitted(
 const FIXTURE_WORKFLOW: &str = "crate::main";
 const FIXTURE_DECLARATION: &str = "crate::resource_runtime_metadata";
 const SECOND_FIXTURE_DECLARATION: &str = "crate::resource_runtime_second_metadata";
+const THIRD_FIXTURE_DECLARATION: &str = "crate::resource_runtime_third_metadata";
 const UNAUTHENTICATED_FIXTURE_DECLARATION: &str =
     "crate::resource_runtime_unauthenticated_metadata";
 const FIXTURE_SITE: u64 = 45;
@@ -2253,6 +2254,15 @@ fn runtime_containment_settlement_restarts_with_the_account_value() {
         .unwrap_or_else(|error| {
             panic!("the declared reconstruction record is admitted: {error:?}")
         });
+    assert_eq!(
+        reclaimed.settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        ),
+        Ok(ExternalOutcome::Accepted),
+        "the account settles its containment before it is reclaimed"
+    );
     assert!(reclaimed.begin_finish(&subject, owner).is_ok());
     assert!(reclaimed.complete_finalization(&subject, owner, 20).is_ok());
     for root in ROOTS {
@@ -2378,10 +2388,11 @@ fn runtime_adapter_binding_is_owner_fenced_and_poisons_once() {
         "a replacement whose owner generation does not succeed the held one is refused"
     );
 
-    let held_spelling = registry
-        .adapter_instance(&subject)
-        .map(AdapterInstance::as_str)
-        .map(str::to_owned);
+    let held_binding = registry.adapter_instance(&subject).cloned();
+    assert!(
+        held_binding.is_some(),
+        "the account holds its bound adapter instance"
+    );
 
     let mut poisoned_candidate = adapter_instance_with("fourth", held, 5, 3);
     poisoned_candidate.poison();
@@ -2410,11 +2421,8 @@ fn runtime_adapter_binding_is_owner_fenced_and_poisons_once() {
         "a presented binding that is already retired is never returned to service"
     );
     assert_eq!(
-        registry
-            .adapter_instance(&subject)
-            .map(AdapterInstance::as_str)
-            .map(str::to_owned),
-        held_spelling,
+        registry.adapter_instance(&subject),
+        held_binding.as_ref(),
         "a refused replacement leaves the held binding exactly as it was"
     );
 
@@ -2538,8 +2546,9 @@ fn runtime_cohort_emergency_cleanup_reports_its_settled_prefix() {
         ))
     ));
 
+    let third = declared_subject(THIRD_FIXTURE_DECLARATION);
     let mut partial = ResourceRegistry::new();
-    for subject in [&first, &second] {
+    for subject in [&first, &second, &third] {
         partial
             .admit(
                 subject.clone(),
@@ -2550,21 +2559,24 @@ fn runtime_cohort_emergency_cleanup_reports_its_settled_prefix() {
                 panic!("the declared reconstruction record is admitted: {error:?}")
             });
     }
-    // A refusal that follows a successful settlement preserves exactly the settled prefix, and the
-    // registry keeps the lifetimes the progress reports.
-    let mut ordered = [&first, &second];
+    // A refusal that follows a successful settlement preserves exactly the settled prefix, stops the
+    // sweep before every account that sorts after the refusal, and leaves each lifetime reachable only
+    // through the routes that already ran.
+    let mut ordered = [&first, &second, &third];
     ordered.sort_by(|left, right| {
         (left.operation(), left.generation()).cmp(&(right.operation(), right.generation()))
     });
     let earlier = (*ordered[0]).clone();
-    let later = (*ordered[1]).clone();
+    let refusing = (*ordered[1]).clone();
+    let untouched = (*ordered[2]).clone();
     assert_eq!(
-        partial.settle_from_emergency_cleanup(&later, emergency_cleanup()),
+        partial.settle_from_emergency_cleanup(&refusing, emergency_cleanup()),
         Ok(ResourceLifetimeState::EmergencyReleased),
-        "the later account settles before the sweep, so the sweep meets it after a settlement"
+        "the refusing account settles before the sweep, so the sweep meets it after a settlement"
     );
     let swept = partial.settle_cohort_from_emergency_cleanup(vec![
-        (later.clone(), emergency_cleanup()),
+        (untouched.clone(), emergency_cleanup()),
+        (refusing.clone(), emergency_cleanup()),
         (earlier.clone(), emergency_cleanup()),
     ]);
     assert!(!swept.is_complete());
@@ -2586,7 +2598,7 @@ fn runtime_cohort_emergency_cleanup_reports_its_settled_prefix() {
         Some((
             subject,
             ResourceRegistryRefusal::EmergencyRelease(ResourceError::IllegalLifetimeTransition)
-        )) if subject.operation() == later.operation()
+        )) if subject.operation() == refusing.operation()
     ));
     assert_eq!(
         partial
@@ -2597,10 +2609,17 @@ fn runtime_cohort_emergency_cleanup_reports_its_settled_prefix() {
     );
     assert_eq!(
         partial
-            .account(&later)
+            .account(&refusing)
             .map(|account| account.ledger().lifetime()),
         Some(ResourceLifetimeState::EmergencyReleased),
         "the refused account keeps the lifetime it already reached"
+    );
+    assert_eq!(
+        partial
+            .account(&untouched)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Active),
+        "an account sorting after the refusal is untouched, so the sweep really stopped"
     );
 
     // A cohort whose only subject this registry does not hold settles nothing and reports it.

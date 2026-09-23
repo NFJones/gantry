@@ -1086,8 +1086,9 @@ impl AdmittedResource {
     /// Binds or replaces this account's adapter instance under one presented owner generation.
     ///
     /// A first binding is stored as it is presented, and a presented binding that is already poisoned
-    /// or already retired is refused with the model's own reason before anything else, so binding can
-    /// never return a failed or retired instance to service. A replacement is then decided by the
+    /// or already retired is refused with the model's own reason once the presented owner generation is
+    /// accepted, so binding can never return a failed or retired instance to service. A replacement is
+    /// then decided by the
     /// model's own substitution rule of the binding this account already holds, so a poisoned held
     /// binding, a retired held binding, a replacement that widens the rights held, and a replacement
     /// whose owner generation does not succeed the held one are each refused with the model's own
