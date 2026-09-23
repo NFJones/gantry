@@ -239,23 +239,19 @@ fn retirement_and_deletion_never_reclaim_a_released_live_place() {
             panic!("the declared reconstruction record is admitted: {error:?}")
         });
     assert_eq!(registry.live_resources(), 1);
-    {
-        let account = registry
-            .account_mut(&subject)
-            .unwrap_or_else(|| panic!("the registry holds the admitted account"));
-        assert!(account.ledger_mut().begin_finish().is_ok());
-    }
+    assert_eq!(
+        registry.begin_finish(&subject, OwnerGeneration::new(4)),
+        Ok(ResourceLifetimeState::Finishing)
+    );
     assert_eq!(
         registry.live_resources(),
         1,
         "a finishing lifetime is still live"
     );
-    {
-        let account = registry
-            .account_mut(&subject)
-            .unwrap_or_else(|| panic!("the registry holds the admitted account"));
-        assert!(account.ledger_mut().finish(20).is_ok());
-    }
+    assert_eq!(
+        registry.complete_finalization(&subject, OwnerGeneration::new(4), 20),
+        Ok(ResourceLifetimeState::Finished)
+    );
     assert_eq!(
         registry.live_resources(),
         0,
@@ -274,11 +270,14 @@ fn retirement_and_deletion_never_reclaim_a_released_live_place() {
             .account_mut(&subject)
             .unwrap_or_else(|| panic!("the registry holds the admitted account"));
         for root in ROOTS {
-            assert!(account.ledger_mut().close_liveness_root(*root).is_ok());
+            assert!(
+                account
+                    .close_liveness_root_for(OwnerGeneration::new(4), *root)
+                    .is_ok()
+            );
         }
         assert!(
             account
-                .ledger_mut()
                 .retire(fence, OwnerGeneration::new(4), OwnerGeneration::new(5), 35)
                 .is_ok()
         );
@@ -293,7 +292,10 @@ fn retirement_and_deletion_never_reclaim_a_released_live_place() {
         let account = registry
             .account_mut(&subject)
             .unwrap_or_else(|| panic!("the registry holds the admitted account"));
-        assert!(account.ledger_mut().delete().is_ok());
+        assert_eq!(
+            account.delete_for(OwnerGeneration::new(4)),
+            Ok(ResourceLifetimeState::Deleted)
+        );
         assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Deleted);
     }
     assert_eq!(
@@ -646,8 +648,16 @@ fn an_admitted_account_preserves_every_declared_recorded_fact() {
 fn semantic_release_is_independent_of_record_retirement() {
     let mut admitted_resource = admitted_active();
 
-    assert!(admitted_resource.ledger_mut().begin_finish().is_ok());
-    assert!(admitted_resource.ledger_mut().finish(20).is_ok());
+    assert!(
+        admitted_resource
+            .begin_finish_for(OwnerGeneration::new(4))
+            .is_ok()
+    );
+    assert!(
+        admitted_resource
+            .complete_finalization_for(OwnerGeneration::new(4), 20)
+            .is_ok()
+    );
     assert_eq!(
         admitted_resource.ledger().lifetime(),
         ResourceLifetimeState::Finished
@@ -666,12 +676,7 @@ fn semantic_release_is_independent_of_record_retirement() {
     let fence = RetentionFence::new(2, 10).unwrap_or_else(|_| unreachable!("bounded fence"));
     let released = admitted_resource.ledger().clone();
     assert_eq!(
-        admitted_resource.ledger_mut().retire(
-            fence,
-            OwnerGeneration::new(4),
-            OwnerGeneration::new(5),
-            35,
-        ),
+        admitted_resource.retire(fence, OwnerGeneration::new(4), OwnerGeneration::new(5), 35,),
         Err(ResourceError::LivenessRootsRemain)
     );
     assert_eq!(admitted_resource.ledger(), &released);
@@ -679,26 +684,19 @@ fn semantic_release_is_independent_of_record_retirement() {
     for root in ROOTS {
         assert!(
             admitted_resource
-                .ledger_mut()
-                .close_liveness_root(*root)
+                .close_liveness_root_for(OwnerGeneration::new(4), *root)
                 .is_ok()
         );
     }
     let roots_closed = admitted_resource.ledger().clone();
     assert_eq!(
-        admitted_resource.ledger_mut().retire(
-            fence,
-            OwnerGeneration::new(4),
-            OwnerGeneration::new(5),
-            25,
-        ),
+        admitted_resource.retire(fence, OwnerGeneration::new(4), OwnerGeneration::new(5), 25,),
         Err(ResourceError::RetentionNotExpired)
     );
     assert_eq!(admitted_resource.ledger(), &roots_closed);
 
     assert!(
         admitted_resource
-            .ledger_mut()
             .retire(fence, OwnerGeneration::new(4), OwnerGeneration::new(5), 35,)
             .is_ok()
     );
@@ -714,7 +712,10 @@ fn semantic_release_is_independent_of_record_retirement() {
         admitted_resource.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
         Some(8)
     );
-    assert!(admitted_resource.ledger_mut().delete().is_ok());
+    assert_eq!(
+        admitted_resource.delete_for(OwnerGeneration::new(4)),
+        Ok(ResourceLifetimeState::Deleted)
+    );
     assert_eq!(
         admitted_resource.ledger().lifetime(),
         ResourceLifetimeState::Deleted
@@ -731,11 +732,7 @@ fn owner_authorized_changes_refuse_a_stale_generation_without_mutating() {
         amount: 1,
     }];
     assert_eq!(
-        admitted_resource.ledger_mut().charge(
-            OwnerGeneration::new(5),
-            ResourceAction::Move,
-            &charges,
-        ),
+        admitted_resource.charge(OwnerGeneration::new(5), ResourceAction::Move, &charges,),
         Err(ResourceError::StaleOwner {
             presented: OwnerGeneration::new(5),
             current: OwnerGeneration::new(4),
@@ -744,7 +741,6 @@ fn owner_authorized_changes_refuse_a_stale_generation_without_mutating() {
     assert_eq!(admitted_resource.ledger(), &before);
     assert!(
         admitted_resource
-            .ledger_mut()
             .charge(OwnerGeneration::new(4), ResourceAction::Move, &charges,)
             .is_ok()
     );
@@ -759,7 +755,7 @@ fn a_charge_vector_commits_every_declared_member_or_none() {
     let mut admitted_resource = admitted_active();
     let before = admitted_resource.ledger().clone();
     assert_eq!(
-        admitted_resource.ledger_mut().charge(
+        admitted_resource.charge(
             OwnerGeneration::new(4),
             ResourceAction::Copy,
             &[
@@ -779,7 +775,7 @@ fn a_charge_vector_commits_every_declared_member_or_none() {
     );
     assert_eq!(admitted_resource.ledger(), &before);
     assert_eq!(
-        admitted_resource.ledger_mut().charge(
+        admitted_resource.charge(
             OwnerGeneration::new(4),
             ResourceAction::Loan,
             &[
@@ -1058,11 +1054,7 @@ fn runtime_emergency_settlement_requires_the_sealed_cleanup_witness() {
         amount: 1,
     }];
     assert!(matches!(
-        admitted_resource.ledger_mut().charge(
-            OwnerGeneration::new(4),
-            ResourceAction::Update,
-            &charges,
-        ),
+        admitted_resource.charge(OwnerGeneration::new(4), ResourceAction::Update, &charges,),
         Err(ResourceError::LifetimeDoesNotAdmitCharge { .. })
     ));
 }
@@ -1070,17 +1062,18 @@ fn runtime_emergency_settlement_requires_the_sealed_cleanup_witness() {
 #[test]
 fn runtime_finalization_completion_requires_the_finishing_phase() {
     let mut admitted_resource = admitted_active();
+    let owner = OwnerGeneration::new(4);
     assert_eq!(
-        admitted_resource.complete_finalization(20),
+        admitted_resource.complete_finalization_for(owner, 20),
         Err(ResourceError::IllegalLifetimeTransition)
     );
-    assert!(admitted_resource.ledger_mut().begin_finish().is_ok());
+    assert!(admitted_resource.begin_finish_for(owner).is_ok());
     assert_eq!(
-        admitted_resource.complete_finalization(20),
+        admitted_resource.complete_finalization_for(owner, 20),
         Ok(ResourceLifetimeState::Finished)
     );
     assert_eq!(
-        admitted_resource.complete_finalization(21),
+        admitted_resource.complete_finalization_for(owner, 21),
         Err(ResourceError::IllegalLifetimeTransition)
     );
 }
@@ -1901,5 +1894,76 @@ fn a_poisoned_account_cannot_enter_or_complete_the_finish_path() {
             .account(&subject)
             .map(|account| account.ledger().lifetime()),
         Some(ResourceLifetimeState::Poisoned)
+    );
+}
+
+/// A superseded owner generation is refused on every runtime-added fence - root closure, deletion,
+/// and the model's own retirement rule - before any declared fact changes, and the account's current
+/// generation still closes its roots, retires, and deletes the same record.
+#[test]
+fn the_account_mutation_surface_refuses_a_superseded_owner_generation() {
+    let mut admitted_resource = admitted_active();
+    let owner = OwnerGeneration::new(4);
+    let stale = OwnerGeneration::new(3);
+    let before = admitted_resource.ledger().clone();
+
+    assert_eq!(
+        admitted_resource.close_liveness_root_for(stale, LivenessRoot::Resource),
+        Err(ResourceError::StaleOwner {
+            presented: stale,
+            current: owner,
+        })
+    );
+    assert_eq!(
+        admitted_resource.delete_for(stale),
+        Err(ResourceError::StaleOwner {
+            presented: stale,
+            current: owner,
+        })
+    );
+    assert_eq!(
+        admitted_resource.ledger(),
+        &before,
+        "a superseded owner generation changes no declared fact"
+    );
+
+    assert!(admitted_resource.begin_finish_for(owner).is_ok());
+    assert!(
+        admitted_resource
+            .complete_finalization_for(owner, 20)
+            .is_ok()
+    );
+    for root in ROOTS {
+        assert!(
+            admitted_resource
+                .close_liveness_root_for(owner, *root)
+                .is_ok()
+        );
+    }
+
+    let fence = RetentionFence::new(2, 10).unwrap_or_else(|_| unreachable!("bounded fence"));
+    assert_eq!(
+        admitted_resource.retire(fence, stale, OwnerGeneration::new(5), 35),
+        Err(ResourceError::StaleOwner {
+            presented: stale,
+            current: owner,
+        }),
+        "retirement keeps the model's own stale-owner refusal"
+    );
+    assert!(
+        admitted_resource
+            .retire(fence, owner, OwnerGeneration::new(5), 35)
+            .is_ok()
+    );
+    assert_eq!(
+        admitted_resource.delete_for(stale),
+        Err(ResourceError::StaleOwner {
+            presented: stale,
+            current: owner,
+        })
+    );
+    assert_eq!(
+        admitted_resource.delete_for(owner),
+        Ok(ResourceLifetimeState::Deleted)
     );
 }

@@ -50,10 +50,10 @@ use std::collections::BTreeMap;
 
 use gantry_ir::{
     CanonicalPath, Charge, DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness,
-    ExecutableOperation, LogicalOperationId, OperationKind, OwnerGeneration, PoisonWitness,
-    PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ResourceAction, ResourceCarrier,
-    ResourceError, ResourceGenerationId, ResourceLedger, ResourceLifetimeState, StaticSiteId,
-    StructuralPosition, admit_resource_carrier,
+    ExecutableOperation, LivenessRoot, LogicalOperationId, OperationKind, OwnerGeneration,
+    PoisonWitness, PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ResourceAction,
+    ResourceCarrier, ResourceError, ResourceGenerationId, ResourceLedger, ResourceLifetimeState,
+    RetentionFence, StaticSiteId, StructuralPosition, admit_resource_carrier,
 };
 
 /// One runtime-owned binding of an admitted account to its Section 20 subject.
@@ -504,7 +504,6 @@ impl ResourceRegistry {
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
         account
-            .ledger_mut()
             .charge(presented_owner, action, charges)
             .map_err(ResourceRegistryRefusal::Charge)
     }
@@ -532,7 +531,6 @@ impl ResourceRegistry {
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
         account
-            .ledger_mut()
             .renew(presented_owner, owner, family, increase)
             .map_err(ResourceRegistryRefusal::Renewal)
     }
@@ -627,6 +625,21 @@ pub enum ResourceRegistryRefusal {
 /// reconstruction record of `GNT-28.7-durable-resource-reconstruction`, and
 /// `GNT-28.9-retirement-deletion-and-stale-owner-fences` admits a genuinely later
 /// owner only through a distinct declared resource record.
+///
+/// The account's whole mutation surface is owner-qualified and its ledger is crate-private, so no
+/// caller outside this crate can reach an unfenced transition:
+///
+/// ```compile_fail
+/// use gantry_runtime::AdmittedResource;
+///
+/// fn unfenced_finish(account: &mut AdmittedResource) {
+///     account.begin_finish().ok();
+///     account.complete_finalization(0).ok();
+///     // The unfenced transitions are crate-private and the raw ledger accessor does not exist
+///     // outside this crate at all.
+///     let _ = account.ledger_mut();
+/// }
+/// ```
 #[derive(Debug, Eq, PartialEq)]
 pub struct AdmittedResource {
     ledger: ResourceLedger,
@@ -669,12 +682,6 @@ impl AdmittedResource {
         &self.ledger
     }
 
-    /// Returns the reconstructed accounting ledger for owner-authorized changes.
-    #[must_use]
-    pub fn ledger_mut(&mut self) -> &mut ResourceLedger {
-        &mut self.ledger
-    }
-
     /// Returns one declared quota of this resource by its closed owner and family.
     #[must_use]
     pub fn quota(&self, owner: QuotaOwner, family: QuotaFamily) -> Option<Quota> {
@@ -711,7 +718,7 @@ impl AdmittedResource {
     /// caller reaching into the ledger: any other lifetime is refused by the model's own transition
     /// rule, no quota fact changes, and a finishing account keeps its live place because `Finishing` is
     /// live.
-    pub fn begin_finish(&mut self) -> Result<ResourceLifetimeState, ResourceError> {
+    pub(crate) fn begin_finish(&mut self) -> Result<ResourceLifetimeState, ResourceError> {
         self.ledger.begin_finish()?;
         Ok(self.ledger.lifetime())
     }
@@ -723,7 +730,7 @@ impl AdmittedResource {
     /// ledger and this step records the completion at one declared logical instant. Any other
     /// lifetime is refused by the model's own transition rule, no quota fact changes, and the
     /// retained settlement baseline names the current owner.
-    pub fn complete_finalization(
+    pub(crate) fn complete_finalization(
         &mut self,
         settled_at: u64,
     ) -> Result<ResourceLifetimeState, ResourceError> {
@@ -768,6 +775,79 @@ impl AdmittedResource {
             });
         }
         Ok(())
+    }
+
+    /// Charges this account's declared quotas for one presented action.
+    ///
+    /// Every decision is the model's own: a stale presented owner, an undeclared owner-and-family
+    /// key, an exhausted ceiling, an overflowing member, and a lifetime that admits no charge are each
+    /// refused with the model's reason, and a refused vector commits nothing.
+    pub fn charge(
+        &mut self,
+        presented_owner: OwnerGeneration,
+        action: ResourceAction,
+        charges: &[Charge],
+    ) -> Result<(), ResourceError> {
+        self.ledger.charge(presented_owner, action, charges)
+    }
+
+    /// Renews exactly one declared quota of this account for one presented owner generation.
+    ///
+    /// The model's own renewal rule decides the presented owner, the declared key, the remaining
+    /// allowance, the ceiling overflow, and the charging lifetime, and a refused renewal changes
+    /// nothing.
+    pub fn renew(
+        &mut self,
+        presented_owner: OwnerGeneration,
+        owner: QuotaOwner,
+        family: QuotaFamily,
+        increase: u64,
+    ) -> Result<(), ResourceError> {
+        self.ledger.renew(presented_owner, owner, family, increase)
+    }
+
+    /// Closes one declared liveness root for one presented owner generation.
+    ///
+    /// The model's root closure takes no owner generation, so the runtime requires one here: any
+    /// other generation than this account's current one is refused with the model's own
+    /// `ResourceError::StaleOwner` before any root fact changes.
+    pub fn close_liveness_root_for(
+        &mut self,
+        presented_owner: OwnerGeneration,
+        root: LivenessRoot,
+    ) -> Result<(), ResourceError> {
+        self.require_current_owner(presented_owner)?;
+        self.ledger.close_liveness_root(root)
+    }
+
+    /// Retires this account under its declared retention fence.
+    ///
+    /// The model's own retirement rule already requires the presented owner generation to be the
+    /// current one and refuses a still-live root, an unexpired fence, and an invalid successor with
+    /// its own reasons, so this route delegates rather than restating them.
+    pub fn retire(
+        &mut self,
+        fence: RetentionFence,
+        presented_owner: OwnerGeneration,
+        succeeding_owner: OwnerGeneration,
+        at: u64,
+    ) -> Result<(), ResourceError> {
+        self.ledger
+            .retire(fence, presented_owner, succeeding_owner, at)
+    }
+
+    /// Deletes an already-retired record for one presented owner generation.
+    ///
+    /// The model's deletion takes no owner generation, so the runtime requires this account's current
+    /// one: any other is refused with the model's own `ResourceError::StaleOwner` before the record
+    /// changes.
+    pub fn delete_for(
+        &mut self,
+        presented_owner: OwnerGeneration,
+    ) -> Result<ResourceLifetimeState, ResourceError> {
+        self.require_current_owner(presented_owner)?;
+        self.ledger.delete()?;
+        Ok(self.ledger.lifetime())
     }
 
     /// Settles one admitted resource from a model-issued post-failure settlement.
