@@ -804,6 +804,95 @@ fn registry_routes_emergency_cleanup_and_releases_the_live_place() {
     );
 }
 
+/// Declared quota families are enforced on the registry's live path: an admitted charge consumes
+/// declared headroom, a charge beyond the ceiling is refused with the model's own reason, an
+/// undeclared family and a stale owner generation are refused, an unknown subject is refused, and a
+/// refused charge leaves the account's headroom unchanged.
+#[test]
+fn registry_charges_declared_quotas_on_the_live_path() {
+    let subject = active_subject();
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    let owner = OwnerGeneration::new(4);
+    let bytes = |amount: u64| Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount,
+    };
+    let headroom = |registry: &ResourceRegistry| {
+        registry
+            .account(&subject)
+            .and_then(|account| account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes))
+    };
+    assert_eq!(headroom(&registry), Some(8));
+    assert!(
+        registry
+            .charge(&subject, owner, ResourceAction::Move, &[bytes(3)])
+            .is_ok()
+    );
+    assert_eq!(
+        headroom(&registry),
+        Some(5),
+        "the admitted charge consumes declared headroom"
+    );
+    assert_eq!(
+        registry.charge(&subject, owner, ResourceAction::Move, &[bytes(6)]),
+        Err(ResourceRegistryRefusal::Charge(
+            ResourceError::QuotaExhausted
+        )),
+        "a charge beyond the declared ceiling is refused"
+    );
+    assert_eq!(
+        headroom(&registry),
+        Some(5),
+        "a refused charge changes nothing"
+    );
+    assert_eq!(
+        registry.charge(
+            &subject,
+            owner,
+            ResourceAction::Move,
+            &[Charge {
+                owner: QuotaOwner::DurableRecord,
+                family: QuotaFamily::Bytes,
+                amount: 1,
+            }],
+        ),
+        Err(ResourceRegistryRefusal::Charge(
+            ResourceError::UndeclaredQuota
+        )),
+        "an undeclared owner and family key is refused"
+    );
+    assert!(matches!(
+        registry.charge(
+            &subject,
+            OwnerGeneration::new(5),
+            ResourceAction::Move,
+            &[bytes(1)],
+        ),
+        Err(ResourceRegistryRefusal::Charge(
+            ResourceError::StaleOwner { .. }
+        ))
+    ));
+    let (_program, _machine, other) =
+        machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let other = other.unwrap_or_else(|| panic!("the second fixture operation declares an action"));
+    assert_eq!(
+        registry.charge(&other, owner, ResourceAction::Move, &[bytes(1)]),
+        Err(ResourceRegistryRefusal::UnknownSubject),
+        "a subject this registry holds no account for changes nothing"
+    );
+    assert_eq!(headroom(&registry), Some(5));
+}
+
 fn emergency_cleanup() -> EmergencyCleanupWitness {
     let policy =
         GracePolicy::new(1, 1).unwrap_or_else(|_| unreachable!("fixture stop policy is bounded"));

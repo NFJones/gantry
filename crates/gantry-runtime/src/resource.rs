@@ -39,11 +39,11 @@
 use std::collections::BTreeMap;
 
 use gantry_ir::{
-    CanonicalPath, DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness,
-    ExecutableOperation, LogicalOperationId, OperationKind, PoisonWitness, PostFailureSettlement,
-    Quota, QuotaFamily, QuotaOwner, ResourceCarrier, ResourceError, ResourceGenerationId,
-    ResourceLedger, ResourceLifetimeState, StaticSiteId, StructuralPosition,
-    admit_resource_carrier,
+    CanonicalPath, Charge, DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness,
+    ExecutableOperation, LogicalOperationId, OperationKind, OwnerGeneration, PoisonWitness,
+    PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ResourceAction, ResourceCarrier,
+    ResourceError, ResourceGenerationId, ResourceLedger, ResourceLifetimeState, StaticSiteId,
+    StructuralPosition, admit_resource_carrier,
 };
 
 /// One runtime-owned binding of an admitted account to its Section 20 subject.
@@ -326,6 +326,33 @@ impl ResourceRegistry {
             .settle_from_emergency_cleanup(cleanup)
             .map_err(ResourceRegistryRefusal::EmergencyRelease)
     }
+
+    /// Charges one admitted account's declared quotas for one presented action.
+    ///
+    /// The caller names the subject, so the account is selected by the subject's own operation and
+    /// generation and a subject this registry holds no account for is refused with
+    /// [`ResourceRegistryRefusal::UnknownSubject`]. The presented owner generation and the charge
+    /// vector are then decided by the account's own ledger, so a stale owner, an undeclared quota
+    /// key, an exhausted ceiling, an overflowing member, and a lifetime that admits no charge are
+    /// each refused with the model's own reason through [`ResourceRegistryRefusal::Charge`], and a
+    /// refused vector commits nothing.
+    pub fn charge(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+        action: ResourceAction,
+        charges: &[Charge],
+    ) -> Result<(), ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .ledger_mut()
+            .charge(presented_owner, action, charges)
+            .map_err(ResourceRegistryRefusal::Charge)
+    }
 }
 
 /// Why the runtime resource registry refused an admission or a settlement.
@@ -337,6 +364,8 @@ pub enum ResourceRegistryRefusal {
     UnauthenticatedOperationKind,
     /// The account's own emergency release refused the sealed cleanup witness.
     EmergencyRelease(ResourceError),
+    /// The account's own ledger refused the presented charge.
+    Charge(ResourceError),
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
         /// The declared limit.
