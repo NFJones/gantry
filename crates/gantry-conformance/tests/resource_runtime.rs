@@ -2633,15 +2633,30 @@ fn runtime_lifecycle_accepts_one_machine_subject_and_keeps_its_terminal_disposit
         )
         .unwrap_or_else(|error| panic!("the machine-issued subject is admitted: {error:?}"));
 
-    let charges = [Charge {
-        owner: QuotaOwner::Owner,
-        family: QuotaFamily::Bytes,
-        amount: 1,
-    }];
+    let headroom = |registry: &ResourceRegistry| {
+        registry
+            .account(&subject)
+            .and_then(|account| account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes))
+    };
+    assert_eq!(headroom(&registry), Some(8));
     assert!(
         registry
-            .charge(&subject, owner, ResourceAction::Update, &charges)
+            .charge(
+                &subject,
+                owner,
+                ResourceAction::Update,
+                &[Charge {
+                    owner: QuotaOwner::Owner,
+                    family: QuotaFamily::Bytes,
+                    amount: 1,
+                }],
+            )
             .is_ok()
+    );
+    assert_eq!(
+        headroom(&registry),
+        Some(7),
+        "the admitted charge consumes declared headroom on this subject"
     );
     assert!(registry.begin_finish(&subject, owner).is_ok());
     assert_eq!(
@@ -2655,6 +2670,20 @@ fn runtime_lifecycle_accepts_one_machine_subject_and_keeps_its_terminal_disposit
             Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
         ),
         Ok(ExternalOutcome::Accepted)
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.containment().outcome()),
+        Some(Some(ExternalOutcome::Accepted)),
+        "the settled containment outcome is observable on this subject"
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.containment().effect_state()),
+        Some(Some(EffectState::NotStarted)),
+        "the settled containment keeps the effect state its completion observed"
     );
     assert_eq!(
         registry.live_resources(),
@@ -2682,6 +2711,18 @@ fn runtime_lifecycle_accepts_one_machine_subject_and_keeps_its_terminal_disposit
             .map(|account| account.ledger().lifetime()),
         Some(ResourceLifetimeState::Finished),
         "the refused cleanup leaves the terminal lifetime exactly as it was"
+    );
+    assert_eq!(
+        headroom(&registry),
+        Some(7),
+        "the refused cleanup consumes no quota"
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.containment().outcome()),
+        Some(Some(ExternalOutcome::Accepted)),
+        "the refused cleanup leaves the settled containment outcome as it was"
     );
 }
 
