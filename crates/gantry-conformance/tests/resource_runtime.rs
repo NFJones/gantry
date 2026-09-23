@@ -2616,6 +2616,75 @@ fn runtime_cohort_emergency_cleanup_reports_its_settled_prefix() {
     ));
 }
 
+/// One machine-issued subject drives admission, quota charging, the two-phase finish, and the
+/// containment settlement, and the hard-cancellation cohort sweep does not reopen the terminal
+/// lifetime that path produced.
+#[test]
+fn runtime_lifecycle_accepts_one_machine_subject_and_keeps_its_terminal_disposition() {
+    let (_program, _machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("the fixture operation declares an action"));
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the machine-issued subject is admitted: {error:?}"));
+
+    let charges = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 1,
+    }];
+    assert!(
+        registry
+            .charge(&subject, owner, ResourceAction::Update, &charges)
+            .is_ok()
+    );
+    assert!(registry.begin_finish(&subject, owner).is_ok());
+    assert_eq!(
+        registry.complete_finalization(&subject, owner, 20),
+        Ok(ResourceLifetimeState::Finished)
+    );
+    assert_eq!(
+        registry.settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        ),
+        Ok(ExternalOutcome::Accepted)
+    );
+    assert_eq!(
+        registry.live_resources(),
+        0,
+        "the finished lifetime released its live place"
+    );
+
+    let swept =
+        registry.settle_cohort_from_emergency_cleanup(vec![(subject.clone(), emergency_cleanup())]);
+    assert!(!swept.is_complete());
+    assert!(
+        swept.settled().is_empty(),
+        "a settled lifetime is not reopened by hard-cancellation cleanup"
+    );
+    assert!(matches!(
+        swept.refusal(),
+        Some((
+            _,
+            ResourceRegistryRefusal::EmergencyRelease(ResourceError::IllegalLifetimeTransition)
+        ))
+    ));
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Finished),
+        "the refused cleanup leaves the terminal lifetime exactly as it was"
+    );
+}
+
 /// Returns the workspace root of this repository.
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
