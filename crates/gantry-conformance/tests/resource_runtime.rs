@@ -2513,11 +2513,13 @@ const RUNTIME_NOTE_CLAUSES: &[&str] = &[
 
 /// Every runtime route or accessor the runtime resource reader note publishes.
 const RUNTIME_NOTE_ROUTES: &[&str] = &[
-    "ResourceRegistry::admit",
-    "AdmittedResource::admit",
-    "ResourceRegistry::reconstruct",
-    "ResourceRegistry::declared_records",
+    "admit",
+    "reconstruct",
+    "RecoveredResourceRecord",
+    "declared_records",
+    "account",
     "with_live_limit",
+    "live_limit",
     "live_resources",
     "reap_deleted",
     "charge",
@@ -2533,6 +2535,16 @@ const RUNTIME_NOTE_ROUTES: &[&str] = &[
     "bind_adapter_instance",
     "adapter_instance",
     "poison_adapter_instance",
+    "subject",
+    "ledger",
+    "quota",
+    "remaining",
+    "durable_record",
+    "containment",
+    "begin_finish_for",
+    "complete_finalization_for",
+    "close_liveness_root_for",
+    "delete_for",
 ];
 
 /// The runtime resource reader note names every clause it relies on, every route it publishes, and
@@ -2556,8 +2568,8 @@ fn runtime_resource_note_pins_every_declared_surface_and_non_claim() {
         (
             "GNT-20.10-retirement-and-stale-owner-fencing",
             &[
-                "Every route that changes a declared fact is subject-addressed and owner-qualified",
-                "superseded generation is refused before any declared fact changes",
+                "owner-qualified",
+                "a superseded generation is refused before any declared fact changes",
             ],
         ),
         (
@@ -2609,5 +2621,88 @@ fn runtime_resource_note_pins_every_declared_surface_and_non_claim() {
                 "the reader note must state, under {anchor}: {needle}"
             );
         }
+    }
+}
+
+/// The reader note states each material claim together with the clause that owns it, in one line or
+/// one block, so a claim cannot pass by appearing anywhere in the note while the section that owns
+/// it says something else, and so a removed sentence fails rather than passing on a stray word.
+#[test]
+fn runtime_resource_note_pins_claims_to_their_sections() {
+    let note = read_text(&workspace_root().join("docs/resource-runtime-integration.md"));
+    let units: Vec<String> = note
+        .lines()
+        .map(flatten)
+        .chain(note.split("\n\n").map(flatten))
+        .collect();
+    let claims: &[(&str, &[&str])] = &[
+        ("GNT-20.1-operation-kinds", &["Admission"]),
+        ("GNT-28.7-durable-resource-reconstruction", &["Capture"]),
+        (
+            "GNT-28.4-resource-lifetime-finish-poison-and-emergency-release",
+            &["Live-account ceiling", "the model owns no ceiling"],
+        ),
+        (
+            "GNT-28.9-retirement-deletion-and-stale-owner-fences",
+            &["Physical reclamation", "Runtime policy"],
+        ),
+        (
+            "GNT-20.7-resource-state-after-failure-and-poisoning",
+            &["Failure settlement"],
+        ),
+        (
+            "GNT-23.4-operation-ownership-and-single-settlement",
+            &["Containment settlement"],
+        ),
+        (
+            "GNT-23.5-failed-instance-poisoning-and-isolation",
+            &["Adapter binding and poisoning"],
+        ),
+        (
+            "GNT-20.10-retirement-and-stale-owner-fencing",
+            &[
+                "owner-qualified",
+                "a superseded generation is refused before any declared fact changes",
+            ],
+        ),
+        (
+            "GNT-23.7-adapter-containment-obligations",
+            &["never derives a resource settlement from a containment report"],
+        ),
+        (
+            "GNT-23.6-protected-fault-diagnostics",
+            &["Protected-scope containment reports are not published here"],
+        ),
+        (
+            "GNT-28.10-resource-accounting-non-claims",
+            &[
+                "Account uniqueness is per registry",
+                "no global uniqueness claim",
+            ],
+        ),
+    ];
+    for (anchor, fragments) in claims {
+        let needles: Vec<String> = fragments.iter().map(|fragment| flatten(fragment)).collect();
+        assert!(
+            units.iter().any(|unit| {
+                unit.contains(anchor) && needles.iter().all(|needle| unit.contains(needle))
+            }),
+            "the reader note must state {anchor} together with {needles:?} in one line or block"
+        );
+    }
+    // Statements that no single clause owns must still be published, and the witness paragraph must
+    // name the boundaries the witnesses actually cover rather than claiming all of them.
+    let flattened = flatten(&note);
+    for statement in [
+        "The two failure routes are fenced differently and are not owner-qualified",
+        "Physical reclamation is the one registry-wide mutating route and changes no declared fact",
+        "No public route hands out a mutable registry-held account",
+        "the private subject-binding constructor",
+        "the removed raw ledger accessor",
+    ] {
+        assert!(
+            flattened.contains(&flatten(statement)),
+            "the reader note must state: {statement}"
+        );
     }
 }
