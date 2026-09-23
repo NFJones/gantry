@@ -1451,6 +1451,88 @@ mod tests {
     }
 
     #[test]
+    fn v5_keeps_a_non_copyable_caller_place_admission() {
+        let method = CanonicalPath::new("crate::Thing::consume")
+            .unwrap_or_else(|error| panic!("method path failed: {error}"));
+        let receiver_ty = TypeDescriptor::STRING;
+        let callee = CanonicalCallableIdentity::inherent(&receiver_ty, "consume", &[])
+            .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+        let operation = ExecutableOperation {
+            kind: OperationSiteKind::Action,
+            section20_kind: Some(OperationKind::LiveResource),
+            result_type: TypeDescriptor::UNIT,
+            action: None,
+            template_segments: Vec::new(),
+            interpolation_types: Vec::new(),
+            named_input_names: Vec::new(),
+            named_input_types: Vec::new(),
+            retry_limit: None,
+            session_mode: None,
+            attempted: false,
+        };
+        let instruction = |site, ty, kind| Instruction {
+            site: StructuralPosition::new(site)
+                .unwrap_or_else(|error| panic!("instruction site failed: {error}")),
+            ty,
+            kind,
+        };
+        let mut callables = vec![(
+            callee.clone(),
+            Workflow {
+                path: method,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: receiver_ty,
+                    mutable: true,
+                    receiver_mode: Some(ReceiverMode::Owned),
+                }],
+                result: TypeDescriptor::UNIT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        vec![0],
+                        TypeDescriptor::UNIT,
+                        InstructionKind::OperationCall {
+                            operation,
+                            operands: 0,
+                        },
+                    ),
+                    instruction(
+                        vec![1],
+                        TypeDescriptor::UNIT,
+                        InstructionKind::ReceiverCall {
+                            callee,
+                            arguments: 1,
+                            source: ReceiverSource::CallerPlace {
+                                root: Arc::from("self"),
+                                path: Vec::new(),
+                                ownership: OwnershipClass::MustConsume,
+                            },
+                        },
+                    ),
+                    instruction(vec![2], TypeDescriptor::UNIT, InstructionKind::Return),
+                ],
+            },
+        )];
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let program = MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("caller-place program failed: {error:?}"));
+
+        let encoded = encode_machine_program(&program);
+        assert_eq!(
+            encoded.get(..8),
+            Some(b"GNTPRG05".as_slice()),
+            "an authenticated kind selects V5 beside a caller-place admission"
+        );
+        assert_eq!(decode_machine_program(&encoded), Ok(program.clone()));
+        assert_eq!(
+            encoded,
+            encode_machine_program(&program),
+            "the re-encoded V5 program is identical"
+        );
+    }
+
+    #[test]
     fn executable_program_codec_preserves_closed_generic_callable_identities() {
         let main_path = CanonicalPath::new("crate::main")
             .unwrap_or_else(|error| panic!("main path failed: {error}"));
