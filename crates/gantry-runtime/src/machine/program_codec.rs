@@ -1,4 +1,8 @@
-//! Canonical private codec for the analyzer-owned executable program retained by durable start.
+//! Canonical codec for the analyzer-owned executable program retained by durable start.
+//!
+//! The encode and decode pair is published so that an embedder retaining a program itself stores
+//! and restores exactly the wire the durable runtime uses, including the optional Section 20
+//! operation kind the newest form carries.
 
 use std::sync::Arc;
 
@@ -197,7 +201,12 @@ fn codec_limits() -> ValueLimits {
         .unwrap_or_else(|| unreachable!("positive codec limits are valid"))
 }
 
-pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
+/// Encodes one program in the retained-program wire, selecting the oldest form that carries it.
+///
+/// The newest form is selected exactly when the program carries an authenticated Section 20
+/// operation kind, so a program whose kinds are all unauthenticated keeps its predecessor layout.
+#[must_use]
+pub fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
     let mut writer = Writer::default();
     let wire = if program_carries_section20_kind(program) {
         ProgramWire::V5
@@ -246,7 +255,11 @@ pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
     writer.finish()
 }
 
-pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, MachineRecoveryError> {
+/// Decodes one retained program, refusing a noncanonical or unsupported form.
+///
+/// A decoded program re-encodes to exactly the bytes it was decoded from; an unknown spelling, a
+/// trailing octet, or a form the caller's build does not admit is refused rather than repaired.
+pub fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, MachineRecoveryError> {
     let mut reader = Reader::new(bytes);
     let wire = match reader.raw(MAGIC_V2.len())? {
         magic if magic == MAGIC_V2 => ProgramWire::V2,

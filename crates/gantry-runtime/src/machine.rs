@@ -37,7 +37,7 @@ use checkpoint_codec::{
 #[cfg(feature = "durable")]
 mod program_codec;
 #[cfg(feature = "durable")]
-pub(crate) use program_codec::{decode_machine_program, encode_machine_program};
+pub use program_codec::{decode_machine_program, encode_machine_program};
 
 /// Semantic limits captured for one machine run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

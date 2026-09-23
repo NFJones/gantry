@@ -51,19 +51,23 @@ rather than authentication or consumption evidence. The analyzer-produced kind i
 separately by
 `crates/gantry-conformance/tests/analyzer_lowering.rs#live_resource_result_authenticates_the_section20_kind_and_non_live_stays_unauthenticated`,
 which lowers a source operation returning a `live_resource struct` and asserts the authenticated arm
-beside an unauthenticated non-live result. No lane yet carries an analyzer-produced program through
-the wire itself: the program codec is crate-private to `gantry-runtime`, and no runtime decision
-reads the field yet.
+beside an unauthenticated non-live result, and by
+`crates/gantry-conformance/tests/executable_bridge.rs#analyzer_authenticated_live_resource_kind_survives_the_retained_program_wire`,
+which encodes that analyzer-produced program with the published
+`gantry::runtime::{encode_machine_program, decode_machine_program}` pair, observes the `GNTPRG05`
+form, and decodes it back with the kind intact and a byte-identical re-encode. No runtime decision
+reads the field yet: that consumer stays with `b87d011f` `GNT-GP-RESOURCE-RUNTIME-001`.
 
 ## Handoff
 
 What is in place: `ExecutableOperation` can express the kind and publishes no unauthenticated
 default; analysis has one declared rule for producing it; the `GNTPRG05` wire round-trips whatever
 is authenticated while `GNTPRG02`-`GNTPRG04` keep decoding; and `GNT-6.2j` gives one source
-declaration that reports the analyzed class the rule consumes, and lowering emits the authenticated
-kind for it. What is **not** in place: a runtime boundary consumer - `gantry-runtime` selects the
-wire and round-trips the field, but no admission path reads it, and no lane yet carries an
-analyzer-produced program through the wire itself (`a0257d36` `GNT-GP-LIVERES-001` records that
-gap). The retry condition recorded on `b87d011f` `GNT-GP-RESOURCE-RUNTIME-001` is therefore only
-**partially** satisfied: carriage and emission are done, and the boundary consumption belongs to
+declaration that reports the analyzed class the rule consumes, lowering emits the authenticated kind
+for it, and the retained-program encode/decode pair is published
+(`gantry::runtime::{encode_machine_program, decode_machine_program}`) so the analyzer-produced kind
+is provably carried by the wire. What is **not** in place: a runtime boundary consumer -
+`gantry-runtime` selects the wire and round-trips the field, but no admission path reads it. The
+retry condition recorded on `b87d011f` `GNT-GP-RESOURCE-RUNTIME-001` is therefore only **partially**
+satisfied: carriage, emission, and the wire proof are done, and the boundary consumption belongs to
 that issue's own integration scope.

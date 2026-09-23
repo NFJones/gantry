@@ -107,7 +107,10 @@ pub use machine::{
     SessionScopeCompletionError, SessionScopeOccurrence, root_task_identity,
 };
 #[cfg(feature = "durable")]
-pub use machine::{MachineCheckpointV3, MachineCheckpointV4, MachineRecoveryError};
+pub use machine::{
+    MachineCheckpointV3, MachineCheckpointV4, MachineRecoveryError, decode_machine_program,
+    encode_machine_program,
+};
 #[cfg(feature = "concurrent")]
 pub use machine::{
     MachineSpawnSuspension, MachineTaskCapture, MachineTaskHandle, TaskControlCompletionError,

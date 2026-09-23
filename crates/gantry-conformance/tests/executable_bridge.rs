@@ -5459,3 +5459,51 @@ fn monomorphic_receiver_call_operands_still_execute() {
         );
     }
 }
+
+/// The Section 20 kind an analysis authenticated survives the retained-program wire: the encoded
+/// program decodes with the live-resource arm intact and the non-live arm unauthenticated, and the
+/// authenticated arm selects the newest retained form.
+/// The conformance crate always links the durable runtime surface, so this lane needs no gate.
+#[test]
+fn analyzer_authenticated_live_resource_kind_survives_the_retained_program_wire() {
+    use gantry::ir::{InstructionKind, OperationKind};
+    use gantry::runtime::{decode_machine_program, encode_machine_program};
+
+    let root = TempDirectory::new(
+        r#"
+live_resource struct Handle { token: Int }
+fn main() { discard prompt "x" -> Handle; discard prompt "y" -> String; }
+"#,
+    );
+    let package = analyze(&root);
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+    let encoded = encode_machine_program(&program);
+    assert_eq!(
+        encoded.get(..8),
+        Some(&b"GNTPRG05"[..]),
+        "an authenticated live-resource kind selects the newest retained-program form"
+    );
+    let decoded = decode_machine_program(&encoded)
+        .unwrap_or_else(|error| panic!("the retained program did not decode: {error:?}"));
+    let mut kinds = Vec::new();
+    for workflow in decoded.workflows() {
+        for instruction in &workflow.instructions {
+            if let InstructionKind::OperationCall { operation, .. } = &instruction.kind {
+                kinds.push(operation.section20_kind);
+            }
+        }
+    }
+    assert_eq!(
+        kinds,
+        [Some(OperationKind::LiveResource), None],
+        "the analyzer-produced kind survives the wire and the non-live arm stays unauthenticated"
+    );
+    assert_eq!(
+        encode_machine_program(&decoded),
+        encoded,
+        "the decoded program re-encodes to the exact retained bytes"
+    );
+}
