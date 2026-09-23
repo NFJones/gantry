@@ -13,8 +13,8 @@
 //! entry cannot drive is reported as undriveable rather than as a pass.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Barrier};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_ir::{CanonicalPath, MachineProgram, TestKind, TestRunPlan, TestSubstitution};
@@ -149,7 +149,7 @@ impl TestTargetResult {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TestRunReport {
     results: Vec<TestTargetResult>,
-    peak_in_flight: u64,
+    arranged_width: u64,
 }
 
 impl TestRunReport {
@@ -167,16 +167,15 @@ impl TestRunReport {
             .all(|result| matches!(result.outcome, TestTargetOutcome::Completed { .. }))
     }
 
-    /// Returns the greatest number of targets this run had in flight at once.
+    /// Returns the number of targets this run arranged to execute at once.
     ///
-    /// This is the width the harness arranged rather than a scheduling accident: every worker holds
-    /// one target at the start gate, so all arranged workers are in flight together before any target
-    /// runs, and no more workers exist than the declared ceiling. The peak is therefore the declared
-    /// ceiling bounded by the admitted target count on every run, and a harness that runs one target
-    /// at a time reports one.
+    /// This is the harness's declared parallelism bounded by the admitted target count, so a harness
+    /// that runs one target at a time reports one and a declared width larger than the target count
+    /// reports the target count. It is a property of the plan and the declaration rather than an
+    /// observation of the run, so the whole report is the same on every run at one width.
     #[must_use]
-    pub const fn peak_in_flight(&self) -> u64 {
-        self.peak_in_flight
+    pub const fn arranged_width(&self) -> u64 {
+        self.arranged_width
     }
 }
 
@@ -223,7 +222,7 @@ impl TestHarness {
     /// Each target still runs in its own machine under the same limits, step bound, and cancellation
     /// policy, and the report's ordering and per-target outcomes are independent of the parallelism:
     /// only the arrangement of the work changes. The report states that arrangement as its
-    /// `peak_in_flight` observation. A declared parallelism of zero would run no target at all and is
+    /// `arranged_width` observation. A declared parallelism of zero would run no target at all and is
     /// refused rather than treated as sequential, so the harness never silently ignores a caller's
     /// declaration.
     ///
@@ -325,10 +324,11 @@ impl TestHarness {
     /// The plan is checked before any machine exists: a declared kind outside
     /// [`TEST_EXECUTED_KINDS`] is refused as `UnsupportedKind` and a declared substitution is refused
     /// as `UnsupportedSubstitution`, because this entry provides no substitution machinery. An empty
-    /// harness is refused as `NoTargets`. Otherwise every admitted target runs, in canonical
-    /// name order, each in its own machine and under the harness's step bound. The targets are
-    /// arranged across the harness's declared parallelism, which changes how the work is scheduled
-    /// and nothing else: the report's results and their order are the same at any width.
+    /// harness is refused as `NoTargets`. Otherwise every admitted target runs exactly once, each in
+    /// its own machine and under the harness's step bound. Targets are claimed in canonical name
+    /// order and arranged across the harness's declared parallelism, which decides how the work is
+    /// scheduled and nothing else: the report's results and their order are the same at any width,
+    /// and the report states the width this run arranged.
     ///
     /// The step bound is the machine's declared transition budget, counted in labelled transitions.
     /// A cooperative yield is not a labelled transition: the machine is resumed and the bound counts
@@ -339,9 +339,18 @@ impl TestHarness {
     ///
     /// # Errors
     ///
-    /// Returns the refusal that applies, leaving the harness unchanged. The construction branch is
-    /// unreachable for an admitted target - `admit` validated the same construction - and exists so
-    /// that a caller can never panic a run.
+    /// Returns the refusal the plan or the admitted targets produced, leaving the harness unchanged.
+    /// The construction branch is unreachable for an admitted target - `admit` validated the same
+    /// construction - and exists so that rejected target construction cannot panic a run instead of
+    /// being refused.
+    ///
+    /// # Panics
+    ///
+    /// A run panics only on a harness fault, never on caller input: when a worker thread cannot be
+    /// started, or when a started worker panics. Workers that did start are stopped at their next
+    /// claim and joined before a startup failure reaches the caller, and `thread::scope` joins every
+    /// started worker before a worker panic reaches it, so a failed run is never reported as a
+    /// narrower arrangement or as a partial result set.
     pub fn run(&self, plan: &TestRunPlan) -> Result<TestRunReport, TestHarnessRefusal> {
         for kind in plan.kinds() {
             if !TEST_EXECUTED_KINDS.contains(kind) {
@@ -362,39 +371,31 @@ impl TestHarness {
             .iter()
             .map(|(name, target)| (name.as_str(), target))
             .collect();
-        let workers = usize::try_from(
-            self.parallelism
-                .min(u64::try_from(queue.len()).unwrap_or(u64::MAX))
-                .max(1),
-        )
-        .unwrap_or(1);
+        let arranged = self
+            .parallelism
+            .min(u64::try_from(queue.len()).unwrap_or(u64::MAX))
+            .max(1);
+        let workers = usize::try_from(arranged).unwrap_or(usize::MAX);
         let next = AtomicUsize::new(0);
-        let in_flight = AtomicUsize::new(0);
-        let peak = AtomicUsize::new(0);
-        let gate = Barrier::new(workers);
+        let aborted = AtomicBool::new(false);
         let mut collected: Vec<TestTargetResult> = Vec::with_capacity(queue.len());
         let mut refusal: Option<TestHarnessRefusal> = None;
+        let mut startup_failure: Option<std::io::Error> = None;
         std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(workers);
             for _ in 0..workers {
-                handles.push(scope.spawn(|| {
+                let worker = std::thread::Builder::new().spawn_scoped(scope, || {
                     let mut local = Vec::new();
                     let mut failure = None;
                     loop {
+                        if aborted.load(Ordering::SeqCst) {
+                            break;
+                        }
                         let index = next.fetch_add(1, Ordering::SeqCst);
                         let Some((name, target)) = queue.get(index) else {
                             break;
                         };
-                        let current = in_flight.fetch_add(1, Ordering::SeqCst).saturating_add(1);
-                        peak.fetch_max(current, Ordering::SeqCst);
-                        if index < workers {
-                            // Every worker holds its first claim at the gate, so all arranged workers
-                            // are in flight together before any target runs. Only infallible work
-                            // happens between claiming and gating, so the gate cannot be abandoned.
-                            gate.wait();
-                        }
                         let outcome = self.run_target(target, bound);
-                        in_flight.fetch_sub(1, Ordering::SeqCst);
                         match outcome {
                             Ok(outcome) => local.push(TestTargetResult {
                                 name: (*name).to_owned(),
@@ -407,7 +408,17 @@ impl TestHarness {
                         }
                     }
                     (local, failure)
-                }));
+                });
+                match worker {
+                    Ok(handle) => handles.push(handle),
+                    Err(error) => {
+                        // A run that cannot start a worker stops the workers it did start instead of
+                        // quietly running at a narrower arrangement than the one it promised.
+                        aborted.store(true, Ordering::SeqCst);
+                        startup_failure = Some(error);
+                        break;
+                    }
+                }
             }
             for handle in handles {
                 match handle.join() {
@@ -423,13 +434,16 @@ impl TestHarness {
                 }
             }
         });
+        if let Some(error) = startup_failure {
+            panic!("the harness could not start {workers} arranged workers: {error}");
+        }
         if let Some(refusal) = refusal {
             return Err(refusal);
         }
         collected.sort_by(|left, right| left.name.cmp(&right.name));
         Ok(TestRunReport {
             results: collected,
-            peak_in_flight: u64::try_from(peak.load(Ordering::SeqCst)).unwrap_or(u64::MAX),
+            arranged_width: arranged,
         })
     }
 

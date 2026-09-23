@@ -515,7 +515,7 @@ fn runtime_harness_arranges_targets_up_to_its_declared_parallelism() {
 
     let one = run(&sequential);
     assert_eq!(
-        one.peak_in_flight(),
+        one.arranged_width(),
         1,
         "a harness that declares no width runs one target at a time"
     );
@@ -526,9 +526,9 @@ fn runtime_harness_arranges_targets_up_to_its_declared_parallelism() {
         .parallel(4)
         .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}")));
     assert_eq!(
-        four.peak_in_flight(),
+        four.arranged_width(),
         4,
-        "every arranged worker holds a target at once, so the observed peak is the arranged width"
+        "a declared width is the arranged width while enough targets are admitted"
     );
 
     let wider_than_the_targets = run(&sequential
@@ -536,7 +536,7 @@ fn runtime_harness_arranges_targets_up_to_its_declared_parallelism() {
         .parallel(64)
         .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}")));
     assert_eq!(
-        wider_than_the_targets.peak_in_flight(),
+        wider_than_the_targets.arranged_width(),
         5,
         "the arranged width is bounded by the admitted target count"
     );
@@ -606,9 +606,9 @@ fn runtime_harness_keeps_each_target_isolated_under_a_parallel_arrangement() {
         .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
 
     assert_eq!(
-        arranged.peak_in_flight(),
+        arranged.arranged_width(),
         3,
-        "all three targets are arranged at once"
+        "the run arranges all three admitted targets at once"
     );
     assert_eq!(
         arranged.results(),
@@ -640,4 +640,69 @@ fn runtime_harness_keeps_each_target_isolated_under_a_parallel_arrangement() {
         arranged.results()[2].outcome(),
         TestTargetOutcome::Completed { .. }
     ));
+}
+
+#[test]
+fn runtime_harness_applies_its_cancellation_policy_under_a_parallel_arrangement() {
+    let reason: Arc<str> = Arc::from("test-harness-parallel-budget");
+    let mut harness = TestHarness::new(limits(1)).with_cancellation(Arc::clone(&reason));
+    assert!(
+        harness
+            .admit("alpha", operation_program(), workflow(), execution(0x81))
+            .is_ok()
+    );
+    assert!(
+        harness
+            .admit("beta", operation_program(), workflow(), execution(0x82))
+            .is_ok()
+    );
+    let plan = declare_test_run(&["unit"], &[])
+        .unwrap_or_else(|error| panic!("fixture plan is declared: {error:?}"));
+
+    let arranged = harness
+        .clone()
+        .parallel(2)
+        .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}"))
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    assert_eq!(arranged.arranged_width(), 2);
+    assert!(
+        !arranged.is_clean(),
+        "a cancelled target is never arranged into a pass"
+    );
+    for result in arranged.results() {
+        assert_eq!(
+            result.outcome(),
+            &TestTargetOutcome::Cancelled {
+                steps: 1,
+                reason: Arc::clone(&reason),
+            },
+            "each arranged target carries the harness's own cancellation reason"
+        );
+    }
+
+    // The same arrangement under a harness that declares no reason keeps stopping at the bound.
+    let mut stopping = TestHarness::new(limits(1));
+    assert!(
+        stopping
+            .admit("alpha", operation_program(), workflow(), execution(0x83))
+            .is_ok()
+    );
+    assert!(
+        stopping
+            .admit("beta", operation_program(), workflow(), execution(0x84))
+            .is_ok()
+    );
+    let report = stopping
+        .parallel(2)
+        .unwrap_or_else(|error| panic!("a positive width is accepted: {error:?}"))
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    for result in report.results() {
+        assert_eq!(
+            result.outcome(),
+            &TestTargetOutcome::StepBoundExhausted { steps: 1, bound: 1 },
+            "a harness that declares no reason keeps stopping at the bound"
+        );
+    }
 }
