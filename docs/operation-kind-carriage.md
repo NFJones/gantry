@@ -69,8 +69,12 @@ is authenticated while `GNTPRG02`-`GNTPRG04` keep decoding; and `GNT-6.2j` gives
 declaration that reports the analyzed class the rule consumes, lowering emits the authenticated kind
 for it, and the retained-program encode/decode pair is published
 (`gantry::runtime::{encode_machine_program, decode_machine_program}`) so the analyzer-produced kind
-is provably carried by the wire. What is **not** in place: a runtime boundary consumer -
-`gantry-runtime` selects the wire and round-trips the field, but no admission path reads it. The
-retry condition recorded on `b87d011f` `GNT-GP-RESOURCE-RUNTIME-001` is therefore only **partially**
-satisfied: carriage, emission, and the wire proof are done, and the boundary consumption belongs to
-that issue's own integration scope.
+is provably carried by the wire; and the runtime resource-admission boundary consumes it, since
+`AdmittedResource::admit`, the single account-construction path, refuses a subject whose operation
+carries no authenticated live-resource kind with
+`ResourceRegistryRefusal::UnauthenticatedOperationKind`, and `ResourceRegistry::admit` propagates
+that refusal. What is **not** in place: the wider integration arms the retry condition on `b87d011f`
+`GNT-GP-RESOURCE-RUNTIME-001` owns - quota enforcement in live paths, cleanup across cancellation,
+shutdown, and hard cancellation, adapter fault containment, and durable resource reconstruction -
+and the protected arm stays unauthenticated. The retry condition is therefore **partially**
+satisfied: carriage, emission, the wire proof, and the resource-admission boundary read are done.

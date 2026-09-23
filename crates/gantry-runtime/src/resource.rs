@@ -275,10 +275,12 @@ pub struct AdmittedResource {
 impl AdmittedResource {
     /// Admits one durable reconstruction record presented under its declared carrier.
     ///
-    /// The carrier is admitted first through the model's `admit_resource_carrier`: an
-    /// ordinary serialization or ordinary durable-state carrier is refused with
-    /// `ResourceError::OrdinaryCarrierRefused`, and the record is dropped unread. Only
-    /// the declared reconstruction record reconstructs the account's ledger.
+    /// The subject's authenticated live-resource Section 20 kind is checked first, so an
+    /// unauthenticated operation is refused before any carrier or record is inspected. The carrier
+    /// is then admitted through the model's `admit_resource_carrier`: an ordinary serialization or
+    /// ordinary durable-state carrier is refused with `ResourceError::OrdinaryCarrierRefused`, and
+    /// the record is dropped unread. Only the declared reconstruction record reconstructs the
+    /// account's ledger.
     pub fn admit(
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
