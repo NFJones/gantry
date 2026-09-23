@@ -16,7 +16,8 @@ use gantry::ir::{
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    MachineLimits, TestHarness, TestHarnessRefusal, TestHarnessStop, TestTargetOutcome, Workflow,
+    MachineBuildError, MachineLimits, TestHarness, TestHarnessRefusal, TestHarnessStop,
+    TestTargetOutcome, Workflow,
 };
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 
@@ -102,6 +103,21 @@ fn operation_program() -> Arc<MachineProgram> {
             kind: InstructionKind::Return,
         },
     ])
+}
+
+/// Returns one fixture program that panics, so the machine fixes a failure.
+fn failing_program() -> Arc<MachineProgram> {
+    program(vec![Instruction {
+        site: site(6),
+        ty: TypeDescriptor::UNIT,
+        kind: InstructionKind::Panic,
+    }])
+}
+
+/// Returns the fixture machine limits of one declared budget and one yield quantum.
+fn limits_with_quantum(maximum_transitions: u64, quantum: u64) -> MachineLimits {
+    MachineLimits::new(maximum_transitions, 1, 1, 1, quantum, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("fixture machine limits are positive"))
 }
 
 /// Wraps one instruction sequence as a fixture machine program.
@@ -284,4 +300,105 @@ fn runtime_harness_reports_where_a_target_stopped() {
         Err(TestHarnessRefusal::UnboundedStepBound),
         "a harness with no finite step bound refuses to run"
     );
+}
+
+#[test]
+fn runtime_harness_admits_only_accepted_targets_and_runs_them_in_canonical_order() {
+    let mut harness = TestHarness::new(limits(8));
+    // Insertion order is reversed, so enumeration and execution must not follow it.
+    assert!(
+        harness
+            .admit("beta", returning_program(), workflow(), execution(0x41))
+            .is_ok()
+    );
+    assert!(
+        harness
+            .admit("alpha", returning_program(), workflow(), execution(0x42))
+            .is_ok()
+    );
+    assert_eq!(harness.admitted(), vec!["alpha", "beta"]);
+
+    // A target the machine refuses is refused at admission and never stored.
+    let absent = CanonicalPath::new("crate::absent")
+        .unwrap_or_else(|_| unreachable!("fixture path is canonical"));
+    assert_eq!(
+        harness.admit("gamma", returning_program(), absent, execution(0x43)),
+        Err(TestHarnessRefusal::TargetRejected(
+            MachineBuildError::MissingRoot
+        )),
+        "a workflow the program does not name is refused at admission"
+    );
+    assert_eq!(
+        harness.admitted(),
+        vec!["alpha", "beta"],
+        "a refused target is not admitted"
+    );
+
+    let plan = declare_test_run(&["unit"], &[])
+        .unwrap_or_else(|error| panic!("fixture plan is declared: {error:?}"));
+    let report = harness
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    assert_eq!(
+        report
+            .results()
+            .iter()
+            .map(|result| result.name())
+            .collect::<Vec<_>>(),
+        vec!["alpha", "beta"],
+        "execution follows canonical name order, not insertion order"
+    );
+
+    // A machine failure is a failure, never a pass, and it does not hide other targets' results.
+    let mut failing = TestHarness::new(limits(8));
+    assert!(
+        failing
+            .admit("alpha", returning_program(), workflow(), execution(0x44))
+            .is_ok()
+    );
+    assert!(
+        failing
+            .admit("beta", failing_program(), workflow(), execution(0x45))
+            .is_ok()
+    );
+    let report = failing
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    assert!(!report.is_clean());
+    assert!(matches!(
+        report.results()[0].outcome(),
+        TestTargetOutcome::Completed { .. }
+    ));
+    assert_eq!(
+        report.results()[1].outcome(),
+        &TestTargetOutcome::Failed { steps: 1 },
+        "a panicking target reports the failure on its first labelled transition"
+    );
+
+    // A cooperative yield is resumed, so a one-transition quantum still completes.
+    let mut yielding = TestHarness::new(limits_with_quantum(8, 1));
+    assert!(
+        yielding
+            .admit("alpha", returning_program(), workflow(), execution(0x46))
+            .is_ok()
+    );
+    let report = yielding
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    assert!(report.is_clean(), "a yielded target resumes and completes");
+
+    // A fixed success is never reported as exhaustion when the bound is reached.
+    let mut small = TestHarness::new(limits(2));
+    assert!(
+        small
+            .admit("alpha", returning_program(), workflow(), execution(0x47))
+            .is_ok()
+    );
+    let report = small
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    assert!(matches!(
+        report.results()[0].outcome(),
+        TestTargetOutcome::Completed { steps } if *steps >= 2
+    ));
 }

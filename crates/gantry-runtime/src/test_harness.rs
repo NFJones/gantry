@@ -18,7 +18,9 @@ use std::sync::Arc;
 use gantry_core::identity::ProtocolIdentity;
 use gantry_ir::{CanonicalPath, MachineProgram, TestKind, TestRunPlan, TestSubstitution};
 
-use crate::machine::{Machine, MachineLabel, MachineLimits, MachineStep};
+use crate::machine::{
+    Machine, MachineBuildError, MachineLabel, MachineLimits, MachineOutcome, MachineStep,
+};
 
 /// The declared test kinds this entry executes.
 ///
@@ -48,6 +50,8 @@ pub enum TestHarnessRefusal {
     NoTargets,
     /// The declared transition budget is unbounded, so the harness has no finite step bound.
     UnboundedStepBound,
+    /// The machine refused to start the presented target, so the target cannot be admitted.
+    TargetRejected(MachineBuildError),
 }
 
 /// Where one target stopped in a state this entry cannot drive.
@@ -56,6 +60,10 @@ pub enum TestHarnessStop {
     /// The target awaits host dispatch of one prepared operation.
     HostDispatchPending,
     /// The target awaits coordinator-owned child-session creation.
+    ///
+    /// This branch is classified here so a spawned target can never be reported as a pass, but the
+    /// conformance lane cannot exercise it: a spawn fixture needs the runtime's `concurrent` feature,
+    /// which the lane's crate does not enable.
     ChildSessionPending,
 }
 
@@ -81,10 +89,15 @@ pub enum TestTargetOutcome {
     },
     /// The target did not complete inside the declared step bound.
     StepBoundExhausted {
-        /// Steps taken before the bound was reached.
+        /// Labelled transitions taken before the bound was reached.
         steps: u64,
         /// The bound the harness stopped at.
         bound: u64,
+    },
+    /// The machine fixed a cancellation outcome for the target.
+    Cancelled {
+        /// Labelled transitions taken before the cancellation was observed.
+        steps: u64,
     },
 }
 
@@ -171,7 +184,10 @@ impl TestHarness {
     /// repeated name is `Duplicate`, so the harness admits precisely the sets
     /// `declare_test_discovery` admits. A `DuplicateIdentity` refusal additionally keeps one execution
     /// identity from standing for two targets, because the identity is what the runtime roots a task
-    /// in. Nothing is admitted on a refusal.
+    /// in. The target is then validated by constructing the machine it would run in: a program whose
+    /// root the presented workflow does not name, an argument or identity the machine refuses, or an
+    /// effect it does not support is refused here as `TargetRejected` rather than stored and failing
+    /// later, so every admitted target is one the machine accepts. Nothing is admitted on a refusal.
     pub fn admit(
         &mut self,
         name: &str,
@@ -191,6 +207,15 @@ impl TestHarness {
             .any(|target| target.execution == execution)
         {
             return Err(TestHarnessRefusal::DuplicateIdentity);
+        }
+        if let Err(error) = Machine::new(
+            Arc::clone(&program),
+            &workflow,
+            Vec::new(),
+            execution,
+            self.limits,
+        ) {
+            return Err(TestHarnessRefusal::TargetRejected(error));
         }
         self.targets.insert(
             name.to_owned(),
@@ -223,9 +248,18 @@ impl TestHarness {
     /// harness is refused as `NoTargets`. Otherwise every admitted target runs, in canonical
     /// name order, each in its own machine and under the harness's step bound.
     ///
+    /// The step bound is the machine's declared transition budget, counted in labelled transitions.
+    /// A cooperative yield is not a labelled transition: the machine is resumed and the bound counts
+    /// the yields too, so a machine that yields without ever transitioning still cannot spin. A
+    /// completion or a fixed machine outcome is never lost to the bound: when the bound is reached,
+    /// an outcome the machine has already fixed is reported as `Completed`, `Failed`, or `Cancelled`
+    /// instead of as exhaustion, and only a target with no fixed outcome is reported exhausted.
+    ///
     /// # Errors
     ///
-    /// Returns the refusal that applies, leaving the harness unchanged.
+    /// Returns the refusal that applies, leaving the harness unchanged. The construction branch is
+    /// unreachable for an admitted target - `admit` validated the same construction - and exists so
+    /// that a caller can never panic a run.
     pub fn run(&self, plan: &TestRunPlan) -> Result<TestRunReport, TestHarnessRefusal> {
         for kind in plan.kinds() {
             if !TEST_EXECUTED_KINDS.contains(kind) {
@@ -243,16 +277,16 @@ impl TestHarness {
         };
         let mut results = Vec::with_capacity(self.targets.len());
         for (name, target) in &self.targets {
-            let mut machine = Machine::new(
+            let mut machine = match Machine::new(
                 Arc::clone(&target.program),
                 &target.workflow,
                 Vec::new(),
                 target.execution,
                 self.limits,
-            )
-            .unwrap_or_else(|error| {
-                panic!("an admitted target program is a valid machine: {error:?}")
-            });
+            ) {
+                Ok(machine) => machine,
+                Err(error) => return Err(TestHarnessRefusal::TargetRejected(error)),
+            };
             results.push(TestTargetResult {
                 name: name.clone(),
                 outcome: execute(&mut machine, bound),
@@ -262,32 +296,58 @@ impl TestHarness {
     }
 }
 
-/// Steps one machine until it completes, fails, reaches an undriveable state, or exhausts the bound.
+/// Steps one machine until it completes, fails, is cancelled, reaches an undriveable state, or
+/// exhausts the bound.
+///
+/// Labelled transitions - every `Transition` label, including a failure - are counted against the
+/// bound. A cooperative yield is resumed rather than counted as progress, and yields carry their own
+/// ceiling so a machine that never transitions still cannot spin. Reaching the bound is decided by
+/// the outcome the machine has already fixed, when it has fixed one: a completed, failed, or
+/// cancelled target is never reported as exhaustion.
 fn execute(machine: &mut Machine, bound: u64) -> TestTargetOutcome {
-    let mut steps = 0_u64;
+    let mut labelled = 0_u64;
+    let mut yields = 0_u64;
     loop {
-        if steps >= bound {
-            return TestTargetOutcome::StepBoundExhausted { steps, bound };
+        if labelled >= bound {
+            return bound_outcome(machine, labelled, bound);
         }
-        steps = steps.saturating_add(1);
         match machine.step() {
-            MachineStep::Complete(_) => return TestTargetOutcome::Completed { steps },
+            MachineStep::Complete(_) => return TestTargetOutcome::Completed { steps: labelled },
             MachineStep::Transition(MachineLabel::Failure(_)) => {
-                return TestTargetOutcome::Failed { steps };
+                return TestTargetOutcome::Failed {
+                    steps: labelled.saturating_add(1),
+                };
             }
+            MachineStep::Transition(_) => labelled = labelled.saturating_add(1),
             MachineStep::WaitingOperation(_) => {
                 return TestTargetOutcome::Undriveable {
-                    steps,
+                    steps: labelled,
                     stop: TestHarnessStop::HostDispatchPending,
                 };
             }
             MachineStep::WaitingSessionScope(_) => {
                 return TestTargetOutcome::Undriveable {
-                    steps,
+                    steps: labelled,
                     stop: TestHarnessStop::ChildSessionPending,
                 };
             }
-            MachineStep::Transition(_) | MachineStep::YieldRequired => {}
+            MachineStep::YieldRequired => {
+                yields = yields.saturating_add(1);
+                if yields > bound {
+                    return bound_outcome(machine, labelled, bound);
+                }
+                let _resumed = machine.resume_after_yield();
+            }
         }
+    }
+}
+
+/// Classifies a target that reached the harness bound by whatever the machine already fixed.
+fn bound_outcome(machine: &Machine, steps: u64, bound: u64) -> TestTargetOutcome {
+    match machine.outcome() {
+        Some(MachineOutcome::Succeeded(_)) => TestTargetOutcome::Completed { steps },
+        Some(MachineOutcome::Failed(_)) => TestTargetOutcome::Failed { steps },
+        Some(MachineOutcome::Cancelled(_)) => TestTargetOutcome::Cancelled { steps },
+        None => TestTargetOutcome::StepBoundExhausted { steps, bound },
     }
 }
