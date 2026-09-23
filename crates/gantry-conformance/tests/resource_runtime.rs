@@ -5,6 +5,8 @@
 //! how semantic release stays independent of record retirement. They perform no
 //! durable I/O and claim no journal, checkpoint, evaluator, or host behavior.
 
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gantry::identity::ProtocolIdentity;
@@ -2469,4 +2471,143 @@ fn runtime_adapter_binding_is_owner_fenced_and_poisons_once() {
         )),
         "a rebuilt registry holds no recorded reason, so its account is unbound"
     );
+}
+
+/// Returns the workspace root of this repository.
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// Returns the text of one workspace file.
+fn read_text(path: &Path) -> String {
+    fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()))
+}
+
+/// Returns the text with every whitespace run collapsed to one space.
+fn flatten(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Every clause anchor the runtime resource reader note cites.
+const RUNTIME_NOTE_CLAUSES: &[&str] = &[
+    "GNT-28.7-durable-resource-reconstruction",
+    "GNT-20.1-operation-kinds",
+    "GNT-20.10-retirement-and-stale-owner-fencing",
+    "GNT-28.8-retention-and-compaction-fences",
+    "GNT-28.9-retirement-deletion-and-stale-owner-fences",
+    "GNT-28.3-atomic-copy-move-loan-update-and-release-charging",
+    "GNT-28.5-closed-quota-families-and-owners",
+    "GNT-28.6-bounded-renewal-and-exhaustion",
+    "GNT-28.4-resource-lifetime-finish-poison-and-emergency-release",
+    "GNT-28.1-resource-identity-and-closed-liveness-roots",
+    "GNT-20.7-resource-state-after-failure-and-poisoning",
+    "GNT-23.4-operation-ownership-and-single-settlement",
+    "GNT-23.5-failed-instance-poisoning-and-isolation",
+    "GNT-20.11-adapter-obligations-and-diagnostics",
+    "GNT-28.10-resource-accounting-non-claims",
+    "GNT-23.7-adapter-containment-obligations",
+    "GNT-23.8-containment-non-claims",
+    "GNT-23.6-protected-fault-diagnostics",
+];
+
+/// Every runtime route or accessor the runtime resource reader note publishes.
+const RUNTIME_NOTE_ROUTES: &[&str] = &[
+    "ResourceRegistry::admit",
+    "AdmittedResource::admit",
+    "ResourceRegistry::reconstruct",
+    "ResourceRegistry::declared_records",
+    "with_live_limit",
+    "live_resources",
+    "reap_deleted",
+    "charge",
+    "renew",
+    "begin_finish",
+    "complete_finalization",
+    "close_liveness_root",
+    "retire",
+    "delete",
+    "settle_from_post_failure",
+    "settle_from_emergency_cleanup",
+    "settle_containment",
+    "bind_adapter_instance",
+    "adapter_instance",
+    "poison_adapter_instance",
+];
+
+/// The runtime resource reader note names every clause it relies on, every route it publishes, and
+/// every limit it publishes, so a summary cannot quietly drop a surface or overstate a claim.
+#[test]
+fn runtime_resource_note_pins_every_declared_surface_and_non_claim() {
+    let note = read_text(&workspace_root().join("docs/resource-runtime-integration.md"));
+    for anchor in RUNTIME_NOTE_CLAUSES {
+        assert!(note.contains(anchor), "the reader note must name {anchor}");
+    }
+    for route in RUNTIME_NOTE_ROUTES {
+        assert!(note.contains(route), "the reader note must name {route}");
+    }
+    // The material per-claim sentences, so a substantive statement cannot change or disappear while
+    // the anchor-only check stays green.
+    let claims: &[(&str, &[&str])] = &[
+        (
+            "GNT-28.7-durable-resource-reconstruction",
+            &["Admission", "Reconstruction", "Capture"],
+        ),
+        (
+            "GNT-20.10-retirement-and-stale-owner-fencing",
+            &[
+                "Every route that changes a declared fact is subject-addressed and owner-qualified",
+                "superseded generation is refused before any declared fact changes",
+            ],
+        ),
+        (
+            "GNT-28.10-resource-accounting-non-claims",
+            &[
+                "Account uniqueness is per registry",
+                "no global uniqueness claim",
+            ],
+        ),
+        (
+            "GNT-23.4-operation-ownership-and-single-settlement",
+            &[
+                "runtime state of one account value",
+                "publishes no cross-recovery single-settlement claim",
+            ],
+        ),
+        (
+            "GNT-23.5-failed-instance-poisoning-and-isolation",
+            &[
+                "poison reason ledger are runtime state",
+                "publishes no recovery claim for either",
+            ],
+        ),
+        (
+            "GNT-23.7-adapter-containment-obligations",
+            &[
+                "declare containment obligations and limits only",
+                "never derives a resource settlement from a containment report",
+            ],
+        ),
+        (
+            "GNT-23.6-protected-fault-diagnostics",
+            &["Protected-scope containment reports are not published here"],
+        ),
+        (
+            "GNT-28.9-retirement-deletion-and-stale-owner-fences",
+            &[
+                "Physical reclamation is not semantic release",
+                "no retention state returns a released live place",
+            ],
+        ),
+    ];
+    let flattened = flatten(&note);
+    for (anchor, fragments) in claims {
+        for fragment in *fragments {
+            let needle = flatten(fragment);
+            assert!(
+                flattened.contains(&needle),
+                "the reader note must state, under {anchor}: {needle}"
+            );
+        }
+    }
 }
