@@ -26,12 +26,13 @@
 //! no durable or host I/O, decodes no record bytes, and publishes no journal, checkpoint,
 //! evaluator, or host behavior; those remain with the durable, recovery, and machine modules.
 //!
-//! Live-resource admission at an operation boundary is deliberately not published here: no
-//! declared fact currently distinguishes a live-resource operation from a value action —
-//! `OperationSite`, `ActionInventory`, and `ExecutableOperation` carry no Section 20 operation
-//! kind and no live-handle type kind exists — so binding admission to an analyzer-authenticated
-//! kind is the next increment's obligation, and no caller-presented declaration may stand in for
-//! it.
+//! Live-resource admission at an operation boundary is deliberately not published here.
+//! `ExecutableOperation` now carries an optional Section 20 operation kind and the retained-program
+//! `GNTPRG05` wire round-trips it (see `docs/operation-kind-carriage.md`), but no admitted account
+//! reads that field yet: analysis publishes no live-resource kind because no declared type carries
+//! the live-resource resource class, and this module takes no admission decision from the carrier.
+//! Binding admission to an authenticated kind therefore remains the next increment's obligation,
+//! and no caller-presented declaration may stand in for it.
 
 use std::collections::BTreeMap;
 
