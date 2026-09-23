@@ -1533,6 +1533,36 @@ mod tests {
     }
 
     #[test]
+    fn operation_kind_carriage_note_pins_the_declared_rules() {
+        let note = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/operation-kind-carriage.md"),
+        )
+        .unwrap_or_else(|error| panic!("the carriage note must be readable: {error}"));
+        for phrase in [
+            "value-action",
+            "protected-operation",
+            "live-resource",
+            "section20_kind: Option<OperationKind>",
+            "fail closed",
+            "GNTPRG05",
+            "GNTPRG02",
+            "GNTPRG03",
+            "GNTPRG04",
+            "v5_carries_the_authenticated_section20_kind_and_predecessors_do_not",
+            "v5_is_selected_when_only_a_task_body_operation_is_authenticated",
+            "v5_keeps_a_non_copyable_caller_place_admission",
+            "ProtectedOperation",
+            "b87d011f",
+        ] {
+            assert!(
+                note.contains(phrase),
+                "the carriage note must state {phrase}"
+            );
+        }
+    }
+
+    #[test]
     fn executable_program_codec_preserves_closed_generic_callable_identities() {
         let main_path = CanonicalPath::new("crate::main")
             .unwrap_or_else(|error| panic!("main path failed: {error}"));
