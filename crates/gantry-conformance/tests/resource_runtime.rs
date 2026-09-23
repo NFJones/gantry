@@ -26,6 +26,7 @@ use gantry::ir::{
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::AdapterBindingRefusal;
+use gantry::runtime::CohortEmergencySettlement;
 use gantry::runtime::{
     AdmittedResource, ExecutionBudget, Instruction, InstructionKind, Machine, MachineCheckpointV3,
     MachineLabel, MachineLimits, MachineProgram, MachineStep, PostFailureSettlementRefusal,
@@ -2473,6 +2474,114 @@ fn runtime_adapter_binding_is_owner_fenced_and_poisons_once() {
     );
 }
 
+/// A cohort emergency-cleanup sweep settles every presented account through its own sealed witness in
+/// canonical subject order, settles a repeated subject once, stops at the first refusal, and reports
+/// exactly the settled prefix without rolling anything back.
+#[test]
+fn runtime_cohort_emergency_cleanup_reports_its_settled_prefix() {
+    let first = declared_subject(FIXTURE_DECLARATION);
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let mut registry = ResourceRegistry::new();
+    for subject in [&first, &second] {
+        registry
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| {
+                panic!("the declared reconstruction record is admitted: {error:?}")
+            });
+    }
+
+    let complete = registry.settle_cohort_from_emergency_cleanup(vec![
+        (second.clone(), emergency_cleanup()),
+        (first.clone(), emergency_cleanup()),
+        (first.clone(), emergency_cleanup()),
+    ]);
+    assert!(complete.is_complete());
+    assert!(complete.refusal().is_none());
+    assert_eq!(
+        complete.settled().len(),
+        2,
+        "one subject settles once however often it is presented"
+    );
+    assert!(
+        complete
+            .settled()
+            .iter()
+            .all(|settlement| settlement.lifetime() == ResourceLifetimeState::EmergencyReleased)
+    );
+    let settled_subjects: Vec<&ResourceSubjectBinding> = complete
+        .settled()
+        .iter()
+        .map(CohortEmergencySettlement::subject)
+        .collect();
+    let mut expected = vec![&first, &second];
+    expected.sort_by(|left, right| {
+        (left.operation(), left.generation()).cmp(&(right.operation(), right.generation()))
+    });
+    assert_eq!(
+        settled_subjects, expected,
+        "the sweep settles in canonical subject order, not the presented order"
+    );
+
+    let repeated =
+        registry.settle_cohort_from_emergency_cleanup(vec![(first.clone(), emergency_cleanup())]);
+    assert!(!repeated.is_complete());
+    assert!(repeated.settled().is_empty());
+    assert!(matches!(
+        repeated.refusal(),
+        Some((
+            _,
+            ResourceRegistryRefusal::EmergencyRelease(ResourceError::IllegalLifetimeTransition)
+        ))
+    ));
+
+    let mut partial = ResourceRegistry::new();
+    for subject in [&first, &second] {
+        partial
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| {
+                panic!("the declared reconstruction record is admitted: {error:?}")
+            });
+    }
+    let unknown = unauthenticated_fixture_subject(UNAUTHENTICATED_FIXTURE_DECLARATION);
+    let swept = partial.settle_cohort_from_emergency_cleanup(vec![
+        (second.clone(), emergency_cleanup()),
+        (unknown.clone(), emergency_cleanup()),
+        (first.clone(), emergency_cleanup()),
+    ]);
+    assert!(!swept.is_complete());
+    assert!(matches!(
+        swept.refusal(),
+        Some((subject, ResourceRegistryRefusal::UnknownSubject))
+            if subject.operation() == unknown.operation()
+    ));
+    let unknown_key = (unknown.operation().clone(), unknown.generation().clone());
+    let prefix = [&first, &second]
+        .into_iter()
+        .filter(|subject| {
+            (subject.operation(), subject.generation()) < (&unknown_key.0, &unknown_key.1)
+        })
+        .count();
+    assert_eq!(
+        swept.settled().len(),
+        prefix,
+        "exactly the accounts sorting before the unknown subject settle"
+    );
+    assert!(
+        swept
+            .settled()
+            .iter()
+            .all(|settlement| settlement.lifetime() == ResourceLifetimeState::EmergencyReleased)
+    );
+}
+
 /// Returns the workspace root of this repository.
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -2509,6 +2618,7 @@ const RUNTIME_NOTE_CLAUSES: &[&str] = &[
     "GNT-23.7-adapter-containment-obligations",
     "GNT-23.8-containment-non-claims",
     "GNT-23.6-protected-fault-diagnostics",
+    "GNT-22.6-grace-expiry-and-hard-cancellation",
 ];
 
 /// Every runtime route or accessor the runtime resource reader note publishes.
@@ -2545,6 +2655,9 @@ const RUNTIME_NOTE_ROUTES: &[&str] = &[
     "complete_finalization_for",
     "close_liveness_root_for",
     "delete_for",
+    "settle_cohort_from_emergency_cleanup",
+    "CohortEmergencyCleanup",
+    "CohortEmergencySettlement",
 ];
 
 /// The runtime resource reader note names every clause it relies on, every route it publishes, and
@@ -2684,6 +2797,10 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
             &["Failure settlement"],
         ),
         (
+            "GNT-22.6-grace-expiry-and-hard-cancellation",
+            &["Cohort emergency cleanup"],
+        ),
+        (
             "GNT-23.4-operation-ownership-and-single-settlement",
             &["Containment settlement"],
         ),
@@ -2810,6 +2927,7 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
         "No public route hands out a mutable registry-held account",
         "the private subject-binding constructor",
         "the removed raw ledger accessor",
+        "one witness settles exactly one account",
     ] {
         assert!(
             flattened.contains(&flatten(statement)),

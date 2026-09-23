@@ -22,6 +22,7 @@ below. Where a clause owns a fence rather than the runtime policy that consumes 
 | Two-phase finish | `begin_finish`, `complete_finalization` | `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` |
 | Root closure, retirement, deletion | `close_liveness_root`, `retire`, `delete` | `GNT-28.1-resource-identity-and-closed-liveness-roots`, `GNT-28.8-retention-and-compaction-fences`, `GNT-28.9-retirement-deletion-and-stale-owner-fences` |
 | Failure settlement | `settle_from_post_failure`, `settle_from_emergency_cleanup` | `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` |
+| Cohort emergency cleanup | `settle_cohort_from_emergency_cleanup`, `CohortEmergencyCleanup`, `CohortEmergencySettlement` | `GNT-22.6-grace-expiry-and-hard-cancellation`, `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` |
 | Containment settlement | `settle_containment` | `GNT-23.4-operation-ownership-and-single-settlement` |
 | Adapter binding and poisoning | `bind_adapter_instance`, `adapter_instance`, `poison_adapter_instance` | `GNT-23.5-failed-instance-poisoning-and-isolation`, `GNT-20.11-adapter-obligations-and-diagnostics` |
 | Inspection | `account` | `GNT-28.7-durable-resource-reconstruction` |
@@ -54,6 +55,10 @@ No public route hands out a mutable registry-held account. The bounded compile-f
 the private subject-binding constructor, the removed mutable registry-held account route, the
 unqualified finish and finalization steps, and the removed raw ledger accessor, so those specific
 transitions are unnameable outside the crate rather than merely unused.
+
+The sealed emergency-release witness is single-use, so one witness settles exactly one account: the
+cohort sweep takes one witness per account, settles the presented subjects in canonical order, and
+stops at the first refusal without rolling back an account that already settled.
 
 ## Non-claims
 

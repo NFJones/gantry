@@ -761,6 +761,58 @@ impl ResourceRegistry {
             .poison_adapter_instance(presented_owner, reason, ledger)
             .map_err(ResourceRegistryRefusal::AdapterBinding)
     }
+
+    /// Settles every account of one hard-cancelled cohort from that cohort's sealed cleanup witnesses.
+    ///
+    /// The model's emergency-release witness is sealed and single-use, so one witness settles exactly
+    /// one account: the sweep takes one witness per account, which is the shape a halted cohort has
+    /// after each of its escalations admitted cleanup. Accounts settle in canonical subject order
+    /// rather than the order the caller presents, and each account's own ledger decides whether it
+    /// admits an emergency release, exactly as [`Self::settle_from_emergency_cleanup`] documents. An
+    /// account this registry does not hold is refused with
+    /// [`ResourceRegistryRefusal::UnknownSubject`], and a subject presented more than once settles
+    /// once, with the extra witness never reaching a ledger. Two things are runtime policy: that order,
+    /// and the progress contract that stops at the first refusal without rolling back an account that
+    /// already settled, because an emergency release is one-way.
+    pub fn settle_cohort_from_emergency_cleanup(
+        &mut self,
+        cleanups: Vec<(ResourceSubjectBinding, EmergencyCleanupWitness)>,
+    ) -> CohortEmergencyCleanup {
+        let mut ordered = cleanups;
+        ordered.sort_by(|left, right| {
+            (left.0.operation(), left.0.generation())
+                .cmp(&(right.0.operation(), right.0.generation()))
+        });
+        ordered.dedup_by(|left, right| {
+            left.0.operation() == right.0.operation() && left.0.generation() == right.0.generation()
+        });
+        let mut settled = Vec::new();
+        for (subject, cleanup) in ordered {
+            let key = (subject.operation().clone(), subject.generation().clone());
+            let Some(account) = self.accounts.get_mut(&key) else {
+                return CohortEmergencyCleanup {
+                    settled,
+                    refusal: Some((subject, ResourceRegistryRefusal::UnknownSubject)),
+                };
+            };
+            match account
+                .settle_from_emergency_cleanup(cleanup)
+                .map_err(ResourceRegistryRefusal::EmergencyRelease)
+            {
+                Ok(lifetime) => settled.push(CohortEmergencySettlement { subject, lifetime }),
+                Err(refusal) => {
+                    return CohortEmergencyCleanup {
+                        settled,
+                        refusal: Some((subject, refusal)),
+                    };
+                }
+            }
+        }
+        CohortEmergencyCleanup {
+            settled,
+            refusal: None,
+        }
+    }
 }
 
 /// Why the runtime resource registry refused an admission or a settlement.
@@ -810,6 +862,60 @@ pub enum AdapterBindingRefusal {
     Unbound,
     /// The model's own substitution rule refused the replacement binding.
     Substitution(OperationAbiError),
+}
+
+/// One account settled by one cohort emergency-cleanup sweep.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CohortEmergencySettlement {
+    subject: ResourceSubjectBinding,
+    lifetime: ResourceLifetimeState,
+}
+
+impl CohortEmergencySettlement {
+    /// Returns the subject of the settled account.
+    #[must_use]
+    pub const fn subject(&self) -> &ResourceSubjectBinding {
+        &self.subject
+    }
+
+    /// Returns the lifetime the account settled into.
+    #[must_use]
+    pub const fn lifetime(&self) -> ResourceLifetimeState {
+        self.lifetime
+    }
+}
+
+/// The progress of one cohort emergency-cleanup sweep.
+///
+/// A sweep settles the accounts it was given in canonical subject order and stops at the first
+/// refusal, so [`Self::settled`] is exactly the prefix that reached its terminal disposition and
+/// [`Self::refusal`] names the account the sweep stopped at, when it stopped.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CohortEmergencyCleanup {
+    settled: Vec<CohortEmergencySettlement>,
+    refusal: Option<(ResourceSubjectBinding, ResourceRegistryRefusal)>,
+}
+
+impl CohortEmergencyCleanup {
+    /// Returns the accounts that settled, in canonical subject order.
+    #[must_use]
+    pub fn settled(&self) -> &[CohortEmergencySettlement] {
+        &self.settled
+    }
+
+    /// Returns the account the sweep stopped at and the refusal it reported, when it stopped.
+    #[must_use]
+    pub fn refusal(&self) -> Option<(&ResourceSubjectBinding, &ResourceRegistryRefusal)> {
+        self.refusal
+            .as_ref()
+            .map(|(subject, refusal)| (subject, refusal))
+    }
+
+    /// Returns whether the sweep settled every account it was given.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.refusal.is_none()
+    }
 }
 
 /// One resource whose declared accounting facts the runtime has admitted.
