@@ -392,6 +392,30 @@ impl ResourceRegistry {
         })
     }
 
+    /// Captures the declared reconstruction records of every admitted account.
+    ///
+    /// The capture is exactly the presentation [`ResourceRegistry::reconstruct`] accepts: every
+    /// account publishes the model's own `durable_record` under the declared reconstruction-record
+    /// carrier, paired with its own subject and the owner generation its ledger currently holds, so a
+    /// checkpoint built from this projection republishes only facts the accounts actually hold and
+    /// reconstructs the same accounts under the same generations. No ordinary carrier ever appears in
+    /// the output, and the capture is a projection rather than a duplicate: it borrows each account's
+    /// declared facts, so it can neither add an account nor change one.
+    #[must_use]
+    pub fn declared_records(&self) -> Vec<RecoveredResourceRecord> {
+        self.accounts
+            .values()
+            .map(|account| {
+                RecoveredResourceRecord::new(
+                    account.subject().clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    account.ledger().owner(),
+                    account.durable_record(),
+                )
+            })
+            .collect()
+    }
+
     /// Returns the account one subject owns, when any.
     #[must_use]
     pub fn account(&self, subject: &ResourceSubjectBinding) -> Option<&AdmittedResource> {

@@ -1595,3 +1595,82 @@ fn reconstruction_honors_the_declared_live_limit_over_live_records_only() {
         "two live records refuse a reconstruction that declares one place"
     );
 }
+
+/// The declared records of a registry are exactly the presentation recovery reconstructs from: a
+/// captured set carries every account under the declared reconstruction-record carrier and its own
+/// owner generation, and reconstructing from the capture rebuilds the same lifetimes, live count,
+/// and declared quota facts.
+#[test]
+fn a_registry_captures_the_reconstruction_set_that_rebuilds_it() {
+    let first = declared_subject(FIXTURE_DECLARATION);
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+
+    let mut registry = ResourceRegistry::new();
+    for subject in [&first, &second] {
+        registry
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("the declared record is admitted: {error:?}"));
+    }
+    let settlement = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        registry.settle_from_post_failure(&settlement, 21),
+        Ok(ResourceLifetimeState::Poisoned)
+    );
+    assert_eq!(registry.live_resources(), 1);
+
+    let captured = registry.declared_records();
+    assert_eq!(captured.len(), 2, "every admitted account is captured");
+    assert!(
+        captured
+            .iter()
+            .all(|record| record.carrier() == ResourceCarrier::ReconstructionRecord),
+        "a capture never presents an ordinary carrier"
+    );
+    assert!(
+        captured
+            .iter()
+            .all(|record| record.owner() == OwnerGeneration::new(4)),
+        "every captured record names the account's own owner generation"
+    );
+    assert!(
+        captured.iter().any(|record| record.subject() == &first),
+        "the settled account is captured too"
+    );
+
+    let rebuilt = ResourceRegistry::reconstruct(None, captured)
+        .unwrap_or_else(|error| panic!("the captured set reconstructs: {error:?}"));
+    assert_eq!(
+        rebuilt.live_resources(),
+        1,
+        "the captured lifetimes rebuild the same live count"
+    );
+    assert_eq!(
+        rebuilt
+            .account(&first)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Poisoned)
+    );
+    assert_eq!(
+        rebuilt
+            .account(&second)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Active)
+    );
+    assert_eq!(
+        rebuilt
+            .account(&first)
+            .map(|account| account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes)),
+        Some(Some(8)),
+        "the captured record keeps the declared quota facts of the settled account"
+    );
+}
