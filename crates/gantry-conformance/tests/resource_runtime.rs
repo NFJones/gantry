@@ -55,8 +55,13 @@ const ROOTS: &[LivenessRoot] = &[
 ];
 
 fn ledger() -> ResourceLedger {
+    ledger_owned_by(4)
+}
+
+/// Returns the declared fixture ledger under one owner generation.
+fn ledger_owned_by(owner: u64) -> ResourceLedger {
     ResourceLedger::new(
-        OwnerGeneration::new(4),
+        OwnerGeneration::new(owner),
         ResourceState::PartiallyAdvanced,
         ROOTS,
         &[
@@ -1672,5 +1677,63 @@ fn a_registry_captures_the_reconstruction_set_that_rebuilds_it() {
             .map(|account| account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes)),
         Some(Some(8)),
         "the captured record keeps the declared quota facts of the settled account"
+    );
+}
+
+/// A capture carries each account's own owner generation rather than one generation for the whole
+/// set, so a heterogeneous capture reconstructs every account under its own owner and the capture
+/// round-trips through reconstruction as the identical set of complete declared records.
+#[test]
+fn a_capture_carries_each_accounts_own_owner_generation() {
+    let first = declared_subject(FIXTURE_DECLARATION);
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            first.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger_owned_by(5).durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the declared record is admitted: {error:?}"));
+    registry
+        .admit(
+            second.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger_owned_by(4).durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the declared record is admitted: {error:?}"));
+
+    let captured = registry.declared_records();
+    assert_eq!(
+        captured
+            .iter()
+            .find(|record| record.subject() == &first)
+            .map(RecoveredResourceRecord::owner),
+        Some(OwnerGeneration::new(5)),
+        "the capture carries the first account's own owner generation"
+    );
+    assert_eq!(
+        captured
+            .iter()
+            .find(|record| record.subject() == &second)
+            .map(RecoveredResourceRecord::owner),
+        Some(OwnerGeneration::new(4)),
+        "the capture carries the second account's own owner generation"
+    );
+
+    let rebuilt = ResourceRegistry::reconstruct(None, captured.clone())
+        .unwrap_or_else(|error| panic!("the heterogeneous capture reconstructs: {error:?}"));
+    assert_eq!(rebuilt.live_resources(), 2, "both accounts rebuild");
+    assert_eq!(
+        rebuilt
+            .account(&first)
+            .map(|account| account.ledger().owner()),
+        Some(OwnerGeneration::new(5))
+    );
+    assert_eq!(
+        rebuilt.declared_records(),
+        captured,
+        "a capture round-trips through reconstruction as the identical declared records"
     );
 }
