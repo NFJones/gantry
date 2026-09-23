@@ -47,6 +47,7 @@
 //! formats remains with the durable, recovery, and machine modules.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use gantry_ir::{
     AdapterInstance, CanonicalPath, Charge, Completion, ContainmentError, ContainmentSettlement,
@@ -705,7 +706,11 @@ impl ResourceRegistry {
     /// the model's own substitution rule of the binding the account already holds, so a poisoned
     /// binding, a retired binding, a replacement that widens the rights held, and a replacement whose
     /// owner generation does not succeed the held generation are each refused with the model's own
-    /// reason through [`ResourceRegistryRefusal::AdapterBinding`] and nothing is replaced.
+    /// reason through [`ResourceRegistryRefusal::AdapterBinding`] and nothing is replaced. A presented
+    /// binding that is itself already poisoned or already retired is refused for the same reason, so no
+    /// replacement returns a failed or retired instance to service. The binding is runtime state rather
+    /// than a declared durable fact, so a registry rebuilt from declared reconstruction records holds
+    /// no adapter binding.
     pub fn bind_adapter_instance(
         &mut self,
         subject: &ResourceSubjectBinding,
@@ -738,7 +743,8 @@ impl ResourceRegistry {
     /// bound instance is refused as [`AdapterBindingRefusal::Unbound`]. The reason is fixed by the
     /// first poisoning of that instance identity in this registry's reason ledger, so a repeated
     /// poisoning stutters and reports the reason recorded first instead of rewriting it, and no path
-    /// clears the landed one-way poison.
+    /// clears the landed one-way poison. The reason record is runtime state of this registry's ledger
+    /// rather than a declared durable fact, so a rebuilt registry holds no recorded reason.
     pub fn poison_adapter_instance(
         &mut self,
         subject: &ResourceSubjectBinding,
@@ -968,12 +974,15 @@ impl AdmittedResource {
 
     /// Binds or replaces this account's adapter instance under one presented owner generation.
     ///
-    /// A first binding is stored as it is presented. A replacement is decided by the model's own
-    /// substitution rule of the binding this account already holds, so the model refuses a poisoned
-    /// binding, a retired binding, a replacement that widens the rights held, and a replacement whose
-    /// owner generation does not succeed the held one, each with its own reason and without replacing
-    /// anything. The presented owner generation must be this account's current one, so a superseded
-    /// owner can neither bind nor replace the adapter of an operation it does not hold.
+    /// A first binding is stored as it is presented, and a presented binding that is already poisoned
+    /// or already retired is refused with the model's own reason before anything else, so binding can
+    /// never return a failed or retired instance to service. A replacement is then decided by the
+    /// model's own substitution rule of the binding this account already holds, so a poisoned held
+    /// binding, a retired held binding, a replacement that widens the rights held, and a replacement
+    /// whose owner generation does not succeed the held one are each refused with the model's own
+    /// reason and without replacing anything. The presented owner generation must be this account's
+    /// current one, so a superseded owner can neither bind nor replace the adapter of an operation it
+    /// does not hold.
     pub fn bind_adapter_instance(
         &mut self,
         presented_owner: OwnerGeneration,
@@ -981,6 +990,20 @@ impl AdmittedResource {
     ) -> Result<(), AdapterBindingRefusal> {
         self.require_current_owner(presented_owner)
             .map_err(AdapterBindingRefusal::StaleOwner)?;
+        if instance.is_poisoned() {
+            return Err(AdapterBindingRefusal::Substitution(
+                OperationAbiError::AdapterInstancePoisoned {
+                    instance: Arc::from(instance.as_str()),
+                },
+            ));
+        }
+        if instance.is_retired() {
+            return Err(AdapterBindingRefusal::Substitution(
+                OperationAbiError::AdapterInstanceRetired {
+                    instance: Arc::from(instance.as_str()),
+                },
+            ));
+        }
         match &self.adapter {
             Some(held) => {
                 let replacement = held

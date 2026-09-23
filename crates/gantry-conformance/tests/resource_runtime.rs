@@ -2375,6 +2375,46 @@ fn runtime_adapter_binding_is_owner_fenced_and_poisons_once() {
         "a replacement whose owner generation does not succeed the held one is refused"
     );
 
+    let held_spelling = registry
+        .adapter_instance(&subject)
+        .map(AdapterInstance::as_str)
+        .map(str::to_owned);
+
+    let mut poisoned_candidate = adapter_instance_with("fourth", held, 5, 3);
+    poisoned_candidate.poison();
+    assert!(
+        matches!(
+            registry.bind_adapter_instance(&subject, owner, poisoned_candidate),
+            Err(ResourceRegistryRefusal::AdapterBinding(
+                AdapterBindingRefusal::Substitution(
+                    OperationAbiError::AdapterInstancePoisoned { .. }
+                )
+            ))
+        ),
+        "a presented binding that is already poisoned is never returned to service"
+    );
+    let mut retired_candidate = adapter_instance_with("fifth", held, 5, 4);
+    retired_candidate.retire();
+    assert!(
+        matches!(
+            registry.bind_adapter_instance(&subject, owner, retired_candidate),
+            Err(ResourceRegistryRefusal::AdapterBinding(
+                AdapterBindingRefusal::Substitution(
+                    OperationAbiError::AdapterInstanceRetired { .. }
+                )
+            ))
+        ),
+        "a presented binding that is already retired is never returned to service"
+    );
+    assert_eq!(
+        registry
+            .adapter_instance(&subject)
+            .map(AdapterInstance::as_str)
+            .map(str::to_owned),
+        held_spelling,
+        "a refused replacement leaves the held binding exactly as it was"
+    );
+
     let reason = PoisonReason::ForeignFailure(ForeignFailureKind::Panic);
     assert_eq!(
         registry.poison_adapter_instance(&subject, owner, reason),
@@ -2412,5 +2452,21 @@ fn runtime_adapter_binding_is_owner_fenced_and_poisons_once() {
         ResourceRegistry::new().poison_adapter_instance(&subject, owner, reason),
         Err(ResourceRegistryRefusal::UnknownSubject),
         "a registry holding no account for the subject refuses the poisoning"
+    );
+
+    let captured = registry.declared_records();
+    let mut rebuilt = ResourceRegistry::reconstruct(None, captured)
+        .unwrap_or_else(|error| panic!("the declared capture reconstructs: {error:?}"));
+    assert_eq!(
+        rebuilt.adapter_instance(&subject),
+        None,
+        "a registry rebuilt from declared records holds no adapter binding"
+    );
+    assert_eq!(
+        rebuilt.poison_adapter_instance(&subject, owner, reason),
+        Err(ResourceRegistryRefusal::AdapterBinding(
+            AdapterBindingRefusal::Unbound
+        )),
+        "a rebuilt registry holds no recorded reason, so its account is unbound"
     );
 }
