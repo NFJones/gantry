@@ -2688,8 +2688,22 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
             &["Containment settlement"],
         ),
         (
+            "GNT-23.4-operation-ownership-and-single-settlement",
+            &[
+                "runtime state of one account value",
+                "publishes no cross-recovery single-settlement claim",
+            ],
+        ),
+        (
             "GNT-23.5-failed-instance-poisoning-and-isolation",
             &["Adapter binding and poisoning"],
+        ),
+        (
+            "GNT-23.5-failed-instance-poisoning-and-isolation",
+            &[
+                "poison reason ledger are runtime state",
+                "publishes no recovery claim for either",
+            ],
         ),
         (
             "GNT-20.10-retirement-and-stale-owner-fencing",
@@ -2697,7 +2711,17 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
         ),
         (
             "GNT-23.7-adapter-containment-obligations",
-            &["never derives a resource settlement from a containment report"],
+            &[
+                "declare containment obligations and limits only",
+                "never derives a resource settlement from a containment report",
+            ],
+        ),
+        (
+            "GNT-28.9-retirement-deletion-and-stale-owner-fences",
+            &[
+                "Physical reclamation is not semantic release",
+                "no retention state returns a released live place",
+            ],
         ),
         (
             "GNT-23.6-protected-fault-diagnostics",
@@ -2734,6 +2758,46 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
             &["Live-account ceiling", "the model owns no ceiling"],
         ),
         "a ceiling row that no longer names its own clause must fail the association check"
+    );
+    // Negative coverage for the non-claims: a bullet that loses its own anchor must fail even though
+    // the anchor still appears in the table above it.
+    let weakened_bullet = note.replace(
+        "runtime state of one account value under\n  `GNT-23.4-operation-ownership-and-single-settlement`, so one contained operation",
+        "runtime state of one account value under no named clause, so one contained operation",
+    );
+    assert_ne!(
+        weakened_bullet, note,
+        "the negative case must change the note"
+    );
+    assert!(
+        !claim_is_stated(
+            &weakened_bullet,
+            "GNT-23.4-operation-ownership-and-single-settlement",
+            &[
+                "runtime state of one account value",
+                "publishes no cross-recovery single-settlement claim",
+            ],
+        ),
+        "a containment non-claim that no longer names its own clause must fail"
+    );
+    let weakened_adapter_bullet = note.replace(
+        "runtime state under\n  `GNT-23.5-failed-instance-poisoning-and-isolation`. A registry rebuilt",
+        "runtime state under no named clause. A registry rebuilt",
+    );
+    assert_ne!(
+        weakened_adapter_bullet, note,
+        "the adapter negative case must change the note"
+    );
+    assert!(
+        !claim_is_stated(
+            &weakened_adapter_bullet,
+            "GNT-23.5-failed-instance-poisoning-and-isolation",
+            &[
+                "poison reason ledger are runtime state",
+                "publishes no recovery claim for either",
+            ],
+        ),
+        "an adapter non-claim that no longer names its own clause must fail"
     );
     // Statements that no single clause owns must still be published, and the witness paragraph must
     // name the boundaries the witnesses actually cover rather than claiming all of them.
