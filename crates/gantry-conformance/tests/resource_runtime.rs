@@ -754,6 +754,56 @@ fn a_charge_vector_commits_every_declared_member_or_none() {
     );
 }
 
+/// Emergency cleanup settles through the registry: the sealed witness plus the account's own
+/// subject reaches that account's ledger, an unknown subject changes nothing, the emergency release
+/// frees the live place, and the retained account stays queryable.
+#[test]
+fn registry_routes_emergency_cleanup_and_releases_the_live_place() {
+    let subject = active_subject();
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert_eq!(registry.live_resources(), 1);
+
+    let (_program, _machine, other) =
+        machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let other = other.unwrap_or_else(|| panic!("the second fixture operation declares an action"));
+    assert_eq!(
+        registry.settle_from_emergency_cleanup(&other, emergency_cleanup()),
+        Err(ResourceRegistryRefusal::UnknownSubject),
+        "a subject this registry holds no account for changes nothing"
+    );
+    assert_eq!(registry.live_resources(), 1);
+
+    assert_eq!(
+        registry.settle_from_emergency_cleanup(&subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+    assert_eq!(
+        registry.live_resources(),
+        0,
+        "emergency release frees the live place"
+    );
+    assert!(
+        registry.account(&subject).is_some(),
+        "the retained account stays queryable"
+    );
+    assert_eq!(
+        registry.settle_from_emergency_cleanup(&subject, emergency_cleanup()),
+        Err(ResourceRegistryRefusal::EmergencyRelease(
+            ResourceError::IllegalLifetimeTransition
+        )),
+        "a second emergency release is refused by the model's transition rule"
+    );
+}
+
 fn emergency_cleanup() -> EmergencyCleanupWitness {
     let policy =
         GracePolicy::new(1, 1).unwrap_or_else(|_| unreachable!("fixture stop policy is bounded"));

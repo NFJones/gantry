@@ -303,6 +303,29 @@ impl ResourceRegistry {
             .settle_from_post_failure(settlement, settled_at)
             .map_err(ResourceRegistryRefusal::Settlement)
     }
+
+    /// Settles one account from the sealed emergency-cleanup witness its caller holds.
+    ///
+    /// The witness is a sealed stop artifact that names no account, so the caller names the
+    /// subject: the registry selects exactly that account and the account's own ledger derives the
+    /// emergency-released lifetime. A subject this registry holds no account for is refused with
+    /// [`ResourceRegistryRefusal::UnknownSubject`], and a lifetime that does not admit an emergency
+    /// release is refused by the model's own transition rule through
+    /// [`ResourceRegistryRefusal::EmergencyRelease`].
+    pub fn settle_from_emergency_cleanup(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        cleanup: EmergencyCleanupWitness,
+    ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .settle_from_emergency_cleanup(cleanup)
+            .map_err(ResourceRegistryRefusal::EmergencyRelease)
+    }
 }
 
 /// Why the runtime resource registry refused an admission or a settlement.
@@ -312,6 +335,8 @@ pub enum ResourceRegistryRefusal {
     SecondAdmission,
     /// The subject's operation carries no authenticated live-resource Section 20 kind.
     UnauthenticatedOperationKind,
+    /// The account's own emergency release refused the sealed cleanup witness.
+    EmergencyRelease(ResourceError),
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
         /// The declared limit.
