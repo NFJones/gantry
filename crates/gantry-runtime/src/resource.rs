@@ -181,6 +181,23 @@ pub enum PostFailureSettlementRefusal {
 /// Every mutating route of this type is owner-qualified: charging, renewal, and both finish steps
 /// require the owner generation their caller presents to equal the account's current one, so a
 /// superseded owner can neither spend, renew, enter, nor complete the finish path.
+///
+/// Root closure, retirement, and deletion are owner-qualified on those same terms, and no route
+/// hands out a mutable registry-held account, so an admitted account cannot be replaced wholesale
+/// to reach a transition its own fence refused:
+///
+/// ```compile_fail
+/// use gantry_runtime::{AdmittedResource, ResourceRegistry, ResourceSubjectBinding};
+///
+/// fn replace_admitted(
+///     registry: &mut ResourceRegistry,
+///     subject: &ResourceSubjectBinding,
+///     account: AdmittedResource,
+/// ) {
+///     // No route hands out a mutable registry-held account, so this write is unnameable.
+///     *registry.account_mut(subject).unwrap() = account;
+/// }
+/// ```
 #[derive(Debug, Default)]
 pub struct ResourceRegistry {
     accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
@@ -427,16 +444,6 @@ impl ResourceRegistry {
             .get(&(subject.operation().clone(), subject.generation().clone()))
     }
 
-    /// Returns the account one subject owns for owner-authorized changes, when any.
-    #[must_use]
-    pub fn account_mut(
-        &mut self,
-        subject: &ResourceSubjectBinding,
-    ) -> Option<&mut AdmittedResource> {
-        self.accounts
-            .get_mut(&(subject.operation().clone(), subject.generation().clone()))
-    }
-
     /// Settles the account its own subject names from one model-issued post-failure settlement.
     ///
     /// The account is selected by the settlement's own operation and generation, so a settlement
@@ -582,6 +589,79 @@ impl ResourceRegistry {
             .complete_finalization_for(presented_owner, settled_at)
             .map_err(ResourceRegistryRefusal::Finish)
     }
+
+    /// Closes one declared liveness root of one admitted account through the current owner.
+    ///
+    /// The account is selected by the subject's own operation and generation, so a subject this
+    /// registry holds no account for is refused with [`ResourceRegistryRefusal::UnknownSubject`]. The
+    /// presented owner generation must then be the account's current one: any other presentation is
+    /// refused with the model's own `ResourceError::StaleOwner` through
+    /// [`ResourceRegistryRefusal::RootClosure`] before any root fact changes. Only then does the
+    /// model's own root-closure rule decide, so a root the account does not declare is refused with
+    /// the model's own reason.
+    pub fn close_liveness_root(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+        root: LivenessRoot,
+    ) -> Result<(), ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .close_liveness_root_for(presented_owner, root)
+            .map_err(ResourceRegistryRefusal::RootClosure)
+    }
+
+    /// Retires one admitted account under its declared retention fence through a presented owner.
+    ///
+    /// The account is selected by the subject's own operation and generation, so a subject this
+    /// registry holds no account for is refused with [`ResourceRegistryRefusal::UnknownSubject`]. The
+    /// model's own retirement rule then decides the presented owner generation, a still-live root, an
+    /// unexpired fence, and an invalid successor, each refused with the model's own reason through
+    /// [`ResourceRegistryRefusal::Retirement`], so this route delegates rather than restating them.
+    pub fn retire(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        fence: RetentionFence,
+        presented_owner: OwnerGeneration,
+        succeeding_owner: OwnerGeneration,
+        at: u64,
+    ) -> Result<(), ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .retire(fence, presented_owner, succeeding_owner, at)
+            .map_err(ResourceRegistryRefusal::Retirement)
+    }
+
+    /// Deletes one retired admitted record through the owner generation its caller presents.
+    ///
+    /// The account is selected by the subject's own operation and generation, so a subject this
+    /// registry holds no account for is refused with [`ResourceRegistryRefusal::UnknownSubject`]. The
+    /// model's deletion takes no owner generation, so the account's own route requires this
+    /// account's current one: any other is refused with the model's own `ResourceError::StaleOwner`
+    /// through [`ResourceRegistryRefusal::Deletion`] before the record changes, and only then does
+    /// the model's own rule decide whether the lifetime admits deletion.
+    pub fn delete(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+    ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .delete_for(presented_owner)
+            .map_err(ResourceRegistryRefusal::Deletion)
+    }
 }
 
 /// Why the runtime resource registry refused an admission or a settlement.
@@ -599,6 +679,12 @@ pub enum ResourceRegistryRefusal {
     Renewal(ResourceError),
     /// The account's own finish step refused the presented owner or the lifetime transition.
     Finish(ResourceError),
+    /// The account's own owner-qualified root closure refused the presented owner or the root.
+    RootClosure(ResourceError),
+    /// The account's own retirement rule refused the presented owner, a live root, or the fence.
+    Retirement(ResourceError),
+    /// The account's own deletion rule refused the presented owner generation.
+    Deletion(ResourceError),
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
         /// The declared limit.
@@ -634,9 +720,23 @@ pub enum ResourceRegistryRefusal {
 ///
 /// fn unfenced_finish(account: &mut AdmittedResource) {
 ///     account.begin_finish().ok();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use gantry_runtime::AdmittedResource;
+///
+/// fn unfenced_finalization(account: &mut AdmittedResource) {
 ///     account.complete_finalization(0).ok();
-///     // The unfenced transitions are crate-private and the raw ledger accessor does not exist
-///     // outside this crate at all.
+/// }
+/// ```
+///
+/// The raw ledger accessor does not exist outside this crate at all:
+///
+/// ```compile_fail
+/// use gantry_runtime::AdmittedResource;
+///
+/// fn raw_ledger(account: &mut AdmittedResource) {
 ///     let _ = account.ledger_mut();
 /// }
 /// ```

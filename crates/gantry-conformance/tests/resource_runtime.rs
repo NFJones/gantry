@@ -265,39 +265,46 @@ fn retirement_and_deletion_never_reclaim_a_released_live_place() {
     assert!(registry.account(&subject).is_some());
 
     let fence = RetentionFence::new(2, 10).unwrap_or_else(|_| unreachable!("bounded fence"));
-    {
-        let account = registry
-            .account_mut(&subject)
-            .unwrap_or_else(|| panic!("the registry holds the admitted account"));
-        for root in ROOTS {
-            assert!(
-                account
-                    .close_liveness_root_for(OwnerGeneration::new(4), *root)
-                    .is_ok()
-            );
-        }
+    for root in ROOTS {
         assert!(
-            account
-                .retire(fence, OwnerGeneration::new(4), OwnerGeneration::new(5), 35)
-                .is_ok()
+            registry
+                .close_liveness_root(&subject, OwnerGeneration::new(4), *root)
+                .is_ok(),
+            "the current owner closes one declared liveness root"
         );
-        assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Retired);
     }
+    assert!(
+        registry
+            .retire(
+                &subject,
+                fence,
+                OwnerGeneration::new(4),
+                OwnerGeneration::new(5),
+                35
+            )
+            .is_ok()
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Retired)
+    );
     assert_eq!(
         registry.live_resources(),
         0,
         "retirement never reclaims the released place"
     );
-    {
-        let account = registry
-            .account_mut(&subject)
-            .unwrap_or_else(|| panic!("the registry holds the admitted account"));
-        assert_eq!(
-            account.delete_for(OwnerGeneration::new(4)),
-            Ok(ResourceLifetimeState::Deleted)
-        );
-        assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Deleted);
-    }
+    assert_eq!(
+        registry.delete(&subject, OwnerGeneration::new(4)),
+        Ok(ResourceLifetimeState::Deleted)
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Deleted)
+    );
     assert_eq!(
         registry.live_resources(),
         0,
@@ -1964,6 +1971,91 @@ fn the_account_mutation_surface_refuses_a_superseded_owner_generation() {
     );
     assert_eq!(
         admitted_resource.delete_for(owner),
+        Ok(ResourceLifetimeState::Deleted)
+    );
+}
+
+/// A superseded owner generation is refused on the registry's owner-qualified root closure,
+/// retirement, and deletion routes before any declared fact changes, and the account's current
+/// generation still closes the same roots, retires, and deletes the same record through them.
+#[test]
+fn the_registry_mutation_surface_refuses_a_superseded_owner_generation() {
+    let subject = active_subject();
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+
+    let owner = OwnerGeneration::new(4);
+    let stale = OwnerGeneration::new(3);
+    let fence = RetentionFence::new(2, 10).unwrap_or_else(|_| unreachable!("bounded fence"));
+    let before = registry
+        .account(&subject)
+        .map(|account| account.ledger().clone());
+
+    assert_eq!(
+        registry.close_liveness_root(&subject, stale, LivenessRoot::Resource),
+        Err(ResourceRegistryRefusal::RootClosure(
+            ResourceError::StaleOwner {
+                presented: stale,
+                current: owner,
+            }
+        ))
+    );
+    assert_eq!(
+        registry.delete(&subject, stale),
+        Err(ResourceRegistryRefusal::Deletion(
+            ResourceError::StaleOwner {
+                presented: stale,
+                current: owner,
+            }
+        ))
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().clone()),
+        before,
+        "a superseded owner generation changes no declared fact"
+    );
+
+    assert!(registry.begin_finish(&subject, owner).is_ok());
+    assert!(registry.complete_finalization(&subject, owner, 20).is_ok());
+    for root in ROOTS {
+        assert!(registry.close_liveness_root(&subject, owner, *root).is_ok());
+    }
+    assert_eq!(
+        registry.retire(&subject, fence, stale, OwnerGeneration::new(5), 35),
+        Err(ResourceRegistryRefusal::Retirement(
+            ResourceError::StaleOwner {
+                presented: stale,
+                current: owner,
+            }
+        )),
+        "retirement keeps the model's own stale-owner refusal"
+    );
+    assert!(
+        registry
+            .retire(&subject, fence, owner, OwnerGeneration::new(5), 35)
+            .is_ok()
+    );
+    assert_eq!(
+        registry.delete(&subject, stale),
+        Err(ResourceRegistryRefusal::Deletion(
+            ResourceError::StaleOwner {
+                presented: stale,
+                current: owner,
+            }
+        ))
+    );
+    assert_eq!(
+        registry.delete(&subject, owner),
         Ok(ResourceLifetimeState::Deleted)
     );
 }
