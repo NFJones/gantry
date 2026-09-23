@@ -50,8 +50,10 @@ pub const TEST_EXECUTED_KINDS: [TestKind; 3] =
 /// claim. Each provided rule is exercised by a lane row of
 /// `crates/gantry-conformance/tests/test_harness.rs`:
 ///
-/// - `DeterministicDiscoveryAndOrdering`: targets are admitted and executed by canonical name, not by
-///   presentation order.
+/// - `DeterministicDiscoveryAndOrdering`: targets are enumerated by canonical name, claimed in
+///   canonical name order, and reported in canonical name order; admission accepts the caller's
+///   presentation order, and under parallelism neither the start nor the completion order of two
+///   targets is promised.
 /// - `PerTestIsolation`: every target runs in its own fresh machine with its own budget, step bound,
 ///   and outcome, and no target shares state with another.
 /// - `BoundedParallelism`: [`TestHarness::parallel`] declares the greatest number of targets run at
