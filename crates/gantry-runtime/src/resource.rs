@@ -219,6 +219,19 @@ impl ResourceRegistry {
             .fold(0_u64, |count, _| count.saturating_add(1))
     }
 
+    /// Removes the accounts whose lifetime has reached the terminal retention state.
+    ///
+    /// Deletion is the only state in which the retained record is gone, so reaping is physical
+    /// reclamation alone: it frees registry memory without changing any semantic release, and the
+    /// registry holds no account for a reaped subject afterwards. A settled lifetime that is still
+    /// retained keeps its account and stays queryable.
+    pub fn reap_deleted(&mut self) -> usize {
+        let before = self.accounts.len();
+        self.accounts
+            .retain(|_, account| account.ledger().lifetime() != ResourceLifetimeState::Deleted);
+        before.saturating_sub(self.accounts.len())
+    }
+
     /// Admits one resource for one machine-issued subject.
     ///
     /// A subject that already owns an account in this registry is refused rather than replaced, so

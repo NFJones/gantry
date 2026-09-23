@@ -252,6 +252,12 @@ fn retirement_and_deletion_never_reclaim_a_released_live_place() {
         0,
         "finishing the lifetime releases the place"
     );
+    assert_eq!(
+        registry.reap_deleted(),
+        0,
+        "a settled account that is still retained is not reaped"
+    );
+    assert!(registry.account(&subject).is_some());
 
     let fence = RetentionFence::new(2, 10).unwrap_or_else(|_| unreachable!("bounded fence"));
     {
@@ -285,6 +291,22 @@ fn retirement_and_deletion_never_reclaim_a_released_live_place() {
         registry.live_resources(),
         0,
         "deletion never reclaims the released place"
+    );
+    assert!(
+        registry.account(&subject).is_some(),
+        "a deleted account stays registry-held until it is reaped"
+    );
+    assert_eq!(
+        registry.reap_deleted(),
+        1,
+        "reaping reclaims the deleted account's record"
+    );
+    assert!(registry.account(&subject).is_none());
+    assert_eq!(registry.live_resources(), 0);
+    assert_eq!(
+        registry.reap_deleted(),
+        0,
+        "reaping is idempotent once the deleted account is gone"
     );
 }
 
