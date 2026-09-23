@@ -90,7 +90,7 @@
   },
   {
    "path": "crates/gantry-conformance/tests/external_facade_matrix.rs",
-   "sha256": "39785c2a3cf8f65b6d7d63ff246285ee3cc8420fbcad3460bd2180ada8b7190d"
+   "sha256": "342a366df3ab589501bf8a722eb0c8f6a567d6fa8506c55a5073032fa31c0d9e"
   },
   {
    "path": "crates/gantry-conformance/tests/facade.rs",
