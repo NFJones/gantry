@@ -349,30 +349,33 @@ fn runtime_harness_admits_only_accepted_targets_and_runs_them_in_canonical_order
         "execution follows canonical name order, not insertion order"
     );
 
-    // A machine failure is a failure, never a pass, and it does not hide other targets' results.
+    // A machine failure is a failure, never a pass, and it does not hide a later target's result.
     let mut failing = TestHarness::new(limits(8));
     assert!(
         failing
-            .admit("alpha", returning_program(), workflow(), execution(0x44))
+            .admit("beta", returning_program(), workflow(), execution(0x44))
             .is_ok()
     );
     assert!(
         failing
-            .admit("beta", failing_program(), workflow(), execution(0x45))
+            .admit("alpha", failing_program(), workflow(), execution(0x45))
             .is_ok()
     );
     let report = failing
         .run(&plan)
         .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
     assert!(!report.is_clean());
-    assert!(matches!(
-        report.results()[0].outcome(),
-        TestTargetOutcome::Completed { .. }
-    ));
     assert_eq!(
-        report.results()[1].outcome(),
+        report.results()[0].outcome(),
         &TestTargetOutcome::Failed { steps: 1 },
         "a panicking target reports the failure on its first labelled transition"
+    );
+    assert!(
+        matches!(
+            report.results()[1].outcome(),
+            TestTargetOutcome::Completed { .. }
+        ),
+        "a failing target does not hide the target that sorts after it"
     );
 
     // A cooperative yield is resumed, so a one-transition quantum still completes.
@@ -397,8 +400,9 @@ fn runtime_harness_admits_only_accepted_targets_and_runs_them_in_canonical_order
     let report = small
         .run(&plan)
         .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
-    assert!(matches!(
+    assert_eq!(
         report.results()[0].outcome(),
-        TestTargetOutcome::Completed { steps } if *steps >= 2
-    ));
+        &TestTargetOutcome::Completed { steps: 2 },
+        "a fixed success is reported at the bound with the labelled transitions it took"
+    );
 }

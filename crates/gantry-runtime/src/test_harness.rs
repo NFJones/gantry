@@ -61,28 +61,32 @@ pub enum TestHarnessStop {
     HostDispatchPending,
     /// The target awaits coordinator-owned child-session creation.
     ///
-    /// This branch is classified here so a spawned target can never be reported as a pass, but the
-    /// conformance lane cannot exercise it: a spawn fixture needs the runtime's `concurrent` feature,
-    /// which the lane's crate does not enable.
+    /// No public constructor path reaches this state today: `Machine::new` supplies no initial
+    /// session, so a non-inline session entry fails its missing-parent check before the machine can
+    /// wait for a child session. The branch is classified here so that such a target can never be
+    /// reported as a pass if one is ever admitted.
     ChildSessionPending,
 }
 
 /// What one admitted target did when the harness executed it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TestTargetOutcome {
-    /// The target reached the machine's completion step.
+    /// The machine fixed a successful outcome for the target.
     Completed {
-        /// Steps taken, including the completing step.
+        /// Labelled transitions the machine emitted before its outcome was fixed.
+        ///
+        /// A fixed success can be recognized when the bound is reached rather than only at the
+        /// machine's completing observation, so this count need not include that observation.
         steps: u64,
     },
-    /// The machine fixed a task-local failure before completion.
+    /// The machine fixed a task-local failure for the target.
     Failed {
-        /// Steps taken, including the failing step.
+        /// Labelled transitions, including the failing one.
         steps: u64,
     },
     /// The target reached a state this entry cannot drive.
     Undriveable {
-        /// Steps taken, including the step that reached the state.
+        /// Labelled transitions emitted before the state was reached.
         steps: u64,
         /// The state the harness cannot drive.
         stop: TestHarnessStop,
@@ -95,8 +99,12 @@ pub enum TestTargetOutcome {
         bound: u64,
     },
     /// The machine fixed a cancellation outcome for the target.
+    ///
+    /// The machine's completing observation and the bound classifier both report this, so a
+    /// cancelled target is never classified as a pass. No constructor path in this entry demonstrates
+    /// a cancelled target today, because the harness never cancels one itself.
     Cancelled {
-        /// Labelled transitions taken before the cancellation was observed.
+        /// Labelled transitions emitted before the cancellation was observed.
         steps: u64,
     },
 }
@@ -312,7 +320,7 @@ fn execute(machine: &mut Machine, bound: u64) -> TestTargetOutcome {
             return bound_outcome(machine, labelled, bound);
         }
         match machine.step() {
-            MachineStep::Complete(_) => return TestTargetOutcome::Completed { steps: labelled },
+            MachineStep::Complete(outcome) => return classify(&outcome, labelled),
             MachineStep::Transition(MachineLabel::Failure(_)) => {
                 return TestTargetOutcome::Failed {
                     steps: labelled.saturating_add(1),
@@ -342,12 +350,19 @@ fn execute(machine: &mut Machine, bound: u64) -> TestTargetOutcome {
     }
 }
 
+/// Classifies one fixed machine outcome for the harness.
+fn classify(outcome: &MachineOutcome, steps: u64) -> TestTargetOutcome {
+    match outcome {
+        MachineOutcome::Succeeded(_) => TestTargetOutcome::Completed { steps },
+        MachineOutcome::Failed(_) => TestTargetOutcome::Failed { steps },
+        MachineOutcome::Cancelled(_) => TestTargetOutcome::Cancelled { steps },
+    }
+}
+
 /// Classifies a target that reached the harness bound by whatever the machine already fixed.
 fn bound_outcome(machine: &Machine, steps: u64, bound: u64) -> TestTargetOutcome {
     match machine.outcome() {
-        Some(MachineOutcome::Succeeded(_)) => TestTargetOutcome::Completed { steps },
-        Some(MachineOutcome::Failed(_)) => TestTargetOutcome::Failed { steps },
-        Some(MachineOutcome::Cancelled(_)) => TestTargetOutcome::Cancelled { steps },
+        Some(outcome) => classify(outcome, steps),
         None => TestTargetOutcome::StepBoundExhausted { steps, bound },
     }
 }
