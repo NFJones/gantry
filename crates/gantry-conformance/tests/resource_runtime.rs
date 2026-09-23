@@ -2624,17 +2624,50 @@ fn runtime_resource_note_pins_every_declared_surface_and_non_claim() {
     }
 }
 
+/// Returns the units one claim may be stated in: every single line, and every bullet together with
+/// its continuation lines. A table row is therefore matched only within its own row and a non-claim
+/// only within its own bullet, so an anchor in a neighbouring row cannot satisfy a claim.
+fn claim_units(text: &str) -> Vec<String> {
+    let mut units: Vec<String> = text.lines().map(flatten).collect();
+    let mut bullet: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        if line.trim_start().starts_with("- ") {
+            if !bullet.is_empty() {
+                units.push(flatten(&bullet.join(" ")));
+            }
+            bullet = vec![line];
+        } else if line.trim().is_empty() {
+            if !bullet.is_empty() {
+                units.push(flatten(&bullet.join(" ")));
+                bullet.clear();
+            }
+        } else if !bullet.is_empty() {
+            bullet.push(line);
+        }
+    }
+    if !bullet.is_empty() {
+        units.push(flatten(&bullet.join(" ")));
+    }
+    units
+}
+
+/// Returns whether one note states one clause anchor together with every fragment of one claim in a
+/// single unit.
+fn claim_is_stated(text: &str, anchor: &str, fragments: &[&str]) -> bool {
+    let needles: Vec<String> = fragments.iter().map(|fragment| flatten(fragment)).collect();
+    claim_units(text)
+        .iter()
+        .any(|unit| unit.contains(anchor) && needles.iter().all(|needle| unit.contains(needle)))
+}
+
 /// The reader note states each material claim together with the clause that owns it, in one line or
-/// one block, so a claim cannot pass by appearing anywhere in the note while the section that owns
-/// it says something else, and so a removed sentence fails rather than passing on a stray word.
+/// one bullet, so a claim cannot pass by appearing anywhere in the note while the row or bullet that
+/// owns it says something else, and so a moved or removed anchor fails rather than passing on a
+/// stray word elsewhere in the note.
 #[test]
 fn runtime_resource_note_pins_claims_to_their_sections() {
     let note = read_text(&workspace_root().join("docs/resource-runtime-integration.md"));
-    let units: Vec<String> = note
-        .lines()
-        .map(flatten)
-        .chain(note.split("\n\n").map(flatten))
-        .collect();
+    let units = claim_units(&note);
     let claims: &[(&str, &[&str])] = &[
         ("GNT-20.1-operation-kinds", &["Admission"]),
         ("GNT-28.7-durable-resource-reconstruction", &["Capture"]),
@@ -2660,10 +2693,7 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
         ),
         (
             "GNT-20.10-retirement-and-stale-owner-fencing",
-            &[
-                "owner-qualified",
-                "a superseded generation is refused before any declared fact changes",
-            ],
+            &["Reconstruction"],
         ),
         (
             "GNT-23.7-adapter-containment-obligations",
@@ -2687,14 +2717,31 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
             units.iter().any(|unit| {
                 unit.contains(anchor) && needles.iter().all(|needle| unit.contains(needle))
             }),
-            "the reader note must state {anchor} together with {needles:?} in one line or block"
+            "the reader note must state {anchor} together with {needles:?} in one line or bullet"
         );
     }
+    // Negative coverage: the predicate must fail when the owning row stops naming its own clause,
+    // even though the same anchor still appears in another row of the same table.
+    let weakened = note.replace(
+        "| Live-account ceiling | `with_live_limit`, `live_limit`, `live_resources` | Runtime policy over the lifetimes `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` declares; the model owns no ceiling |",
+        "| Live-account ceiling | `with_live_limit`, `live_limit`, `live_resources` | Runtime policy over the lifetimes `GNT-28.4` declares; the model owns no ceiling |",
+    );
+    assert_ne!(weakened, note, "the negative case must change the note");
+    assert!(
+        !claim_is_stated(
+            &weakened,
+            "GNT-28.4-resource-lifetime-finish-poison-and-emergency-release",
+            &["Live-account ceiling", "the model owns no ceiling"],
+        ),
+        "a ceiling row that no longer names its own clause must fail the association check"
+    );
     // Statements that no single clause owns must still be published, and the witness paragraph must
     // name the boundaries the witnesses actually cover rather than claiming all of them.
     let flattened = flatten(&note);
     for statement in [
         "The two failure routes are fenced differently and are not owner-qualified",
+        "are additionally owner-qualified",
+        "a superseded generation is refused before any declared fact changes",
         "Physical reclamation is the one registry-wide mutating route and changes no declared fact",
         "No public route hands out a mutable registry-held account",
         "the private subject-binding constructor",
