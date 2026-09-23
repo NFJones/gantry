@@ -103,12 +103,14 @@ pub enum TestTargetOutcome {
     },
     /// The machine fixed a cancellation outcome for the target.
     ///
-    /// The machine's completing observation and the bound classifier both report this, so a
-    /// cancelled target is never classified as a pass. No constructor path in this entry demonstrates
-    /// a cancelled target today, because the harness never cancels one itself.
+    /// A cancelled target is never classified as a pass. `steps` is the labelled transitions observed
+    /// when the cancellation was presented - the harness bound - and `reason` is the reason the
+    /// machine fixed, which a cancelled machine keeps as its first reason.
     Cancelled {
-        /// Labelled transitions emitted before the cancellation was observed.
+        /// Labelled transitions observed when the cancellation was presented.
         steps: u64,
+        /// The first cancellation reason the machine fixed.
+        reason: Arc<str>,
     },
 }
 
@@ -172,6 +174,7 @@ struct AdmittedTestTarget {
 #[derive(Clone, Debug)]
 pub struct TestHarness {
     limits: MachineLimits,
+    cancel_at_bound: Option<Arc<str>>,
     targets: BTreeMap<String, AdmittedTestTarget>,
 }
 
@@ -185,8 +188,23 @@ impl TestHarness {
     pub fn new(limits: MachineLimits) -> Self {
         Self {
             limits,
+            cancel_at_bound: None,
             targets: BTreeMap::new(),
         }
+    }
+
+    /// Declares that this harness cancels a target that reaches its bound, under one reason.
+    ///
+    /// A harness that declares a cancellation reason turns its bound into a timeout with cleanup:
+    /// when a target reaches the bound without a fixed outcome, the harness presents the declared
+    /// reason, settles the cancellation the machine fixes, and reports `Cancelled` with that reason
+    /// rather than reporting exhaustion. The reason is the caller's, exactly as the target's program
+    /// and execution identity are, so the harness invents no cancellation vocabulary of its own. A
+    /// harness that declares no reason keeps stopping at the bound and reports `StepBoundExhausted`.
+    #[must_use]
+    pub fn with_cancellation(mut self, reason: Arc<str>) -> Self {
+        self.cancel_at_bound = Some(reason);
+        self
     }
 
     /// Admits one target under one declared test name.
@@ -300,7 +318,7 @@ impl TestHarness {
             };
             results.push(TestTargetResult {
                 name: name.clone(),
-                outcome: execute(&mut machine, bound),
+                outcome: execute(&mut machine, bound, self.cancel_at_bound.as_ref()),
             });
         }
         Ok(TestRunReport { results })
@@ -315,11 +333,21 @@ impl TestHarness {
 /// ceiling so a machine that never transitions still cannot spin. Reaching the bound is decided by
 /// the outcome the machine has already fixed, when it has fixed one: a completed, failed, or
 /// cancelled target is never reported as exhaustion.
-fn execute(machine: &mut Machine, bound: u64) -> TestTargetOutcome {
+fn execute(
+    machine: &mut Machine,
+    bound: u64,
+    cancel_at_bound: Option<&Arc<str>>,
+) -> TestTargetOutcome {
     let mut labelled = 0_u64;
     let mut yields = 0_u64;
     loop {
         if labelled >= bound {
+            if let Some(reason) = cancel_at_bound
+                && machine.outcome().is_none()
+            {
+                let _label = machine.cancel(Arc::clone(reason));
+                return drain_cancellation(machine, labelled, bound);
+            }
             return bound_outcome(machine, labelled, bound);
         }
         match machine.step() {
@@ -358,7 +386,44 @@ fn classify(outcome: &MachineOutcome, steps: u64) -> TestTargetOutcome {
     match outcome {
         MachineOutcome::Succeeded(_) => TestTargetOutcome::Completed { steps },
         MachineOutcome::Failed(_) => TestTargetOutcome::Failed { steps },
-        MachineOutcome::Cancelled(_) => TestTargetOutcome::Cancelled { steps },
+        MachineOutcome::Cancelled(reason) => TestTargetOutcome::Cancelled {
+            steps,
+            reason: Arc::clone(reason),
+        },
+    }
+}
+
+/// Settles one presented cancellation and reports the reason the machine fixed.
+///
+/// The settle loop has its own ceiling equal to the harness bound, so a cancellation that never
+/// settles cannot spin; when that ceiling is reached the target is classified by whatever the machine
+/// has already fixed, exactly as the bound classifier does.
+fn drain_cancellation(machine: &mut Machine, steps: u64, bound: u64) -> TestTargetOutcome {
+    let mut observations = 0_u64;
+    loop {
+        if observations >= bound {
+            return bound_outcome(machine, steps, bound);
+        }
+        observations = observations.saturating_add(1);
+        match machine.step() {
+            MachineStep::Complete(outcome) => return classify(&outcome, steps),
+            MachineStep::YieldRequired => {
+                let _resumed = machine.resume_after_yield();
+            }
+            MachineStep::WaitingOperation(_) => {
+                return TestTargetOutcome::Undriveable {
+                    steps,
+                    stop: TestHarnessStop::HostDispatchPending,
+                };
+            }
+            MachineStep::WaitingSessionScope(_) => {
+                return TestTargetOutcome::Undriveable {
+                    steps,
+                    stop: TestHarnessStop::ChildSessionPending,
+                };
+            }
+            MachineStep::Transition(_) => {}
+        }
     }
 }
 

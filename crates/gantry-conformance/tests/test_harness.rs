@@ -411,3 +411,41 @@ fn runtime_harness_admits_only_accepted_targets_and_runs_them_in_canonical_order
         "a fixed success is reported at the bound with the labelled transitions it took"
     );
 }
+
+#[test]
+fn runtime_harness_cancels_a_target_that_reaches_its_bound() {
+    let reason: Arc<str> = Arc::from("test-harness-budget");
+    let mut harness = TestHarness::new(limits(1)).with_cancellation(Arc::clone(&reason));
+    assert!(
+        harness
+            .admit("alpha", operation_program(), workflow(), execution(0x51))
+            .is_ok()
+    );
+    let plan = declare_test_run(&["unit"], &[])
+        .unwrap_or_else(|error| panic!("fixture plan is declared: {error:?}"));
+    let report = harness
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    assert!(!report.is_clean(), "a cancelled target is not a pass");
+    assert_eq!(
+        report.results()[0].outcome(),
+        &TestTargetOutcome::Cancelled { steps: 1, reason },
+        "the harness presents its declared reason and reports the one the machine fixed"
+    );
+
+    // The same target under a harness with no declared reason stops at the bound instead.
+    let mut stopping = TestHarness::new(limits(1));
+    assert!(
+        stopping
+            .admit("alpha", operation_program(), workflow(), execution(0x52))
+            .is_ok()
+    );
+    let report = stopping
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+    assert_eq!(
+        report.results()[0].outcome(),
+        &TestTargetOutcome::StepBoundExhausted { steps: 1, bound: 1 },
+        "a harness that declares no reason keeps stopping at the bound"
+    );
+}
