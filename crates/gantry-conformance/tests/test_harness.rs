@@ -370,11 +370,30 @@ fn runtime_harness_admits_only_accepted_targets_and_runs_them_in_canonical_order
         .run(&plan)
         .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
     assert!(!report.is_clean());
-    assert_eq!(
-        report.results()[0].outcome(),
-        &TestTargetOutcome::Failed { steps: 1 },
-        "a panicking target reports the failure on its first labelled transition"
-    );
+    match report.results()[0].outcome() {
+        TestTargetOutcome::Failed { steps, failure } => {
+            assert_eq!(
+                *steps, 1,
+                "the failure is reported on its first labelled transition"
+            );
+            assert_eq!(
+                failure.code.wire_name(),
+                "source-panic",
+                "the report carries the machine's own stable failure code"
+            );
+            assert_eq!(
+                failure.workflow,
+                workflow(),
+                "the report names the workflow active at failure"
+            );
+            assert_eq!(
+                failure.site,
+                site(6),
+                "the report names the structural site active at failure"
+            );
+        }
+        other => panic!("a panicking target reports a structured failure: {other:?}"),
+    }
     assert!(
         matches!(
             report.results()[1].outcome(),

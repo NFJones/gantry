@@ -19,7 +19,8 @@ use gantry_core::identity::ProtocolIdentity;
 use gantry_ir::{CanonicalPath, MachineProgram, TestKind, TestRunPlan, TestSubstitution};
 
 use crate::machine::{
-    Machine, MachineBuildError, MachineLabel, MachineLimits, MachineOutcome, MachineStep,
+    Machine, MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,
+    MachineStep,
 };
 
 /// The declared test kinds this entry executes.
@@ -83,9 +84,15 @@ pub enum TestTargetOutcome {
         steps: u64,
     },
     /// The machine fixed a task-local failure for the target.
+    ///
+    /// The structured failure is the machine's own: its stable code, the workflow and structural site
+    /// active at failure, and any retained join detail are recorded by the machine, and this entry
+    /// reports them unchanged rather than restating or reclassifying them.
     Failed {
         /// Labelled transitions, including the failing one.
         steps: u64,
+        /// The structured failure the machine fixed.
+        failure: MachineFailure,
     },
     /// The target reached a state this entry cannot drive.
     Undriveable {
@@ -352,9 +359,10 @@ fn execute(
         }
         match machine.step() {
             MachineStep::Complete(outcome) => return classify(&outcome, labelled),
-            MachineStep::Transition(MachineLabel::Failure(_)) => {
+            MachineStep::Transition(MachineLabel::Failure(failure)) => {
                 return TestTargetOutcome::Failed {
                     steps: labelled.saturating_add(1),
+                    failure,
                 };
             }
             MachineStep::Transition(_) => labelled = labelled.saturating_add(1),
@@ -385,7 +393,10 @@ fn execute(
 fn classify(outcome: &MachineOutcome, steps: u64) -> TestTargetOutcome {
     match outcome {
         MachineOutcome::Succeeded(_) => TestTargetOutcome::Completed { steps },
-        MachineOutcome::Failed(_) => TestTargetOutcome::Failed { steps },
+        MachineOutcome::Failed(failure) => TestTargetOutcome::Failed {
+            steps,
+            failure: failure.clone(),
+        },
         MachineOutcome::Cancelled(reason) => TestTargetOutcome::Cancelled {
             steps,
             reason: Arc::clone(reason),
