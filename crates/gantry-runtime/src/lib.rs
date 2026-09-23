@@ -28,6 +28,12 @@ mod resource;
 mod session;
 mod supervision;
 mod task;
+mod test_harness;
+
+pub use test_harness::{
+    TEST_EXECUTED_KINDS, TestHarness, TestHarnessRefusal, TestHarnessStop, TestRunReport,
+    TestTargetOutcome, TestTargetResult,
+};
 
 pub use admission::{
     AdmissionBoundary, AdmissionClass, AdmissionExhaustion, AdmissionFailureCategory,
