@@ -10,6 +10,10 @@ use std::sync::Arc;
 use gantry::identity::ProtocolIdentity;
 use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry::ir::{
+    AdapterInstance, CanonicalImplementationIdentity, ForeignFailureKind, OperationAbiError,
+    PoisonReason, RightsSet, TypeExpression,
+};
+use gantry::ir::{
     CanonicalPath, CanonicalSignature, Charge, Completion, ContainmentError, DurableResourceRecord,
     EffectSet, EffectState, EmergencyCleanupWitness, ExecutableAction, ExecutableOperation,
     ExternalOutcome, FailureClass, GracePolicy, LivenessRoot, MalformedCompletion, OperationAbi,
@@ -19,6 +23,7 @@ use gantry::ir::{
     StopRequest, StructuralPosition, TaskStopState, TypeDescriptor,
 };
 use gantry::portable::IdentityKind;
+use gantry::runtime::AdapterBindingRefusal;
 use gantry::runtime::{
     AdmittedResource, ExecutionBudget, Instruction, InstructionKind, Machine, MachineCheckpointV3,
     MachineLabel, MachineLimits, MachineProgram, MachineStep, PostFailureSettlementRefusal,
@@ -2282,5 +2287,130 @@ fn runtime_containment_settlement_restarts_with_the_account_value() {
             .map(|account| account.containment().is_settled()),
         Some(false),
         "a readmitted account value holds a fresh unsettled settlement"
+    );
+}
+
+/// Returns one fixture adapter instance of one implementation name, rights set, owner generation,
+/// and binding sequence.
+fn adapter_instance_with(
+    name: &str,
+    rights: RightsSet,
+    generation: u64,
+    binding_sequence: u64,
+) -> AdapterInstance {
+    let receiver = TypeExpression::from_canonical_string(&format!("crate::{name}"), 4)
+        .unwrap_or_else(|_| unreachable!("fixture receiver is a canonical type"));
+    AdapterInstance::bind(
+        &CanonicalImplementationIdentity::inherent(&receiver),
+        rights,
+        OwnerGeneration::new(generation),
+        binding_sequence,
+    )
+}
+
+/// Returns one fixture adapter instance carrying no right.
+fn adapter_instance(name: &str, generation: u64, binding_sequence: u64) -> AdapterInstance {
+    adapter_instance_with(name, RightsSet::empty(), generation, binding_sequence)
+}
+
+/// One admitted account's adapter instance is bound under the account's current owner generation,
+/// replaced only through the model's own substitution rule, poisoned once through the model's own
+/// one-way poison and reason ledger, and refused as unbound when no instance is bound.
+#[test]
+fn runtime_adapter_binding_is_owner_fenced_and_poisons_once() {
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let stale = OwnerGeneration::new(3);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+
+    assert_eq!(registry.adapter_instance(&subject), None);
+    assert_eq!(
+        registry.poison_adapter_instance(&subject, owner, PoisonReason::AmbiguousEffect),
+        Err(ResourceRegistryRefusal::AdapterBinding(
+            AdapterBindingRefusal::Unbound
+        )),
+        "an account with no bound adapter instance is refused"
+    );
+    assert_eq!(
+        registry.bind_adapter_instance(&subject, stale, adapter_instance("first", 4, 0)),
+        Err(ResourceRegistryRefusal::AdapterBinding(
+            AdapterBindingRefusal::StaleOwner(ResourceError::StaleOwner {
+                presented: stale,
+                current: owner,
+            })
+        )),
+        "a superseded owner never binds the adapter of an operation it does not hold"
+    );
+    assert!(
+        registry
+            .bind_adapter_instance(&subject, owner, adapter_instance("first", 4, 0))
+            .is_ok()
+    );
+    let held = registry
+        .adapter_instance(&subject)
+        .map(AdapterInstance::rights)
+        .unwrap_or_else(|| panic!("the account holds its bound adapter instance"));
+
+    assert_eq!(
+        registry.bind_adapter_instance(
+            &subject,
+            owner,
+            adapter_instance_with("second", held, 4, 1),
+        ),
+        Err(ResourceRegistryRefusal::AdapterBinding(
+            AdapterBindingRefusal::Substitution(OperationAbiError::StaleOwnerGeneration {
+                owner,
+                expected: owner,
+            })
+        )),
+        "a replacement whose owner generation does not succeed the held one is refused"
+    );
+
+    let reason = PoisonReason::ForeignFailure(ForeignFailureKind::Panic);
+    assert_eq!(
+        registry.poison_adapter_instance(&subject, owner, reason),
+        Ok(reason),
+        "the first poisoning fixes the reason"
+    );
+    assert_eq!(
+        registry.poison_adapter_instance(&subject, owner, PoisonReason::AmbiguousEffect),
+        Ok(reason),
+        "a repeated poisoning reports the reason recorded first"
+    );
+    assert_eq!(
+        registry
+            .adapter_instance(&subject)
+            .map(AdapterInstance::is_poisoned),
+        Some(true),
+        "the bound instance carries the landed one-way poison"
+    );
+    assert!(
+        matches!(
+            registry.bind_adapter_instance(
+                &subject,
+                owner,
+                adapter_instance_with("third", held, 5, 2),
+            ),
+            Err(ResourceRegistryRefusal::AdapterBinding(
+                AdapterBindingRefusal::Substitution(
+                    OperationAbiError::AdapterInstancePoisoned { .. }
+                )
+            ))
+        ),
+        "a poisoned binding is never substituted"
+    );
+    assert_eq!(
+        ResourceRegistry::new().poison_adapter_instance(&subject, owner, reason),
+        Err(ResourceRegistryRefusal::UnknownSubject),
+        "a registry holding no account for the subject refuses the poisoning"
     );
 }

@@ -49,12 +49,13 @@
 use std::collections::BTreeMap;
 
 use gantry_ir::{
-    CanonicalPath, Charge, Completion, ContainmentError, ContainmentSettlement,
+    AdapterInstance, CanonicalPath, Charge, Completion, ContainmentError, ContainmentSettlement,
     DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness, ExecutableOperation,
-    ExternalOutcome, LivenessRoot, LogicalOperationId, OperationKind, OwnerGeneration,
-    PoisonWitness, PostFailureSettlement, Quota, QuotaFamily, QuotaOwner, ResourceAction,
-    ResourceCarrier, ResourceError, ResourceGenerationId, ResourceLedger, ResourceLifetimeState,
-    RetentionFence, StaticSiteId, StructuralPosition, admit_resource_carrier,
+    ExternalOutcome, LivenessRoot, LogicalOperationId, OperationAbiError, OperationKind,
+    OwnerGeneration, PoisonLedger, PoisonReason, PoisonWitness, PostFailureSettlement, Quota,
+    QuotaFamily, QuotaOwner, ResourceAction, ResourceCarrier, ResourceError, ResourceGenerationId,
+    ResourceLedger, ResourceLifetimeState, RetentionFence, StaticSiteId, StructuralPosition,
+    admit_resource_carrier,
 };
 
 /// One runtime-owned binding of an admitted account to its Section 20 subject.
@@ -203,6 +204,7 @@ pub enum PostFailureSettlementRefusal {
 pub struct ResourceRegistry {
     accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
     live_limit: Option<u64>,
+    adapter_faults: PoisonLedger,
 }
 
 /// One declared reconstruction record as a recovery pass presents it.
@@ -269,6 +271,7 @@ impl ResourceRegistry {
         Self {
             accounts: BTreeMap::new(),
             live_limit: None,
+            adapter_faults: PoisonLedger::new(),
         }
     }
 
@@ -282,6 +285,7 @@ impl ResourceRegistry {
         Self {
             accounts: BTreeMap::new(),
             live_limit: Some(limit),
+            adapter_faults: PoisonLedger::new(),
         }
     }
 
@@ -411,6 +415,7 @@ impl ResourceRegistry {
         Ok(Self {
             accounts,
             live_limit,
+            adapter_faults: PoisonLedger::new(),
         })
     }
 
@@ -691,6 +696,65 @@ impl ResourceRegistry {
             .settle_containment(presented_owner, completion)
             .map_err(ResourceRegistryRefusal::Containment)
     }
+
+    /// Binds or replaces the adapter instance of one admitted account.
+    ///
+    /// The account is selected by the subject's own operation and generation, so a subject this
+    /// registry holds no account for is refused with [`ResourceRegistryRefusal::UnknownSubject`]. The
+    /// presented owner generation must be the account's current one, and a replacement is decided by
+    /// the model's own substitution rule of the binding the account already holds, so a poisoned
+    /// binding, a retired binding, a replacement that widens the rights held, and a replacement whose
+    /// owner generation does not succeed the held generation are each refused with the model's own
+    /// reason through [`ResourceRegistryRefusal::AdapterBinding`] and nothing is replaced.
+    pub fn bind_adapter_instance(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+        instance: AdapterInstance,
+    ) -> Result<(), ResourceRegistryRefusal> {
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .bind_adapter_instance(presented_owner, instance)
+            .map_err(ResourceRegistryRefusal::AdapterBinding)
+    }
+
+    /// Returns the adapter instance bound to one admitted account, when one is bound.
+    #[must_use]
+    pub fn adapter_instance(&self, subject: &ResourceSubjectBinding) -> Option<&AdapterInstance> {
+        self.accounts
+            .get(&(subject.operation().clone(), subject.generation().clone()))
+            .and_then(AdmittedResource::adapter_instance)
+    }
+
+    /// Poisons the adapter instance of one admitted account through the model's own one-way poison.
+    ///
+    /// The account is selected by the subject's own operation and generation, so a subject this
+    /// registry holds no account for is refused with [`ResourceRegistryRefusal::UnknownSubject`]. The
+    /// presented owner generation must be the account's current one, and an account that holds no
+    /// bound instance is refused as [`AdapterBindingRefusal::Unbound`]. The reason is fixed by the
+    /// first poisoning of that instance identity in this registry's reason ledger, so a repeated
+    /// poisoning stutters and reports the reason recorded first instead of rewriting it, and no path
+    /// clears the landed one-way poison.
+    pub fn poison_adapter_instance(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        presented_owner: OwnerGeneration,
+        reason: PoisonReason,
+    ) -> Result<PoisonReason, ResourceRegistryRefusal> {
+        let ledger = &mut self.adapter_faults;
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .poison_adapter_instance(presented_owner, reason, ledger)
+            .map_err(ResourceRegistryRefusal::AdapterBinding)
+    }
 }
 
 /// Why the runtime resource registry refused an admission or a settlement.
@@ -716,6 +780,8 @@ pub enum ResourceRegistryRefusal {
     Deletion(ResourceError),
     /// The account's own Section 23 containment settlement refused the presented completion.
     Containment(ContainmentError),
+    /// The account's own adapter binding, replacement, or poisoning refused the request.
+    AdapterBinding(AdapterBindingRefusal),
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
         /// The declared limit.
@@ -727,6 +793,17 @@ pub enum ResourceRegistryRefusal {
     Admission(ResourceError),
     /// The account's own settlement step refused the settlement.
     Settlement(PostFailureSettlementRefusal),
+}
+
+/// Why the runtime refused to bind, replace, or poison one resource-bearing adapter instance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AdapterBindingRefusal {
+    /// The presented owner generation is not the account's current one.
+    StaleOwner(ResourceError),
+    /// This account holds no bound adapter instance.
+    Unbound,
+    /// The model's own substitution rule refused the replacement binding.
+    Substitution(OperationAbiError),
 }
 
 /// One resource whose declared accounting facts the runtime has admitted.
@@ -783,6 +860,7 @@ pub struct AdmittedResource {
     ledger: ResourceLedger,
     subject: ResourceSubjectBinding,
     containment: ContainmentSettlement,
+    adapter: Option<AdapterInstance>,
 }
 
 impl AdmittedResource {
@@ -809,6 +887,7 @@ impl AdmittedResource {
             ledger,
             subject,
             containment,
+            adapter: None,
         })
     }
 
@@ -879,6 +958,60 @@ impl AdmittedResource {
         completion: Completion,
     ) -> Result<ExternalOutcome, ContainmentError> {
         self.containment.settle(presented_owner, completion)
+    }
+
+    /// Returns the adapter instance bound to this account, when one is bound.
+    #[must_use]
+    pub const fn adapter_instance(&self) -> Option<&AdapterInstance> {
+        self.adapter.as_ref()
+    }
+
+    /// Binds or replaces this account's adapter instance under one presented owner generation.
+    ///
+    /// A first binding is stored as it is presented. A replacement is decided by the model's own
+    /// substitution rule of the binding this account already holds, so the model refuses a poisoned
+    /// binding, a retired binding, a replacement that widens the rights held, and a replacement whose
+    /// owner generation does not succeed the held one, each with its own reason and without replacing
+    /// anything. The presented owner generation must be this account's current one, so a superseded
+    /// owner can neither bind nor replace the adapter of an operation it does not hold.
+    pub fn bind_adapter_instance(
+        &mut self,
+        presented_owner: OwnerGeneration,
+        instance: AdapterInstance,
+    ) -> Result<(), AdapterBindingRefusal> {
+        self.require_current_owner(presented_owner)
+            .map_err(AdapterBindingRefusal::StaleOwner)?;
+        match &self.adapter {
+            Some(held) => {
+                let replacement = held
+                    .substitute(
+                        instance.implementation(),
+                        instance.rights(),
+                        instance.generation(),
+                        instance.binding_sequence(),
+                    )
+                    .map_err(AdapterBindingRefusal::Substitution)?;
+                self.adapter = Some(replacement);
+            }
+            None => self.adapter = Some(instance),
+        }
+        Ok(())
+    }
+
+    /// Poisons this account's bound adapter instance through one model reason ledger.
+    fn poison_adapter_instance(
+        &mut self,
+        presented_owner: OwnerGeneration,
+        reason: PoisonReason,
+        ledger: &mut PoisonLedger,
+    ) -> Result<PoisonReason, AdapterBindingRefusal> {
+        self.require_current_owner(presented_owner)
+            .map_err(AdapterBindingRefusal::StaleOwner)?;
+        let instance = self
+            .adapter
+            .as_mut()
+            .ok_or(AdapterBindingRefusal::Unbound)?;
+        Ok(ledger.poison(instance, reason))
     }
 
     /// Advances to finishing from the only ordinary active state.
