@@ -164,8 +164,9 @@ pub enum PostFailureSettlementRefusal {
 /// obligation.
 ///
 /// A registry may declare a live-resource limit: admission is refused with
-/// [`ResourceRegistryRefusal::LiveResourceLimitReached`] once that many unsettled accounts exist,
-/// and settling an account releases its place immediately, before retention retires the record.
+/// [`ResourceRegistryRefusal::LiveResourceLimitReached`] once that many live accounts exist - a
+/// lifetime is live exactly while it is `Active` or `Finishing` - and a settlement releases the
+/// place immediately, so the later retention states never take it back.
 #[derive(Debug, Default)]
 pub struct ResourceRegistry {
     accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
@@ -184,10 +185,9 @@ impl ResourceRegistry {
 
     /// Creates an empty registry that admits at most `limit` live resources at once.
     ///
-    /// A live resource is one whose lifetime has not settled (`ResourceLifetimeState::is_settled`):
-    /// settling an account releases its place immediately, while the retained account stays
-    /// queryable until retention retires it, so quota release stays independent of physical
-    /// reclamation.
+    /// A live resource is one whose lifetime is still live - `Active` or `Finishing`: settling an
+    /// account releases its place immediately, while the retained account stays queryable through
+    /// retirement, so quota release stays independent of physical reclamation.
     #[must_use]
     pub fn with_live_limit(limit: u64) -> Self {
         Self {
@@ -202,30 +202,39 @@ impl ResourceRegistry {
         self.live_limit
     }
 
-    /// Counts the admitted resources whose lifetime has not settled.
+    /// Counts the admitted resources that still hold a live lifetime.
+    ///
+    /// A lifetime is live exactly while it is `Active` or `Finishing`, so a settlement releases the
+    /// place and the later retention states (`Retired`, `Deleted`) never take it back.
     #[must_use]
     pub fn live_resources(&self) -> u64 {
         self.accounts
             .values()
-            .filter(|account| !account.ledger().lifetime().is_settled())
+            .filter(|account| {
+                matches!(
+                    account.ledger().lifetime(),
+                    ResourceLifetimeState::Active | ResourceLifetimeState::Finishing
+                )
+            })
             .fold(0_u64, |count, _| count.saturating_add(1))
     }
 
     /// Admits one resource for one machine-issued subject.
     ///
     /// A subject that already owns an account in this registry is refused rather than replaced, so
-    /// one registry never holds two lifetimes for one subject.
+    /// one registry never holds two lifetimes for one subject. Refusals keep their own precedence:
+    /// a duplicate subject is refused as [`ResourceRegistryRefusal::SecondAdmission`], a subject
+    /// whose operation carries no authenticated live-resource kind as
+    /// [`ResourceRegistryRefusal::UnauthenticatedOperationKind`], and only then is the declared
+    /// live-resource limit consulted, so a full registry never masks a stronger refusal.
     pub fn admit(
         &mut self,
         subject: ResourceSubjectBinding,
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
-        if let Some(limit) = self.live_limit
-            && self.live_resources() >= limit
-        {
-            return Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit });
-        }
+        let live = self.live_resources();
+        let limit = self.live_limit;
         let key = (subject.operation().clone(), subject.generation().clone());
         match self.accounts.entry(key) {
             std::collections::btree_map::Entry::Occupied(_) => {
@@ -233,6 +242,11 @@ impl ResourceRegistry {
             }
             std::collections::btree_map::Entry::Vacant(slot) => {
                 let account = AdmittedResource::admit(carrier, record, subject)?;
+                if let Some(limit) = limit
+                    && live >= limit
+                {
+                    return Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit });
+                }
                 Ok(slot.insert(account))
             }
         }

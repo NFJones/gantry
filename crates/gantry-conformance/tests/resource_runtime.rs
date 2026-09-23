@@ -157,6 +157,28 @@ fn live_resource_quota_is_enforced_at_admission_and_released_by_settlement() {
         Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit: 1 }),
         "the declared live-resource limit refuses the next admission"
     );
+    assert_eq!(
+        registry.admit(
+            first.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::SecondAdmission),
+        "a full registry still refuses a duplicate subject with its own refusal"
+    );
+    let (_program, _machine, unauthenticated) =
+        machine_with_unauthenticated_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let unauthenticated = unauthenticated
+        .unwrap_or_else(|| panic!("the second fixture operation declares an action"));
+    assert_eq!(
+        registry.admit(
+            unauthenticated,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::UnauthenticatedOperationKind),
+        "a full registry still refuses an unauthenticated operation with its own refusal"
+    );
 
     let matching = failure_settlement_in(
         FIXTURE_WORKFLOW,
@@ -189,6 +211,81 @@ fn live_resource_quota_is_enforced_at_admission_and_released_by_settlement() {
             panic!("the released place admits the next live resource: {error:?}")
         });
     assert_eq!(registry.live_resources(), 1);
+}
+
+/// A settled account keeps its place released through retirement and deletion: no retention state
+/// returns it to the live count, so a record the registry already released never blocks a later
+/// admission.
+#[test]
+fn retirement_and_deletion_never_reclaim_a_released_live_place() {
+    let subject = active_subject();
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert_eq!(registry.live_resources(), 1);
+    {
+        let account = registry
+            .account_mut(&subject)
+            .unwrap_or_else(|| panic!("the registry holds the admitted account"));
+        assert!(account.ledger_mut().begin_finish().is_ok());
+    }
+    assert_eq!(
+        registry.live_resources(),
+        1,
+        "a finishing lifetime is still live"
+    );
+    {
+        let account = registry
+            .account_mut(&subject)
+            .unwrap_or_else(|| panic!("the registry holds the admitted account"));
+        assert!(account.ledger_mut().finish(20).is_ok());
+    }
+    assert_eq!(
+        registry.live_resources(),
+        0,
+        "finishing the lifetime releases the place"
+    );
+
+    let fence = RetentionFence::new(2, 10).unwrap_or_else(|_| unreachable!("bounded fence"));
+    {
+        let account = registry
+            .account_mut(&subject)
+            .unwrap_or_else(|| panic!("the registry holds the admitted account"));
+        for root in ROOTS {
+            assert!(account.ledger_mut().close_liveness_root(*root).is_ok());
+        }
+        assert!(
+            account
+                .ledger_mut()
+                .retire(fence, OwnerGeneration::new(4), OwnerGeneration::new(5), 35)
+                .is_ok()
+        );
+        assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Retired);
+    }
+    assert_eq!(
+        registry.live_resources(),
+        0,
+        "retirement never reclaims the released place"
+    );
+    {
+        let account = registry
+            .account_mut(&subject)
+            .unwrap_or_else(|| panic!("the registry holds the admitted account"));
+        assert!(account.ledger_mut().delete().is_ok());
+        assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Deleted);
+    }
+    assert_eq!(
+        registry.live_resources(),
+        0,
+        "deletion never reclaims the released place"
+    );
 }
 
 fn machine_with_declared_subject(
