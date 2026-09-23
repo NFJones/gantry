@@ -11,13 +11,19 @@
 //! and every one of them is fail-closed: a plan that declares a kind or a substitution this entry does
 //! not provide is refused before any machine is constructed, and a target that reaches a state this
 //! entry cannot drive is reported as undriveable rather than as a pass.
+//!
+//! The entry also answers which of the declared execution rules it obeys: a declared plan reports the
+//! whole closed rule set as the rules every plan obeys, and `TEST_PROVIDED_RULES` is this entry's
+//! exact answer for the rules it implements.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use gantry_core::identity::ProtocolIdentity;
-use gantry_ir::{CanonicalPath, MachineProgram, TestKind, TestRunPlan, TestSubstitution};
+use gantry_ir::{
+    CanonicalPath, MachineProgram, TestExecutionRule, TestKind, TestRunPlan, TestSubstitution,
+};
 
 use crate::machine::{
     Machine, MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,
@@ -34,6 +40,44 @@ use crate::machine::{
 /// program execution.
 pub const TEST_EXECUTED_KINDS: [TestKind; 3] =
     [TestKind::Unit, TestKind::Integration, TestKind::Example];
+
+/// The declared execution rules this entry obeys, in the declared order of [`TestExecutionRule::ALL`].
+///
+/// A declared plan reports the whole closed rule set as the rules every plan obeys
+/// (`TestRunPlan::execution_rules`), so the entry that executes the plan owes an exact answer to the
+/// question of which of those rules it actually obeys. This constant is that answer, in declared
+/// order, and its complement in [`TestExecutionRule::ALL`] is exactly the set this entry does not
+/// claim. Each provided rule is exercised by a lane row of
+/// `crates/gantry-conformance/tests/test_harness.rs`:
+///
+/// - `DeterministicDiscoveryAndOrdering`: targets are admitted and executed by canonical name, not by
+///   presentation order.
+/// - `PerTestIsolation`: every target runs in its own fresh machine with its own budget, step bound,
+///   and outcome, and no target shares state with another.
+/// - `BoundedParallelism`: [`TestHarness::parallel`] declares the greatest number of targets run at
+///   once, and the report states the width the run arranged.
+/// - `Timeout`: [`TestHarness::with_cancellation`] cancels a target that reaches the bound without a
+///   fixed outcome and reports the settlement the machine fixed.
+/// - `StructuredAssertion`: a failing target is reported as the machine's structured failure - stable
+///   code, workflow, and structural site - rather than as a bare marker.
+///
+/// The rules not named here are `Fixture`, `TemporaryCapabilityRoot`, `Shrinking`, and `Replay`. This
+/// entry provides no fixture or temporary capability root, no shrinker, and no recorded trace or
+/// stable-seed replay; it refuses the declared kinds that need them (`Property`, `Replay`) by name,
+/// and it refuses every declared substitution, rather than obeying a rule in appearance only.
+pub const TEST_PROVIDED_RULES: [TestExecutionRule; 5] = [
+    TestExecutionRule::DeterministicDiscoveryAndOrdering,
+    TestExecutionRule::PerTestIsolation,
+    TestExecutionRule::BoundedParallelism,
+    TestExecutionRule::Timeout,
+    TestExecutionRule::StructuredAssertion,
+];
+
+/// Returns whether this entry obeys one declared execution rule.
+#[must_use]
+pub fn provides_rule(rule: TestExecutionRule) -> bool {
+    TEST_PROVIDED_RULES.contains(&rule)
+}
 
 /// Why the harness refused a target admission or a declared run plan.
 #[derive(Clone, Debug, Eq, PartialEq)]

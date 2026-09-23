@@ -12,12 +12,12 @@ use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry::ir::{
     CanonicalPath, CanonicalSignature, EffectSet, ExecutableAction, ExecutableOperation,
     Instruction, InstructionKind, MachineProgram, OperationKind, StructuralPosition,
-    TypeDescriptor, declare_test_run,
+    TestExecutionRule, TypeDescriptor, declare_test_run,
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    MachineBuildError, MachineLimits, TestHarness, TestHarnessRefusal, TestHarnessStop,
-    TestTargetOutcome, Workflow,
+    MachineBuildError, MachineLimits, TEST_PROVIDED_RULES, TestHarness, TestHarnessRefusal,
+    TestHarnessStop, TestTargetOutcome, Workflow, provides_rule,
 };
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 
@@ -705,4 +705,57 @@ fn runtime_harness_applies_its_cancellation_policy_under_a_parallel_arrangement(
             "a harness that declares no reason keeps stopping at the bound"
         );
     }
+}
+
+#[test]
+fn runtime_harness_states_which_declared_execution_rules_it_obeys() {
+    let provided = TEST_PROVIDED_RULES.to_vec();
+    assert_eq!(
+        provided,
+        vec![
+            TestExecutionRule::DeterministicDiscoveryAndOrdering,
+            TestExecutionRule::PerTestIsolation,
+            TestExecutionRule::BoundedParallelism,
+            TestExecutionRule::Timeout,
+            TestExecutionRule::StructuredAssertion,
+        ],
+        "the provided set is exactly the rules this entry implements"
+    );
+    let declared_positions = provided
+        .iter()
+        .map(|rule| {
+            TestExecutionRule::ALL
+                .iter()
+                .position(|candidate| candidate == rule)
+                .unwrap_or_else(|| panic!("every provided rule is declared: {}", rule.wire_name()))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        declared_positions.windows(2).all(|pair| pair[0] < pair[1]),
+        "the provided set is stated in the canonical declaration order, without repeats"
+    );
+    assert!(
+        provided
+            .iter()
+            .all(|rule| TestExecutionRule::ALL.contains(rule)),
+        "every provided rule is a member of the closed declared set"
+    );
+    let unprovided = TestExecutionRule::ALL
+        .into_iter()
+        .filter(|rule| !provides_rule(*rule))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        unprovided,
+        vec![
+            TestExecutionRule::Fixture,
+            TestExecutionRule::TemporaryCapabilityRoot,
+            TestExecutionRule::Shrinking,
+            TestExecutionRule::Replay,
+        ],
+        "the rules this entry does not claim are exactly its unimplemented arms"
+    );
+    assert!(
+        !provides_rule(TestExecutionRule::Replay),
+        "an unprovided rule is reported as unprovided rather than assumed"
+    );
 }

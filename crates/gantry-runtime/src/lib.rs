@@ -31,8 +31,8 @@ mod task;
 mod test_harness;
 
 pub use test_harness::{
-    TEST_EXECUTED_KINDS, TestHarness, TestHarnessRefusal, TestHarnessStop, TestRunReport,
-    TestTargetOutcome, TestTargetResult,
+    TEST_EXECUTED_KINDS, TEST_PROVIDED_RULES, TestHarness, TestHarnessRefusal, TestHarnessStop,
+    TestRunReport, TestTargetOutcome, TestTargetResult, provides_rule,
 };
 
 pub use admission::{
