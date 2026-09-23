@@ -82,10 +82,49 @@ const FIXTURE_WORKFLOW: &str = "crate::main";
 const FIXTURE_DECLARATION: &str = "crate::resource_runtime_metadata";
 const FIXTURE_SITE: u64 = 45;
 
-/// Builds the fixture machine, drives it to the prepared operation, and takes the subject the
-/// machine itself issues for that operation.
+/// An operation whose Section 20 kind is not authenticated cannot be admitted as a live resource:
+/// the admission boundary reads the authenticated fact rather than defaulting one.
+#[test]
+fn an_unauthenticated_operation_kind_is_refused_at_resource_admission() {
+    let (_program, _machine, subject) =
+        machine_with_unauthenticated_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("the fixture operation declares an action"));
+    assert_eq!(
+        subject.operation_kind(),
+        None,
+        "the fixture leaves the Section 20 kind unauthenticated"
+    );
+    let mut registry = ResourceRegistry::new();
+    assert_eq!(
+        registry.admit(
+            subject,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::UnauthenticatedOperationKind),
+        "no account may stand in for an unauthenticated Section 20 operation kind"
+    );
+}
+
 fn machine_with_declared_subject(
     action_path: Option<&str>,
+) -> (Arc<MachineProgram>, Machine, Option<ResourceSubjectBinding>) {
+    machine_with_subject(action_path, Some(OperationKind::LiveResource))
+}
+
+/// Builds the same fixture with the operation's Section 20 kind left unauthenticated, so its
+/// subject is one no resource account may be admitted for.
+fn machine_with_unauthenticated_subject(
+    action_path: Option<&str>,
+) -> (Arc<MachineProgram>, Machine, Option<ResourceSubjectBinding>) {
+    machine_with_subject(action_path, None)
+}
+
+/// Builds the fixture machine, drives it to the prepared operation, and takes the subject the
+/// machine itself issues for that operation.
+fn machine_with_subject(
+    action_path: Option<&str>,
+    section20_kind: Option<OperationKind>,
 ) -> (Arc<MachineProgram>, Machine, Option<ResourceSubjectBinding>) {
     let workflow = CanonicalPath::new(FIXTURE_WORKFLOW)
         .unwrap_or_else(|_| unreachable!("fixture workflow is canonical"));
@@ -101,7 +140,7 @@ fn machine_with_declared_subject(
                 site,
                 ty: TypeDescriptor::UNIT,
                 kind: InstructionKind::OperationCall {
-                    operation: operation_metadata(action_path),
+                    operation: operation_metadata(action_path, section20_kind),
                     operands: 0,
                 },
             },
@@ -177,8 +216,11 @@ fn admitted_active() -> AdmittedResource {
     .unwrap_or_else(|error| panic!("the declared reconstruction record is admitted: {error:?}"))
 }
 
-/// Builds one decoded operation metadata value with an optional declared action.
-fn operation_metadata(action_path: Option<&str>) -> ExecutableOperation {
+/// Builds one decoded operation metadata value with an optional declared action and Section 20 kind.
+fn operation_metadata(
+    action_path: Option<&str>,
+    section20_kind: Option<OperationKind>,
+) -> ExecutableOperation {
     let action = action_path.map(|declaration| {
         let path = CanonicalPath::new(declaration)
             .unwrap_or_else(|_| unreachable!("fixture action path is canonical"));
@@ -196,7 +238,7 @@ fn operation_metadata(action_path: Option<&str>) -> ExecutableOperation {
     });
     ExecutableOperation {
         kind: OperationSiteKind::Action,
-        section20_kind: None,
+        section20_kind,
         result_type: TypeDescriptor::UNIT,
         action,
         template_segments: Vec::new(),
@@ -211,7 +253,7 @@ fn operation_metadata(action_path: Option<&str>) -> ExecutableOperation {
 
 #[test]
 fn an_operation_without_an_authenticated_section20_kind_is_explicit() {
-    let metadata = operation_metadata(None);
+    let metadata = operation_metadata(None, None);
     assert_eq!(metadata.kind, OperationSiteKind::Action);
     assert_eq!(
         metadata.section20_kind, None,

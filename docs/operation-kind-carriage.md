@@ -56,7 +56,10 @@ beside an unauthenticated non-live result, and by
 which encodes that analyzer-produced program with the published
 `gantry::runtime::{encode_machine_program, decode_machine_program}` pair, observes the `GNTPRG05`
 form, and decodes it back with the kind intact and a byte-identical re-encode. No runtime decision
-reads the field yet: that consumer stays with `b87d011f` `GNT-GP-RESOURCE-RUNTIME-001`.
+reads the field everywhere yet: the runtime resource-admission boundary does read it, so a subject
+whose operation carries no authenticated live-resource kind is refused with
+`ResourceRegistryRefusal::UnauthenticatedOperationKind` rather than admitted, and the wider
+integration arms stay with `b87d011f` `GNT-GP-RESOURCE-RUNTIME-001`.
 
 ## Handoff
 

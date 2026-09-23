@@ -26,21 +26,23 @@
 //! no durable or host I/O, decodes no record bytes, and publishes no journal, checkpoint,
 //! evaluator, or host behavior; those remain with the durable, recovery, and machine modules.
 //!
-//! Live-resource admission at an operation boundary is deliberately not published here.
-//! `ExecutableOperation` now carries an optional Section 20 operation kind and the retained-program
-//! `GNTPRG05` wire round-trips it (see `docs/operation-kind-carriage.md`), but no admitted account
-//! reads that field yet: analysis publishes no live-resource kind because no declared type carries
-//! the live-resource resource class, and this module takes no admission decision from the carrier.
-//! Binding admission to an authenticated kind therefore remains the next increment's obligation,
-//! and no caller-presented declaration may stand in for it.
+//! Live-resource admission at an operation boundary reads the authenticated Section 20 kind.
+//! `ExecutableOperation` carries an optional kind and the retained-program `GNTPRG05` wire
+//! round-trips it (see `docs/operation-kind-carriage.md`); the machine derives the subject from the
+//! decoded metadata, so the subject carries the kind the program authenticated, and
+//! [`ResourceRegistry::admit`] refuses a subject whose operation carries no live-resource kind with
+//! [`ResourceRegistryRefusal::UnauthenticatedOperationKind`] before any account exists. The kind is
+//! authenticated by analysis - `GNT-6.2j` declares the `live_resource` struct modifier - and is
+//! never inferred from a caller-presented declaration, an effect row, or the hook-site kind.
 
 use std::collections::BTreeMap;
 
 use gantry_ir::{
     CanonicalPath, DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness,
-    ExecutableOperation, LogicalOperationId, PoisonWitness, PostFailureSettlement, Quota,
-    QuotaFamily, QuotaOwner, ResourceCarrier, ResourceError, ResourceGenerationId, ResourceLedger,
-    ResourceLifetimeState, StaticSiteId, StructuralPosition, admit_resource_carrier,
+    ExecutableOperation, LogicalOperationId, OperationKind, PoisonWitness, PostFailureSettlement,
+    Quota, QuotaFamily, QuotaOwner, ResourceCarrier, ResourceError, ResourceGenerationId,
+    ResourceLedger, ResourceLifetimeState, StaticSiteId, StructuralPosition,
+    admit_resource_carrier,
 };
 
 /// One runtime-owned binding of an admitted account to its Section 20 subject.
@@ -63,6 +65,7 @@ pub struct ResourceSubjectBinding {
     site: StaticSiteId,
     operation: LogicalOperationId,
     generation: ResourceGenerationId,
+    kind: Option<OperationKind>,
 }
 
 impl ResourceSubjectBinding {
@@ -73,6 +76,7 @@ impl ResourceSubjectBinding {
         workflow: CanonicalPath,
         position: StructuralPosition,
         generation: u64,
+        kind: Option<OperationKind>,
     ) -> Self {
         let site = StaticSiteId::new(workflow, position);
         let operation = LogicalOperationId::derive(declaration, &site);
@@ -81,7 +85,17 @@ impl ResourceSubjectBinding {
             site,
             operation,
             generation,
+            kind,
         }
+    }
+
+    /// Returns the Section 20 operation kind the decoded metadata authenticated, when any.
+    ///
+    /// A subject whose operation carries no authenticated live-resource kind is never admissible:
+    /// [`ResourceRegistry::admit`] refuses it rather than defaulting a kind.
+    #[must_use]
+    pub const fn operation_kind(&self) -> Option<OperationKind> {
+        self.kind
     }
 
     /// Derives the binding one decoded operation metadata declares at one site.
@@ -102,6 +116,7 @@ impl ResourceSubjectBinding {
             workflow.clone(),
             position.clone(),
             generation,
+            metadata.section20_kind,
         ))
     }
 
@@ -170,6 +185,9 @@ impl ResourceRegistry {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
+        if subject.operation_kind() != Some(OperationKind::LiveResource) {
+            return Err(ResourceRegistryRefusal::UnauthenticatedOperationKind);
+        }
         let key = (subject.operation().clone(), subject.generation().clone());
         match self.accounts.entry(key) {
             std::collections::btree_map::Entry::Occupied(_) => {
@@ -228,6 +246,8 @@ impl ResourceRegistry {
 pub enum ResourceRegistryRefusal {
     /// The subject already owns an admitted account.
     SecondAdmission,
+    /// The subject's operation carries no authenticated live-resource Section 20 kind.
+    UnauthenticatedOperationKind,
     /// The registry holds no account for the settlement's own operation and generation.
     UnknownSubject,
     /// The model refused the carrier or the reconstruction record at admission.
