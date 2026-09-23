@@ -162,9 +162,14 @@ pub enum PostFailureSettlementRefusal {
 /// Uniqueness here is per registry: this type publishes no global uniqueness claim, and making one
 /// execution-layer registry the runtime's sole live-resource owner remains the next increment's
 /// obligation.
+///
+/// A registry may declare a live-resource limit: admission is refused with
+/// [`ResourceRegistryRefusal::LiveResourceLimitReached`] once that many unsettled accounts exist,
+/// and settling an account releases its place immediately, before retention retires the record.
 #[derive(Debug, Default)]
 pub struct ResourceRegistry {
     accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
+    live_limit: Option<u64>,
 }
 
 impl ResourceRegistry {
@@ -173,7 +178,37 @@ impl ResourceRegistry {
     pub fn new() -> Self {
         Self {
             accounts: BTreeMap::new(),
+            live_limit: None,
         }
+    }
+
+    /// Creates an empty registry that admits at most `limit` live resources at once.
+    ///
+    /// A live resource is one whose lifetime has not settled (`ResourceLifetimeState::is_settled`):
+    /// settling an account releases its place immediately, while the retained account stays
+    /// queryable until retention retires it, so quota release stays independent of physical
+    /// reclamation.
+    #[must_use]
+    pub fn with_live_limit(limit: u64) -> Self {
+        Self {
+            accounts: BTreeMap::new(),
+            live_limit: Some(limit),
+        }
+    }
+
+    /// Returns the declared live-resource admission limit, when any.
+    #[must_use]
+    pub const fn live_limit(&self) -> Option<u64> {
+        self.live_limit
+    }
+
+    /// Counts the admitted resources whose lifetime has not settled.
+    #[must_use]
+    pub fn live_resources(&self) -> u64 {
+        self.accounts
+            .values()
+            .filter(|account| !account.ledger().lifetime().is_settled())
+            .fold(0_u64, |count, _| count.saturating_add(1))
     }
 
     /// Admits one resource for one machine-issued subject.
@@ -186,6 +221,11 @@ impl ResourceRegistry {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
+        if let Some(limit) = self.live_limit
+            && self.live_resources() >= limit
+        {
+            return Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit });
+        }
         let key = (subject.operation().clone(), subject.generation().clone());
         match self.accounts.entry(key) {
             std::collections::btree_map::Entry::Occupied(_) => {
@@ -245,6 +285,11 @@ pub enum ResourceRegistryRefusal {
     SecondAdmission,
     /// The subject's operation carries no authenticated live-resource Section 20 kind.
     UnauthenticatedOperationKind,
+    /// The registry's declared live-resource limit is already reached.
+    LiveResourceLimitReached {
+        /// The declared limit.
+        limit: u64,
+    },
     /// The registry holds no account for the settlement's own operation and generation.
     UnknownSubject,
     /// The model refused the carrier or the reconstruction record at admission.

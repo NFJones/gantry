@@ -80,6 +80,7 @@ fn admitted(
 
 const FIXTURE_WORKFLOW: &str = "crate::main";
 const FIXTURE_DECLARATION: &str = "crate::resource_runtime_metadata";
+const SECOND_FIXTURE_DECLARATION: &str = "crate::resource_runtime_second_metadata";
 const FIXTURE_SITE: u64 = 45;
 
 /// An operation whose Section 20 kind is not authenticated cannot be admitted as a live resource:
@@ -118,6 +119,76 @@ fn an_unauthenticated_operation_kind_is_refused_at_resource_admission() {
         registry.account(&subject).is_none(),
         "a refused admission creates no account"
     );
+}
+
+/// A declared live-resource limit is enforced at admission and released semantically: settling an
+/// account frees its place while the retained account stays queryable, so no retirement, deletion,
+/// or physical reclamation is needed to reuse the quota.
+#[test]
+fn live_resource_quota_is_enforced_at_admission_and_released_by_settlement() {
+    let (_program, _machine, first) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let first = first.unwrap_or_else(|| panic!("the fixture operation declares an action"));
+    let (_program, _machine, second) =
+        machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let second =
+        second.unwrap_or_else(|| panic!("the second fixture operation declares an action"));
+    assert_ne!(
+        first.operation(),
+        second.operation(),
+        "the two fixtures declare distinct operations"
+    );
+
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    assert_eq!(registry.live_limit(), Some(1));
+    registry
+        .admit(
+            first.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the first live resource is admitted: {error:?}"));
+    assert_eq!(registry.live_resources(), 1);
+    assert_eq!(
+        registry.admit(
+            second.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit: 1 }),
+        "the declared live-resource limit refuses the next admission"
+    );
+
+    let matching = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        registry.settle_from_post_failure(&matching, 21),
+        Ok(ResourceLifetimeState::Poisoned),
+        "the account settles into a terminal lifetime"
+    );
+    assert_eq!(
+        registry.live_resources(),
+        0,
+        "settlement releases the live place before any retirement"
+    );
+    assert!(
+        registry.account(&first).is_some(),
+        "the retained account stays queryable after settlement"
+    );
+    registry
+        .admit(
+            second,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the released place admits the next live resource: {error:?}")
+        });
+    assert_eq!(registry.live_resources(), 1);
 }
 
 fn machine_with_declared_subject(
