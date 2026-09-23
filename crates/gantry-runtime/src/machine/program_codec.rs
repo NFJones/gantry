@@ -1048,15 +1048,98 @@ mod tests {
 
     use gantry_core::numeric::GantryInt;
     use gantry_core::value::LogicalValue;
+    use gantry_ir::generated::OperationSiteKind;
     use gantry_ir::{
-        CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody,
-        ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
-        InstructionKind, MachineProgram, OwnershipClass, Parameter, ReceiverMode, ReceiverSource,
-        StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow,
+        CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableOperation,
+        ExecutableTaskBody, ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle,
+        Instruction, InstructionKind, MachineProgram, OperationKind, OwnershipClass, Parameter,
+        ReceiverMode, ReceiverSource, StructuralPosition, TaskBodyIdentity, TypeDescriptor,
+        Workflow,
     };
 
     use super::{decode_machine_program, encode_machine_program};
     use crate::MachineRecoveryError;
+
+    /// Builds one program whose single operation carries `section20_kind`.
+    fn operation_program(section20_kind: Option<OperationKind>) -> MachineProgram {
+        let operation = ExecutableOperation {
+            kind: OperationSiteKind::Action,
+            section20_kind,
+            result_type: TypeDescriptor::BOOL,
+            action: None,
+            template_segments: Vec::new(),
+            interpolation_types: Vec::new(),
+            named_input_names: Vec::new(),
+            named_input_types: Vec::new(),
+            retry_limit: None,
+            session_mode: None,
+            attempted: false,
+        };
+        MachineProgram::new(vec![Workflow {
+            path: CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("path failed: {error}")),
+            parameters: Vec::new(),
+            result: TypeDescriptor::BOOL,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site failed: {error}")),
+                    ty: TypeDescriptor::BOOL,
+                    kind: InstructionKind::OperationCall {
+                        operation,
+                        operands: 0,
+                    },
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site failed: {error}")),
+                    ty: TypeDescriptor::BOOL,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program failed: {error:?}"))
+    }
+
+    #[test]
+    fn v5_carries_the_authenticated_section20_kind_and_predecessors_do_not() {
+        let authenticated = operation_program(Some(OperationKind::LiveResource));
+        let encoded = encode_machine_program(&authenticated);
+        assert_eq!(
+            &encoded[..8],
+            b"GNTPRG05",
+            "an authenticated Section 20 kind selects the V5 wire"
+        );
+        let decoded = decode_machine_program(&encoded)
+            .unwrap_or_else(|error| panic!("V5 decode failed: {error:?}"));
+        assert_eq!(decoded, authenticated);
+
+        let unauthenticated = operation_program(None);
+        let predecessor = encode_machine_program(&unauthenticated);
+        assert_ne!(
+            &predecessor[..8],
+            b"GNTPRG05",
+            "an all-unauthenticated program keeps a predecessor wire"
+        );
+        let decoded = decode_machine_program(&predecessor)
+            .unwrap_or_else(|error| panic!("predecessor decode failed: {error:?}"));
+        assert_eq!(decoded, unauthenticated);
+
+        let mut unknown =
+            encode_machine_program(&operation_program(Some(OperationKind::LiveResource)));
+        let spelling = b"live-resource";
+        let start = unknown
+            .windows(spelling.len())
+            .position(|window| window == spelling)
+            .unwrap_or_else(|| panic!("the kind spelling must appear on the V5 wire"));
+        unknown[start..start + spelling.len()].copy_from_slice(b"xxxx-resource");
+        assert_eq!(
+            decode_machine_program(&unknown),
+            Err(MachineRecoveryError::InvalidEncoding),
+            "an unknown kind spelling is refused rather than ignored"
+        );
+    }
 
     #[test]
     fn executable_program_codec_round_trips_canonically_and_rejects_corruption() {
