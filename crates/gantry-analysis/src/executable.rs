@@ -24,7 +24,10 @@ use crate::bodies::{
     BodyAnalysis, BoolFact, EffectNode, SpawnCaptureMetadata, annotation_is_contextual_self,
     bool_fact,
 };
-use crate::generics::{GenericDeclarationShape, prove_ownership_class, prove_resource_class};
+use crate::generics::{
+    GenericDeclarationShape, prove_ownership_class, prove_resource_class,
+    prove_source_protection_class,
+};
 use crate::{AnalysisError, TypeFact};
 use gantry_ir::ReceiverSource;
 
@@ -3264,17 +3267,20 @@ impl Compiler<'_> {
             .transpose()?;
         let metadata = ExecutableOperation {
             kind: site.kind,
-            // Only the live-resource arm is authenticated from the analyzed result type's resource
-            // class; a non-live result is either a value action or a protected operation and no
-            // analyzed fact separates those two, so it stays explicitly unauthenticated rather than
-            // assumed. The class comes from the same stored-member fold the public type-property
-            // surface publishes, so a declared or generic result type authenticates exactly as its
-            // analyzed properties report; a fold that refuses the descriptor leaves the kind
-            // unauthenticated rather than guessed. The V5 retained-program wire carries whatever is
-            // authenticated here, and predecessor wires decode it as unauthenticated.
+            // Authenticate the live-resource arm first, then the protected arm, from the analyzed
+            // result type only. An unsealed non-live result remains ambiguous and unauthenticated;
+            // sealed types merely mentioned elsewhere in the operation do not participate. Both
+            // classifications use the public stored-member property fold, and a refused fold is
+            // never guessed. The V5 retained-program wire carries the authenticated kind; older
+            // wires decode it as unauthenticated.
             section20_kind: prove_resource_class(&result_type, self.capability_declarations)
                 .ok()
-                .and_then(gantry_ir::OperationKind::for_value_resource_class),
+                .and_then(gantry_ir::OperationKind::for_value_resource_class)
+                .or_else(|| {
+                    prove_source_protection_class(&result_type, self.capability_declarations)
+                        .ok()
+                        .and_then(gantry_ir::OperationKind::for_source_protection_class)
+                }),
             result_type,
             action,
             template_segments: operation_template_segments(self.tree, &actual_node),

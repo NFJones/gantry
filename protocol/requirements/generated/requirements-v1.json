@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "ee9282d1a6a80cbf73d1e7f398fff210a61fba61884348dd62a788b1c7e8f745",
-  "byte_length": 1285478,
-  "line_count": 16775,
+  "specification_sha256": "2a88f33a6cb7b853ad904761acc8fc6553805d0c7b684fe4fe82aa28dbae67fe",
+  "byte_length": 1288055,
+  "line_count": 16809,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9529,
-      "end_line": 16775,
-      "sha256": "9572a8aa96871890906c3b3a05abad55415354e21e5363577c92231b8b4df884",
+      "end_line": 16809,
+      "sha256": "4711fcd7879dd4983f761316bea2d717c7f6c27e085e836be2a051a064694a71",
       "rationale": null
     }
   ],
@@ -32846,11 +32846,11 @@
       "id": "GNT-20.1-operation-kinds",
       "span_start_line": 12123,
       "span_end_line": 12136,
-      "span_sha256": "9904fcdf851ccd3691e995378cc04f38790524b694ed638acc8f83788b03fcc7",
+      "span_sha256": "d9460e6adbcf2a51829573de3887a96d5749ef810542b675f7f3e44562025121",
       "anchor_line": 12124,
       "body_start_line": 12125,
       "body_end_line": 12136,
-      "body_sha256": "b3b567a465e70b095ad36398c77a8c5fac17976d71522c265a3f8f5fae59f789",
+      "body_sha256": "d901c33b7bb0bc6bc3191bb1a530aac8b850899feee8e68ba762fabd3c9a9b54",
       "profiles": [
         "analyzer"
       ],
@@ -32876,7 +32876,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/operation_abi.rs#a_live_resource_operation_is_never_a_durable_value_and_carries_the_only_live_handle",
-                "crates/gantry-conformance/tests/operation_abi.rs#every_closed_vocabulary_round_trips_its_exact_wire_name"
+                "crates/gantry-conformance/tests/operation_abi.rs#every_closed_vocabulary_round_trips_its_exact_wire_name",
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#analyzed_operation_result_authenticates_live_and_protected_kinds_only",
+                "crates/gantry-conformance/tests/executable_bridge.rs#analyzer_authenticated_operation_kinds_survive_the_retained_program_wire"
               ],
               "rationale": null
             }
@@ -45415,12 +45417,12 @@
     {
       "id": "GNT-47.14-filesystem-durable-carriers",
       "span_start_line": 16744,
-      "span_end_line": 16775,
-      "span_sha256": "3e229200799dfef49c2ca168a4fdd29f6a612f718baf8797daa6fce82cd4a8fb",
+      "span_end_line": 16776,
+      "span_sha256": "c194f6766db9cc562a401a2e40e8cc4397846c623faff43a2b85141449bb8aeb",
       "anchor_line": 16745,
       "body_start_line": 16746,
-      "body_end_line": 16775,
-      "body_sha256": "a21c1b8993ad1f9ec569b7e918197f4da61a19a982c0e88dc14469f75b15aa1a",
+      "body_end_line": 16776,
+      "body_sha256": "b9e8f0e3efe9156cd2e6efbf63fb7aeeb6d1c82fa77d4e0b0f3e04faf0e22ddc",
       "profiles": [
         "analyzer"
       ],
@@ -45432,7 +45434,7 @@
         {
           "key": "clause-001",
           "start_line": 16746,
-          "end_line": 16775,
+          "end_line": 16776,
           "profiles": [
             "analyzer"
           ],
@@ -45446,6 +45448,91 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/fs_foundation.rs#fs_durable_carrier_is_the_reconstruction_record_only"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.0-observe-foundation-scope",
+      "span_start_line": 16777,
+      "span_end_line": 16790,
+      "span_sha256": "fb2bc9d0b86e9b3871ff91befd4d8a528d215a9dccdc4752b5f25e685c63fea7",
+      "anchor_line": 16777,
+      "body_start_line": 16778,
+      "body_end_line": 16790,
+      "body_sha256": "a6d069fef780cf7f241282dc102c1b88a58b4925a7dc7f21afae0ce54285a535",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16778,
+          "end_line": 16790,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_scope_is_declared_without_runtime_or_release_claims"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.1-observe-modules-and-item-rows",
+      "span_start_line": 16791,
+      "span_end_line": 16809,
+      "span_sha256": "669ad27c02ce798a0ae6b3f464d279d281d9c284d90bfc963823c53be6555455",
+      "anchor_line": 16791,
+      "body_start_line": 16792,
+      "body_end_line": 16809,
+      "body_sha256": "1d45d5de92cec4dcbd662e4025105f06b9516f1dd9550f317b3d294e045a707f",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16792,
+          "end_line": 16809,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_module_rows_are_closed_and_canonical",
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_surface_declaration_requires_package_and_is_atomic",
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_surface_refuses_missing_and_partial_rows_without_mutating_the_graph",
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_surface_refuses_rows_with_wrong_class_tier_or_applicability_atomically"
               ],
               "rationale": null
             }

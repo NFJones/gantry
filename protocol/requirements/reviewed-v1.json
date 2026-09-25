@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "ee9282d1a6a80cbf73d1e7f398fff210a61fba61884348dd62a788b1c7e8f745",
+  "specification_sha256": "2a88f33a6cb7b853ad904761acc8fc6553805d0c7b684fe4fe82aa28dbae67fe",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9529,
-      "end_line": 16775,
+      "end_line": 16809,
       "rationale": null
     }
   ],
@@ -32223,7 +32223,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/operation_abi.rs#a_live_resource_operation_is_never_a_durable_value_and_carries_the_only_live_handle",
-                "crates/gantry-conformance/tests/operation_abi.rs#every_closed_vocabulary_round_trips_its_exact_wire_name"
+                "crates/gantry-conformance/tests/operation_abi.rs#every_closed_vocabulary_round_trips_its_exact_wire_name",
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#analyzed_operation_result_authenticates_live_and_protected_kinds_only",
+                "crates/gantry-conformance/tests/executable_bridge.rs#analyzer_authenticated_operation_kinds_survive_the_retained_program_wire"
               ],
               "rationale": null
             }
@@ -44158,15 +44160,15 @@
     {
       "id": "GNT-47.14-filesystem-durable-carriers",
       "span_start_line": 16744,
-      "span_end_line": 16775,
+      "span_end_line": 16776,
       "anchor_line": 16745,
       "body_start_line": 16746,
-      "body_end_line": 16775,
+      "body_end_line": 16776,
       "clauses": [
         {
           "key": "clause-001",
           "start_line": 16746,
-          "end_line": 16775,
+          "end_line": 16776,
           "profiles": [
             "analyzer"
           ],
@@ -44192,6 +44194,87 @@
       "roles": [
         "harness",
         "implementation"
+      ]
+    },
+    {
+      "id": "GNT-48.0-observe-foundation-scope",
+      "span_start_line": 16777,
+      "span_end_line": 16790,
+      "anchor_line": 16777,
+      "body_start_line": 16778,
+      "body_end_line": 16790,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16778,
+          "end_line": 16790,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_scope_is_declared_without_runtime_or_release_claims"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.1-observe-modules-and-item-rows",
+      "span_start_line": 16791,
+      "span_end_line": 16809,
+      "anchor_line": 16791,
+      "body_start_line": 16792,
+      "body_end_line": 16809,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 16792,
+          "end_line": 16809,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "rationale": null,
+              "evidence": [
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_module_rows_are_closed_and_canonical",
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_surface_declaration_requires_package_and_is_atomic",
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_surface_refuses_missing_and_partial_rows_without_mutating_the_graph",
+                "crates/gantry-conformance/tests/observe_foundation.rs#observe_surface_refuses_rows_with_wrong_class_tier_or_applicability_atomically"
+              ]
+            }
+          ]
+        }
       ]
     }
   ]

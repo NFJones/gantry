@@ -387,16 +387,15 @@ fn artifacts(source: &str) -> (Vec<u8>, Vec<u8>) {
     )
 }
 
-/// A source operation whose analyzed result type carries the live-resource class authenticates
-/// that arm of the Section 20 kind, while an operation whose result carries no such class stays
-/// explicitly unauthenticated (`GNT-20.1`, `GNT-6.2j`).
+/// Section 20 operation kinds are authenticated from analyzed result properties only: live
+/// resources and sealed results select their distinct arms, while unsealed values stay ambiguous.
 #[test]
-fn live_resource_result_authenticates_the_section20_kind_and_non_live_stays_unauthenticated() {
+fn analyzed_operation_result_authenticates_live_and_protected_kinds_only() {
     use gantry::ir::{InstructionKind, OperationKind};
 
     let package = analyze(
         "live_resource struct Handle { token: Int }\n\
-         fn main() { discard prompt \"x\" -> Handle; discard prompt \"y\" -> String; }",
+         fn main() { discard prompt \"x\" -> Handle; let judgment: Decision = decide \"y\"; discard prompt \"z\" using { judgment } -> String; }",
     );
     assert_eq!(
         package.status(),
@@ -418,8 +417,12 @@ fn live_resource_result_authenticates_the_section20_kind_and_non_live_stays_unau
     }
     assert_eq!(
         kinds,
-        [Some(OperationKind::LiveResource), None],
-        "the live-resource result authenticates its arm and every other result stays unauthenticated"
+        [
+            Some(OperationKind::LiveResource),
+            Some(OperationKind::ProtectedOperation),
+            None,
+        ],
+        "live-resource and sealed results authenticate their exact kind; unsealed results remain ambiguous"
     );
 }
 

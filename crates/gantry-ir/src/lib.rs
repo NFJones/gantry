@@ -42,6 +42,7 @@ mod locale;
 mod manifest;
 mod metadata;
 mod numeric;
+mod observe;
 mod operation;
 mod package;
 mod path;
@@ -225,6 +226,12 @@ pub use fs::{
     FsItemRow, FsPath, FsRefusalCondition, FsReplacementOutcome, FsResourceOperation,
     FsTargetState, admit_fs_surface, declare_fs_surface, fs_durable_carrier_is_admissible,
     fs_traversal_order,
+};
+// Section 48 publishes the declared `std.observe` module surface. It adds no sink or runtime
+// telemetry behavior.
+pub use observe::{
+    OBSERVE_CLAUSES, OBSERVE_ITEMS, OBSERVE_SURFACE_MODES, OBSERVE_SURFACE_TARGETS, ObserveItemRow,
+    admit_observe_surface, declare_observe_surface,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and

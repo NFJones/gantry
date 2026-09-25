@@ -218,6 +218,14 @@ fn refusal_error<T>(result: Result<T, OperationAbiError>) -> OperationAbiError {
 fn every_closed_vocabulary_round_trips_its_exact_wire_name() {
     // Each vocabulary is closed and exhaustive, so every member decodes back from the
     // exact spelling it publishes and an unknown spelling has no member.
+    assert_eq!(
+        OperationKind::for_source_protection_class(gantry::ir::SourceProtectionClass::Sealed),
+        Some(OperationKind::ProtectedOperation)
+    );
+    assert_eq!(
+        OperationKind::for_source_protection_class(gantry::ir::SourceProtectionClass::Unsealed),
+        None
+    );
     for kind in OperationKind::ALL {
         assert_eq!(OperationKind::from_wire_name(kind.wire_name()), Some(kind));
         assert_eq!(kind.as_str(), kind.wire_name());

@@ -5460,19 +5460,19 @@ fn monomorphic_receiver_call_operands_still_execute() {
     }
 }
 
-/// The Section 20 kind an analysis authenticated survives the retained-program wire: the encoded
-/// program decodes with the live-resource arm intact and the non-live arm unauthenticated, and the
-/// authenticated arm selects the newest retained form.
+/// Section 20 kinds authenticated from analyzed result properties survive the retained-program
+/// wire: live-resource and protected arms remain distinct, while an unsealed result stays
+/// unauthenticated, and either authenticated arm selects the newest retained form.
 /// The conformance crate always links the durable runtime surface, so this lane needs no gate.
 #[test]
-fn analyzer_authenticated_live_resource_kind_survives_the_retained_program_wire() {
+fn analyzer_authenticated_operation_kinds_survive_the_retained_program_wire() {
     use gantry::ir::{InstructionKind, OperationKind};
     use gantry::runtime::{decode_machine_program, encode_machine_program};
 
     let root = TempDirectory::new(
         r#"
 live_resource struct Handle { token: Int }
-fn main() { discard prompt "x" -> Handle; discard prompt "y" -> String; }
+fn main() { discard prompt "x" -> Handle; discard decide "y"; discard prompt "z" -> String; }
 "#,
     );
     let package = analyze(&root);
@@ -5484,7 +5484,7 @@ fn main() { discard prompt "x" -> Handle; discard prompt "y" -> String; }
     assert_eq!(
         encoded.get(..8),
         Some(&b"GNTPRG05"[..]),
-        "an authenticated live-resource kind selects the newest retained-program form"
+        "an authenticated operation kind selects the newest retained-program form"
     );
     let decoded = decode_machine_program(&encoded)
         .unwrap_or_else(|error| panic!("the retained program did not decode: {error:?}"));
@@ -5498,8 +5498,12 @@ fn main() { discard prompt "x" -> Handle; discard prompt "y" -> String; }
     }
     assert_eq!(
         kinds,
-        [Some(OperationKind::LiveResource), None],
-        "the analyzer-produced kind survives the wire and the non-live arm stays unauthenticated"
+        [
+            Some(OperationKind::LiveResource),
+            Some(OperationKind::ProtectedOperation),
+            None,
+        ],
+        "both authenticated kinds survive the wire and an unsealed result remains unauthenticated"
     );
     assert_eq!(
         encode_machine_program(&decoded),

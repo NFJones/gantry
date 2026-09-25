@@ -19,9 +19,9 @@ use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
 use gantry_ir::{
     CallableKind, EFFECT_ORDER, EffectSet, ImplementationHead, IndependentTypeProperties,
-    OwnershipClass, Predicate, PrimitiveTypeProperties, ReceiverMode, TraitContract,
-    TraitMethodContract, TraitReference, TransferEligibility, TypeDescriptor, TypeExpression,
-    ValueResourceClass,
+    OwnershipClass, Predicate, PrimitiveTypeProperties, ReceiverMode, SourceProtectionClass,
+    TraitContract, TraitMethodContract, TraitReference, TransferEligibility, TypeDescriptor,
+    TypeExpression, ValueResourceClass,
 };
 
 use crate::types::{
@@ -2294,6 +2294,16 @@ pub(crate) fn prove_resource_class(
     let mut memo = BTreeMap::new();
     prove_independent_type_properties(root, declarations, &mut None, &mut memo)
         .map(IndependentTypeProperties::resource_class)
+}
+
+/// Proves source-language protection for one retained closed type with an uncounted fold.
+pub(crate) fn prove_source_protection_class(
+    root: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+) -> Result<SourceProtectionClass, AnalysisError> {
+    let mut memo = BTreeMap::new();
+    prove_independent_type_properties(root, declarations, &mut None, &mut memo)
+        .map(IndependentTypeProperties::source_protection_class)
 }
 
 /// Proves source-task transfer eligibility for one retained closed type with an uncounted fold.

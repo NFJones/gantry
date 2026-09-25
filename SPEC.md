@@ -12123,17 +12123,17 @@ outcome.
 
 <a id="GNT-20.1-operation-kinds"></a>
 
-**[GNT-20.1-operation-kinds] Operation kinds.** The closed vocabulary of operation
-kinds is exactly three members: a value action, a protected operation, and a
-live-resource operation. The three are distinct and exhaustive, and membership of a
-kind is decided once, at declaration. A value action and a protected operation
-produce a durable value and carry no live handle; a live-resource operation carries
-a live handle and MUST NOT be reported as a durable value. A live handle MUST be
-obtainable only from a live-resource operation, so an implementation MUST refuse to
-report a value action or a protected operation as a live resource, and MUST refuse
-to report a live-resource operation as a durable value. No operation changes kind
-after declaration, and no kind may be read as, reported as, or substituted for
-another.
+**[GNT-20.1-operation-kinds] Operation kinds.** Exactly three distinct, exhaustive kinds: value
+action, protected operation, and live-resource operation. Kind is fixed at declaration. For
+analyzer-authenticated executable metadata, a sealed analyzed result type identifies a protected
+operation; only that result type counts, not a sealed type mentioned by an operand, input, or
+effect. An unsealed non-live result cannot distinguish a value action from a protected
+operation.
+Both non-live kinds produce durable values with no live handles; a live-resource operation carries
+a live handle and MUST NOT be reported as a durable value. A live handle MUST come only from a
+live-resource operation. Implementations MUST refuse to report other kinds as live resources or a
+live-resource operation as a durable value. No operation changes kind after declaration or may be
+read as, reported as, or substituted for another.
 
 <a id="GNT-20.2-logical-operation-and-resource-generation-identity"></a>
 
@@ -16773,3 +16773,37 @@ boundary encoding, schema, journal, recovery procedure, or compaction rule, no q
 retention fence, no work limit or cancellation safe point, no change to any other clause of this
 section or of Sections 20 or 28, and it claims no performance, storage layout, or physical
 representation.
+
+<a id="GNT-48.0-observe-foundation-scope"></a>
+
+**[GNT-48.0-observe-foundation-scope] Observability foundation scope.** This section publishes the
+declaration surface of the capability-backed `std.observe` family of
+`GNT-34.1-canonical-hierarchy-and-package-names`, for source-emitted logs, metrics, and traces.
+Source telemetry is an explicit external effect and is distinct from the protected runtime events
+of Section 12 and the protected-data release contract of Section 15. This section declares only
+the family identity, its closed module rows, and their applicability; it does not implement
+telemetry emission, sink delivery, protected-data release, or runtime availability. No event of
+Section 12 is a source-emitted telemetry record, and no telemetry record is semantic evidence that
+a business operation occurred. The section creates no sink, adapter, host trait, capability grant,
+queue, or delivery policy, and no clause of this section may be read as publishing a facility it
+does not declare.
+
+<a id="GNT-48.1-observe-modules-and-item-rows"></a>
+
+**[GNT-48.1-observe-modules-and-item-rows] Observability modules and item rows.** This clause
+declares exactly three public modules of `std.observe` — `std.observe::log`, `std.observe::metric`,
+and `std.observe::trace` — in canonical name order, which is the order the model's
+`ObserveItemRow` and `OBSERVE_ITEMS` publish. Each row is classified as a module at the stable tier
+of `GNT-34.2-name-classification` and `GNT-34.6-stability-tiers`, and each row has exactly the
+application semantic mode over the library and binary target kinds. No other module, item, alias,
+or spelling is declared; an identity naming another module is not declared here. The model's
+`declare_observe_surface` and `admit_observe_surface` publish and admit exactly these rows over one
+standard-library graph, refusing a missing, partial, extra, or mismatched surface rather than
+repairing it.
+
+This clause publishes names, classification, tier, and applicability only. It declares no record
+schema, field vocabulary, context propagation, label or cardinality bound, retention rule,
+redaction or release permission, backpressure, delivery policy, cancellation or shutdown behavior,
+sink failure behavior, runtime event, telemetry operation, adapter, or runtime availability. It
+does not change Section 12's event contract or Section 15's protection and release rules, and it
+claims no performance, storage layout, or physical representation.

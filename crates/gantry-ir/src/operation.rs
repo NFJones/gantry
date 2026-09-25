@@ -224,6 +224,20 @@ impl OperationKind {
         }
     }
 
+    /// Returns the protected-operation kind authenticated by one analyzed result type.
+    ///
+    /// A sealed source-protection class identifies a protected operation. An unsealed result
+    /// does not distinguish a value action from any other operation kind.
+    #[must_use]
+    pub const fn for_source_protection_class(
+        class: crate::type_properties::SourceProtectionClass,
+    ) -> Option<Self> {
+        match class {
+            crate::type_properties::SourceProtectionClass::Sealed => Some(Self::ProtectedOperation),
+            crate::type_properties::SourceProtectionClass::Unsealed => None,
+        }
+    }
+
     /// Returns the exact portable spelling.
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
