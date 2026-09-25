@@ -5,7 +5,13 @@
 //! machine, where a run stops, and that an unsupported plan is refused before any machine exists.
 //! They read no clock, use no ambient authority, and add no declaration of the `std.test` surface.
 
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use gantry::analysis::{AnalysisStatus, analyze_package_types};
+use gantry::frontend::validate_package_syntax;
 
 use gantry::identity::ProtocolIdentity;
 use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
@@ -19,10 +25,20 @@ use gantry::runtime::{
     MachineBuildError, MachineLimits, TEST_PROVIDED_RULES, TestHarness, TestHarnessRefusal,
     TestHarnessStop, TestTargetOutcome, Workflow, provides_rule,
 };
+use gantry::source::SourceLimits;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 
 const WORKFLOW: &str = "crate::main";
 const DECLARATION: &str = "crate::harness_fixture";
+static NEXT_SOURCE_FIXTURE: AtomicU64 = AtomicU64::new(0);
+
+struct SourceFixtureDirectory(PathBuf);
+
+impl Drop for SourceFixtureDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 
 /// Returns one canonical workflow path of the fixture.
 fn workflow() -> CanonicalPath {
@@ -758,4 +774,74 @@ fn runtime_harness_states_which_declared_execution_rules_it_obeys() {
         !provides_rule(TestExecutionRule::Replay),
         "an unprovided rule is reported as unprovided rather than assumed"
     );
+}
+
+#[test]
+fn runtime_harness_reports_a_source_assertion_as_a_structured_failure() {
+    let root = std::env::temp_dir().join(format!(
+        "gantry-test-harness-assertion-{}-{}",
+        std::process::id(),
+        NEXT_SOURCE_FIXTURE.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&root)
+        .unwrap_or_else(|error| panic!("could not create {}: {error}", root.display()));
+    let _fixture = SourceFixtureDirectory(root.clone());
+    fs::write(
+        root.join("main.gnt"),
+        "fn main() -> Int { assert(false); 0 }",
+    )
+    .unwrap_or_else(|error| panic!("could not write source assertion fixture: {error}"));
+    let source_limits = SourceLimits::new(8, 1_048_576, 4_194_304, 262_144, 256)
+        .unwrap_or_else(|_| unreachable!("positive source limits"));
+    let syntax = validate_package_syntax(&root, source_limits, i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("source assertion syntax failed: {error}"));
+    let package = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("source assertion analysis failed: {error:?}"));
+    assert_eq!(package.status(), AnalysisStatus::Valid);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid assertion package has an entry"));
+    let program = Arc::new(
+        package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("valid assertion package has an executable program")),
+    );
+    let failure_site = program
+        .workflows()
+        .iter()
+        .find(|workflow| workflow.path == entry.path)
+        .and_then(|workflow| {
+            workflow
+                .instructions
+                .iter()
+                .find(|instruction| matches!(instruction.kind, InstructionKind::Panic))
+        })
+        .map(|instruction| instruction.site.clone())
+        .unwrap_or_else(|| panic!("the failing assertion lowers to a panic instruction"));
+
+    let mut harness = TestHarness::new(limits(8));
+    assert!(
+        harness
+            .admit("assertion", program, entry.path.clone(), execution(0x91))
+            .is_ok()
+    );
+    let plan = declare_test_run(&["unit"], &[])
+        .unwrap_or_else(|error| panic!("fixture plan is declared: {error:?}"));
+    let report = harness
+        .run(&plan)
+        .unwrap_or_else(|error| panic!("the declared plan runs: {error:?}"));
+
+    assert!(
+        !report.is_clean(),
+        "a failed assertion is not a passing target"
+    );
+    match report.results()[0].outcome() {
+        TestTargetOutcome::Failed { failure, .. } => {
+            assert_eq!(failure.code.wire_name(), "source-panic");
+            assert_eq!(failure.workflow, entry.path);
+            assert_eq!(failure.site, failure_site);
+        }
+        other => panic!("the source assertion reports a structured failure: {other:?}"),
+    }
 }
