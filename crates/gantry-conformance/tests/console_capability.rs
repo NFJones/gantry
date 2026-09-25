@@ -177,7 +177,7 @@ fn console_capability_note_agrees_with_the_declared_operations() {
     }
     assert!(
         flattened.contains(
-            "A public capability requirement is one four-part identity: the package-qualified declaration path, the complete canonical typed signature, the capability family, and the recovery class"
+            "The operation form of a public capability requirement is one four-part identity: the package-qualified declaration path, the complete canonical typed signature, the capability family, and the recovery class"
         ),
         "the note must publish the four-part requirement identity"
     );

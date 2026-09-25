@@ -35,7 +35,7 @@ read identity to its exact result may retry a read.
 
 ## The shape of a console capability requirement
 
-A public capability requirement is one four-part identity: the package-qualified declaration path,
+The operation form of a public capability requirement is one four-part identity: the package-qualified declaration path,
 the complete canonical typed signature, the capability family, and the recovery class, which
 `crates/gantry-ir/src/authority.rs` composes in `AuthorityRequirementId::new` and the
 abstract-requirement contract of `GNT-6.5` owns. The console surface declares two of those parts
