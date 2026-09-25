@@ -130,6 +130,14 @@ impl QuotaFamily {
             Self::Operations => LogicalMeasure::Operations,
         }
     }
+
+    /// Strictly decodes one portable quota-family spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|family| family.wire_name() == value)
+    }
 }
 
 /// A closed owner family for quota accounting.
@@ -155,6 +163,14 @@ impl QuotaOwner {
             Self::Owner => "owner",
             Self::DurableRecord => "durable-record",
         }
+    }
+
+    /// Strictly decodes one portable quota-owner spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|owner| owner.wire_name() == value)
     }
 }
 
@@ -216,6 +232,39 @@ pub enum ResourceLifetimeState {
 }
 
 impl ResourceLifetimeState {
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Finishing => "finishing",
+            Self::Finished => "finished",
+            Self::Poisoned => "poisoned",
+            Self::EmergencyReleased => "emergency-released",
+            Self::Retired => "retired",
+            Self::Deleted => "deleted",
+        }
+    }
+
+    /// Strictly decodes one portable lifetime-state spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|state| state.wire_name() == value)
+    }
+
+    /// Every lifetime state in exact wire-name order.
+    pub const ALL: [Self; 7] = [
+        Self::Active,
+        Self::Deleted,
+        Self::EmergencyReleased,
+        Self::Finished,
+        Self::Finishing,
+        Self::Poisoned,
+        Self::Retired,
+    ];
+
     /// Returns whether ordinary accounting is still admitted.
     #[must_use]
     pub const fn admits_charge(self) -> bool {
@@ -249,6 +298,22 @@ impl Quota {
             used: 0,
             remaining_renewals,
         }
+    }
+
+    /// Reconstructs one quota from declared durable facts, refusing use above its limit.
+    pub fn from_durable_facts(
+        limit: u64,
+        used: u64,
+        remaining_renewals: u64,
+    ) -> Result<Self, ResourceError> {
+        if used > limit {
+            return Err(ResourceError::InvalidDurableQuota);
+        }
+        Ok(Self {
+            limit,
+            used,
+            remaining_renewals,
+        })
     }
 
     /// Returns the declared ceiling.
@@ -348,6 +413,88 @@ pub struct DurableResourceRecord {
 }
 
 impl DurableResourceRecord {
+    /// Constructs a reconstruction record only when its facts describe a reachable ledger state.
+    pub fn from_durable_facts(
+        owner: OwnerGeneration,
+        lifetime: ResourceLifetimeState,
+        operation_state: ResourceState,
+        quotas: BTreeMap<(QuotaOwner, QuotaFamily), Quota>,
+        liveness_roots: BTreeSet<LivenessRoot>,
+        settlement: Option<SettlementBaseline>,
+        successor_fence: Option<OwnerGeneration>,
+    ) -> Result<Self, ResourceError> {
+        let settlement_matches_owner = settlement.is_some_and(|value| value.owner() == owner);
+        let valid = match lifetime {
+            ResourceLifetimeState::Active | ResourceLifetimeState::Finishing => {
+                settlement.is_none() && successor_fence.is_none()
+            }
+            ResourceLifetimeState::Finished
+            | ResourceLifetimeState::Poisoned
+            | ResourceLifetimeState::EmergencyReleased => {
+                settlement_matches_owner && successor_fence.is_none()
+            }
+            ResourceLifetimeState::Retired | ResourceLifetimeState::Deleted => {
+                settlement_matches_owner
+                    && successor_fence.is_some_and(|successor| successor.succeeds(owner))
+                    && liveness_roots.is_empty()
+            }
+        };
+        if !valid {
+            return Err(ResourceError::InvalidDurableResourceRecord);
+        }
+        Ok(Self {
+            owner,
+            lifetime,
+            operation_state,
+            quotas,
+            liveness_roots,
+            settlement,
+            successor_fence,
+        })
+    }
+
+    /// Returns the owner generation retained by this reconstruction record.
+    #[must_use]
+    pub const fn owner(&self) -> OwnerGeneration {
+        self.owner
+    }
+
+    /// Returns the whole-resource lifetime retained by this reconstruction record.
+    #[must_use]
+    pub const fn lifetime(&self) -> ResourceLifetimeState {
+        self.lifetime
+    }
+
+    /// Returns the Section 20 operation state retained by this reconstruction record.
+    #[must_use]
+    pub const fn operation_state(&self) -> ResourceState {
+        self.operation_state
+    }
+
+    /// Returns the exact quota declarations and committed use retained by this record.
+    #[must_use]
+    pub fn quotas(&self) -> &BTreeMap<(QuotaOwner, QuotaFamily), Quota> {
+        &self.quotas
+    }
+
+    /// Returns the exact liveness roots retained by this reconstruction record.
+    #[must_use]
+    pub fn liveness_roots(&self) -> &BTreeSet<LivenessRoot> {
+        &self.liveness_roots
+    }
+
+    /// Returns the terminal settlement baseline retained by this record, if any.
+    #[must_use]
+    pub const fn settlement(&self) -> Option<SettlementBaseline> {
+        self.settlement
+    }
+
+    /// Returns the successor owner fence retained by this record, if any.
+    #[must_use]
+    pub const fn successor_fence(&self) -> Option<OwnerGeneration> {
+        self.successor_fence
+    }
+
     /// Replaces the retained roots for a candidate compaction record.
     ///
     /// The record is only a candidate until [`ResourceLedger::validate_compaction`]
@@ -417,6 +564,12 @@ pub struct SettlementBaseline {
 }
 
 impl SettlementBaseline {
+    /// Reconstructs a terminal settlement baseline from its declared durable facts.
+    #[must_use]
+    pub const fn from_durable_facts(owner: OwnerGeneration, settled_at: u64) -> Self {
+        Self { owner, settled_at }
+    }
+
     /// Returns the current owner that settled the resource.
     #[must_use]
     pub const fn owner(self) -> OwnerGeneration {
@@ -829,4 +982,8 @@ pub enum ResourceError {
     FailureDoesNotPoisonResource,
     /// An ordinary serialization or ordinary durable-state carrier was asked to carry a resource.
     OrdinaryCarrierRefused,
+    /// Durable quota facts record committed use above the declared limit.
+    InvalidDurableQuota,
+    /// Durable resource facts do not describe a state reachable through model transitions.
+    InvalidDurableResourceRecord,
 }

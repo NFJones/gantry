@@ -13,8 +13,8 @@ use gantry::ir::{
     LogicalMeasure, OperationAbi, OperationKind, OwnerGeneration, PoisonWitness, Quota,
     QuotaFamily, QuotaOwner, RESOURCE_CLAUSES, ReceiverOwnership, ResourceAction, ResourceCarrier,
     ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence,
-    StaticSiteId, StopCause, StopCoordinator, StopError, StopRequest, StructuralPosition,
-    TaskStopState, admit_resource_carrier,
+    SettlementBaseline, StaticSiteId, StopCause, StopCoordinator, StopError, StopRequest,
+    StructuralPosition, TaskStopState, admit_resource_carrier,
 };
 
 #[test]
@@ -157,6 +157,40 @@ fn terminal_witnesses_are_derived_from_closed_failure_and_cancellation_facts() {
 #[test]
 fn section_scope_has_closed_roots_measures_actions_and_quota_families() {
     assert_eq!(RESOURCE_CLAUSES.len(), 11);
+    assert_eq!(
+        ResourceLifetimeState::ALL.map(ResourceLifetimeState::wire_name),
+        [
+            "active",
+            "deleted",
+            "emergency-released",
+            "finished",
+            "finishing",
+            "poisoned",
+            "retired",
+        ]
+    );
+    for lifetime in ResourceLifetimeState::ALL {
+        assert_eq!(
+            ResourceLifetimeState::from_wire_name(lifetime.wire_name()),
+            Some(lifetime)
+        );
+    }
+    assert_eq!(ResourceLifetimeState::from_wire_name("live"), None);
+    assert_eq!(ResourceLifetimeState::from_wire_name("Active"), None);
+    assert_eq!(ResourceLifetimeState::from_wire_name("active "), None);
+    for owner in QuotaOwner::ALL {
+        assert_eq!(QuotaOwner::from_wire_name(owner.wire_name()), Some(owner));
+    }
+    assert_eq!(QuotaOwner::from_wire_name("ambient"), None);
+    assert_eq!(QuotaOwner::from_wire_name("Owner"), None);
+    for family in QuotaFamily::ALL {
+        assert_eq!(
+            QuotaFamily::from_wire_name(family.wire_name()),
+            Some(family)
+        );
+    }
+    assert_eq!(QuotaFamily::from_wire_name("fuel"), None);
+    assert_eq!(QuotaFamily::from_wire_name("Bytes"), None);
     assert_eq!(
         LivenessRoot::ALL.map(LivenessRoot::wire_name),
         ["durable-record", "loan", "owner", "resource"]
@@ -351,6 +385,316 @@ fn roots_and_quota_facts_survive_or_refuse_pure_compaction() {
         refusal(ledger.validate_compaction(&durable.with_liveness_roots(&[LivenessRoot::Owner]))),
         ResourceError::CompactionDoesNotPreserve
     );
+}
+
+#[test]
+fn durable_resource_record_exposes_its_exact_declared_projection() {
+    let mut ledger = ledger();
+    assert!(
+        ledger
+            .charge(
+                OwnerGeneration::new(4),
+                ResourceAction::Loan,
+                &[Charge {
+                    owner: QuotaOwner::Resource,
+                    family: QuotaFamily::Operations,
+                    amount: 1,
+                }],
+            )
+            .is_ok()
+    );
+
+    let record = ledger.durable_record();
+    assert_eq!(record.owner(), OwnerGeneration::new(4));
+    assert_eq!(record.lifetime(), ResourceLifetimeState::Active);
+    assert_eq!(record.operation_state(), ResourceState::PartiallyAdvanced);
+    assert_eq!(record.quotas().len(), 3);
+    assert_eq!(
+        record
+            .quotas()
+            .get(&(QuotaOwner::Resource, QuotaFamily::Operations))
+            .map(|quota| (quota.limit(), quota.used(), quota.remaining_renewals())),
+        Some((2, 1, 0))
+    );
+    assert_eq!(record.liveness_roots().len(), ROOTS.len());
+    assert_eq!(record.settlement(), None);
+    assert_eq!(record.successor_fence(), None);
+
+    let settled = finished_ledger().durable_record();
+    assert_eq!(
+        settled.settlement().map(SettlementBaseline::settled_at),
+        Some(20)
+    );
+}
+
+#[test]
+fn durable_resource_facts_reconstruct_only_reachable_records() {
+    let source = finished_ledger().durable_record();
+    let reconstructed = gantry::ir::DurableResourceRecord::from_durable_facts(
+        source.owner(),
+        source.lifetime(),
+        source.operation_state(),
+        source.quotas().clone(),
+        source.liveness_roots().clone(),
+        source.settlement(),
+        source.successor_fence(),
+    );
+    assert_eq!(reconstructed, Ok(source));
+
+    let mut retired = finished_ledger();
+    close_all_roots(&mut retired);
+    assert!(
+        retired
+            .retire(
+                RetentionFence::new(1, 1).unwrap_or_else(|_| unreachable!("bounded")),
+                OwnerGeneration::new(4),
+                OwnerGeneration::new(6),
+                30,
+            )
+            .is_ok()
+    );
+    let retired_record = retired.durable_record();
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            retired_record.owner(),
+            retired_record.lifetime(),
+            retired_record.operation_state(),
+            retired_record.quotas().clone(),
+            retired_record.liveness_roots().clone(),
+            retired_record.settlement(),
+            retired_record.successor_fence(),
+        ),
+        Ok(retired_record.clone())
+    );
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            retired_record.owner(),
+            retired_record.lifetime(),
+            retired_record.operation_state(),
+            retired_record.quotas().clone(),
+            retired_record.liveness_roots().clone(),
+            Some(SettlementBaseline::from_durable_facts(
+                OwnerGeneration::new(4),
+                20,
+            )),
+            retired_record.successor_fence(),
+        ),
+        Ok(retired_record.clone()),
+        "terminal reconstruction uses persisted scalar settlement facts"
+    );
+    assert!(retired.delete().is_ok());
+    let deleted_record = retired.durable_record();
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            deleted_record.owner(),
+            deleted_record.lifetime(),
+            deleted_record.operation_state(),
+            deleted_record.quotas().clone(),
+            deleted_record.liveness_roots().clone(),
+            deleted_record.settlement(),
+            deleted_record.successor_fence(),
+        ),
+        Ok(deleted_record)
+    );
+
+    assert_eq!(
+        Quota::from_durable_facts(1, 2, 0),
+        Err(ResourceError::InvalidDurableQuota)
+    );
+    let quota = Quota::from_durable_facts(8, 3, 2)
+        .unwrap_or_else(|error| panic!("valid durable quota reconstructs: {error:?}"));
+    assert_eq!(
+        (quota.limit(), quota.used(), quota.remaining_renewals()),
+        (8, 3, 2)
+    );
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            OwnerGeneration::new(4),
+            ResourceLifetimeState::Retired,
+            ResourceState::Usable,
+            Default::default(),
+            Default::default(),
+            retired_record.settlement(),
+            Some(OwnerGeneration::new(4)),
+        ),
+        Err(ResourceError::InvalidDurableResourceRecord)
+    );
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            OwnerGeneration::new(4),
+            ResourceLifetimeState::Finished,
+            ResourceState::Usable,
+            Default::default(),
+            Default::default(),
+            None,
+            None,
+        ),
+        Err(ResourceError::InvalidDurableResourceRecord)
+    );
+}
+
+#[test]
+fn durable_resource_facts_round_trip_reachable_lifetimes_from_scalars() {
+    let active = ledger();
+    let mut finishing = ledger();
+    assert!(finishing.begin_finish().is_ok());
+    let finished = finished_ledger();
+    let mut poisoned = ledger();
+    assert!(poisoned.poison(poison_witness()).is_ok());
+    let mut emergency_released = ledger();
+    assert!(
+        emergency_released
+            .emergency_release(emergency_release_witness())
+            .is_ok()
+    );
+    let mut retired = finished_ledger();
+    close_all_roots(&mut retired);
+    assert!(
+        retired
+            .retire(
+                RetentionFence::new(1, 1).unwrap_or_else(|_| unreachable!("bounded")),
+                OwnerGeneration::new(4),
+                OwnerGeneration::new(6),
+                30,
+            )
+            .is_ok()
+    );
+    assert!(retired.delete().is_ok());
+
+    for record in [
+        active.durable_record(),
+        finishing.durable_record(),
+        finished.durable_record(),
+        poisoned.durable_record(),
+        emergency_released.durable_record(),
+        retired.durable_record(),
+    ] {
+        let quotas = record
+            .quotas()
+            .iter()
+            .map(|(key, quota)| {
+                (
+                    *key,
+                    Quota::from_durable_facts(
+                        quota.limit(),
+                        quota.used(),
+                        quota.remaining_renewals(),
+                    )
+                    .unwrap_or_else(|error| panic!("quota facts reconstruct: {error:?}")),
+                )
+            })
+            .collect();
+        let settlement = record
+            .settlement()
+            .map(|value| SettlementBaseline::from_durable_facts(value.owner(), value.settled_at()));
+        assert_eq!(
+            gantry::ir::DurableResourceRecord::from_durable_facts(
+                record.owner(),
+                record.lifetime(),
+                record.operation_state(),
+                quotas,
+                record.liveness_roots().clone(),
+                settlement,
+                record.successor_fence(),
+            ),
+            Ok(record),
+            "every reachable lifetime reconstructs from persisted scalar facts"
+        );
+    }
+
+    let finished = finished_ledger().durable_record();
+    let settlement = finished
+        .settlement()
+        .unwrap_or_else(|| panic!("finished resource retains settlement"));
+    let settled_at = settlement.settled_at();
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            finished.owner(),
+            finished.lifetime(),
+            finished.operation_state(),
+            finished.quotas().clone(),
+            finished.liveness_roots().clone(),
+            Some(SettlementBaseline::from_durable_facts(
+                OwnerGeneration::new(3),
+                settled_at,
+            )),
+            None,
+        ),
+        Err(ResourceError::InvalidDurableResourceRecord),
+        "terminal settlement cannot name a different owner"
+    );
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            active.owner(),
+            active.lifetime(),
+            active.operation_state(),
+            active.durable_record().quotas().clone(),
+            active.durable_record().liveness_roots().clone(),
+            Some(SettlementBaseline::from_durable_facts(
+                active.owner(),
+                settled_at,
+            )),
+            None,
+        ),
+        Err(ResourceError::InvalidDurableResourceRecord),
+        "an unsettled lifetime cannot retain terminal settlement"
+    );
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            active.owner(),
+            active.lifetime(),
+            active.operation_state(),
+            active.durable_record().quotas().clone(),
+            active.durable_record().liveness_roots().clone(),
+            None,
+            Some(OwnerGeneration::new(5)),
+        ),
+        Err(ResourceError::InvalidDurableResourceRecord),
+        "an active lifetime cannot retain a successor fence"
+    );
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            finished.owner(),
+            finished.lifetime(),
+            finished.operation_state(),
+            finished.quotas().clone(),
+            finished.liveness_roots().clone(),
+            finished.settlement(),
+            Some(OwnerGeneration::new(6)),
+        ),
+        Err(ResourceError::InvalidDurableResourceRecord),
+        "a settled but unretired lifetime cannot retain a successor fence"
+    );
+    let retired = retired_record();
+    assert_eq!(
+        gantry::ir::DurableResourceRecord::from_durable_facts(
+            retired.owner(),
+            retired.lifetime(),
+            retired.operation_state(),
+            retired.quotas().clone(),
+            finished.liveness_roots().clone(),
+            retired.settlement(),
+            retired.successor_fence(),
+        ),
+        Err(ResourceError::InvalidDurableResourceRecord),
+        "retired records cannot retain liveness roots"
+    );
+}
+
+fn retired_record() -> gantry::ir::DurableResourceRecord {
+    let mut ledger = finished_ledger();
+    close_all_roots(&mut ledger);
+    assert!(
+        ledger
+            .retire(
+                RetentionFence::new(1, 1).unwrap_or_else(|_| unreachable!("bounded")),
+                OwnerGeneration::new(4),
+                OwnerGeneration::new(6),
+                30,
+            )
+            .is_ok()
+    );
+    ledger.durable_record()
 }
 
 #[test]

@@ -1056,10 +1056,64 @@ fn payload_path_segment(source: &LogicalValue) -> ValuePathSegment {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 struct PendingOperation {
     occurrence: OperationOccurrence,
     operands: usize,
+    resource_admission_open: Arc<Mutex<bool>>,
+}
+
+impl PartialEq for PendingOperation {
+    fn eq(&self, other: &Self) -> bool {
+        self.occurrence == other.occurrence && self.operands == other.operands
+    }
+}
+
+impl Eq for PendingOperation {}
+
+impl PendingOperation {
+    fn close_resource_admission(&self) {
+        if let Ok(mut admission_open) = self.resource_admission_open.lock() {
+            *admission_open = false;
+        }
+    }
+}
+
+/// Projection-lifetime ownership of every pending-operation admission lease it creates.
+#[derive(Debug, Default)]
+struct ResourceAdmissionTracker {
+    armed: bool,
+    leases: Vec<Arc<Mutex<bool>>>,
+}
+
+/// Revokes every admission lease created by one abandoned isolated projection.
+#[derive(Debug)]
+pub(crate) struct ResourceAdmissionGuard {
+    tracker: Arc<Mutex<ResourceAdmissionTracker>>,
+}
+
+impl ResourceAdmissionGuard {
+    /// Preserves tracked leases after the projection is published authoritatively.
+    pub(crate) fn disarm(&mut self) {
+        if let Ok(mut tracker) = self.tracker.lock() {
+            tracker.armed = false;
+            tracker.leases.clear();
+        }
+    }
+}
+
+impl Drop for ResourceAdmissionGuard {
+    fn drop(&mut self) {
+        if let Ok(mut tracker) = self.tracker.lock()
+            && tracker.armed
+        {
+            for lease in tracker.leases.drain(..) {
+                if let Ok(mut state) = lease.lock() {
+                    *state = false;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(feature = "concurrent")]
@@ -1166,6 +1220,52 @@ impl MachineCheckpointV3 {
         self.pending_operation
             .as_ref()
             .map(|pending| &pending.occurrence)
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_resource_generation(&mut self, generation: Option<u64>) -> bool {
+        let Some(pending) = self.pending_operation.as_mut() else {
+            return false;
+        };
+        let occurrence = &mut pending.occurrence;
+        let key = resource_generation_counter_key(&occurrence.workflow, &occurrence.site);
+        if let Some(generation) = generation {
+            let Some(last_frame) = occurrence.dynamic_path.last() else {
+                return false;
+            };
+            let prefix = format!(
+                "operation:{}:{}:",
+                occurrence.workflow.as_str(),
+                position_key(&occurrence.site)
+            );
+            let Some((_, ordinal)) = last_frame
+                .strip_prefix(&prefix)
+                .and_then(|suffix| suffix.split_once(':'))
+            else {
+                return false;
+            };
+            let mut path = occurrence.dynamic_path.to_vec();
+            let last = path.len() - 1;
+            path[last] = Arc::from(format!("{prefix}{generation}:{ordinal}"));
+            let Some(identity) = ProtocolIdentity::derive(
+                IdentityKind::Operation,
+                &operation_key(
+                    self.execution,
+                    &occurrence.workflow,
+                    &occurrence.site,
+                    &path,
+                ),
+            )
+            .ok() else {
+                return false;
+            };
+            self.counters.insert(key, generation);
+            occurrence.dynamic_path = Arc::from(path);
+            occurrence.identity = identity;
+        } else {
+            self.counters.remove(&key);
+        }
+        true
     }
 
     /// Returns the first effective cancellation reason retained by this checkpoint.
@@ -1655,6 +1755,7 @@ pub struct Machine {
     consecutive_transitions: u64,
     pending_session_scope: Option<SessionScopeOccurrence>,
     pending_operation: Option<PendingOperation>,
+    resource_admission_tracker: Option<Arc<Mutex<ResourceAdmissionTracker>>>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -1944,6 +2045,7 @@ impl Machine {
             consecutive_transitions: 0,
             pending_session_scope: None,
             pending_operation: None,
+            resource_admission_tracker: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2051,6 +2153,7 @@ impl Machine {
             consecutive_transitions: 0,
             pending_session_scope: None,
             pending_operation: None,
+            resource_admission_tracker: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2222,20 +2325,19 @@ impl Machine {
     /// occurrence whose decoded metadata declares no action has no resource subject.
     #[must_use]
     pub fn pending_resource_subject(&self) -> Option<ResourceSubjectBinding> {
-        let occurrence = self
-            .pending_operation
-            .as_ref()
-            .map(|pending| &pending.occurrence)?;
+        let pending = self.pending_operation.as_ref()?;
+        let occurrence = &pending.occurrence;
         let metadata = occurrence.metadata.as_deref()?;
-        let generation = self
-            .counters
-            .get(&self.counter_key("operation", &occurrence.workflow, &occurrence.site))?
-            .checked_sub(1)?;
+        let generation = self.counters.get(&resource_generation_counter_key(
+            &occurrence.workflow,
+            &occurrence.site,
+        ))?;
         ResourceSubjectBinding::from_declared_operation(
             &occurrence.workflow,
             &occurrence.site,
             metadata,
-            generation,
+            *generation,
+            Arc::clone(&pending.resource_admission_open),
         )
     }
 
@@ -2288,11 +2390,12 @@ impl Machine {
     /// must exclusively own this machine while capturing it; ordinary machine
     /// clones continue sharing their execution-wide budget.
     #[cfg(feature = "durable")]
-    pub(crate) fn clone_durable_projection(&self) -> Self {
+    pub(crate) fn clone_durable_projection(&self) -> (Self, Option<ResourceAdmissionGuard>) {
         let mut projection = self.clone();
         projection.execution_budget =
             ExecutionBudget::from_snapshot(self.execution_budget.snapshot());
-        projection
+        let guard = projection.isolate_resource_admission();
+        (projection, guard)
     }
 
     /// Copies task-local state onto the private shared budget of a staged graph.
@@ -2300,13 +2403,84 @@ impl Machine {
     pub(crate) fn clone_with_staged_budget(
         &self,
         budget: ExecutionBudget,
-    ) -> Result<Self, MachineRecoveryError> {
+    ) -> Result<(Self, Option<ResourceAdmissionGuard>), MachineRecoveryError> {
         if !budget.matches(self.execution, self.limits) {
             return Err(MachineRecoveryError::ExecutionBudgetMismatch);
         }
         let mut staged = self.clone();
         staged.execution_budget = budget;
-        Ok(staged)
+        let guard = staged.isolate_resource_admission();
+        Ok((staged, guard))
+    }
+
+    fn isolate_resource_admission(&mut self) -> Option<ResourceAdmissionGuard> {
+        let tracker = Arc::new(Mutex::new(ResourceAdmissionTracker {
+            armed: true,
+            leases: Vec::new(),
+        }));
+        if let Some(pending) = self.pending_operation.as_mut() {
+            let admission_open = pending
+                .resource_admission_open
+                .lock()
+                .map(|state| *state)
+                .unwrap_or(false);
+            let isolated = Arc::new(Mutex::new(admission_open));
+            pending.resource_admission_open = Arc::clone(&isolated);
+            if let Ok(mut state) = tracker.lock() {
+                state.leases.push(isolated);
+            }
+        }
+        self.resource_admission_tracker = Some(Arc::clone(&tracker));
+        Some(ResourceAdmissionGuard { tracker })
+    }
+
+    /// Publishes a staged operation-admission state into the authoritative machine lease.
+    ///
+    /// Speculative clones own an isolated lease. At the journal publication boundary, carry the
+    /// authoritative lease forward for the same pending operation so previously issued subjects
+    /// remain valid while it is pending; close it when the committed successor settles/replaces it.
+    pub(crate) fn commit_staged_resource_admission(&mut self, staged: &mut Self) {
+        let Some(authoritative) = self.pending_operation.as_ref() else {
+            return;
+        };
+        let authoritative_identity = authoritative.occurrence.identity;
+        let authoritative_lease = Arc::clone(&authoritative.resource_admission_open);
+        let staged_lease = staged
+            .pending_operation
+            .as_ref()
+            .filter(|pending| pending.occurrence.identity == authoritative_identity)
+            .map(|pending| {
+                let lease = Arc::clone(&pending.resource_admission_open);
+                let open = lease.lock().ok().map(|state| *state);
+                (lease, open)
+            });
+        if let Some((lease, _)) = &staged_lease
+            && !Arc::ptr_eq(lease, &authoritative_lease)
+            && let Ok(mut state) = lease.lock()
+        {
+            *state = false;
+        }
+        let next_state = staged_lease.and_then(|(_, state)| state);
+        if let Ok(mut state) = authoritative_lease.lock() {
+            *state = next_state.unwrap_or(false);
+        } else {
+            return;
+        }
+        if next_state.is_some()
+            && let Some(pending) = staged
+                .pending_operation
+                .as_mut()
+                .filter(|pending| pending.occurrence.identity == authoritative_identity)
+        {
+            pending.resource_admission_open = Arc::clone(&authoritative_lease);
+        }
+    }
+
+    /// Closes admission for a pending operation removed by a committed graph transition.
+    pub(crate) fn close_resource_admission(&mut self) {
+        if let Some(pending) = self.pending_operation.take() {
+            pending.close_resource_admission();
+        }
     }
 
     /// Reconstructs the same evaluator using its separately recovered shared budget.
@@ -2329,6 +2503,23 @@ impl Machine {
         validate_machine_checkpoint(&program, &checkpoint)?;
         if !execution_budget.matches(checkpoint.execution, checkpoint.limits) {
             return Err(MachineRecoveryError::ExecutionBudgetMismatch);
+        }
+        let budget_revision = execution_budget.snapshot().revision;
+        let pending_generation = checkpoint.pending_operation.as_ref().and_then(|pending| {
+            pending
+                .occurrence
+                .metadata
+                .as_ref()
+                .filter(|metadata| metadata.action.is_some())
+                .and_then(|_| {
+                    checkpoint.counters.get(&resource_generation_counter_key(
+                        &pending.occurrence.workflow,
+                        &pending.occurrence.site,
+                    ))
+                })
+        });
+        if pending_generation.is_some_and(|generation| *generation >= budget_revision) {
+            return Err(MachineRecoveryError::InvalidCheckpoint);
         }
         Ok(Self {
             program,
@@ -2357,7 +2548,11 @@ impl Machine {
             remaining_loop_iterations: checkpoint.remaining_loop_iterations,
             consecutive_transitions: checkpoint.consecutive_transitions,
             pending_session_scope: checkpoint.pending_session_scope,
-            pending_operation: checkpoint.pending_operation,
+            pending_operation: checkpoint.pending_operation.map(|mut pending| {
+                pending.resource_admission_open = Arc::new(Mutex::new(true));
+                pending
+            }),
+            resource_admission_tracker: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -2654,7 +2849,9 @@ impl Machine {
         }
         self.truncate_staged(self.values.len() - operands);
         self.push_staged(value, None);
-        self.pending_operation = None;
+        if let Some(pending) = self.pending_operation.take() {
+            pending.close_resource_admission();
+        }
         self.status = MachineStatus::Running;
         self.consecutive_transitions = 0;
         Ok(MachineLabel::OperationResult { operation })
@@ -4020,10 +4217,19 @@ impl Machine {
             InstructionKind::OperationCall { operation, .. } => Some(Arc::new(operation.clone())),
             _ => None,
         };
+        let resource_generation = budget_state.revision;
         if let Err(code) = ExecutionBudget::charge_operation(budget_state) {
             return self.fail_at(code, workflow, instruction.site);
         }
-        let operation_frame = self.next_occurrence("operation", &workflow, &instruction.site, None);
+        let operation_frame = self.next_occurrence(
+            "operation",
+            &workflow,
+            &instruction.site,
+            metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.action.is_some())
+                .then_some(resource_generation),
+        );
         let mut path = self.task_path.to_vec();
         path.extend(self.occurrences.iter().cloned());
         path.push(operation_frame);
@@ -4034,6 +4240,15 @@ impl Machine {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, instruction.site);
             }
         };
+        if metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.action.is_some())
+        {
+            self.counters.insert(
+                resource_generation_counter_key(&workflow, &instruction.site),
+                resource_generation,
+            );
+        }
         self.advance_pc();
         let occurrence = OperationOccurrence {
             identity,
@@ -4048,9 +4263,17 @@ impl Machine {
             active_agent: self.agent.clone(),
             active_session: self.session,
         };
+        let resource_admission_open = Arc::new(Mutex::new(true));
+        if let Some(tracker) = &self.resource_admission_tracker
+            && let Ok(mut tracker) = tracker.lock()
+            && tracker.armed
+        {
+            tracker.leases.push(Arc::clone(&resource_admission_open));
+        }
         self.pending_operation = Some(PendingOperation {
             occurrence: occurrence.clone(),
             operands,
+            resource_admission_open,
         });
         self.status = MachineStatus::WaitingOperation;
         self.consecutive_transitions = 0;
@@ -4165,7 +4388,9 @@ impl Machine {
     fn finish_cancelled(&mut self, reason: Arc<str>) -> MachineStep {
         let outcome = MachineOutcome::Cancelled(reason);
         self.pending_session_scope = None;
-        self.pending_operation = None;
+        if let Some(pending) = self.pending_operation.take() {
+            pending.close_resource_admission();
+        }
         #[cfg(feature = "concurrent")]
         {
             self.pending_task_control = None;
@@ -4262,7 +4487,9 @@ impl Machine {
 
     fn finish_failure(&mut self, failure: MachineFailure) -> MachineStep {
         self.pending_session_scope = None;
-        self.pending_operation = None;
+        if let Some(pending) = self.pending_operation.take() {
+            pending.close_resource_admission();
+        }
         #[cfg(feature = "concurrent")]
         {
             self.pending_task_control = None;
@@ -4432,6 +4659,34 @@ fn occurrence_counter_key(
     key.push('|');
     key.push_str(&position_key(site));
     key
+}
+
+fn resource_generation_counter_key(workflow: &CanonicalPath, site: &StructuralPosition) -> String {
+    format!(
+        "resource-generation|{}:{}:{}",
+        workflow.as_str().len(),
+        workflow.as_str(),
+        position_key(site)
+    )
+}
+
+fn operation_frame_has_resource_generation(
+    frame: &str,
+    workflow: &CanonicalPath,
+    site: &StructuralPosition,
+    generation: u64,
+) -> bool {
+    let prefix = format!(
+        "operation:{}:{}:{}:",
+        workflow.as_str(),
+        position_key(site),
+        generation
+    );
+    frame.strip_prefix(&prefix).is_some_and(|occurrence| {
+        occurrence
+            .parse::<u64>()
+            .is_ok_and(|value| value.to_string() == occurrence)
+    })
 }
 
 #[cfg(feature = "durable")]
@@ -4993,6 +5248,25 @@ fn validate_machine_checkpoint(
             && pending.operands == operands
             && occurrence.metadata.as_deref() == metadata
             && pending.operands <= checkpoint.values.len()
+            && metadata.is_none_or(|metadata| {
+                metadata.action.is_none()
+                    || checkpoint
+                        .counters
+                        .get(&resource_generation_counter_key(
+                            &occurrence.workflow,
+                            &occurrence.site,
+                        ))
+                        .is_some_and(|generation| {
+                            occurrence.dynamic_path.last().is_some_and(|frame| {
+                                operation_frame_has_resource_generation(
+                                    frame,
+                                    &occurrence.workflow,
+                                    &occurrence.site,
+                                    *generation,
+                                )
+                            })
+                        })
+            })
     });
     if !pending_operation_valid {
         return Err(MachineRecoveryError::ProgramMismatch);

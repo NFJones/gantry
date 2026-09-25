@@ -350,21 +350,21 @@ impl ExecutionCoordinator {
             .execution_budget
             .as_ref()
             .ok_or(crate::ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
-        let foreground = foreground
+        let (foreground, _foreground_resource_admission_guard) = foreground
             .clone_with_staged_budget(budget.clone())
             .map_err(crate::ConcurrentDurableCheckpointError::Machine)?;
-        let children = children
-            .iter()
-            .map(|(task_id, machine)| {
-                machine
-                    .clone_with_staged_budget(budget.clone())
-                    .map(|machine| (*task_id, machine))
-                    .map_err(crate::ConcurrentDurableCheckpointError::Machine)
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        let mut projected_children = BTreeMap::new();
+        let mut child_resource_admission_guards = Vec::new();
+        for (task_id, machine) in children {
+            let (machine, guard) = machine
+                .clone_with_staged_budget(budget.clone())
+                .map_err(crate::ConcurrentDurableCheckpointError::Machine)?;
+            projected_children.insert(*task_id, machine);
+            child_resource_admission_guards.push(guard);
+        }
         crate::ConcurrentDurableCheckpointV4::capture_coordinated(
             &foreground,
-            &children,
+            &projected_children,
             &state.tasks,
             &state.sessions,
             budget,

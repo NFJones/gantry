@@ -12,17 +12,25 @@ use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind};
 use gantry_core::value::{
     DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView, ValueLimits, ValuePathSegment,
 };
+#[cfg(feature = "durable")]
+use gantry_ir::Projection;
 use gantry_ir::generated::Effect;
+#[cfg(any(feature = "concurrent", feature = "durable"))]
+use gantry_ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry_ir::{
-    CanonicalCallableIdentity, CanonicalPath, EffectSet, OwnershipClass, Projection, ReceiverMode,
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, OwnershipClass, ReceiverMode,
     ReceiverSource, StructuralPosition, TypeDescriptor,
 };
+#[cfg(any(feature = "concurrent", feature = "durable"))]
+use gantry_ir::{CanonicalSignature, ExecutableAction, ExecutableOperation, OperationKind};
 #[cfg(feature = "concurrent")]
 use gantry_ir::{
     ExecutableTaskBody, ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle,
     TaskBodyIdentity,
 };
 
+#[cfg(any(feature = "concurrent", feature = "durable"))]
+use crate::ExecutionBudget;
 #[cfg(feature = "concurrent")]
 use crate::{
     DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskControlCompletionError,
@@ -30,8 +38,8 @@ use crate::{
     root_task_identity,
 };
 use crate::{
-    ExecutionBudget, Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError,
-    MachineLabel, MachineLimits, MachineOutcome, MachineProgram, MachineStatus, MachineStep,
+    Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError, MachineLabel,
+    MachineLimits, MachineOutcome, MachineProgram, MachineStatus, MachineStep,
     OperationCompletionError, Parameter, Primitive, ProgramError, RuntimeCode, Workflow,
 };
 
@@ -436,6 +444,95 @@ fn machines_share_one_operation_budget_without_partial_mutation() {
         loser.step(),
         MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Failed(_)))
     ));
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn shared_budget_gives_same_static_action_site_distinct_resource_generations() {
+    let action_path = path("crate::action");
+    let operation = ExecutableOperation {
+        kind: OperationSiteKind::Action,
+        section20_kind: Some(OperationKind::LiveResource),
+        result_type: TypeDescriptor::UNIT,
+        action: Some(ExecutableAction {
+            path: action_path.clone(),
+            signature: CanonicalSignature::action(
+                RecoveryClass::Idempotent,
+                &action_path,
+                &[],
+                &TypeDescriptor::UNIT,
+            ),
+            recovery: RecoveryClass::Idempotent,
+            parameters: Vec::new(),
+        }),
+        template_segments: Vec::new(),
+        interpolation_types: Vec::new(),
+        named_input_names: Vec::new(),
+        named_input_types: Vec::new(),
+        retry_limit: None,
+        session_mode: None,
+        attempted: false,
+    };
+    let program = program(vec![workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::OperationCall {
+                operation,
+                operands: 0,
+            },
+        )],
+    )]);
+    let machine_limits = limits(8, 2, 1, 1, 8);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let mut foreground = Machine::new_with_budget(
+        Arc::clone(&program),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget.clone(),
+    )
+    .unwrap_or_else(|error| panic!("foreground construction failed: {error:?}"));
+    let (task_id, task_path) = child_task_coordinate();
+    let mut child = Machine::new_concurrent_task_with_budget_and_context(
+        program,
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        task_id,
+        task_path,
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("child construction failed: {error:?}"));
+
+    assert!(matches!(
+        foreground.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    let foreground_subject = foreground
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("foreground action has a resource subject"));
+    assert!(matches!(
+        child.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    let child_subject = child
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("child action has a resource subject"));
+
+    assert_ne!(
+        foreground_subject.generation(),
+        child_subject.generation(),
+        "shared execution-budget revisions distinguish tasks at one static action site"
+    );
 }
 
 #[test]
@@ -4922,6 +5019,182 @@ fn resplice_moved_out_section(bytes: &[u8], section: &[u8]) -> Vec<u8> {
     let mut rewritten = bytes[..offset].to_vec();
     rewritten.extend_from_slice(section);
     rewritten
+}
+
+/// Pending action checkpoints cannot omit or reuse a resource-generation ordinal.
+#[cfg(feature = "durable")]
+#[test]
+fn pending_action_checkpoint_rejects_missing_or_future_resource_generation() {
+    let action_path = path("crate::action");
+    let operation = ExecutableOperation {
+        kind: OperationSiteKind::Action,
+        section20_kind: Some(OperationKind::LiveResource),
+        result_type: TypeDescriptor::UNIT,
+        action: Some(ExecutableAction {
+            path: action_path.clone(),
+            signature: CanonicalSignature::action(
+                RecoveryClass::Idempotent,
+                &action_path,
+                &[],
+                &TypeDescriptor::UNIT,
+            ),
+            recovery: RecoveryClass::Idempotent,
+            parameters: Vec::new(),
+        }),
+        template_segments: Vec::new(),
+        interpolation_types: Vec::new(),
+        named_input_names: Vec::new(),
+        named_input_types: Vec::new(),
+        retry_limit: None,
+        session_mode: None,
+        attempted: false,
+    };
+    let program = program(vec![workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::OperationCall {
+                operation,
+                operands: 0,
+            },
+        )],
+    )]);
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        Vec::new(),
+        limits(8, 1, 1, 1, 8),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("action budget recovery failed: {error:?}"));
+
+    let mut missing_generation = machine.checkpoint();
+    assert!(missing_generation.test_set_resource_generation(None));
+    let missing_recovery =
+        Machine::recover_from_checkpoint(Arc::clone(&program), missing_generation, budget.clone());
+    assert!(
+        missing_recovery.is_err(),
+        "a pending action must retain its generation ordinal: {missing_recovery:?}"
+    );
+
+    let mut future_generation = machine.checkpoint();
+    assert!(future_generation.test_set_resource_generation(Some(budget.snapshot().revision)));
+    assert!(
+        matches!(
+            Machine::recover_from_checkpoint(program, future_generation, budget),
+            Err(crate::MachineRecoveryError::InvalidCheckpoint)
+        ),
+        "an ordinal at the budget frontier cannot be reused as an allocation"
+    );
+}
+
+/// A speculative terminal transition cannot close the authoritative pending resource lease.
+#[cfg(feature = "durable")]
+#[test]
+fn speculative_resource_admission_closes_only_when_the_transition_commits() {
+    let action_path = path("crate::action");
+    let operation = ExecutableOperation {
+        kind: OperationSiteKind::Action,
+        section20_kind: Some(OperationKind::LiveResource),
+        result_type: TypeDescriptor::UNIT,
+        action: Some(ExecutableAction {
+            path: action_path.clone(),
+            signature: CanonicalSignature::action(
+                RecoveryClass::Idempotent,
+                &action_path,
+                &[],
+                &TypeDescriptor::UNIT,
+            ),
+            recovery: RecoveryClass::Idempotent,
+            parameters: Vec::new(),
+        }),
+        template_segments: Vec::new(),
+        interpolation_types: Vec::new(),
+        named_input_names: Vec::new(),
+        named_input_types: Vec::new(),
+        retry_limit: None,
+        session_mode: None,
+        attempted: false,
+    };
+    let program = program(vec![workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::OperationCall {
+                operation,
+                operands: 0,
+            },
+        )],
+    )]);
+    let mut authoritative = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        Vec::new(),
+        limits(8, 1, 1, 1, 8),
+    );
+    assert!(matches!(
+        authoritative.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    let subject = authoritative
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("pending action has a resource subject"));
+    let operation = authoritative
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending action retains its occurrence"))
+        .identity;
+
+    let (mut rolled_back, rolled_back_guard) = authoritative.clone_durable_projection();
+    let rolled_back_subject = rolled_back
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("projected pending action has a resource subject"));
+    rolled_back
+        .fail_operation_with_code(operation, RuntimeCode::InternalInvariant)
+        .unwrap_or_else(|error| panic!("staged operation failure succeeds: {error:?}"));
+    assert_eq!(
+        subject.lock_admission().map(|open| *open),
+        Some(true),
+        "a speculative terminal transition uses an isolated lease"
+    );
+    drop(rolled_back);
+    drop(rolled_back_guard);
+    assert_eq!(
+        rolled_back_subject.lock_admission().map(|open| *open),
+        Some(false),
+        "dropping an uncommitted projection revokes its escaped subject"
+    );
+    assert_eq!(
+        subject.lock_admission().map(|open| *open),
+        Some(true),
+        "dropping an uncommitted projection preserves admission"
+    );
+
+    let (mut committed, mut committed_guard) = authoritative.clone_durable_projection();
+    committed
+        .fail_operation_with_code(operation, RuntimeCode::InternalInvariant)
+        .unwrap_or_else(|error| panic!("staged operation failure succeeds: {error:?}"));
+    authoritative.commit_staged_resource_admission(&mut committed);
+    if let Some(guard) = committed_guard.as_mut() {
+        guard.disarm();
+    }
+    assert_eq!(
+        subject.lock_admission().map(|open| *open),
+        Some(false),
+        "publishing the staged terminal transition closes saved subjects"
+    );
 }
 
 /// A normal owned return marks the caller place durably, and the mark survives recovery.

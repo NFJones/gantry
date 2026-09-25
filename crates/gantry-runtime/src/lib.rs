@@ -148,8 +148,9 @@ pub use recovery::{
 };
 pub use resource::{
     AdapterBindingRefusal, AdmittedResource, CohortEmergencyCleanup, CohortEmergencySettlement,
-    PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRegistry,
-    ResourceRegistryRefusal, ResourceSubjectBinding,
+    PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRecordCodecError,
+    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
+    decode_resource_reconstruction_record, encode_resource_reconstruction_record,
 };
 pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,

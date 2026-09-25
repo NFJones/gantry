@@ -47,17 +47,328 @@
 //! formats remains with the durable, recovery, and machine modules.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
+use gantry_core::strict_json::{JsonLimits, JsonNode, JsonNodeId, StrictJsonDocument};
 use gantry_ir::{
     AdapterInstance, CanonicalPath, Charge, Completion, ContainmentError, ContainmentSettlement,
     DurableResourceRecord, EmergencyCleanupWitness, EmergencyReleaseWitness, ExecutableOperation,
     ExternalOutcome, LivenessRoot, LogicalOperationId, OperationAbiError, OperationKind,
     OwnerGeneration, PoisonLedger, PoisonReason, PoisonWitness, PostFailureSettlement, Quota,
     QuotaFamily, QuotaOwner, ResourceAction, ResourceCarrier, ResourceError, ResourceGenerationId,
-    ResourceLedger, ResourceLifetimeState, RetentionFence, StaticSiteId, StructuralPosition,
-    admit_resource_carrier,
+    ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence, SettlementBaseline,
+    StaticSiteId, StructuralPosition, admit_resource_carrier,
 };
+
+/// Decodes one exact canonical declared resource reconstruction record.
+///
+/// The returned facts are still subject-free: callers must derive the subject from retained
+/// executable/checkpoint metadata and present this record only through
+/// [`ResourceCarrier::ReconstructionRecord`].
+pub fn decode_resource_reconstruction_record(
+    bytes: &[u8],
+) -> Result<DurableResourceRecord, ResourceRecordCodecError> {
+    let maximum_bytes =
+        u64::try_from(bytes.len()).map_err(|_| ResourceRecordCodecError::Encoding)?;
+    let document = StrictJsonDocument::decode(
+        bytes,
+        JsonLimits {
+            maximum_bytes,
+            maximum_nesting_depth: maximum_bytes.max(1),
+            maximum_nodes: maximum_bytes.max(1),
+            maximum_string_scalars: maximum_bytes.max(1),
+            maximum_list_items: maximum_bytes.max(1),
+        },
+    )
+    .map_err(|_| ResourceRecordCodecError::Encoding)?;
+    let root = codec_object(&document, document.root())?;
+    codec_require_fields(root, &["format", "record"])?;
+    if codec_string(&document, codec_field(root, "format")?)? != "gantry.resource-reconstruction/v1"
+    {
+        return Err(ResourceRecordCodecError::Encoding);
+    }
+    let value = codec_object(&document, codec_field(root, "record")?)?;
+    codec_require_fields(
+        value,
+        &[
+            "lifetime",
+            "liveness_roots",
+            "operation_state",
+            "owner",
+            "quotas",
+            "settlement",
+            "successor_fence",
+        ],
+    )?;
+    let owner = OwnerGeneration::new(codec_unsigned(&document, codec_field(value, "owner")?)?);
+    let lifetime = ResourceLifetimeState::from_wire_name(codec_string(
+        &document,
+        codec_field(value, "lifetime")?,
+    )?)
+    .ok_or(ResourceRecordCodecError::Encoding)?;
+    let operation_state = ResourceState::from_wire_name(codec_string(
+        &document,
+        codec_field(value, "operation_state")?,
+    )?)
+    .ok_or(ResourceRecordCodecError::Encoding)?;
+    let quotas = codec_quotas(&document, codec_field(value, "quotas")?)?;
+    let liveness_roots = codec_roots(&document, codec_field(value, "liveness_roots")?)?;
+    let settlement = codec_settlement(&document, codec_field(value, "settlement")?)?;
+    let successor_fence = codec_optional_owner(&document, codec_field(value, "successor_fence")?)?;
+    let record = DurableResourceRecord::from_durable_facts(
+        owner,
+        lifetime,
+        operation_state,
+        quotas,
+        liveness_roots,
+        settlement,
+        successor_fence,
+    )
+    .map_err(ResourceRecordCodecError::Model)?;
+    if encode_resource_reconstruction_record(&record) != bytes {
+        return Err(ResourceRecordCodecError::Encoding);
+    }
+    Ok(record)
+}
+
+/// Encodes the model's declared resource facts in their canonical reconstruction-record form.
+#[must_use]
+pub fn encode_resource_reconstruction_record(record: &DurableResourceRecord) -> Vec<u8> {
+    let mut output = String::from("{\"format\":\"gantry.resource-reconstruction/v1\",\"record\":{");
+    codec_push_string_field(&mut output, "lifetime", record.lifetime().wire_name());
+    output.push_str(",\"liveness_roots\":[");
+    for (index, root) in record.liveness_roots().iter().enumerate() {
+        if index != 0 {
+            output.push(',');
+        }
+        codec_push_string(&mut output, root.wire_name());
+    }
+    output.push_str("],\"operation_state\":");
+    codec_push_string(&mut output, record.operation_state().wire_name());
+    output.push_str(",\"owner\":");
+    codec_push_u64(&mut output, record.owner().value());
+    output.push_str(",\"quotas\":[");
+    for (index, ((owner, family), quota)) in record.quotas().iter().enumerate() {
+        if index != 0 {
+            output.push(',');
+        }
+        output.push_str("{\"family\":");
+        codec_push_string(&mut output, family.wire_name());
+        output.push_str(",\"limit\":");
+        codec_push_u64(&mut output, quota.limit());
+        output.push_str(",\"owner\":");
+        codec_push_string(&mut output, owner.wire_name());
+        output.push_str(",\"remaining_renewals\":");
+        codec_push_u64(&mut output, quota.remaining_renewals());
+        output.push_str(",\"used\":");
+        codec_push_u64(&mut output, quota.used());
+        output.push('}');
+    }
+    output.push_str("],\"settlement\":");
+    match record.settlement() {
+        Some(settlement) => {
+            output.push_str("{\"owner\":");
+            codec_push_u64(&mut output, settlement.owner().value());
+            output.push_str(",\"settled_at\":");
+            codec_push_u64(&mut output, settlement.settled_at());
+            output.push('}');
+        }
+        None => output.push_str("null"),
+    }
+    output.push_str(",\"successor_fence\":");
+    match record.successor_fence() {
+        Some(successor) => codec_push_u64(&mut output, successor.value()),
+        None => output.push_str("null"),
+    }
+    output.push_str("}}");
+    output.into_bytes()
+}
+
+/// Failure to decode a canonical resource reconstruction record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResourceRecordCodecError {
+    /// The bytes are malformed, noncanonical, or contain an unknown field or wire name.
+    Encoding,
+    /// The decoded facts do not describe a reachable resource record.
+    Model(ResourceError),
+}
+
+fn codec_quotas(
+    document: &StrictJsonDocument,
+    id: JsonNodeId,
+) -> Result<BTreeMap<(QuotaOwner, QuotaFamily), Quota>, ResourceRecordCodecError> {
+    let Some(JsonNode::Array(items)) = document.node(id) else {
+        return Err(ResourceRecordCodecError::Encoding);
+    };
+    let mut quotas = BTreeMap::new();
+    for item in items {
+        let value = codec_object(document, *item)?;
+        codec_require_fields(
+            value,
+            &["family", "limit", "owner", "remaining_renewals", "used"],
+        )?;
+        let family =
+            QuotaFamily::from_wire_name(codec_string(document, codec_field(value, "family")?)?)
+                .ok_or(ResourceRecordCodecError::Encoding)?;
+        let owner =
+            QuotaOwner::from_wire_name(codec_string(document, codec_field(value, "owner")?)?)
+                .ok_or(ResourceRecordCodecError::Encoding)?;
+        let quota = Quota::from_durable_facts(
+            codec_unsigned(document, codec_field(value, "limit")?)?,
+            codec_unsigned(document, codec_field(value, "used")?)?,
+            codec_unsigned(document, codec_field(value, "remaining_renewals")?)?,
+        )
+        .map_err(ResourceRecordCodecError::Model)?;
+        if quotas.insert((owner, family), quota).is_some() {
+            return Err(ResourceRecordCodecError::Model(
+                ResourceError::DuplicateQuota,
+            ));
+        }
+    }
+    Ok(quotas)
+}
+
+fn codec_roots(
+    document: &StrictJsonDocument,
+    id: JsonNodeId,
+) -> Result<std::collections::BTreeSet<LivenessRoot>, ResourceRecordCodecError> {
+    let Some(JsonNode::Array(items)) = document.node(id) else {
+        return Err(ResourceRecordCodecError::Encoding);
+    };
+    let mut roots = std::collections::BTreeSet::new();
+    for item in items {
+        let root = LivenessRoot::from_wire_name(codec_string(document, *item)?)
+            .ok_or(ResourceRecordCodecError::Encoding)?;
+        if !roots.insert(root) {
+            return Err(ResourceRecordCodecError::Encoding);
+        }
+    }
+    Ok(roots)
+}
+
+fn codec_settlement(
+    document: &StrictJsonDocument,
+    id: JsonNodeId,
+) -> Result<Option<SettlementBaseline>, ResourceRecordCodecError> {
+    if matches!(document.node(id), Some(JsonNode::Null)) {
+        return Ok(None);
+    }
+    let value = codec_object(document, id)?;
+    codec_require_fields(value, &["owner", "settled_at"])?;
+    Ok(Some(SettlementBaseline::from_durable_facts(
+        OwnerGeneration::new(codec_unsigned(document, codec_field(value, "owner")?)?),
+        codec_unsigned(document, codec_field(value, "settled_at")?)?,
+    )))
+}
+
+fn codec_optional_owner(
+    document: &StrictJsonDocument,
+    id: JsonNodeId,
+) -> Result<Option<OwnerGeneration>, ResourceRecordCodecError> {
+    if matches!(document.node(id), Some(JsonNode::Null)) {
+        return Ok(None);
+    }
+    codec_unsigned(document, id)
+        .map(OwnerGeneration::new)
+        .map(Some)
+}
+
+fn codec_object(
+    document: &StrictJsonDocument,
+    id: JsonNodeId,
+) -> Result<&[(Arc<str>, JsonNodeId)], ResourceRecordCodecError> {
+    match document.node(id) {
+        Some(JsonNode::Object(value)) => Ok(value),
+        _ => Err(ResourceRecordCodecError::Encoding),
+    }
+}
+
+fn codec_require_fields(
+    object: &[(Arc<str>, JsonNodeId)],
+    expected: &[&str],
+) -> Result<(), ResourceRecordCodecError> {
+    if object.len() == expected.len()
+        && expected.iter().all(|name| {
+            object
+                .iter()
+                .any(|(candidate, _)| candidate.as_ref() == *name)
+        })
+    {
+        Ok(())
+    } else {
+        Err(ResourceRecordCodecError::Encoding)
+    }
+}
+
+fn codec_field(
+    object: &[(Arc<str>, JsonNodeId)],
+    name: &str,
+) -> Result<JsonNodeId, ResourceRecordCodecError> {
+    object
+        .iter()
+        .find_map(|(candidate, value)| (candidate.as_ref() == name).then_some(*value))
+        .ok_or(ResourceRecordCodecError::Encoding)
+}
+
+fn codec_string(
+    document: &StrictJsonDocument,
+    id: JsonNodeId,
+) -> Result<&str, ResourceRecordCodecError> {
+    match document.node(id) {
+        Some(JsonNode::String(value)) => Ok(value),
+        _ => Err(ResourceRecordCodecError::Encoding),
+    }
+}
+
+fn codec_unsigned(
+    document: &StrictJsonDocument,
+    id: JsonNodeId,
+) -> Result<u64, ResourceRecordCodecError> {
+    match document.node(id) {
+        Some(JsonNode::String(value))
+            if !value.is_empty()
+                && (value.as_ref() == "0"
+                    || (!value.starts_with('0')
+                        && value.bytes().all(|byte| byte.is_ascii_digit()))) =>
+        {
+            value
+                .parse()
+                .map_err(|_| ResourceRecordCodecError::Encoding)
+        }
+        _ => Err(ResourceRecordCodecError::Encoding),
+    }
+}
+
+fn codec_push_u64(output: &mut String, value: u64) {
+    codec_push_string(output, &value.to_string());
+}
+
+fn codec_push_string_field(output: &mut String, name: &str, value: &str) {
+    output.push('"');
+    output.push_str(name);
+    output.push_str("\":");
+    codec_push_string(output, value);
+}
+
+fn codec_push_string(output: &mut String, value: &str) {
+    output.push('"');
+    for scalar in value.chars() {
+        match scalar {
+            '"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\u{08}' => output.push_str("\\b"),
+            '\u{09}' => output.push_str("\\t"),
+            '\u{0a}' => output.push_str("\\n"),
+            '\u{0c}' => output.push_str("\\f"),
+            '\u{0d}' => output.push_str("\\r"),
+            value if value <= '\u{1f}' => {
+                output.push_str(&format!("\\u{:04x}", value as u32));
+            }
+            value => output.push(value),
+        }
+    }
+    output.push('"');
+}
 
 /// One runtime-owned binding of an admitted account to its Section 20 subject.
 ///
@@ -74,13 +385,25 @@ use gantry_ir::{
 /// // The derivation constructor is crate-private and unnameable from outside the crate.
 /// let _ = gantry_runtime::ResourceSubjectBinding::derive;
 /// ```
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ResourceSubjectBinding {
     site: StaticSiteId,
     operation: LogicalOperationId,
     generation: ResourceGenerationId,
     kind: Option<OperationKind>,
+    admission_open: Arc<Mutex<bool>>,
 }
+
+impl PartialEq for ResourceSubjectBinding {
+    fn eq(&self, other: &Self) -> bool {
+        self.site == other.site
+            && self.operation == other.operation
+            && self.generation == other.generation
+            && self.kind == other.kind
+    }
+}
+
+impl Eq for ResourceSubjectBinding {}
 
 impl ResourceSubjectBinding {
     /// Derives the binding of one declared operation site and one runtime generation.
@@ -91,6 +414,7 @@ impl ResourceSubjectBinding {
         position: StructuralPosition,
         generation: u64,
         kind: Option<OperationKind>,
+        admission_open: Arc<Mutex<bool>>,
     ) -> Self {
         let site = StaticSiteId::new(workflow, position);
         let operation = LogicalOperationId::derive(declaration, &site);
@@ -100,7 +424,14 @@ impl ResourceSubjectBinding {
             operation,
             generation,
             kind,
+            admission_open,
         }
+    }
+
+    /// Locks the machine-issued pending-operation admission window.
+    #[must_use]
+    pub(crate) fn lock_admission(&self) -> Option<MutexGuard<'_, bool>> {
+        self.admission_open.lock().ok()
     }
 
     /// Returns the Section 20 operation kind the decoded metadata authenticated, when any.
@@ -123,6 +454,7 @@ impl ResourceSubjectBinding {
         position: &StructuralPosition,
         metadata: &ExecutableOperation,
         generation: u64,
+        admission_open: Arc<Mutex<bool>>,
     ) -> Option<Self> {
         let action = metadata.action.as_ref()?;
         Some(Self::derive(
@@ -131,6 +463,7 @@ impl ResourceSubjectBinding {
             position.clone(),
             generation,
             metadata.section20_kind,
+            admission_open,
         ))
     }
 
@@ -340,6 +673,13 @@ impl ResourceRegistry {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
+        let admission_open = Arc::clone(&subject.admission_open);
+        let admission_guard = admission_open
+            .lock()
+            .map_err(|_| ResourceRegistryRefusal::NoPendingResourceSubject)?;
+        if !*admission_guard {
+            return Err(ResourceRegistryRefusal::NoPendingResourceSubject);
+        }
         let live = self.live_resources();
         let limit = self.live_limit;
         let key = (subject.operation().clone(), subject.generation().clone());
@@ -348,7 +688,7 @@ impl ResourceRegistry {
                 Err(ResourceRegistryRefusal::SecondAdmission)
             }
             std::collections::btree_map::Entry::Vacant(slot) => {
-                let account = AdmittedResource::admit(carrier, record, subject)?;
+                let account = AdmittedResource::admit_reconstructed(carrier, record, subject)?;
                 if let Some(limit) = limit
                     && live >= limit
                 {
@@ -357,6 +697,22 @@ impl ResourceRegistry {
                 Ok(slot.insert(account))
             }
         }
+    }
+
+    /// Admits the resource subject of a machine's current pending action operation.
+    ///
+    /// The subject is derived from the machine's retained operation metadata and generation
+    /// counter. A machine without a pending action-backed resource subject cannot admit a record.
+    pub fn admit_pending_operation(
+        &mut self,
+        machine: &crate::Machine,
+        carrier: ResourceCarrier,
+        record: DurableResourceRecord,
+    ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
+        let subject = machine
+            .pending_resource_subject()
+            .ok_or(ResourceRegistryRefusal::NoPendingResourceSubject)?;
+        self.admit(subject, carrier, record)
     }
 
     /// Reconstructs a whole registry from the records one recovery pass presents.
@@ -389,8 +745,11 @@ impl ResourceRegistry {
             if accounts.contains_key(&key) {
                 return Err(ResourceRegistryRefusal::SecondAdmission);
             }
-            let account =
-                AdmittedResource::admit(presented.carrier, presented.record, presented.subject)?;
+            let account = AdmittedResource::admit_reconstructed(
+                presented.carrier,
+                presented.record,
+                presented.subject,
+            )?;
             let current = account.ledger().owner();
             if current != presented.owner {
                 return Err(ResourceRegistryRefusal::Admission(
@@ -827,6 +1186,8 @@ pub enum ResourceRegistryRefusal {
     SecondAdmission,
     /// The subject's operation carries no authenticated live-resource Section 20 kind.
     UnauthenticatedOperationKind,
+    /// The machine has no pending action-backed operation with a resource subject.
+    NoPendingResourceSubject,
     /// The account's own emergency release refused the sealed cleanup witness.
     EmergencyRelease(ResourceError),
     /// The account's own ledger refused the presented charge.
@@ -990,6 +1351,25 @@ impl AdmittedResource {
     /// the record is dropped unread. Only the declared reconstruction record reconstructs the
     /// account's ledger.
     pub fn admit(
+        carrier: ResourceCarrier,
+        record: DurableResourceRecord,
+        subject: ResourceSubjectBinding,
+    ) -> Result<Self, ResourceRegistryRefusal> {
+        if subject.operation_kind() != Some(OperationKind::LiveResource) {
+            return Err(ResourceRegistryRefusal::UnauthenticatedOperationKind);
+        }
+        let admission_open = subject
+            .lock_admission()
+            .ok_or(ResourceRegistryRefusal::NoPendingResourceSubject)?;
+        if !*admission_open {
+            return Err(ResourceRegistryRefusal::NoPendingResourceSubject);
+        }
+        let admitted = Self::admit_reconstructed(carrier, record, subject.clone());
+        drop(admission_open);
+        admitted
+    }
+
+    fn admit_reconstructed(
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
         subject: ResourceSubjectBinding,

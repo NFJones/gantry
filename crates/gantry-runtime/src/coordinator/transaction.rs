@@ -6,6 +6,7 @@
 //! semantic publication because the journal result may be indeterminate.
 
 use super::*;
+use crate::machine::ResourceAdmissionGuard;
 use crate::recovery::validate_budget_successor;
 use crate::{
     ConcurrentDurableCheckpointV4, DurableCommitCoordinatorV1, DurableCommitCutV1,
@@ -27,6 +28,8 @@ pub struct DurableGraphTransaction<'a> {
     children: &'a mut BTreeMap<ProtocolIdentity, Machine>,
     staged_foreground: Machine,
     staged_children: BTreeMap<ProtocolIdentity, Machine>,
+    staged_foreground_resource_admission_guard: Option<ResourceAdmissionGuard>,
+    staged_child_resource_admission_guards: BTreeMap<ProtocolIdentity, ResourceAdmissionGuard>,
     tasks: ConcurrentTaskStateV1,
     sessions: LogicalSessionRegistryV1,
     budget: ExecutionBudget,
@@ -70,18 +73,20 @@ impl ExecutionCoordinator {
         }
         let budget = ExecutionBudget::recover_from_checkpoint(successor_budget)
             .map_err(|_| TaskStateError::InvalidTaskMachine)?;
-        let staged_foreground = foreground
+        let (staged_foreground, staged_foreground_resource_admission_guard) = foreground
             .clone_with_staged_budget(budget.clone())
             .map_err(|_| TaskStateError::InvalidTaskMachine)?;
-        let staged_children = children
-            .iter()
-            .map(|(id, machine)| {
-                machine
-                    .clone_with_staged_budget(budget.clone())
-                    .map(|machine| (*id, machine))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()
-            .map_err(|_| TaskStateError::InvalidTaskMachine)?;
+        let mut staged_children = BTreeMap::new();
+        let mut staged_child_resource_admission_guards = BTreeMap::new();
+        for (id, machine) in children.iter() {
+            let (staged, guard) = machine
+                .clone_with_staged_budget(budget.clone())
+                .map_err(|_| TaskStateError::InvalidTaskMachine)?;
+            staged_children.insert(*id, staged);
+            if let Some(guard) = guard {
+                staged_child_resource_admission_guards.insert(*id, guard);
+            }
+        }
         let (tasks, sessions) = if let Some((tasks, sessions)) = &state.durable_graph_baseline {
             (tasks.clone(), sessions.clone())
         } else {
@@ -102,6 +107,8 @@ impl ExecutionCoordinator {
             children,
             staged_foreground,
             staged_children,
+            staged_foreground_resource_admission_guard,
+            staged_child_resource_admission_guards,
             tasks,
             sessions,
             budget,
@@ -202,13 +209,19 @@ impl DurableGraphTransaction<'_> {
             .filter(|task| matches!(task.status(), ConcurrentTaskStatusV1::Running))
             .map(|task| task.task_path().to_vec())
             .ok_or(TaskStateError::InvalidTaskMachine)?;
-        let machine = machine
+        if self.staged_children.contains_key(&task_id) {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        let (machine, guard) = machine
             .clone_with_staged_budget(self.budget.clone())
             .map_err(|_| TaskStateError::InvalidTaskMachine)?;
-        if !machine.has_concurrent_task_context(task_id, &task_path)
-            || self.staged_children.insert(task_id, machine).is_some()
-        {
+        if !machine.has_concurrent_task_context(task_id, &task_path) {
             return Err(TaskStateError::InvalidTaskMachine);
+        }
+        self.staged_children.insert(task_id, machine);
+        if let Some(guard) = guard {
+            self.staged_child_resource_admission_guards
+                .insert(task_id, guard);
         }
         Ok(())
     }
@@ -343,6 +356,15 @@ impl DurableGraphTransaction<'_> {
             let execution_budget = ExecutionBudget::recover_from_checkpoint(committed_budget)
                 .map_err(|_| DurableCommitError::InvalidState)?;
             state.durable_graph_baseline = Some((self.tasks.clone(), self.sessions.clone()));
+            self.foreground
+                .commit_staged_resource_admission(&mut self.staged_foreground);
+            for (task_id, authoritative) in self.children.iter_mut() {
+                if let Some(staged) = self.staged_children.get_mut(task_id) {
+                    authoritative.commit_staged_resource_admission(staged);
+                } else {
+                    authoritative.close_resource_admission();
+                }
+            }
             *self.foreground = self.staged_foreground.clone();
             *self.children = self.staged_children.clone();
             state.tasks = published_tasks;
@@ -351,6 +373,14 @@ impl DurableGraphTransaction<'_> {
             state.execution_budget = Some(execution_budget);
             state.publication = state.publication.wrapping_add(1);
             state.durable_publication_reserved = false;
+            if let Some(guard) = self.staged_foreground_resource_admission_guard.as_mut() {
+                guard.disarm();
+            }
+            for task_id in self.staged_children.keys() {
+                if let Some(guard) = self.staged_child_resource_admission_guards.get_mut(task_id) {
+                    guard.disarm();
+                }
+            }
             self.installed = true;
             let ids = state
                 .task_waiters
@@ -378,7 +408,7 @@ impl DurableGraphTransaction<'_> {
 
 impl Drop for DurableGraphTransaction<'_> {
     fn drop(&mut self) {
-        if !self.commit_started && !self.installed {
+        if !self.installed && !self.commit_started {
             lock(&self.coordinator.inner.state).durable_publication_reserved = false;
         }
     }

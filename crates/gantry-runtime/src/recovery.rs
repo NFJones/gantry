@@ -34,6 +34,7 @@ use gantry_ir::{MachineProgram, TypeDescriptor};
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 use crate::ConcurrentDurableCheckpointError;
+use crate::machine::ResourceAdmissionGuard;
 use crate::{
     CancellationReason, DURABLE_EVENT_DISPATCHED_KIND_V1, DURABLE_EVENT_OCCURRENCE_KIND_V1,
     DURABLE_EVENT_SETTLED_KIND_V1, DurableEventEvidenceError, DurableEventOccurrenceV1,
@@ -457,6 +458,7 @@ pub enum DurableOperationRecoveryV1 {
 #[derive(Debug)]
 pub struct RecoveredDurableStateV1 {
     machine: Machine,
+    resource_admission_guard: Option<ResourceAdmissionGuard>,
     sessions: Option<LogicalSessionRegistryV1>,
     execution_start: Option<DurableExecutionStartV3>,
     execution_state: Option<DurableExecutionStateV1>,
@@ -472,8 +474,10 @@ pub struct RecoveredDurableStateV1 {
 impl Clone for RecoveredDurableStateV1 {
     /// Copies a durable cut without sharing speculative budget mutations.
     fn clone(&self) -> Self {
+        let (machine, resource_admission_guard) = self.machine.clone_durable_projection();
         Self {
-            machine: self.machine.clone_durable_projection(),
+            machine,
+            resource_admission_guard,
             sessions: self.sessions.clone(),
             execution_start: self.execution_start.clone(),
             execution_state: self.execution_state.clone(),
@@ -516,6 +520,7 @@ impl RecoveredDurableStateV1 {
             .map_err(DurableEvidenceError::Session)?;
         Ok(Self {
             machine,
+            resource_admission_guard: None,
             sessions,
             execution_start: Some(execution_start),
             execution_state: None,
@@ -662,13 +667,19 @@ impl RecoveredDurableStateV1 {
 
     /// Consumes the projection and returns the reconstructed existing evaluator.
     #[must_use]
-    pub fn into_machine(self) -> Machine {
+    pub fn into_machine(mut self) -> Machine {
+        if let Some(guard) = self.resource_admission_guard.as_mut() {
+            guard.disarm();
+        }
         self.machine
     }
 
     /// Consumes the projection into the existing evaluator and recovered session registry.
     #[must_use]
-    pub fn into_parts(self) -> (Machine, Option<LogicalSessionRegistryV1>) {
+    pub fn into_parts(mut self) -> (Machine, Option<LogicalSessionRegistryV1>) {
+        if let Some(guard) = self.resource_admission_guard.as_mut() {
+            guard.disarm();
+        }
         (self.machine, self.sessions)
     }
 }
@@ -1002,6 +1013,7 @@ impl PrefixProjection {
             .map_err(DurableEvidenceError::Checkpoint)?;
         Ok(RecoveredDurableStateV1 {
             machine,
+            resource_admission_guard: None,
             sessions,
             execution_start: self.execution_start,
             execution_state: self.execution_state,
@@ -1908,9 +1920,10 @@ mod tests {
         FullJournalPrefixV1, JournalEvidenceEnvelopeV1, JournalId, JournalPrefixV1,
         SnapshotJournalPrefixV1,
     };
-    use gantry_ir::generated::RecoveryClass;
+    use gantry_ir::generated::{OperationSiteKind, RecoveryClass};
     use gantry_ir::{
-        CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, StructuralPosition,
+        CanonicalPath, CanonicalSignature, EffectSet, ExecutableAction, ExecutableOperation,
+        Instruction, InstructionKind, MachineProgram, OperationKind, StructuralPosition,
         TypeDescriptor, Workflow,
     };
 
@@ -1949,6 +1962,40 @@ mod tests {
         assert_ne!(staged.machine().budget_checkpoint(), budget);
         assert_eq!(authoritative.machine().checkpoint(), checkpoint);
         assert_eq!(authoritative.machine().budget_checkpoint(), budget);
+    }
+
+    /// Dropping an isolated recovered projection revokes an action prepared after cloning.
+    #[test]
+    fn durable_state_clone_revokes_escaped_resource_admission_on_drop() {
+        let program = operation_program();
+        let machine = machine(Arc::clone(&program));
+        let evidence = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
+        let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
+            journal_id: journal_id(),
+            evidence: Arc::from([envelope(1, 1, &evidence, &[])]),
+            committed_through: 1,
+        });
+        let authoritative = recover_authoritative_prefix(program, &prefix)
+            .unwrap_or_else(|error| panic!("recovery failed: {error:?}"));
+        let mut projected = authoritative.clone();
+        assert!(matches!(
+            projected.machine_mut().step(),
+            MachineStep::Transition(crate::MachineLabel::OperationPrepared(_))
+        ));
+        let projected_subject = projected
+            .machine()
+            .pending_resource_subject()
+            .unwrap_or_else(|| panic!("projected action has a resource subject"));
+        drop(projected);
+        assert_eq!(
+            projected_subject.lock_admission().map(|open| *open),
+            Some(false),
+            "dropping a recovered projection revokes a lease created after cloning"
+        );
+        assert!(
+            authoritative.machine().pending_resource_subject().is_none(),
+            "the authoritative machine remains before the projected action"
+        );
     }
 
     #[test]
@@ -2547,9 +2594,40 @@ mod tests {
     }
 
     fn operation_program() -> Arc<MachineProgram> {
+        let action_path = path("crate::action");
+        let operation = ExecutableOperation {
+            kind: OperationSiteKind::Action,
+            section20_kind: Some(OperationKind::LiveResource),
+            result_type: TypeDescriptor::UNIT,
+            action: Some(ExecutableAction {
+                path: action_path.clone(),
+                signature: CanonicalSignature::action(
+                    RecoveryClass::ReadOnly,
+                    &action_path,
+                    &[],
+                    &TypeDescriptor::UNIT,
+                ),
+                recovery: RecoveryClass::ReadOnly,
+                parameters: Vec::new(),
+            }),
+            template_segments: Vec::new(),
+            interpolation_types: Vec::new(),
+            named_input_names: Vec::new(),
+            named_input_types: Vec::new(),
+            retry_limit: None,
+            session_mode: None,
+            attempted: false,
+        };
         program(
             vec![
-                instruction(0, TypeDescriptor::UNIT, InstructionKind::Operation),
+                instruction(
+                    0,
+                    TypeDescriptor::UNIT,
+                    InstructionKind::OperationCall {
+                        operation,
+                        operands: 0,
+                    },
+                ),
                 instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
             ],
             TypeDescriptor::UNIT,

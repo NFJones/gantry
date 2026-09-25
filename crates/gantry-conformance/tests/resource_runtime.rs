@@ -28,12 +28,13 @@ use gantry::portable::IdentityKind;
 use gantry::runtime::AdapterBindingRefusal;
 use gantry::runtime::CohortEmergencySettlement;
 use gantry::runtime::{
-    AdmittedResource, ExecutionBudget, Instruction, InstructionKind, Machine, MachineCheckpointV3,
-    MachineLabel, MachineLimits, MachineProgram, MachineStep, PostFailureSettlementRefusal,
-    RecoveredResourceRecord, ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
-    Workflow,
+    AdmittedResource, ExecutionBudget, Instruction, InstructionKind, LoopPhase, Machine,
+    MachineCheckpointV3, MachineLabel, MachineLimits, MachineProgram, MachineStep,
+    PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRecordCodecError,
+    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding, Workflow,
+    decode_resource_reconstruction_record, encode_resource_reconstruction_record,
 };
-use gantry::value::DEFAULT_VALUE_LIMITS;
+use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 
 /// Fails to compile if the admitted account acquires a duplicating trait: a runtime
 /// account is uniquely owned, so copying one would create a second owner over one
@@ -136,6 +137,106 @@ fn an_unauthenticated_operation_kind_is_refused_at_resource_admission() {
     assert!(
         registry.account(&subject).is_none(),
         "a refused admission creates no account"
+    );
+}
+
+#[test]
+fn registry_admission_uses_the_machines_pending_resource_subject() {
+    let (_program, machine, expected_subject) =
+        machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let expected_subject =
+        expected_subject.unwrap_or_else(|| panic!("the pending action has a resource subject"));
+    let mut registry = ResourceRegistry::new();
+
+    registry
+        .admit_pending_operation(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("the pending action subject is admitted: {error:?}"));
+    assert!(
+        registry.account(&expected_subject).is_some(),
+        "admission is bound to the machine-issued subject"
+    );
+
+    let (_program, machine_without_action, _) = machine_with_declared_subject(None);
+    let registry_before_actionless_refusal = registry.declared_records();
+    assert_eq!(
+        registry.admit_pending_operation(
+            &machine_without_action,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "an operation without an action cannot present a resource subject"
+    );
+    assert_eq!(
+        registry.declared_records(),
+        registry_before_actionless_refusal,
+        "an operation without an action leaves registry records unchanged"
+    );
+
+    let (_program, mut completed_machine, _) =
+        machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let saved_subject = completed_machine
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("pending action exposes its machine-issued subject"));
+    let operation = completed_machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("fixture operation is pending"))
+        .identity;
+    completed_machine
+        .complete_operation(operation, LogicalValue::unit())
+        .unwrap_or_else(|error| panic!("fixture operation completes: {error:?}"));
+    let registry_before_completed_refusal = registry.declared_records();
+    assert_eq!(
+        registry.admit_pending_operation(
+            &completed_machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "a machine without pending work cannot present a resource subject"
+    );
+    assert_eq!(
+        registry.declared_records(),
+        registry_before_completed_refusal,
+        "completed work leaves registry records unchanged"
+    );
+    assert_eq!(
+        registry.admit(
+            saved_subject,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "a cloned pending subject cannot bypass the machine's completed-operation refusal"
+    );
+    assert_eq!(
+        registry.declared_records(),
+        registry_before_completed_refusal,
+        "a stale saved subject cannot publish a resource account"
+    );
+
+    let (_program, unauthenticated_machine, _) =
+        machine_with_unauthenticated_subject(Some(FIXTURE_DECLARATION));
+    let mut unauthenticated_registry = ResourceRegistry::new();
+    let registry_before_unauthenticated_refusal = unauthenticated_registry.declared_records();
+    assert_eq!(
+        unauthenticated_registry.admit_pending_operation(
+            &unauthenticated_machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::UnauthenticatedOperationKind),
+        "the wrapper preserves the existing unauthenticated-kind refusal"
+    );
+    assert_eq!(
+        unauthenticated_registry.declared_records(),
+        registry_before_unauthenticated_refusal,
+        "an unauthenticated operation leaves registry records unchanged"
     );
 }
 
@@ -1196,6 +1297,135 @@ fn runtime_subject_requires_the_declared_operation_action() {
 }
 
 #[test]
+fn repeated_loop_site_gets_a_distinct_checkpointed_resource_generation() {
+    let workflow = CanonicalPath::new(FIXTURE_WORKFLOW)
+        .unwrap_or_else(|_| unreachable!("fixture workflow is canonical"));
+    let program = Arc::new(
+        MachineProgram::new(vec![Workflow {
+            path: workflow.clone(),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![FIXTURE_SITE - 1])
+                        .unwrap_or_else(|_| unreachable!("loop site is canonical")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::EnterLoop {
+                        phase: LoopPhase::Condition,
+                        source_limit: None,
+                    },
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![FIXTURE_SITE])
+                        .unwrap_or_else(|_| unreachable!("operation site is canonical")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::OperationCall {
+                        operation: operation_metadata(
+                            Some(FIXTURE_DECLARATION),
+                            Some(OperationKind::LiveResource),
+                        ),
+                        operands: 0,
+                    },
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![FIXTURE_SITE + 1])
+                        .unwrap_or_else(|_| unreachable!("pop site is canonical")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Pop,
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![FIXTURE_SITE + 2])
+                        .unwrap_or_else(|_| unreachable!("leave site is canonical")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::LeaveOccurrence,
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![FIXTURE_SITE + 3])
+                        .unwrap_or_else(|_| unreachable!("jump site is canonical")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Jump(0),
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("loop resource fixture is valid: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [9; 32])
+        .unwrap_or_else(|error| panic!("fixture execution identity is valid: {error}"));
+    let limits = MachineLimits::new(32, 2, 2, 1, 32, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("fixture machine limits are positive"));
+    let mut machine = Machine::new(
+        Arc::clone(&program),
+        &workflow,
+        Vec::new(),
+        execution,
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("loop resource machine constructs: {error:?}"));
+    let first_occurrence = loop {
+        match machine.step() {
+            MachineStep::Transition(MachineLabel::OperationPrepared(occurrence)) => {
+                break occurrence;
+            }
+            MachineStep::Transition(_) => {}
+            MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+            other => panic!("first loop operation was not prepared: {other:?}"),
+        }
+    };
+    let first_subject = machine
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("first operation has a resource subject"));
+    let bytes = machine.checkpoint().canonical_bytes();
+    let checkpoint = MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("pending-operation checkpoint decodes: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("operation budget recovers: {error:?}"));
+    let mut machine = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("pending-operation machine recovers: {error:?}"));
+    assert_eq!(
+        machine.pending_resource_subject(),
+        Some(first_subject.clone()),
+        "the checkpoint retains the allocated resource generation"
+    );
+    machine
+        .complete_operation(first_occurrence.identity, LogicalValue::unit())
+        .unwrap_or_else(|error| panic!("first operation completes: {error:?}"));
+    let second_subject = loop {
+        match machine.step() {
+            MachineStep::Transition(MachineLabel::OperationPrepared(_)) => {
+                break machine
+                    .pending_resource_subject()
+                    .unwrap_or_else(|| panic!("second operation has a resource subject"));
+            }
+            MachineStep::Transition(_) => {}
+            MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+            other => panic!("second loop operation was not prepared: {other:?}"),
+        }
+    };
+
+    assert_ne!(
+        first_subject.generation(),
+        second_subject.generation(),
+        "one declared operation site must not reuse a resource generation across loop invocations"
+    );
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            first_subject,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("first generation is admitted: {error:?}"));
+    registry
+        .admit(
+            second_subject,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("second generation is independently admitted: {error:?}"));
+}
+
+#[test]
 fn runtime_subject_survives_checkpoint_recovery() {
     let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
     let subject = subject.unwrap_or_else(|| panic!("the fixture operation declares an action"));
@@ -1440,6 +1670,176 @@ fn recovery_reconstructs_every_presented_record_or_refuses_the_whole_set() {
         .err(),
         Some(ResourceRegistryRefusal::UnauthenticatedOperationKind),
         "a record for an unauthenticated operation refuses the whole set"
+    );
+}
+
+#[test]
+fn reconstruction_record_codec_round_trips_full_range_facts_and_rejects_noncanonical_bytes() {
+    let source = ledger().durable_record();
+    let mut quotas = source.quotas().clone();
+    quotas.insert(
+        (QuotaOwner::Owner, QuotaFamily::Bytes),
+        Quota::from_durable_facts(u64::MAX, u64::MAX, u64::MAX)
+            .unwrap_or_else(|error| panic!("maximum quota facts are reachable: {error:?}")),
+    );
+    let record = DurableResourceRecord::from_durable_facts(
+        OwnerGeneration::new(u64::MAX),
+        ResourceLifetimeState::Active,
+        source.operation_state(),
+        quotas,
+        source.liveness_roots().clone(),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("maximum owner facts are reachable: {error:?}"));
+
+    let encoded = encode_resource_reconstruction_record(&record);
+    assert_eq!(
+        decode_resource_reconstruction_record(&encoded),
+        Ok(record),
+        "the declared record codec preserves all u64 model facts"
+    );
+    let settled = settled_record();
+    let settled_bytes = encode_resource_reconstruction_record(&settled);
+    assert_eq!(
+        decode_resource_reconstruction_record(&settled_bytes),
+        Ok(settled),
+        "terminal settlement facts survive reconstruction-record encoding"
+    );
+    assert_eq!(
+        decode_resource_reconstruction_record(&[encoded.as_slice(), b" "].concat()),
+        Err(ResourceRecordCodecError::Encoding),
+        "trailing whitespace is not a second canonical spelling"
+    );
+    assert_eq!(
+        decode_resource_reconstruction_record(
+            br#"{"format":"gantry.resource-reconstruction/v1","record":{}}"#
+        ),
+        Err(ResourceRecordCodecError::Encoding),
+        "an incomplete record is rejected"
+    );
+    let mut injected_subject = encoded.clone();
+    injected_subject.pop();
+    injected_subject.extend_from_slice(br#","subject":"caller-selected"}"#);
+    assert_eq!(
+        decode_resource_reconstruction_record(&injected_subject),
+        Err(ResourceRecordCodecError::Encoding),
+        "journal-carried subjects are not accepted by the subject-free record codec"
+    );
+    let malformed_decimal = String::from_utf8(encoded.clone())
+        .unwrap_or_else(|error| panic!("codec output is UTF-8: {error}"))
+        .replace("18446744073709551615", "01");
+    assert_eq!(
+        decode_resource_reconstruction_record(malformed_decimal.as_bytes()),
+        Err(ResourceRecordCodecError::Encoding),
+        "decimal counters reject leading zeroes"
+    );
+    let overflowing_decimal = String::from_utf8(encoded.clone())
+        .unwrap_or_else(|error| panic!("codec output is UTF-8: {error}"))
+        .replace("18446744073709551615", "18446744073709551616");
+    assert_eq!(
+        decode_resource_reconstruction_record(overflowing_decimal.as_bytes()),
+        Err(ResourceRecordCodecError::Encoding),
+        "decimal counters reject values outside u64"
+    );
+
+    let encoded_text = String::from_utf8(encoded.clone())
+        .unwrap_or_else(|error| panic!("codec output is UTF-8: {error}"));
+    let duplicate_array_entry = |field: &str, object_entry: bool| {
+        let marker = format!("\"{field}\":[");
+        let start = encoded_text
+            .find(&marker)
+            .unwrap_or_else(|| panic!("encoded record has {field} array"))
+            + marker.len();
+        let end = encoded_text[start..]
+            .find(']')
+            .map(|offset| start + offset)
+            .unwrap_or_else(|| panic!("encoded {field} array closes"));
+        let entries = &encoded_text[start..end];
+        let first_end = if object_entry {
+            entries
+                .find('}')
+                .map(|offset| offset + 1)
+                .unwrap_or_else(|| panic!("encoded {field} array has an object"))
+        } else {
+            entries.find(',').unwrap_or(entries.len())
+        };
+        format!(
+            "{}{},{}{}",
+            &encoded_text[..start],
+            entries,
+            &entries[..first_end],
+            &encoded_text[end..]
+        )
+    };
+    assert_eq!(
+        decode_resource_reconstruction_record(
+            duplicate_array_entry("liveness_roots", false).as_bytes()
+        ),
+        Err(ResourceRecordCodecError::Encoding),
+        "duplicate liveness roots are not canonical reconstruction facts"
+    );
+    assert_eq!(
+        decode_resource_reconstruction_record(duplicate_array_entry("quotas", true).as_bytes()),
+        Err(ResourceRecordCodecError::Model(
+            ResourceError::DuplicateQuota
+        )),
+        "duplicate quota identities are refused"
+    );
+
+    let first_field_start = encoded_text
+        .find("\"record\":{")
+        .map(|offset| offset + "\"record\":{".len())
+        .unwrap_or_else(|| panic!("encoded record object exists"));
+    let second_field_start = encoded_text
+        .find(",\"liveness_roots\":")
+        .map(|offset| offset + 1)
+        .unwrap_or_else(|| panic!("encoded liveness-roots field exists"));
+    let second_field_end = encoded_text
+        .find(",\"operation_state\":")
+        .unwrap_or_else(|| panic!("encoded operation-state field follows roots"));
+    let reordered_fields = format!(
+        "{}{},{}{}",
+        &encoded_text[..first_field_start],
+        &encoded_text[second_field_start..second_field_end],
+        &encoded_text[first_field_start..second_field_start - 1],
+        &encoded_text[second_field_end..]
+    );
+    assert_eq!(
+        decode_resource_reconstruction_record(reordered_fields.as_bytes()),
+        Err(ResourceRecordCodecError::Encoding),
+        "reordered fields are not a second canonical record spelling"
+    );
+
+    let record_start = encoded_text
+        .find(",\"record\":")
+        .map(|offset| offset + ",\"record\":".len())
+        .unwrap_or_else(|| panic!("encoded top-level record field exists"));
+    let top_level_reordered = format!(
+        r#"{{"record":{},"format":"gantry.resource-reconstruction/v1"}}"#,
+        &encoded_text[record_start..encoded_text.len() - 1]
+    );
+    assert_eq!(
+        decode_resource_reconstruction_record(top_level_reordered.as_bytes()),
+        Err(ResourceRecordCodecError::Encoding),
+        "reordered top-level fields are not a second canonical record spelling"
+    );
+
+    let invalid_model_facts = encoded_text.replacen(
+        "\"family\":\"bytes\",\"limit\":\"18446744073709551615\"",
+        "\"family\":\"bytes\",\"limit\":\"0\"",
+        1,
+    );
+    assert_ne!(
+        invalid_model_facts, encoded_text,
+        "the selected quota exists"
+    );
+    assert_eq!(
+        decode_resource_reconstruction_record(invalid_model_facts.as_bytes()),
+        Err(ResourceRecordCodecError::Model(
+            ResourceError::InvalidDurableQuota
+        )),
+        "durable quota facts above their declared limit are refused"
     );
 }
 

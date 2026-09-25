@@ -3,15 +3,18 @@
 use super::*;
 use crate::{
     CanonicalTranscriptV1, DurableTransitionSink, InMemoryJournalStore, MachineLimits, MachineStep,
+    ResourceRegistry, ResourceRegistryRefusal,
 };
 use gantry_core::portable::IdentityKind;
 use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 use gantry_host::contracts::HostFuture;
 use gantry_host::journal::*;
+use gantry_ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry_ir::{
-    CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody, ExecutableTaskContext,
-    ExecutableTaskHandle, Instruction, InstructionKind, MachineProgram, TaskBodyIdentity,
-    TypeDescriptor, Workflow,
+    CanonicalCallableIdentity, CanonicalPath, CanonicalSignature, EffectSet, ExecutableAction,
+    ExecutableOperation, ExecutableTaskBody, ExecutableTaskContext, ExecutableTaskHandle,
+    Instruction, InstructionKind, LivenessRoot, MachineProgram, OperationKind, OwnerGeneration,
+    ResourceCarrier, ResourceLedger, ResourceState, TaskBodyIdentity, TypeDescriptor, Workflow,
 };
 
 /// Probes publication from inside a wake callback to catch lock-held notification.
@@ -422,6 +425,263 @@ fn dropping_unsubmitted_stage_rolls_back_and_releases_publication() {
     assert_eq!(root.checkpoint(), checkpoint);
     assert_eq!(coordinator.snapshot(), before);
     assert!(coordinator.stage_graph(&mut root, &mut children).is_ok());
+}
+
+#[test]
+fn dropping_failed_operation_stage_preserves_authoritative_resource_admission() {
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [71; 32])
+        .unwrap_or_else(|error| panic!("execution identity: {error}"));
+    let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [72; 32])
+        .unwrap_or_else(|error| panic!("session identity: {error}"));
+    let workflow_path =
+        CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("workflow path: {error}"));
+    let action_path =
+        CanonicalPath::new("crate::action").unwrap_or_else(|error| panic!("action path: {error}"));
+    let operation = ExecutableOperation {
+        kind: OperationSiteKind::Action,
+        section20_kind: Some(OperationKind::LiveResource),
+        result_type: TypeDescriptor::UNIT,
+        action: Some(ExecutableAction {
+            path: action_path.clone(),
+            signature: CanonicalSignature::action(
+                RecoveryClass::Idempotent,
+                &action_path,
+                &[],
+                &TypeDescriptor::UNIT,
+            ),
+            recovery: RecoveryClass::Idempotent,
+            parameters: Vec::new(),
+        }),
+        template_segments: Vec::new(),
+        interpolation_types: Vec::new(),
+        named_input_names: Vec::new(),
+        named_input_types: Vec::new(),
+        retry_limit: None,
+        session_mode: None,
+        attempted: false,
+    };
+    let program = Arc::new(
+        MachineProgram::new(vec![Workflow {
+            path: workflow_path.clone(),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("operation site: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::OperationCall {
+                        operation,
+                        operands: 0,
+                    },
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("return site: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("operation program: {error:?}")),
+    );
+    let limits = MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("machine limits"));
+    let mut root = Machine::new(
+        Arc::clone(&program),
+        &workflow_path,
+        Vec::new(),
+        execution,
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let tasks = ConcurrentTaskStateV1::new(execution, root.task_id(), 10)
+        .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+    let sessions = LogicalSessionRegistryV1::new(
+        execution,
+        session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+    let coordinator =
+        ExecutionCoordinator::new_with_budget(tasks, sessions, root.execution_budget())
+            .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+    let mut children = BTreeMap::new();
+    let record = ResourceLedger::new(
+        OwnerGeneration::new(4),
+        ResourceState::Usable,
+        &[LivenessRoot::Resource],
+        &[],
+    )
+    .unwrap_or_else(|error| panic!("resource reconstruction record: {error:?}"))
+    .durable_record();
+
+    let mut before_action_stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage before action: {error:?}"));
+    let before_action_subject = before_action_stage.update(|staged_root, _, _, _| {
+        assert!(matches!(
+            staged_root.step(),
+            MachineStep::Transition(crate::MachineLabel::OperationPrepared(_))
+        ));
+        staged_root
+            .pending_resource_subject()
+            .unwrap_or_else(|| panic!("staged action has a resource subject"))
+    });
+    drop(before_action_stage);
+    assert_eq!(
+        ResourceRegistry::new().admit(
+            before_action_subject,
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "an action prepared only inside a rolled-back stage cannot be admitted"
+    );
+    assert!(matches!(
+        root.step(),
+        MachineStep::Transition(crate::MachineLabel::OperationPrepared(_))
+    ));
+    let subject = root
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("the pending action has a resource subject"));
+    let operation = root
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("the pending action retains its occurrence"))
+        .identity;
+
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage graph: {error:?}"));
+    let staged_subject = stage.update(|staged_root, _, _, _| {
+        let subject = staged_root
+            .pending_resource_subject()
+            .unwrap_or_else(|| panic!("staged pending action has a resource subject"));
+        staged_root
+            .fail_operation_with_code(operation, crate::RuntimeCode::InternalInvariant)
+            .unwrap_or_else(|error| panic!("staged failure: {error:?}"));
+        subject
+    });
+    assert_eq!(subject.lock_admission().map(|open| *open), Some(true));
+    drop(stage);
+
+    assert!(
+        root.checkpoint().pending_operation().is_some(),
+        "rollback keeps the authoritative operation pending"
+    );
+    assert_eq!(
+        subject.lock_admission().map(|open| *open),
+        Some(true),
+        "a dropped terminal stage leaves the authoritative resource admission open"
+    );
+    assert_eq!(
+        ResourceRegistry::new().admit(
+            staged_subject,
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "a subject retained from a rolled-back staged failure cannot be admitted"
+    );
+
+    let mut unchanged_stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage unchanged pending operation: {error:?}"));
+    let staged_pending_subject = unchanged_stage.update(|staged_root, _, _, _| {
+        staged_root
+            .pending_resource_subject()
+            .unwrap_or_else(|| panic!("staged operation remains pending"))
+    });
+    drop(unchanged_stage);
+    assert_eq!(
+        ResourceRegistry::new().admit(
+            staged_pending_subject,
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "a binding retained from an unchanged rolled-back stage is revoked"
+    );
+
+    let task = root.task_id();
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal = JournalId::new("staged-resource-admission")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage, journal, owner.token);
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, task, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let mut committed_stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage pending operation: {error:?}"));
+    let committed_staged_subject = committed_stage.update(|staged_root, _, _, _| {
+        staged_root
+            .pending_resource_subject()
+            .unwrap_or_else(|| panic!("staged operation remains pending"))
+    });
+    let payload = gantry_core::event::EventPayload::from_validated_canonical_bytes(
+        Arc::<[u8]>::from(&b"{}"[..]),
+    )
+    .unwrap_or_else(|error| panic!("payload: {error:?}"));
+    let draft = gantry_core::event::EventDraft::new(
+        gantry_core::portable::EventKind::OperationCompletion,
+        payload,
+    )
+    .with_execution_id(execution)
+    .unwrap_or_else(|error| panic!("draft: {error:?}"));
+    let event = gantry_core::event::EventEnvelope::complete(
+        ProtocolIdentity::from_fresh_material(IdentityKind::Event, [81; 32])
+            .unwrap_or_else(|error| panic!("event id: {error}")),
+        ProtocolIdentity::from_fresh_material(IdentityKind::Activity, [82; 32])
+            .unwrap_or_else(|error| panic!("activity id: {error}")),
+        gantry_core::timestamp::UtcTimestamp::from_unix_seconds(0, 82)
+            .unwrap_or_else(|error| panic!("time: {error:?}")),
+        draft,
+    )
+    .unwrap_or_else(|error| panic!("event: {error:?}"));
+    committed_stage
+        .set_event(event, crate::DurableEventPlanV1::default(), Vec::new())
+        .unwrap_or_else(|error| panic!("event staging: {error:?}"));
+    ready(committed_stage.commit(&mut commits, DurableCommitCutV1::Checkpoint, task))
+        .unwrap_or_else(|error| panic!("same-operation commit: {error:?}"));
+    assert_eq!(
+        ResourceRegistry::new().admit(
+            committed_staged_subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "a subject captured from a committed stage is revoked when its lease is promoted"
+    );
+    let authoritative_subject = root
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("committed authoritative operation remains pending"));
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            authoritative_subject,
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+        )
+        .unwrap_or_else(|error| panic!("authoritative pending subject admits: {error:?}"));
+    root.complete_operation(operation, LogicalValue::unit())
+        .unwrap_or_else(|error| panic!("authoritative pending operation completes: {error:?}"));
+    assert_eq!(
+        ResourceRegistry::new().admit(
+            committed_staged_subject,
+            ResourceCarrier::ReconstructionRecord,
+            record,
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "the staged subject remains unusable after the authoritative operation completes"
+    );
 }
 
 #[test]
