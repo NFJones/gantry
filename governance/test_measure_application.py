@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from measure_application import measure, refuse_constant
+from measure_application import MAX_OUTPUT_BYTES, measure, refuse_constant
 
 
 class MeasurementTests(unittest.TestCase):
@@ -57,6 +57,12 @@ class MeasurementTests(unittest.TestCase):
                       'Path(sys.argv[2], "main.gnt").write_text("changed")\n'
                       'print("\\\"ok\\\"")\n')
         with self.assertRaisesRegex(ValueError, "inputs changed"):
+            measure(self.binary, self.package, '"ok"', 1, 5)
+
+    def test_excessive_output_refuses_without_retaining_the_stream(self):
+        """A process that emits too much output never produces a timing record."""
+        self.fake_cli(f'import sys\nsys.stdout.write("x" * {MAX_OUTPUT_BYTES + 1})\n')
+        with self.assertRaisesRegex(ValueError, "output exceeds"):
             measure(self.binary, self.package, '"ok"', 1, 5)
 
     def test_bounds_and_missing_inputs_refuse(self):

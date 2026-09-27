@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
+import selectors
 import subprocess
 import sys
 import time
@@ -17,6 +19,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+MAX_OUTPUT_BYTES = 1_048_576
 
 
 def digest(path: Path) -> str:
@@ -29,11 +32,47 @@ def refuse_constant(value: str) -> None:
     raise ValueError(f"non-JSON numeric constant: {value}")
 
 
+def run_bounded(command: list[str], timeout_seconds: float) -> tuple[int, bytes, bytes]:
+    """Drain both streams with a deadline and a separate byte ceiling for each."""
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output = {"stdout": bytearray(), "stderr": bytearray()}
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        with selectors.DefaultSelector() as ready:
+            for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+                ready.register(stream, selectors.EVENT_READ, name)
+            while ready.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout_seconds)
+                for key, _ in ready.select(remaining):
+                    chunk = os.read(key.fileobj.fileno(), 65_536)
+                    if not chunk:
+                        ready.unregister(key.fileobj)
+                    else:
+                        collected = output[key.data]
+                        if len(collected) + len(chunk) > MAX_OUTPUT_BYTES:
+                            raise ValueError("application output exceeds the measurement byte limit")
+                        collected.extend(chunk)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(command, timeout_seconds)
+        return process.wait(timeout=remaining), bytes(output["stdout"]), bytes(output["stderr"])
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        process.stdout.close()
+        process.stderr.close()
+
+
 def measure(binary: Path, package: Path, expected: str, repetitions: int,
             timeout_seconds: float) -> dict:
     """Measure successful CLI runs, failing closed on drift or incomplete runs."""
     if not 1 <= repetitions <= 30 or not 0 < timeout_seconds <= 120:
         raise ValueError("repetitions must be 1..30 and timeout must be in (0, 120]")
+    if len(expected.encode()) + 1 > MAX_OUTPUT_BYTES:
+        raise ValueError("expected output exceeds the measurement byte limit")
     sources = sorted(package.rglob("*.gnt"))
     if not sources or not binary.is_file():
         raise ValueError("a product binary and at least one .gnt source are required")
@@ -44,10 +83,9 @@ def measure(binary: Path, package: Path, expected: str, repetitions: int,
     observations = []
     for _ in range(repetitions):
         start = time.perf_counter_ns()
-        result = subprocess.run([str(binary), "run", str(package)], capture_output=True,
-                                timeout=timeout_seconds, check=False)
+        code, stdout, stderr = run_bounded([str(binary), "run", str(package)], timeout_seconds)
         elapsed = time.perf_counter_ns() - start
-        if result.returncode or result.stderr or result.stdout != (expected + "\n").encode():
+        if code or stderr or stdout != (expected + "\n").encode():
             raise ValueError("application failed or produced unexpected output; no observation recorded")
         if (digest(binary) != binary_sha256
                 or digest(ROOT / "SPEC.md") != specification_sha256
