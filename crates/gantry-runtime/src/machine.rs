@@ -1062,7 +1062,26 @@ fn payload_path_segment(source: &LogicalValue) -> ValuePathSegment {
 struct PendingOperation {
     occurrence: OperationOccurrence,
     operands: usize,
-    resource_admission_open: Arc<Mutex<bool>>,
+    resource_admission_open: Arc<Mutex<ResourceOperationLease>>,
+}
+
+/// Process-local admission and settlement facts for one pending operation.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct ResourceOperationLease {
+    /// Accepted work retains pending capacity until terminal machine settlement.
+    pub(crate) pending: bool,
+    /// Cancellation prevents new admission without settling accepted work.
+    pub(crate) cancellation_requested: bool,
+}
+
+impl ResourceOperationLease {
+    /// Opens one operation with no requested cancellation.
+    pub(crate) const fn open() -> Self {
+        Self {
+            pending: true,
+            cancellation_requested: false,
+        }
+    }
 }
 
 impl PartialEq for PendingOperation {
@@ -1076,7 +1095,7 @@ impl Eq for PendingOperation {}
 impl PendingOperation {
     fn close_resource_admission(&self) {
         if let Ok(mut admission_open) = self.resource_admission_open.lock() {
-            *admission_open = false;
+            admission_open.pending = false;
         }
     }
 }
@@ -1085,7 +1104,7 @@ impl PendingOperation {
 #[derive(Debug, Default)]
 struct ResourceAdmissionTracker {
     armed: bool,
-    leases: Vec<Arc<Mutex<bool>>>,
+    leases: Vec<Arc<Mutex<ResourceOperationLease>>>,
 }
 
 /// Revokes every admission lease created by one abandoned isolated projection.
@@ -1111,7 +1130,7 @@ impl Drop for ResourceAdmissionGuard {
         {
             for lease in tracker.leases.drain(..) {
                 if let Ok(mut state) = lease.lock() {
-                    *state = false;
+                    state.pending = false;
                 }
             }
         }
@@ -2426,7 +2445,7 @@ impl Machine {
                 .resource_admission_open
                 .lock()
                 .map(|state| *state)
-                .unwrap_or(false);
+                .unwrap_or_default();
             let isolated = Arc::new(Mutex::new(admission_open));
             pending.resource_admission_open = Arc::clone(&isolated);
             if let Ok(mut state) = tracker.lock() {
@@ -2461,11 +2480,11 @@ impl Machine {
             && !Arc::ptr_eq(lease, &authoritative_lease)
             && let Ok(mut state) = lease.lock()
         {
-            *state = false;
+            state.pending = false;
         }
         let next_state = staged_lease.and_then(|(_, state)| state);
         if let Ok(mut state) = authoritative_lease.lock() {
-            *state = next_state.unwrap_or(false);
+            *state = next_state.unwrap_or_default();
         } else {
             return;
         }
@@ -2552,7 +2571,10 @@ impl Machine {
             consecutive_transitions: checkpoint.consecutive_transitions,
             pending_session_scope: checkpoint.pending_session_scope,
             pending_operation: checkpoint.pending_operation.map(|mut pending| {
-                pending.resource_admission_open = Arc::new(Mutex::new(true));
+                pending.resource_admission_open = Arc::new(Mutex::new(ResourceOperationLease {
+                    pending: true,
+                    cancellation_requested: checkpoint.cancellation.is_some(),
+                }));
                 pending
             }),
             resource_admission_tracker: None,
@@ -2759,6 +2781,11 @@ impl Machine {
         }
         let reason = reason.into();
         self.cancellation = Some(Arc::clone(&reason));
+        if let Some(pending) = &self.pending_operation
+            && let Ok(mut lease) = pending.resource_admission_open.lock()
+        {
+            lease.cancellation_requested = true;
+        }
         Some(MachineLabel::Cancellation { reason })
     }
 
@@ -4286,7 +4313,7 @@ impl Machine {
             active_agent: self.agent.clone(),
             active_session: self.session,
         };
-        let resource_admission_open = Arc::new(Mutex::new(true));
+        let resource_admission_open = Arc::new(Mutex::new(ResourceOperationLease::open()));
         if let Some(tracker) = &self.resource_admission_tracker
             && let Ok(mut tracker) = tracker.lock()
             && tracker.armed

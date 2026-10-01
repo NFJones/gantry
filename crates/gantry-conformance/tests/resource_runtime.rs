@@ -1031,14 +1031,78 @@ fn registry_admission_uses_the_machines_pending_resource_subject() {
         "a stale saved subject cannot publish a resource account"
     );
 
-    let (_program, mut cancelled_machine, cancellation_subject) =
+    let (cancellation_program, mut cancelled_machine, cancellation_subject) =
         machine_with_declared_subject(Some(FIXTURE_DECLARATION));
     let cancellation_subject = cancellation_subject
         .unwrap_or_else(|| panic!("the pending action exposes its cancellation subject"));
+    let mut accepted_registry = ResourceRegistry::with_limits(1, 1);
+    accepted_registry
+        .admit_pending_operation(
+            &cancelled_machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("accepted pending account: {error:?}"));
     assert!(
         cancelled_machine
             .cancel("resource admission test")
             .is_some()
+    );
+    let mut refused_registry = ResourceRegistry::new();
+    assert_eq!(
+        refused_registry
+            .admit(
+                cancellation_subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::CancellationRequested),
+        "saved bindings cannot admit new accounts after cancellation request"
+    );
+    assert_eq!(
+        AdmittedResource::admit(
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            cancellation_subject.clone(),
+        )
+        .err(),
+        Some(ResourceRegistryRefusal::CancellationRequested)
+    );
+    assert_eq!(
+        refused_registry
+            .admit_pending_operation(
+                &cancelled_machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::CancellationRequested)
+    );
+    let checkpoint = MachineCheckpointV3::decode(
+        &cancellation_program,
+        &cancelled_machine.checkpoint().canonical_bytes(),
+    )
+    .unwrap_or_else(|error| panic!("cancelled checkpoint: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(cancelled_machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("cancelled budget: {error:?}"));
+    let recovered = Machine::recover_from_checkpoint(cancellation_program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("cancelled recovery: {error:?}"));
+    assert_eq!(
+        refused_registry
+            .admit_pending_operation(
+                &recovered,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::CancellationRequested)
+    );
+    assert!(refused_registry.declared_records().is_empty());
+    assert_eq!(
+        accepted_registry.pending_operations(),
+        1,
+        "cancellation request does not settle already accepted work"
     );
     let cancelled_operation = cancelled_machine
         .checkpoint()
@@ -1060,6 +1124,7 @@ fn registry_admission_uses_the_machines_pending_resource_subject() {
     ));
     assert!(cancelled_machine.pending_resource_subject().is_none());
     let mut cancellation_registry = ResourceRegistry::new();
+    assert_eq!(accepted_registry.pending_operations(), 0);
     assert_eq!(
         cancellation_registry.admit(
             cancellation_subject.clone(),

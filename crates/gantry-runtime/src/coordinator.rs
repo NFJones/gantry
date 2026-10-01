@@ -2199,7 +2199,7 @@ mod tests {
                 .unwrap_or_else(|error| panic!("resource site: {error}")),
             0,
             Some(gantry_ir::OperationKind::LiveResource),
-            Arc::new(Mutex::new(true)),
+            Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open())),
             (execution, root),
         );
         let owner = gantry_ir::OwnerGeneration::new(4);

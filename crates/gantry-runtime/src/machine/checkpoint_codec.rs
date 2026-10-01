@@ -1569,7 +1569,9 @@ fn read_pending_operation(
     Ok(Some(PendingOperation {
         occurrence: read_occurrence(reader, program, limits)?,
         operands: reader.usize()?,
-        resource_admission_open: Arc::new(std::sync::Mutex::new(true)),
+        resource_admission_open: Arc::new(std::sync::Mutex::new(
+            super::ResourceOperationLease::open(),
+        )),
     }))
 }
 

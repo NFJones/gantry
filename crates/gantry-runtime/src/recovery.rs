@@ -1987,7 +1987,9 @@ mod tests {
             .unwrap_or_else(|| panic!("projected action has a resource subject"));
         drop(projected);
         assert_eq!(
-            projected_subject.lock_admission().map(|open| *open),
+            projected_subject
+                .lock_admission()
+                .map(|lease| lease.pending),
             Some(false),
             "dropping a recovered projection revokes a lease created after cloning"
         );

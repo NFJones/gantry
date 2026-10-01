@@ -15,8 +15,12 @@ below. Where a clause owns a fence rather than the runtime policy that consumes 
 resource-operation ceilings under `GNT-28.11-runtime-admission-mapping`. `pending_limit` and
 `pending_operations` inspect the enabled pending policy. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
-completion and a cancellation request alone retain them. Accounting lifetime settlement and
-physical reclamation do not release still-pending work. Closed leases are pruned at successful
+completion and a cancellation request alone retain them.
+Machine-local cancellation separately closes new admission through current and saved subjects
+with `CancellationRequested`, without releasing accepted pending capacity. Recovery derives that
+refusal from recorded cancellation. Isolated staged cancellation affects the authoritative lease
+only when published, and publication retains pending capacity until settlement.
+Accounting lifetime settlement and physical reclamation do not release still-pending work. Closed leases are pruned at successful
 admission; poisoned leases conservatively retain capacity. Reconstruction does not recover this
 process-local pending policy, and unadmitted evaluator work is outside its scope.
 

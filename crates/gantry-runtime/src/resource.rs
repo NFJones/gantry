@@ -395,7 +395,7 @@ pub struct ResourceSubjectBinding {
         gantry_core::identity::ProtocolIdentity,
         gantry_core::identity::ProtocolIdentity,
     ),
-    admission_open: Arc<Mutex<bool>>,
+    admission_open: Arc<Mutex<crate::machine::ResourceOperationLease>>,
 }
 
 impl PartialEq for ResourceSubjectBinding {
@@ -419,7 +419,7 @@ impl ResourceSubjectBinding {
         position: StructuralPosition,
         generation: u64,
         kind: Option<OperationKind>,
-        admission_open: Arc<Mutex<bool>>,
+        admission_open: Arc<Mutex<crate::machine::ResourceOperationLease>>,
         runtime_owner: (
             gantry_core::identity::ProtocolIdentity,
             gantry_core::identity::ProtocolIdentity,
@@ -440,7 +440,9 @@ impl ResourceSubjectBinding {
 
     /// Locks the machine-issued pending-operation admission window.
     #[must_use]
-    pub(crate) fn lock_admission(&self) -> Option<MutexGuard<'_, bool>> {
+    pub(crate) fn lock_admission(
+        &self,
+    ) -> Option<MutexGuard<'_, crate::machine::ResourceOperationLease>> {
         self.admission_open.lock().ok()
     }
 
@@ -464,7 +466,7 @@ impl ResourceSubjectBinding {
         position: &StructuralPosition,
         metadata: &ExecutableOperation,
         generation: u64,
-        admission_open: Arc<Mutex<bool>>,
+        admission_open: Arc<Mutex<crate::machine::ResourceOperationLease>>,
         runtime_owner: (
             gantry_core::identity::ProtocolIdentity,
             gantry_core::identity::ProtocolIdentity,
@@ -576,7 +578,7 @@ pub struct ResourceRegistry {
     >,
     live_limit: Option<u64>,
     pending_limit: Option<u64>,
-    pending_admissions: Vec<Arc<Mutex<bool>>>,
+    pending_admissions: Vec<Arc<Mutex<crate::machine::ResourceOperationLease>>>,
     adapter_faults: PoisonLedger,
 }
 
@@ -694,7 +696,7 @@ impl ResourceRegistry {
     pub fn pending_operations(&self) -> u64 {
         self.pending_admissions
             .iter()
-            .filter(|lease| lease.lock().map_or(true, |open| *open))
+            .filter(|lease| lease.lock().map_or(true, |lease| lease.pending))
             .fold(0_u64, |count, _| count.saturating_add(1))
     }
 
@@ -770,7 +772,7 @@ impl ResourceRegistry {
         let mut pending_admissions = if self.pending_limit.is_some() {
             self.pending_admissions
                 .iter()
-                .filter(|lease| lease.lock().map_or(true, |open| *open))
+                .filter(|lease| lease.lock().map_or(true, |lease| lease.pending))
                 .cloned()
                 .collect::<Vec<_>>()
         } else {
@@ -781,8 +783,11 @@ impl ResourceRegistry {
         let admission_guard = admission_open
             .lock()
             .map_err(|_| ResourceRegistryRefusal::NoPendingResourceSubject)?;
-        if !*admission_guard {
+        if !admission_guard.pending {
             return Err(ResourceRegistryRefusal::NoPendingResourceSubject);
+        }
+        if admission_guard.cancellation_requested {
+            return Err(ResourceRegistryRefusal::CancellationRequested);
         }
         let live = self.live_resources();
         let limit = self.live_limit;
@@ -1578,6 +1583,8 @@ pub enum ResourceRegistryRefusal {
     UnauthenticatedOperationKind,
     /// The machine has no pending action-backed operation with a resource subject.
     NoPendingResourceSubject,
+    /// Machine cancellation has closed new admission while accepted work remains pending.
+    CancellationRequested,
     /// The account's own emergency release refused the sealed cleanup witness.
     EmergencyRelease(ResourceError),
     /// The account's own ledger refused the presented charge.
@@ -1760,8 +1767,11 @@ impl AdmittedResource {
         let admission_open = subject
             .lock_admission()
             .ok_or(ResourceRegistryRefusal::NoPendingResourceSubject)?;
-        if !*admission_open {
+        if !admission_open.pending {
             return Err(ResourceRegistryRefusal::NoPendingResourceSubject);
+        }
+        if admission_open.cancellation_requested {
+            return Err(ResourceRegistryRefusal::CancellationRequested);
         }
         let admitted = Self::admit_reconstructed(carrier, record, subject.clone());
         drop(admission_open);
@@ -1849,7 +1859,7 @@ impl AdmittedResource {
                 .subject
                 .lock_admission()
                 .ok_or(HostResourceError::PendingOperation)?;
-            if *lease {
+            if lease.pending {
                 return Err(HostResourceError::PendingOperation);
             }
         }

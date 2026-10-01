@@ -15129,8 +15129,13 @@ define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
 A registry MAY separately declare a finite ceiling on admitted pending resource operations.
 That ceiling counts admitted machine settlement leases, not active accounting lifetimes. An
 accepted machine completion, failure, or settled cancellation closes its lease and releases its
-pending place; a refused completion or a cancellation request alone does not. Accounting finish,
-poison, emergency release, record deletion, and physical reclamation MUST NOT release a pending
+pending place; a refused completion or a cancellation request alone does not.
+Machine-local cancellation MUST separately close new admission through current or saved subject
+bindings with `CancellationRequested` while retaining the pending place for accepted work. Recovery
+MUST restore that admission refusal from recorded cancellation; an uncommitted staged cancellation
+MUST NOT revoke authoritative admission, and committed cancellation MUST preserve pending capacity
+until settlement. These are separate facts of one process-local lease, not a new checkpoint field.
+Accounting finish, poison, emergency release, record deletion, and physical reclamation MUST NOT release a pending
 place while its machine lease remains open. Duplicate, kind, carrier, and live-account refusals
 retain their precedence before the pending ceiling. This optional policy is process-local and
 does not reconstruct pending work from accounting records or cover unadmitted evaluator work.

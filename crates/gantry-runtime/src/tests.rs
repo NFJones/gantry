@@ -5157,6 +5157,25 @@ fn speculative_resource_admission_closes_only_when_the_transition_commits() {
         .unwrap_or_else(|| panic!("pending action retains its occurrence"))
         .identity;
 
+    let (mut cancelled_stage, cancelled_guard) = authoritative.clone_durable_projection();
+    assert!(cancelled_stage.cancel("speculative cancellation").is_some());
+    assert_eq!(
+        subject
+            .lock_admission()
+            .map(|lease| (lease.pending, lease.cancellation_requested)),
+        Some((true, false)),
+        "uncommitted cancellation cannot revoke authoritative admission"
+    );
+    drop(cancelled_stage);
+    drop(cancelled_guard);
+    assert_eq!(
+        subject
+            .lock_admission()
+            .map(|lease| (lease.pending, lease.cancellation_requested)),
+        Some((true, false)),
+        "rollback preserves both authoritative lease facts"
+    );
+
     let (mut rolled_back, rolled_back_guard) = authoritative.clone_durable_projection();
     let rolled_back_subject = rolled_back
         .pending_resource_subject()
@@ -5165,19 +5184,21 @@ fn speculative_resource_admission_closes_only_when_the_transition_commits() {
         .fail_operation_with_code(operation, RuntimeCode::InternalInvariant)
         .unwrap_or_else(|error| panic!("staged operation failure succeeds: {error:?}"));
     assert_eq!(
-        subject.lock_admission().map(|open| *open),
+        subject.lock_admission().map(|lease| lease.pending),
         Some(true),
         "a speculative terminal transition uses an isolated lease"
     );
     drop(rolled_back);
     drop(rolled_back_guard);
     assert_eq!(
-        rolled_back_subject.lock_admission().map(|open| *open),
+        rolled_back_subject
+            .lock_admission()
+            .map(|lease| lease.pending),
         Some(false),
         "dropping an uncommitted projection revokes its escaped subject"
     );
     assert_eq!(
-        subject.lock_admission().map(|open| *open),
+        subject.lock_admission().map(|lease| lease.pending),
         Some(true),
         "dropping an uncommitted projection preserves admission"
     );
@@ -5191,9 +5212,43 @@ fn speculative_resource_admission_closes_only_when_the_transition_commits() {
         guard.disarm();
     }
     assert_eq!(
-        subject.lock_admission().map(|open| *open),
+        subject.lock_admission().map(|lease| lease.pending),
         Some(false),
         "publishing the staged terminal transition closes saved subjects"
+    );
+    let mut pending = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        Vec::new(),
+        limits(8, 1, 1, 1, 8),
+    );
+    assert!(matches!(
+        pending.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    let subject = pending
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("pending subject"));
+    let (mut cancelled, mut guard) = pending.clone_durable_projection();
+    assert!(cancelled.cancel("committed cancellation").is_some());
+    pending.commit_staged_resource_admission(&mut cancelled);
+    if let Some(guard) = guard.as_mut() {
+        guard.disarm();
+    }
+    assert_eq!(
+        subject
+            .lock_admission()
+            .map(|lease| (lease.pending, lease.cancellation_requested)),
+        Some((true, true)),
+        "published cancellation closes acquisition but retains pending capacity"
+    );
+    assert!(matches!(
+        cancelled.step(),
+        MachineStep::Transition(MachineLabel::TaskSettled(_))
+    ));
+    assert_eq!(
+        subject.lock_admission().map(|lease| lease.pending),
+        Some(false)
     );
 }
 

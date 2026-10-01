@@ -565,7 +565,10 @@ fn dropping_failed_operation_stage_preserves_authoritative_resource_admission() 
             .unwrap_or_else(|error| panic!("staged failure: {error:?}"));
         subject
     });
-    assert_eq!(subject.lock_admission().map(|open| *open), Some(true));
+    assert_eq!(
+        subject.lock_admission().map(|lease| lease.pending),
+        Some(true)
+    );
     drop(stage);
 
     assert!(
@@ -573,7 +576,7 @@ fn dropping_failed_operation_stage_preserves_authoritative_resource_admission() 
         "rollback keeps the authoritative operation pending"
     );
     assert_eq!(
-        subject.lock_admission().map(|open| *open),
+        subject.lock_admission().map(|lease| lease.pending),
         Some(true),
         "a dropped terminal stage leaves the authoritative resource admission open"
     );
