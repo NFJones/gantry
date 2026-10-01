@@ -60,6 +60,12 @@ not automatically attached to the registry or evaluator and publishes no async c
 source transfer, authority admission, or host reconstruction. Its host value is never placed in
 `LogicalValue`, hook bytes, or accounting reconstruction records.
 
+`OwnedHostResource::transfer` consumes the owner and advances only its current accounting
+generation. It requires active/open accounting, no loan root, a closed pending-machine lease,
+settled historical containment, no bound adapter, and unpoisoned transport. Refusal returns the
+complete owner untouched. Success preserves the physical value, subject, quota/root facts and
+historical containment; it neither rebinds an adapter nor implements source-task transfer.
+
 `AdmittedResource` publishes `admit`, `subject`, `ledger`, `quota`, `remaining`, `durable_record`,
 `containment`, `settle_containment`, `adapter_instance`, `bind_adapter_instance`,
 `begin_finish_for`, `complete_finalization_for`, `charge`, `renew`, `close_liveness_root_for`,

@@ -15162,6 +15162,13 @@ is not implicitly retried, and does not roll back accepted external work. Sealed
 MUST settle accounting before physical disposal; disposal failure MUST NOT undo semantic release.
 Physical disposal MUST remove the held value before destruction and contain destructor panics.
 Dropping the wrapper performs physical disposal only, never implicit semantic finalization.
+The wrapper MAY expose consuming process-local transfer to a strictly succeeding owner
+generation. Transfer MUST require active lifetime and open operation state, no declared loan root,
+a closed machine admission lease, settled historical containment, no bound adapter, and an
+unpoisoned transport holding its value. Refusal MUST return the complete affine owner unchanged.
+Success changes only current accounting ownership and moves the same host value; subject, quotas,
+roots and historical containment evidence MUST remain unchanged. This does not rebind an adapter,
+reopen settlement, grant authority, or implement source-task transfer.
 This optional synchronous boundary is not the accounting registry, does not add host values to
 `LogicalValue`, raw hook bytes, or reconstruction records, and claims no source-resource evaluation,
 asynchronous cancellation, task transfer, host authority admission, or durable host reconstruction.

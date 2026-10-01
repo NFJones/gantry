@@ -1530,6 +1530,64 @@ impl AdmittedResource {
         &self.ledger
     }
 
+    /// Advances an exclusively held host account after every prior operation obligation settles.
+    ///
+    /// This private transport route retains the historical containment value and all facts other
+    /// than current ownership. It does not rebind an adapter or reopen the machine admission lease.
+    pub(crate) fn transfer_owner(
+        &mut self,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+    ) -> Result<(), crate::HostResourceError> {
+        use crate::HostResourceError;
+
+        self.require_current_owner(owner)
+            .map_err(HostResourceError::Model)?;
+        if self.ledger.lifetime() != ResourceLifetimeState::Active
+            || !self.ledger.operation_state().is_open()
+        {
+            return Err(HostResourceError::Model(
+                ResourceError::IllegalLifetimeTransition,
+            ));
+        }
+        if !successor.succeeds(owner) {
+            return Err(HostResourceError::Model(
+                ResourceError::InvalidSuccessorGeneration,
+            ));
+        }
+        if self.ledger.liveness_roots().contains(&LivenessRoot::Loan) {
+            return Err(HostResourceError::LoanOutstanding);
+        }
+        {
+            let lease = self
+                .subject
+                .lock_admission()
+                .ok_or(HostResourceError::PendingOperation)?;
+            if *lease {
+                return Err(HostResourceError::PendingOperation);
+            }
+        }
+        if !self.containment.is_settled() {
+            return Err(HostResourceError::ContainmentPending);
+        }
+        if self.adapter.is_some() {
+            return Err(HostResourceError::AdapterBound);
+        }
+        let record = self.ledger.durable_record();
+        let transferred = DurableResourceRecord::from_durable_facts(
+            successor,
+            record.lifetime(),
+            record.operation_state(),
+            record.quotas().clone(),
+            record.liveness_roots().clone(),
+            record.settlement(),
+            record.successor_fence(),
+        )
+        .map_err(HostResourceError::Model)?;
+        self.ledger = ResourceLedger::reconstruct(transferred);
+        Ok(())
+    }
+
     /// Returns one declared quota of this resource by its closed owner and family.
     #[must_use]
     pub fn quota(&self, owner: QuotaOwner, family: QuotaFamily) -> Option<Quota> {

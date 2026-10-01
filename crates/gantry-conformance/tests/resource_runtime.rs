@@ -1589,6 +1589,215 @@ impl Drop for TransportValue {
     }
 }
 
+/// Prepares a standalone active account with optional outstanding transport obligations.
+fn transfer_account(pending: bool, loan: bool, containment_pending: bool) -> AdmittedResource {
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject exists"));
+    let mut account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject,
+    )
+    .unwrap_or_else(|error| panic!("account admits: {error:?}"));
+    if !loan {
+        account
+            .close_liveness_root_for(OwnerGeneration::new(4), LivenessRoot::Loan)
+            .unwrap_or_else(|error| panic!("loan root closes: {error:?}"));
+    }
+    if !containment_pending {
+        account
+            .settle_containment(
+                OwnerGeneration::new(4),
+                Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+            )
+            .unwrap_or_else(|error| panic!("containment settles: {error:?}"));
+    }
+    if !pending {
+        let operation = machine
+            .checkpoint()
+            .pending_operation()
+            .unwrap_or_else(|| panic!("pending operation exists"))
+            .identity;
+        machine
+            .fail_operation(
+                operation,
+                gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+            )
+            .unwrap_or_else(|error| panic!("machine work settles: {error:?}"));
+    }
+    account
+}
+
+/// A consuming move advances only the owner and retains one physical value and historical evidence.
+#[test]
+fn owned_host_resource_transfer_preserves_facts_and_fences_the_previous_owner() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let account = transfer_account(false, false, false);
+    let before = account.durable_record();
+    let subject = account.subject().clone();
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let resource = OwnedHostResource::bind(
+        account,
+        TransportValue {
+            drops: Arc::clone(&drops),
+            panic_on_drop: false,
+            value: 17,
+        },
+    )
+    .unwrap_or_else(|_| panic!("active account binds"));
+    let mut transferred = resource
+        .transfer(OwnerGeneration::new(4), OwnerGeneration::new(5))
+        .unwrap_or_else(|_| panic!("settled unbound owner transfers"));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let after = transferred.account().durable_record();
+    assert_eq!(after.owner(), OwnerGeneration::new(5));
+    assert_eq!(after.lifetime(), before.lifetime());
+    assert_eq!(after.operation_state(), before.operation_state());
+    assert_eq!(after.quotas(), before.quotas());
+    assert_eq!(after.liveness_roots(), before.liveness_roots());
+    assert_eq!(after.settlement(), before.settlement());
+    assert_eq!(after.successor_fence(), before.successor_fence());
+    assert_eq!(transferred.account().subject(), &subject);
+    assert_eq!(
+        transferred.account().containment().owner(),
+        OwnerGeneration::new(4)
+    );
+    assert_eq!(
+        transferred.account().containment().outcome(),
+        Some(ExternalOutcome::Accepted)
+    );
+    assert!(matches!(
+        transferred.invoke::<()>(OwnerGeneration::new(4), |_| panic!(
+            "old owner cannot invoke"
+        )),
+        Err(HostResourceError::Model(ResourceError::StaleOwner { .. }))
+    ));
+    assert_eq!(
+        transferred.invoke(OwnerGeneration::new(5), |value| Ok(value.value)),
+        Ok(17)
+    );
+    let decoded =
+        decode_resource_reconstruction_record(&encode_resource_reconstruction_record(&after))
+            .unwrap_or_else(|error| panic!("transferred record decodes: {error:?}"));
+    assert_eq!(decoded, after);
+    assert_eq!(
+        transferred.finish(OwnerGeneration::new(5), 40, |_| Ok(())),
+        Ok(ResourceLifetimeState::Finished)
+    );
+    assert_eq!(
+        transferred
+            .account()
+            .durable_record()
+            .settlement()
+            .map(|baseline| baseline.owner()),
+        Some(OwnerGeneration::new(5))
+    );
+    drop(transferred);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Every refusal returns the complete affine owner without modifying its facts or disposing its value.
+#[test]
+fn owned_host_resource_transfer_refuses_outstanding_obligations_without_mutation() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    for (account, owner, successor, expected) in [
+        (
+            transfer_account(false, false, false),
+            3,
+            5,
+            HostResourceError::Model(ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: OwnerGeneration::new(4),
+            }),
+        ),
+        (
+            transfer_account(false, false, false),
+            4,
+            4,
+            HostResourceError::Model(ResourceError::InvalidSuccessorGeneration),
+        ),
+        (
+            transfer_account(false, false, false),
+            4,
+            3,
+            HostResourceError::Model(ResourceError::InvalidSuccessorGeneration),
+        ),
+        (
+            transfer_account(false, true, false),
+            4,
+            5,
+            HostResourceError::LoanOutstanding,
+        ),
+        (
+            transfer_account(true, false, false),
+            4,
+            5,
+            HostResourceError::PendingOperation,
+        ),
+        (
+            transfer_account(false, false, true),
+            4,
+            5,
+            HostResourceError::ContainmentPending,
+        ),
+    ] {
+        let before = account.durable_record();
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let resource = OwnedHostResource::bind(
+            account,
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: false,
+                value: 17,
+            },
+        )
+        .unwrap_or_else(|_| panic!("active account binds"));
+        let (error, mut returned) = *resource
+            .transfer(OwnerGeneration::new(owner), OwnerGeneration::new(successor))
+            .err()
+            .unwrap_or_else(|| panic!("outstanding obligation refuses"));
+        assert_eq!(error, expected);
+        assert_eq!(returned.account().durable_record(), before);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(
+            returned.invoke(OwnerGeneration::new(4), |value| Ok(value.value)),
+            Ok(17)
+        );
+        drop(returned);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+    let mut bound = transfer_account(false, false, false);
+    bound
+        .bind_adapter_instance(
+            OwnerGeneration::new(4),
+            adapter_instance("transfer_bound", 4, 0),
+        )
+        .unwrap_or_else(|error| panic!("adapter binds: {error:?}"));
+    let resource = OwnedHostResource::bind(bound, 1_u64).unwrap_or_else(|_| panic!("bind"));
+    let before = resource.account().durable_record();
+    let (error, returned) = *resource
+        .transfer(OwnerGeneration::new(4), OwnerGeneration::new(5))
+        .err()
+        .unwrap_or_else(|| panic!("bound adapter refuses"));
+    assert_eq!(error, HostResourceError::AdapterBound);
+    assert_eq!(returned.account().durable_record(), before);
+    assert!(returned.account().adapter_instance().is_some());
+    let mut resource = OwnedHostResource::bind(transfer_account(false, false, false), 1_u64)
+        .unwrap_or_else(|_| panic!("bind"));
+    assert!(
+        resource
+            .invoke::<()>(OwnerGeneration::new(4), |_| panic!("poison"))
+            .is_err()
+    );
+    let before = resource.account().durable_record();
+    let (error, returned) = *resource
+        .transfer(OwnerGeneration::new(4), OwnerGeneration::new(5))
+        .err()
+        .unwrap_or_else(|| panic!("poison refuses"));
+    assert_eq!(error, HostResourceError::TransportPoisoned);
+    assert_eq!(returned.account().durable_record(), before);
+}
+
 /// Transport ownership is affine even when the underlying value is copyable.
 #[test]
 fn owned_host_resource_fences_invocation_and_finishes_exactly_once() {

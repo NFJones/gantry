@@ -22,6 +22,16 @@ pub enum HostResourceError {
     Boundary(BoundaryFailure),
     /// The integration returned an operational error, not a portable domain result.
     Host(HostError),
+    /// Pending machine work or an unreadable admission lease prevents transfer.
+    PendingOperation,
+    /// An outstanding declared loan prevents ownership transfer.
+    LoanOutstanding,
+    /// Historical containment has not reached its single settlement.
+    ContainmentPending,
+    /// A bound adapter needs a separately governed substitution contract.
+    AdapterBound,
+    /// A poisoned transport cannot be transferred back into service.
+    TransportPoisoned,
 }
 
 /// One unclonable host value bound to one consumed accounting account.
@@ -70,6 +80,31 @@ impl<T> OwnedHostResource<T> {
     #[must_use]
     pub fn is_poisoned(&self) -> bool {
         self.poison.is_poisoned()
+    }
+
+    /// Consumes this affine owner and advances accounting ownership without copying the value.
+    ///
+    /// Pending work, loans, unsettled containment, bound adapters and poisoned transport refuse
+    /// before mutation. Historical containment remains settled under its original owner. Refusal
+    /// returns the complete owner; success preserves subject, quota, roots and physical identity.
+    pub fn transfer(
+        mut self,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+    ) -> Result<Self, Box<(HostResourceError, Self)>> {
+        if let Err(error) = self.require_owner(owner) {
+            return Err(Box::new((error, self)));
+        }
+        if self.is_poisoned() {
+            return Err(Box::new((HostResourceError::TransportPoisoned, self)));
+        }
+        if self.value.is_none() {
+            return Err(Box::new((HostResourceError::Disposed, self)));
+        }
+        if let Err(error) = self.account.transfer_owner(owner, successor) {
+            return Err(Box::new((error, self)));
+        }
+        Ok(self)
     }
 
     /// Invokes bounded synchronous integration code under current-owner and active-lifetime fences.
