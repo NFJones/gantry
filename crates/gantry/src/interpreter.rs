@@ -1711,13 +1711,29 @@ impl PreparedRootDriver {
         }
         .map_err(RunExecutionError::TaskState)?;
         #[cfg(feature = "concurrent")]
-        let coordinator =
-            ExecutionCoordinator::new_with_budget(tasks, sessions, execution_budget.clone())
-                .map_err(RunExecutionError::TaskState)?;
+        let coordinator = match inner.configuration.resource_accounting_limits() {
+            Some((live, pending)) => ExecutionCoordinator::new_with_budget_and_resource_limits(
+                tasks,
+                sessions,
+                execution_budget.clone(),
+                live,
+                pending,
+            ),
+            None => {
+                ExecutionCoordinator::new_with_budget(tasks, sessions, execution_budget.clone())
+            }
+        }
+        .map_err(RunExecutionError::TaskState)?;
         #[cfg(not(feature = "concurrent"))]
         let coordinator = {
             let _ = execution_budget;
-            ExecutionCoordinator::new(tasks, sessions).map_err(RunExecutionError::TaskState)?
+            sequential_execution_coordinator(
+                &machine,
+                tasks,
+                sessions,
+                inner.configuration.resource_accounting_limits(),
+            )
+            .map_err(RunExecutionError::TaskState)?
         };
         let create_request = TaskContextV1 {
             execution_id,
@@ -11234,6 +11250,20 @@ impl Interpreter {
             .map(|coordinator| coordinator.snapshot().state().clone())
     }
 
+    /// Returns immutable accounting inspection for fresh nondurable launch conformance.
+    #[cfg(all(feature = "concurrent", feature = "test-support"))]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn test_nondurable_resource_records(
+        &self,
+        execution_id: ProtocolIdentity,
+    ) -> Option<Option<Vec<gantry_runtime::RecoveredResourceRecord>>> {
+        self.inner
+            .nondurable_executions
+            .coordinator(execution_id)
+            .map(|coordinator| coordinator.snapshot().resource_records().map(<[_]>::to_vec))
+    }
+
     /// Installs a one-shot callback at the source-child executor submission cut.
     #[cfg(all(feature = "concurrent", feature = "test-support"))]
     #[doc(hidden)]
@@ -14421,6 +14451,26 @@ pub fn root_task_identity(execution_id: ProtocolIdentity) -> ProtocolIdentity {
     gantry_runtime::root_task_identity(execution_id)
 }
 
+/// Retains the sequential machine's budget when explicitly enabling resource accounting.
+#[cfg(not(feature = "concurrent"))]
+fn sequential_execution_coordinator(
+    machine: &Machine,
+    tasks: ConcurrentTaskStateV1,
+    sessions: LogicalSessionRegistryV1,
+    accounting: Option<(u64, u64)>,
+) -> Result<ExecutionCoordinator, TaskStateError> {
+    match accounting {
+        Some((live, pending)) => ExecutionCoordinator::new_with_budget_and_resource_limits(
+            tasks,
+            sessions,
+            machine.execution_budget(),
+            live,
+            pending,
+        ),
+        None => ExecutionCoordinator::new(tasks, sessions),
+    }
+}
+
 fn should_defer_execution_completion_event(
     label: &MachineLabel,
     execution_foreground: bool,
@@ -14437,6 +14487,88 @@ mod evaluator_only_tests {
     use super::should_defer_execution_completion_event;
     use gantry_core::value::LogicalValue;
     use gantry_runtime::{MachineLabel, MachineOutcome};
+
+    /// Evaluator-only launch must retain the actual machine budget when accounting is enabled.
+    #[test]
+    fn sequential_accounting_retains_the_machine_budget_owner() {
+        use gantry_core::identity::ProtocolIdentity;
+        use gantry_core::portable::IdentityKind;
+        use gantry_core::value::DEFAULT_VALUE_LIMITS;
+        use gantry_ir::{
+            CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram,
+            StructuralPosition, TypeDescriptor, Workflow,
+        };
+        use gantry_runtime::{
+            CanonicalTranscriptV1, ConcurrentTaskStateV1, LogicalSessionRegistryV1, Machine,
+            MachineLimits, SessionCreationModeV1,
+        };
+        use std::sync::Arc;
+
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [81; 32])
+            .unwrap_or_else(|error| panic!("execution: {error}"));
+        let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [82; 32])
+            .unwrap_or_else(|error| panic!("session: {error}"));
+        let path =
+            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+        let program = Arc::new(
+            MachineProgram::new(vec![Workflow {
+                path: path.clone(),
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: StructuralPosition::new(vec![0])
+                            .unwrap_or_else(|error| panic!("site: {error}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Push(LogicalValue::unit()),
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![1])
+                            .unwrap_or_else(|error| panic!("site: {error}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+        );
+        let limits = MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("positive limits"));
+        for accounting in [None, Some((0, 0)), Some((2, 3))] {
+            let mut machine =
+                Machine::new(Arc::clone(&program), &path, Vec::new(), execution, limits)
+                    .unwrap_or_else(|error| panic!("machine: {error:?}"));
+            let tasks = ConcurrentTaskStateV1::new(execution, machine.task_id(), 1)
+                .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+            let sessions = LogicalSessionRegistryV1::new(
+                execution,
+                session,
+                SessionCreationModeV1::GantryRoot,
+                CanonicalTranscriptV1::empty(),
+            )
+            .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+            let coordinator =
+                super::sequential_execution_coordinator(&machine, tasks, sessions, accounting)
+                    .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+            assert_eq!(
+                coordinator.snapshot().resource_records(),
+                accounting.map(|_| &[][..])
+            );
+            let before = machine.execution_budget().snapshot();
+            assert!(matches!(
+                machine.step(),
+                gantry_runtime::MachineStep::Transition(_)
+            ));
+            let after = machine.execution_budget().snapshot();
+            assert_ne!(before, after, "fixture transition charges its budget");
+            assert_eq!(
+                coordinator.snapshot().execution_budget(),
+                accounting.map(|_| after),
+                "enabled accounting observes the same budget after a machine transition"
+            );
+        }
+    }
 
     #[test]
     fn terminal_event_is_deferred_to_the_single_evaluator_specific_arm() {

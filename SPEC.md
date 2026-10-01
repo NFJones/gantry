@@ -15158,6 +15158,12 @@ does not reconstruct pending work from accounting records or cover unadmitted ev
 
 A runtime MAY expose this accounting registry through an explicitly configured execution
 coordinator with a finite live-account ceiling and an optional separate pending-operation ceiling.
+Interpreter configuration MAY opt fresh execution owners into explicit finite live-account and
+pending-operation ceilings, including zero to deny admission. The default MUST leave accounting
+disabled. Fresh root construction MUST retain the shared execution budget when enabling this
+registry; ordinary source execution remains eligible with zero accounting ceilings. This policy
+MUST NOT enable unsupported live-handle transport or grant host authority, and the current durable
+graph wire does not recover it on resume.
 Coordinator handles cloned from that owner MUST
 share one registry and serialize admission, atomic quota charging, accepted operation-state
 projection, accounting finalization, and emergency release. Charging retains the owner and

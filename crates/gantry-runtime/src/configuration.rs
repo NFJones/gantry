@@ -523,6 +523,7 @@ pub struct InterpreterConfiguration {
     post_cancellation_drain: DurationMicros,
     maximum_workflow_call_depth: ResourceLimit,
     maximum_tasks_per_execution: ResourceLimit,
+    resource_accounting_limits: Option<(u64, u64)>,
 }
 
 impl fmt::Debug for InterpreterConfiguration {
@@ -531,6 +532,10 @@ impl fmt::Debug for InterpreterConfiguration {
             .debug_struct("InterpreterConfiguration")
             .field("required", &self.required)
             .field("async_capacities", &self.async_capacities)
+            .field(
+                "resource_accounting_limits",
+                &self.resource_accounting_limits,
+            )
             .field("retry", &self.retry)
             .field("graceful_shutdown_timeout", &self.graceful_shutdown_timeout)
             .field("post_cancellation_drain", &self.post_cancellation_drain)
@@ -569,6 +574,7 @@ impl InterpreterConfiguration {
             post_cancellation_drain: duration(5_000_000),
             maximum_workflow_call_depth: ResourceLimit::Unlimited,
             maximum_tasks_per_execution: ResourceLimit::Unlimited,
+            resource_accounting_limits: None,
         }
     }
 
@@ -710,6 +716,22 @@ impl InterpreterConfiguration {
         }
         self.maximum_tasks_per_execution = limit;
         Ok(self)
+    }
+
+    /// Enables finite live-account and pending-operation ceilings for fresh execution owners.
+    ///
+    /// Zero denies admission. These process-local accounting ceilings grant no transport or
+    /// host authority and are not reconstructed from the current durable graph wire.
+    #[must_use]
+    pub fn with_resource_accounting_limits(mut self, live: u64, pending: u64) -> Self {
+        self.resource_accounting_limits = Some((live, pending));
+        self
+    }
+
+    /// Returns the optional fresh-execution accounting ceilings; None disables the registry.
+    #[must_use]
+    pub const fn resource_accounting_limits(&self) -> Option<(u64, u64)> {
+        self.resource_accounting_limits
     }
 
     /// Returns the configured executor without exposing an executor-specific type.

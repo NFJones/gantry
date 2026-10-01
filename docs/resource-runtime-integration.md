@@ -42,6 +42,15 @@ process-local pending policy, and unadmitted evaluator work is outside its scope
 cloned handles retain the same admission refusal and machine-settlement release boundaries.
 The existing `new_with_resource_limit` constructor leaves the pending policy disabled.
 
+`InterpreterConfiguration::with_resource_accounting_limits(live, pending)` opts fresh launch
+owners into finite accounting ceilings; the default `resource_accounting_limits()` is `None`.
+Zero denies resource admission, not ordinary source execution. Concurrent root construction uses
+`new_with_budget_and_resource_limits` to retain the same execution budget. This policy enables
+accounting ownership only, not live-handle transport or host authority; current durable resume
+does not reconstruct it. For example, an embedder can use
+`configuration.with_resource_accounting_limits(64, 16)` for new execution owners while retaining
+the existing raw-byte-hook refusal for live-resource results.
+
 `ExecutionCoordinator::new_with_recovered_resources` constructs one shared accounting owner
 atomically from declared reconstruction records. Each binding must name the execution and a known
 task; settled tasks may retain accounting for cleanup. Registry carrier, kind, duplicate, owner

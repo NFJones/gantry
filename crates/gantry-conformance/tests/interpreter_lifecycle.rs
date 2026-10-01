@@ -167,6 +167,7 @@ fn public_configuration_defaults_bounds_and_classes_are_exact() {
     assert_eq!(configuration.graceful_shutdown_timeout().get(), 30_000_000);
     assert_eq!(configuration.post_cancellation_drain().get(), 5_000_000);
     assert_eq!(configuration.maximum_tasks_per_execution().maximum(), None);
+    assert_eq!(configuration.resource_accounting_limits(), None);
 
     let frontend = configuration.required().frontend_limits;
     assert_eq!(frontend.maximum_package_files(), 128);

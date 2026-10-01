@@ -612,6 +612,51 @@ impl Drop for TempDirectory {
     }
 }
 
+/// Accounting configuration changes ownership inspection, not ordinary source eligibility.
+#[test]
+fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
+    for accounting in [None, Some((0, 0)), Some((2, 3))] {
+        let root = TempDirectory::new("fn main() {}");
+        let executor = Arc::new(DeterministicConcurrentExecutor::default());
+        let integration = Arc::new(ScriptedIntegration::new(
+            [ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            )],
+            [],
+        ));
+        let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
+            (1_u8..=192).map(|byte| Ok([byte; 32])),
+        ));
+        let interpreter = interpreter_with_accounting_policy(
+            executor.clone(),
+            integration.clone(),
+            integration,
+            AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+                .unwrap_or_else(|error| panic!("capacities: {error}")),
+            8,
+            SinkPlan::default(),
+            identities,
+            accounting,
+        );
+        let accepted = accepted(&interpreter, &root);
+        let handle = accepted.handle().clone();
+        assert_eq!(
+            interpreter.test_nondurable_resource_records(handle.execution_id()),
+            Some(accounting.map(|_| Vec::new()))
+        );
+        drop(accepted);
+        let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
+        assert_eq!(
+            snapshot.foreground,
+            Some(MachineOutcome::Succeeded(
+                gantry::value::LogicalValue::unit()
+            ))
+        );
+        assert!(snapshot.terminal.is_some());
+    }
+}
+
 #[test]
 fn native_child_submission_keeps_the_gate_closed_and_establishes_session_before_hook() {
     let root = TempDirectory::new(
@@ -4228,6 +4273,30 @@ fn interpreter_with_capacity_limits(
     event_delivery: SinkPlan,
     identities: Arc<dyn IdentitySource>,
 ) -> Interpreter {
+    interpreter_with_accounting_policy(
+        executor,
+        integration,
+        runtime_sessions,
+        capacities,
+        maximum_tasks_per_execution,
+        event_delivery,
+        identities,
+        None,
+    )
+}
+
+/// Allows launch fixtures to inspect explicitly configured accounting ownership.
+#[allow(clippy::too_many_arguments)]
+fn interpreter_with_accounting_policy(
+    executor: Arc<dyn ExecutorAdapter>,
+    integration: Arc<ScriptedIntegration>,
+    runtime_sessions: Arc<dyn RuntimeSessionService>,
+    capacities: AsyncCapacityLimits,
+    maximum_tasks_per_execution: u64,
+    event_delivery: SinkPlan,
+    identities: Arc<dyn IdentitySource>,
+    accounting: Option<(u64, u64)>,
+) -> Interpreter {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
@@ -4246,6 +4315,12 @@ fn interpreter_with_capacity_limits(
     let configuration = InterpreterConfiguration::new(executor, identities, required, capacities)
         .with_maximum_tasks_per_execution(maximum_tasks_per_execution)
         .unwrap_or_else(|error| panic!("task-limit configuration failed: {error}"));
+    assert_eq!(configuration.resource_accounting_limits(), None);
+    let configuration = match accounting {
+        Some((live, pending)) => configuration.with_resource_accounting_limits(live, pending),
+        None => configuration,
+    };
+    assert_eq!(configuration.resource_accounting_limits(), accounting);
     Interpreter::new_with_event_delivery(
         configuration,
         execution_clock(),

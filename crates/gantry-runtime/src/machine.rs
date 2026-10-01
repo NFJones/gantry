@@ -2228,7 +2228,6 @@ impl Machine {
     }
 
     /// Returns a clone of this machine's execution-wide budget owner.
-    #[cfg(any(feature = "concurrent", feature = "durable"))]
     #[must_use]
     pub fn execution_budget(&self) -> ExecutionBudget {
         self.execution_budget.clone()
