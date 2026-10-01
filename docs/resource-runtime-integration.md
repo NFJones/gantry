@@ -142,8 +142,12 @@ polling and handle disposal use integration containment. Started destruction run
 and remains service-owned.
 
 Nondurable execution cancellation now submits already-settled physical obligations after driver
-drainage and before waiting for shutdown quiescence. The configured cancellation drain deadline
-bounds observation, not started destruction. Service/coordinator failures report `ResourceCleanup`;
+drainage and before waiting for shutdown quiescence.
+Failed semantic or physical driver-grace timing retains an executor error rather than implying
+grace expiry. Abort-and-drain ownership and settled physical cleanup remain required; successful
+drainage cannot erase the retained error or its first lifecycle `Executor` classification.
+The configured cancellation drain deadline bounds observation, not started destruction.
+Service/coordinator failures report `ResourceCleanup`;
 member destruction failures report `ResourceDisposal`. `ExecutionSnapshot::resource_cleanup_failure`
 retains the first operational classification (service, disposal, deadline, executor, unsettled accounting or pending resource work), including
 after terminal publication. Fixed language outcomes and cancellation remain unchanged; failures

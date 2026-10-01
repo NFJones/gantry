@@ -11643,20 +11643,22 @@ impl Interpreter {
             .map(|task_id| owner.coordinator.wait_for_task_settlement(task_id))
             .collect::<Result<Vec<_>, _>>()
             .map_err(CancelExecutionError::TaskState)?;
-        let semantic_settled = matches!(
-            deadline_race(
-                self.inner.configuration.executor(),
-                Box::pin(async move {
-                    for wait in semantic_waits {
-                        wait.await;
-                    }
-                }),
-                self.inner.configuration.post_cancellation_drain(),
-                None,
-            )
-            .await,
-            DeadlineOutcome::Completed(())
-        );
+        let semantic_grace = deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(async move {
+                for wait in semantic_waits {
+                    wait.await;
+                }
+            }),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await;
+        let semantic_settled = matches!(semantic_grace, DeadlineOutcome::Completed(()));
+        let mut grace_failure = match semantic_grace {
+            DeadlineOutcome::Failed(error) => Some(error),
+            _ => None,
+        };
 
         let selected = self
             .inner
@@ -11665,23 +11667,33 @@ impl Interpreter {
             .owned_task_controls(owner.handle.execution_id(), &semantic_tasks);
         let completed_gracefully = if semantic_settled {
             let graceful_controls = Arc::clone(&selected);
-            matches!(
-                deadline_race(
-                    self.inner.configuration.executor(),
-                    Box::pin(async move {
-                        for task in graceful_controls.iter() {
-                            let _ = task.completion().await;
-                        }
-                    }),
-                    self.inner.configuration.post_cancellation_drain(),
-                    None,
-                )
-                .await,
-                DeadlineOutcome::Completed(())
+            let physical_grace = deadline_race(
+                self.inner.configuration.executor(),
+                Box::pin(async move {
+                    for task in graceful_controls.iter() {
+                        let _ = task.completion().await;
+                    }
+                }),
+                self.inner.configuration.post_cancellation_drain(),
+                None,
             )
+            .await;
+            let completed = matches!(physical_grace, DeadlineOutcome::Completed(()));
+            if let DeadlineOutcome::Failed(error) = physical_grace {
+                grace_failure = Some(error);
+            }
+            completed
         } else {
             false
         };
+        if grace_failure.is_some() {
+            owner
+                .handle
+                .record_resource_cleanup_failure(
+                    gantry_runtime::ExecutionResourceCleanupFailure::Executor,
+                )
+                .map_err(CancelExecutionError::Transition)?;
+        }
         if !completed_gracefully {
             request_abort_for_active_controls(&selected);
         }
@@ -11777,6 +11789,9 @@ impl Interpreter {
                     Err(CancelExecutionError::CleanupTimedOut)
                 }
             };
+        }
+        if let Some(error) = grace_failure {
+            return Err(CancelExecutionError::Executor(error));
         }
         let obligation = if owner.coordinator.has_unsettled_resource_accounts() {
             Some(gantry_runtime::ExecutionResourceCleanupFailure::UnsettledAccounting)

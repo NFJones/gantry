@@ -47,6 +47,97 @@ impl ExecutorAdapter for CleanupTimerFailureExecutor {
     }
 }
 
+/// A grace timer failure must remain observable after abort-and-drain completes.
+#[test]
+fn cancellation_preserves_failed_grace_timer_after_driver_drainage() {
+    let root = TempDirectory::new("fn main() {}");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let fail = Arc::new(AtomicBool::new(false));
+    let adapter: Arc<dyn ExecutorAdapter> = Arc::new(CleanupTimerFailureExecutor {
+        inner: Arc::clone(&executor),
+        fail: Arc::clone(&fail),
+    });
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
+        (1_u8..=192).map(|byte| Ok([byte; 32])),
+    ));
+    let interpreter = interpreter_with_accounting_policy(
+        adapter,
+        integration.clone(),
+        integration,
+        AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacities: {error}")),
+        8,
+        SinkPlan::default(),
+        identities,
+        None,
+    );
+    let accepted = accepted(&interpreter, &root);
+    let reason =
+        caller_cancellation_reason(None, 64).unwrap_or_else(|error| panic!("reason: {error:?}"));
+    let mut cancellation = Box::pin(interpreter.cancel_execution(accepted.execution_id(), reason));
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    fail.store(true, Ordering::Release);
+    let control = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("control task"));
+    let _ = executor
+        .poll_task(control)
+        .unwrap_or_else(|error| panic!("control: {error:?}"));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let result = loop {
+        if let Poll::Ready(result) = cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            break result;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "cancellation did not settle"
+        );
+        for id in executor.task_ids() {
+            if executor.is_runnable(id) {
+                let _ = executor
+                    .poll_task(id)
+                    .unwrap_or_else(|error| panic!("task {id}: {error:?}"));
+            }
+        }
+        std::thread::yield_now();
+    };
+    assert!(
+        matches!(result, Err(gantry::CancelExecutionError::Executor(ref error))
+        if error.code.as_ref() == "cleanup-timer-failure")
+    );
+    assert!(
+        interpreter
+            .test_nondurable_task_state(accepted.execution_id())
+            .unwrap_or_else(|| panic!("task state"))
+            .drivers_are_quiescent()
+    );
+    assert_eq!(
+        accepted
+            .handle()
+            .snapshot()
+            .unwrap_or_else(|error| panic!("snapshot: {error:?}"))
+            .resource_cleanup_failure,
+        Some(gantry::runtime::ExecutionResourceCleanupFailure::Executor)
+    );
+}
+
 /// Delegates ordinary package work but can refuse the later cleanup submission.
 struct RefusingCleanupService {
     inner: gantry::runtime::BoundedBlockingWorkService,

@@ -15316,6 +15316,11 @@ handle disposal MUST retain integration containment. Repeated observation return
 result; service completion and per-resource destruction outcomes remain distinct.
 Nondurable execution cancellation MUST submit any already-settled physical obligations after driver
 drainage and before observing shutdown quiescence.
+Failure of either semantic or physical driver-grace timing MUST retain an executor failure, not
+be interpreted as successful grace expiry. Cancellation MUST still retain abort-and-drain ownership
+and attempt settled physical cleanup; after successful drainage and quiescence it returns the
+retained executor error rather than a successful cancellation result. The lifecycle independently
+retains the first `Executor` cleanup classification without changing fixed language outcomes.
 Already-terminal language outcomes MUST NOT bypass this physical cleanup and quiescence phase;
 successful observation retains the `AlreadyTerminal` result without changing fixed outcomes.
 When no held or in-flight physical value and no retained disposal failure requires cleanup,
