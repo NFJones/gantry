@@ -183,6 +183,8 @@ pub enum ExecutionResourceCleanupFailure {
     Executor,
     /// Active or finishing resource accounting still lacks a semantic disposition.
     UnsettledAccounting,
+    /// Admitted resource operation work still awaits machine settlement.
+    PendingResourceWork,
 }
 
 /// Exact required-sink exhaustion retained by one execution lifecycle.

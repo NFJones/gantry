@@ -657,6 +657,17 @@ impl ExecutionCoordinator {
             .is_some_and(|resources| resources.live_resources() != 0)
     }
 
+    /// Reports admitted machine work still awaiting settlement, independently of accounting.
+    ///
+    /// An unreadable lease conservatively remains pending; this inspection releases no capacity.
+    #[must_use]
+    pub fn has_pending_resource_operations(&self) -> bool {
+        lock(&self.inner.state)
+            .resources
+            .as_ref()
+            .is_some_and(|resources| resources.pending_operations() != 0)
+    }
+
     /// Reports whether any physical resource value remains held or in-flight.
     ///
     /// Completed disposal failures are quiescent but remain independently reportable.

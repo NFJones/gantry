@@ -15308,7 +15308,7 @@ failures and per-resource disposal failures MUST remain distinct. The first oper
 failure MUST remain visible in lifecycle snapshots independently of immutable language outcomes,
 including after terminal publication, rather than claiming successful cleanup. Recording errors
 MUST propagate; recording MUST NOT rewrite cancellation, foreground or terminal state. The bounded
-classification is service, disposal, deadline, executor or unsettled accounting. Physical-quiescence observation timeout
+classification is service, disposal, deadline, executor, unsettled accounting or pending resource work. Physical-quiescence observation timeout
 or executor failure MUST retain the same independent operational record, including when active
 resource ownership prevents quiescence after terminal publication.
 Active and finishing resource lifetimes remain explicit obligations; this
@@ -15325,6 +15325,9 @@ active and finishing accounts MUST NOT be implicitly released or disposed by thi
 Unsettled active or finishing accounting MUST independently prevent an orderly report, even
 without a physical slot. Shutdown MUST retain `UnsettledAccounting` as its operational cleanup
 classification unless an earlier cleanup failure is already recorded; this creates no settlement.
+Admitted pending resource work MUST independently prevent an orderly report after accounting or
+physical release. Shutdown MUST retain `PendingResourceWork` unless an earlier cleanup failure
+is recorded, without closing its machine lease or releasing accepted pending capacity.
 
 <a id="GNT-28.12-operation-state-projection"></a>
 

@@ -11,11 +11,12 @@ use gantry::ir::{
 /// Terminal language settlement must not hide physical cleanup from interpreter shutdown.
 #[test]
 fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service() {
-    for (fails, remains_active, physical) in [
-        (false, false, true),
-        (true, false, true),
-        (false, true, true),
-        (false, true, false),
+    for (fails, remains_active, physical, pending) in [
+        (false, false, true, false),
+        (true, false, true, false),
+        (false, true, true, false),
+        (false, true, false, false),
+        (false, false, false, true),
     ] {
         let root = TempDirectory::new("fn main() {}");
         let executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -46,7 +47,7 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
         let coordinator = interpreter
             .test_nondurable_resource_coordinator(execution)
             .unwrap_or_else(|| panic!("resource owner"));
-        let machine = resource_machine(execution);
+        let mut machine = resource_machine(execution);
         let subject = machine
             .pending_resource_subject()
             .unwrap_or_else(|| panic!("subject"));
@@ -102,6 +103,13 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
                 .settle_resource_from_post_failure(&failure, 21, &subject)
                 .unwrap_or_else(|error| panic!("release: {error:?}"));
         }
+        if !pending {
+            assert!(machine.cancel("fixture operation settlement").is_some());
+            assert!(matches!(
+                machine.step(),
+                gantry::runtime::MachineStep::Transition(_)
+            ));
+        }
         let before_records = coordinator
             .snapshot()
             .resource_records()
@@ -143,7 +151,7 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
             u64::from(physical && !remains_active),
             "shutdown must drain terminal resource ownership"
         );
-        assert_eq!(report.orderly, !fails && !remains_active);
+        assert_eq!(report.orderly, !fails && !remains_active && !pending);
         let after = accepted
             .handle()
             .snapshot()
@@ -157,6 +165,8 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
                 Some(gantry::runtime::ExecutionResourceCleanupFailure::Deadline)
             } else if remains_active {
                 Some(gantry::runtime::ExecutionResourceCleanupFailure::UnsettledAccounting)
+            } else if pending {
+                Some(gantry::runtime::ExecutionResourceCleanupFailure::PendingResourceWork)
             } else {
                 fails.then_some(gantry::runtime::ExecutionResourceCleanupFailure::Disposal)
             }
@@ -173,6 +183,23 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
                 .dispose_settled_resource_host_values()
                 .unwrap_or_else(|error| panic!("explicit late disposal: {error:?}"));
             assert_eq!(drops.load(Ordering::Acquire), u64::from(physical));
+        }
+        assert_eq!(coordinator.has_pending_resource_operations(), pending);
+        if pending {
+            assert!(
+                machine
+                    .cancel("explicit late operation settlement")
+                    .is_some()
+            );
+            assert!(matches!(
+                machine.step(),
+                gantry::runtime::MachineStep::Transition(_)
+            ));
+            assert!(!coordinator.has_pending_resource_operations());
+            assert_eq!(
+                coordinator.snapshot().resource_records(),
+                Some(before_records.as_slice())
+            );
         }
     }
 }

@@ -128,7 +128,7 @@ Nondurable execution cancellation now submits already-settled physical obligatio
 drainage and before waiting for shutdown quiescence. The configured cancellation drain deadline
 bounds observation, not started destruction. Service/coordinator failures report `ResourceCleanup`;
 member destruction failures report `ResourceDisposal`. `ExecutionSnapshot::resource_cleanup_failure`
-retains the first operational classification (service, disposal, deadline, executor or unsettled accounting), including
+retains the first operational classification (service, disposal, deadline, executor, unsettled accounting or pending resource work), including
 after terminal publication. Fixed language outcomes and cancellation remain unchanged; failures
 to record this classification propagate rather than being silently discarded.
 Physical-quiescence observation also records deadline or executor failure, including when an active
@@ -149,6 +149,9 @@ held until explicitly settled; fixed language outcomes are never rewritten.
 Active or finishing accounting also prevents orderly shutdown when no physical slot exists.
 `UnsettledAccounting` records this missing semantic disposition without changing accounting or
 overwriting an earlier cleanup classification.
+Admitted pending operations independently prevent orderly shutdown even after accounting release.
+`PendingResourceWork` records the outstanding machine settlement without closing its lease or
+releasing pending capacity. Explicit later machine settlement remains available.
 
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |

@@ -12259,6 +12259,14 @@ impl Interpreter {
                             orderly = false;
                         }
                     }
+                    if owner.coordinator.has_pending_resource_operations() {
+                        orderly = false;
+                        if owner.handle.record_resource_cleanup_failure(
+                            gantry_runtime::ExecutionResourceCleanupFailure::PendingResourceWork,
+                        ).is_err() {
+                            orderly = false;
+                        }
+                    }
                 }
                 let mut blocking_shutdown =
                     catch_integration(&shutdown_owner.blocking_work_poison, || {
