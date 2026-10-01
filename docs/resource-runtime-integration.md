@@ -135,10 +135,15 @@ Physical-quiescence observation also records deadline or executor failure, inclu
 resource remains held after driver terminal publication. It does not dispose or release that account.
 An already-terminal cancellation request still drains retained settled physical obligations and
 observes quiescence; success retains `AlreadyTerminal` without changing fixed language outcomes.
-With no held/in-flight values or retained disposal failures, it returns immediately rather than
-waiting for unrelated driver completion. Interpreter shutdown retains ownership of those drivers.
+With no held/in-flight values, retained disposal failures, unsettled accounting or admitted pending
+work, it returns immediately rather than waiting for unrelated driver completion. Interpreter
+shutdown retains ownership of those drivers.
 Active and finishing accounts are not implicitly released. This phase does not enable source
 live-handle transport or complete durable cancellation integration.
+After physical quiescence, cancellation independently checks accounting and pending work. Remaining
+obligations return `ResourceObligations` with `UnsettledAccounting` or `PendingResourceWork`, retaining
+the first lifecycle classification without changing accounting or leases. Explicit later settlement
+remains available, including for already-terminal language outcomes.
 
 Interpreter shutdown also inspects retained nondurable execution owners, including terminal owners
 outside the semantic cancellation cohort. It submits settled physical cleanup before closing the

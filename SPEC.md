@@ -15301,7 +15301,8 @@ drainage and before observing shutdown quiescence.
 Already-terminal language outcomes MUST NOT bypass this physical cleanup and quiescence phase;
 successful observation retains the `AlreadyTerminal` result without changing fixed outcomes.
 When no held or in-flight physical value and no retained disposal failure requires cleanup,
-an already-terminal request MAY return immediately without waiting for unrelated driver completion.
+and no unsettled accounting or admitted pending work remains, an already-terminal request MAY
+return immediately without waiting for unrelated driver completion.
 Observation MUST use the configured cancellation drain deadline; timeout stops observation without
 cancelling started destruction. Service/coordinator
 failures and per-resource disposal failures MUST remain distinct. The first operational cleanup
@@ -15314,6 +15315,11 @@ resource ownership prevents quiescence after terminal publication.
 Active and finishing resource lifetimes remain explicit obligations; this
 phase MUST NOT fabricate semantic release or enable source live-handle transport. Durable cancellation
 resource integration remains outside this scoped phase.
+After physical quiescence, cancellation MUST independently refuse cleanup completion with
+`ResourceObligations` if active/finishing accounting or admitted pending machine work remains.
+It MUST retain `UnsettledAccounting` or `PendingResourceWork` respectively, preserve an earlier
+failure classification, and leave accounting and machine leases unchanged. Explicit later
+settlement remains available; physical absence never substitutes for semantic disposition.
 
 Interpreter shutdown MUST inspect retained nondurable execution owners, including terminal owners
 outside its semantic cancellation cohort, before closing the blocking-work service. It MUST submit

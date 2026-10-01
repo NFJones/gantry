@@ -11602,6 +11602,8 @@ impl Interpreter {
         if matches!(record, CancellationRecord::AlreadyTerminal(_))
             && !owner.coordinator.has_resource_host_values()
             && !owner.coordinator.has_settled_resource_host_values()
+            && !owner.coordinator.has_unsettled_resource_accounts()
+            && !owner.coordinator.has_pending_resource_operations()
         {
             return Ok(record);
         }
@@ -11747,6 +11749,20 @@ impl Interpreter {
                     Err(CancelExecutionError::CleanupTimedOut)
                 }
             };
+        }
+        let obligation = if owner.coordinator.has_unsettled_resource_accounts() {
+            Some(gantry_runtime::ExecutionResourceCleanupFailure::UnsettledAccounting)
+        } else if owner.coordinator.has_pending_resource_operations() {
+            Some(gantry_runtime::ExecutionResourceCleanupFailure::PendingResourceWork)
+        } else {
+            None
+        };
+        if let Some(classification) = obligation {
+            owner
+                .handle
+                .record_resource_cleanup_failure(classification)
+                .map_err(CancelExecutionError::Transition)?;
+            return Err(CancelExecutionError::ResourceObligations(classification));
         }
         let terminal = self
             .inner
@@ -13740,6 +13756,8 @@ pub enum CancelExecutionError {
     ResourceCleanup(gantry_runtime::ResourceCleanupError),
     /// A settled physical resource reported a contained destruction failure.
     ResourceDisposal(gantry_runtime::HostResourceError),
+    /// Semantic resource accounting or admitted machine work remains unsettled.
+    ResourceObligations(gantry_runtime::ExecutionResourceCleanupFailure),
     /// The supervised cancellation owner stopped abnormally.
     Physical(OwnedTaskCompletion),
     /// Retained cancellation state was internally incomplete.

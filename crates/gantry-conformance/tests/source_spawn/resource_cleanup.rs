@@ -213,7 +213,7 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
         let coordinator = interpreter
             .test_nondurable_resource_coordinator(execution)
             .unwrap_or_else(|| panic!("execution accounting owner"));
-        let machine = resource_machine(execution);
+        let mut machine = resource_machine(execution);
         let subject = machine
             .pending_resource_subject()
             .unwrap_or_else(|| panic!("subject"));
@@ -270,6 +270,8 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
                 .settle_resource_from_post_failure(&failure, 21, &subject)
                 .unwrap_or_else(|error| panic!("semantic release: {error:?}"));
         }
+        assert!(machine.cancel("fixture operation settlement").is_some());
+        let _ = machine.step();
         let before = coordinator
             .snapshot()
             .resource_records()
