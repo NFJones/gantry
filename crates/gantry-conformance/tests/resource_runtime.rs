@@ -2738,6 +2738,205 @@ fn submitted_resource_cleanup_cancelled_before_start_retains_physical_ownership(
     assert_eq!(coordinator.snapshot(), before);
 }
 
+/// Faults injected independently at each cleanup service boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CleanupServiceFault {
+    Submission,
+    CompletionConstruction,
+    CompletionPoll,
+    CompletionDrop,
+    HandleDrop,
+    MissingResult,
+}
+
+/// Inline service double isolates containment; it is not blocking-worker qualification.
+struct FaultingCleanupService {
+    fault: CleanupServiceFault,
+    handle_drops: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl gantry::host::contracts::BlockingWorkService for FaultingCleanupService {
+    fn capacities(&self) -> gantry::host::contracts::BlockingWorkCapacities {
+        gantry::host::contracts::BlockingWorkCapacities::new(1, 1)
+            .unwrap_or_else(|| panic!("positive fixture capacities"))
+    }
+
+    fn submit(
+        &self,
+        job: gantry::host::contracts::OwnedBlockingJob,
+    ) -> Result<
+        Arc<dyn gantry::host::contracts::SubmittedBlockingJob>,
+        gantry::host::contracts::BlockingWorkSubmitError,
+    > {
+        assert_ne!(
+            self.fault,
+            CleanupServiceFault::Submission,
+            "protected submission failure"
+        );
+        if self.fault != CleanupServiceFault::MissingResult {
+            job();
+        }
+        Ok(Arc::new(FaultingCleanupHandle {
+            fault: self.fault,
+            drops: Arc::clone(&self.handle_drops),
+        }))
+    }
+
+    fn shutdown(
+        &self,
+    ) -> gantry::host::contracts::HostFuture<'_, Result<(), gantry::host::contracts::HostError>>
+    {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// The handle may fail while creating an observer or being physically destroyed.
+struct FaultingCleanupHandle {
+    fault: CleanupServiceFault,
+    drops: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl gantry::host::contracts::SubmittedBlockingJob for FaultingCleanupHandle {
+    fn cancel_before_start(&self) -> gantry::host::contracts::BlockingJobCancellation {
+        panic!("cleanup observers must never cancel accepted work")
+    }
+
+    fn completion(
+        &self,
+    ) -> gantry::host::contracts::HostFuture<'_, gantry::host::contracts::BlockingJobCompletion>
+    {
+        assert_ne!(
+            self.fault,
+            CleanupServiceFault::CompletionConstruction,
+            "protected observer construction failure"
+        );
+        Box::pin(FaultingCleanupFuture(self.fault))
+    }
+}
+
+impl Drop for FaultingCleanupHandle {
+    fn drop(&mut self) {
+        self.drops.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        assert_ne!(
+            self.fault,
+            CleanupServiceFault::HandleDrop,
+            "protected handle disposal failure"
+        );
+    }
+}
+
+/// Completed observer futures can still fail during their contained destruction.
+struct FaultingCleanupFuture(CleanupServiceFault);
+
+impl std::future::Future for FaultingCleanupFuture {
+    type Output = gantry::host::contracts::BlockingJobCompletion;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        assert_ne!(
+            self.0,
+            CleanupServiceFault::CompletionPoll,
+            "protected completion poll failure"
+        );
+        std::task::Poll::Ready(gantry::host::contracts::BlockingJobCompletion::Completed)
+    }
+}
+
+impl Drop for FaultingCleanupFuture {
+    fn drop(&mut self) {
+        assert_ne!(
+            self.0,
+            CleanupServiceFault::CompletionDrop,
+            "protected completion disposal failure"
+        );
+    }
+}
+
+/// Service faults cannot escape containment, fabricate cleanup results or rewrite accounting.
+#[test]
+fn submitted_resource_cleanup_contains_hostile_service_boundaries() {
+    use gantry::host::containment::AdapterPoison;
+    use gantry::runtime::ResourceCleanupError;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap_or_else(|error| panic!("observer runtime: {error}"));
+    for fault in [
+        CleanupServiceFault::Submission,
+        CleanupServiceFault::CompletionConstruction,
+        CleanupServiceFault::CompletionPoll,
+        CleanupServiceFault::CompletionDrop,
+        CleanupServiceFault::HandleDrop,
+        CleanupServiceFault::MissingResult,
+    ] {
+        let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+        let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+        coordinator
+            .admit_resource(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        let value_drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        coordinator
+            .attach_resource_host_value(
+                &subject,
+                OwnerGeneration::new(4),
+                TransportValue {
+                    drops: Arc::clone(&value_drops),
+                    panic_on_drop: false,
+                    value: 1,
+                },
+            )
+            .unwrap_or_else(|_| panic!("attachment"));
+        coordinator
+            .emergency_release_resource(&subject, emergency_cleanup())
+            .unwrap_or_else(|error| panic!("release: {error:?}"));
+        let before = coordinator.snapshot();
+        let handle_drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let service = FaultingCleanupService {
+            fault,
+            handle_drops: Arc::clone(&handle_drops),
+        };
+        let poison = AdapterPoison::default();
+        let submitted = coordinator.submit_settled_resource_cleanup(&service, &poison);
+        if fault == CleanupServiceFault::Submission {
+            assert!(matches!(submitted, Err(ResourceCleanupError::Boundary(_))));
+            assert!(poison.is_poisoned());
+            assert_eq!(value_drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+        } else {
+            let observer = submitted.unwrap_or_else(|error| panic!("submission: {error:?}"));
+            let result = runtime.block_on(observer.completion());
+            match fault {
+                CleanupServiceFault::MissingResult => {
+                    assert_eq!(result, Err(ResourceCleanupError::MissingResult))
+                }
+                CleanupServiceFault::HandleDrop => {
+                    assert_eq!(result, Ok(vec![(subject.clone(), Ok(()))]))
+                }
+                _ => assert!(matches!(result, Err(ResourceCleanupError::Boundary(_)))),
+            }
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(observer))).is_ok()
+            );
+            assert_eq!(handle_drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+            assert_eq!(
+                value_drops.load(std::sync::atomic::Ordering::SeqCst),
+                usize::from(fault != CleanupServiceFault::MissingResult)
+            );
+        }
+        assert_eq!(coordinator.snapshot(), before);
+        coordinator
+            .dispose_settled_resource_host_values()
+            .unwrap_or_else(|error| panic!("remaining cleanup: {error:?}"));
+        assert_eq!(value_drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(coordinator.snapshot(), before);
+    }
+}
+
 /// Counts physical-quiescence notifications without polling or scheduling cleanup itself.
 #[derive(Default)]
 struct ResourceShutdownWake(std::sync::atomic::AtomicUsize);
