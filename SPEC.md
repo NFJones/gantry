@@ -15182,6 +15182,18 @@ This optional synchronous boundary is not the accounting registry, does not add 
 `LogicalValue`, raw hook bytes, or reconstruction records, and claims no source-resource evaluation,
 asynchronous cancellation, task transfer, host authority admission, or durable host reconstruction.
 
+The registry MAY separately retain one process-local physical slot for an existing active/open
+account. Attachment MUST check current ownership and refuse duplicate slots while returning the
+physical input untouched; it MUST NOT remove the account or change quota facts. Typed bounded
+synchronous invocation MUST retain account and containment fences, including contained unused
+callback destruction. Accounting finalization MUST refuse while a physical value remains held.
+Explicit physical disposal is permitted only after accounting leaves active, including finishing,
+and MUST NOT itself release semantic quota. Terminal semantic release remains effective before
+disposal and despite destruction failure. A deleted account MUST remain retained until its physical
+value is disposed. Captures and reconstruction MUST omit physical slots, and no coordinator callback
+route may invoke integration under its shared lock. This boundary grants no host authority and
+does not establish automatic evaluator integration or physical reconstruction.
+
 <a id="GNT-28.12-operation-state-projection"></a>
 
 **[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile

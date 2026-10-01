@@ -24,6 +24,18 @@ process-local pending policy, and unadmitted evaluator work is outside its scope
 cloned handles retain the same admission refusal and machine-settlement release boundaries.
 The existing `new_with_resource_limit` constructor leaves the pending policy disabled.
 
+`attach_host_value` optionally attaches one typed process-local value to an existing active/open
+account without moving or duplicating accounting and without changing quotas. The embedding caller
+authenticates its association and authority. Duplicate, unknown, stale-owner and inactive refusals
+return the value untouched. `invoke_host_value` checks the exact Rust type and accounting fences;
+invocation and unused callback destruction reuse host containment. `dispose_host_value` removes the
+value before contained destruction, only after accounting leaves active. Finalization cannot
+complete while a value remains held. Semantic poison or emergency release can release live quota
+before physical disposal, even when destruction later fails. `has_host_value` reports presence only.
+Deleted accounts are not reaped while a value remains attached. Captures and reconstruction omit
+physical slots; no callback route is exposed through the coordinator's shared lock. Registry drop
+contains physical destruction only and does not synthesize semantic settlement.
+
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |
 | Admission | `new`, `admit` | `GNT-28.11-runtime-admission-mapping`, `GNT-28.7-durable-resource-reconstruction`, `GNT-20.1-operation-kinds` |

@@ -543,6 +543,10 @@ pub enum PostFailureSettlementRefusal {
 #[derive(Debug, Default)]
 pub struct ResourceRegistry {
     accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
+    physical: BTreeMap<
+        (LogicalOperationId, ResourceGenerationId),
+        crate::resource_transport::HostValueSlot,
+    >,
     live_limit: Option<u64>,
     pending_limit: Option<u64>,
     pending_admissions: Vec<Arc<Mutex<bool>>>,
@@ -612,6 +616,7 @@ impl ResourceRegistry {
     pub fn new() -> Self {
         Self {
             accounts: BTreeMap::new(),
+            physical: BTreeMap::new(),
             live_limit: None,
             pending_limit: None,
             pending_admissions: Vec::new(),
@@ -628,6 +633,7 @@ impl ResourceRegistry {
     pub fn with_live_limit(limit: u64) -> Self {
         Self {
             accounts: BTreeMap::new(),
+            physical: BTreeMap::new(),
             live_limit: Some(limit),
             pending_limit: None,
             pending_admissions: Vec::new(),
@@ -696,8 +702,15 @@ impl ResourceRegistry {
     /// retained keeps its account and stays queryable.
     pub fn reap_deleted(&mut self) -> usize {
         let before = self.accounts.len();
-        self.accounts
-            .retain(|_, account| account.ledger().lifetime() != ResourceLifetimeState::Deleted);
+        self.accounts.retain(|key, account| {
+            account.ledger().lifetime() != ResourceLifetimeState::Deleted
+                || self
+                    .physical
+                    .get(key)
+                    .is_some_and(crate::resource_transport::HostValueSlot::is_present)
+        });
+        self.physical
+            .retain(|key, _| self.accounts.contains_key(key));
         before.saturating_sub(self.accounts.len())
     }
 
@@ -838,6 +851,7 @@ impl ResourceRegistry {
         }
         Ok(Self {
             accounts,
+            physical: BTreeMap::new(),
             live_limit,
             pending_limit: None,
             pending_admissions: Vec::new(),
@@ -874,6 +888,121 @@ impl ResourceRegistry {
     pub fn account(&self, subject: &ResourceSubjectBinding) -> Option<&AdmittedResource> {
         self.accounts
             .get(&(subject.operation().clone(), subject.generation().clone()))
+    }
+
+    /// Attaches one physical value without moving its account or changing quota facts.
+    ///
+    /// The embedding caller authenticates the value/subject association and supplies authority.
+    /// Refusal returns the value untouched. Disposed slots cannot be attached again.
+    pub fn attach_host_value<T: std::any::Any + Send>(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+        value: T,
+    ) -> Result<(), Box<(crate::HostResourceError, T)>> {
+        use crate::HostResourceError;
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let refusal = match self.accounts.get(&key) {
+            None => Some(HostResourceError::UnknownSubject),
+            Some(account) => {
+                if let Err(error) = account.require_current_owner(owner) {
+                    Some(HostResourceError::Model(error))
+                } else if account.ledger().lifetime() != ResourceLifetimeState::Active
+                    || !account.ledger().operation_state().is_open()
+                {
+                    Some(HostResourceError::Model(
+                        ResourceError::IllegalLifetimeTransition,
+                    ))
+                } else if self.physical.contains_key(&key) {
+                    Some(HostResourceError::AlreadyAttached)
+                } else {
+                    None
+                }
+            }
+        };
+        if let Some(error) = refusal {
+            return Err(Box::new((error, value)));
+        }
+        self.physical
+            .insert(key, crate::resource_transport::HostValueSlot::new(value));
+        Ok(())
+    }
+
+    /// Inspects physical presence only; accounting captures never include a physical value.
+    #[must_use]
+    pub fn has_host_value(&self, subject: &ResourceSubjectBinding) -> bool {
+        self.physical
+            .get(&(subject.operation().clone(), subject.generation().clone()))
+            .is_some_and(crate::resource_transport::HostValueSlot::is_present)
+    }
+
+    /// Invokes bounded synchronous integration with exact Rust type and accounting owner fences.
+    ///
+    /// No coordinator route exposes this callback API: integration code must not run under a
+    /// coordinator lock. Callback destruction on refusal is contained, with panic precedence.
+    pub fn invoke_host_value<T: std::any::Any + Send, R>(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+        callback: impl FnOnce(&mut T) -> Result<R, gantry_host::contracts::HostError>,
+    ) -> Result<R, crate::HostResourceError> {
+        use crate::HostResourceError;
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let refusal = match self.accounts.get(&key) {
+            None => Some(HostResourceError::UnknownSubject),
+            Some(account) => {
+                if let Err(error) = account.require_current_owner(owner) {
+                    Some(HostResourceError::Model(error))
+                } else if account.ledger().lifetime() != ResourceLifetimeState::Active
+                    || !account.ledger().operation_state().is_open()
+                {
+                    Some(HostResourceError::Model(
+                        ResourceError::IllegalLifetimeTransition,
+                    ))
+                } else {
+                    None
+                }
+            }
+        };
+        let Some(slot) = self.physical.get_mut(&key) else {
+            return crate::resource_transport::refuse_unbound_callback(
+                callback,
+                refusal.unwrap_or(HostResourceError::NotAttached),
+            );
+        };
+        if let Some(error) = refusal {
+            return slot.refuse(callback, error);
+        }
+        slot.invoke(callback)
+    }
+
+    /// Disposes physical ownership only after accounting leaves Active.
+    ///
+    /// Finishing permits disposal before finalization completion. Terminal lifetime release has
+    /// already freed live quota even if disposal panics. The slot remains as a no-reattach fence.
+    pub fn dispose_host_value(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+    ) -> Result<(), crate::HostResourceError> {
+        use crate::HostResourceError;
+        let key = (subject.operation().clone(), subject.generation().clone());
+        let account = self
+            .accounts
+            .get(&key)
+            .ok_or(HostResourceError::UnknownSubject)?;
+        account
+            .require_current_owner(owner)
+            .map_err(HostResourceError::Model)?;
+        if account.ledger().lifetime() == ResourceLifetimeState::Active {
+            return Err(HostResourceError::Model(
+                ResourceError::IllegalLifetimeTransition,
+            ));
+        }
+        self.physical
+            .get_mut(&key)
+            .ok_or(HostResourceError::NotAttached)?
+            .dispose()
     }
 
     /// Settles the account its own subject names from one model-issued post-failure settlement.
@@ -1045,6 +1174,16 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .require_current_owner(presented_owner)
+            .map_err(ResourceRegistryRefusal::Finish)?;
+        if self
+            .physical
+            .get(&key)
+            .is_some_and(crate::resource_transport::HostValueSlot::is_present)
+        {
+            return Err(ResourceRegistryRefusal::PhysicalValuePresent);
+        }
         account
             .complete_finalization_for(presented_owner, settled_at)
             .map_err(ResourceRegistryRefusal::Finish)
@@ -1305,6 +1444,8 @@ impl ResourceRegistry {
 pub enum ResourceRegistryRefusal {
     /// The subject already owns an admitted account, or was presented twice in one reconstruction.
     SecondAdmission,
+    /// Physical ownership must be disposed before accounting finalization completes.
+    PhysicalValuePresent,
     /// The subject's operation carries no authenticated live-resource Section 20 kind.
     UnauthenticatedOperationKind,
     /// The machine has no pending action-backed operation with a resource subject.

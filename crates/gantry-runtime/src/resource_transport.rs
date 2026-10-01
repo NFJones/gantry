@@ -44,6 +44,14 @@ pub enum HostResourceError {
     Operation(OperationAbiError),
     /// This receiver loan already accepted its settlement.
     LoanSettled,
+    /// The requested Rust transport type differs from the attached physical value.
+    TypeMismatch,
+    /// No accounting account exists for the requested subject.
+    UnknownSubject,
+    /// A physical slot was already attached, including a disposed slot.
+    AlreadyAttached,
+    /// This account has no attached physical slot.
+    NotAttached,
 }
 
 /// One unclonable host value bound to one consumed accounting account.
@@ -369,6 +377,88 @@ impl<T> Drop for HostReceiverLoan<'_, T> {
             self.resource.poison.poison();
         }
     }
+}
+
+/// Registry-held physical ownership, kept separate from serializable accounting facts.
+pub(crate) struct HostValueSlot {
+    value: Option<Box<dyn std::any::Any + Send>>,
+    poison: AdapterPoison,
+}
+
+impl std::fmt::Debug for HostValueSlot {
+    /// Reports only transport state, never host value contents or identity.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HostValueSlot")
+            .field("poisoned", &self.poison.is_poisoned())
+            .field("present", &self.value.is_some())
+            .finish()
+    }
+}
+
+impl HostValueSlot {
+    /// Consumes one physical value without deriving authority or a durable representation.
+    pub(crate) fn new<T: std::any::Any + Send>(value: T) -> Self {
+        Self {
+            value: Some(Box::new(value)),
+            poison: AdapterPoison::default(),
+        }
+    }
+
+    /// Reports physical presence without exposing host identity or contents.
+    pub(crate) fn is_present(&self) -> bool {
+        self.value.is_some()
+    }
+
+    /// Contains unused callback destruction, including type or accounting refusals.
+    pub(crate) fn refuse<C, R>(
+        &self,
+        callback: C,
+        error: HostResourceError,
+    ) -> Result<R, HostResourceError> {
+        drop_integration(&self.poison, &mut Some(callback)).map_err(HostResourceError::Boundary)?;
+        Err(error)
+    }
+
+    /// Invokes the exact attached Rust type through the existing synchronous containment owner.
+    pub(crate) fn invoke<T: std::any::Any + Send, R>(
+        &mut self,
+        callback: impl FnOnce(&mut T) -> Result<R, HostError>,
+    ) -> Result<R, HostResourceError> {
+        if self.value.is_none() {
+            return self.refuse(callback, HostResourceError::Disposed);
+        }
+        let Some(value) = self
+            .value
+            .as_mut()
+            .and_then(|value| value.downcast_mut::<T>())
+        else {
+            return self.refuse(callback, HostResourceError::TypeMismatch);
+        };
+        invoke_contained(&self.poison, value, callback)
+    }
+
+    /// Removes the value before contained destruction; no second disposal can execute it.
+    pub(crate) fn dispose(&mut self) -> Result<(), HostResourceError> {
+        drop_integration(&self.poison, &mut self.value).map_err(HostResourceError::Boundary)
+    }
+}
+
+impl Drop for HostValueSlot {
+    /// Contains physical cleanup only, without synthesizing accounting settlement.
+    fn drop(&mut self) {
+        let _ = self.dispose();
+    }
+}
+
+/// Contains callbacks rejected before an attached transport slot can be selected.
+pub(crate) fn refuse_unbound_callback<C, R>(
+    callback: C,
+    error: HostResourceError,
+) -> Result<R, HostResourceError> {
+    drop_integration(&AdapterPoison::default(), &mut Some(callback))
+        .map_err(HostResourceError::Boundary)?;
+    Err(error)
 }
 
 /// Keeps unused callback ownership outside the poisoned invocation fast path, then disposes it.

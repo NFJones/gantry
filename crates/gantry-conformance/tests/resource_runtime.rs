@@ -1589,6 +1589,295 @@ impl Drop for TransportValue {
     }
 }
 
+/// Physical attachment leaves registry quota and accounting ownership in place until settlement.
+#[test]
+fn registry_host_attachment_preserves_accounting_and_finalization_fences() {
+    use gantry::runtime::HostResourceError;
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let before = registry.declared_records();
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    registry
+        .attach_host_value(
+            &subject,
+            owner,
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: false,
+                value: 7,
+            },
+        )
+        .unwrap_or_else(|_| panic!("physical attachment"));
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(registry.live_resources(), 1);
+    assert!(registry.has_host_value(&subject));
+    let (error, returned) = *registry
+        .attach_host_value(&subject, owner, 9_u64)
+        .err()
+        .unwrap_or_else(|| panic!("second attachment refuses"));
+    assert_eq!(error, HostResourceError::AlreadyAttached);
+    assert_eq!(returned, 9);
+    assert_eq!(
+        registry.invoke_host_value::<u64, ()>(&subject, owner, |_| panic!("wrong type cannot run")),
+        Err(HostResourceError::TypeMismatch)
+    );
+    assert!(matches!(
+        registry.invoke_host_value::<TransportValue, ()>(
+            &subject,
+            OwnerGeneration::new(3),
+            |_| panic!("old owner cannot run")
+        ),
+        Err(HostResourceError::Model(ResourceError::StaleOwner { .. }))
+    ));
+    assert_eq!(
+        registry.invoke_host_value::<TransportValue, u64>(&subject, owner, |value| Ok(value.value)),
+        Ok(7)
+    );
+    assert_eq!(
+        registry.dispose_host_value(&subject, owner),
+        Err(HostResourceError::Model(
+            ResourceError::IllegalLifetimeTransition
+        ))
+    );
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(
+        registry.begin_finish(&subject, owner),
+        Ok(ResourceLifetimeState::Finishing)
+    );
+    let finishing = registry.declared_records();
+    assert_eq!(
+        registry.complete_finalization(&subject, owner, 31),
+        Err(ResourceRegistryRefusal::PhysicalValuePresent)
+    );
+    assert_eq!(registry.declared_records(), finishing);
+    assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
+    assert_eq!(
+        registry.live_resources(),
+        1,
+        "physical disposal alone releases no semantic quota"
+    );
+    assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+        registry.complete_finalization(&subject, owner, 31),
+        Ok(ResourceLifetimeState::Finished)
+    );
+    assert_eq!(registry.live_resources(), 0);
+    assert!(!registry.has_host_value(&subject));
+    let sibling = declared_subject(SECOND_FIXTURE_DECLARATION);
+    registry
+        .admit(
+            sibling,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("released live place: {error:?}"));
+    assert_eq!(registry.live_resources(), 1);
+    drop(registry);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Emergency semantic release survives destruction failure; recovery never invents host values.
+#[test]
+fn registry_host_emergency_release_is_independent_of_disposal_and_recovery() {
+    use gantry::runtime::HostResourceError;
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    registry
+        .attach_host_value(
+            &subject,
+            owner,
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: true,
+                value: 7,
+            },
+        )
+        .unwrap_or_else(|_| panic!("attachment"));
+    assert_eq!(
+        registry.settle_from_emergency_cleanup(&subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+    assert_eq!(registry.live_resources(), 0);
+    assert!(registry.has_host_value(&subject));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let records = registry.declared_records();
+    let recovered = ResourceRegistry::reconstruct(Some(1), records.clone())
+        .unwrap_or_else(|error| panic!("accounting recovery: {error:?}"));
+    assert_eq!(recovered.declared_records(), records);
+    assert!(!recovered.has_host_value(&subject));
+    assert!(matches!(
+        registry.dispose_host_value(&subject, owner),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert!(!registry.has_host_value(&subject));
+    assert_eq!(registry.declared_records(), records);
+    assert_eq!(registry.live_resources(), 0);
+    assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
+    drop(registry);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Attachment refusals preserve inputs, and invocation panics poison only the selected slot.
+#[test]
+fn registry_host_refusals_preserve_inputs_and_contain_callback_destruction() {
+    use gantry::runtime::HostResourceError;
+    let subject = active_subject();
+    let sibling = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::with_live_limit(2);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let before = registry.declared_records();
+    for (requested, presented, expected) in [
+        (&sibling, owner, HostResourceError::UnknownSubject),
+        (
+            &subject,
+            OwnerGeneration::new(3),
+            HostResourceError::Model(ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: owner,
+            }),
+        ),
+    ] {
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (error, returned) = *registry
+            .attach_host_value(
+                requested,
+                presented,
+                TransportValue {
+                    drops: Arc::clone(&drops),
+                    panic_on_drop: false,
+                    value: 17,
+                },
+            )
+            .err()
+            .unwrap_or_else(|| panic!("attachment refuses"));
+        assert_eq!(error, expected);
+        assert_eq!(returned.value, 17);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(registry.declared_records(), before);
+        drop(returned);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+    registry
+        .attach_host_value(&subject, owner, 7_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    assert!(matches!(
+        registry.invoke_host_value::<u64, ()>(&subject, owner, |_| panic!("integration panic")),
+        Err(HostResourceError::Boundary(_))
+    ));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let captured = TransportValue {
+        drops: Arc::clone(&drops),
+        panic_on_drop: true,
+        value: 1,
+    };
+    let called = std::cell::Cell::new(false);
+    assert!(matches!(
+        registry.invoke_host_value::<u64, ()>(&subject, owner, |_| {
+            called.set(true);
+            drop(captured);
+            Ok(())
+        }),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert!(!called.get());
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(registry.declared_records(), before);
+    registry
+        .admit(
+            sibling.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("sibling admission: {error:?}"));
+    registry
+        .attach_host_value(&sibling, owner, 9_u64)
+        .unwrap_or_else(|_| panic!("sibling attach"));
+    assert_eq!(
+        registry.invoke_host_value::<u64, u64>(&sibling, owner, |value| Ok(*value)),
+        Ok(9)
+    );
+    registry
+        .settle_from_emergency_cleanup(&subject, emergency_cleanup())
+        .unwrap_or_else(|error| panic!("release: {error:?}"));
+    assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
+}
+
+/// Deleted accounting cannot be reaped while its physical value still needs contained disposal.
+#[test]
+fn registry_host_record_reclamation_waits_for_physical_disposal() {
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    registry
+        .attach_host_value(
+            &subject,
+            owner,
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: false,
+                value: 1,
+            },
+        )
+        .unwrap_or_else(|_| panic!("attachment"));
+    registry
+        .settle_from_emergency_cleanup(&subject, emergency_cleanup())
+        .unwrap_or_else(|error| panic!("release: {error:?}"));
+    for root in ROOTS {
+        registry
+            .close_liveness_root(&subject, owner, *root)
+            .unwrap_or_else(|error| panic!("root closure: {error:?}"));
+    }
+    let fence = RetentionFence::new(2, 10).unwrap_or_else(|error| panic!("fence: {error:?}"));
+    registry
+        .retire(&subject, fence, owner, OwnerGeneration::new(5), 35)
+        .unwrap_or_else(|error| panic!("retirement: {error:?}"));
+    assert_eq!(
+        registry.delete(&subject, owner),
+        Ok(ResourceLifetimeState::Deleted)
+    );
+    assert_eq!(registry.reap_deleted(), 0);
+    assert_eq!(registry.live_resources(), 0);
+    assert!(registry.account(&subject).is_some());
+    assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
+    assert_eq!(registry.reap_deleted(), 1);
+    assert!(registry.account(&subject).is_none());
+    assert!(!registry.has_host_value(&subject));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
 /// Prepares a standalone active account with optional outstanding transport obligations.
 fn transfer_account(pending: bool, loan: bool, containment_pending: bool) -> AdmittedResource {
     let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
