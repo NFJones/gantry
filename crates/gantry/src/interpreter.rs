@@ -12249,6 +12249,17 @@ impl Interpreter {
                         }
                     }
                 }
+                for owner in shutdown_owner.nondurable_executions.all_owned() {
+                    if owner.coordinator.has_unsettled_resource_accounts() {
+                        orderly = false;
+                        // Preserve an earlier physical failure if it was recorded first.
+                        if owner.handle.record_resource_cleanup_failure(
+                            gantry_runtime::ExecutionResourceCleanupFailure::UnsettledAccounting,
+                        ).is_err() {
+                            orderly = false;
+                        }
+                    }
+                }
                 let mut blocking_shutdown =
                     catch_integration(&shutdown_owner.blocking_work_poison, || {
                         shutdown_owner.configuration.blocking_work().shutdown()

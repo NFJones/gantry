@@ -11,7 +11,12 @@ use gantry::ir::{
 /// Terminal language settlement must not hide physical cleanup from interpreter shutdown.
 #[test]
 fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service() {
-    for (fails, remains_active) in [(false, false), (true, false), (false, true)] {
+    for (fails, remains_active, physical) in [
+        (false, false, true),
+        (true, false, true),
+        (false, true, true),
+        (false, true, false),
+    ] {
         let root = TempDirectory::new("fn main() {}");
         let executor = Arc::new(DeterministicConcurrentExecutor::default());
         executor.control_sleeps();
@@ -57,17 +62,19 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
             )
             .unwrap_or_else(|error| panic!("admission: {error:?}"));
         let drops = Arc::new(AtomicU64::new(0));
-        coordinator
-            .attach_resource_host_value(
-                &subject,
-                owner,
-                CleanupValue {
-                    drops: Arc::clone(&drops),
-                    fails,
-                    pause: None,
-                },
-            )
-            .unwrap_or_else(|_| panic!("attachment"));
+        if physical {
+            coordinator
+                .attach_resource_host_value(
+                    &subject,
+                    owner,
+                    CleanupValue {
+                        drops: Arc::clone(&drops),
+                        fails,
+                        pause: None,
+                    },
+                )
+                .unwrap_or_else(|_| panic!("attachment"));
+        }
         let abi = OperationAbi::new(
             OperationKind::LiveResource,
             &CanonicalPath::new("crate::cleanup_resource")
@@ -133,7 +140,7 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
         };
         assert_eq!(
             drops.load(Ordering::Acquire),
-            u64::from(!remains_active),
+            u64::from(physical && !remains_active),
             "shutdown must drain terminal resource ownership"
         );
         assert_eq!(report.orderly, !fails && !remains_active);
@@ -146,8 +153,10 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
         assert_eq!(after.cancellation, before.cancellation);
         assert_eq!(
             after.resource_cleanup_failure,
-            if remains_active {
+            if remains_active && physical {
                 Some(gantry::runtime::ExecutionResourceCleanupFailure::Deadline)
+            } else if remains_active {
+                Some(gantry::runtime::ExecutionResourceCleanupFailure::UnsettledAccounting)
             } else {
                 fails.then_some(gantry::runtime::ExecutionResourceCleanupFailure::Disposal)
             }
@@ -163,7 +172,7 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
             coordinator
                 .dispose_settled_resource_host_values()
                 .unwrap_or_else(|error| panic!("explicit late disposal: {error:?}"));
-            assert_eq!(drops.load(Ordering::Acquire), 1);
+            assert_eq!(drops.load(Ordering::Acquire), u64::from(physical));
         }
     }
 }

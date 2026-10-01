@@ -181,6 +181,8 @@ pub enum ExecutionResourceCleanupFailure {
     Deadline,
     /// The executor failed while observing cleanup.
     Executor,
+    /// Active or finishing resource accounting still lacks a semantic disposition.
+    UnsettledAccounting,
 }
 
 /// Exact required-sink exhaustion retained by one execution lifecycle.

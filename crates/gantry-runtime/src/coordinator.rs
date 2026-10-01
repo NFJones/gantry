@@ -646,6 +646,17 @@ impl ExecutionCoordinator {
         result
     }
 
+    /// Reports whether active or finishing accounting still requires semantic settlement.
+    ///
+    /// This obligation is independent of physical slot presence and does not release quota.
+    #[must_use]
+    pub fn has_unsettled_resource_accounts(&self) -> bool {
+        lock(&self.inner.state)
+            .resources
+            .as_ref()
+            .is_some_and(|resources| resources.live_resources() != 0)
+    }
+
     /// Reports whether any physical resource value remains held or in-flight.
     ///
     /// Completed disposal failures are quiescent but remain independently reportable.
