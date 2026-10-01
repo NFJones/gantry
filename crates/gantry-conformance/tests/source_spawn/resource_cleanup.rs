@@ -14,9 +14,9 @@ use gantry::ir::{
 use gantry::runtime::{HostResourceError, Machine, MachineLabel, MachineLimits, MachineStep};
 
 /// Delegates scheduling while injecting a failure into a registered cleanup timer.
-struct CleanupTimerFailureExecutor {
-    inner: Arc<DeterministicConcurrentExecutor>,
-    fail: Arc<AtomicBool>,
+pub(super) struct CleanupTimerFailureExecutor {
+    pub(super) inner: Arc<DeterministicConcurrentExecutor>,
+    pub(super) fail: Arc<AtomicBool>,
 }
 
 impl ExecutorAdapter for CleanupTimerFailureExecutor {

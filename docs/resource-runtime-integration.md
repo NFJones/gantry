@@ -154,6 +154,14 @@ drainage and before waiting for shutdown quiescence.
 Failed semantic or physical driver-grace timing retains an executor error rather than implying
 grace expiry. Abort-and-drain ownership and settled physical cleanup remain required; successful
 drainage cannot erase the retained error or its first lifecycle `Executor` classification.
+For positive grace, cancellation declares a supervisor stop before each driver-grace timer using
+phase-relative logical microseconds (zero request instant, configured drain duration as grace and
+drain). Only successful timer expiry issues sealed escalation at the declared deadline. Zero
+duration and timer errors grant no emergency cleanup authority. After successful abort-and-drain,
+only supervision records confirming both `Stopped` abort and `Stopped` completion select tasks for
+`submit_task_resource_cleanup`; its cancelled/physically-settled fences are rechecked in the job.
+Failed or already-settled aborts cannot authorize release. Emergency cleanup runs off async workers
+and does not settle independently pending external machine work.
 The configured cancellation drain deadline bounds observation, not started destruction.
 Service/coordinator failures report `ResourceCleanup`;
 member destruction failures report `ResourceDisposal`. `ExecutionSnapshot::resource_cleanup_failure`

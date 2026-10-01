@@ -11643,6 +11643,8 @@ impl Interpreter {
             .map(|task_id| owner.coordinator.wait_for_task_settlement(task_id))
             .collect::<Result<Vec<_>, _>>()
             .map_err(CancelExecutionError::TaskState)?;
+        let grace_duration = self.inner.configuration.post_cancellation_drain();
+        let mut stop = cancellation_grace_stop(grace_duration);
         let semantic_grace = deadline_race(
             self.inner.configuration.executor(),
             Box::pin(async move {
@@ -11655,6 +11657,14 @@ impl Interpreter {
         )
         .await;
         let semantic_settled = matches!(semantic_grace, DeadlineOutcome::Completed(()));
+        let mut escalation = if matches!(semantic_grace, DeadlineOutcome::TimedOut) {
+            stop.as_mut()
+                .map(|stop| stop.escalate(&mut [], grace_duration.get()))
+                .transpose()
+                .map_err(|_| CancelExecutionError::Invariant)?
+        } else {
+            None
+        };
         let mut grace_failure = match semantic_grace {
             DeadlineOutcome::Failed(error) => Some(error),
             _ => None,
@@ -11667,6 +11677,7 @@ impl Interpreter {
             .owned_task_controls(owner.handle.execution_id(), &semantic_tasks);
         let completed_gracefully = if semantic_settled {
             let graceful_controls = Arc::clone(&selected);
+            let mut stop = cancellation_grace_stop(grace_duration);
             let physical_grace = deadline_race(
                 self.inner.configuration.executor(),
                 Box::pin(async move {
@@ -11679,6 +11690,13 @@ impl Interpreter {
             )
             .await;
             let completed = matches!(physical_grace, DeadlineOutcome::Completed(()));
+            if matches!(physical_grace, DeadlineOutcome::TimedOut) {
+                escalation = stop
+                    .as_mut()
+                    .map(|stop| stop.escalate(&mut [], grace_duration.get()))
+                    .transpose()
+                    .map_err(|_| CancelExecutionError::Invariant)?;
+            }
             if let DeadlineOutcome::Failed(error) = physical_grace {
                 grace_failure = Some(error);
             }
@@ -11737,6 +11755,48 @@ impl Interpreter {
                     let _ = owner.handle.publish_run_failed_nondurably();
                     return Err(CancelExecutionError::CleanupTimedOut);
                 }
+            }
+        }
+
+        if let Some(escalation) = escalation
+            && owner.coordinator.has_unsettled_resource_accounts()
+        {
+            let stopped_tasks = aborted
+                .iter()
+                .filter_map(|task| {
+                    let snapshot = task.snapshot();
+                    (snapshot.abort_result == Some(OwnedTaskAbort::Stopped)
+                        && snapshot.completion == Some(OwnedTaskCompletion::Stopped))
+                    .then_some(snapshot.task_id)
+                    .flatten()
+                })
+                .collect::<Vec<_>>();
+            if !stopped_tasks.is_empty()
+                && let Err(error) = self
+                    .drain_emergency_nondurable_resources(
+                        &owner.coordinator,
+                        stopped_tasks,
+                        escalation,
+                    )
+                    .await
+            {
+                let classification = match &error {
+                    CancelExecutionError::ResourceDisposal(_) => {
+                        gantry_runtime::ExecutionResourceCleanupFailure::Disposal
+                    }
+                    CancelExecutionError::CleanupTimedOut => {
+                        gantry_runtime::ExecutionResourceCleanupFailure::Deadline
+                    }
+                    CancelExecutionError::Executor(_) => {
+                        gantry_runtime::ExecutionResourceCleanupFailure::Executor
+                    }
+                    _ => gantry_runtime::ExecutionResourceCleanupFailure::Service,
+                };
+                owner
+                    .handle
+                    .record_resource_cleanup_failure(classification)
+                    .map_err(CancelExecutionError::Transition)?;
+                return Err(error);
             }
         }
 
@@ -11824,6 +11884,52 @@ impl Interpreter {
             DeadlineOutcome::Failed(error) => Err(CancelExecutionError::Executor(error)),
             DeadlineOutcome::TimedOut | DeadlineOutcome::Cancelled => {
                 let _ = owner.handle.publish_run_failed_nondurably();
+                Err(CancelExecutionError::CleanupTimedOut)
+            }
+        }
+    }
+
+    /// Observes task-qualified emergency cleanup without settling pending external work.
+    async fn drain_emergency_nondurable_resources(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        task_ids: Vec<ProtocolIdentity>,
+        escalation: gantry_ir::Escalation,
+    ) -> Result<(), CancelExecutionError> {
+        let observer = coordinator
+            .submit_task_resource_cleanup(
+                self.inner.configuration.blocking_work(),
+                &self.inner.blocking_work_poison,
+                task_ids,
+                escalation,
+            )
+            .map_err(CancelExecutionError::ResourceCleanup)?;
+        match deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(observer.completion()),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await
+        {
+            DeadlineOutcome::Completed(result) => {
+                let report = result.map_err(CancelExecutionError::ResourceCleanup)?;
+                if let Some((_, refusal)) = report.semantic().refusal() {
+                    return Err(CancelExecutionError::ResourceCleanup(
+                        gantry_runtime::ResourceCleanupError::Coordinator(
+                            gantry_runtime::CoordinatorResourceRefusal::Registry(refusal.clone()),
+                        ),
+                    ));
+                }
+                for (_, outcome) in report.physical() {
+                    outcome
+                        .clone()
+                        .map_err(CancelExecutionError::ResourceDisposal)?;
+                }
+                Ok(())
+            }
+            DeadlineOutcome::Failed(error) => Err(CancelExecutionError::Executor(error)),
+            DeadlineOutcome::TimedOut | DeadlineOutcome::Cancelled => {
                 Err(CancelExecutionError::CleanupTimedOut)
             }
         }
@@ -14021,6 +14127,19 @@ async fn wait_for_nondurable_abort_and_completion(
     tasks: &[SupervisedTask],
 ) -> Result<(), HostError> {
     wait_for_abort_and_completion(tasks).await
+}
+
+/// Declares positive phase-relative grace before its timer starts; zero has no escalation authority.
+fn cancellation_grace_stop(duration: DurationMicros) -> Option<gantry_ir::StopCoordinator> {
+    let policy = gantry_ir::GracePolicy::new(duration.get(), duration.get()).ok()?;
+    let mut stop = gantry_ir::StopCoordinator::new();
+    stop.request_stop(gantry_ir::StopRequest::new(
+        gantry_ir::StopCause::SupervisorRequest,
+        policy,
+        0,
+    ))
+    .ok()?;
+    Some(stop)
 }
 
 fn request_abort_for_active_controls(tasks: &[SupervisedTask]) {

@@ -15330,6 +15330,17 @@ be interpreted as successful grace expiry. Cancellation MUST still retain abort-
 and attempt settled physical cleanup; after successful drainage and quiescence it returns the
 retained executor error rather than a successful cancellation result. The lifecycle independently
 retains the first `Executor` cleanup classification without changing fixed language outcomes.
+For positive cancellation grace, the runtime MUST declare a supervisor stop before starting each
+driver-grace timer, using phase-relative logical microseconds with request instant zero and the
+configured cancellation drain duration as the declared grace and drain. Only a successful timer
+expiry MAY issue sealed escalation at that declared deadline. Zero duration, timer failure or
+cancellation observation MUST NOT fabricate escalation authority. After abort-and-drain succeeds,
+automatic emergency resource cleanup MUST select only tasks whose supervision records confirm
+both `Stopped` abortion and `Stopped` physical completion. The task-qualified cleanup route MUST
+then recheck cancelled semantic status and physical cessation under its settlement lock and run
+destruction through bounded blocking ownership. Failed, ambiguous or already-settled abortion
+MUST NOT authorize emergency release. Pending external machine work remains independently owned;
+emergency accounting release and physical destruction MUST NOT close its settlement lease.
 Already-terminal language outcomes MUST NOT bypass this physical cleanup and quiescence phase;
 successful observation retains the `AlreadyTerminal` result without changing fixed outcomes.
 When no held or in-flight physical value and no retained disposal failure requires cleanup,
