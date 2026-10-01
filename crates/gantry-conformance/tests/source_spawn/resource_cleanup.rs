@@ -13,6 +13,35 @@ use gantry::ir::{
 };
 use gantry::runtime::{HostResourceError, Machine, MachineLabel, MachineLimits, MachineStep};
 
+/// Delegates ordinary package work but can refuse the later cleanup submission.
+struct RefusingCleanupService {
+    inner: gantry::runtime::BoundedBlockingWorkService,
+    refuse: Arc<AtomicBool>,
+}
+
+impl gantry::host::contracts::BlockingWorkService for RefusingCleanupService {
+    fn capacities(&self) -> gantry::host::contracts::BlockingWorkCapacities {
+        self.inner.capacities()
+    }
+
+    fn submit(
+        &self,
+        job: gantry::host::contracts::OwnedBlockingJob,
+    ) -> Result<
+        Arc<dyn gantry::host::contracts::SubmittedBlockingJob>,
+        gantry::host::contracts::BlockingWorkSubmitError,
+    > {
+        if self.refuse.load(Ordering::Acquire) {
+            return Err(gantry::host::contracts::BlockingWorkSubmitError::CapacityExhausted);
+        }
+        self.inner.submit(job)
+    }
+
+    fn shutdown(&self) -> HostFuture<'_, Result<(), HostError>> {
+        self.inner.shutdown()
+    }
+}
+
 /// Counts physical disposal and optionally fails within the integration containment boundary.
 struct CleanupValue {
     drops: Arc<AtomicU64>,
@@ -97,11 +126,12 @@ fn resource_machine(execution: ProtocolIdentity) -> Machine {
 /// Cancellation drains already-released fake-host values and reports disposal failures separately.
 #[test]
 fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
-    for (fails, times_out, remains_active) in [
-        (false, false, false),
-        (true, false, false),
-        (false, true, false),
-        (false, true, true),
+    for (fails, times_out, remains_active, service_refuses) in [
+        (false, false, false, false),
+        (true, false, false, false),
+        (false, true, false, false),
+        (false, true, true, false),
+        (false, false, false, true),
     ] {
         let root = TempDirectory::new("fn main() {}");
         let executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -116,7 +146,15 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
         let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
             (1_u8..=192).map(|byte| Ok([byte; 32])),
         ));
-        let interpreter = interpreter_with_accounting_policy(
+        let refuse = Arc::new(AtomicBool::new(false));
+        let service = service_refuses.then(|| {
+            Box::new(RefusingCleanupService {
+                inner: gantry::runtime::BoundedBlockingWorkService::new(8, 8)
+                    .unwrap_or_else(|error| panic!("cleanup service: {error:?}")),
+                refuse: Arc::clone(&refuse),
+            }) as Box<dyn gantry::host::contracts::BlockingWorkService>
+        });
+        let interpreter = interpreter_with_accounting_service(
             executor.clone(),
             integration.clone(),
             integration,
@@ -126,6 +164,7 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
             SinkPlan::default(),
             identities,
             Some((2, 2)),
+            service,
         );
         let accepted = accepted(&interpreter, &root);
         let execution = accepted.execution_id();
@@ -194,6 +233,7 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
             .resource_records()
             .unwrap_or_else(|| panic!("records"))
             .to_vec();
+        refuse.store(service_refuses, Ordering::Release);
         let reason = caller_cancellation_reason(Some(Arc::from("resource cleanup")), 64)
             .unwrap_or_else(|error| panic!("reason: {error:?}"));
         let mut cancellation = Box::pin(interpreter.cancel_execution(execution, reason));
@@ -256,7 +296,9 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
             snapshot.terminal.is_some(),
             "driver terminal publication precedes cleanup reporting"
         );
-        let expected_failure = if times_out {
+        let expected_failure = if service_refuses {
+            Some(gantry::runtime::ExecutionResourceCleanupFailure::Service)
+        } else if times_out {
             Some(gantry::runtime::ExecutionResourceCleanupFailure::Deadline)
         } else if fails {
             Some(gantry::runtime::ExecutionResourceCleanupFailure::Disposal)
@@ -264,7 +306,24 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
             None
         };
         assert_eq!(snapshot.resource_cleanup_failure, expected_failure);
-        if times_out {
+        if service_refuses {
+            assert!(matches!(
+                result,
+                Err(gantry::CancelExecutionError::ResourceCleanup(
+                    gantry::runtime::ResourceCleanupError::Submission(
+                        gantry::host::contracts::BlockingWorkSubmitError::CapacityExhausted
+                    )
+                ))
+            ));
+            assert_eq!(drops.load(Ordering::Acquire), 0);
+            assert_eq!(
+                coordinator.snapshot().resource_records(),
+                Some(before.as_slice())
+            );
+            coordinator
+                .dispose_settled_resource_host_values()
+                .unwrap_or_else(|error| panic!("late physical cleanup: {error:?}"));
+        } else if times_out {
             assert!(matches!(
                 result,
                 Err(gantry::CancelExecutionError::CleanupTimedOut)

@@ -4300,6 +4300,32 @@ fn interpreter_with_accounting_policy(
     identities: Arc<dyn IdentitySource>,
     accounting: Option<(u64, u64)>,
 ) -> Interpreter {
+    interpreter_with_accounting_service(
+        executor,
+        integration,
+        runtime_sessions,
+        capacities,
+        maximum_tasks_per_execution,
+        event_delivery,
+        identities,
+        accounting,
+        None,
+    )
+}
+
+/// Injects a capacity-matched cleanup service without changing existing launch fixtures.
+#[allow(clippy::too_many_arguments)]
+fn interpreter_with_accounting_service(
+    executor: Arc<dyn ExecutorAdapter>,
+    integration: Arc<ScriptedIntegration>,
+    runtime_sessions: Arc<dyn RuntimeSessionService>,
+    capacities: AsyncCapacityLimits,
+    maximum_tasks_per_execution: u64,
+    event_delivery: SinkPlan,
+    identities: Arc<dyn IdentitySource>,
+    accounting: Option<(u64, u64)>,
+    service: Option<Box<dyn gantry::host::contracts::BlockingWorkService>>,
+) -> Interpreter {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
@@ -4324,6 +4350,12 @@ fn interpreter_with_accounting_policy(
         None => configuration,
     };
     assert_eq!(configuration.resource_accounting_limits(), accounting);
+    let configuration = match service {
+        Some(service) => configuration
+            .with_blocking_work_service(service)
+            .unwrap_or_else(|error| panic!("blocking service configuration: {error:?}")),
+        None => configuration,
+    };
     Interpreter::new_with_event_delivery(
         configuration,
         execution_clock(),
