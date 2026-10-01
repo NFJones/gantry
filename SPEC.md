@@ -15197,6 +15197,10 @@ machine binding to match the selected account. Matching portable operation and r
 identities alone MUST NOT authorize attachment, invocation, presence inspection or disposal across
 runtime owners. This provenance is derived from machine context and retained across its recovery;
 it does not change portable identity derivation or add a physical value to accounting records.
+Subject-addressed accounting mutations, containment and adapter changes, and sealed single/cohort
+emergency release MUST likewise require matching issuing execution/task provenance after account
+selection and before mutation. Foreign provenance MUST refuse with `ForeignSubject` and preserve
+accounting and bindings, so semantic release cannot bypass the physical-access fence.
 Typed bounded synchronous invocation MUST retain account and containment fences, including contained unused
 callback destruction. Accounting finalization MUST refuse while a physical value remains held.
 Contained destruction failure MUST remain recorded after the physical slot becomes empty;

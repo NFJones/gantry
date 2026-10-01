@@ -1138,6 +1138,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .settle_from_emergency_cleanup(cleanup)
             .map_err(ResourceRegistryRefusal::EmergencyRelease)
@@ -1164,6 +1165,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .charge(presented_owner, action, charges)
             .map_err(ResourceRegistryRefusal::Charge)
@@ -1191,6 +1193,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .renew(presented_owner, owner, family, increase)
             .map_err(ResourceRegistryRefusal::Renewal)
@@ -1215,6 +1218,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .begin_finish_for(presented_owner)
             .map_err(ResourceRegistryRefusal::Finish)
@@ -1239,6 +1243,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .require_current_owner(presented_owner)
             .map_err(ResourceRegistryRefusal::Finish)?;
@@ -1281,6 +1286,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .close_liveness_root_for(presented_owner, root)
             .map_err(ResourceRegistryRefusal::RootClosure)
@@ -1306,6 +1312,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .retire(fence, presented_owner, succeeding_owner, at)
             .map_err(ResourceRegistryRefusal::Retirement)
@@ -1329,6 +1336,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .delete_for(presented_owner)
             .map_err(ResourceRegistryRefusal::Deletion)
@@ -1357,6 +1365,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .settle_containment(presented_owner, completion)
             .map_err(ResourceRegistryRefusal::Containment)
@@ -1386,6 +1395,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .bind_adapter_instance(presented_owner, instance)
             .map_err(ResourceRegistryRefusal::AdapterBinding)
@@ -1421,6 +1431,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
         account
             .poison_adapter_instance(presented_owner, reason, ledger)
             .map_err(ResourceRegistryRefusal::AdapterBinding)
@@ -1491,6 +1502,12 @@ impl ResourceRegistry {
                     refusal: Some((subject, ResourceRegistryRefusal::UnknownSubject)),
                 };
             };
+            if let Err(refusal) = require_subject_provenance(account, &subject) {
+                return CohortEmergencyCleanup {
+                    settled,
+                    refusal: Some((subject, refusal)),
+                };
+            }
             match account
                 .settle_from_emergency_cleanup(cleanup)
                 .map_err(ResourceRegistryRefusal::EmergencyRelease)
@@ -1511,11 +1528,24 @@ impl ResourceRegistry {
     }
 }
 
+/// Checks runtime ownership independently of portable operation and generation identity.
+fn require_subject_provenance(
+    account: &AdmittedResource,
+    subject: &ResourceSubjectBinding,
+) -> Result<(), ResourceRegistryRefusal> {
+    if account.subject().runtime_owner != subject.runtime_owner {
+        return Err(ResourceRegistryRefusal::ForeignSubject);
+    }
+    Ok(())
+}
+
 /// Why the runtime resource registry refused an admission or a settlement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceRegistryRefusal {
     /// The subject already owns an admitted account, or was presented twice in one reconstruction.
     SecondAdmission,
+    /// Matching portable identity was presented by another execution or task.
+    ForeignSubject,
     /// Physical ownership must be disposed before accounting finalization completes.
     PhysicalValuePresent,
     /// Contained physical destruction failed and cannot authorize normal finalization.

@@ -1503,6 +1503,56 @@ fn registry_physical_routes_refuse_a_foreign_execution_with_matching_static_iden
         .unwrap_or_else(|error| panic!("local admission: {error:?}"));
     let before = registry.declared_records();
     let refusal = registry.attach_host_value(&foreign, OwnerGeneration::new(4), 17_u64);
+    assert_eq!(
+        registry.begin_finish(&foreign, OwnerGeneration::new(4)),
+        Err(ResourceRegistryRefusal::ForeignSubject)
+    );
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(
+        registry.settle_from_emergency_cleanup(&foreign, emergency_cleanup()),
+        Err(ResourceRegistryRefusal::ForeignSubject)
+    );
+    assert_eq!(registry.declared_records(), before);
+    let cohort =
+        registry.settle_cohort_from_emergency_cleanup(vec![(foreign.clone(), emergency_cleanup())]);
+    assert!(cohort.settled().is_empty());
+    assert_eq!(
+        cohort.refusal(),
+        Some((&foreign, &ResourceRegistryRefusal::ForeignSubject))
+    );
+    for requested in [&foreign, &other_task] {
+        let owner = OwnerGeneration::new(4);
+        let fence =
+            RetentionFence::new(2, 10).unwrap_or_else(|error| panic!("retention fence: {error:?}"));
+        for result in [
+            registry.charge(requested, owner, ResourceAction::Update, &[]),
+            registry.renew(requested, owner, QuotaOwner::Owner, QuotaFamily::Bytes, 1),
+            registry
+                .complete_finalization(requested, owner, 31)
+                .map(|_| ()),
+            registry.close_liveness_root(requested, owner, LivenessRoot::Owner),
+            registry.retire(requested, fence, owner, OwnerGeneration::new(5), 35),
+            registry.delete(requested, owner).map(|_| ()),
+            registry
+                .settle_containment(
+                    requested,
+                    owner,
+                    Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+                )
+                .map(|_| ()),
+            registry.bind_adapter_instance(
+                requested,
+                owner,
+                adapter_instance("foreign_binding", 4, 0),
+            ),
+            registry
+                .poison_adapter_instance(requested, owner, PoisonReason::InvariantFailure)
+                .map(|_| ()),
+        ] {
+            assert_eq!(result, Err(ResourceRegistryRefusal::ForeignSubject));
+        }
+    }
+    assert_eq!(registry.declared_records(), before);
     assert!(
         refusal.is_err(),
         "portable identity cannot substitute for execution ownership"

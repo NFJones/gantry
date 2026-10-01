@@ -128,6 +128,10 @@ ledger without exposing a mutable account.
 
 Every route that changes a declared fact is subject-addressed at the registry level: the account is
 selected by the subject's own operation and generation rather than by caller text. The ordinary
+subject-addressed mutations, containment and adapter changes, and sealed single/cohort cleanup
+also require the binding's issuing execution/task to match the account before mutation. Foreign
+provenance refuses with `ResourceRegistryRefusal::ForeignSubject`, preserving records and bindings.
+This prevents accounting release from bypassing physical-access provenance checks. The ordinary
 mutation routes - `charge`, `renew`, `begin_finish`, `complete_finalization`, `close_liveness_root`,
 `retire`, `delete`, `bind_adapter_instance`, and `poison_adapter_instance` - are additionally
 owner-qualified: the presented owner generation must be the account's current one, as
