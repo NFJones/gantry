@@ -726,6 +726,13 @@ impl ExecutionCoordinator {
         children: &BTreeMap<ProtocolIdentity, crate::Machine>,
     ) -> Result<crate::ConcurrentDurableCheckpointV4, crate::ConcurrentDurableCheckpointError> {
         let state = lock(&self.inner.state);
+        if state
+            .resources
+            .as_ref()
+            .is_some_and(crate::ResourceRegistry::has_uncheckpointed_state)
+        {
+            return Err(crate::ConcurrentDurableCheckpointError::ResourceStateUnsupported);
+        }
         let budget = state
             .execution_budget
             .as_ref()

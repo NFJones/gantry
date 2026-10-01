@@ -900,6 +900,15 @@ impl ResourceRegistry {
         })
     }
 
+    /// Reports process-local resource state that the current durable graph wire cannot retain.
+    ///
+    /// Retained accounts, physical slots and still-pending admitted work require explicit
+    /// reconstruction integration; an empty configured registry alone does not.
+    #[must_use]
+    pub(crate) fn has_uncheckpointed_state(&self) -> bool {
+        !self.accounts.is_empty() || !self.physical.is_empty() || self.pending_operations() != 0
+    }
+
     /// Captures the declared reconstruction records of every admitted account.
     ///
     /// The capture is exactly the presentation [`ResourceRegistry::reconstruct`] accepts: every

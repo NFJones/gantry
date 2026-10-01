@@ -1021,6 +1021,8 @@ impl RecoveredConcurrentDurableExecutionV1 {
 pub enum ConcurrentDurableCheckpointError {
     /// Bytes are truncated, noncanonical, or use another version.
     InvalidEncoding,
+    /// The current graph wire cannot retain coordinator-owned resource state.
+    ResourceStateUnsupported,
     /// Task graph, scheduler, machine, or session correspondences disagree.
     InvalidCheckpoint,
     /// The shared execution budget changed during every bounded capture attempt.

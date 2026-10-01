@@ -2455,6 +2455,8 @@ impl ConcurrentSchedulerV1 {
 pub enum TaskStateError {
     /// A durable transaction owns publication, or an indeterminate commit fenced it.
     DurablePublicationReserved,
+    /// The current graph wire cannot retain coordinator-owned resource state.
+    ResourceStateUnsupported,
     /// The configured cumulative task limit is zero.
     InvalidTaskLimit,
     /// Creating another child would exceed or overflow the cumulative limit.

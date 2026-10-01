@@ -32,6 +32,12 @@ process-local pending policy, and unadmitted evaluator work is outside its scope
 cloned handles retain the same admission refusal and machine-settlement release boundaries.
 The existing `new_with_resource_limit` constructor leaves the pending policy disabled.
 
+The current durable graph wire carries no resource reconstruction records or registry policy.
+`capture_checkpoint` and `stage_graph` refuse `ResourceStateUnsupported` before cloning machines
+or reserving publication if retained accounts, physical slots or pending admitted work would be
+omitted. An empty configured registry remains eligible. This fail-closed boundary prevents silent
+accounting loss; it is not durable resource reconstruction integration.
+
 `attach_host_value` optionally attaches one typed process-local value to an existing active/open
 account without moving or duplicating accounting and without changing quotas. The embedding caller
 authenticates its association and authority. Duplicate, unknown, stale-owner and inactive refusals

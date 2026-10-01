@@ -138,6 +138,52 @@ fn fixture() -> (
     (coordinator, machine, children)
 }
 
+/// The current graph wire has no resource-record member and must not silently drop one.
+#[test]
+fn resource_records_refuse_durable_graph_capture_and_staging_without_mutation() {
+    let (coordinator, mut root, mut children) = fixture();
+    lock(&coordinator.inner.state).resources = Some(ResourceRegistry::with_live_limit(1));
+    assert!(coordinator.capture_checkpoint(&root, &children).is_ok());
+    let path = CanonicalPath::new("crate::checkpoint_resource")
+        .unwrap_or_else(|error| panic!("resource path: {error}"));
+    let subject = crate::ResourceSubjectBinding::derive(
+        &path,
+        path.clone(),
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}")),
+        0,
+        Some(OperationKind::LiveResource),
+        Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open())),
+        (root.execution_id(), root.task_id()),
+    );
+    let record = ResourceLedger::new(
+        OwnerGeneration::new(4),
+        ResourceState::Usable,
+        &[LivenessRoot::Resource],
+        &[],
+    )
+    .unwrap_or_else(|error| panic!("record: {error:?}"))
+    .durable_record();
+    lock(&coordinator.inner.state)
+        .resources
+        .as_mut()
+        .unwrap_or_else(|| panic!("registry enabled"))
+        .admit(subject, ResourceCarrier::ReconstructionRecord, record)
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let before = coordinator.snapshot();
+    let machine_before = root.checkpoint().canonical_bytes();
+    assert_eq!(
+        coordinator.capture_checkpoint(&root, &children).err(),
+        Some(crate::ConcurrentDurableCheckpointError::ResourceStateUnsupported)
+    );
+    assert_eq!(
+        coordinator.stage_graph(&mut root, &mut children).err(),
+        Some(TaskStateError::ResourceStateUnsupported)
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(root.checkpoint().canonical_bytes(), machine_before);
+    assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
+}
+
 /// Retains the exact executable artifact for journal recovery assertions.
 fn fixture_with_program() -> (
     ExecutionCoordinator,

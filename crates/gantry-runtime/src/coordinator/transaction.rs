@@ -57,6 +57,13 @@ impl ExecutionCoordinator {
     ) -> Result<DurableGraphTransaction<'a>, TaskStateError> {
         let mut state = lock(&self.inner.state);
         require_publication_available(&state)?;
+        if state
+            .resources
+            .as_ref()
+            .is_some_and(crate::ResourceRegistry::has_uncheckpointed_state)
+        {
+            return Err(TaskStateError::ResourceStateUnsupported);
+        }
         let original_budget = state
             .execution_budget
             .as_ref()

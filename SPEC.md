@@ -15166,6 +15166,12 @@ MAY continue after task settlement, but MUST NOT reopen task admission. This opt
 does not attach the registry automatically to evaluator dispatch or extend uniqueness beyond
 that coordinator, and its live-account ceiling does not bound retained records or snapshot size.
 
+Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
+graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
+slots or admitted pending work would be omitted. Refusal MUST precede private machine cloning or
+publication reservation and leave accounting, machines and publication unchanged. An empty configured
+registry alone does not require refusal. This boundary does not implement durable resource recovery.
+
 An implementation MAY separately bind one consumed active accounting account to one owned
 process-local host value through `OwnedHostResource`. The embedding caller MUST authenticate
 the value/account association and supply authority; this binding grants none. Invocation MUST
