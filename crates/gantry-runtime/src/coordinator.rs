@@ -62,6 +62,10 @@ pub enum CoordinatorResourceRefusal {
     TaskCancellationRequested,
     /// Cooperative shutdown has monotonically closed new resource acquisition.
     ResourceAdmissionClosed,
+    /// Task-qualified emergency cleanup requires a fixed cancellation outcome.
+    TaskNotCancelled,
+    /// Task-qualified emergency cleanup requires confirmed physical driver cessation.
+    TaskDriverNotSettled,
     /// This coordinator was constructed without a resource registry.
     RegistryDisabled,
     /// The registry refused the exact pending subject or its accounting facts.
@@ -526,9 +530,62 @@ impl ExecutionCoordinator {
             gantry_ir::EmergencyCleanupWitness,
         )>,
     ) -> Result<CoordinatorResourceCleanup, CoordinatorResourceRefusal> {
+        self.emergency_release_selected_resources(|_| Ok(cleanups))
+    }
+
+    /// Selects live accounting owned by cancelled, physically settled tasks under one lock.
+    ///
+    /// The caller authenticates the sealed escalation's association with this task cohort.
+    /// Unknown, non-cancelled or still-owned drivers refuse before any resource mutation.
+    /// Already-terminal resource accounts are excluded; pending machine work is never settled
+    /// by this route. Physical destruction remains synchronous and runs outside the lock.
+    pub fn emergency_release_task_resources(
+        &self,
+        task_ids: &[ProtocolIdentity],
+        escalation: gantry_ir::Escalation,
+    ) -> Result<CoordinatorResourceCleanup, CoordinatorResourceRefusal> {
+        self.emergency_release_selected_resources(|state| {
+            for task_id in task_ids {
+                let task = state
+                    .tasks
+                    .task_record(*task_id)
+                    .ok_or(CoordinatorResourceRefusal::UnknownTask)?;
+                if !matches!(task.status(), ConcurrentTaskStatusV1::Cancelled(_)) {
+                    return Err(CoordinatorResourceRefusal::TaskNotCancelled);
+                }
+                if task.driver_ownership() != crate::TaskDriverOwnershipV1::PhysicallySettled {
+                    return Err(CoordinatorResourceRefusal::TaskDriverNotSettled);
+                }
+            }
+            let resources = state
+                .resources
+                .as_ref()
+                .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?;
+            Ok(resources
+                .live_subjects_for_tasks(task_ids)
+                .into_iter()
+                .map(|subject| (subject, escalation.admit_emergency_release()))
+                .collect())
+        })
+    }
+
+    /// Validates and selects one witnessed cohort before settlement under the publication fence.
+    fn emergency_release_selected_resources(
+        &self,
+        select: impl FnOnce(
+            &CoordinatorState,
+        ) -> Result<
+            Vec<(
+                crate::ResourceSubjectBinding,
+                gantry_ir::EmergencyCleanupWitness,
+            )>,
+            CoordinatorResourceRefusal,
+        >,
+    ) -> Result<CoordinatorResourceCleanup, CoordinatorResourceRefusal> {
         let (semantic, jobs) = {
             let mut state = lock(&self.inner.state);
             require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+            let cleanups = select(&state)?;
             let resources = state
                 .resources
                 .as_mut()

@@ -126,6 +126,14 @@ without settling accounting or extracting physical ownership. Started cleanup su
 drop, preserves the canonical settled-prefix report, and never rolls back release after a destructor
 failure. It grants no escalation authority and does not settle accepted machine work.
 
+`emergency_release_task_resources` selects registry-owned live accounts for named tasks only after
+checking that every task is known, cancelled and physically settled. These checks and selection
+share the semantic settlement lock and publication fence. Duplicate task names select each account
+once; terminal accounts remain excluded. The caller authenticates the sealed escalation's cohort
+association. `submit_task_resource_cleanup` runs the same checks when its blocking job starts.
+Neither route creates escalation authority, reopens admission or settles pending machine work;
+the synchronous route still requires a blocking caller for physical destruction.
+
 `dispose_settled_resource_host_values` drains already-settled physical obligations in canonical
 runtime-subject order, reporting `ResourcePhysicalCleanupResults`. Active and finishing accounts
 are excluded. Selection respects publication reservations; jobs execute after unlocking and continue

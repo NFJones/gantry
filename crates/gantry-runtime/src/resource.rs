@@ -1113,6 +1113,27 @@ impl ResourceRegistry {
             .map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
     }
 
+    /// Selects live accounting for exact issuing tasks in canonical runtime-subject order.
+    ///
+    /// Task validation and escalation authority belong to the coordinator. This inspection
+    /// excludes terminal accounts and neither settles accounting nor releases pending work.
+    pub(crate) fn live_subjects_for_tasks(
+        &self,
+        task_ids: &[gantry_core::identity::ProtocolIdentity],
+    ) -> Vec<ResourceSubjectBinding> {
+        self.accounts
+            .values()
+            .filter(|account| {
+                task_ids.contains(&account.subject().task_id())
+                    && matches!(
+                        account.ledger().lifetime(),
+                        ResourceLifetimeState::Active | ResourceLifetimeState::Finishing
+                    )
+            })
+            .map(|account| account.subject().clone())
+            .collect()
+    }
+
     /// Selects already-settled physical obligations in canonical runtime-subject order.
     ///
     /// Active and finishing accounts require semantic settlement first. Failed disposal remains

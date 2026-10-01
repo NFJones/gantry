@@ -15301,6 +15301,15 @@ unchanged while consuming the supplied witnesses. Started work MUST preserve can
 settlement and independent physical outcomes after observer abandonment. Submission and observation
 retain integration containment; this route grants no escalation authority or machine settlement.
 
+The coordinator MAY select emergency cleanup by issuing task identity rather than caller-presented
+resource subjects. Every selected task MUST be known, fixed as cancelled and physically settled
+before any resource mutation. Validation, registry-owned subject selection and semantic settlement
+MUST share one coordinator lock and retain the publication fence. Selection includes only active
+or finishing accounts of the named tasks in canonical runtime-subject order; terminal accounts
+remain excluded. The caller MUST authenticate the supplied sealed escalation's association with
+the task cohort. This route creates no escalation authority and closes no pending machine lease.
+Its bounded blocking submission MUST perform the same validation when the accepted job starts.
+
 The coordinator MAY separately sweep physical obligations of accounts whose lifetime is already
 settled, retired or deleted. Active and finishing accounts MUST remain untouched. Selection and
 extraction MUST respect publication reservations and canonical runtime-subject order; every extracted

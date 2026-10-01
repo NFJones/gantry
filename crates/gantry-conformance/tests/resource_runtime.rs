@@ -176,6 +176,116 @@ fn coordinator_resource_admission_closure_preserves_accepted_work() {
     assert!(coordinator.resource_admission_is_closed());
 }
 
+/// Task-selected cleanup refuses before cessation and never settles accepted machine work.
+#[test]
+fn task_resource_cleanup_requires_cancelled_and_physically_settled_owners() {
+    use gantry::host::containment::AdapterPoison;
+    use gantry::host::contracts::BlockingWorkService;
+    use gantry::runtime::{BoundedBlockingWorkService, CoordinatorResourceRefusal};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let (_, second_machine, second) =
+        machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let second = second.unwrap_or_else(|| panic!("second subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(2));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    for (machine, subject) in [(&machine, &subject), (&second_machine, &second)] {
+        coordinator
+            .admit_resource(
+                machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        coordinator
+            .attach_resource_host_value(
+                subject,
+                OwnerGeneration::new(4),
+                TransportValue {
+                    drops: Arc::clone(&drops),
+                    panic_on_drop: false,
+                    value: 1,
+                },
+            )
+            .unwrap_or_else(|_| panic!("attachment"));
+    }
+    coordinator
+        .emergency_release_resource(&second, emergency_cleanup())
+        .unwrap_or_else(|error| panic!("prior release: {error:?}"));
+    let before = coordinator.snapshot();
+    let unknown = ProtocolIdentity::derive(IdentityKind::Task, b"unknown-cleanup-task")
+        .unwrap_or_else(|error| panic!("task: {error}"));
+    assert_eq!(
+        coordinator.emergency_release_task_resources(&[unknown], emergency_escalation_at(21)),
+        Err(CoordinatorResourceRefusal::UnknownTask)
+    );
+    assert_eq!(
+        coordinator
+            .emergency_release_task_resources(&[machine.task_id()], emergency_escalation_at(21)),
+        Err(CoordinatorResourceRefusal::TaskNotCancelled)
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    coordinator
+        .cancel_execution("task cleanup")
+        .unwrap_or_else(|error| panic!("cancellation: {error:?}"));
+    coordinator
+        .settle_task(
+            machine.task_id(),
+            MachineOutcome::Cancelled(Arc::from("task cleanup")),
+        )
+        .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+    let before = coordinator.snapshot();
+    assert_eq!(
+        coordinator
+            .emergency_release_task_resources(&[machine.task_id()], emergency_escalation_at(21)),
+        Err(CoordinatorResourceRefusal::TaskDriverNotSettled)
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    coordinator
+        .mark_driver_physically_settled(machine.task_id())
+        .unwrap_or_else(|error| panic!("physical settlement: {error:?}"));
+    let before = coordinator.snapshot();
+    let service =
+        BoundedBlockingWorkService::new(1, 1).unwrap_or_else(|error| panic!("service: {error:?}"));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap_or_else(|error| panic!("runtime: {error}"));
+    let observer = coordinator
+        .submit_task_resource_cleanup(
+            &service,
+            &AdapterPoison::default(),
+            vec![machine.task_id(), machine.task_id()],
+            emergency_escalation_at(21),
+        )
+        .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    let report = runtime
+        .block_on(observer.completion())
+        .unwrap_or_else(|error| panic!("cleanup: {error:?}"));
+    assert_eq!(runtime.block_on(service.shutdown()), Ok(()));
+    assert!(report.semantic().is_complete());
+    assert_eq!(report.semantic().settled().len(), 1);
+    assert_eq!(report.semantic().settled()[0].subject(), &subject);
+    assert_eq!(report.physical(), &[(subject.clone(), Ok(()))]);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+        coordinator.snapshot().publication(),
+        before.publication() + 1
+    );
+    assert!(coordinator.has_pending_resource_operations());
+    let before_repeat = coordinator.snapshot();
+    let repeat = coordinator
+        .emergency_release_task_resources(&[machine.task_id()], emergency_escalation_at(21))
+        .unwrap_or_else(|error| panic!("repeat: {error:?}"));
+    assert!(repeat.semantic().settled().is_empty());
+    assert!(repeat.physical().is_empty());
+    assert_eq!(coordinator.snapshot(), before_repeat);
+    coordinator
+        .dispose_resource_host_value(&second, OwnerGeneration::new(4))
+        .unwrap_or_else(|error| panic!("prior terminal cleanup: {error:?}"));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
 /// Builds task/session inputs for an accounting-only reconstruction boundary.
 fn resource_recovery_inputs(
     execution: ProtocolIdentity,
@@ -5165,6 +5275,11 @@ fn emergency_cleanup() -> EmergencyCleanupWitness {
 }
 
 fn emergency_cleanup_at(at_us: u64) -> EmergencyCleanupWitness {
+    emergency_escalation_at(at_us).admit_emergency_release()
+}
+
+/// Issues sealed fixture evidence only through the stop coordinator's declared deadline.
+fn emergency_escalation_at(at_us: u64) -> gantry::ir::Escalation {
     let policy =
         GracePolicy::new(1, 1).unwrap_or_else(|_| unreachable!("fixture stop policy is bounded"));
     let mut coordinator = StopCoordinator::new();
@@ -5174,10 +5289,9 @@ fn emergency_cleanup_at(at_us: u64) -> EmergencyCleanupWitness {
             .is_ok()
     );
     let mut tasks: [TaskStopState; 0] = [];
-    let escalation = coordinator
+    coordinator
         .escalate(&mut tasks, at_us)
-        .unwrap_or_else(|_| unreachable!("held stop request escalates at its deadline"));
-    escalation.admit_emergency_release()
+        .unwrap_or_else(|_| unreachable!("held stop request escalates at its deadline"))
 }
 
 #[test]

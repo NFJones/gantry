@@ -115,6 +115,26 @@ impl ExecutionCoordinator {
     }
 }
 
+impl ExecutionCoordinator {
+    /// Submits registry-selected cleanup of cancelled and physically settled task owners.
+    ///
+    /// Validation and selection happen when the service-owned job starts, under the same lock
+    /// as semantic settlement. The caller authenticates the escalation/cohort association;
+    /// submission grants no escalation authority and never closes accepted machine leases.
+    pub fn submit_task_resource_cleanup(
+        &self,
+        service: &dyn BlockingWorkService,
+        service_poison: &AdapterPoison,
+        task_ids: Vec<gantry_core::identity::ProtocolIdentity>,
+        escalation: gantry_ir::Escalation,
+    ) -> Result<ResourceCleanupObserver<CoordinatorResourceCleanup>, ResourceCleanupError> {
+        let coordinator = self.clone();
+        submit_cleanup(service, service_poison, move || {
+            coordinator.emergency_release_task_resources(&task_ids, escalation)
+        })
+    }
+}
+
 /// Submits only the owned closure; integration refusal cannot extract coordinator-held values.
 fn submit_cleanup<T: Send + 'static>(
     service: &dyn BlockingWorkService,
