@@ -66,6 +66,16 @@ settled historical containment, no bound adapter, and unpoisoned transport. Refu
 complete owner untouched. Success preserves the physical value, subject, quota/root facts and
 historical containment; it neither rebinds an adapter nor implements source-task transfer.
 
+`OwnedHostResource::borrow_receiver` consumes an exact borrowed `LiveResource` into an exclusive
+`HostReceiverLoan`, returning the handle on refusal. Admission checks the account's operation,
+site, resource generation, current owner and declared loan root. `observe` retains Section 20
+allowances and progress rules; accepted `settle` projects operation state and closes only the
+loan root. Refusal retains the guard and progress for another candidate. Whole-resource lifetime,
+quotas and pending machine work remain separate. Owner invocation, finish and transfer stay
+fenced even if the guard is forgotten; dropping an unsettled guard poisons transport without
+claiming settlement. Sealed emergency cleanup can still dispose the held value. These are
+process-local synchronous loans, not source-evaluator borrowing or durable loan recovery.
+
 `AdmittedResource` publishes `admit`, `subject`, `ledger`, `quota`, `remaining`, `durable_record`,
 `containment`, `settle_containment`, `adapter_instance`, `bind_adapter_instance`,
 `begin_finish_for`, `complete_finalization_for`, `charge`, `renew`, `close_liveness_root_for`,

@@ -15169,6 +15169,15 @@ unpoisoned transport holding its value. Refusal MUST return the complete affine 
 Success changes only current accounting ownership and moves the same host value; subject, quotas,
 roots and historical containment evidence MUST remain unchanged. This does not rebind an adapter,
 reopen settlement, grant authority, or implement source-task transfer.
+The wrapper MAY admit an exclusive `HostReceiverLoan` only from an unsettled borrowed
+`LiveResource` with its exact operation, site, resource generation and current owner, while
+active/open accounting retains a declared loan root. Accepted Section 20 settlement MUST project
+only operation state and close that loan root; refused settlement MUST retain the guard and
+observed progress. No loan settlement releases whole-resource lifetime or pending machine work.
+Owner invocation, finish and transfer MUST remain fenced while the transport loan is pending,
+even if its guard is forgotten. Dropping an unsettled guard MUST poison transport and retain
+the pending fence without fabricating settlement. Sealed emergency release remains available.
+Callbacks, including unused callbacks after settlement, retain the same containment boundary.
 This optional synchronous boundary is not the accounting registry, does not add host values to
 `LogicalValue`, raw hook bytes, or reconstruction records, and claims no source-resource evaluation,
 asynchronous cancellation, task transfer, host authority admission, or durable host reconstruction.

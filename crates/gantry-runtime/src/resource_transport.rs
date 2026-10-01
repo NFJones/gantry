@@ -7,7 +7,11 @@ use gantry_host::containment::{
     AdapterPoison, BoundaryFailure, catch_integration, drop_integration,
 };
 use gantry_host::contracts::HostError;
-use gantry_ir::{EmergencyCleanupWitness, OwnerGeneration, ResourceError, ResourceLifetimeState};
+use gantry_ir::{
+    EmergencyCleanupWitness, LiveResource, LivenessRoot, OperationAbiError, OperationSettlement,
+    OwnerGeneration, ProgressObservation, ProgressRecord, ResourceError, ResourceLifetimeState,
+    ResourceState,
+};
 
 use crate::AdmittedResource;
 
@@ -32,6 +36,14 @@ pub enum HostResourceError {
     AdapterBound,
     /// A poisoned transport cannot be transferred back into service.
     TransportPoisoned,
+    /// The supplied receiver loan does not name this account's exact subject and owner.
+    ForeignLoan,
+    /// Receiver-loan admission requires an existing declared loan root.
+    MissingLoanRoot,
+    /// The Section 20 loan's observation or settlement was refused.
+    Operation(OperationAbiError),
+    /// This receiver loan already accepted its settlement.
+    LoanSettled,
 }
 
 /// One unclonable host value bound to one consumed accounting account.
@@ -42,6 +54,7 @@ pub struct OwnedHostResource<T> {
     account: AdmittedResource,
     value: Option<T>,
     poison: AdapterPoison,
+    loan_pending: bool,
 }
 
 impl<T> OwnedHostResource<T> {
@@ -67,6 +80,7 @@ impl<T> OwnedHostResource<T> {
             account,
             value: Some(value),
             poison: AdapterPoison::default(),
+            loan_pending: false,
         })
     }
 
@@ -95,6 +109,9 @@ impl<T> OwnedHostResource<T> {
         if let Err(error) = self.require_owner(owner) {
             return Err(Box::new((error, self)));
         }
+        if self.loan_pending {
+            return Err(Box::new((HostResourceError::LoanOutstanding, self)));
+        }
         if self.is_poisoned() {
             return Err(Box::new((HostResourceError::TransportPoisoned, self)));
         }
@@ -105,6 +122,59 @@ impl<T> OwnedHostResource<T> {
             return Err(Box::new((error, self)));
         }
         Ok(self)
+    }
+
+    /// Exclusively borrows the host value for an exact, unsettled Section 20 receiver loan.
+    ///
+    /// Admission consumes the model handle, returning it on refusal. The retained pending flag
+    /// also fences reuse if the guard is forgotten; abandonment does not fabricate settlement.
+    pub fn borrow_receiver(
+        &mut self,
+        live: LiveResource,
+    ) -> Result<HostReceiverLoan<'_, T>, Box<(HostResourceError, LiveResource)>> {
+        if let Err(error) = self.require_owner(live.owner()) {
+            return Err(Box::new((error, live)));
+        }
+        let error = if self.loan_pending {
+            Some(HostResourceError::LoanOutstanding)
+        } else if self.is_poisoned() {
+            Some(HostResourceError::TransportPoisoned)
+        } else if self.value.is_none() {
+            Some(HostResourceError::Disposed)
+        } else if self.account.ledger().lifetime() != ResourceLifetimeState::Active
+            || !self.account.ledger().operation_state().is_open()
+        {
+            Some(HostResourceError::Model(
+                ResourceError::IllegalLifetimeTransition,
+            ))
+        } else if !self
+            .account
+            .ledger()
+            .liveness_roots()
+            .contains(&LivenessRoot::Loan)
+        {
+            Some(HostResourceError::MissingLoanRoot)
+        } else if live.operation() != self.account.subject().operation()
+            || live.generation() != self.account.subject().generation()
+            || live.site() != self.account.subject().site()
+            || !live.ownership().is_borrowed_loan()
+            || live.settlement().is_some()
+            || live.fenced().is_some()
+            || !live.state().is_open()
+        {
+            Some(HostResourceError::ForeignLoan)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(Box::new((error, live)));
+        }
+        self.loan_pending = true;
+        Ok(HostReceiverLoan {
+            resource: self,
+            live,
+            settled: false,
+        })
     }
 
     /// Invokes bounded synchronous integration code under current-owner and active-lifetime fences.
@@ -119,8 +189,13 @@ impl<T> OwnedHostResource<T> {
         if let Err(error) = self.require_owner(owner) {
             return self.refuse_callback(invoke, error);
         }
+        if self.loan_pending {
+            return self.refuse_callback(invoke, HostResourceError::LoanOutstanding);
+        }
         let lifetime = self.account.ledger().lifetime();
-        if lifetime != ResourceLifetimeState::Active {
+        if lifetime != ResourceLifetimeState::Active
+            || !self.account.ledger().operation_state().is_open()
+        {
             return self.refuse_callback(
                 invoke,
                 HostResourceError::Model(ResourceError::LifetimeDoesNotAdmitCharge {
@@ -144,6 +219,9 @@ impl<T> OwnedHostResource<T> {
         settled_at: u64,
         finalize: impl FnOnce(&mut T) -> Result<(), HostError>,
     ) -> Result<ResourceLifetimeState, HostResourceError> {
+        if self.loan_pending {
+            return self.refuse_callback(finalize, HostResourceError::LoanOutstanding);
+        }
         if let Err(error) = self.account.begin_finish_for(owner) {
             return self.refuse_callback(finalize, HostResourceError::Model(error));
         }
@@ -169,6 +247,7 @@ impl<T> OwnedHostResource<T> {
             .account
             .settle_from_emergency_cleanup(cleanup)
             .map_err(HostResourceError::Model)?;
+        self.loan_pending = false;
         self.dispose()?;
         Ok(lifetime)
     }
@@ -198,6 +277,97 @@ impl<T> OwnedHostResource<T> {
     ) -> Result<R, HostResourceError> {
         drop_integration(&self.poison, &mut Some(callback)).map_err(HostResourceError::Boundary)?;
         Err(error)
+    }
+}
+
+/// Exclusive process-local access tied to one exact borrowed receiver's settlement.
+///
+/// This guard is neither cloneable nor serializable. Its model handle is observable only by
+/// immutable borrow. Dropping an unsettled guard poisons transport and retains the reuse fence.
+pub struct HostReceiverLoan<'a, T> {
+    resource: &'a mut OwnedHostResource<T>,
+    live: LiveResource,
+    settled: bool,
+}
+
+impl<T> HostReceiverLoan<'_, T> {
+    /// Returns immutable progress, identity and settlement evidence for this receiver loan.
+    #[must_use]
+    pub const fn live(&self) -> &LiveResource {
+        &self.live
+    }
+
+    /// Observes progress under the model's exact finite observation allowance.
+    pub fn observe(
+        &mut self,
+        progress: ProgressObservation,
+    ) -> Result<ProgressRecord, HostResourceError> {
+        if self.settled {
+            return Err(HostResourceError::LoanSettled);
+        }
+        self.live
+            .observe(progress)
+            .map_err(HostResourceError::Operation)
+    }
+
+    /// Invokes bounded integration code without releasing the receiver loan.
+    pub fn invoke<R>(
+        &mut self,
+        callback: impl FnOnce(&mut T) -> Result<R, HostError>,
+    ) -> Result<R, HostResourceError> {
+        if self.settled {
+            return self
+                .resource
+                .refuse_callback(callback, HostResourceError::LoanSettled);
+        }
+        if !self.live.state().is_open() || self.live.fenced().is_some() {
+            return self
+                .resource
+                .refuse_callback(callback, HostResourceError::ForeignLoan);
+        }
+        let Some(value) = self.resource.value.as_mut() else {
+            return self
+                .resource
+                .refuse_callback(callback, HostResourceError::Disposed);
+        };
+        invoke_contained(&self.resource.poison, value, callback)
+    }
+
+    /// Accepts one model settlement, projects its state, and releases the declared loan root.
+    ///
+    /// A refused candidate retains the loan and all prior progress for another settlement attempt.
+    /// This does not settle whole-resource lifetime, release machine work, or dispose the host value.
+    pub fn settle(
+        &mut self,
+        candidate: &OperationSettlement,
+    ) -> Result<ResourceState, HostResourceError> {
+        if self.settled {
+            return Err(HostResourceError::LoanSettled);
+        }
+        self.live
+            .settle(candidate)
+            .map_err(HostResourceError::Operation)?;
+        // Exact subject/owner and the loan root were checked on admission. This guard's exclusive
+        // borrow prevents account changes before settlement, so projection and closure must succeed.
+        let state = self
+            .resource
+            .account
+            .settle_receiver_loan(&self.live)
+            .unwrap_or_else(|_| {
+                unreachable!("exclusive admitted loan retains its subject, owner and root")
+            });
+        self.resource.loan_pending = false;
+        self.settled = true;
+        Ok(state)
+    }
+}
+
+impl<T> Drop for HostReceiverLoan<'_, T> {
+    /// Abandonment fences reuse without claiming a model settlement or releasing its loan root.
+    fn drop(&mut self) {
+        if !self.settled {
+            self.resource.poison.poison();
+        }
     }
 }
 

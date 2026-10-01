@@ -1530,6 +1530,23 @@ impl AdmittedResource {
         &self.ledger
     }
 
+    /// Applies an exclusively admitted receiver loan's accepted operation-state projection.
+    pub(crate) fn settle_receiver_loan(
+        &mut self,
+        live: &gantry_ir::LiveResource,
+    ) -> Result<ResourceState, ResourceError> {
+        self.require_current_owner(live.owner())?;
+        if !self.ledger.liveness_roots().contains(&LivenessRoot::Loan) {
+            return Err(ResourceError::LivenessRootNotLive);
+        }
+        let projection = live
+            .operation_state_projection()
+            .unwrap_or_else(|| unreachable!("loan handle has accepted its settlement"));
+        let state = self.ledger.project_operation_state(&projection)?;
+        self.ledger.close_liveness_root(LivenessRoot::Loan)?;
+        Ok(state)
+    }
+
     /// Advances an exclusively held host account after every prior operation obligation settles.
     ///
     /// This private transport route retains the historical containment value and all facts other

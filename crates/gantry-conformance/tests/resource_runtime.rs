@@ -1628,6 +1628,222 @@ fn transfer_account(pending: bool, loan: bool, containment_pending: bool) -> Adm
     account
 }
 
+/// Builds a generation-bound borrowed or retained Section 20 handle for transport tests.
+fn transport_live(
+    declaration: &str,
+    generation: u64,
+    owner: u64,
+    borrowed: bool,
+) -> gantry::ir::LiveResource {
+    use gantry::ir::LoanId;
+    let path =
+        CanonicalPath::new(declaration).unwrap_or_else(|error| panic!("declaration: {error}"));
+    let site = active_subject().site().clone();
+    let retained = OperationAbi::new(
+        OperationKind::LiveResource,
+        &path,
+        &site,
+        generation,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|error| panic!("retained ABI: {error:?}"));
+    let ownership = if borrowed {
+        ReceiverOwnership::BorrowedLoan(LoanId::seal(&path, &site, retained.generation()))
+    } else {
+        ReceiverOwnership::RetainedByCaller
+    };
+    let abi = OperationAbi::new(
+        OperationKind::LiveResource,
+        &path,
+        &site,
+        generation,
+        RecoveryClass::Idempotent,
+        ownership,
+    )
+    .unwrap_or_else(|error| panic!("loan ABI: {error:?}"));
+    abi.open_live(
+        OwnerGeneration::new(owner),
+        OperationAbi::observation_allowance(
+            1,
+            DisclosureCharge::new(1).unwrap_or_else(|| unreachable!("positive charge")),
+        ),
+    )
+    .unwrap_or_else(|error| panic!("live handle: {error:?}"))
+}
+
+/// Accepted settlement releases only the receiver loan, while refused progress claims retain it.
+#[test]
+fn host_receiver_loan_retains_progress_until_exact_settlement() {
+    use gantry::runtime::{HostReceiverLoan, HostResourceError, OwnedHostResource};
+    assert_not_impl_any!(HostReceiverLoan<'static, u64>: Clone, Copy);
+    let mut resource =
+        OwnedHostResource::bind(admitted_active(), 11_u64).unwrap_or_else(|_| panic!("bind"));
+    let before = resource.account().durable_record();
+    let live = transport_live(FIXTURE_DECLARATION, 0, 4, true);
+    {
+        let mut loan = resource
+            .borrow_receiver(live)
+            .unwrap_or_else(|_| panic!("exact loan admits"));
+        assert_eq!(
+            loan.invoke(|value| {
+                *value += 1;
+                Ok(*value)
+            }),
+            Ok(12)
+        );
+        assert!(loan.observe(ProgressObservation::ShortRead).is_ok());
+        assert!(matches!(
+            loan.observe(ProgressObservation::ShortRead),
+            Err(HostResourceError::Operation(
+                OperationAbiError::ObservationBudgetExhausted { .. }
+            ))
+        ));
+        let invalid = OperationSettlement::new(
+            loan.live().operation(),
+            loan.live().generation(),
+            loan.live().owner(),
+            ExternalOutcome::Accepted,
+            ProgressObservation::CommittedProgress,
+            31,
+        )
+        .unwrap_or_else(|error| panic!("candidate: {error:?}"));
+        assert!(matches!(
+            loan.settle(&invalid),
+            Err(HostResourceError::Operation(
+                OperationAbiError::PartialProgressAsCompletion { .. }
+            ))
+        ));
+        assert_eq!(loan.live().settlement(), None);
+        assert_eq!(loan.live().progress(), ProgressObservation::ShortRead);
+        let accepted = OperationSettlement::new(
+            loan.live().operation(),
+            loan.live().generation(),
+            loan.live().owner(),
+            ExternalOutcome::Accepted,
+            ProgressObservation::ShortRead,
+            32,
+        )
+        .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+        assert_eq!(loan.settle(&accepted), Ok(ResourceState::PartiallyAdvanced));
+        assert_eq!(loan.settle(&accepted), Err(HostResourceError::LoanSettled));
+        assert_eq!(
+            loan.invoke::<()>(|_| panic!("settled loan cannot invoke")),
+            Err(HostResourceError::LoanSettled)
+        );
+    }
+    let after = resource.account().durable_record();
+    assert!(!after.liveness_roots().contains(&LivenessRoot::Loan));
+    assert_eq!(after.operation_state(), ResourceState::PartiallyAdvanced);
+    assert_eq!(after.owner(), before.owner());
+    assert_eq!(after.quotas(), before.quotas());
+    assert_eq!(after.lifetime(), ResourceLifetimeState::Active);
+    assert_eq!(after.settlement(), before.settlement());
+    assert_eq!(
+        resource.invoke(OwnerGeneration::new(4), |value| Ok(*value)),
+        Ok(12)
+    );
+}
+
+/// Foreign generations, owners and receiver arrangements refuse without changing either input.
+#[test]
+fn host_receiver_loan_refuses_foreign_identity_and_missing_roots() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let mut resource =
+        OwnedHostResource::bind(admitted_active(), 1_u64).unwrap_or_else(|_| panic!("bind"));
+    let before = resource.account().durable_record();
+    for (live, expected) in [
+        (
+            transport_live(SECOND_FIXTURE_DECLARATION, 0, 4, true),
+            HostResourceError::ForeignLoan,
+        ),
+        (
+            transport_live(FIXTURE_DECLARATION, 1, 4, true),
+            HostResourceError::ForeignLoan,
+        ),
+        (
+            transport_live(FIXTURE_DECLARATION, 0, 3, true),
+            HostResourceError::Model(ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: OwnerGeneration::new(4),
+            }),
+        ),
+        (
+            transport_live(FIXTURE_DECLARATION, 0, 4, false),
+            HostResourceError::ForeignLoan,
+        ),
+    ] {
+        let preserved = live.clone();
+        let (error, returned) = *resource
+            .borrow_receiver(live)
+            .err()
+            .unwrap_or_else(|| panic!("must refuse"));
+        assert_eq!(error, expected);
+        assert_eq!(returned, preserved);
+        assert_eq!(resource.account().durable_record(), before);
+    }
+    let mut no_root = OwnedHostResource::bind(transfer_account(false, false, false), 1_u64)
+        .unwrap_or_else(|_| panic!("bind"));
+    let (error, _) = *no_root
+        .borrow_receiver(transport_live(FIXTURE_DECLARATION, 0, 4, true))
+        .err()
+        .unwrap_or_else(|| panic!("missing loan root refuses"));
+    assert_eq!(error, HostResourceError::MissingLoanRoot);
+}
+
+/// Abandoned and forgotten loans retain a reuse fence until sealed emergency cleanup.
+#[test]
+fn host_receiver_loan_abandonment_and_forgetting_fence_reuse() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    for forgotten in [false, true] {
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut resource = OwnedHostResource::bind(
+            admitted_active(),
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: false,
+                value: 1,
+            },
+        )
+        .unwrap_or_else(|_| panic!("bind"));
+        let before = resource.account().durable_record();
+        let loan = resource
+            .borrow_receiver(transport_live(FIXTURE_DECLARATION, 0, 4, true))
+            .unwrap_or_else(|_| panic!("borrow"));
+        if forgotten {
+            std::mem::forget(loan);
+        } else {
+            drop(loan);
+        }
+        assert_eq!(resource.account().durable_record(), before);
+        assert_eq!(resource.is_poisoned(), !forgotten);
+        assert_eq!(
+            resource.invoke::<()>(OwnerGeneration::new(4), |_| panic!(
+                "loan blocks invocation"
+            )),
+            Err(HostResourceError::LoanOutstanding)
+        );
+        assert_eq!(
+            resource.finish(OwnerGeneration::new(4), 31, |_| panic!(
+                "loan blocks finish"
+            )),
+            Err(HostResourceError::LoanOutstanding)
+        );
+        let (error, mut resource) = *resource
+            .transfer(OwnerGeneration::new(4), OwnerGeneration::new(5))
+            .err()
+            .unwrap_or_else(|| panic!("loan blocks transfer"));
+        assert_eq!(error, HostResourceError::LoanOutstanding);
+        assert_eq!(
+            resource.emergency_release(emergency_cleanup()),
+            Ok(ResourceLifetimeState::EmergencyReleased)
+        );
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+        drop(resource);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+}
+
 /// A consuming move advances only the owner and retains one physical value and historical evidence.
 #[test]
 fn owned_host_resource_transfer_preserves_facts_and_fences_the_previous_owner() {
