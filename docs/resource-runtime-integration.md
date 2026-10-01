@@ -119,6 +119,13 @@ after unlocking and continue despite another member's destruction failure. Later
 unchanged after semantic refusal. A progressing sweep publishes once, while a zero-progress
 refusal does not publish; physical failure never rolls back semantic release.
 
+`submit_emergency_resource_cleanup` submits the same sealed cohort through bounded blocking-work
+ownership and returns `ResourceCleanupObserver<CoordinatorResourceCleanup>`. It captures witnesses
+and a coordinator handle, not physical slots. Refusal or queued cancellation consumes witnesses
+without settling accounting or extracting physical ownership. Started cleanup survives observer
+drop, preserves the canonical settled-prefix report, and never rolls back release after a destructor
+failure. It grants no escalation authority and does not settle accepted machine work.
+
 `dispose_settled_resource_host_values` drains already-settled physical obligations in canonical
 runtime-subject order, reporting `ResourcePhysicalCleanupResults`. Active and finishing accounts
 are excluded. Selection respects publication reservations; jobs execute after unlocking and continue

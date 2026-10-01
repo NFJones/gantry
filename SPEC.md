@@ -15294,6 +15294,13 @@ MUST run after unlocking even if one destruction fails. The report MUST distingu
 settlement/refusal from each member's physical outcome. A nonempty settled prefix advances
 accounting publication once; an empty prefix does not. Physical failure never rolls back release.
 
+An explicitly witnessed emergency cohort MAY be submitted to bounded blocking-work ownership.
+Submission MUST transfer only sealed witnesses and a coordinator handle, never extracted physical
+values. Refusal or service cancellation before start MUST leave accounting and physical slots
+unchanged while consuming the supplied witnesses. Started work MUST preserve canonical prefix
+settlement and independent physical outcomes after observer abandonment. Submission and observation
+retain integration containment; this route grants no escalation authority or machine settlement.
+
 The coordinator MAY separately sweep physical obligations of accounts whose lifetime is already
 settled, retired or deleted. Active and finishing accounts MUST remain untouched. Selection and
 extraction MUST respect publication reservations and canonical runtime-subject order; every extracted
