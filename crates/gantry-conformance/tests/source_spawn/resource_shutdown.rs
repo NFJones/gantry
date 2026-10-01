@@ -159,6 +159,18 @@ fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service()
         assert_eq!(after.foreground, before.foreground);
         assert_eq!(after.terminal, before.terminal);
         assert_eq!(after.cancellation, before.cancellation);
+        let expected_report = after
+            .resource_cleanup_failure
+            .map(|failure| vec![(execution, failure)])
+            .unwrap_or_default();
+        assert_eq!(
+            report.resource_cleanup_failures.as_ref(),
+            expected_report.as_slice()
+        );
+        assert!(
+            report.cohort.is_empty(),
+            "terminal cleanup evidence does not expand the semantic cohort"
+        );
         assert_eq!(
             after.resource_cleanup_failure,
             if remains_active && physical {

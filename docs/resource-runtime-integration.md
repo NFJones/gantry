@@ -157,6 +157,9 @@ overwriting an earlier cleanup classification.
 Admitted pending operations independently prevent orderly shutdown even after accounting release.
 `PendingResourceWork` records the outstanding machine settlement without closing its lease or
 releasing pending capacity. Explicit later machine settlement remains available.
+`ShutdownReport::resource_cleanup_failures` retains each execution's first cleanup failure in
+execution order, including terminal owners outside the semantic cancellation cohort. It does not
+expand that cohort. Recorded failures prevent orderly reporting and are retained in unclean reports.
 
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |

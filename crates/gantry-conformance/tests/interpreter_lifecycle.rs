@@ -421,6 +421,61 @@ fn cleanup_failure_record_preserves_terminal_outcomes_and_first_classification()
     assert_eq!(handle.snapshot(), Ok(after));
 }
 
+/// Clean and unclean reports retain ordered terminal-owner failures outside their semantic cohort.
+#[test]
+fn shutdown_reports_terminal_cleanup_failures_in_execution_order() {
+    use gantry::runtime::ExecutionResourceCleanupFailure;
+    for unclean in [false, true] {
+        let lifecycle = InterpreterLifecycle::new(&configuration());
+        let mut expected = Vec::new();
+        for (id, failure) in [
+            (execution(13), ExecutionResourceCleanupFailure::Disposal),
+            (execution(12), ExecutionResourceCleanupFailure::Service),
+        ] {
+            let mut admission = lifecycle
+                .admit(AdmissionKind::NewWork)
+                .unwrap_or_else(|error| panic!("admission: {error}"));
+            let handle = admission
+                .accept_execution(id)
+                .unwrap_or_else(|error| panic!("acceptance: {error:?}"));
+            let outcome = MachineOutcome::Succeeded(LogicalValue::unit());
+            handle
+                .publish_committed_foreground(outcome.clone())
+                .unwrap_or_else(|error| panic!("foreground: {error:?}"));
+            handle
+                .publish_committed_terminal(outcome)
+                .unwrap_or_else(|error| panic!("terminal: {error:?}"));
+            assert_eq!(handle.record_resource_cleanup_failure(failure), Ok(true));
+            expected.push((id, failure));
+        }
+        expected.sort_by_key(|(id, _)| *id);
+        if unclean {
+            lifecycle.begin_unclean_drop();
+        }
+        let mut admission = lifecycle
+            .begin_shutdown(None, None)
+            .unwrap_or_else(|error| panic!("shutdown: {error}"));
+        let report = if let Some(coordinator) = admission.coordinator.take() {
+            coordinator
+                .complete(true, FinalShutdownEventSettlement::Settled, Arc::from([]))
+                .unwrap_or_else(|error| panic!("report: {error:?}"))
+        } else {
+            let waker = Waker::noop();
+            poll_ready(&mut admission.wait, waker)
+        };
+        assert!(report.cohort.is_empty());
+        assert_eq!(
+            report.resource_cleanup_failures.as_ref(),
+            expected.as_slice()
+        );
+        assert!(
+            !report.orderly,
+            "recorded failures override a caller's orderly claim"
+        );
+        assert_eq!(report.unclean, unclean);
+    }
+}
+
 #[test]
 fn shutdown_races_transfer_admission_and_snapshot_first_durations() {
     let lifecycle = InterpreterLifecycle::new(&configuration());

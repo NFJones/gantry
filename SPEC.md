@@ -15334,6 +15334,10 @@ classification unless an earlier cleanup failure is already recorded; this creat
 Admitted pending resource work MUST independently prevent an orderly report after accounting or
 physical release. Shutdown MUST retain `PendingResourceWork` unless an earlier cleanup failure
 is recorded, without closing its machine lease or releasing accepted pending capacity.
+The immutable shutdown report MUST separately retain the first cleanup failure per execution in
+execution-identity order, including terminal owners outside the semantic cancellation cohort.
+This evidence MUST NOT expand that cohort, and any retained cleanup failure prevents an orderly
+report. Clean and unclean report construction preserve the same recorded failure projection.
 
 <a id="GNT-28.12-operation-state-projection"></a>
 

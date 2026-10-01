@@ -1892,6 +1892,8 @@ pub struct ShutdownReport {
     pub completion_failures: Arc<[ShutdownCompletionError]>,
     /// Per-execution journal-owner release dispositions in execution-identity order.
     pub journal_owner_releases: Arc<[ShutdownJournalOwnerRelease]>,
+    /// First resource cleanup failure per retained execution, including terminal non-cohort owners.
+    pub resource_cleanup_failures: Arc<[(ProtocolIdentity, ExecutionResourceCleanupFailure)]>,
     /// Whether all cleanup, release, and required delivery obligations were orderly.
     pub orderly: bool,
     /// Whether destruction occurred without completed asynchronous shutdown.
@@ -2031,7 +2033,14 @@ impl ShutdownCoordinator {
             cohort: Arc::from(cohort),
             completion_failures: Arc::from(completion_failures.clone()),
             journal_owner_releases,
-            orderly: orderly && completion_failures.is_empty() && cause != ShutdownCause::Poisoned,
+            resource_cleanup_failures: resource_cleanup_failures(&data),
+            orderly: orderly
+                && completion_failures.is_empty()
+                && data
+                    .executions
+                    .values()
+                    .all(|execution| execution.resource_cleanup_failure.is_none())
+                && cause != ShutdownCause::Poisoned,
             unclean: false,
             final_event,
         });
@@ -2233,6 +2242,7 @@ impl LifecycleInner {
             cohort: Arc::from(cohort),
             completion_failures: Arc::from([]),
             journal_owner_releases: Arc::from([]),
+            resource_cleanup_failures: resource_cleanup_failures(&data),
             orderly: false,
             unclean: true,
             final_event: FinalShutdownEventSettlement::NotAttemptedUnclean,
@@ -2417,6 +2427,22 @@ fn error_for_shutdown(cause: ShutdownCause) -> LifecycleError {
             ShutdownCause::Poisoned => LifecycleCode::InterpreterPoisoned,
         },
     }
+}
+
+/// Projects first cleanup failures in execution order without changing the semantic cohort.
+fn resource_cleanup_failures(
+    data: &LifecycleData,
+) -> Arc<[(ProtocolIdentity, ExecutionResourceCleanupFailure)]> {
+    Arc::from(
+        data.executions
+            .iter()
+            .filter_map(|(identity, execution)| {
+                execution
+                    .resource_cleanup_failure
+                    .map(|failure| (*identity, failure))
+            })
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn lifecycle_snapshot(data: &LifecycleData) -> LifecycleSnapshot {
