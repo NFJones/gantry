@@ -77,10 +77,10 @@ impl gantry::host::contracts::BlockingWorkService for RefusingCleanupService {
 }
 
 /// Counts physical disposal and optionally fails within the integration containment boundary.
-struct CleanupValue {
-    drops: Arc<AtomicU64>,
-    fails: bool,
-    pause: Option<(Arc<AtomicBool>, std::sync::mpsc::Receiver<()>)>,
+pub(super) struct CleanupValue {
+    pub(super) drops: Arc<AtomicU64>,
+    pub(super) fails: bool,
+    pub(super) pause: Option<(Arc<AtomicBool>, std::sync::mpsc::Receiver<()>)>,
 }
 
 impl Drop for CleanupValue {
@@ -95,7 +95,7 @@ impl Drop for CleanupValue {
 }
 
 /// Builds a pending fake-host resource operation belonging to the accepted execution root.
-fn resource_machine(execution: ProtocolIdentity) -> Machine {
+pub(super) fn resource_machine(execution: ProtocolIdentity) -> Machine {
     let path = CanonicalPath::new("crate::cleanup_resource")
         .unwrap_or_else(|error| panic!("path: {error}"));
     let workflow =

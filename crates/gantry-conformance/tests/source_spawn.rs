@@ -69,6 +69,9 @@ mod recovery;
 #[path = "source_spawn/resource_cleanup.rs"]
 mod resource_cleanup;
 
+#[path = "source_spawn/resource_shutdown.rs"]
+mod resource_shutdown;
+
 struct TempDirectory(PathBuf);
 
 type EventDeliveryObserver = Arc<dyn Fn(&EventEnvelope) + Send + Sync>;

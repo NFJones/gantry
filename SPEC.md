@@ -15300,6 +15300,8 @@ Nondurable execution cancellation MUST submit any already-settled physical oblig
 drainage and before observing shutdown quiescence.
 Already-terminal language outcomes MUST NOT bypass this physical cleanup and quiescence phase;
 successful observation retains the `AlreadyTerminal` result without changing fixed outcomes.
+When no held or in-flight physical value and no retained disposal failure requires cleanup,
+an already-terminal request MAY return immediately without waiting for unrelated driver completion.
 Observation MUST use the configured cancellation drain deadline; timeout stops observation without
 cancelling started destruction. Service/coordinator
 failures and per-resource disposal failures MUST remain distinct. The first operational cleanup
@@ -15311,7 +15313,15 @@ or executor failure MUST retain the same independent operational record, includi
 resource ownership prevents quiescence after terminal publication.
 Active and finishing resource lifetimes remain explicit obligations; this
 phase MUST NOT fabricate semantic release or enable source live-handle transport. Durable cancellation
-and general interpreter shutdown resource integration remain outside this scoped phase.
+resource integration remains outside this scoped phase.
+
+Interpreter shutdown MUST inspect retained nondurable execution owners, including terminal owners
+outside its semantic cancellation cohort, before closing the blocking-work service. It MUST submit
+already-settled physical obligations while that service still accepts work, then observe any held or
+in-flight physical ownership under the shutdown drain deadline. Cleanup failure, prior retained
+cleanup failure, or failure to reach physical quiescence MUST prevent an orderly report and retain
+the independent lifecycle failure classification. Fixed language outcomes remain unchanged;
+active and finishing accounts MUST NOT be implicitly released or disposed by this phase.
 
 <a id="GNT-28.12-operation-state-projection"></a>
 

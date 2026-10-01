@@ -646,6 +646,17 @@ impl ExecutionCoordinator {
         result
     }
 
+    /// Reports whether any physical resource value remains held or in-flight.
+    ///
+    /// Completed disposal failures are quiescent but remain independently reportable.
+    #[must_use]
+    pub fn has_resource_host_values(&self) -> bool {
+        lock(&self.inner.state)
+            .resources
+            .as_ref()
+            .is_some_and(|resources| !resources.host_values_are_quiescent())
+    }
+
     /// Reports whether already-settled physical obligations require a cleanup sweep.
     ///
     /// This is a point-in-time hint; extraction rechecks under the coordinator mutex.

@@ -135,8 +135,17 @@ Physical-quiescence observation also records deadline or executor failure, inclu
 resource remains held after driver terminal publication. It does not dispose or release that account.
 An already-terminal cancellation request still drains retained settled physical obligations and
 observes quiescence; success retains `AlreadyTerminal` without changing fixed language outcomes.
+With no held/in-flight values or retained disposal failures, it returns immediately rather than
+waiting for unrelated driver completion. Interpreter shutdown retains ownership of those drivers.
 Active and finishing accounts are not implicitly released. This phase does not enable source
-live-handle transport or complete durable cancellation/general interpreter shutdown integration.
+live-handle transport or complete durable cancellation integration.
+
+Interpreter shutdown also inspects retained nondurable execution owners, including terminal owners
+outside the semantic cancellation cohort. It submits settled physical cleanup before closing the
+blocking-work service and observes remaining physical ownership under the shutdown drain deadline.
+Cleanup failure, an earlier retained failure, or incomplete physical quiescence makes the report
+unorderly and preserves independent lifecycle classification. Active and finishing accounts remain
+held until explicitly settled; fixed language outcomes are never rewritten.
 
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |

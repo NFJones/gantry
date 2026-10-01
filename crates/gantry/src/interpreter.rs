@@ -294,6 +294,18 @@ impl NondurableExecutionRegistry {
         }
     }
 
+    /// Snapshots retained owners in execution order without holding the registry during cleanup.
+    fn all_owned(&self) -> Vec<Arc<NondurableExecutionOwner>> {
+        lock_shutdown(&self.state)
+            .executions
+            .values()
+            .filter_map(|registration| match registration {
+                NondurableExecutionRegistration::Owned(owner) => Some(Arc::clone(owner)),
+                NondurableExecutionRegistration::Pending { .. } => None,
+            })
+            .collect()
+    }
+
     fn cancellation_control_is_active(&self) -> bool {
         lock_shutdown(&self.state)
             .executions
@@ -11587,6 +11599,13 @@ impl Interpreter {
             .publish_committed_cancellation(reason)
             .map_err(CancelExecutionError::Transition)?;
 
+        if matches!(record, CancellationRecord::AlreadyTerminal(_))
+            && !owner.coordinator.has_resource_host_values()
+            && !owner.coordinator.has_settled_resource_host_values()
+        {
+            return Ok(record);
+        }
+
         let semantic_tasks = owner.coordinator.execution_cancellation_cohort();
         let semantic_waits = semantic_tasks
             .iter()
@@ -12166,6 +12185,70 @@ impl Interpreter {
                         .confirmed_stopped_abort_ids(&handoff_cohort),
                 );
                 let aborted = usize_to_u64(confirmed_abort_ids.len());
+                // Terminal language settlement does not discharge retained physical ownership.
+                // Keep the blocking service open until every selected cleanup has been submitted.
+                let interpreter = Interpreter {
+                    inner: Arc::clone(&shutdown_owner),
+                    external_owner: false,
+                };
+                for owner in shutdown_owner.nondurable_executions.all_owned() {
+                    orderly &= owner
+                        .handle
+                        .snapshot()
+                        .is_ok_and(|snapshot| snapshot.resource_cleanup_failure.is_none());
+                    if owner.coordinator.has_settled_resource_host_values()
+                        && let Err(error) = interpreter
+                            .drain_settled_nondurable_resources(&owner.coordinator)
+                            .await
+                    {
+                        orderly = false;
+                        let classification = match error {
+                            CancelExecutionError::ResourceDisposal(_) => {
+                                gantry_runtime::ExecutionResourceCleanupFailure::Disposal
+                            }
+                            CancelExecutionError::CleanupTimedOut => {
+                                gantry_runtime::ExecutionResourceCleanupFailure::Deadline
+                            }
+                            CancelExecutionError::Executor(_) => {
+                                gantry_runtime::ExecutionResourceCleanupFailure::Executor
+                            }
+                            _ => gantry_runtime::ExecutionResourceCleanupFailure::Service,
+                        };
+                        // A missing lifecycle owner is also an unorderly shutdown, never success.
+                        if owner
+                            .handle
+                            .record_resource_cleanup_failure(classification)
+                            .is_err()
+                        {
+                            orderly = false;
+                        }
+                    }
+                    if owner.coordinator.has_resource_host_values() {
+                        let quiescence = deadline_race(
+                            executor,
+                            Box::pin(owner.coordinator.wait_for_shutdown_quiescence()),
+                            durations.drain,
+                            None,
+                        )
+                        .await;
+                        if !matches!(quiescence, DeadlineOutcome::Completed(())) {
+                            orderly = false;
+                            let classification = match quiescence {
+                                DeadlineOutcome::Failed(_) => {
+                                    gantry_runtime::ExecutionResourceCleanupFailure::Executor
+                                }
+                                _ => gantry_runtime::ExecutionResourceCleanupFailure::Deadline,
+                            };
+                            if owner
+                                .handle
+                                .record_resource_cleanup_failure(classification)
+                                .is_err()
+                            {
+                                orderly = false;
+                            }
+                        }
+                    }
+                }
                 let mut blocking_shutdown =
                     catch_integration(&shutdown_owner.blocking_work_poison, || {
                         shutdown_owner.configuration.blocking_work().shutdown()
