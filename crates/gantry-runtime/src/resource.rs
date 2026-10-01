@@ -966,6 +966,22 @@ impl ResourceRegistry {
         if let Some(error) = refusal {
             return Err(Box::new((error, value)));
         }
+        // Use the admitted account's lease, not a caller's recovered or speculative binding.
+        // Hold it through insertion so cancellation and physical acquisition linearize once.
+        let lease = Arc::clone(
+            &self
+                .accounts
+                .get(&key)
+                .unwrap_or_else(|| unreachable!("validated account remains present"))
+                .subject
+                .admission_open,
+        );
+        let Ok(admission) = lease.lock() else {
+            return Err(Box::new((HostResourceError::PendingOperation, value)));
+        };
+        if admission.cancellation_requested {
+            return Err(Box::new((HostResourceError::CancellationRequested, value)));
+        }
         self.physical
             .insert(key, crate::resource_transport::HostValueSlot::new(value));
         Ok(())

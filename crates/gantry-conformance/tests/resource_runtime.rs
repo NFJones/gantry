@@ -1104,6 +1104,23 @@ fn registry_admission_uses_the_machines_pending_resource_subject() {
         1,
         "cancellation request does not settle already accepted work"
     );
+    let before_attachment = accepted_registry.declared_records();
+    let refusal =
+        accepted_registry.attach_host_value(&cancellation_subject, OwnerGeneration::new(4), 17_u64);
+    assert!(
+        refusal.is_err(),
+        "machine cancellation closes physical acquisition too"
+    );
+    let (error, returned) = *refusal
+        .err()
+        .unwrap_or_else(|| panic!("attachment must refuse"));
+    assert_eq!(
+        error,
+        gantry::runtime::HostResourceError::CancellationRequested
+    );
+    assert_eq!(returned, 17);
+    assert_eq!(accepted_registry.declared_records(), before_attachment);
+    assert_eq!(accepted_registry.pending_operations(), 1);
     let cancelled_operation = cancelled_machine
         .checkpoint()
         .pending_operation()

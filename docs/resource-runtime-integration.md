@@ -20,6 +20,10 @@ Machine-local cancellation separately closes new admission through current and s
 with `CancellationRequested`, without releasing accepted pending capacity. Recovery derives that
 refusal from recorded cancellation. Isolated staged cancellation affects the authoritative lease
 only when published, and publication retains pending capacity until settlement.
+Physical attachment also refuses machine-local cancellation with `HostResourceError::CancellationRequested`,
+returning the input untouched. It checks the admitted account's lease, not a caller's recovered or
+speculative binding, and holds that lease through acquisition. Accepted-work settlement and cleanup
+remain separate and available.
 Accounting lifetime settlement and physical reclamation do not release still-pending work. Closed leases are pruned at successful
 admission; poisoned leases conservatively retain capacity. Reconstruction does not recover this
 process-local pending policy, and unadmitted evaluator work is outside its scope.

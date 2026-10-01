@@ -56,6 +56,8 @@ pub enum HostResourceError {
     NotAttached,
     /// Physical disposal is already owned by another in-flight cleanup.
     DisposalPending,
+    /// Machine cancellation prevents acquiring a new physical value for this account.
+    CancellationRequested,
 }
 
 /// One unclonable host value bound to one consumed accounting account.
