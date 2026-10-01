@@ -11714,7 +11714,16 @@ impl Interpreter {
         )
         .await;
         if !matches!(quiescence, DeadlineOutcome::Completed(())) {
-            let _ = owner.handle.publish_run_failed_nondurably();
+            let classification = match &quiescence {
+                DeadlineOutcome::Failed(_) => {
+                    gantry_runtime::ExecutionResourceCleanupFailure::Executor
+                }
+                _ => gantry_runtime::ExecutionResourceCleanupFailure::Deadline,
+            };
+            owner
+                .handle
+                .record_resource_cleanup_failure(classification)
+                .map_err(CancelExecutionError::Transition)?;
             return match quiescence {
                 DeadlineOutcome::Failed(error) => Err(CancelExecutionError::Executor(error)),
                 DeadlineOutcome::Completed(()) => unreachable!(),

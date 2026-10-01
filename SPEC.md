@@ -15303,7 +15303,10 @@ failures and per-resource disposal failures MUST remain distinct. The first oper
 failure MUST remain visible in lifecycle snapshots independently of immutable language outcomes,
 including after terminal publication, rather than claiming successful cleanup. Recording errors
 MUST propagate; recording MUST NOT rewrite cancellation, foreground or terminal state. The bounded
-classification is service, disposal, deadline or executor. Active and finishing resource lifetimes remain explicit obligations; this
+classification is service, disposal, deadline or executor. Physical-quiescence observation timeout
+or executor failure MUST retain the same independent operational record, including when active
+resource ownership prevents quiescence after terminal publication.
+Active and finishing resource lifetimes remain explicit obligations; this
 phase MUST NOT fabricate semantic release or enable source live-handle transport. Durable cancellation
 and general interpreter shutdown resource integration remain outside this scoped phase.
 

@@ -131,6 +131,8 @@ member destruction failures report `ResourceDisposal`. `ExecutionSnapshot::resou
 retains the first operational classification (service, disposal, deadline or executor), including
 after terminal publication. Fixed language outcomes and cancellation remain unchanged; failures
 to record this classification propagate rather than being silently discarded.
+Physical-quiescence observation also records deadline or executor failure, including when an active
+resource remains held after driver terminal publication. It does not dispose or release that account.
 Active and finishing accounts are not implicitly released. This phase does not enable source
 live-handle transport or complete durable cancellation/general interpreter shutdown integration.
 

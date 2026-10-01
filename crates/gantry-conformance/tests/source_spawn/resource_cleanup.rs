@@ -97,7 +97,12 @@ fn resource_machine(execution: ProtocolIdentity) -> Machine {
 /// Cancellation drains already-released fake-host values and reports disposal failures separately.
 #[test]
 fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
-    for (fails, times_out) in [(false, false), (true, false), (false, true)] {
+    for (fails, times_out, remains_active) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (false, true, true),
+    ] {
         let root = TempDirectory::new("fn main() {}");
         let executor = Arc::new(DeterministicConcurrentExecutor::default());
         executor.control_sleeps();
@@ -152,7 +157,8 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
                 CleanupValue {
                     drops: Arc::clone(&drops),
                     fails,
-                    pause: times_out.then_some((Arc::clone(&entered), release_rx)),
+                    pause: (times_out && !remains_active)
+                        .then_some((Arc::clone(&entered), release_rx)),
                 },
             )
             .unwrap_or_else(|_| panic!("attachment"));
@@ -178,9 +184,11 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
         let failure = live
             .settle_failure(FailureClass::ResourceFailure)
             .unwrap_or_else(|error| panic!("failure: {error:?}"));
-        coordinator
-            .settle_resource_from_post_failure(&failure, 21, &subject)
-            .unwrap_or_else(|error| panic!("semantic release: {error:?}"));
+        if !remains_active {
+            coordinator
+                .settle_resource_from_post_failure(&failure, 21, &subject)
+                .unwrap_or_else(|error| panic!("semantic release: {error:?}"));
+        }
         let before = coordinator
             .snapshot()
             .resource_records()
@@ -223,7 +231,11 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
                         .unwrap_or_else(|error| panic!("task {id}: {error:?}"));
                 }
             }
-            if times_out && !timer_released && entered.load(Ordering::Acquire) {
+            if times_out
+                && !timer_released
+                && (entered.load(Ordering::Acquire)
+                    || (remains_active && coordinator.snapshot().state().drivers_are_quiescent()))
+            {
                 let timer = executor
                     .sleep_durations()
                     .len()
@@ -267,6 +279,23 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
                 "timed-out cleanup still owns the paused physical value"
             );
             let _ = release_tx.send(());
+            if remains_active {
+                assert_eq!(
+                    drops.load(Ordering::Acquire),
+                    0,
+                    "cancellation cannot fabricate semantic release or dispose active ownership"
+                );
+                assert_eq!(
+                    coordinator.snapshot().resource_records(),
+                    Some(before.as_slice())
+                );
+                coordinator
+                    .settle_resource_from_post_failure(&failure, 21, &subject)
+                    .unwrap_or_else(|error| panic!("explicit late release: {error:?}"));
+                coordinator
+                    .dispose_settled_resource_host_values()
+                    .unwrap_or_else(|error| panic!("explicit late cleanup: {error:?}"));
+            }
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
             while coordinator.has_settled_resource_host_values() {
                 assert!(
@@ -309,10 +338,12 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
             );
         }
         assert_eq!(drops.load(Ordering::Acquire), 1);
-        assert_eq!(
-            coordinator.snapshot().resource_records(),
-            Some(before.as_slice())
-        );
+        if !remains_active {
+            assert_eq!(
+                coordinator.snapshot().resource_records(),
+                Some(before.as_slice())
+            );
+        }
         let mut quiescence = Box::pin(coordinator.wait_for_shutdown_quiescence());
         assert!(
             quiescence
