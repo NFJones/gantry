@@ -15302,7 +15302,9 @@ retain their existing refusal precedence. These bindings supply runtime context,
 The projected operation state MUST equal the accepted settlement's derived `ResourceState`, except
 that a generation fenced under Section 20 MUST project `Poisoned` regardless of that outcome.
 Projection MUST preserve the fence without rewriting the accepted settlement or its progress;
-the state is never caller-selected. This projection changes only the distinct Section 20 operation-state fact of that admitted
+once accounting retains `Poisoned`, a non-poisoned projection MUST refuse with
+`PoisonedOperationStateRevival` without mutation, even from an older accepted model clone.
+The state is never caller-selected. This projection changes only the distinct Section 20 operation-state fact of that admitted
 account: it MUST NOT change whole-resource lifetime, quotas, liveness roots, ownership of a physical
 host resource, or the Section 20 settlement, progress, or generation. It creates no evaluator-wide
 settlement uniqueness, checkpoint format, or journal schema.

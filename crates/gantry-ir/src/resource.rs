@@ -692,6 +692,11 @@ impl ResourceLedger {
         projection: &OperationStateProjection,
     ) -> Result<ResourceState, ResourceError> {
         self.require_current_owner(projection.owner())?;
+        if self.operation_state == ResourceState::Poisoned
+            && projection.state() != ResourceState::Poisoned
+        {
+            return Err(ResourceError::PoisonedOperationStateRevival);
+        }
         self.operation_state = projection.state();
         Ok(self.operation_state)
     }
@@ -996,6 +1001,8 @@ pub enum ResourceError {
     CompactionDoesNotPreserve,
     /// A presented failure settlement does not derive a poisoned resource state.
     FailureDoesNotPoisonResource,
+    /// A projection attempted to clear the operation's retained poison state.
+    PoisonedOperationStateRevival,
     /// An ordinary serialization or ordinary durable-state carrier was asked to carry a resource.
     OrdinaryCarrierRefused,
     /// Durable quota facts record committed use above the declared limit.

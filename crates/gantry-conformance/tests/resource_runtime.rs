@@ -5080,6 +5080,24 @@ fn runtime_projection_preserves_fences_before_and_after_settlement() {
             .account(&subject)
             .unwrap_or_else(|| panic!("account retained"))
             .durable_record();
+        let mut unfenced = transport_live(FIXTURE_DECLARATION, 0, 4, false);
+        unfenced
+            .settle(&completion)
+            .unwrap_or_else(|error| panic!("old completion: {error:?}"));
+        assert_eq!(
+            registry.project_operation_state(&unfenced, &subject),
+            Err(ResourceRegistryRefusal::OperationStateProjection(
+                ResourceError::PoisonedOperationStateRevival
+            )),
+            "older unfenced evidence cannot clear retained poison"
+        );
+        assert_eq!(
+            registry
+                .account(&subject)
+                .unwrap_or_else(|| panic!("account retained"))
+                .durable_record(),
+            after
+        );
         assert_eq!(live.settlement(), Some(&completion));
         assert_eq!(live.progress(), completion.progress());
         assert_eq!(live.fenced(), Some(FenceCategory::Revocation));
