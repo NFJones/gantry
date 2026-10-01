@@ -542,6 +542,8 @@ pub enum PostFailureSettlementRefusal {
 pub struct ResourceRegistry {
     accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
     live_limit: Option<u64>,
+    pending_limit: Option<u64>,
+    pending_admissions: Vec<Arc<Mutex<bool>>>,
     adapter_faults: PoisonLedger,
 }
 
@@ -609,6 +611,8 @@ impl ResourceRegistry {
         Self {
             accounts: BTreeMap::new(),
             live_limit: None,
+            pending_limit: None,
+            pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
         }
     }
@@ -623,8 +627,40 @@ impl ResourceRegistry {
         Self {
             accounts: BTreeMap::new(),
             live_limit: Some(limit),
+            pending_limit: None,
+            pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
         }
+    }
+
+    /// Creates independent finite ceilings for live accounts and admitted pending operations.
+    ///
+    /// Pending capacity follows the machine's admission lease, not accounting lifetime.
+    /// Reconstruction through [`Self::reconstruct`] does not recover this process-local policy.
+    #[must_use]
+    pub fn with_limits(live_limit: u64, pending_limit: u64) -> Self {
+        Self {
+            pending_limit: Some(pending_limit),
+            ..Self::with_live_limit(live_limit)
+        }
+    }
+
+    /// Returns the separately declared pending resource-operation ceiling, when any.
+    #[must_use]
+    pub const fn pending_limit(&self) -> Option<u64> {
+        self.pending_limit
+    }
+
+    /// Counts admitted operations whose machine settlement lease remains open.
+    ///
+    /// A poisoned lease conservatively retains capacity. Accounting finalization, record
+    /// deletion and physical reclamation do not close this lease. This is not a durable fact.
+    #[must_use]
+    pub fn pending_operations(&self) -> u64 {
+        self.pending_admissions
+            .iter()
+            .filter(|lease| lease.lock().map_or(true, |open| *open))
+            .fold(0_u64, |count, _| count.saturating_add(1))
     }
 
     /// Returns the declared live-resource admission limit, when any.
@@ -677,6 +713,19 @@ impl ResourceRegistry {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
+        // Inspect before locking the presented lease: a duplicate may share that mutex.
+        // Stage pruning so refused admissions do not change even process-local bookkeeping.
+        // Settlement only closes leases, so concurrent closure can conservatively refuse.
+        let mut pending_admissions = if self.pending_limit.is_some() {
+            self.pending_admissions
+                .iter()
+                .filter(|lease| lease.lock().map_or(true, |open| *open))
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let pending = u64::try_from(pending_admissions.len()).unwrap_or(u64::MAX);
         let admission_open = Arc::clone(&subject.admission_open);
         let admission_guard = admission_open
             .lock()
@@ -697,6 +746,15 @@ impl ResourceRegistry {
                     && live >= limit
                 {
                     return Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit });
+                }
+                if let Some(limit) = self.pending_limit
+                    && pending >= limit
+                {
+                    return Err(ResourceRegistryRefusal::PendingOperationLimitReached { limit });
+                }
+                if self.pending_limit.is_some() {
+                    pending_admissions.push(Arc::clone(&admission_open));
+                    self.pending_admissions = pending_admissions;
                 }
                 Ok(slot.insert(account))
             }
@@ -779,6 +837,8 @@ impl ResourceRegistry {
         Ok(Self {
             accounts,
             live_limit,
+            pending_limit: None,
+            pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
         })
     }
@@ -1267,6 +1327,11 @@ pub enum ResourceRegistryRefusal {
     AdapterBinding(AdapterBindingRefusal),
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
+        /// The declared limit.
+        limit: u64,
+    },
+    /// The separately declared admitted pending-operation ceiling is already reached.
+    PendingOperationLimitReached {
         /// The declared limit.
         limit: u64,
     },

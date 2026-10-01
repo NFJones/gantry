@@ -222,6 +222,27 @@ impl ExecutionCoordinator {
         )
     }
 
+    /// Creates shared accounting with separate finite live and pending-operation ceilings.
+    ///
+    /// Pending capacity follows admitted machine settlement leases, not resource lifetime.
+    /// Neither policy reconstructs pending work or attaches automatically to evaluator dispatch.
+    pub fn new_with_resource_limits(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        maximum_live_resources: u64,
+        maximum_pending_operations: u64,
+    ) -> Result<Self, TaskStateError> {
+        Self::new_inner(
+            tasks,
+            sessions,
+            None,
+            Some(crate::ResourceRegistry::with_limits(
+                maximum_live_resources,
+                maximum_pending_operations,
+            )),
+        )
+    }
+
     fn new_inner(
         tasks: ConcurrentTaskStateV1,
         sessions: LogicalSessionRegistryV1,

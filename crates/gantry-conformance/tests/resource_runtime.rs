@@ -479,6 +479,290 @@ fn coordinator_resource_failure_settlement_releases_the_live_place_once() {
     assert_eq!(reused.publication(), poisoned.publication() + 1);
 }
 
+/// Pending capacity follows machine settlement rather than accounting lifetime or reclamation.
+#[test]
+fn pending_resource_operation_limit_releases_only_after_machine_settlement() {
+    for disposition in ["completion", "failure", "cancellation"] {
+        let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("pending subject exists"));
+        let operation = machine
+            .checkpoint()
+            .pending_operation()
+            .unwrap_or_else(|| panic!("pending operation exists"))
+            .identity;
+        let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+        let mut registry = ResourceRegistry::with_limits(2, 1);
+        assert_eq!(registry.pending_limit(), Some(1));
+        registry
+            .admit_pending_operation(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("first admission: {error:?}"));
+        assert_eq!(registry.pending_operations(), 1);
+        let before = registry.declared_records();
+        assert_eq!(
+            registry
+                .admit_pending_operation(
+                    &machine,
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record()
+                )
+                .err(),
+            Some(ResourceRegistryRefusal::SecondAdmission)
+        );
+        assert_eq!(
+            registry
+                .admit_pending_operation(
+                    &sibling,
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record()
+                )
+                .err(),
+            Some(ResourceRegistryRefusal::PendingOperationLimitReached { limit: 1 })
+        );
+        assert_eq!(registry.declared_records(), before);
+        assert_eq!(
+            machine.complete_operation(operation, LogicalValue::boolean(true)),
+            Err(OperationCompletionError::TypeMismatch)
+        );
+        assert_eq!(
+            registry.pending_operations(),
+            1,
+            "refused completion retains capacity"
+        );
+        assert_eq!(
+            registry.begin_finish(&subject, OwnerGeneration::new(4)),
+            Ok(ResourceLifetimeState::Finishing)
+        );
+        assert_eq!(
+            registry.complete_finalization(&subject, OwnerGeneration::new(4), 20),
+            Ok(ResourceLifetimeState::Finished)
+        );
+        assert_eq!(registry.live_resources(), 0);
+        assert_eq!(
+            registry.pending_operations(),
+            1,
+            "accounting settlement cannot settle machine work"
+        );
+        assert_eq!(
+            registry
+                .admit_pending_operation(
+                    &sibling,
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record()
+                )
+                .err(),
+            Some(ResourceRegistryRefusal::PendingOperationLimitReached { limit: 1 })
+        );
+        match disposition {
+            "completion" => {
+                assert!(
+                    machine
+                        .complete_operation(operation, LogicalValue::unit())
+                        .is_ok()
+                );
+            }
+            "failure" => {
+                assert!(
+                    machine
+                        .fail_operation(
+                            operation,
+                            gantry::portable::RuntimeErrorCategory::ExecutorFailure
+                        )
+                        .is_ok()
+                );
+            }
+            "cancellation" => {
+                assert!(machine.cancel("pending quota regression").is_some());
+                assert_eq!(
+                    registry.pending_operations(),
+                    1,
+                    "request alone is not settlement"
+                );
+                assert_eq!(
+                    machine.complete_operation(operation, LogicalValue::unit()),
+                    Err(OperationCompletionError::Cancelled)
+                );
+                assert_eq!(registry.pending_operations(), 1);
+                assert!(matches!(
+                    machine.step(),
+                    MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Cancelled(
+                        _
+                    )))
+                ));
+            }
+            _ => unreachable!("the declared settlement cases are exhaustive"),
+        }
+        assert_eq!(
+            registry.pending_operations(),
+            0,
+            "{disposition} releases pending capacity"
+        );
+        registry
+            .admit_pending_operation(
+                &sibling,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("released pending place admits sibling: {error:?}"));
+        assert_eq!(registry.pending_operations(), 1);
+        assert_eq!(
+            registry.declared_records().len(),
+            2,
+            "release does not reclaim accounting records"
+        );
+    }
+}
+
+/// Zero pending capacity and stronger admission errors refuse without retaining a lease.
+#[test]
+fn pending_resource_operation_limit_preserves_admission_refusal_precedence() {
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let (_, unauthenticated, _) = machine_with_unauthenticated_subject(Some(FIXTURE_DECLARATION));
+    let mut registry = ResourceRegistry::with_limits(1, 0);
+    assert_eq!(
+        registry
+            .admit_pending_operation(
+                &unauthenticated,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::UnauthenticatedOperationKind)
+    );
+    assert_eq!(
+        registry
+            .admit_pending_operation(
+                &machine,
+                ResourceCarrier::OrdinarySerialization,
+                ledger().durable_record()
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::Admission(
+            ResourceError::OrdinaryCarrierRefused
+        ))
+    );
+    assert_eq!(
+        registry
+            .admit_pending_operation(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::PendingOperationLimitReached { limit: 0 })
+    );
+    assert!(registry.declared_records().is_empty());
+    assert_eq!(registry.pending_operations(), 0);
+    let mut no_live_capacity = ResourceRegistry::with_limits(0, 0);
+    assert_eq!(
+        no_live_capacity
+            .admit_pending_operation(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 })
+    );
+}
+
+/// Shared pending capacity is released by machine settlement without reclaiming accounting facts.
+#[test]
+fn coordinator_pending_resource_limit_is_shared_and_settlement_fenced() {
+    use gantry::runtime::{
+        CanonicalTranscriptV1, ConcurrentTaskStateV1, CoordinatorResourceRefusal,
+        ExecutionCoordinator, LogicalSessionRegistryV1, SessionCreationModeV1,
+    };
+
+    let (_, mut machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let execution = machine.execution_id();
+    let tasks = ConcurrentTaskStateV1::new(execution, machine.task_id(), 1)
+        .unwrap_or_else(|error| panic!("task state: {error:?}"));
+    let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [7; 32])
+        .unwrap_or_else(|error| panic!("session identity: {error}"));
+    let sessions = LogicalSessionRegistryV1::new(
+        execution,
+        session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("session registry: {error:?}"));
+    let coordinator = ExecutionCoordinator::new_with_resource_limits(tasks, sessions, 2, 1)
+        .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+    let clone = coordinator.clone();
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("first admission: {error:?}"));
+    let before = coordinator.snapshot();
+    let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    assert_eq!(
+        clone.admit_resource(
+            &sibling,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::PendingOperationLimitReached { limit: 1 }
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending operation exists"))
+        .identity;
+    assert!(
+        machine
+            .complete_operation(operation, LogicalValue::unit())
+            .is_ok()
+    );
+    assert_eq!(
+        coordinator.snapshot(),
+        before,
+        "lease closure is not accounting publication"
+    );
+    assert_eq!(
+        clone.admit_resource(
+            &sibling,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Ok(())
+    );
+    let after = coordinator.snapshot();
+    assert_eq!(after.publication(), before.publication() + 1);
+    assert_eq!(after.resource_records().map(<[_]>::len), Some(2));
+}
+
+/// Accounting reconstruction does not fabricate process-local pending work or recover its policy.
+#[test]
+fn reconstruction_does_not_recover_pending_resource_operation_capacity() {
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    registry
+        .admit_pending_operation(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    assert_eq!(registry.pending_operations(), 1);
+    let records = registry.declared_records();
+    let recovered = ResourceRegistry::reconstruct(Some(1), records.clone())
+        .unwrap_or_else(|error| panic!("accounting reconstruction: {error:?}"));
+    assert_eq!(recovered.declared_records(), records);
+    assert_eq!(recovered.live_resources(), 1);
+    assert_eq!(recovered.pending_limit(), None);
+    assert_eq!(recovered.pending_operations(), 0);
+}
+
 /// Concurrent clone handles cannot publish two accounts for the same pending subject.
 #[test]
 fn coordinator_resource_admission_race_has_one_publication() {

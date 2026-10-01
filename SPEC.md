@@ -15092,8 +15092,18 @@ of retention and physical reclamation. This mapping concerns accounting admissio
 create, discover, reconstruct, or claim ownership of a physical host resource, and it does not
 define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
 
+A registry MAY separately declare a finite ceiling on admitted pending resource operations.
+That ceiling counts admitted machine settlement leases, not active accounting lifetimes. An
+accepted machine completion, failure, or settled cancellation closes its lease and releases its
+pending place; a refused completion or a cancellation request alone does not. Accounting finish,
+poison, emergency release, record deletion, and physical reclamation MUST NOT release a pending
+place while its machine lease remains open. Duplicate, kind, carrier, and live-account refusals
+retain their precedence before the pending ceiling. This optional policy is process-local and
+does not reconstruct pending work from accounting records or cover unadmitted evaluator work.
+
 A runtime MAY expose this accounting registry through an explicitly configured execution
-coordinator with a finite live-account ceiling. Coordinator handles cloned from that owner MUST
+coordinator with a finite live-account ceiling and an optional separate pending-operation ceiling.
+Coordinator handles cloned from that owner MUST
 share one registry and serialize admission, atomic quota charging, accepted operation-state
 projection, accounting finalization, and emergency release. Charging retains the owner and
 whole-vector refusal rules of `GNT-28.3-atomic-copy-move-loan-update-and-release-charging`;

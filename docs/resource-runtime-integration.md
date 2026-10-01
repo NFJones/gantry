@@ -11,6 +11,19 @@ below. Where a clause owns a fence rather than the runtime policy that consumes 
 
 ## Registry surfaces
 
+`ResourceRegistry::with_limits` optionally declares independent live-account and pending
+resource-operation ceilings under `GNT-28.11-runtime-admission-mapping`. `pending_limit` and
+`pending_operations` inspect the enabled pending policy. Pending places follow admitted machine
+settlement leases: accepted completion, failure, and settled cancellation release them; refused
+completion and a cancellation request alone retain them. Accounting lifetime settlement and
+physical reclamation do not release still-pending work. Closed leases are pruned at successful
+admission; poisoned leases conservatively retain capacity. Reconstruction does not recover this
+process-local pending policy, and unadmitted evaluator work is outside its scope.
+
+`ExecutionCoordinator::new_with_resource_limits` enables both ceilings in one shared registry;
+cloned handles retain the same admission refusal and machine-settlement release boundaries.
+The existing `new_with_resource_limit` constructor leaves the pending policy disabled.
+
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |
 | Admission | `new`, `admit` | `GNT-28.11-runtime-admission-mapping`, `GNT-28.7-durable-resource-reconstruction`, `GNT-20.1-operation-kinds` |
