@@ -13,6 +13,40 @@ use gantry::ir::{
 };
 use gantry::runtime::{HostResourceError, Machine, MachineLabel, MachineLimits, MachineStep};
 
+/// Delegates scheduling while injecting a failure into a registered cleanup timer.
+struct CleanupTimerFailureExecutor {
+    inner: Arc<DeterministicConcurrentExecutor>,
+    fail: Arc<AtomicBool>,
+}
+
+impl ExecutorAdapter for CleanupTimerFailureExecutor {
+    fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
+        self.inner.spawn(task)
+    }
+
+    fn sleep(&self, duration: DurationMicros) -> HostFuture<'_, Result<(), HostError>> {
+        let mut timer = self.inner.sleep(duration);
+        Box::pin(std::future::poll_fn(move |context| {
+            if self.fail.load(Ordering::Acquire) {
+                Poll::Ready(Err(HostError {
+                    code: Arc::from("cleanup-timer-failure"),
+                    protected_diagnostic: None,
+                }))
+            } else {
+                timer.as_mut().poll(context)
+            }
+        }))
+    }
+
+    fn yield_now(&self) -> HostFuture<'_, Result<(), HostError>> {
+        self.inner.yield_now()
+    }
+
+    fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
+        self.inner.sample_inclusive(range)
+    }
+}
+
 /// Delegates ordinary package work but can refuse the later cleanup submission.
 struct RefusingCleanupService {
     inner: gantry::runtime::BoundedBlockingWorkService,
@@ -126,16 +160,22 @@ fn resource_machine(execution: ProtocolIdentity) -> Machine {
 /// Cancellation drains already-released fake-host values and reports disposal failures separately.
 #[test]
 fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
-    for (fails, times_out, remains_active, service_refuses) in [
-        (false, false, false, false),
-        (true, false, false, false),
-        (false, true, false, false),
-        (false, true, true, false),
-        (false, false, false, true),
+    for (fails, times_out, remains_active, service_refuses, executor_fails) in [
+        (false, false, false, false, false),
+        (true, false, false, false, false),
+        (false, true, false, false, false),
+        (false, true, true, false, false),
+        (false, false, false, true, false),
+        (false, true, true, false, true),
     ] {
         let root = TempDirectory::new("fn main() {}");
         let executor = Arc::new(DeterministicConcurrentExecutor::default());
         executor.control_sleeps();
+        let fail_timer = Arc::new(AtomicBool::new(false));
+        let executor_adapter: Arc<dyn ExecutorAdapter> = Arc::new(CleanupTimerFailureExecutor {
+            inner: Arc::clone(&executor),
+            fail: Arc::clone(&fail_timer),
+        });
         let integration = Arc::new(ScriptedIntegration::new(
             [ScriptedPreflight::success(
                 EmbeddingOperation::ResolveSessions,
@@ -155,7 +195,7 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
             }) as Box<dyn gantry::host::contracts::BlockingWorkService>
         });
         let interpreter = interpreter_with_accounting_service(
-            executor.clone(),
+            executor_adapter,
             integration.clone(),
             integration,
             AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
@@ -281,6 +321,7 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
                     .len()
                     .checked_sub(1)
                     .unwrap_or_else(|| panic!("cleanup deadline was not registered"));
+                fail_timer.store(executor_fails, Ordering::Release);
                 executor
                     .release_sleep(timer)
                     .unwrap_or_else(|error| panic!("cleanup deadline: {error:?}"));
@@ -298,6 +339,8 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
         );
         let expected_failure = if service_refuses {
             Some(gantry::runtime::ExecutionResourceCleanupFailure::Service)
+        } else if executor_fails {
+            Some(gantry::runtime::ExecutionResourceCleanupFailure::Executor)
         } else if times_out {
             Some(gantry::runtime::ExecutionResourceCleanupFailure::Deadline)
         } else if fails {
@@ -324,10 +367,17 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
                 .dispose_settled_resource_host_values()
                 .unwrap_or_else(|error| panic!("late physical cleanup: {error:?}"));
         } else if times_out {
-            assert!(matches!(
-                result,
-                Err(gantry::CancelExecutionError::CleanupTimedOut)
-            ));
+            if executor_fails {
+                assert!(
+                    matches!(result, Err(gantry::CancelExecutionError::Executor(ref error))
+                    if error.code.as_ref() == "cleanup-timer-failure")
+                );
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(gantry::CancelExecutionError::CleanupTimedOut)
+                ));
+            }
             assert!(timer_released);
             let mut pending = Box::pin(coordinator.wait_for_shutdown_quiescence());
             assert!(
