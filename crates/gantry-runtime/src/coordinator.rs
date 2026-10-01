@@ -310,6 +310,31 @@ impl ExecutionCoordinator {
         Ok(())
     }
 
+    /// Charges a complete vector against one coordinator-owned account under its current owner.
+    ///
+    /// The registry's subject, owner, lifetime and quota rules remain authoritative. Refusal
+    /// commits no charge and advances no coordinator publication.
+    pub fn charge_resource(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        action: gantry_ir::ResourceAction,
+        charges: &[gantry_ir::Charge],
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.charge(subject, owner, action, charges))
+    }
+
+    /// Projects only a live resource's retained accepted settlement into its matching account.
+    ///
+    /// This changes operation-state accounting only, not whole-resource lifetime or quota
+    /// release. Unsettled, unknown-subject and stale-owner refusals advance no publication.
+    pub fn project_resource_operation_state(
+        &self,
+        live: &gantry_ir::LiveResource,
+    ) -> Result<gantry_ir::ResourceState, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.project_operation_state(live))
+    }
+
     /// Advances one coordinator-owned account to finishing under its current owner.
     pub fn begin_resource_finish(
         &self,

@@ -15093,7 +15093,10 @@ define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
 
 A runtime MAY expose this accounting registry through an explicitly configured execution
 coordinator with a finite live-account ceiling. Coordinator handles cloned from that owner MUST
-share one registry and serialize admission, accounting finalization, and emergency release.
+share one registry and serialize admission, atomic quota charging, accepted operation-state
+projection, accounting finalization, and emergency release. Charging retains the owner and
+whole-vector refusal rules of `GNT-28.3-atomic-copy-move-loan-update-and-release-charging`;
+projection retains every fence and non-claim of `GNT-28.12-operation-state-projection`.
 Admission MUST require a pending machine operation from a running task of the same execution;
 foreign executions, absent or non-running tasks, and disabled registries MUST be refused without
 mutation. A reserved durable publication MUST fence these accounting writes. Successful writes

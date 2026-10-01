@@ -91,6 +91,9 @@ canonical order and stops at the first refusal without rolling back an account t
 `ExecutionCoordinator::new_with_resource_limit` optionally owns one accounting registry shared
 by cloned handles under its existing mutex (`GNT-28.11-runtime-admission-mapping`).
 `admit_resource` accepts only a running task's pending operation in that execution;
+`charge_resource` retains atomic vector and current-owner charging fences, and
+`project_resource_operation_state` derives only accepted operation-state accounting without
+settling whole-resource lifetime or releasing its live place (`GNT-28.12-operation-state-projection`).
 `begin_resource_finish`, `complete_resource_finalization`, and `emergency_release_resource`
 retain the registry's owner and sealed-witness fences. Reserved durable publication refuses
 accounting writes. Success advances publication once; refusal changes neither records nor

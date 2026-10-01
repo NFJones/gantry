@@ -310,6 +310,84 @@ fn coordinator_resource_admission_refuses_foreign_or_ineligible_machines() {
     assert_eq!(coordinator.snapshot(), before);
 }
 
+/// Shared charging publishes a complete charge vector or preserves the entire prior cut.
+#[test]
+fn coordinator_resource_charging_is_atomic_and_owner_fenced() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("account admits: {error:?}"));
+    let before = coordinator.snapshot();
+    let charges = [
+        Charge {
+            owner: QuotaOwner::Owner,
+            family: QuotaFamily::Bytes,
+            amount: 2,
+        },
+        Charge {
+            owner: QuotaOwner::Resource,
+            family: QuotaFamily::Operations,
+            amount: 3,
+        },
+    ];
+    assert_eq!(
+        coordinator.charge_resource(
+            &subject,
+            OwnerGeneration::new(4),
+            ResourceAction::Update,
+            &charges
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Charge(ResourceError::QuotaExhausted)
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(matches!(
+        coordinator.charge_resource(
+            &subject,
+            OwnerGeneration::new(3),
+            ResourceAction::Update,
+            &charges[..1]
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Charge(ResourceError::StaleOwner { .. })
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(
+        coordinator.clone().charge_resource(
+            &subject,
+            OwnerGeneration::new(4),
+            ResourceAction::Update,
+            &charges[..1]
+        ),
+        Ok(())
+    );
+    let charged = coordinator.snapshot();
+    assert_eq!(charged.publication(), before.publication() + 1);
+    let records = charged
+        .resource_records()
+        .unwrap_or_else(|| panic!("records exist"));
+    let quota = records[0]
+        .record()
+        .quotas()
+        .get(&(QuotaOwner::Owner, QuotaFamily::Bytes))
+        .unwrap_or_else(|| panic!("byte quota exists"));
+    assert_eq!(quota.used(), 2);
+    assert_eq!(
+        records[0].record().lifetime(),
+        ResourceLifetimeState::Active
+    );
+}
+
 /// Concurrent clone handles cannot publish two accounts for the same pending subject.
 #[test]
 fn coordinator_resource_admission_race_has_one_publication() {
@@ -1738,6 +1816,24 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
     assert_eq!(live.operation(), subject.operation());
     assert_eq!(live.generation(), subject.generation());
 
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("coordinator account admits: {error:?}"));
+    let coordinator_before = coordinator.snapshot();
+    assert_eq!(
+        coordinator.project_resource_operation_state(&live),
+        Err(gantry::runtime::CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::OperationStateProjectionNotSettled
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), coordinator_before);
+
     let mut registry = ResourceRegistry::new();
     registry
         .admit(
@@ -1776,6 +1872,27 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
     let accepted_settlement = live.settlement().cloned();
     let accepted_progress = live.progress();
     let accepted_generation = live.generation().clone();
+    assert_eq!(
+        coordinator.clone().project_resource_operation_state(&live),
+        Ok(ResourceState::Consumed)
+    );
+    let coordinator_projected = coordinator.snapshot();
+    assert_eq!(
+        coordinator_projected.publication(),
+        coordinator_before.publication() + 1
+    );
+    let coordinator_records = coordinator_projected
+        .resource_records()
+        .unwrap_or_else(|| panic!("projected coordinator records exist"));
+    assert_eq!(
+        coordinator_records[0].record().operation_state(),
+        ResourceState::Consumed
+    );
+    assert_eq!(
+        coordinator_records[0].record().lifetime(),
+        ResourceLifetimeState::Active
+    );
+    assert_eq!(coordinator_records[0].record().quotas(), before.quotas());
     assert_eq!(
         registry.project_operation_state(&live),
         Ok(ResourceState::Consumed)
