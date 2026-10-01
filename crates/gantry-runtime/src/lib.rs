@@ -100,8 +100,8 @@ pub use hook_request::{
 };
 pub use lifecycle::{
     AcceptExecutionError, AdmissionKind, CancellationCausalIdentity, CancellationReason,
-    CancellationReasonError, CancellationRecord, ExecutionHandle, ExecutionSnapshot,
-    ExecutionTransitionError, ExecutionWait, FinalShutdownEventFailure,
+    CancellationReasonError, CancellationRecord, ExecutionHandle, ExecutionResourceCleanupFailure,
+    ExecutionSnapshot, ExecutionTransitionError, ExecutionWait, FinalShutdownEventFailure,
     FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleCode, LifecycleError,
     LifecycleSnapshot, OperationAdmission, OwnedActivityError, OwnedEventDeliveryHandoffWait,
     OwnedEventDeliveryReservation, OwnedEventDeliveryReservationWait, OwnedPreflightWait,

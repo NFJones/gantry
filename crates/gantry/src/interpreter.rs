@@ -11264,6 +11264,17 @@ impl Interpreter {
             .map(|coordinator| coordinator.snapshot().resource_records().map(<[_]>::to_vec))
     }
 
+    /// Returns the execution owner for fake-host resource cleanup conformance only.
+    #[cfg(all(feature = "concurrent", feature = "test-support"))]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn test_nondurable_resource_coordinator(
+        &self,
+        execution_id: ProtocolIdentity,
+    ) -> Option<ExecutionCoordinator> {
+        self.inner.nondurable_executions.coordinator(execution_id)
+    }
+
     /// Installs a one-shot callback at the source-child executor submission cut.
     #[cfg(all(feature = "concurrent", feature = "test-support"))]
     #[doc(hidden)]
@@ -11671,6 +11682,30 @@ impl Interpreter {
             }
         }
 
+        if owner.coordinator.has_settled_resource_host_values() {
+            let cleanup = self
+                .drain_settled_nondurable_resources(&owner.coordinator)
+                .await;
+            if let Err(error) = cleanup {
+                let classification = match &error {
+                    CancelExecutionError::ResourceDisposal(_) => {
+                        gantry_runtime::ExecutionResourceCleanupFailure::Disposal
+                    }
+                    CancelExecutionError::CleanupTimedOut => {
+                        gantry_runtime::ExecutionResourceCleanupFailure::Deadline
+                    }
+                    CancelExecutionError::Executor(_) => {
+                        gantry_runtime::ExecutionResourceCleanupFailure::Executor
+                    }
+                    _ => gantry_runtime::ExecutionResourceCleanupFailure::Service,
+                };
+                owner
+                    .handle
+                    .record_resource_cleanup_failure(classification)
+                    .map_err(CancelExecutionError::Transition)?;
+                return Err(error);
+            }
+        }
         let quiescence = deadline_race(
             self.inner.configuration.executor(),
             Box::pin(owner.coordinator.wait_for_shutdown_quiescence()),
@@ -11705,6 +11740,39 @@ impl Interpreter {
             DeadlineOutcome::Failed(error) => Err(CancelExecutionError::Executor(error)),
             DeadlineOutcome::TimedOut | DeadlineOutcome::Cancelled => {
                 let _ = owner.handle.publish_run_failed_nondurably();
+                Err(CancelExecutionError::CleanupTimedOut)
+            }
+        }
+    }
+
+    /// Observes service-owned settled cleanup without cancelling it when the deadline expires.
+    async fn drain_settled_nondurable_resources(
+        &self,
+        coordinator: &ExecutionCoordinator,
+    ) -> Result<(), CancelExecutionError> {
+        let observer = coordinator
+            .submit_settled_resource_cleanup(
+                self.inner.configuration.blocking_work(),
+                &self.inner.blocking_work_poison,
+            )
+            .map_err(CancelExecutionError::ResourceCleanup)?;
+        match deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(observer.completion()),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await
+        {
+            DeadlineOutcome::Completed(result) => {
+                let outcomes = result.map_err(CancelExecutionError::ResourceCleanup)?;
+                for (_, outcome) in outcomes {
+                    outcome.map_err(CancelExecutionError::ResourceDisposal)?;
+                }
+                Ok(())
+            }
+            DeadlineOutcome::Failed(error) => Err(CancelExecutionError::Executor(error)),
+            DeadlineOutcome::TimedOut | DeadlineOutcome::Cancelled => {
                 Err(CancelExecutionError::CleanupTimedOut)
             }
         }
@@ -13560,6 +13628,10 @@ pub enum CancelExecutionError {
     Executor(HostError),
     /// Bounded cancellation cleanup ended before physical settlement.
     CleanupTimedOut,
+    /// Service-owned settled resource cleanup could not be observed successfully.
+    ResourceCleanup(gantry_runtime::ResourceCleanupError),
+    /// A settled physical resource reported a contained destruction failure.
+    ResourceDisposal(gantry_runtime::HostResourceError),
     /// The supervised cancellation owner stopped abnormally.
     Physical(OwnedTaskCompletion),
     /// Retained cancellation state was internally incomplete.

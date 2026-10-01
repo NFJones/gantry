@@ -374,6 +374,53 @@ fn public_configuration_admits_independent_mixed_resource_policies() {
     assert_eq!(required.frontend_limits.maximum_package_files(), 8);
 }
 
+/// Operational cleanup failure remains observable after immutable language settlement.
+#[test]
+fn cleanup_failure_record_preserves_terminal_outcomes_and_first_classification() {
+    use gantry::runtime::ExecutionResourceCleanupFailure;
+    let lifecycle = InterpreterLifecycle::new(&configuration());
+    let mut admission = lifecycle
+        .admit(AdmissionKind::NewWork)
+        .unwrap_or_else(|error| panic!("admission: {error}"));
+    let handle = admission
+        .accept_execution(execution(11))
+        .unwrap_or_else(|error| panic!("acceptance: {error:?}"));
+    let outcome = MachineOutcome::Succeeded(LogicalValue::unit());
+    handle
+        .publish_committed_foreground(outcome.clone())
+        .unwrap_or_else(|error| panic!("foreground: {error:?}"));
+    handle
+        .publish_committed_terminal(outcome)
+        .unwrap_or_else(|error| panic!("terminal: {error:?}"));
+    let before = handle
+        .snapshot()
+        .unwrap_or_else(|error| panic!("snapshot: {error:?}"));
+    assert_eq!(before.resource_cleanup_failure, None);
+    assert_eq!(
+        handle.record_resource_cleanup_failure(ExecutionResourceCleanupFailure::Service),
+        Ok(true)
+    );
+    let after = handle
+        .snapshot()
+        .unwrap_or_else(|error| panic!("snapshot: {error:?}"));
+    assert_eq!(
+        after.resource_cleanup_failure,
+        Some(ExecutionResourceCleanupFailure::Service)
+    );
+    assert_eq!(after.foreground, before.foreground);
+    assert_eq!(after.terminal, before.terminal);
+    assert_eq!(after.cancellation, before.cancellation);
+    assert_eq!(
+        after.required_delivery_failures,
+        before.required_delivery_failures
+    );
+    assert_eq!(
+        handle.record_resource_cleanup_failure(ExecutionResourceCleanupFailure::Deadline),
+        Ok(false)
+    );
+    assert_eq!(handle.snapshot(), Ok(after));
+}
+
 #[test]
 fn shutdown_races_transfer_admission_and_snapshot_first_durations() {
     let lifecycle = InterpreterLifecycle::new(&configuration());

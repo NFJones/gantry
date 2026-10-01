@@ -646,6 +646,17 @@ impl ExecutionCoordinator {
         result
     }
 
+    /// Reports whether already-settled physical obligations require a cleanup sweep.
+    ///
+    /// This is a point-in-time hint; extraction rechecks under the coordinator mutex.
+    #[must_use]
+    pub fn has_settled_resource_host_values(&self) -> bool {
+        lock(&self.inner.state)
+            .resources
+            .as_ref()
+            .is_some_and(|resources| !resources.settled_host_subjects().is_empty())
+    }
+
     /// Drains physical obligations of semantically settled accounts without changing accounting.
     ///
     /// Selection and extraction respect publication reservations. Active and finishing accounts

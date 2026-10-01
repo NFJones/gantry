@@ -122,7 +122,17 @@ therefore leaves physical slots held. `ResourceCleanupObserver::completion` repo
 coordinator failures separately from per-member destruction outcomes; repeated observation retains
 the result. Dropping the observer or its future does not cancel accepted work. Submission, completion
 polling and handle disposal use integration containment. Started destruction runs off async workers
-and remains service-owned; this API does not automatically wire interpreter shutdown.
+and remains service-owned.
+
+Nondurable execution cancellation now submits already-settled physical obligations after driver
+drainage and before waiting for shutdown quiescence. The configured cancellation drain deadline
+bounds observation, not started destruction. Service/coordinator failures report `ResourceCleanup`;
+member destruction failures report `ResourceDisposal`. `ExecutionSnapshot::resource_cleanup_failure`
+retains the first operational classification (service, disposal, deadline or executor), including
+after terminal publication. Fixed language outcomes and cancellation remain unchanged; failures
+to record this classification propagate rather than being silently discarded.
+Active and finishing accounts are not implicitly released. This phase does not enable source
+live-handle transport or complete durable cancellation/general interpreter shutdown integration.
 
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |

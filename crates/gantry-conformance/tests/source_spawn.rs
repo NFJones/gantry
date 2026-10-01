@@ -66,6 +66,9 @@ static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 #[path = "source_spawn/recovery.rs"]
 mod recovery;
 
+#[path = "source_spawn/resource_cleanup.rs"]
+mod resource_cleanup;
+
 struct TempDirectory(PathBuf);
 
 type EventDeliveryObserver = Arc<dyn Fn(&EventEnvelope) + Send + Sync>;

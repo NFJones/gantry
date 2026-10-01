@@ -166,6 +166,21 @@ pub struct ExecutionSnapshot {
     pub terminal: Option<crate::ConcurrentTerminalOutcomeV1>,
     /// Required-delivery failures retained separately from language outcomes.
     pub required_delivery_failures: Arc<[RequiredEventDeliveryFailureV1]>,
+    /// First operational resource-cleanup failure, including failures after terminal publication.
+    pub resource_cleanup_failure: Option<ExecutionResourceCleanupFailure>,
+}
+
+/// Bounded operational cleanup classification, never a replacement language outcome.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExecutionResourceCleanupFailure {
+    /// Cleanup service submission or observation failed.
+    Service,
+    /// A resource destructor failed under containment.
+    Disposal,
+    /// The cleanup observation deadline expired.
+    Deadline,
+    /// The executor failed while observing cleanup.
+    Executor,
 }
 
 /// Exact required-sink exhaustion retained by one execution lifecycle.
@@ -401,6 +416,30 @@ impl ExecutionHandle {
             .get(&self.execution_id)
             .map(|execution| execution.cancellation_signal.clone())
             .ok_or(ExecutionTransitionError::NotFound)
+    }
+
+    /// Retains the first cleanup failure without replacing foreground or terminal outcomes.
+    ///
+    /// Returns true only for the first record. This remains available after terminal publication;
+    /// it grants no cleanup authority and neither settles work nor rewrites cancellation.
+    pub fn record_resource_cleanup_failure(
+        &self,
+        failure: ExecutionResourceCleanupFailure,
+    ) -> Result<bool, ExecutionTransitionError> {
+        let inner = self
+            .inner
+            .upgrade()
+            .ok_or(ExecutionTransitionError::InterpreterDropped)?;
+        let mut data = inner.lock();
+        let execution = data
+            .executions
+            .get_mut(&self.execution_id)
+            .ok_or(ExecutionTransitionError::NotFound)?;
+        if execution.resource_cleanup_failure.is_some() {
+            return Ok(false);
+        }
+        execution.resource_cleanup_failure = Some(failure);
+        Ok(true)
     }
 
     /// Records a required-delivery barrier without replacing a language outcome.
@@ -2233,6 +2272,7 @@ struct ExecutionRecord {
     terminal: Option<crate::ConcurrentTerminalOutcomeV1>,
     run_failed_nondurably: bool,
     required_delivery_failures: Vec<RequiredEventDeliveryFailureV1>,
+    resource_cleanup_failure: Option<ExecutionResourceCleanupFailure>,
     waiters: Vec<RegisteredWaiter>,
 }
 
@@ -2250,6 +2290,7 @@ impl ExecutionRecord {
             terminal: None,
             run_failed_nondurably: false,
             required_delivery_failures: Vec::new(),
+            resource_cleanup_failure: None,
             waiters: Vec::new(),
         }
     }
@@ -2261,6 +2302,7 @@ impl ExecutionRecord {
             foreground: self.foreground.clone(),
             terminal: self.terminal.clone(),
             required_delivery_failures: Arc::from(self.required_delivery_failures.clone()),
+            resource_cleanup_failure: self.resource_cleanup_failure,
         }
     }
 }

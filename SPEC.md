@@ -15295,8 +15295,17 @@ the coordinator, not extracted physical values, so refusal or service cancellati
 leaves physical slots held. Started cleanup MUST remain service-owned to physical completion
 even if its observer or completion future is dropped. Submission, completion polling and observer
 handle disposal MUST retain integration containment. Repeated observation returns the same sweep
-result; service completion and per-resource destruction outcomes remain distinct. This boundary
-does not attach resource cleanup automatically to source-task or interpreter shutdown.
+result; service completion and per-resource destruction outcomes remain distinct.
+Nondurable execution cancellation MUST submit any already-settled physical obligations after driver
+drainage and before observing shutdown quiescence. Observation MUST use the configured cancellation
+drain deadline; timeout stops observation without cancelling started destruction. Service/coordinator
+failures and per-resource disposal failures MUST remain distinct. The first operational cleanup
+failure MUST remain visible in lifecycle snapshots independently of immutable language outcomes,
+including after terminal publication, rather than claiming successful cleanup. Recording errors
+MUST propagate; recording MUST NOT rewrite cancellation, foreground or terminal state. The bounded
+classification is service, disposal, deadline or executor. Active and finishing resource lifetimes remain explicit obligations; this
+phase MUST NOT fabricate semantic release or enable source live-handle transport. Durable cancellation
+and general interpreter shutdown resource integration remain outside this scoped phase.
 
 <a id="GNT-28.12-operation-state-projection"></a>
 
