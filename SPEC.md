@@ -15277,6 +15277,13 @@ MUST run after unlocking even if one destruction fails. The report MUST distingu
 settlement/refusal from each member's physical outcome. A nonempty settled prefix advances
 accounting publication once; an empty prefix does not. Physical failure never rolls back release.
 
+The coordinator MAY separately sweep physical obligations of accounts whose lifetime is already
+settled, retired or deleted. Active and finishing accounts MUST remain untouched. Selection and
+extraction MUST respect publication reservations and canonical runtime-subject order; every extracted
+job MUST run after unlocking, with independent results and retained failures. Successful disposed
+slots need no repeated cleanup. This sweep MUST change neither accounting publication nor quota
+facts or pending machine work, and MUST NOT fabricate semantic settlement.
+
 <a id="GNT-28.12-operation-state-projection"></a>
 
 **[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile

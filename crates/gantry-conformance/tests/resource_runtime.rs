@@ -2197,6 +2197,132 @@ impl Drop for TransportValue {
     }
 }
 
+/// A physical sweep leaves Active/Finishing accounts untouched and continues after destruction failure.
+#[test]
+fn coordinator_settled_physical_sweep_preserves_accounting_and_reports_failures() {
+    use gantry::runtime::HostResourceError;
+    let fixtures = [
+        FIXTURE_DECLARATION,
+        SECOND_FIXTURE_DECLARATION,
+        THIRD_FIXTURE_DECLARATION,
+        "crate::sweep_finishing",
+    ]
+    .map(|declaration| machine_with_declared_subject(Some(declaration)));
+    let coordinator = resource_coordinator(
+        fixtures[0].1.execution_id(),
+        fixtures[0].1.task_id(),
+        Some(4),
+    );
+    let drops: Vec<_> = (0..4)
+        .map(|_| Arc::new(std::sync::atomic::AtomicUsize::new(0)))
+        .collect();
+    for (index, (_, machine, subject)) in fixtures.iter().enumerate() {
+        let subject = subject.as_ref().unwrap_or_else(|| panic!("subject exists"));
+        coordinator
+            .admit_resource(
+                machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        coordinator
+            .attach_resource_host_value(
+                subject,
+                OwnerGeneration::new(4),
+                TransportValue {
+                    drops: Arc::clone(&drops[index]),
+                    panic_on_drop: index == 0,
+                    value: 1,
+                },
+            )
+            .unwrap_or_else(|_| panic!("attachment"));
+    }
+    let subjects: Vec<_> = fixtures
+        .iter()
+        .map(|(_, _, subject)| {
+            subject
+                .as_ref()
+                .unwrap_or_else(|| panic!("subject exists"))
+                .clone()
+        })
+        .collect();
+    for subject in &subjects[..2] {
+        coordinator
+            .emergency_release_resource(subject, emergency_cleanup())
+            .unwrap_or_else(|error| panic!("release: {error:?}"));
+    }
+    coordinator
+        .begin_resource_finish(&subjects[3], OwnerGeneration::new(4))
+        .unwrap_or_else(|error| panic!("finishing: {error:?}"));
+    let before = coordinator.snapshot();
+    let results = coordinator
+        .dispose_settled_resource_host_values()
+        .unwrap_or_else(|error| panic!("physical sweep: {error:?}"));
+    let mut expected = subjects[..2].to_vec();
+    expected.sort_by(|left, right| {
+        (
+            left.operation(),
+            left.generation(),
+            left.execution_id(),
+            left.task_id(),
+        )
+            .cmp(&(
+                right.operation(),
+                right.generation(),
+                right.execution_id(),
+                right.task_id(),
+            ))
+    });
+    assert_eq!(
+        results
+            .iter()
+            .map(|(subject, _)| subject.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    for (subject, result) in &results {
+        if subject == &subjects[0] {
+            assert!(matches!(result, Err(HostResourceError::Boundary(_))));
+        } else {
+            assert_eq!(result, &Ok(()));
+        }
+    }
+    assert_eq!(coordinator.snapshot(), before);
+    for (index, count) in drops.iter().enumerate() {
+        assert_eq!(
+            count.load(std::sync::atomic::Ordering::SeqCst),
+            usize::from(index < 2)
+        );
+    }
+    let repeated = coordinator
+        .dispose_settled_resource_host_values()
+        .unwrap_or_else(|error| panic!("repeat sweep: {error:?}"));
+    assert_eq!(repeated.len(), 1);
+    assert_eq!(repeated[0].0, subjects[0]);
+    assert!(matches!(repeated[0].1, Err(HostResourceError::Boundary(_))));
+    assert_eq!(coordinator.snapshot(), before);
+    for subject in &subjects[2..] {
+        coordinator
+            .emergency_release_resource(subject, emergency_cleanup())
+            .unwrap_or_else(|error| panic!("remaining release: {error:?}"));
+    }
+    let released = coordinator.snapshot();
+    let remaining = coordinator
+        .dispose_settled_resource_host_values()
+        .unwrap_or_else(|error| panic!("remaining sweep: {error:?}"));
+    assert_eq!(
+        remaining.len(),
+        3,
+        "retained failure and two newly released slots are reported"
+    );
+    assert_eq!(coordinator.snapshot(), released);
+    assert!(
+        drops
+            .iter()
+            .all(|count| count.load(std::sync::atomic::Ordering::SeqCst) == 1)
+    );
+}
+
 /// Cohort disposal continues after one destructor fails, without rolling back semantic release.
 #[test]
 fn coordinator_resource_cohort_cleanup_reports_semantic_and_physical_outcomes() {

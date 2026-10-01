@@ -100,6 +100,13 @@ after unlocking and continue despite another member's destruction failure. Later
 unchanged after semantic refusal. A progressing sweep publishes once, while a zero-progress
 refusal does not publish; physical failure never rolls back semantic release.
 
+`dispose_settled_resource_host_values` drains already-settled physical obligations in canonical
+runtime-subject order, reporting `ResourcePhysicalCleanupResults`. Active and finishing accounts
+are excluded. Selection respects publication reservations; jobs execute after unlocking and continue
+after failures. Retained failures remain reportable, while successful disposed slots are omitted
+on repeat sweeps. Accounting publication, quotas and pending machine work remain unchanged; the
+sweep neither initiates semantic settlement nor completes source-task cleanup integration.
+
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |
 | Admission | `new`, `admit` | `GNT-28.11-runtime-admission-mapping`, `GNT-28.7-durable-resource-reconstruction`, `GNT-20.1-operation-kinds` |

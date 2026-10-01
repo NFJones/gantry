@@ -68,6 +68,12 @@ pub enum CoordinatorResourceRefusal {
     Host(crate::HostResourceError),
 }
 
+/// Canonical per-subject physical outcomes, separate from semantic accounting settlement.
+pub type ResourcePhysicalCleanupResults = Vec<(
+    crate::ResourceSubjectBinding,
+    Result<(), crate::HostResourceError>,
+)>;
+
 /// Semantic settled-prefix evidence and independent physical cleanup results for one sweep.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoordinatorResourceCleanup {
@@ -613,6 +619,46 @@ impl ExecutionCoordinator {
         let waiters = take_shutdown_waiters_if_quiescent(&mut lock(&self.inner.state));
         wake_all(waiters);
         result
+    }
+
+    /// Drains physical obligations of semantically settled accounts without changing accounting.
+    ///
+    /// Selection and extraction respect publication reservations. Active and finishing accounts
+    /// remain untouched. Every selected result is reported in canonical runtime-subject order;
+    /// destruction runs unlocked and one failure never skips another selected member.
+    pub fn dispose_settled_resource_host_values(
+        &self,
+    ) -> Result<ResourcePhysicalCleanupResults, CoordinatorResourceRefusal> {
+        let jobs = {
+            let mut state = lock(&self.inner.state);
+            require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+            let resources = state
+                .resources
+                .as_mut()
+                .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?;
+            resources
+                .settled_host_subjects()
+                .into_iter()
+                .map(|(subject, owner)| {
+                    let job = resources.extract_host_disposal(&subject, owner);
+                    (subject, job)
+                })
+                .collect::<Vec<_>>()
+        };
+        let results = jobs
+            .into_iter()
+            .map(|(subject, job)| {
+                (
+                    subject,
+                    job.and_then(|job| {
+                        job.map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
+                    }),
+                )
+            })
+            .collect();
+        let waiters = take_shutdown_waiters_if_quiescent(&mut lock(&self.inner.state));
+        wake_all(waiters);
+        Ok(results)
     }
 
     /// Serializes one internal registry mutation and publishes only its successful result.
@@ -2293,6 +2339,12 @@ mod tests {
         );
         assert_eq!(
             coordinator.emergency_release_resource_cohort(Vec::new()),
+            Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::DurablePublicationReserved
+            ))
+        );
+        assert_eq!(
+            coordinator.dispose_settled_resource_host_values(),
             Err(CoordinatorResourceRefusal::Task(
                 TaskStateError::DurablePublicationReserved
             ))

@@ -51,8 +51,8 @@ pub use coordinator::DurableGraphTransaction;
 pub use coordinator::{
     BestEffortEventDeliveryWait, CoordinatorResourceCleanup, CoordinatorResourceRefusal,
     ExecutionCoordinator, ExecutionCoordinatorSnapshot, ForegroundCompletionWait,
-    JoinSettlementWait, RequiredEventDeliveryWait, ShutdownQuiescenceWait, TaskEventSequenceError,
-    TaskSettlementWait, TerminalCompletionWait,
+    JoinSettlementWait, RequiredEventDeliveryWait, ResourcePhysicalCleanupResults,
+    ShutdownQuiescenceWait, TaskEventSequenceError, TaskSettlementWait, TerminalCompletionWait,
 };
 #[cfg(feature = "durable")]
 pub use durable::{

@@ -1112,6 +1112,27 @@ impl ResourceRegistry {
             .map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
     }
 
+    /// Selects already-settled physical obligations in canonical runtime-subject order.
+    ///
+    /// Active and finishing accounts require semantic settlement first. Failed disposal remains
+    /// reportable, while successfully disposed slots require no further cleanup.
+    pub(crate) fn settled_host_subjects(&self) -> Vec<(ResourceSubjectBinding, OwnerGeneration)> {
+        self.accounts
+            .iter()
+            .filter_map(|(key, account)| {
+                let slot = self.physical.get(key)?;
+                (account.ledger().lifetime().is_settled()
+                    || matches!(
+                        account.ledger().lifetime(),
+                        ResourceLifetimeState::Retired | ResourceLifetimeState::Deleted
+                    ))
+                .then_some(())?;
+                (slot.is_present() || slot.disposal_failed())
+                    .then(|| (account.subject().clone(), account.ledger().owner()))
+            })
+            .collect()
+    }
+
     /// Extracts exclusive physical cleanup while retaining a shared process-local pending fence.
     pub(crate) fn extract_host_disposal(
         &mut self,
