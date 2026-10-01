@@ -2160,6 +2160,89 @@ mod tests {
             coordinator.snapshot().publication(),
             before.publication() + 1
         );
+        let path = CanonicalPath::new("crate::reserved_resource")
+            .unwrap_or_else(|error| panic!("resource path: {error}"));
+        let subject = crate::ResourceSubjectBinding::derive(
+            &path,
+            path.clone(),
+            StructuralPosition::new(vec![0])
+                .unwrap_or_else(|error| panic!("resource site: {error}")),
+            0,
+            Some(gantry_ir::OperationKind::LiveResource),
+            Arc::new(Mutex::new(true)),
+        );
+        let owner = gantry_ir::OwnerGeneration::new(4);
+        let record = gantry_ir::ResourceLedger::new(
+            owner,
+            gantry_ir::ResourceState::Usable,
+            &[gantry_ir::LivenessRoot::Resource],
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("resource ledger: {error:?}"))
+        .durable_record();
+        lock(&coordinator.inner.state)
+            .resources
+            .as_mut()
+            .unwrap_or_else(|| panic!("registry exists"))
+            .admit(
+                subject.clone(),
+                gantry_ir::ResourceCarrier::ReconstructionRecord,
+                record,
+            )
+            .unwrap_or_else(|error| panic!("resource admission: {error:?}"));
+        let drops = Arc::new(AtomicUsize::new(0));
+        let value = ReservationDropProbe(Arc::clone(&drops));
+        lock(&coordinator.inner.state).durable_publication_reserved = true;
+        let before_attachment = coordinator.snapshot();
+        let (error, value) = *coordinator
+            .attach_resource_host_value(&subject, owner, value)
+            .err()
+            .unwrap_or_else(|| panic!("reserved attachment refuses"));
+        assert_eq!(
+            error,
+            CoordinatorResourceRefusal::Task(TaskStateError::DurablePublicationReserved)
+        );
+        assert_eq!(drops.load(Ordering::Acquire), 0);
+        assert_eq!(coordinator.snapshot(), before_attachment);
+        lock(&coordinator.inner.state).durable_publication_reserved = false;
+        coordinator
+            .attach_resource_host_value(&subject, owner, value)
+            .unwrap_or_else(|_| panic!("unreserved attachment succeeds"));
+        coordinator
+            .begin_resource_finish(&subject, owner)
+            .unwrap_or_else(|error| panic!("begin finish: {error:?}"));
+        lock(&coordinator.inner.state).durable_publication_reserved = true;
+        let before_disposal = coordinator.snapshot();
+        assert_eq!(
+            coordinator.dispose_resource_host_value(&subject, owner),
+            Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::DurablePublicationReserved
+            ))
+        );
+        assert_eq!(
+            coordinator.emergency_release_resource_cohort(Vec::new()),
+            Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::DurablePublicationReserved
+            ))
+        );
+        assert_eq!(drops.load(Ordering::Acquire), 0);
+        assert_eq!(coordinator.snapshot(), before_disposal);
+        lock(&coordinator.inner.state).durable_publication_reserved = false;
+        assert_eq!(
+            coordinator.dispose_resource_host_value(&subject, owner),
+            Ok(())
+        );
+        assert_eq!(drops.load(Ordering::Acquire), 1);
+        assert_eq!(coordinator.snapshot(), before_disposal);
+    }
+
+    /// Detects any destruction before a publication-reservation refusal returns ownership.
+    struct ReservationDropProbe(Arc<AtomicUsize>);
+
+    impl Drop for ReservationDropProbe {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::AcqRel);
+        }
     }
 
     fn identity(kind: IdentityKind, byte: u8) -> ProtocolIdentity {
