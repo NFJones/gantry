@@ -37,6 +37,8 @@ The current durable graph wire carries no resource reconstruction records or reg
 or reserving publication if retained accounts, physical slots or pending admitted work would be
 omitted. An empty configured registry remains eligible. This fail-closed boundary prevents silent
 accounting loss; it is not durable resource reconstruction integration.
+`publish_committed_root` likewise refuses before installing task, session, budget, event or root
+projections when retained resource state would be omitted. It does not undo an existing journal cut.
 
 `attach_host_value` optionally attaches one typed process-local value to an existing active/open
 account without moving or duplicating accounting and without changing quotas. The embedding caller

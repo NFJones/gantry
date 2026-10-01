@@ -98,6 +98,41 @@ fn committed_root_publication_is_atomic_and_rejects_repeated_cuts() {
     });
     let recovered = recover_authoritative_prefix(program, &prefix)
         .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+    let subject = crate::ResourceSubjectBinding::derive(
+        &path,
+        path.clone(),
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}")),
+        0,
+        Some(gantry_ir::OperationKind::LiveResource),
+        Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open())),
+        (execution, task),
+    );
+    let record = gantry_ir::ResourceLedger::new(
+        gantry_ir::OwnerGeneration::new(4),
+        gantry_ir::ResourceState::Usable,
+        &[gantry_ir::LivenessRoot::Resource],
+        &[],
+    )
+    .unwrap_or_else(|error| panic!("resource record: {error:?}"))
+    .durable_record();
+    let mut registry = crate::ResourceRegistry::new();
+    registry
+        .admit(
+            subject,
+            gantry_ir::ResourceCarrier::ReconstructionRecord,
+            record,
+        )
+        .unwrap_or_else(|error| panic!("resource admission: {error:?}"));
+    lock(&coordinator.inner.state).resources = Some(registry);
+    let before = coordinator.snapshot();
+    assert_eq!(
+        coordinator.publish_committed_root(&recovered),
+        Err(TaskStateError::ResourceStateUnsupported)
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(coordinator.committed_root().is_none());
+    // Remove only the private fixture state to retain the ordinary publication success case.
+    lock(&coordinator.inner.state).resources = Some(crate::ResourceRegistry::new());
     coordinator
         .publish_committed_root(&recovered)
         .unwrap_or_else(|error| panic!("publish: {error:?}"));

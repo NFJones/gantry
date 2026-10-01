@@ -629,6 +629,13 @@ impl ExecutionCoordinator {
         let waiters = {
             let mut state = lock(&self.inner.state);
             require_publication_available(&state)?;
+            if state
+                .resources
+                .as_ref()
+                .is_some_and(crate::ResourceRegistry::has_uncheckpointed_state)
+            {
+                return Err(TaskStateError::ResourceStateUnsupported);
+            }
             let root = state.tasks.root_task_id();
             if state.tasks.task_record_count() != 1
                 || recovered.machine().execution_id() != state.tasks.execution_id()

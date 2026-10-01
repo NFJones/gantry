@@ -15171,6 +15171,9 @@ graph capture and staging MUST refuse `ResourceStateUnsupported` when retained a
 slots or admitted pending work would be omitted. Refusal MUST precede private machine cloning or
 publication reservation and leave accounting, machines and publication unchanged. An empty configured
 registry alone does not require refusal. This boundary does not implement durable resource recovery.
+Sequential committed-root installation MUST likewise refuse `ResourceStateUnsupported` before
+changing task, session, budget, event or retained-root projections when resource state would be
+omitted. This refusal does not undo a previously committed journal cut or claim its completeness.
 
 An implementation MAY separately bind one consumed active accounting account to one owned
 process-local host value through `OwnedHostResource`. The embedding caller MUST authenticate
