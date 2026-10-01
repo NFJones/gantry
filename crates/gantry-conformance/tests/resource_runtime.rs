@@ -7409,7 +7409,7 @@ fn runtime_containment_settlement_restarts_with_the_account_value() {
         "the rebuilt account value settles its own operation once"
     );
 
-    let mut reclaimed = ResourceRegistry::new();
+    let mut reclaimed = ResourceRegistry::with_limits(1, 1);
     reclaimed
         .admit(
             subject.clone(),
@@ -7452,6 +7452,7 @@ fn runtime_containment_settlement_restarts_with_the_account_value() {
         1,
         "reaping frees the deleted account's key"
     );
+    assert_eq!(reclaimed.pending_operations(), 1);
     reclaimed
         .admit(
             subject.clone(),
@@ -7459,6 +7460,11 @@ fn runtime_containment_settlement_restarts_with_the_account_value() {
             ledger().durable_record(),
         )
         .unwrap_or_else(|error| panic!("the reclaimed subject is readmitted: {error:?}"));
+    assert_eq!(
+        reclaimed.pending_operations(),
+        1,
+        "readmitting accounting cannot duplicate the same pending machine lease"
+    );
     assert_eq!(
         reclaimed
             .account(&subject)

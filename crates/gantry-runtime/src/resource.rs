@@ -797,6 +797,9 @@ impl ResourceRegistry {
             .collect::<Vec<_>>();
         let pending = u64::try_from(pending_admissions.len()).unwrap_or(u64::MAX);
         let admission_open = Arc::clone(&subject.admission_open);
+        let retained = pending_admissions
+            .iter()
+            .any(|lease| Arc::ptr_eq(lease, &admission_open));
         let admission_guard = admission_open
             .lock()
             .map_err(|_| ResourceRegistryRefusal::NoPendingResourceSubject)?;
@@ -821,11 +824,14 @@ impl ResourceRegistry {
                     return Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit });
                 }
                 if let Some(limit) = self.pending_limit
+                    && !retained
                     && pending >= limit
                 {
                     return Err(ResourceRegistryRefusal::PendingOperationLimitReached { limit });
                 }
-                pending_admissions.push(Arc::clone(&admission_open));
+                if !retained {
+                    pending_admissions.push(Arc::clone(&admission_open));
+                }
                 self.pending_admissions = pending_admissions;
                 Ok(slot.insert(account))
             }

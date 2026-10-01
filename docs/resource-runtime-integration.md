@@ -25,6 +25,8 @@ the ceiling; `pending_operations` tracks accepted work even when that ceiling is
 Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.
+Readmitting reclaimed accounting through the same retained lease counts that work once, including
+at a full pending ceiling. Genuinely new leases still require an available pending place.
 Machine-local cancellation separately closes new admission through current and saved subjects
 with `CancellationRequested`, without releasing accepted pending capacity. Recovery derives that
 refusal from recorded cancellation. Isolated staged cancellation affects the authoritative lease

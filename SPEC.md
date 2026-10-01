@@ -15139,6 +15139,8 @@ A registry MAY separately declare a finite ceiling on admitted pending resource 
 Every successful live admission MUST retain its pending settlement lease even without that ceiling;
 unlimited admission does not discharge accepted-work ownership. Accounting reconstruction still
 MUST NOT fabricate pending work from retained records.
+Readmission of reclaimed accounting through the same retained machine lease MUST count that lease
+once, without consuming another pending place. New leases remain subject to the pending ceiling.
 That ceiling counts admitted machine settlement leases, not active accounting lifetimes. An
 accepted machine completion, failure, or settled cancellation closes its lease and releases its
 pending place; a refused completion or a cancellation request alone does not.
