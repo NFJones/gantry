@@ -3,7 +3,8 @@
 //! These rows exercise the runtime's admission boundary only: which declared carrier
 //! may present a resource's accounting facts, what an admitted account preserves, and
 //! how semantic release stays independent of record retirement. They perform no
-//! durable I/O and claim no journal, checkpoint, evaluator, or host behavior.
+//! durable I/O and claim no journal, checkpoint, or evaluator behavior. The optional
+//! process-local transport rows use bounded synchronous fake host values only.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1560,6 +1561,275 @@ fn an_operation_without_an_authenticated_section20_kind_is_explicit() {
 #[test]
 fn the_admitted_account_is_not_copyable() {
     assert_not_impl_any!(AdmittedResource: Clone, Copy);
+}
+
+/// A fake integration value records disposal and can fail during destruction.
+struct TransportValue {
+    drops: Arc<std::sync::atomic::AtomicUsize>,
+    panic_on_drop: bool,
+    value: u64,
+}
+
+impl Drop for TransportValue {
+    fn drop(&mut self) {
+        self.drops.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        assert!(!self.panic_on_drop, "fake integration destructor failed");
+    }
+}
+
+/// Transport ownership is affine even when the underlying value is copyable.
+#[test]
+fn owned_host_resource_fences_invocation_and_finishes_exactly_once() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    assert_not_impl_any!(OwnedHostResource<u64>: Clone, Copy);
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut resource = OwnedHostResource::bind(
+        admitted_active(),
+        TransportValue {
+            drops: Arc::clone(&drops),
+            panic_on_drop: false,
+            value: 0,
+        },
+    )
+    .unwrap_or_else(|_| panic!("active account binds"));
+    let before = resource.account().durable_record();
+    assert!(matches!(
+        resource.invoke::<()>(OwnerGeneration::new(3), |_| {
+            panic!("stale owner cannot invoke integration")
+        }),
+        Err(HostResourceError::Model(ResourceError::StaleOwner { .. }))
+    ));
+    assert_eq!(resource.account().durable_record(), before);
+    assert_eq!(
+        resource.invoke(OwnerGeneration::new(4), |value| {
+            value.value += 1;
+            Ok(value.value)
+        }),
+        Ok(1)
+    );
+    assert_eq!(
+        resource.finish(OwnerGeneration::new(4), 31, |value| {
+            assert_eq!(value.value, 1);
+            Ok(())
+        }),
+        Ok(ResourceLifetimeState::Finished)
+    );
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let finished = resource.account().durable_record();
+    assert_eq!(
+        finished.settlement().map(|baseline| baseline.settled_at()),
+        Some(31)
+    );
+    assert_eq!(finished.quotas(), before.quotas());
+    assert_eq!(
+        resource.finish(OwnerGeneration::new(4), 32, |_| {
+            panic!("second finish must not invoke integration")
+        }),
+        Err(HostResourceError::Model(
+            ResourceError::IllegalLifetimeTransition
+        ))
+    );
+    assert!(matches!(
+        resource.invoke(OwnerGeneration::new(4), |_| Ok(())),
+        Err(HostResourceError::Model(
+            ResourceError::LifetimeDoesNotAdmitCharge { .. }
+        ))
+    ));
+    assert_eq!(resource.account().durable_record(), finished);
+    drop(resource);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Refused binding returns both inputs; callback failures remain finishing without retries.
+#[test]
+fn owned_host_resource_preserves_refused_inputs_and_failed_finalization() {
+    use gantry::host::contracts::HostError;
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let mut account = admitted_active();
+    assert!(account.begin_finish_for(OwnerGeneration::new(4)).is_ok());
+    let before = account.durable_record();
+    let (error, returned, value) = match OwnedHostResource::bind(account, 7_u64) {
+        Err(refusal) => *refusal,
+        Ok(_) => panic!("finishing account cannot bind"),
+    };
+    assert!(matches!(
+        error,
+        HostResourceError::Model(ResourceError::LifetimeDoesNotAdmitCharge { .. })
+    ));
+    assert_eq!(returned.durable_record(), before);
+    assert_eq!(value, 7);
+
+    for panic_in_callback in [false, true] {
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut resource = OwnedHostResource::bind(
+            admitted_active(),
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: false,
+                value: 0,
+            },
+        )
+        .unwrap_or_else(|_| panic!("active account binds"));
+        let failure = resource.finish(OwnerGeneration::new(4), 31, |_| {
+            assert!(!panic_in_callback, "fake finalizer panic");
+            Err(HostError {
+                code: Arc::from("fake-finalization-failure"),
+                protected_diagnostic: None,
+            })
+        });
+        if panic_in_callback {
+            assert!(matches!(failure, Err(HostResourceError::Boundary(_))));
+            assert!(resource.is_poisoned());
+        } else {
+            assert!(matches!(failure, Err(HostResourceError::Host(_))));
+        }
+        assert_eq!(
+            resource.account().ledger().lifetime(),
+            ResourceLifetimeState::Finishing
+        );
+        assert_eq!(resource.account().durable_record().settlement(), None);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(
+            resource.finish(OwnerGeneration::new(4), 32, |_| {
+                panic!("failed finish cannot be retried")
+            }),
+            Err(HostResourceError::Model(
+                ResourceError::IllegalLifetimeTransition
+            ))
+        );
+        assert_eq!(
+            resource.emergency_release(emergency_cleanup()),
+            Ok(ResourceLifetimeState::EmergencyReleased)
+        );
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+        drop(resource);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+}
+
+/// Refused callbacks are disposed under containment without executing their bodies.
+#[test]
+fn owned_host_resource_contains_unused_callback_destruction() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    for case in [
+        "stale-invoke",
+        "stale-finish",
+        "inactive-invoke",
+        "inactive-finish",
+        "poisoned-invoke",
+        "poisoned-finish",
+    ] {
+        let mut resource = OwnedHostResource::bind(admitted_active(), 0_u64)
+            .unwrap_or_else(|_| panic!("active account binds"));
+        if case.starts_with("inactive") {
+            assert!(
+                resource
+                    .finish(OwnerGeneration::new(4), 31, |_| Ok(()))
+                    .is_ok()
+            );
+        }
+        if case.starts_with("poisoned") {
+            assert!(matches!(
+                resource.invoke::<()>(OwnerGeneration::new(4), |_| {
+                    panic!("initial integration failure")
+                }),
+                Err(HostResourceError::Boundary(_))
+            ));
+        }
+        let before = resource.account().durable_record();
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let captured = TransportValue {
+            drops: Arc::clone(&drops),
+            panic_on_drop: true,
+            value: 0,
+        };
+        let called = std::cell::Cell::new(false);
+        let callback = |_: &mut u64| {
+            called.set(true);
+            drop(captured);
+            Ok(())
+        };
+        let owner = OwnerGeneration::new(if case.starts_with("stale") { 3 } else { 4 });
+        let result = if case.ends_with("finish") {
+            resource.finish(owner, 32, callback)
+        } else {
+            resource
+                .invoke(owner, callback)
+                .map(|()| ResourceLifetimeState::Active)
+        };
+        assert!(
+            matches!(result, Err(HostResourceError::Boundary(_))),
+            "{case}"
+        );
+        assert!(!called.get(), "{case} must not execute the callback");
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(resource.is_poisoned());
+        if case != "poisoned-finish" {
+            assert_eq!(resource.account().durable_record(), before);
+        } else {
+            assert_eq!(
+                resource.account().ledger().lifetime(),
+                ResourceLifetimeState::Finishing
+            );
+        }
+    }
+}
+
+/// Destruction panic cannot undo sealed semantic release or cause a second physical disposal.
+#[test]
+fn owned_host_resource_contains_disposal_panics_without_fabricating_finish() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    for emergency in [false, true] {
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut resource = OwnedHostResource::bind(
+            admitted_active(),
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: true,
+                value: 0,
+            },
+        )
+        .unwrap_or_else(|_| panic!("active account binds"));
+        let result = if emergency {
+            resource.emergency_release(emergency_cleanup())
+        } else {
+            resource.finish(OwnerGeneration::new(4), 31, |_| Ok(()))
+        };
+        assert!(matches!(result, Err(HostResourceError::Boundary(_))));
+        assert!(resource.is_poisoned());
+        assert_eq!(
+            resource.account().ledger().lifetime(),
+            if emergency {
+                ResourceLifetimeState::EmergencyReleased
+            } else {
+                ResourceLifetimeState::Finishing
+            }
+        );
+        if !emergency {
+            assert_eq!(
+                resource.emergency_release(emergency_cleanup()),
+                Ok(ResourceLifetimeState::EmergencyReleased)
+            );
+        }
+        drop(resource);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let resource = OwnedHostResource::bind(
+        admitted_active(),
+        TransportValue {
+            drops: Arc::clone(&drops),
+            panic_on_drop: true,
+            value: 0,
+        },
+    )
+    .unwrap_or_else(|_| panic!("active account binds"));
+    assert_eq!(
+        resource.account().ledger().lifetime(),
+        ResourceLifetimeState::Active
+    );
+    drop(resource);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
 #[test]

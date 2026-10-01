@@ -44,6 +44,22 @@ The existing `new_with_resource_limit` constructor leaves the pending policy dis
 
 ## Account surfaces
 
+`OwnedHostResource<T>` is a separate affine process-local owner under
+`GNT-28.11-runtime-admission-mapping`. `bind` consumes one active `AdmittedResource` and one
+host value, returning both on refusal. The embedding caller authenticates their association and
+supplies authority. `invoke` fences the current owner and active lifetime before a bounded
+synchronous callback, using existing `gantry-host` unwind containment. A panic poisons this
+transport boundary, not the accounting lifetime. Unused callbacks are disposed under containment
+on refusal, including an already-poisoned boundary, without executing their bodies; a destruction
+panic takes precedence over the original refusal. `finish` enters finishing before the callback and
+records finished only after callback and contained physical disposal succeed. Failure remains
+finishing without implicit retry; sealed `emergency_release` settles accounting before disposal,
+so destruction failure cannot undo semantic release. Disposal removes the value before destruction;
+wrapper drop contains physical destruction but never fabricates semantic finish. This owner is
+not automatically attached to the registry or evaluator and publishes no async cancellation,
+source transfer, authority admission, or host reconstruction. Its host value is never placed in
+`LogicalValue`, hook bytes, or accounting reconstruction records.
+
 `AdmittedResource` publishes `admit`, `subject`, `ledger`, `quota`, `remaining`, `durable_record`,
 `containment`, `settle_containment`, `adapter_instance`, `bind_adapter_instance`,
 `begin_finish_for`, `complete_finalization_for`, `charge`, `renew`, `close_liveness_root_for`,

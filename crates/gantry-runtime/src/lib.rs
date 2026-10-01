@@ -25,6 +25,7 @@ mod outcome;
 #[cfg(feature = "durable")]
 mod recovery;
 mod resource;
+mod resource_transport;
 mod session;
 mod supervision;
 mod task;
@@ -153,6 +154,7 @@ pub use resource::{
     ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
     decode_resource_reconstruction_record, encode_resource_reconstruction_record,
 };
+pub use resource_transport::{HostResourceError, OwnedHostResource};
 pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,
     SessionCreationModeV1, SessionError, SessionEstablisher, SessionEstablishmentError,

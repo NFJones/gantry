@@ -15121,6 +15121,24 @@ MAY continue after task settlement, but MUST NOT reopen task admission. This opt
 does not attach the registry automatically to evaluator dispatch or extend uniqueness beyond
 that coordinator, and its live-account ceiling does not bound retained records or snapshot size.
 
+An implementation MAY separately bind one consumed active accounting account to one owned
+process-local host value through `OwnedHostResource`. The embedding caller MUST authenticate
+the value/account association and supply authority; this binding grants none. Invocation MUST
+check current ownership and active lifetime before running a bounded synchronous callback.
+Integration panics MUST be contained and poison the transport boundary without fabricating
+resource-poisoning evidence. Unused callbacks MUST be disposed under containment on every
+refusal, including an already-poisoned boundary, without executing their bodies. A callback
+destruction panic takes precedence over the original refusal and poisons the transport boundary.
+Explicit finish MUST enter finishing before its callback and record
+finished only after callback and contained disposal succeed. A failed finish remains finishing,
+is not implicitly retried, and does not roll back accepted external work. Sealed emergency release
+MUST settle accounting before physical disposal; disposal failure MUST NOT undo semantic release.
+Physical disposal MUST remove the held value before destruction and contain destructor panics.
+Dropping the wrapper performs physical disposal only, never implicit semantic finalization.
+This optional synchronous boundary is not the accounting registry, does not add host values to
+`LogicalValue`, raw hook bytes, or reconstruction records, and claims no source-resource evaluation,
+asynchronous cancellation, task transfer, host authority admission, or durable host reconstruction.
+
 <a id="GNT-28.12-operation-state-projection"></a>
 
 **[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile
