@@ -697,6 +697,13 @@ impl ResourceLedger {
         {
             return Err(ResourceError::PoisonedOperationStateRevival);
         }
+        if matches!(
+            self.operation_state,
+            ResourceState::Consumed | ResourceState::Closed
+        ) && projection.state().is_open()
+        {
+            return Err(ResourceError::TerminalOperationStateRevival);
+        }
         self.operation_state = projection.state();
         Ok(self.operation_state)
     }
@@ -1003,6 +1010,8 @@ pub enum ResourceError {
     FailureDoesNotPoisonResource,
     /// A projection attempted to clear the operation's retained poison state.
     PoisonedOperationStateRevival,
+    /// A projection attempted to reopen a consumed or closed operation generation.
+    TerminalOperationStateRevival,
     /// An ordinary serialization or ordinary durable-state carrier was asked to carry a resource.
     OrdinaryCarrierRefused,
     /// Durable quota facts record committed use above the declared limit.

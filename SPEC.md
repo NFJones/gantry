@@ -15304,6 +15304,9 @@ that a generation fenced under Section 20 MUST project `Poisoned` regardless of 
 Projection MUST preserve the fence without rewriting the accepted settlement or its progress;
 once accounting retains `Poisoned`, a non-poisoned projection MUST refuse with
 `PoisonedOperationStateRevival` without mutation, even from an older accepted model clone.
+Once accounting retains `Consumed` or `Closed`, a projection that restores an open half MUST
+refuse with `TerminalOperationStateRevival` without mutation. Current-owner validation retains
+precedence; repeated terminal projection and subsequent poison fencing remain available.
 The state is never caller-selected. This projection changes only the distinct Section 20 operation-state fact of that admitted
 account: it MUST NOT change whole-resource lifetime, quotas, liveness roots, ownership of a physical
 host resource, or the Section 20 settlement, progress, or generation. It creates no evaluator-wide

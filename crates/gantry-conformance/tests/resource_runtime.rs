@@ -5125,6 +5125,69 @@ fn runtime_projection_preserves_fences_before_and_after_settlement() {
     }
 }
 
+/// A settled consumed or closed generation cannot regain an open operation state.
+#[test]
+fn runtime_terminal_projection_cannot_reopen_the_same_generation() {
+    for progress in [
+        ProgressObservation::CommittedProgress,
+        ProgressObservation::Eof,
+    ] {
+        let subject = active_subject();
+        let mut terminal = transport_live(FIXTURE_DECLARATION, 0, 4, false);
+        let completion = OperationSettlement::new(
+            terminal.operation(),
+            terminal.generation(),
+            terminal.owner(),
+            ExternalOutcome::Accepted,
+            progress,
+            30,
+        )
+        .unwrap_or_else(|error| panic!("terminal completion: {error:?}"));
+        terminal
+            .settle(&completion)
+            .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+        let mut registry = ResourceRegistry::new();
+        registry
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        assert_eq!(
+            registry.project_operation_state(&terminal, &subject),
+            Ok(completion.resource_state())
+        );
+        let before = registry.declared_records();
+        let mut older = transport_live(FIXTURE_DECLARATION, 0, 4, false);
+        let partial = OperationSettlement::new(
+            older.operation(),
+            older.generation(),
+            older.owner(),
+            ExternalOutcome::Accepted,
+            ProgressObservation::ShortRead,
+            29,
+        )
+        .unwrap_or_else(|error| panic!("partial completion: {error:?}"));
+        older
+            .settle(&partial)
+            .unwrap_or_else(|error| panic!("older settlement: {error:?}"));
+        assert_eq!(
+            registry.project_operation_state(&older, &subject),
+            Err(ResourceRegistryRefusal::OperationStateProjection(
+                ResourceError::TerminalOperationStateRevival
+            )),
+            "terminal accounting cannot regain an open half from older evidence"
+        );
+        assert_eq!(registry.declared_records(), before);
+        assert_eq!(
+            registry.project_operation_state(&terminal, &subject),
+            Ok(completion.resource_state())
+        );
+        assert_eq!(registry.declared_records(), before);
+    }
+}
+
 #[test]
 fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     let mut admitted_resource = admitted_active();
