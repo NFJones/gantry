@@ -383,6 +383,7 @@ impl<T> Drop for HostReceiverLoan<'_, T> {
 pub(crate) struct HostValueSlot {
     value: Option<Box<dyn std::any::Any + Send>>,
     poison: AdapterPoison,
+    disposal_failure: Option<BoundaryFailure>,
 }
 
 impl std::fmt::Debug for HostValueSlot {
@@ -402,12 +403,18 @@ impl HostValueSlot {
         Self {
             value: Some(Box::new(value)),
             poison: AdapterPoison::default(),
+            disposal_failure: None,
         }
     }
 
     /// Reports physical presence without exposing host identity or contents.
     pub(crate) fn is_present(&self) -> bool {
         self.value.is_some()
+    }
+
+    /// Retains failed destruction independently of physical presence or later disposal attempts.
+    pub(crate) const fn disposal_failed(&self) -> bool {
+        self.disposal_failure.is_some()
     }
 
     /// Contains unused callback destruction, including type or accounting refusals.
@@ -440,7 +447,14 @@ impl HostValueSlot {
 
     /// Removes the value before contained destruction; no second disposal can execute it.
     pub(crate) fn dispose(&mut self) -> Result<(), HostResourceError> {
-        drop_integration(&self.poison, &mut self.value).map_err(HostResourceError::Boundary)
+        if let Some(failure) = self.disposal_failure {
+            return Err(HostResourceError::Boundary(failure));
+        }
+        if let Err(failure) = drop_integration(&self.poison, &mut self.value) {
+            self.disposal_failure = Some(failure);
+            return Err(HostResourceError::Boundary(failure));
+        }
+        Ok(())
     }
 }
 

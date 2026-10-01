@@ -1184,6 +1184,13 @@ impl ResourceRegistry {
         {
             return Err(ResourceRegistryRefusal::PhysicalValuePresent);
         }
+        if self
+            .physical
+            .get(&key)
+            .is_some_and(crate::resource_transport::HostValueSlot::disposal_failed)
+        {
+            return Err(ResourceRegistryRefusal::PhysicalDisposalFailed);
+        }
         account
             .complete_finalization_for(presented_owner, settled_at)
             .map_err(ResourceRegistryRefusal::Finish)
@@ -1446,6 +1453,8 @@ pub enum ResourceRegistryRefusal {
     SecondAdmission,
     /// Physical ownership must be disposed before accounting finalization completes.
     PhysicalValuePresent,
+    /// Contained physical destruction failed and cannot authorize normal finalization.
+    PhysicalDisposalFailed,
     /// The subject's operation carries no authenticated live-resource Section 20 kind.
     UnauthenticatedOperationKind,
     /// The machine has no pending action-backed operation with a resource subject.

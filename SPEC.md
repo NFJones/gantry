@@ -15187,6 +15187,9 @@ account. Attachment MUST check current ownership and refuse duplicate slots whil
 physical input untouched; it MUST NOT remove the account or change quota facts. Typed bounded
 synchronous invocation MUST retain account and containment fences, including contained unused
 callback destruction. Accounting finalization MUST refuse while a physical value remains held.
+Contained destruction failure MUST remain recorded after the physical slot becomes empty;
+repeated disposal MUST report that failure without destroying again, and normal finalization
+MUST refuse without mutation. Sealed emergency release remains available from finishing.
 Explicit physical disposal is permitted only after accounting leaves active, including finishing,
 and MUST NOT itself release semantic quota. Terminal semantic release remains effective before
 disposal and despite destruction failure. A deleted account MUST remain retained until its physical

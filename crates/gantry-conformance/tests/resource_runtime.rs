@@ -1685,6 +1685,62 @@ fn registry_host_attachment_preserves_accounting_and_finalization_fences() {
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Failed physical destruction must not be relabeled as successful finalization.
+#[test]
+fn registry_host_failed_disposal_cannot_complete_finalization() {
+    use gantry::runtime::HostResourceError;
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    registry
+        .attach_host_value(
+            &subject,
+            owner,
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: true,
+                value: 7,
+            },
+        )
+        .unwrap_or_else(|_| panic!("attachment"));
+    assert_eq!(
+        registry.begin_finish(&subject, owner),
+        Ok(ResourceLifetimeState::Finishing)
+    );
+    let before = registry.declared_records();
+    assert!(matches!(
+        registry.dispose_host_value(&subject, owner),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert!(!registry.has_host_value(&subject));
+    assert_eq!(
+        registry.complete_finalization(&subject, owner, 31),
+        Err(ResourceRegistryRefusal::PhysicalDisposalFailed),
+        "absence after failed disposal is not successful finalization"
+    );
+    assert!(matches!(
+        registry.dispose_host_value(&subject, owner),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(registry.live_resources(), 1);
+    assert_eq!(
+        registry.settle_from_emergency_cleanup(&subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+    assert_eq!(registry.live_resources(), 0);
+    drop(registry);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
 /// Emergency semantic release survives destruction failure; recovery never invents host values.
 #[test]
 fn registry_host_emergency_release_is_independent_of_disposal_and_recovery() {
@@ -1730,7 +1786,10 @@ fn registry_host_emergency_release_is_independent_of_disposal_and_recovery() {
     assert!(!registry.has_host_value(&subject));
     assert_eq!(registry.declared_records(), records);
     assert_eq!(registry.live_resources(), 0);
-    assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
+    assert!(matches!(
+        registry.dispose_host_value(&subject, owner),
+        Err(HostResourceError::Boundary(_))
+    ));
     drop(registry);
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

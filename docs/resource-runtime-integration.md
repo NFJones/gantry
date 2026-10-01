@@ -31,7 +31,10 @@ return the value untouched. `invoke_host_value` checks the exact Rust type and a
 invocation and unused callback destruction reuse host containment. `dispose_host_value` removes the
 value before contained destruction, only after accounting leaves active. Finalization cannot
 complete while a value remains held. Semantic poison or emergency release can release live quota
-before physical disposal, even when destruction later fails. `has_host_value` reports presence only.
+before disposal. A contained destruction failure remains recorded after the slot becomes empty:
+repeated disposal reports the same failure without destroying again, and normal finalization
+refuses with `PhysicalDisposalFailed`. Sealed emergency release remains available from finishing.
+`has_host_value` reports presence only, not successful destruction.
 Deleted accounts are not reaped while a value remains attached. Captures and reconstruction omit
 physical slots; no callback route is exposed through the coordinator's shared lock. Registry drop
 contains physical destruction only and does not synthesize semantic settlement.
