@@ -1422,6 +1422,152 @@ fn active_subject() -> ResourceSubjectBinding {
     declared_subject(FIXTURE_DECLARATION)
 }
 
+/// Portable operation identity does not authorize physical access across executions.
+#[test]
+fn registry_physical_routes_refuse_a_foreign_execution_with_matching_static_identity() {
+    use gantry::runtime::HostResourceError;
+    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("local subject exists"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [10; 32])
+        .unwrap_or_else(|error| panic!("foreign execution: {error}"));
+    let mut foreign = Machine::new(
+        Arc::clone(&program),
+        &CanonicalPath::new(FIXTURE_WORKFLOW).unwrap_or_else(|error| panic!("workflow: {error}")),
+        Vec::new(),
+        execution,
+        MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("positive limits")),
+    )
+    .unwrap_or_else(|error| panic!("foreign machine: {error:?}"));
+    assert!(matches!(
+        foreign.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    let foreign = foreign
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("foreign subject"));
+    assert_eq!(foreign.operation(), subject.operation());
+    assert_eq!(foreign.generation(), subject.generation());
+    assert_eq!(subject.execution_id(), machine.execution_id());
+    assert_eq!(subject.task_id(), machine.task_id());
+    assert_ne!(foreign.execution_id(), subject.execution_id());
+    let task_key = format!(
+        "{{\"execution\":\"{}\",\"path\":[\"foreign-task\"]}}",
+        machine.execution_id()
+    );
+    let task = ProtocolIdentity::derive(IdentityKind::Task, task_key.as_bytes())
+        .unwrap_or_else(|error| panic!("foreign task: {error}"));
+    let mut other_task = Machine::new_concurrent_task_with_context(
+        Arc::clone(&program),
+        &CanonicalPath::new(FIXTURE_WORKFLOW).unwrap_or_else(|error| panic!("workflow: {error}")),
+        Vec::new(),
+        machine.execution_id(),
+        task,
+        Arc::from([Arc::from("foreign-task")]),
+        MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("positive limits")),
+        ExecutionBudget::new(
+            machine.execution_id(),
+            MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| panic!("positive fixture limits")),
+        ),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("other task: {error:?}"));
+    assert!(matches!(
+        other_task.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    let other_task = other_task
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("task subject"));
+    assert_eq!(other_task.operation(), subject.operation());
+    assert_eq!(other_task.generation(), subject.generation());
+    assert_eq!(other_task.execution_id(), subject.execution_id());
+    assert_ne!(other_task.task_id(), subject.task_id());
+    let checkpoint = MachineCheckpointV3::decode(&program, &machine.checkpoint().canonical_bytes())
+        .unwrap_or_else(|error| panic!("checkpoint: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("budget: {error:?}"));
+    let recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+    assert_eq!(recovered.pending_resource_subject(), Some(subject.clone()));
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit_pending_operation(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("local admission: {error:?}"));
+    let before = registry.declared_records();
+    let refusal = registry.attach_host_value(&foreign, OwnerGeneration::new(4), 17_u64);
+    assert!(
+        refusal.is_err(),
+        "portable identity cannot substitute for execution ownership"
+    );
+    let (error, returned) = *refusal
+        .err()
+        .unwrap_or_else(|| panic!("foreign attachment refuses"));
+    assert_eq!(error, HostResourceError::ForeignSubject);
+    assert_eq!(returned, 17);
+    assert_eq!(registry.declared_records(), before);
+    let (error, returned) = *registry
+        .attach_host_value(&other_task, OwnerGeneration::new(4), 18_u64)
+        .err()
+        .unwrap_or_else(|| panic!("foreign task refuses"));
+    assert_eq!(error, HostResourceError::ForeignSubject);
+    assert_eq!(returned, 18);
+    assert_eq!(registry.declared_records(), before);
+    registry
+        .attach_host_value(&subject, OwnerGeneration::new(4), 7_u64)
+        .unwrap_or_else(|_| panic!("local attachment"));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let captured = TransportValue {
+        drops: Arc::clone(&drops),
+        panic_on_drop: true,
+        value: 1,
+    };
+    let called = std::cell::Cell::new(false);
+    assert!(matches!(
+        registry.invoke_host_value::<u64, ()>(&foreign, OwnerGeneration::new(4), |_| {
+            called.set(true);
+            drop(captured);
+            Ok(())
+        }),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert!(!called.get());
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(
+        registry
+            .invoke_host_value::<u64, u64>(&subject, OwnerGeneration::new(4), |value| Ok(*value)),
+        Ok(7),
+        "foreign callback destruction cannot poison local transport"
+    );
+    assert_eq!(
+        registry.invoke_host_value::<u64, ()>(&foreign, OwnerGeneration::new(4), |_| panic!(
+            "foreign callback must not run"
+        )),
+        Err(HostResourceError::ForeignSubject)
+    );
+    registry
+        .begin_finish(&subject, OwnerGeneration::new(4))
+        .unwrap_or_else(|error| panic!("finish: {error:?}"));
+    assert_eq!(
+        registry.dispose_host_value(&foreign, OwnerGeneration::new(4)),
+        Err(HostResourceError::ForeignSubject)
+    );
+    assert!(!registry.has_host_value(&foreign));
+    assert!(registry.has_host_value(&subject));
+    assert_eq!(
+        registry.dispose_host_value(&subject, OwnerGeneration::new(4)),
+        Ok(())
+    );
+}
+
 /// Returns the machine-issued subject of one declared fixture operation.
 fn declared_subject(declaration: &str) -> ResourceSubjectBinding {
     let (_program, _machine, subject) = machine_with_declared_subject(Some(declaration));

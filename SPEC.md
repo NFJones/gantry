@@ -15192,7 +15192,12 @@ asynchronous cancellation, task transfer, host authority admission, or durable h
 The registry MAY separately retain one process-local physical slot for an existing active/open
 account. Attachment MUST check current ownership and refuse duplicate slots while returning the
 physical input untouched; it MUST NOT remove the account or change quota facts. Typed bounded
-synchronous invocation MUST retain account and containment fences, including contained unused
+synchronous physical access MUST also require the issuing execution and task provenance of the
+machine binding to match the selected account. Matching portable operation and resource-generation
+identities alone MUST NOT authorize attachment, invocation, presence inspection or disposal across
+runtime owners. This provenance is derived from machine context and retained across its recovery;
+it does not change portable identity derivation or add a physical value to accounting records.
+Typed bounded synchronous invocation MUST retain account and containment fences, including contained unused
 callback destruction. Accounting finalization MUST refuse while a physical value remains held.
 Contained destruction failure MUST remain recorded after the physical slot becomes empty;
 repeated disposal MUST report that failure without destroying again, and normal finalization

@@ -391,6 +391,10 @@ pub struct ResourceSubjectBinding {
     operation: LogicalOperationId,
     generation: ResourceGenerationId,
     kind: Option<OperationKind>,
+    runtime_owner: (
+        gantry_core::identity::ProtocolIdentity,
+        gantry_core::identity::ProtocolIdentity,
+    ),
     admission_open: Arc<Mutex<bool>>,
 }
 
@@ -400,6 +404,7 @@ impl PartialEq for ResourceSubjectBinding {
             && self.operation == other.operation
             && self.generation == other.generation
             && self.kind == other.kind
+            && self.runtime_owner == other.runtime_owner
     }
 }
 
@@ -415,6 +420,10 @@ impl ResourceSubjectBinding {
         generation: u64,
         kind: Option<OperationKind>,
         admission_open: Arc<Mutex<bool>>,
+        runtime_owner: (
+            gantry_core::identity::ProtocolIdentity,
+            gantry_core::identity::ProtocolIdentity,
+        ),
     ) -> Self {
         let site = StaticSiteId::new(workflow, position);
         let operation = LogicalOperationId::derive(declaration, &site);
@@ -424,6 +433,7 @@ impl ResourceSubjectBinding {
             operation,
             generation,
             kind,
+            runtime_owner,
             admission_open,
         }
     }
@@ -455,6 +465,10 @@ impl ResourceSubjectBinding {
         metadata: &ExecutableOperation,
         generation: u64,
         admission_open: Arc<Mutex<bool>>,
+        runtime_owner: (
+            gantry_core::identity::ProtocolIdentity,
+            gantry_core::identity::ProtocolIdentity,
+        ),
     ) -> Option<Self> {
         let action = metadata.action.as_ref()?;
         Some(Self::derive(
@@ -464,7 +478,20 @@ impl ResourceSubjectBinding {
             generation,
             metadata.section20_kind,
             admission_open,
+            runtime_owner,
         ))
+    }
+
+    /// Returns the issuing execution, independently of portable operation identity.
+    #[must_use]
+    pub const fn execution_id(&self) -> gantry_core::identity::ProtocolIdentity {
+        self.runtime_owner.0
+    }
+
+    /// Returns the issuing task, independently of portable resource generation.
+    #[must_use]
+    pub const fn task_id(&self) -> gantry_core::identity::ProtocolIdentity {
+        self.runtime_owner.1
     }
 
     /// Returns the canonical operation site of this binding.
@@ -914,7 +941,9 @@ impl ResourceRegistry {
         let refusal = match self.accounts.get(&key) {
             None => Some(HostResourceError::UnknownSubject),
             Some(account) => {
-                if let Err(error) = account.require_current_owner(owner) {
+                if account.subject().runtime_owner != subject.runtime_owner {
+                    Some(HostResourceError::ForeignSubject)
+                } else if let Err(error) = account.require_current_owner(owner) {
                     Some(HostResourceError::Model(error))
                 } else if account.ledger().lifetime() != ResourceLifetimeState::Active
                     || !account.ledger().operation_state().is_open()
@@ -940,6 +969,12 @@ impl ResourceRegistry {
     /// Inspects physical presence only; accounting captures never include a physical value.
     #[must_use]
     pub fn has_host_value(&self, subject: &ResourceSubjectBinding) -> bool {
+        if self
+            .account(subject)
+            .is_none_or(|account| account.subject().runtime_owner != subject.runtime_owner)
+        {
+            return false;
+        }
         self.physical
             .get(&(subject.operation().clone(), subject.generation().clone()))
             .is_some_and(crate::resource_transport::HostValueSlot::is_present)
@@ -960,7 +995,9 @@ impl ResourceRegistry {
         let refusal = match self.accounts.get(&key) {
             None => Some(HostResourceError::UnknownSubject),
             Some(account) => {
-                if let Err(error) = account.require_current_owner(owner) {
+                if account.subject().runtime_owner != subject.runtime_owner {
+                    Some(HostResourceError::ForeignSubject)
+                } else if let Err(error) = account.require_current_owner(owner) {
                     Some(HostResourceError::Model(error))
                 } else if account.ledger().lifetime() != ResourceLifetimeState::Active
                     || !account.ledger().operation_state().is_open()
@@ -973,6 +1010,12 @@ impl ResourceRegistry {
                 }
             }
         };
+        if matches!(refusal, Some(HostResourceError::ForeignSubject)) {
+            return crate::resource_transport::refuse_unbound_callback(
+                callback,
+                HostResourceError::ForeignSubject,
+            );
+        }
         let Some(slot) = self.physical.get_mut(&key) else {
             return crate::resource_transport::refuse_unbound_callback(
                 callback,
@@ -1010,6 +1053,9 @@ impl ResourceRegistry {
             .accounts
             .get(&key)
             .ok_or(HostResourceError::UnknownSubject)?;
+        if account.subject().runtime_owner != subject.runtime_owner {
+            return Err(HostResourceError::ForeignSubject);
+        }
         account
             .require_current_owner(owner)
             .map_err(HostResourceError::Model)?;

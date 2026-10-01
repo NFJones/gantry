@@ -2340,6 +2340,7 @@ impl Machine {
             metadata,
             *generation,
             Arc::clone(&pending.resource_admission_open),
+            (self.execution, self.task_id),
         )
     }
 

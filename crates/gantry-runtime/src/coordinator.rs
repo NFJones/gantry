@@ -2170,6 +2170,7 @@ mod tests {
             0,
             Some(gantry_ir::OperationKind::LiveResource),
             Arc::new(Mutex::new(true)),
+            (execution, root),
         );
         let owner = gantry_ir::OwnerGeneration::new(4);
         let record = gantry_ir::ResourceLedger::new(

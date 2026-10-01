@@ -28,7 +28,11 @@ The existing `new_with_resource_limit` constructor leaves the pending policy dis
 account without moving or duplicating accounting and without changing quotas. The embedding caller
 authenticates its association and authority. Duplicate, unknown, stale-owner and inactive refusals
 return the value untouched. `invoke_host_value` checks the exact Rust type and accounting fences;
-invocation and unused callback destruction reuse host containment. `dispose_host_value` removes the
+physical attachment, invocation, presence inspection and disposal also require the binding's
+issuing execution/task to match the admitted account. `execution_id` and `task_id` retain machine
+provenance across checkpoint recovery without changing portable operation/generation identities.
+Another runtime owner with matching static identities refuses with `ForeignSubject`.
+Invocation and unused callback destruction reuse host containment. `dispose_host_value` removes the
 value before contained destruction, only after accounting leaves active. Finalization cannot
 complete while a value remains held. Semantic poison or emergency release can release live quota
 before disposal. A contained destruction failure remains recorded after the slot becomes empty:

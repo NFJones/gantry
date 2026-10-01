@@ -48,6 +48,8 @@ pub enum HostResourceError {
     TypeMismatch,
     /// No accounting account exists for the requested subject.
     UnknownSubject,
+    /// A portable identity matches, but the issuing execution or task does not.
+    ForeignSubject,
     /// A physical slot was already attached, including a disposed slot.
     AlreadyAttached,
     /// This account has no attached physical slot.
