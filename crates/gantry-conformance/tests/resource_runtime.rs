@@ -616,6 +616,100 @@ fn pending_resource_operation_limit_releases_only_after_machine_settlement() {
     }
 }
 
+/// Reclaiming terminal accounting records cannot release unsettled machine work.
+#[test]
+fn pending_capacity_survives_poison_emergency_release_and_record_reclamation() {
+    for emergency in [false, true] {
+        let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("pending subject exists"));
+        let operation = machine
+            .checkpoint()
+            .pending_operation()
+            .unwrap_or_else(|| panic!("pending operation exists"))
+            .identity;
+        let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+        let mut registry = ResourceRegistry::with_limits(1, 1);
+        registry
+            .admit_pending_operation(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("first admission: {error:?}"));
+        if emergency {
+            assert_eq!(
+                registry.settle_from_emergency_cleanup(&subject, emergency_cleanup()),
+                Ok(ResourceLifetimeState::EmergencyReleased)
+            );
+        } else {
+            let failure = failure_settlement_in(
+                FIXTURE_WORKFLOW,
+                FIXTURE_DECLARATION,
+                vec![FIXTURE_SITE],
+                0,
+                FailureClass::ResourceFailure,
+            );
+            assert_eq!(
+                registry.settle_from_post_failure(&failure, 21),
+                Ok(ResourceLifetimeState::Poisoned)
+            );
+        }
+        assert_eq!(registry.live_resources(), 0);
+        assert_eq!(registry.pending_operations(), 1);
+        for root in ROOTS {
+            registry
+                .close_liveness_root(&subject, OwnerGeneration::new(4), *root)
+                .unwrap_or_else(|error| panic!("root closure: {error:?}"));
+        }
+        let fence =
+            RetentionFence::new(2, 10).unwrap_or_else(|error| panic!("retention fence: {error:?}"));
+        registry
+            .retire(
+                &subject,
+                fence,
+                OwnerGeneration::new(4),
+                OwnerGeneration::new(5),
+                35,
+            )
+            .unwrap_or_else(|error| panic!("record retirement: {error:?}"));
+        assert_eq!(
+            registry.delete(&subject, OwnerGeneration::new(4)),
+            Ok(ResourceLifetimeState::Deleted)
+        );
+        assert_eq!(registry.reap_deleted(), 1);
+        assert!(registry.declared_records().is_empty());
+        assert_eq!(
+            registry.pending_operations(),
+            1,
+            "reclamation is not machine settlement"
+        );
+        assert_eq!(
+            registry
+                .admit_pending_operation(
+                    &sibling,
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record()
+                )
+                .err(),
+            Some(ResourceRegistryRefusal::PendingOperationLimitReached { limit: 1 })
+        );
+        assert!(
+            machine
+                .complete_operation(operation, LogicalValue::unit())
+                .is_ok()
+        );
+        assert_eq!(registry.pending_operations(), 0);
+        registry
+            .admit_pending_operation(
+                &sibling,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("settled lease releases capacity: {error:?}"));
+        assert_eq!(registry.pending_operations(), 1);
+    }
+}
+
 /// Zero pending capacity and stronger admission errors refuse without retaining a lease.
 #[test]
 fn pending_resource_operation_limit_preserves_admission_refusal_precedence() {
