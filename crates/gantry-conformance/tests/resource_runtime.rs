@@ -2524,6 +2524,145 @@ impl Drop for CoordinatorDropProbe {
     }
 }
 
+/// Started blocking cleanup retains destruction even after its observer is dropped.
+#[test]
+fn submitted_resource_cleanup_survives_observer_drop_and_runs_unlocked() {
+    use gantry::host::containment::AdapterPoison;
+    use gantry::host::contracts::BlockingWorkService;
+    use gantry::runtime::BoundedBlockingWorkService;
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let entered = Arc::new(std::sync::Barrier::new(2));
+    let release = Arc::new(std::sync::Barrier::new(2));
+    let unlocked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    coordinator
+        .attach_resource_host_value(
+            &subject,
+            OwnerGeneration::new(4),
+            CoordinatorDropProbe {
+                coordinator: coordinator.clone(),
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+                unlocked: Arc::clone(&unlocked),
+                drops: Arc::clone(&drops),
+            },
+        )
+        .unwrap_or_else(|_| panic!("attachment"));
+    coordinator
+        .emergency_release_resource(&subject, emergency_cleanup())
+        .unwrap_or_else(|error| panic!("release: {error:?}"));
+    let before = coordinator.snapshot();
+    let service =
+        BoundedBlockingWorkService::new(1, 1).unwrap_or_else(|error| panic!("service: {error:?}"));
+    let observer = coordinator
+        .submit_settled_resource_cleanup(&service, &AdapterPoison::default())
+        .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    entered.wait();
+    let mut completion = Box::pin(observer.completion());
+    let pending = std::future::Future::poll(
+        completion.as_mut(),
+        &mut std::task::Context::from_waker(std::task::Waker::noop()),
+    )
+    .is_pending();
+    drop(completion);
+    drop(observer);
+    let during = coordinator.snapshot();
+    release.wait();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap_or_else(|error| panic!("observer runtime: {error}"));
+    assert_eq!(runtime.block_on(service.shutdown()), Ok(()));
+    assert!(
+        pending,
+        "observer remains pending while destruction is executing"
+    );
+    assert!(unlocked.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(during, before);
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+        coordinator.dispose_settled_resource_host_values(),
+        Ok(Vec::new())
+    );
+}
+
+/// Submission refusal leaves slots held; successful service completion retains member failures.
+#[test]
+fn submitted_resource_cleanup_refusal_and_failure_preserve_accounting() {
+    use gantry::host::containment::AdapterPoison;
+    use gantry::host::contracts::BlockingWorkService;
+    use gantry::runtime::{BoundedBlockingWorkService, HostResourceError, ResourceCleanupError};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    coordinator
+        .attach_resource_host_value(
+            &subject,
+            OwnerGeneration::new(4),
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: true,
+                value: 1,
+            },
+        )
+        .unwrap_or_else(|_| panic!("attachment"));
+    coordinator
+        .emergency_release_resource(&subject, emergency_cleanup())
+        .unwrap_or_else(|error| panic!("release: {error:?}"));
+    let before = coordinator.snapshot();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap_or_else(|error| panic!("observer runtime: {error}"));
+    let refused =
+        BoundedBlockingWorkService::new(1, 1).unwrap_or_else(|error| panic!("service: {error:?}"));
+    assert_eq!(runtime.block_on(refused.shutdown()), Ok(()));
+    assert!(matches!(
+        coordinator.submit_settled_resource_cleanup(&refused, &AdapterPoison::default()),
+        Err(ResourceCleanupError::Submission(_))
+    ));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(coordinator.snapshot(), before);
+    let poison = AdapterPoison::default();
+    poison.poison();
+    assert!(matches!(
+        coordinator.submit_settled_resource_cleanup(&refused, &poison),
+        Err(ResourceCleanupError::Boundary(_))
+    ));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let service =
+        BoundedBlockingWorkService::new(1, 1).unwrap_or_else(|error| panic!("service: {error:?}"));
+    let observer = coordinator
+        .submit_settled_resource_cleanup(&service, &AdapterPoison::default())
+        .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    let result = runtime
+        .block_on(observer.completion())
+        .unwrap_or_else(|error| panic!("completion: {error:?}"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].0, subject);
+    assert!(matches!(result[0].1, Err(HostResourceError::Boundary(_))));
+    assert_eq!(runtime.block_on(observer.completion()), Ok(result));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(runtime.block_on(service.shutdown()), Ok(()));
+}
+
 /// Counts physical-quiescence notifications without polling or scheduling cleanup itself.
 #[derive(Default)]
 struct ResourceShutdownWake(std::sync::atomic::AtomicUsize);

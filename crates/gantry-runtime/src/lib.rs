@@ -25,6 +25,7 @@ mod outcome;
 #[cfg(feature = "durable")]
 mod recovery;
 mod resource;
+mod resource_cleanup;
 mod resource_transport;
 mod session;
 mod supervision;
@@ -154,6 +155,7 @@ pub use resource::{
     ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
     decode_resource_reconstruction_record, encode_resource_reconstruction_record,
 };
+pub use resource_cleanup::{ResourceCleanupError, ResourceCleanupObserver};
 pub use resource_transport::{HostReceiverLoan, HostResourceError, OwnedHostResource};
 pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,

@@ -15284,6 +15284,14 @@ job MUST run after unlocking, with independent results and retained failures. Su
 slots need no repeated cleanup. This sweep MUST change neither accounting publication nor quota
 facts or pending machine work, and MUST NOT fabricate semantic settlement.
 
+The sweep MAY be submitted to the bounded blocking-work service. Submission MUST capture only
+the coordinator, not extracted physical values, so refusal or service cancellation before start
+leaves physical slots held. Started cleanup MUST remain service-owned to physical completion
+even if its observer or completion future is dropped. Submission, completion polling and observer
+handle disposal MUST retain integration containment. Repeated observation returns the same sweep
+result; service completion and per-resource destruction outcomes remain distinct. This boundary
+does not attach resource cleanup automatically to source-task or interpreter shutdown.
+
 <a id="GNT-28.12-operation-state-projection"></a>
 
 **[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile

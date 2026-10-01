@@ -107,6 +107,14 @@ after failures. Retained failures remain reportable, while successful disposed s
 on repeat sweeps. Accounting publication, quotas and pending machine work remain unchanged; the
 sweep neither initiates semantic settlement nor completes source-task cleanup integration.
 
+`submit_settled_resource_cleanup` hands the sweep to the existing bounded blocking-work service,
+capturing only a coordinator handle. Submission refusal or service cancellation before start
+therefore leaves physical slots held. `ResourceCleanupObserver::completion` reports service and
+coordinator failures separately from per-member destruction outcomes; repeated observation retains
+the result. Dropping the observer or its future does not cancel accepted work. Submission, completion
+polling and handle disposal use integration containment. Started destruction runs off async workers
+and remains service-owned; this API does not automatically wire interpreter shutdown.
+
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |
 | Admission | `new`, `admit` | `GNT-28.11-runtime-admission-mapping`, `GNT-28.7-durable-resource-reconstruction`, `GNT-20.1-operation-kinds` |
