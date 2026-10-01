@@ -385,8 +385,9 @@ impl ExecutionCoordinator {
     pub fn project_resource_operation_state(
         &self,
         live: &gantry_ir::LiveResource,
+        subject: &crate::ResourceSubjectBinding,
     ) -> Result<gantry_ir::ResourceState, CoordinatorResourceRefusal> {
-        self.mutate_resources(|resources| resources.project_operation_state(live))
+        self.mutate_resources(|resources| resources.project_operation_state(live, subject))
     }
 
     /// Advances one coordinator-owned account to finishing under its current owner.
@@ -407,9 +408,10 @@ impl ExecutionCoordinator {
         &self,
         settlement: &gantry_ir::PostFailureSettlement,
         settled_at: u64,
+        subject: &crate::ResourceSubjectBinding,
     ) -> Result<gantry_ir::ResourceLifetimeState, CoordinatorResourceRefusal> {
         self.mutate_resources(|resources| {
-            resources.settle_from_post_failure(settlement, settled_at)
+            resources.settle_from_post_failure(settlement, settled_at, subject)
         })
     }
 

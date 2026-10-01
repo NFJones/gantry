@@ -15242,6 +15242,12 @@ admitted subject into its accounting record only from the settlement retained by
 The runtime MUST select the account by that settlement's logical operation and resource generation,
 and MUST require its owner generation to equal the account's current owner generation before any
 fact changes; an absent subject or stale owner MUST be refused without mutation. The projected
+evidence MUST additionally be accompanied by a machine-issued subject binding naming the same
+operation and resource generation and the selected account's issuing execution/task. Mismatched
+portable subject identity MUST refuse with `EvidenceSubjectMismatch`; foreign runtime provenance
+MUST refuse with `ForeignSubject`. Registry failure settlement and adapter-failure poisoning MUST
+require the same accompanying binding. Unsettled projection and absent evidence-selected accounts
+retain their existing refusal precedence. These bindings supply runtime context, not host authority.
 operation state MUST equal the accepted settlement's derived `ResourceState`, not a caller-selected
 state. This projection changes only the distinct Section 20 operation-state fact of that admitted
 account: it MUST NOT change whole-resource lifetime, quotas, liveness roots, ownership of a physical

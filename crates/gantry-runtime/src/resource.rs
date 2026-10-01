@@ -1074,10 +1074,12 @@ impl ResourceRegistry {
     ///
     /// The account is selected by the settlement's own operation and generation, so a settlement
     /// naming a subject this registry holds no account for is refused without changing any account.
+    /// The accompanying machine binding must agree with that account and its runtime provenance.
     pub fn settle_from_post_failure(
         &mut self,
         settlement: &PostFailureSettlement,
         settled_at: u64,
+        subject: &ResourceSubjectBinding,
     ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
         let key = (
             settlement.operation().clone(),
@@ -1087,6 +1089,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_evidence_subject(account, subject)?;
         account
             .settle_from_post_failure(settlement, settled_at)
             .map_err(ResourceRegistryRefusal::Settlement)
@@ -1099,9 +1102,11 @@ impl ResourceRegistry {
     /// then enforces the current owner generation before changing only the distinct operation-state
     /// fact. An unsettled or unknown subject, or stale owner, is refused without changing any
     /// declared account fact.
+    /// The accompanying machine binding must name the same account and issuing execution/task.
     pub fn project_operation_state(
         &mut self,
         live: &gantry_ir::LiveResource,
+        subject: &ResourceSubjectBinding,
     ) -> Result<ResourceState, ResourceRegistryRefusal> {
         let projection = live
             .operation_state_projection()
@@ -1114,6 +1119,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_evidence_subject(account, subject)?;
         account
             .ledger
             .project_operation_state(&projection)
@@ -1444,11 +1450,13 @@ impl ResourceRegistry {
     /// while the Section 23 reason remains explicit input from the fault-classification caller.
     /// The account's owner fence and the registry's one-way poison ledger decide whether that
     /// binding can be poisoned; the resource lifetime and sibling accounts are unchanged.
+    /// The accompanying machine binding must agree with the evidence-selected runtime account.
     pub fn poison_adapter_from_post_failure(
         &mut self,
         settlement: &PostFailureSettlement,
         presented_owner: OwnerGeneration,
         reason: PoisonReason,
+        subject: &ResourceSubjectBinding,
     ) -> Result<PoisonReason, ResourceRegistryRefusal> {
         let key = (
             settlement.operation().clone(),
@@ -1459,6 +1467,7 @@ impl ResourceRegistry {
             .accounts
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_evidence_subject(account, subject)?;
         account
             .poison_adapter_from_post_failure(settlement, presented_owner, reason, ledger)
             .map_err(ResourceRegistryRefusal::Settlement)
@@ -1539,6 +1548,19 @@ fn require_subject_provenance(
     Ok(())
 }
 
+/// Checks that a binding names the evidence-selected account before checking runtime ownership.
+fn require_evidence_subject(
+    account: &AdmittedResource,
+    subject: &ResourceSubjectBinding,
+) -> Result<(), ResourceRegistryRefusal> {
+    if account.subject().operation() != subject.operation()
+        || account.subject().generation() != subject.generation()
+    {
+        return Err(ResourceRegistryRefusal::EvidenceSubjectMismatch);
+    }
+    require_subject_provenance(account, subject)
+}
+
 /// Why the runtime resource registry refused an admission or a settlement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceRegistryRefusal {
@@ -1546,6 +1568,8 @@ pub enum ResourceRegistryRefusal {
     SecondAdmission,
     /// Matching portable identity was presented by another execution or task.
     ForeignSubject,
+    /// The supplied runtime binding differs from the evidence-selected operation or generation.
+    EvidenceSubjectMismatch,
     /// Physical ownership must be disposed before accounting finalization completes.
     PhysicalValuePresent,
     /// Contained physical destruction failed and cannot authorize normal finalization.

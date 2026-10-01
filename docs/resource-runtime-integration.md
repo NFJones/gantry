@@ -149,7 +149,12 @@ and this route changes neither the resource lifetime nor sibling adapters. Physi
 the one registry-wide mutating route and changes no declared fact.
 
 `ResourceRegistry::project_operation_state` accepts a `LiveResource` and derives its opaque
-projection internally; `ResourceLedger::project_operation_state` consumes that projection. A
+projection internally, alongside a machine-issued `ResourceSubjectBinding`;
+`ResourceLedger::project_operation_state` consumes that projection. Registry failure settlement
+and adapter-failure poisoning likewise require the accompanying binding. Evidence still selects
+its own exact account; the binding must name that operation/generation and match its issuing
+execution/task. `EvidenceSubjectMismatch` and `ForeignSubject` refuse before mutation, while
+unsettled projection and absent evidence-selected account refusals retain precedence. A
 projection exists only after the supplied `LiveResource` accepted its own Section 20 settlement.
 That exact operation and resource generation select the account, and the accepted owner generation
 must still be current. The route updates only the distinct operation-state field; it does not settle

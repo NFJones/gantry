@@ -394,7 +394,8 @@ fn coordinator_resource_charging_is_atomic_and_owner_fenced() {
 fn coordinator_resource_failure_settlement_releases_the_live_place_once() {
     use gantry::runtime::CoordinatorResourceRefusal;
 
-    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject exists"));
     let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
     coordinator
         .admit_resource(
@@ -412,7 +413,7 @@ fn coordinator_resource_failure_settlement_releases_the_live_place_once() {
         FailureClass::AdapterFailure,
     );
     assert_eq!(
-        coordinator.settle_resource_from_post_failure(&adapter_failure, 21),
+        coordinator.settle_resource_from_post_failure(&adapter_failure, 21, &subject),
         Err(CoordinatorResourceRefusal::Registry(
             ResourceRegistryRefusal::Settlement(PostFailureSettlementRefusal::Model(
                 ResourceError::FailureDoesNotPoisonResource
@@ -430,7 +431,7 @@ fn coordinator_resource_failure_settlement_releases_the_live_place_once() {
     assert_eq!(
         coordinator
             .clone()
-            .settle_resource_from_post_failure(&resource_failure, 22),
+            .settle_resource_from_post_failure(&resource_failure, 22, &subject),
         Ok(ResourceLifetimeState::Poisoned)
     );
     let poisoned = coordinator.snapshot();
@@ -458,7 +459,7 @@ fn coordinator_resource_failure_settlement_releases_the_live_place_once() {
     assert_eq!(baseline.owner(), OwnerGeneration::new(4));
     assert_eq!(baseline.settled_at(), 22);
     assert_eq!(
-        coordinator.settle_resource_from_post_failure(&resource_failure, 23),
+        coordinator.settle_resource_from_post_failure(&resource_failure, 23, &subject),
         Err(CoordinatorResourceRefusal::Registry(
             ResourceRegistryRefusal::Settlement(PostFailureSettlementRefusal::Model(
                 ResourceError::IllegalLifetimeTransition
@@ -644,7 +645,7 @@ fn pending_capacity_survives_poison_emergency_release_and_record_reclamation() {
                 FailureClass::ResourceFailure,
             );
             assert_eq!(
-                registry.settle_from_post_failure(&failure, 21),
+                registry.settle_from_post_failure(&failure, 21, &subject),
                 Ok(ResourceLifetimeState::Poisoned)
             );
         }
@@ -1218,7 +1219,7 @@ fn live_resource_quota_is_enforced_at_admission_and_released_by_settlement() {
         FailureClass::ResourceFailure,
     );
     assert_eq!(
-        registry.settle_from_post_failure(&matching, 21),
+        registry.settle_from_post_failure(&matching, 21, &first),
         Ok(ResourceLifetimeState::Poisoned),
         "the account settles into a terminal lifetime"
     );
@@ -1502,6 +1503,61 @@ fn registry_physical_routes_refuse_a_foreign_execution_with_matching_static_iden
         )
         .unwrap_or_else(|error| panic!("local admission: {error:?}"));
     let before = registry.declared_records();
+    let failure = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    let adapter_failure = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::AdapterFailure,
+    );
+    let mut live = transport_live(FIXTURE_DECLARATION, 0, 4, false);
+    let settlement = OperationSettlement::new(
+        live.operation(),
+        live.generation(),
+        live.owner(),
+        ExternalOutcome::Accepted,
+        ProgressObservation::CommittedProgress,
+        30,
+    )
+    .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+    live.settle(&settlement)
+        .unwrap_or_else(|error| panic!("accepted settlement: {error:?}"));
+    let mismatched = declared_subject(SECOND_FIXTURE_DECLARATION);
+    for (requested, expected) in [
+        (&foreign, ResourceRegistryRefusal::ForeignSubject),
+        (&other_task, ResourceRegistryRefusal::ForeignSubject),
+        (
+            &mismatched,
+            ResourceRegistryRefusal::EvidenceSubjectMismatch,
+        ),
+    ] {
+        assert_eq!(
+            registry.settle_from_post_failure(&failure, 31, requested),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            registry.project_operation_state(&live, requested),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            registry.poison_adapter_from_post_failure(
+                &adapter_failure,
+                OwnerGeneration::new(4),
+                PoisonReason::InvariantFailure,
+                requested
+            ),
+            Err(expected)
+        );
+        assert_eq!(registry.declared_records(), before);
+        assert_eq!(registry.adapter_instance(&subject), None);
+    }
     let refusal = registry.attach_host_value(&foreign, OwnerGeneration::new(4), 17_u64);
     assert_eq!(
         registry.begin_finish(&foreign, OwnerGeneration::new(4)),
@@ -3987,7 +4043,7 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
         .unwrap_or_else(|error| panic!("coordinator account admits: {error:?}"));
     let coordinator_before = coordinator.snapshot();
     assert_eq!(
-        coordinator.project_resource_operation_state(&live),
+        coordinator.project_resource_operation_state(&live, &subject),
         Err(gantry::runtime::CoordinatorResourceRefusal::Registry(
             ResourceRegistryRefusal::OperationStateProjectionNotSettled
         ))
@@ -4007,7 +4063,7 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
         .unwrap_or_else(|| panic!("account remains admitted"))
         .durable_record();
     assert!(matches!(
-        registry.project_operation_state(&live),
+        registry.project_operation_state(&live, &subject),
         Err(ResourceRegistryRefusal::OperationStateProjectionNotSettled)
     ));
     assert_eq!(
@@ -4033,7 +4089,9 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
     let accepted_progress = live.progress();
     let accepted_generation = live.generation().clone();
     assert_eq!(
-        coordinator.clone().project_resource_operation_state(&live),
+        coordinator
+            .clone()
+            .project_resource_operation_state(&live, &subject),
         Ok(ResourceState::Consumed)
     );
     let coordinator_projected = coordinator.snapshot();
@@ -4054,7 +4112,7 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
     );
     assert_eq!(coordinator_records[0].record().quotas(), before.quotas());
     assert_eq!(
-        registry.project_operation_state(&live),
+        registry.project_operation_state(&live, &subject),
         Ok(ResourceState::Consumed)
     );
     let account = registry
@@ -4184,7 +4242,7 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
         .durable_record()
         .clone();
     assert_eq!(
-        registry.project_operation_state(&foreign_live),
+        registry.project_operation_state(&foreign_live, &subject),
         Err(ResourceRegistryRefusal::UnknownSubject)
     );
     assert_eq!(
@@ -4235,7 +4293,7 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
         .durable_record()
         .clone();
     assert_eq!(
-        registry.project_operation_state(&next_generation_live),
+        registry.project_operation_state(&next_generation_live, &subject),
         Err(ResourceRegistryRefusal::UnknownSubject)
     );
     assert_eq!(
@@ -4272,7 +4330,7 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
         .unwrap_or_else(|| panic!("account remains admitted"))
         .durable_record();
     assert!(matches!(
-        registry.project_operation_state(&stale_owner_live),
+        registry.project_operation_state(&stale_owner_live, &subject),
         Err(ResourceRegistryRefusal::OperationStateProjection(_))
     ));
     assert_eq!(
@@ -4350,7 +4408,7 @@ fn runtime_projects_only_the_cancellation_race_winner() {
             .unwrap_or_else(|error| panic!("race account admits: {error:?}"));
         live.settle(winner)
             .unwrap_or_else(|error| panic!("first settlement wins: {error:?}"));
-        assert_eq!(registry.project_operation_state(&live), Ok(state));
+        assert_eq!(registry.project_operation_state(&live, &subject), Ok(state));
         let projected = registry
             .account(&subject)
             .unwrap_or_else(|| panic!("race account remains admitted"))
@@ -4361,7 +4419,7 @@ fn runtime_projects_only_the_cancellation_race_winner() {
         ));
         assert_eq!(live.settlement(), Some(winner));
         assert_eq!(live.progress(), winner.progress());
-        assert_eq!(registry.project_operation_state(&live), Ok(state));
+        assert_eq!(registry.project_operation_state(&live, &subject), Ok(state));
         assert_eq!(
             registry
                 .account(&subject)
@@ -4547,6 +4605,7 @@ fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
             &adapter_failure,
             owner,
             PoisonReason::ForeignFailure(ForeignFailureKind::Protocol),
+            &subject,
         ),
         Err(ResourceRegistryRefusal::Settlement(
             PostFailureSettlementRefusal::AdapterBinding(AdapterBindingRefusal::Unbound)
@@ -4605,7 +4664,8 @@ fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
             registry.poison_adapter_from_post_failure(
                 evidence,
                 owner,
-                PoisonReason::InvariantFailure
+                PoisonReason::InvariantFailure,
+                &subject,
             ),
             Err(ResourceRegistryRefusal::Settlement(refusal))
         );
@@ -4632,6 +4692,7 @@ fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
             &resource_failure,
             owner,
             PoisonReason::InvariantFailure,
+            &subject,
         ),
         Err(ResourceRegistryRefusal::Settlement(
             PostFailureSettlementRefusal::AdapterPoisoningNotRequired
@@ -4651,6 +4712,7 @@ fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
             &adapter_failure,
             OwnerGeneration::new(3),
             PoisonReason::ForeignFailure(ForeignFailureKind::Protocol),
+            &subject,
         ),
         Err(ResourceRegistryRefusal::Settlement(
             PostFailureSettlementRefusal::AdapterBinding(AdapterBindingRefusal::StaleOwner(
@@ -4673,6 +4735,7 @@ fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
             &adapter_failure,
             owner,
             PoisonReason::ForeignFailure(ForeignFailureKind::Protocol),
+            &subject,
         ),
         Ok(PoisonReason::ForeignFailure(ForeignFailureKind::Protocol))
     );
@@ -4681,6 +4744,7 @@ fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
             &adapter_failure,
             owner,
             PoisonReason::AmbiguousEffect,
+            &subject,
         ),
         Ok(PoisonReason::ForeignFailure(ForeignFailureKind::Protocol)),
         "a repeated poison preserves the first recorded reason"
@@ -4714,7 +4778,12 @@ fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
         FailureClass::AdapterFailure,
     );
     assert_eq!(
-        registry.poison_adapter_from_post_failure(&stale, owner, PoisonReason::AmbiguousEffect),
+        registry.poison_adapter_from_post_failure(
+            &stale,
+            owner,
+            PoisonReason::AmbiguousEffect,
+            &subject
+        ),
         Err(ResourceRegistryRefusal::UnknownSubject),
         "a different resource generation selects no admitted account"
     );
@@ -4961,7 +5030,7 @@ fn resource_registry_gives_one_subject_exactly_one_account() {
         FailureClass::ResourceFailure,
     );
     assert_eq!(
-        registry.settle_from_post_failure(&foreign, 21),
+        registry.settle_from_post_failure(&foreign, 21, &subject),
         Err(ResourceRegistryRefusal::UnknownSubject)
     );
     assert_eq!(
@@ -4979,7 +5048,7 @@ fn resource_registry_gives_one_subject_exactly_one_account() {
         FailureClass::ResourceFailure,
     );
     assert_eq!(
-        registry.settle_from_post_failure(&matching, 21),
+        registry.settle_from_post_failure(&matching, 21, &subject),
         Ok(ResourceLifetimeState::Poisoned)
     );
     let account = registry
@@ -4997,7 +5066,7 @@ fn resource_registry_gives_one_subject_exactly_one_account() {
         .durable_record()
         .clone();
     assert_eq!(
-        registry.settle_from_post_failure(&matching, 22),
+        registry.settle_from_post_failure(&matching, 22, &subject),
         Err(ResourceRegistryRefusal::Settlement(
             PostFailureSettlementRefusal::Model(ResourceError::IllegalLifetimeTransition)
         ))
@@ -5504,7 +5573,7 @@ fn a_registry_captures_the_reconstruction_set_that_rebuilds_it() {
         FailureClass::ResourceFailure,
     );
     assert_eq!(
-        registry.settle_from_post_failure(&settlement, 21),
+        registry.settle_from_post_failure(&settlement, 21, &first),
         Ok(ResourceLifetimeState::Poisoned)
     );
     assert_eq!(registry.live_resources(), 1);
@@ -5754,7 +5823,7 @@ fn a_poisoned_account_cannot_enter_or_complete_the_finish_path() {
         FailureClass::ResourceFailure,
     );
     assert_eq!(
-        registry.settle_from_post_failure(&settlement, 21),
+        registry.settle_from_post_failure(&settlement, 21, &subject),
         Ok(ResourceLifetimeState::Poisoned)
     );
 
