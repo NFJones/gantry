@@ -1752,6 +1752,119 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
     );
 }
 
+/// Both cancellation/completion race orders retain one winner through accounting reconstruction.
+#[test]
+fn runtime_projects_only_the_cancellation_race_winner() {
+    let subject = active_subject();
+    let operation_path = CanonicalPath::new(FIXTURE_DECLARATION)
+        .unwrap_or_else(|_| unreachable!("fixture declaration is canonical"));
+    let operation_site = StaticSiteId::new(
+        CanonicalPath::new(FIXTURE_WORKFLOW)
+            .unwrap_or_else(|_| unreachable!("fixture workflow is canonical")),
+        StructuralPosition::new(vec![FIXTURE_SITE])
+            .unwrap_or_else(|_| unreachable!("fixture site is canonical")),
+    );
+    let operation = OperationAbi::new(
+        OperationKind::LiveResource,
+        &operation_path,
+        &operation_site,
+        0,
+        RecoveryClass::NonIdempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|error| panic!("race operation is admissible: {error:?}"));
+    let owner = OwnerGeneration::new(4);
+    let completed = OperationSettlement::new(
+        operation.operation(),
+        operation.generation(),
+        owner,
+        ExternalOutcome::Accepted,
+        ProgressObservation::CommittedProgress,
+        30,
+    )
+    .unwrap_or_else(|error| panic!("completion identities agree: {error:?}"));
+    let cancelled = OperationSettlement::new(
+        operation.operation(),
+        operation.generation(),
+        owner,
+        ExternalOutcome::Ambiguous,
+        ProgressObservation::PartialAdvance,
+        30,
+    )
+    .unwrap_or_else(|error| panic!("cancellation identities agree: {error:?}"));
+
+    for (winner, loser, state) in [
+        (&completed, &cancelled, ResourceState::Consumed),
+        (&cancelled, &completed, ResourceState::Poisoned),
+    ] {
+        let mut live = operation
+            .open_live(
+                owner,
+                OperationAbi::observation_allowance(
+                    1,
+                    DisclosureCharge::new(1)
+                        .unwrap_or_else(|| unreachable!("fixture charge is nonzero")),
+                ),
+            )
+            .unwrap_or_else(|error| panic!("race resource opens: {error:?}"));
+        let mut registry = ResourceRegistry::with_live_limit(1);
+        registry
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("race account admits: {error:?}"));
+        live.settle(winner)
+            .unwrap_or_else(|error| panic!("first settlement wins: {error:?}"));
+        assert_eq!(registry.project_operation_state(&live), Ok(state));
+        let projected = registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("race account remains admitted"))
+            .durable_record();
+        assert!(matches!(
+            live.settle(loser),
+            Err(OperationAbiError::SecondSettlement { .. })
+        ));
+        assert_eq!(live.settlement(), Some(winner));
+        assert_eq!(live.progress(), winner.progress());
+        assert_eq!(registry.project_operation_state(&live), Ok(state));
+        assert_eq!(
+            registry
+                .account(&subject)
+                .unwrap_or_else(|| panic!("race account remains admitted"))
+                .durable_record(),
+            projected,
+            "a losing settlement cannot rewrite any projected accounting fact"
+        );
+        assert_eq!(registry.live_resources(), 1);
+        assert_eq!(projected.lifetime(), ResourceLifetimeState::Active);
+        let decoded = decode_resource_reconstruction_record(
+            &encode_resource_reconstruction_record(&projected),
+        )
+        .unwrap_or_else(|error| panic!("race record decodes: {error:?}"));
+        let recovered = ResourceRegistry::reconstruct(
+            Some(1),
+            vec![RecoveredResourceRecord::new(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                owner,
+                decoded,
+            )],
+        )
+        .unwrap_or_else(|error| panic!("race accounting reconstructs: {error:?}"));
+        assert_eq!(recovered.live_resources(), 1);
+        assert_eq!(
+            recovered
+                .account(&subject)
+                .unwrap_or_else(|| panic!("recovered race account exists"))
+                .durable_record(),
+            projected,
+            "reconstruction retains the winner without claiming operation replay"
+        );
+    }
+}
+
 #[test]
 fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     let mut admitted_resource = admitted_active();
