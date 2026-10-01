@@ -2947,6 +2947,89 @@ fn submitted_resource_cleanup_cancelled_before_start_retains_physical_ownership(
     assert_eq!(coordinator.snapshot(), before);
 }
 
+/// Cancelling a queued sealed cohort does not publish semantic release or destroy physical values.
+#[test]
+fn submitted_emergency_cleanup_cancelled_before_start_preserves_accounting() {
+    use gantry::host::containment::AdapterPoison;
+    use gantry::host::contracts::{BlockingJobCompletion, BlockingWorkService};
+    use gantry::runtime::{BoundedBlockingWorkService, ResourceCleanupError};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    coordinator
+        .attach_resource_host_value(
+            &subject,
+            OwnerGeneration::new(4),
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: false,
+                value: 1,
+            },
+        )
+        .unwrap_or_else(|_| panic!("attachment"));
+    let before = coordinator.snapshot();
+    let service =
+        BoundedBlockingWorkService::new(1, 1).unwrap_or_else(|error| panic!("service: {error:?}"));
+    let (started_tx, started_rx) = std::sync::mpsc::sync_channel(1);
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+    let blocker = service
+        .submit(Box::new(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv();
+        }))
+        .unwrap_or_else(|error| panic!("blocker: {error:?}"));
+    started_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .unwrap_or_else(|error| panic!("blocker did not start: {error}"));
+    let submission = coordinator.submit_emergency_resource_cleanup(
+        &service,
+        &AdapterPoison::default(),
+        vec![(subject.clone(), emergency_cleanup())],
+    );
+    let shutdown = service.shutdown();
+    let _ = release_tx.send(());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap_or_else(|error| panic!("observer runtime: {error}"));
+    assert_eq!(runtime.block_on(shutdown), Ok(()));
+    assert_eq!(
+        runtime.block_on(blocker.completion()),
+        BlockingJobCompletion::Completed
+    );
+    let observer = submission.unwrap_or_else(|error| panic!("queued submission: {error:?}"));
+    assert_eq!(
+        runtime.block_on(observer.completion()),
+        Err(ResourceCleanupError::Completion(
+            BlockingJobCompletion::CancelledBeforeStart
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(coordinator.has_pending_resource_operations());
+    let report = coordinator
+        .emergency_release_resource_cohort(vec![(subject.clone(), emergency_cleanup())])
+        .unwrap_or_else(|error| panic!("explicit late cleanup: {error:?}"));
+    assert!(report.semantic().is_complete());
+    assert_eq!(report.physical(), &[(subject, Ok(()))]);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+        coordinator.snapshot().publication(),
+        before.publication() + 1
+    );
+    assert!(
+        coordinator.has_pending_resource_operations(),
+        "cleanup does not settle machine work"
+    );
+}
+
 /// Faults injected independently at each cleanup service boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CleanupServiceFault {
