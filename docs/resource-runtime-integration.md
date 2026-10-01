@@ -79,11 +79,14 @@ mutation routes - `charge`, `renew`, `begin_finish`, `complete_finalization`, `c
 owner-qualified: the presented owner generation must be the account's current one, as
 `GNT-20.10-retirement-and-stale-owner-fencing` requires, and a superseded generation is refused
 before any declared fact changes. `settle_from_post_failure` is fenced by its own operation and
-resource generation, while `settle_from_emergency_cleanup` is authorized by the sealed cleanup
+resource generation plus accepting-owner provenance from `LiveResource`, while declaration-only
+`OperationAbi` failure classification cannot authorize runtime poisoning. Missing provenance or
+a stale evidence owner refuses before mutation. `settle_from_emergency_cleanup` is authorized by the sealed cleanup
 witness; neither uses an owner-generation argument. `poison_adapter_from_post_failure` is a distinct
 adapter-failure route: the settlement selects its operation and resource generation and must declare
-adapter poisoning under `GNT-20.7`, then the presented current owner generation fences the bound
-adapter poison under `GNT-23.5`. Its poison reason is supplied by the fault-classification caller,
+adapter poisoning under `GNT-20.7`. The evidence's accepting owner must match the account;
+the presented current owner generation fences the bound adapter poison under `GNT-23.5`.
+Its poison reason is supplied by the fault-classification caller,
 and this route changes neither the resource lifetime nor sibling adapters. Physical reclamation is
 the one registry-wide mutating route and changes no declared fact.
 

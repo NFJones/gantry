@@ -1488,7 +1488,17 @@ fn failure_settlement_in(
         ReceiverOwnership::RetainedByCaller,
     )
     .unwrap_or_else(|_| unreachable!("fixture operation is admissible"));
-    operation.settle_failure(failure)
+    let mut live = operation
+        .open_live(
+            OwnerGeneration::new(4),
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1).unwrap_or_else(|| unreachable!("nonzero charge")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("fixture live resource: {error:?}"));
+    live.settle_failure(failure)
+        .unwrap_or_else(|error| panic!("fixture failure evidence: {error:?}"))
 }
 
 fn admitted_active() -> AdmittedResource {
@@ -2984,6 +2994,48 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     let mut admitted_resource = admitted_active();
     let before = admitted_resource.ledger().clone();
 
+    let subject = admitted_resource.subject();
+    let operation = OperationAbi::new(
+        OperationKind::LiveResource,
+        &CanonicalPath::new(FIXTURE_DECLARATION)
+            .unwrap_or_else(|error| panic!("declaration: {error}")),
+        subject.site(),
+        0,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|error| panic!("operation: {error:?}"));
+    let mut stale_owner_resource = operation
+        .open_live(
+            OwnerGeneration::new(3),
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1).unwrap_or_else(|| unreachable!("nonzero charge")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("stale-owner fixture: {error:?}"));
+    let stale_owner_failure = stale_owner_resource
+        .settle_failure(FailureClass::ResourceFailure)
+        .unwrap_or_else(|error| panic!("failure evidence: {error:?}"));
+    assert_eq!(
+        admitted_resource.settle_from_post_failure(&stale_owner_failure, 21),
+        Err(PostFailureSettlementRefusal::Model(
+            ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: OwnerGeneration::new(4),
+            }
+        ))
+    );
+    assert_eq!(admitted_resource.ledger(), &before);
+    let declaration_only = operation.settle_failure(FailureClass::ResourceFailure);
+    assert_eq!(declaration_only.owner(), None);
+    assert_eq!(stale_owner_failure.owner(), Some(OwnerGeneration::new(3)));
+    assert_eq!(
+        admitted_resource.settle_from_post_failure(&declaration_only, 21),
+        Err(PostFailureSettlementRefusal::MissingOwner)
+    );
+    assert_eq!(admitted_resource.ledger(), &before);
+
     let foreign = failure_settlement_in(
         FIXTURE_WORKFLOW,
         "crate::resource_runtime_foreign",
@@ -3105,6 +3157,59 @@ fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
             adapter_instance("post_failure_sibling", 4, 0),
         )
         .unwrap_or_else(|error| panic!("the current owner binds its sibling adapter: {error:?}"));
+
+    let operation = OperationAbi::new(
+        OperationKind::LiveResource,
+        &CanonicalPath::new(FIXTURE_DECLARATION)
+            .unwrap_or_else(|error| panic!("declaration: {error}")),
+        subject.site(),
+        0,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|error| panic!("operation: {error:?}"));
+    let unqualified = operation.settle_failure(FailureClass::AdapterFailure);
+    let mut stale_live = operation
+        .open_live(
+            OwnerGeneration::new(3),
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1).unwrap_or_else(|| unreachable!("nonzero charge")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("stale resource: {error:?}"));
+    let stale_evidence = stale_live
+        .settle_failure(FailureClass::AdapterFailure)
+        .unwrap_or_else(|error| panic!("stale evidence: {error:?}"));
+    let before = registry.declared_records();
+    for (evidence, refusal) in [
+        (&unqualified, PostFailureSettlementRefusal::MissingOwner),
+        (
+            &stale_evidence,
+            PostFailureSettlementRefusal::Model(ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: owner,
+            }),
+        ),
+    ] {
+        assert_eq!(
+            registry.poison_adapter_from_post_failure(
+                evidence,
+                owner,
+                PoisonReason::InvariantFailure
+            ),
+            Err(ResourceRegistryRefusal::Settlement(refusal))
+        );
+        assert_eq!(registry.declared_records(), before);
+        for subject in [&subject, &sibling] {
+            assert_eq!(
+                registry
+                    .adapter_instance(subject)
+                    .map(AdapterInstance::is_poisoned),
+                Some(false)
+            );
+        }
+    }
 
     let resource_failure = failure_settlement_in(
         FIXTURE_WORKFLOW,

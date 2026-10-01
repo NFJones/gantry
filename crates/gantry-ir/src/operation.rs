@@ -1304,6 +1304,7 @@ impl ProgressRecord {
 pub struct PostFailureSettlement {
     operation: LogicalOperationId,
     generation: ResourceGenerationId,
+    owner: Option<OwnerGeneration>,
     state: ResourceState,
     ownership: ReceiverOwnership,
     adapter_poisoned: bool,
@@ -1320,6 +1321,14 @@ impl PostFailureSettlement {
     #[must_use]
     pub const fn generation(&self) -> &ResourceGenerationId {
         &self.generation
+    }
+
+    /// Returns accepting-owner provenance only when a live resource issued this evidence.
+    ///
+    /// Declaration-only ABI failure classification has no accepting runtime owner.
+    #[must_use]
+    pub const fn owner(&self) -> Option<OwnerGeneration> {
+        self.owner
     }
 
     /// Returns the single declared post-failure resource state.
@@ -1344,9 +1353,13 @@ impl PostFailureSettlement {
     #[must_use]
     pub fn canonical_text(&self) -> String {
         format!(
-            "operation={};generation={};state={};ownership={};adapter-poisoned={}",
+            "operation={};generation={};owner={};state={};ownership={};adapter-poisoned={}",
             self.operation.as_str(),
             self.generation.as_str(),
+            self.owner.map_or_else(
+                || "unqualified".to_owned(),
+                |owner| owner.value().to_string()
+            ),
             self.state.wire_name(),
             self.ownership.canonical_text(),
             self.adapter_poisoned,
@@ -1569,6 +1582,7 @@ impl OperationAbi {
         PostFailureSettlement {
             operation: self.operation.clone(),
             generation: self.generation.clone(),
+            owner: None,
             state,
             ownership: self.ownership.clone(),
             adapter_poisoned,
@@ -1981,6 +1995,7 @@ impl LiveResource {
         PostFailureSettlement {
             operation: self.abi.operation().clone(),
             generation: self.abi.generation().clone(),
+            owner: Some(self.owner),
             state,
             ownership: self.abi.ownership().clone(),
             adapter_poisoned,

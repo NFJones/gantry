@@ -12273,6 +12273,13 @@ observation on a resource that has no open half, or whose generation was fenced,
 MUST be refused, and the category of a fenced generation MUST be preserved rather
 than relabelled.
 
+Post-failure evidence issued by a `LiveResource` MUST retain that resource's accepting owner
+generation. Declaration-only `OperationAbi` failure classification has no accepting runtime
+owner and MUST NOT authorize runtime resource or adapter poisoning. After exact operation and
+resource-generation selection and applicable poison classification, the runtime MUST require
+that accepting owner to equal the admitted account's current owner before mutation. Missing
+provenance and stale-owner evidence MUST leave accounting and adapter state unchanged.
+
 <a id="GNT-20.8-half-close-and-post-failure-ownership"></a>
 
 **[GNT-20.8-half-close-and-post-failure-ownership] Half-close and post-failure

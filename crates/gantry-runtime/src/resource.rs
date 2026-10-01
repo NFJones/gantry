@@ -493,6 +493,8 @@ pub enum PostFailureSettlementRefusal {
     ForeignOperation,
     /// The settlement names another resource generation of this account's site.
     StaleGeneration,
+    /// Declaration-only failure classification carries no accepting owner provenance.
+    MissingOwner,
     /// The settlement does not declare that the failed adapter instance is poisoned.
     AdapterPoisoningNotRequired,
     /// The account's adapter binding refused the model-issued poison evidence.
@@ -1674,6 +1676,12 @@ impl AdmittedResource {
         if !settlement.poisons_adapter() {
             return Err(PostFailureSettlementRefusal::AdapterPoisoningNotRequired);
         }
+        self.require_current_owner(
+            settlement
+                .owner()
+                .ok_or(PostFailureSettlementRefusal::MissingOwner)?,
+        )
+        .map_err(PostFailureSettlementRefusal::Model)?;
         self.poison_adapter_instance(presented_owner, reason, ledger)
             .map_err(PostFailureSettlementRefusal::AdapterBinding)
     }
@@ -1839,6 +1847,12 @@ impl AdmittedResource {
         }
         let witness = PoisonWitness::from_post_failure(settlement, settled_at)
             .map_err(PostFailureSettlementRefusal::Model)?;
+        self.require_current_owner(
+            settlement
+                .owner()
+                .ok_or(PostFailureSettlementRefusal::MissingOwner)?,
+        )
+        .map_err(PostFailureSettlementRefusal::Model)?;
         self.ledger
             .poison(witness)
             .map_err(PostFailureSettlementRefusal::Model)?;
