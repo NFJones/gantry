@@ -10,7 +10,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::lifecycle::EmergencyCleanupWitness;
-use crate::operation::{OwnerGeneration, PostFailureSettlement, ResourceState};
+use crate::operation::{
+    OperationStateProjection, OwnerGeneration, PostFailureSettlement, ResourceState,
+};
 
 /// The Section 28 clauses implemented by this pure model, in declaration order.
 pub const RESOURCE_CLAUSES: [&str; 11] = [
@@ -678,6 +680,20 @@ impl ResourceLedger {
     #[must_use]
     pub const fn operation_state(&self) -> ResourceState {
         self.operation_state
+    }
+
+    /// Projects one accepted Section 20 settlement's state through the current owner generation.
+    ///
+    /// Runtime subject selection is performed by the registry before this owner-qualified model
+    /// mutation. A stale projection owner is refused before the operation-state fact changes; whole-
+    /// resource lifetime, quotas, roots, and settlement baselines are unaffected.
+    pub fn project_operation_state(
+        &mut self,
+        projection: &OperationStateProjection,
+    ) -> Result<ResourceState, ResourceError> {
+        self.require_current_owner(projection.owner())?;
+        self.operation_state = projection.state();
+        Ok(self.operation_state)
     }
 
     /// Returns the exact closed roots currently retained for this resource.

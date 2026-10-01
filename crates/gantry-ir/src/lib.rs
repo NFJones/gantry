@@ -284,10 +284,10 @@ pub use operation::{
     AdapterInstance, CrashCutClassification, DedupRecord, DedupRecordState, DedupRetentionBounds,
     DispatchAdmission, DurableOperationCut, DurableValueRecord, EffectCertainty, FailureClass,
     LiveResource, LoanId, OPERATION_ABI_CLAUSES, OperationAbi, OperationAbiDiagnosticCode,
-    OperationAbiError, OperationCancellation, OperationKind, OperationSettlement, OwnerGeneration,
-    PostFailureSettlement, ProgressDisposition, ProgressObservation, ProgressRecord,
-    ReceiverOwnership, ResourceGenerationId, ResourceState, RetryEligibility, admit_dispatch,
-    classify_effect, retry_eligibility,
+    OperationAbiError, OperationCancellation, OperationKind, OperationSettlement,
+    OperationStateProjection, OwnerGeneration, PostFailureSettlement, ProgressDisposition,
+    ProgressObservation, ProgressRecord, ReceiverOwnership, ResourceGenerationId, ResourceState,
+    RetryEligibility, admit_dispatch, classify_effect, retry_eligibility,
 };
 pub use package::{
     AliasMap, AliasNamespace, AxisReport, AxisVerdict, BoundarySchemaReport,

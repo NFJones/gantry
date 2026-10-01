@@ -13,7 +13,7 @@ below. Where a clause owns a fence rather than the runtime policy that consumes 
 
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |
-| Admission | `new`, `admit` | `GNT-28.7-durable-resource-reconstruction`, `GNT-20.1-operation-kinds` |
+| Admission | `new`, `admit` | `GNT-28.11-runtime-admission-mapping`, `GNT-28.7-durable-resource-reconstruction`, `GNT-20.1-operation-kinds` |
 | Reconstruction | `reconstruct`, `RecoveredResourceRecord` | `GNT-28.7-durable-resource-reconstruction`, `GNT-20.10-retirement-and-stale-owner-fencing` |
 | Capture | `declared_records` | `GNT-28.7-durable-resource-reconstruction` |
 | Live-account ceiling | `with_live_limit`, `live_limit`, `live_resources` | Runtime policy over the lifetimes `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` declares; the model owns no ceiling |
@@ -22,9 +22,11 @@ below. Where a clause owns a fence rather than the runtime policy that consumes 
 | Two-phase finish | `begin_finish`, `complete_finalization` | `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` |
 | Root closure, retirement, deletion | `close_liveness_root`, `retire`, `delete` | `GNT-28.1-resource-identity-and-closed-liveness-roots`, `GNT-28.8-retention-and-compaction-fences`, `GNT-28.9-retirement-deletion-and-stale-owner-fences` |
 | Failure settlement | `settle_from_post_failure`, `settle_from_emergency_cleanup` | `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` |
+| Operation-state projection | `project_operation_state` | `GNT-28.12-operation-state-projection`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.10-retirement-and-stale-owner-fencing` |
 | Cohort emergency cleanup | `settle_cohort_from_emergency_cleanup`, `CohortEmergencyCleanup`, `CohortEmergencySettlement` | `GNT-22.6-grace-expiry-and-hard-cancellation`, `GNT-28.4-resource-lifetime-finish-poison-and-emergency-release` |
 | Containment settlement | `settle_containment` | `GNT-23.4-operation-ownership-and-single-settlement` |
 | Adapter binding and poisoning | `bind_adapter_instance`, `adapter_instance`, `poison_adapter_instance` | `GNT-23.5-failed-instance-poisoning-and-isolation`, `GNT-20.11-adapter-obligations-and-diagnostics` |
+| Adapter-failure settlement | `poison_adapter_from_post_failure` | `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-23.5-failed-instance-poisoning-and-isolation`; caller supplies the classified poison reason |
 | Inspection | `account` | `GNT-28.7-durable-resource-reconstruction` |
 
 ## Account surfaces
@@ -35,7 +37,9 @@ below. Where a clause owns a fence rather than the runtime policy that consumes 
 `retire`, `delete_for`, `settle_from_post_failure`, and `settle_from_emergency_cleanup`. The registry
 routes above select an account and delegate to these, so both levels publish the same model
 decisions, and the account level is the narrower surface: it mutates one account a caller already
-holds rather than selecting one by subject.
+holds rather than selecting one by subject. Operation-state projection is a registry route; it
+derives its model projection from a supplied accepted `LiveResource` and applies it to the selected
+ledger without exposing a mutable account.
 
 ## Fences
 
@@ -45,11 +49,31 @@ mutation routes - `charge`, `renew`, `begin_finish`, `complete_finalization`, `c
 `retire`, `delete`, `bind_adapter_instance`, and `poison_adapter_instance` - are additionally
 owner-qualified: the presented owner generation must be the account's current one, as
 `GNT-20.10-retirement-and-stale-owner-fencing` requires, and a superseded generation is refused
-before any declared fact changes. The two failure routes are fenced differently and are not
-owner-qualified: `settle_from_post_failure` is authorized by the settlement's own operation and
-resource generation, and `settle_from_emergency_cleanup` only by the sealed cleanup witness, so an
-owner generation is not what authorizes either. Physical reclamation is the one registry-wide
-mutating route and changes no declared fact.
+before any declared fact changes. `settle_from_post_failure` is fenced by its own operation and
+resource generation, while `settle_from_emergency_cleanup` is authorized by the sealed cleanup
+witness; neither uses an owner-generation argument. `poison_adapter_from_post_failure` is a distinct
+adapter-failure route: the settlement selects its operation and resource generation and must declare
+adapter poisoning under `GNT-20.7`, then the presented current owner generation fences the bound
+adapter poison under `GNT-23.5`. Its poison reason is supplied by the fault-classification caller,
+and this route changes neither the resource lifetime nor sibling adapters. Physical reclamation is
+the one registry-wide mutating route and changes no declared fact.
+
+`ResourceRegistry::project_operation_state` accepts a `LiveResource` and derives its opaque
+projection internally; `ResourceLedger::project_operation_state` consumes that projection. A
+projection exists only after the supplied `LiveResource` accepted its own Section 20 settlement.
+That exact operation and resource generation select the account, and the accepted owner generation
+must still be current. The route updates only the distinct operation-state field; it does not settle
+whole-resource lifetime, change quotas or roots, or reconstruct or claim a host resource. Unsettled,
+unknown-subject, or stale-owner projections leave the account unchanged, as required by
+`GNT-28.12-operation-state-projection`.
+
+- `GNT-28.11-runtime-admission-mapping` maps only accounting admission: the registry derives its
+  subject from the machine's authenticated live-resource operation, admits only the declared
+  reconstruction-record carrier, and refuses duplicate subjects and admissions above its declared
+  live-account ceiling. This does not discover or reconstruct a physical host resource.
+- `GNT-28.12-operation-state-projection` maps one accepted Section 20 operation settlement into the
+  matching account's distinct operation-state fact. It does not establish evaluator-wide settlement
+  uniqueness, a checkpoint format, or a journal schema.
 
 No public route hands out a mutable registry-held account. The bounded compile-fail witnesses cover
 the private subject-binding constructor, the removed mutable registry-held account route, the

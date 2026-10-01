@@ -1199,6 +1199,45 @@ impl OperationSettlement {
     }
 }
 
+/// An opaque projection of an accepted live-resource settlement into its runtime accounting record.
+///
+/// The only constructor is [`LiveResource::operation_state_projection`], which requires the
+/// settlement retained by that same live resource. The operation, resource generation, owner, and
+/// state therefore come from one Section 20-accepted settlement rather than caller-selected facts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationStateProjection {
+    operation: LogicalOperationId,
+    generation: ResourceGenerationId,
+    owner: OwnerGeneration,
+    state: ResourceState,
+}
+
+impl OperationStateProjection {
+    /// Returns the settled logical operation identity.
+    #[must_use]
+    pub const fn operation(&self) -> &LogicalOperationId {
+        &self.operation
+    }
+
+    /// Returns the resource generation whose operation state was settled.
+    #[must_use]
+    pub const fn generation(&self) -> &ResourceGenerationId {
+        &self.generation
+    }
+
+    /// Returns the owner generation that accepted the settlement.
+    #[must_use]
+    pub const fn owner(&self) -> OwnerGeneration {
+        self.owner
+    }
+
+    /// Returns the state derived by the accepted settlement.
+    #[must_use]
+    pub const fn state(&self) -> ResourceState {
+        self.state
+    }
+}
+
 /// One declared progress record retained across an interruption
 /// (`GNT-20.5-interruption-cancellation-and-late-completion`).
 ///
@@ -1737,6 +1776,22 @@ impl LiveResource {
     #[must_use]
     pub const fn settlement(&self) -> Option<&OperationSettlement> {
         self.settlement.as_ref()
+    }
+
+    /// Returns an opaque runtime state projection only after this live resource accepted a settlement.
+    ///
+    /// The projection is derived from the exact settlement retained by this resource; an
+    /// unsettled, foreign, stale-generation, stale-owner, or otherwise refused candidate cannot
+    /// produce one.
+    #[must_use]
+    pub fn operation_state_projection(&self) -> Option<OperationStateProjection> {
+        let settlement = self.settlement.as_ref()?;
+        Some(OperationStateProjection {
+            operation: settlement.operation().clone(),
+            generation: settlement.generation().clone(),
+            owner: settlement.owner(),
+            state: settlement.resource_state(),
+        })
     }
 
     /// Observes one progress observation, charging the declared observation allowance.

@@ -14948,18 +14948,21 @@ or conditionally satisfied where it can only demonstrate one of these limits.
 contract.** This section defines closed liveness roots, logical measures independent of physical
 representation, atomic charging for copy, move, loan, update, and release, whole-resource
 lifetime settlement, closed quota families and owners, bounded renewal, deterministic durable
-reconstruction, and retention, compaction, retirement, and deletion fences. It extends without
+reconstruction, retention, compaction, retirement, and deletion fences, plus the separately
+scoped runtime admission mapping of `GNT-28.11-runtime-admission-mapping` and operation-state
+projection of `GNT-28.12-operation-state-projection`. It extends without
 redefining the ownership, receiver-loan, operation identity, operation `ResourceState`, poison,
 retention, and stale-owner contracts of `GNT-20.*`, and the stop and sealed emergency-cleanup
 contracts of `GNT-22.*` and `GNT-15.10`. The pure model is `crates/gantry-ir/src/resource.rs`
 and its analyzer-profile evidence lane is
 `crates/gantry-conformance/tests/resource_accounting.rs`.
 
-**Applicability.** These clauses apply to an implementation that declares the Section 28 pure
-resource-accounting model. They define model facts only: no clause here creates a runtime
-registry, evaluator behavior, checkpoint, journal schema, host trait, scheduler, or runtime
-integration claim. The analyzer profile records every clause `covered` only for the declared
-pure model and its conformance lane.
+**Applicability.** Clauses `GNT-28.1` through `GNT-28.10` apply to an implementation that
+declares the Section 28 pure resource-accounting model and define model facts only. Clauses
+`GNT-28.11` and `GNT-28.12` apply only to a runtime profile that separately declares a resource registry. No
+clause here creates evaluator behavior, a checkpoint, a journal schema, a host trait, or a
+scheduler. The analyzer profile records clauses `covered` only for the declared pure model and
+its conformance lane; it does not claim coverage of `GNT-28.11` or `GNT-28.12`.
 
 **Boundary.** `ResourceState` remains the Section 20 state of one operation. The
 whole-resource lifetime state defined here is distinct and MUST NOT be substituted for an
@@ -15064,12 +15067,44 @@ a distinct declared resource record.
 
 <a id="GNT-28.10-resource-accounting-non-claims"></a>
 
-**[GNT-28.10-resource-accounting-non-claims] Resource accounting non-claims.** This section does
+**[GNT-28.10-resource-accounting-non-claims] Resource accounting non-claims.** Except for the
+explicitly scoped admission mapping of `GNT-28.11-runtime-admission-mapping` and operation-state
+projection of `GNT-28.12-operation-state-projection`, this section does
 not promise a runtime resource registry, evaluator integration, host allocation accounting,
 checkpoint format, journal schema, runtime compaction implementation, automatic quota renewal,
 automatic resource revival, or host-resource reconstruction. These non-claims are closed: a
 model fact or test MUST NOT be presented as a runtime guarantee, and an implementation MUST NOT
 claim runtime integration merely because it implements this pure model.
+
+<a id="GNT-28.11-runtime-admission-mapping"></a>
+
+**[GNT-28.11-runtime-admission-mapping] Runtime admission mapping.** A runtime profile that
+separately declares a resource registry MUST derive each admission subject from the machine's
+authenticated Section 20 live-resource operation and its declared operation and resource
+generations; a caller-presented identity MUST NOT substitute for that subject. The registry MUST
+admit resource-accounting facts only through the declared reconstruction-record carrier and MUST
+refuse an ordinary serialization or ordinary durable-state carrier before reconstructing those
+facts. It MUST refuse a duplicate subject or an admission beyond its explicitly declared live
+account ceiling without replacing an existing account. A live account is one whose whole-resource
+lifetime is active or finishing; leaving those states releases its live-account place independently
+of retention and physical reclamation. This mapping concerns accounting admission only: it does not
+create, discover, reconstruct, or claim ownership of a physical host resource, and it does not
+define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
+
+<a id="GNT-28.12-operation-state-projection"></a>
+
+**[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile
+that separately declares a resource registry MAY project the Section 20 operation state of an
+admitted subject into its accounting record only from the settlement retained by the same
+`LiveResource` after that resource accepts the settlement under `GNT-20.5-interruption-cancellation-and-late-completion`.
+The runtime MUST select the account by that settlement's logical operation and resource generation,
+and MUST require its owner generation to equal the account's current owner generation before any
+fact changes; an absent subject or stale owner MUST be refused without mutation. The projected
+operation state MUST equal the accepted settlement's derived `ResourceState`, not a caller-selected
+state. This projection changes only the distinct Section 20 operation-state fact of that admitted
+account: it MUST NOT change whole-resource lifetime, quotas, liveness roots, ownership of a physical
+host resource, or the Section 20 settlement, progress, or generation. It creates no evaluator-wide
+settlement uniqueness, checkpoint format, or journal schema.
 
 ## 29. Portable Host-Domain and Standard Host-Family Contracts
 

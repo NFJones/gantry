@@ -542,6 +542,15 @@ impl ExitReport {
     pub fn cleanup(&self) -> Option<&EmergencyCleanupWitness> {
         self.cleanup.as_ref()
     }
+
+    /// Transfers the affine cleanup witness to the runtime that settles owned resources.
+    ///
+    /// Consuming the report prevents the same published lifecycle result from remaining
+    /// observable after its cleanup authority has been handed to a settlement boundary.
+    #[must_use]
+    pub fn into_cleanup(self) -> Option<EmergencyCleanupWitness> {
+        self.cleanup
+    }
 }
 
 /// Admits only a binary whose every durable-companion member is durable.

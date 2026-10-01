@@ -493,6 +493,10 @@ pub enum PostFailureSettlementRefusal {
     ForeignOperation,
     /// The settlement names another resource generation of this account's site.
     StaleGeneration,
+    /// The settlement does not declare that the failed adapter instance is poisoned.
+    AdapterPoisoningNotRequired,
+    /// The account's adapter binding refused the model-issued poison evidence.
+    AdapterBinding(AdapterBindingRefusal),
     /// The model refused the settlement under its own witness or lifetime rules.
     Model(ResourceError),
 }
@@ -832,6 +836,34 @@ impl ResourceRegistry {
             .map_err(ResourceRegistryRefusal::Settlement)
     }
 
+    /// Projects the state of one accepted live-resource settlement into its admitted record.
+    ///
+    /// The operation-state projection is available only after the supplied `LiveResource` accepted
+    /// its own Section 20 settlement. Its operation and generation select the account; the ledger
+    /// then enforces the current owner generation before changing only the distinct operation-state
+    /// fact. An unsettled or unknown subject, or stale owner, is refused without changing any
+    /// declared account fact.
+    pub fn project_operation_state(
+        &mut self,
+        live: &gantry_ir::LiveResource,
+    ) -> Result<ResourceState, ResourceRegistryRefusal> {
+        let projection = live
+            .operation_state_projection()
+            .ok_or(ResourceRegistryRefusal::OperationStateProjectionNotSettled)?;
+        let key = (
+            projection.operation().clone(),
+            projection.generation().clone(),
+        );
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .ledger
+            .project_operation_state(&projection)
+            .map_err(ResourceRegistryRefusal::OperationStateProjection)
+    }
+
     /// Settles one account from the sealed emergency-cleanup witness its caller holds.
     ///
     /// The witness is a sealed stop artifact that names no account, so the caller names the
@@ -1121,6 +1153,33 @@ impl ResourceRegistry {
             .map_err(ResourceRegistryRefusal::AdapterBinding)
     }
 
+    /// Poisons only the bound adapter named by a model-issued adapter-failure settlement.
+    ///
+    /// The settlement selects its own admitted operation and resource generation; a missing
+    /// account is refused without changing any binding. The Section 20 poison flag is required,
+    /// while the Section 23 reason remains explicit input from the fault-classification caller.
+    /// The account's owner fence and the registry's one-way poison ledger decide whether that
+    /// binding can be poisoned; the resource lifetime and sibling accounts are unchanged.
+    pub fn poison_adapter_from_post_failure(
+        &mut self,
+        settlement: &PostFailureSettlement,
+        presented_owner: OwnerGeneration,
+        reason: PoisonReason,
+    ) -> Result<PoisonReason, ResourceRegistryRefusal> {
+        let key = (
+            settlement.operation().clone(),
+            settlement.generation().clone(),
+        );
+        let ledger = &mut self.adapter_faults;
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        account
+            .poison_adapter_from_post_failure(settlement, presented_owner, reason, ledger)
+            .map_err(ResourceRegistryRefusal::Settlement)
+    }
+
     /// Settles every account of one hard-cancelled cohort from that cohort's sealed cleanup witnesses.
     ///
     /// The model's emergency-release witness is sealed and single-use, so the sweep takes one witness
@@ -1217,6 +1276,10 @@ pub enum ResourceRegistryRefusal {
     Admission(ResourceError),
     /// The account's own settlement step refused the settlement.
     Settlement(PostFailureSettlementRefusal),
+    /// The account's current-owner fence refused an accepted operation-state projection.
+    OperationStateProjection(ResourceError),
+    /// The presented live resource has not accepted an operation settlement.
+    OperationStateProjectionNotSettled,
 }
 
 /// Why the runtime refused to bind, replace, or poison one resource-bearing adapter instance.
@@ -1527,6 +1590,27 @@ impl AdmittedResource {
             .as_mut()
             .ok_or(AdapterBindingRefusal::Unbound)?;
         Ok(ledger.poison(instance, reason))
+    }
+
+    /// Applies one model-issued adapter-failure settlement to this account's bound adapter.
+    fn poison_adapter_from_post_failure(
+        &mut self,
+        settlement: &PostFailureSettlement,
+        presented_owner: OwnerGeneration,
+        reason: PoisonReason,
+        ledger: &mut PoisonLedger,
+    ) -> Result<PoisonReason, PostFailureSettlementRefusal> {
+        if settlement.operation() != self.subject.operation() {
+            return Err(PostFailureSettlementRefusal::ForeignOperation);
+        }
+        if settlement.generation() != self.subject.generation() {
+            return Err(PostFailureSettlementRefusal::StaleGeneration);
+        }
+        if !settlement.poisons_adapter() {
+            return Err(PostFailureSettlementRefusal::AdapterPoisoningNotRequired);
+        }
+        self.poison_adapter_instance(presented_owner, reason, ledger)
+            .map_err(PostFailureSettlementRefusal::AdapterBinding)
     }
 
     /// Advances to finishing from the only ordinary active state.

@@ -12,27 +12,31 @@ use std::sync::Arc;
 use gantry::identity::ProtocolIdentity;
 use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry::ir::{
-    AdapterInstance, CanonicalImplementationIdentity, ForeignFailureKind, OperationAbiError,
-    PoisonReason, RightsSet, TypeExpression,
+    AdapterInstance, CanonicalImplementationIdentity, DisclosureCharge, ForeignFailureKind,
+    OperationAbiError, OperationSettlement, PoisonReason, ProgressObservation, RightsSet,
+    TypeExpression,
 };
 use gantry::ir::{
-    CanonicalPath, CanonicalSignature, Charge, Completion, ContainmentError, DurableResourceRecord,
-    EffectSet, EffectState, EmergencyCleanupWitness, ExecutableAction, ExecutableOperation,
-    ExternalOutcome, FailureClass, GracePolicy, LivenessRoot, MalformedCompletion, OperationAbi,
-    OperationKind, OwnerGeneration, PoisonWitness, PostFailureSettlement, Quota, QuotaFamily,
-    QuotaOwner, ReceiverOwnership, ResourceAction, ResourceCarrier, ResourceError, ResourceLedger,
-    ResourceLifetimeState, ResourceState, RetentionFence, StaticSiteId, StopCause, StopCoordinator,
-    StopRequest, StructuralPosition, TaskStopState, TypeDescriptor,
+    ApplicationCoordinator, ApplicationEntry, CanonicalPath, CanonicalSignature, Charge,
+    Completion, ContainmentError, DurableResourceRecord, EffectSet, EffectState,
+    EmergencyCleanupWitness, ExecutableAction, ExecutableOperation, ExitDisposition, ExitReport,
+    ExternalOutcome, FailureClass, GracePolicy, LaunchArrangement, LaunchSnapshot,
+    LaunchSnapshotLimits, LivenessRoot, LogicalCwd, MalformedCompletion, OperationAbi,
+    OperationKind, OwnerGeneration, PoisonWitness, PortableSignalClass, PostFailureSettlement,
+    Quota, QuotaFamily, QuotaOwner, ReceiverOwnership, ResourceAction, ResourceCarrier,
+    ResourceError, ResourceLedger, ResourceLifetimeState, ResourceState, RetentionFence,
+    SemanticMode, StaticSiteId, StopCause, StopCoordinator, StopRequest, StructuralPosition,
+    SupervisorSettlement, TaskStopState, TypeDescriptor,
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::AdapterBindingRefusal;
 use gantry::runtime::CohortEmergencySettlement;
 use gantry::runtime::{
     AdmittedResource, ExecutionBudget, Instruction, InstructionKind, LoopPhase, Machine,
-    MachineCheckpointV3, MachineLabel, MachineLimits, MachineProgram, MachineStep,
-    PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRecordCodecError,
-    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding, Workflow,
-    decode_resource_reconstruction_record, encode_resource_reconstruction_record,
+    MachineCheckpointV3, MachineLabel, MachineLimits, MachineOutcome, MachineProgram, MachineStep,
+    OperationCompletionError, PostFailureSettlementRefusal, RecoveredResourceRecord,
+    ResourceRecordCodecError, ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
+    Workflow, decode_resource_reconstruction_record, encode_resource_reconstruction_record,
 };
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 
@@ -219,6 +223,107 @@ fn registry_admission_uses_the_machines_pending_resource_subject() {
         registry_before_completed_refusal,
         "a stale saved subject cannot publish a resource account"
     );
+
+    let (_program, mut cancelled_machine, cancellation_subject) =
+        machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let cancellation_subject = cancellation_subject
+        .unwrap_or_else(|| panic!("the pending action exposes its cancellation subject"));
+    assert!(
+        cancelled_machine
+            .cancel("resource admission test")
+            .is_some()
+    );
+    let cancelled_operation = cancelled_machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("the cancelled operation remains pending until settlement"))
+        .identity;
+    assert_eq!(
+        cancelled_machine.complete_operation(cancelled_operation, LogicalValue::unit()),
+        Err(OperationCompletionError::Cancelled)
+    );
+    assert_eq!(
+        cancelled_machine.pending_resource_subject(),
+        Some(cancellation_subject.clone()),
+        "a refused late completion leaves the cancellation settlement pending"
+    );
+    assert!(matches!(
+        cancelled_machine.step(),
+        MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Cancelled(_)))
+    ));
+    assert!(cancelled_machine.pending_resource_subject().is_none());
+    let mut cancellation_registry = ResourceRegistry::new();
+    assert_eq!(
+        cancellation_registry.admit(
+            cancellation_subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "a saved subject cannot admit after cancellation consumes the pending operation"
+    );
+    assert!(
+        cancellation_registry
+            .account(&cancellation_subject)
+            .is_none()
+    );
+
+    let (_program, mut rejected_machine, rejected_subject) =
+        machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let rejected_subject = rejected_subject
+        .unwrap_or_else(|| panic!("the pending action exposes its rejected-result subject"));
+    let rejected_operation = rejected_machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("the action operation is pending"))
+        .identity;
+    assert_eq!(
+        rejected_machine.complete_operation(rejected_operation, LogicalValue::boolean(true)),
+        Err(OperationCompletionError::TypeMismatch)
+    );
+    assert_eq!(
+        rejected_machine.pending_resource_subject(),
+        Some(rejected_subject.clone()),
+        "a rejected completion leaves the pending resource subject live"
+    );
+    let mut rejected_registry = ResourceRegistry::new();
+    rejected_registry
+        .admit(
+            rejected_subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("rejected completion preserves admission: {error:?}"));
+    assert!(rejected_registry.account(&rejected_subject).is_some());
+
+    let (_program, mut failed_machine, failure_subject) =
+        machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let failure_subject =
+        failure_subject.unwrap_or_else(|| panic!("the pending action exposes its failure subject"));
+    let failure_operation = failed_machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("the action operation is pending"))
+        .identity;
+    assert!(matches!(
+        failed_machine.fail_operation(
+            failure_operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        ),
+        Ok(MachineLabel::Failure(_))
+    ));
+    assert!(failed_machine.pending_resource_subject().is_none());
+    let mut failure_registry = ResourceRegistry::new();
+    assert_eq!(
+        failure_registry.admit(
+            failure_subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "a saved subject cannot admit after failure consumes the pending operation"
+    );
+    assert!(failure_registry.account(&failure_subject).is_none());
 
     let (_program, unauthenticated_machine, _) =
         machine_with_unauthenticated_subject(Some(FIXTURE_DECLARATION));
@@ -967,6 +1072,92 @@ fn registry_routes_emergency_cleanup_and_releases_the_live_place() {
     );
 }
 
+/// The published lifecycle report transfers its affine cleanup authority to the resource registry.
+#[test]
+fn published_hard_cancellation_cleanup_settles_resource_account() {
+    let limits = LaunchSnapshotLimits::new(1, 0, 0, 32);
+    let snapshot = LaunchSnapshot::new(
+        vec!["app".into()],
+        vec![],
+        LogicalCwd::new("/").unwrap_or_else(|error| panic!("logical cwd: {error:?}")),
+        Default::default(),
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("launch snapshot: {error:?}"));
+    let entry = ApplicationEntry::new(
+        "test",
+        SemanticMode::Application,
+        "gantry-v1",
+        snapshot,
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("application entry: {error:?}"));
+    let policy = GracePolicy::new(1, 1).unwrap_or_else(|error| panic!("grace policy: {error:?}"));
+    let mut lifecycle = ApplicationCoordinator::new(LaunchArrangement::Standalone);
+    lifecycle
+        .start(&entry)
+        .unwrap_or_else(|error| panic!("application starts: {error:?}"));
+    lifecycle
+        .translate_signal(PortableSignalClass::Interrupt, policy, 20)
+        .unwrap_or_else(|error| panic!("stop closes admission: {error:?}"));
+    lifecycle
+        .begin_finalization()
+        .unwrap_or_else(|error| panic!("finalization begins: {error:?}"));
+    lifecycle
+        .record_final_flush()
+        .unwrap_or_else(|error| panic!("flush is recorded: {error:?}"));
+    lifecycle
+        .record_hard_cancellation(Some(emergency_cleanup_at(21)))
+        .unwrap_or_else(|error| panic!("hard cancellation is recorded: {error:?}"));
+    lifecycle
+        .settle()
+        .unwrap_or_else(|error| panic!("supervisor settles: {error:?}"));
+    let report = ExitReport::new(
+        ExitDisposition::Stopped,
+        true,
+        SupervisorSettlement::settled(),
+        Some(emergency_cleanup_at(22)),
+    )
+    .unwrap_or_else(|error| panic!("exit report: {error:?}"));
+    let published = lifecycle
+        .publish(report)
+        .unwrap_or_else(|error| panic!("exit report publishes: {error:?}"));
+    let cleanup = published
+        .into_cleanup()
+        .unwrap_or_else(|| panic!("published hard cancellation retains cleanup"));
+    assert_eq!(
+        cleanup.at_us(),
+        21,
+        "publication transfers the coordinator witness"
+    );
+
+    let subject = active_subject();
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("resource admission: {error:?}"));
+    assert_eq!(registry.live_resources(), 1);
+    assert_eq!(
+        registry.settle_from_emergency_cleanup(&subject, cleanup,),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+    assert_eq!(registry.live_resources(), 0);
+    assert!(registry.account(&subject).is_some());
+
+    let report_without_cleanup = ExitReport::new(
+        ExitDisposition::Stopped,
+        true,
+        SupervisorSettlement::settled(),
+        None,
+    )
+    .unwrap_or_else(|error| panic!("exit report without cleanup: {error:?}"));
+    assert!(report_without_cleanup.into_cleanup().is_none());
+}
+
 /// Declared quota families are enforced on the registry's live path: an admitted charge consumes
 /// declared headroom, a charge beyond the ceiling is refused with the model's own reason, an
 /// undeclared family and a stale owner generation are refused, an unknown subject is refused, and a
@@ -1139,6 +1330,10 @@ fn registry_renews_one_declared_quota_and_refuses_exhaustion() {
 }
 
 fn emergency_cleanup() -> EmergencyCleanupWitness {
+    emergency_cleanup_at(21)
+}
+
+fn emergency_cleanup_at(at_us: u64) -> EmergencyCleanupWitness {
     let policy =
         GracePolicy::new(1, 1).unwrap_or_else(|_| unreachable!("fixture stop policy is bounded"));
     let mut coordinator = StopCoordinator::new();
@@ -1149,7 +1344,7 @@ fn emergency_cleanup() -> EmergencyCleanupWitness {
     );
     let mut tasks: [TaskStopState; 0] = [];
     let escalation = coordinator
-        .escalate(&mut tasks, 21)
+        .escalate(&mut tasks, at_us)
         .unwrap_or_else(|_| unreachable!("held stop request escalates at its deadline"));
     escalation.admit_emergency_release()
 }
@@ -1192,6 +1387,368 @@ fn runtime_finalization_completion_requires_the_finishing_phase() {
     assert_eq!(
         admitted_resource.complete_finalization_for(owner, 21),
         Err(ResourceError::IllegalLifetimeTransition)
+    );
+}
+
+#[test]
+fn emergency_release_survives_declared_registry_reconstruction() {
+    let subject = active_subject();
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the declared reconstruction record is admitted: {error:?}")
+        });
+    assert_eq!(
+        registry.settle_from_emergency_cleanup(&subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+
+    let captured = registry.declared_records();
+    assert_eq!(captured.len(), 1);
+    let captured = &captured[0];
+    let settlement = captured
+        .record()
+        .settlement()
+        .unwrap_or_else(|| panic!("emergency release retains its settlement baseline"));
+    assert_eq!(settlement.owner(), OwnerGeneration::new(4));
+    assert_eq!(settlement.settled_at(), 21);
+
+    let encoded = encode_resource_reconstruction_record(captured.record());
+    let decoded = decode_resource_reconstruction_record(&encoded)
+        .unwrap_or_else(|error| panic!("emergency-release record decodes: {error:?}"));
+    let recovered = ResourceRegistry::reconstruct(
+        None,
+        vec![RecoveredResourceRecord::new(
+            captured.subject().clone(),
+            captured.carrier(),
+            captured.owner(),
+            decoded,
+        )],
+    )
+    .unwrap_or_else(|error| panic!("emergency-release record reconstructs: {error:?}"));
+
+    assert_eq!(recovered.live_resources(), 0);
+    let account = recovered
+        .account(&subject)
+        .unwrap_or_else(|| panic!("the reconstructed registry retains the subject"));
+    assert_eq!(
+        account.ledger().lifetime(),
+        ResourceLifetimeState::EmergencyReleased
+    );
+    assert_eq!(account.durable_record(), captured.record().clone());
+    let settlement = account
+        .ledger()
+        .settlement()
+        .unwrap_or_else(|| panic!("reconstructed emergency release retains its baseline"));
+    assert_eq!(settlement.owner(), OwnerGeneration::new(4));
+    assert_eq!(settlement.settled_at(), 21);
+}
+
+#[test]
+fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() {
+    let subject = active_subject();
+    let operation_path = CanonicalPath::new(FIXTURE_DECLARATION)
+        .unwrap_or_else(|_| unreachable!("fixture declaration is canonical"));
+    let operation_site = StaticSiteId::new(
+        CanonicalPath::new(FIXTURE_WORKFLOW)
+            .unwrap_or_else(|_| unreachable!("fixture workflow is canonical")),
+        StructuralPosition::new(vec![FIXTURE_SITE])
+            .unwrap_or_else(|_| unreachable!("fixture site is canonical")),
+    );
+    let operation = OperationAbi::new(
+        OperationKind::LiveResource,
+        &operation_path,
+        &operation_site,
+        0,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|_| unreachable!("fixture operation is admissible"));
+    let mut live = operation
+        .open_live(
+            OwnerGeneration::new(4),
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1)
+                    .unwrap_or_else(|| unreachable!("fixture charge is nonzero")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("live resource opens: {error:?}"));
+    assert_eq!(live.operation(), subject.operation());
+    assert_eq!(live.generation(), subject.generation());
+
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("subject is admitted: {error:?}"));
+    let before = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("account remains admitted"))
+        .durable_record();
+    assert!(matches!(
+        registry.project_operation_state(&live),
+        Err(ResourceRegistryRefusal::OperationStateProjectionNotSettled)
+    ));
+    assert_eq!(
+        registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("account remains admitted"))
+            .durable_record(),
+        before,
+        "an unsettled live resource cannot project state"
+    );
+
+    let settlement = OperationSettlement::new(
+        live.operation(),
+        live.generation(),
+        live.owner(),
+        ExternalOutcome::Accepted,
+        ProgressObservation::CommittedProgress,
+        25,
+    )
+    .unwrap_or_else(|error| panic!("settlement identities agree: {error:?}"));
+    assert!(live.settle(&settlement).is_ok());
+    let accepted_settlement = live.settlement().cloned();
+    let accepted_progress = live.progress();
+    let accepted_generation = live.generation().clone();
+    assert_eq!(
+        registry.project_operation_state(&live),
+        Ok(ResourceState::Consumed)
+    );
+    let account = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("account remains admitted"));
+    assert_eq!(account.ledger().operation_state(), ResourceState::Consumed);
+    assert_eq!(account.ledger().lifetime(), ResourceLifetimeState::Active);
+    assert_eq!(account.durable_record().quotas(), before.quotas());
+    assert_eq!(
+        account.durable_record().liveness_roots(),
+        before.liveness_roots()
+    );
+    assert_eq!(account.durable_record().settlement(), before.settlement());
+    assert_eq!(accepted_settlement, live.settlement().cloned());
+    assert_eq!(accepted_progress, live.progress());
+    assert_eq!(accepted_generation, *live.generation());
+
+    let captured = registry.declared_records();
+    assert_eq!(captured.len(), 1);
+    let captured = &captured[0];
+    let encoded = encode_resource_reconstruction_record(captured.record());
+    let decoded = decode_resource_reconstruction_record(&encoded)
+        .unwrap_or_else(|error| panic!("projected operation-state record decodes: {error:?}"));
+    let recovered = ResourceRegistry::reconstruct(
+        None,
+        vec![RecoveredResourceRecord::new(
+            captured.subject().clone(),
+            captured.carrier(),
+            captured.owner(),
+            decoded,
+        )],
+    )
+    .unwrap_or_else(|error| panic!("projected operation-state record reconstructs: {error:?}"));
+    let recovered_account = recovered
+        .account(&subject)
+        .unwrap_or_else(|| panic!("reconstructed registry retains the projected subject"));
+    assert_eq!(
+        recovered_account.ledger().operation_state(),
+        ResourceState::Consumed,
+        "the accepted projection remains distinct durable accounting state"
+    );
+    assert_eq!(
+        recovered_account.ledger().lifetime(),
+        ResourceLifetimeState::Active,
+        "operation-state reconstruction does not settle whole-resource lifetime"
+    );
+    assert_eq!(
+        recovered_account.durable_record(),
+        captured.record().clone(),
+        "projection recovery preserves every other captured accounting fact"
+    );
+
+    let mut rejected_live = operation
+        .open_live(
+            OwnerGeneration::new(4),
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1)
+                    .unwrap_or_else(|| unreachable!("fixture charge is nonzero")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("rejection fixture opens: {error:?}"));
+    assert!(
+        rejected_live
+            .observe(ProgressObservation::PartialAdvance)
+            .is_ok()
+    );
+    let progress_before_refusal = rejected_live.progress();
+    let candidate = OperationSettlement::new(
+        rejected_live.operation(),
+        rejected_live.generation(),
+        rejected_live.owner(),
+        ExternalOutcome::Accepted,
+        ProgressObservation::CommittedProgress,
+        27,
+    )
+    .unwrap_or_else(|error| panic!("candidate identities agree: {error:?}"));
+    assert_eq!(
+        rejected_live.settle(&candidate),
+        Err(OperationAbiError::PartialProgressAsCompletion {
+            observed: ProgressObservation::PartialAdvance,
+            claimed: ProgressObservation::CommittedProgress,
+        })
+    );
+    assert_eq!(rejected_live.settlement(), None);
+    assert_eq!(rejected_live.progress(), progress_before_refusal);
+    assert_eq!(
+        rejected_live.operation_state_projection(),
+        None,
+        "a rejected Section 20 settlement cannot produce a projection"
+    );
+
+    let foreign_path = CanonicalPath::new("crate::resource_runtime_projection_foreign")
+        .unwrap_or_else(|_| unreachable!("foreign fixture declaration is canonical"));
+    let foreign_operation = OperationAbi::new(
+        OperationKind::LiveResource,
+        &foreign_path,
+        &operation_site,
+        0,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|_| unreachable!("foreign fixture operation is admissible"));
+    let mut foreign_live = foreign_operation
+        .open_live(
+            OwnerGeneration::new(4),
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1)
+                    .unwrap_or_else(|| unreachable!("fixture charge is nonzero")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("foreign live resource opens: {error:?}"));
+    let foreign_settlement = OperationSettlement::new(
+        foreign_live.operation(),
+        foreign_live.generation(),
+        foreign_live.owner(),
+        ExternalOutcome::Accepted,
+        ProgressObservation::Eof,
+        28,
+    )
+    .unwrap_or_else(|error| panic!("foreign settlement identities agree: {error:?}"));
+    assert!(foreign_live.settle(&foreign_settlement).is_ok());
+    let record_before_foreign_projection = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("the admitted account remains available"))
+        .durable_record()
+        .clone();
+    assert_eq!(
+        registry.project_operation_state(&foreign_live),
+        Err(ResourceRegistryRefusal::UnknownSubject)
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("the admitted account remains available"))
+            .durable_record(),
+        record_before_foreign_projection,
+        "foreign settlement evidence cannot change another account"
+    );
+
+    let next_generation_operation = OperationAbi::new(
+        OperationKind::LiveResource,
+        &operation_path,
+        &operation_site,
+        1,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|_| unreachable!("next-generation fixture operation is admissible"));
+    let mut next_generation_live = next_generation_operation
+        .open_live(
+            OwnerGeneration::new(4),
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1)
+                    .unwrap_or_else(|| unreachable!("fixture charge is nonzero")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("next-generation live resource opens: {error:?}"));
+    let next_generation_settlement = OperationSettlement::new(
+        next_generation_live.operation(),
+        next_generation_live.generation(),
+        next_generation_live.owner(),
+        ExternalOutcome::Accepted,
+        ProgressObservation::Eof,
+        29,
+    )
+    .unwrap_or_else(|error| panic!("next-generation settlement identities agree: {error:?}"));
+    assert!(
+        next_generation_live
+            .settle(&next_generation_settlement)
+            .is_ok()
+    );
+    let record_before_stale_generation_projection = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("the admitted account remains available"))
+        .durable_record()
+        .clone();
+    assert_eq!(
+        registry.project_operation_state(&next_generation_live),
+        Err(ResourceRegistryRefusal::UnknownSubject)
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("the admitted account remains available"))
+            .durable_record(),
+        record_before_stale_generation_projection,
+        "a settlement for an unadmitted generation cannot change another account"
+    );
+
+    let mut stale_owner_live = operation
+        .open_live(
+            OwnerGeneration::new(5),
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1)
+                    .unwrap_or_else(|| unreachable!("fixture charge is nonzero")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("second live resource opens: {error:?}"));
+    let stale_settlement = OperationSettlement::new(
+        stale_owner_live.operation(),
+        stale_owner_live.generation(),
+        stale_owner_live.owner(),
+        ExternalOutcome::Accepted,
+        ProgressObservation::Eof,
+        26,
+    )
+    .unwrap_or_else(|error| panic!("stale settlement identities agree: {error:?}"));
+    assert!(stale_owner_live.settle(&stale_settlement).is_ok());
+    let projected = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("account remains admitted"))
+        .durable_record();
+    assert!(matches!(
+        registry.project_operation_state(&stale_owner_live),
+        Err(ResourceRegistryRefusal::OperationStateProjection(_))
+    ));
+    assert_eq!(
+        registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("account remains admitted"))
+            .durable_record(),
+        projected,
+        "stale owner evidence cannot rewrite the projected state"
     );
 }
 
@@ -1269,6 +1826,156 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     assert_eq!(
         admitted_resource.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
         Some(8)
+    );
+}
+
+#[test]
+fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
+    let subject = active_subject();
+    let sibling = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::new();
+    for admitted_subject in [&subject, &sibling] {
+        registry
+            .admit(
+                admitted_subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| {
+                panic!("the declared reconstruction record is admitted: {error:?}")
+            });
+    }
+
+    let adapter_failure = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::AdapterFailure,
+    );
+    assert_eq!(
+        registry.poison_adapter_from_post_failure(
+            &adapter_failure,
+            owner,
+            PoisonReason::ForeignFailure(ForeignFailureKind::Protocol),
+        ),
+        Err(ResourceRegistryRefusal::Settlement(
+            PostFailureSettlementRefusal::AdapterBinding(AdapterBindingRefusal::Unbound)
+        )),
+        "a matching settlement cannot poison an unbound adapter"
+    );
+    assert_eq!(registry.adapter_instance(&subject), None);
+    assert_eq!(registry.adapter_instance(&sibling), None);
+
+    registry
+        .bind_adapter_instance(&subject, owner, adapter_instance("post_failure", 4, 0))
+        .unwrap_or_else(|error| panic!("the current owner binds its adapter: {error:?}"));
+    registry
+        .bind_adapter_instance(
+            &sibling,
+            owner,
+            adapter_instance("post_failure_sibling", 4, 0),
+        )
+        .unwrap_or_else(|error| panic!("the current owner binds its sibling adapter: {error:?}"));
+
+    let resource_failure = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        registry.poison_adapter_from_post_failure(
+            &resource_failure,
+            owner,
+            PoisonReason::InvariantFailure,
+        ),
+        Err(ResourceRegistryRefusal::Settlement(
+            PostFailureSettlementRefusal::AdapterPoisoningNotRequired
+        )),
+        "resource failure does not authorize adapter poisoning"
+    );
+    assert_eq!(
+        registry
+            .adapter_instance(&subject)
+            .map(AdapterInstance::is_poisoned),
+        Some(false),
+        "refused evidence leaves the adapter usable"
+    );
+
+    assert_eq!(
+        registry.poison_adapter_from_post_failure(
+            &adapter_failure,
+            OwnerGeneration::new(3),
+            PoisonReason::ForeignFailure(ForeignFailureKind::Protocol),
+        ),
+        Err(ResourceRegistryRefusal::Settlement(
+            PostFailureSettlementRefusal::AdapterBinding(AdapterBindingRefusal::StaleOwner(
+                ResourceError::StaleOwner {
+                    presented: OwnerGeneration::new(3),
+                    current: owner,
+                }
+            ))
+        )),
+        "stale owners cannot poison a model-authorized failed adapter"
+    );
+    assert_eq!(
+        registry
+            .adapter_instance(&subject)
+            .map(AdapterInstance::is_poisoned),
+        Some(false)
+    );
+    assert_eq!(
+        registry.poison_adapter_from_post_failure(
+            &adapter_failure,
+            owner,
+            PoisonReason::ForeignFailure(ForeignFailureKind::Protocol),
+        ),
+        Ok(PoisonReason::ForeignFailure(ForeignFailureKind::Protocol))
+    );
+    assert_eq!(
+        registry.poison_adapter_from_post_failure(
+            &adapter_failure,
+            owner,
+            PoisonReason::AmbiguousEffect,
+        ),
+        Ok(PoisonReason::ForeignFailure(ForeignFailureKind::Protocol)),
+        "a repeated poison preserves the first recorded reason"
+    );
+    assert_eq!(
+        registry
+            .adapter_instance(&subject)
+            .map(AdapterInstance::is_poisoned),
+        Some(true)
+    );
+    assert_eq!(
+        registry
+            .adapter_instance(&sibling)
+            .map(AdapterInstance::is_poisoned),
+        Some(false),
+        "poisoning is isolated to the adapter named by the settlement"
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(|account| account.ledger().lifetime()),
+        Some(ResourceLifetimeState::Active),
+        "adapter failure poisoning does not settle the resource lifetime"
+    );
+
+    let stale = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        1,
+        FailureClass::AdapterFailure,
+    );
+    assert_eq!(
+        registry.poison_adapter_from_post_failure(&stale, owner, PoisonReason::AmbiguousEffect),
+        Err(ResourceRegistryRefusal::UnknownSubject),
+        "a different resource generation selects no admitted account"
     );
 }
 
@@ -1537,11 +2244,24 @@ fn resource_registry_gives_one_subject_exactly_one_account() {
         Some(8)
     );
 
+    let record_before_retry = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("the subject still owns its account"))
+        .durable_record()
+        .clone();
     assert_eq!(
         registry.settle_from_post_failure(&matching, 22),
         Err(ResourceRegistryRefusal::Settlement(
             PostFailureSettlementRefusal::Model(ResourceError::IllegalLifetimeTransition)
         ))
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("the subject still owns its account"))
+            .durable_record(),
+        record_before_retry,
+        "a refused repeated settlement leaves every declared fact unchanged"
     );
 }
 
@@ -3164,6 +3884,7 @@ fn flatten(text: &str) -> String {
 /// Every clause anchor the runtime resource reader note cites.
 const RUNTIME_NOTE_CLAUSES: &[&str] = &[
     "GNT-28.7-durable-resource-reconstruction",
+    "GNT-28.11-runtime-admission-mapping",
     "GNT-20.1-operation-kinds",
     "GNT-20.10-retirement-and-stale-owner-fencing",
     "GNT-28.8-retention-and-compaction-fences",
@@ -3177,6 +3898,7 @@ const RUNTIME_NOTE_CLAUSES: &[&str] = &[
     "GNT-23.4-operation-ownership-and-single-settlement",
     "GNT-23.5-failed-instance-poisoning-and-isolation",
     "GNT-20.11-adapter-obligations-and-diagnostics",
+    "GNT-28.12-operation-state-projection",
     "GNT-28.10-resource-accounting-non-claims",
     "GNT-23.7-adapter-containment-obligations",
     "GNT-23.8-containment-non-claims",
@@ -3203,7 +3925,9 @@ const RUNTIME_NOTE_ROUTES: &[&str] = &[
     "retire",
     "delete",
     "settle_from_post_failure",
+    "project_operation_state",
     "settle_from_emergency_cleanup",
+    "poison_adapter_from_post_failure",
     "settle_containment",
     "bind_adapter_instance",
     "adapter_instance",
@@ -3222,6 +3946,55 @@ const RUNTIME_NOTE_ROUTES: &[&str] = &[
     "CohortEmergencyCleanup",
     "CohortEmergencySettlement",
 ];
+
+/// Section 28's scope and exclusions must acknowledge both separately scoped runtime mappings.
+#[test]
+fn resource_spec_scope_includes_both_runtime_mappings_without_analyzer_claims() {
+    let spec = read_text(&workspace_root().join("SPEC.md"));
+    let scope = spec
+        .split("**[GNT-28.0-resource-accounting-and-lifetime-contract]")
+        .nth(1)
+        .and_then(|section| section.split("<a id=\"GNT-28.1-").next())
+        .unwrap_or_else(|| panic!("the Section 28 scope exists"));
+    let non_claims = spec
+        .split("**[GNT-28.10-resource-accounting-non-claims]")
+        .nth(1)
+        .and_then(|section| section.split("<a id=\"GNT-28.11-").next())
+        .unwrap_or_else(|| panic!("the Section 28 non-claims exist"));
+    let applicability = scope
+        .split("**Applicability.**")
+        .nth(1)
+        .and_then(|section| section.split("**Boundary.**").next())
+        .unwrap_or_else(|| panic!("the Section 28 applicability exists"));
+    for clause in [
+        "GNT-28.11-runtime-admission-mapping",
+        "GNT-28.12-operation-state-projection",
+    ] {
+        assert!(scope.contains(clause), "scope must identify {clause}");
+        assert!(
+            non_claims.contains(clause),
+            "exceptions must identify {clause}"
+        );
+    }
+    let applicability = flatten(applicability);
+    assert!(
+        applicability
+            .contains("Clauses `GNT-28.11` and `GNT-28.12` apply only to a runtime profile")
+    );
+    assert!(applicability.contains("does not claim coverage of `GNT-28.11` or `GNT-28.12`"));
+    for limit in [
+        "evaluator behavior",
+        "a checkpoint",
+        "a journal schema",
+        "a host trait",
+    ] {
+        assert!(
+            applicability.contains(limit),
+            "retain the {limit} exclusion"
+        );
+    }
+    assert!(non_claims.contains("model fact or test MUST NOT be presented as a runtime guarantee"));
+}
 
 /// The runtime resource reader note names every clause it relies on, every route it publishes, and
 /// every limit it publishes, so a summary cannot quietly drop a surface or overstate a claim.
@@ -3348,6 +4121,10 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
         ("GNT-20.1-operation-kinds", &["Admission"]),
         ("GNT-28.7-durable-resource-reconstruction", &["Capture"]),
         (
+            "GNT-28.11-runtime-admission-mapping",
+            &["maps only accounting admission", "physical host resource"],
+        ),
+        (
             "GNT-28.4-resource-lifetime-finish-poison-and-emergency-release",
             &["Live-account ceiling", "the model owns no ceiling"],
         ),
@@ -3358,6 +4135,13 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
         (
             "GNT-20.7-resource-state-after-failure-and-poisoning",
             &["Failure settlement"],
+        ),
+        (
+            "GNT-20.7-resource-state-after-failure-and-poisoning",
+            &[
+                "poison_adapter_from_post_failure",
+                "caller supplies the classified poison reason",
+            ],
         ),
         (
             "GNT-22.6-grace-expiry-and-hard-cancellation",
@@ -3483,7 +4267,9 @@ fn runtime_resource_note_pins_claims_to_their_sections() {
     // name the boundaries the witnesses actually cover rather than claiming all of them.
     let flattened = flatten(&note);
     for statement in [
-        "The two failure routes are fenced differently and are not owner-qualified",
+        "`poison_adapter_from_post_failure` is a distinct adapter-failure route",
+        "the presented current owner generation fences the bound adapter poison",
+        "this route changes neither the resource lifetime nor sibling adapters",
         "are additionally owner-qualified",
         "a superseded generation is refused before any declared fact changes",
         "Physical reclamation is the one registry-wide mutating route and changes no declared fact",
