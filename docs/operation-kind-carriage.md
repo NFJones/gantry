@@ -51,6 +51,13 @@ The analyzer/retained-wire regression
 checks this boundary with a structurally matching ordinary value. A separate source live-handle
 completion path remains unimplemented; this refusal does not grant one or roll back accepted work.
 
+Product start uses only raw-byte hooks, so its workflow and spawned-body operation inventory
+rejects authenticated live-resource results, including attempted operations, with
+`unsupported-live-resource-transport` before mapping calls, root-session/execution identities,
+or execution acceptance. Source analysis remains valid; an unsupported transport cannot cause
+an external dispatch and then fail only when its successful result reaches the machine.
+The low-level attempted-error and replay contract remains available to its existing owners.
+
 ## Evidence
 
 Codec tests in `crates/gantry-runtime/src/machine/program_codec.rs` (compiled under

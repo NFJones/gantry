@@ -12148,6 +12148,14 @@ admitting a live handle as ordinary data. Until a separately
 declared live-handle completion path exists, ordinary serialized data MUST NOT substitute for
 that result; explicit operational failure and cancellation settlement remain available.
 
+The product start boundary using only raw-byte operation hooks MUST reject a package whose
+executable inventory contains an authenticated live-resource result with
+`unsupported-live-resource-transport` in the integration-preflight category, before mapping
+calls, root-session or execution identity allocation, and execution acceptance. The inventory
+includes workflow and spawned task-body operations, including attempted operations. This is
+an unsupported transport refusal, not a source-analysis error or a fabricated operation outcome.
+It does not remove the low-level handle-free attempted-error settlement contract above.
+
 <a id="GNT-20.2-logical-operation-and-resource-generation-identity"></a>
 
 **[GNT-20.2-logical-operation-and-resource-generation-identity] Logical operation

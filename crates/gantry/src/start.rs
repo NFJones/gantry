@@ -741,6 +741,14 @@ pub(crate) fn mapping_dependencies(
         )
     {
         match &instruction.kind {
+            InstructionKind::OperationCall { operation, .. }
+                if operation.section20_kind == Some(gantry_ir::OperationKind::LiveResource) =>
+            {
+                return Err(failure(
+                    StartFailureCategory::IntegrationPreflight,
+                    "unsupported-live-resource-transport",
+                ));
+            }
             InstructionKind::OperationCall { operation, .. } if operation.action.is_none() => {
                 reaches_model_operation = true;
             }

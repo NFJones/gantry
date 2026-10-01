@@ -282,6 +282,39 @@ fn constructed_type_depth_rejects_start_before_preflight_or_execution_identity()
     assert_eq!(services.calls(), [IdentityKind::Activity]);
 }
 
+/// Raw-byte hooks cannot provide live handles, so refusal must precede external integration work.
+#[test]
+fn live_resource_transport_rejects_start_before_preflight_or_execution_identity() {
+    for source in [
+        &b"live_resource struct Handle { token: Int }\nfn main() { discard prompt \"x\" -> Handle; }"[..],
+        &b"live_resource struct Handle { token: Int }\nfn main() { discard attempt prompt \"x\" -> Handle; }"[..],
+    ] {
+        let root = TempDirectory::new(source);
+        let services = Arc::new(Services::default());
+        let configuration = configuration(Arc::clone(&services));
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let allocator = FreshIdentityAllocator::default();
+        let clock = FixedClock;
+        let package = AnalyzePackageCoordinator::new(
+            &allocator, services.as_ref(), &clock, gantry_conformance::blocking_work(),
+        );
+        let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
+        let coordinator = StartExecutionCoordinator::new(
+            &package, &lifecycle, &configuration, &allocator, preflight.clone(),
+        );
+        let selection = selection();
+        let result = block_on(coordinator.start(request(&root.0, &selection, None, None)));
+        let StartExecutionResult::Rejected(failure) = result else {
+            panic!("unsupported live-resource transport was accepted");
+        };
+        assert_eq!(failure.category, StartFailureCategory::IntegrationPreflight);
+        assert_eq!(&*failure.code, "unsupported-live-resource-transport");
+        assert!(failure.package_activity.is_some());
+        assert!(preflight.calls().is_empty());
+        assert_eq!(services.calls(), [IdentityKind::Activity, IdentityKind::Event, IdentityKind::Event]);
+    }
+}
+
 #[test]
 fn mapping_and_root_preflight_precede_identity_and_accept_normalized_entry() {
     let root = TempDirectory::new(
