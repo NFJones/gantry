@@ -40,6 +40,13 @@ process-local pending policy, and unadmitted evaluator work is outside its scope
 cloned handles retain the same admission refusal and machine-settlement release boundaries.
 The existing `new_with_resource_limit` constructor leaves the pending policy disabled.
 
+`ExecutionCoordinator::new_with_recovered_resources` constructs one shared accounting owner
+atomically from declared reconstruction records. Each binding must name the execution and a known
+task; settled tasks may retain accounting for cleanup. Registry carrier, kind, duplicate, owner
+generation and live-ceiling checks all run before exposing a coordinator. No physical slots,
+adapter bindings, pending policy or pending work are reconstructed. Journal provenance remains
+the caller's recovery responsibility; this entry point does not add resource records to graph cuts.
+
 The current durable graph wire carries no resource reconstruction records or registry policy.
 `capture_checkpoint` and `stage_graph` refuse `ResourceStateUnsupported` before cloning machines
 or reserving publication if retained accounts, physical slots or pending admitted work would be

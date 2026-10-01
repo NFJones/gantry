@@ -15175,6 +15175,14 @@ MAY continue after task settlement, but MUST NOT reopen task admission. This opt
 does not attach the registry automatically to evaluator dispatch or extend uniqueness beyond
 that coordinator, and its live-account ceiling does not bound retained records or snapshot size.
 
+The coordinator MAY be constructed atomically from declared resource reconstruction records.
+Each machine-issued binding MUST name that execution and a known task, including settled tasks
+retaining cleanup obligations. Carrier, authenticated kind, duplicate runtime subject, matching
+owner generation and live-ceiling checks MUST all succeed before exposing the coordinator.
+Reconstruction MUST create no physical slots, adapter bindings, pending-operation policy or pending
+work. This accounting-only construction does not authenticate journal provenance or replace a
+versioned durable graph resource member.
+
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
 slots or admitted pending work would be omitted. Refusal MUST precede private machine cloning or

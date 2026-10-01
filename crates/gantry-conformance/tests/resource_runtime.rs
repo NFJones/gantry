@@ -133,6 +133,189 @@ fn resource_coordinator(
     .unwrap_or_else(|error| panic!("resource coordinator: {error:?}"))
 }
 
+/// Builds task/session inputs for an accounting-only reconstruction boundary.
+fn resource_recovery_inputs(
+    execution: ProtocolIdentity,
+    root: ProtocolIdentity,
+) -> (
+    gantry::runtime::ConcurrentTaskStateV1,
+    gantry::runtime::LogicalSessionRegistryV1,
+) {
+    let tasks = gantry::runtime::ConcurrentTaskStateV1::new(execution, root, 1)
+        .unwrap_or_else(|error| panic!("recovery tasks: {error:?}"));
+    let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [7; 32])
+        .unwrap_or_else(|error| panic!("recovery session: {error}"));
+    let sessions = gantry::runtime::LogicalSessionRegistryV1::new(
+        execution,
+        session,
+        gantry::runtime::SessionCreationModeV1::GantryRoot,
+        gantry::runtime::CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("recovery sessions: {error:?}"));
+    (tasks, sessions)
+}
+
+/// Declared records reconstruct one shared accounting owner, never physical or pending work.
+#[test]
+fn coordinator_reconstructs_declared_resource_records_for_known_tasks() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ExecutionCoordinator, HostResourceError};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let active = decode_resource_reconstruction_record(&encode_resource_reconstruction_record(
+        &ledger().durable_record(),
+    ))
+    .unwrap_or_else(|error| panic!("active reconstruction record: {error:?}"));
+    let terminal = decode_resource_reconstruction_record(&encode_resource_reconstruction_record(
+        &settled_record(),
+    ))
+    .unwrap_or_else(|error| panic!("terminal reconstruction record: {error:?}"));
+    let records = vec![
+        presented(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            active,
+        ),
+        presented(second, ResourceCarrier::ReconstructionRecord, terminal),
+    ];
+    let (mut tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    tasks
+        .settle(
+            machine.task_id(),
+            MachineOutcome::Succeeded(LogicalValue::unit()),
+        )
+        .unwrap_or_else(|error| panic!("terminal recovered task: {error:?}"));
+    let coordinator =
+        ExecutionCoordinator::new_with_recovered_resources(tasks, sessions, 1, records.clone())
+            .unwrap_or_else(|error| panic!("accounting reconstruction: {error:?}"));
+    let before = coordinator.snapshot();
+    assert_eq!(before.publication(), 0);
+    assert_eq!(before.resource_records(), Some(records.as_slice()));
+    let (error, returned) = *coordinator
+        .attach_resource_host_value(&subject, OwnerGeneration::new(4), 17_u64)
+        .err()
+        .unwrap_or_else(|| panic!("recovered terminal task cannot acquire host ownership"));
+    assert_eq!(error, CoordinatorResourceRefusal::TaskNotRunning);
+    assert_eq!(returned, 17);
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(
+        coordinator
+            .clone()
+            .emergency_release_resource(&subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+    let after = coordinator.snapshot();
+    assert_eq!(after.publication(), 1);
+    assert_eq!(
+        after
+            .resource_records()
+            .unwrap_or_else(|| panic!("records retained"))[0]
+            .record()
+            .lifetime(),
+        ResourceLifetimeState::EmergencyReleased
+    );
+    assert_eq!(
+        coordinator.dispose_resource_host_value(&subject, OwnerGeneration::new(4)),
+        Err(CoordinatorResourceRefusal::Host(
+            HostResourceError::NotAttached
+        )),
+        "accounting recovery does not invent a physical slot"
+    );
+}
+
+/// Reconstruction rejects the whole set for bad provenance or registry evidence.
+#[test]
+fn coordinator_resource_reconstruction_refuses_invalid_sets() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ExecutionCoordinator};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let valid = presented(
+        subject.clone(),
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+    );
+    let second = presented(
+        declared_subject(SECOND_FIXTURE_DECLARATION),
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+    );
+    for (records, limit, expected) in [
+        (
+            vec![valid.clone(), valid.clone()],
+            2,
+            ResourceRegistryRefusal::SecondAdmission,
+        ),
+        (
+            vec![
+                valid.clone(),
+                presented(
+                    subject.clone(),
+                    ResourceCarrier::OrdinarySerialization,
+                    ledger().durable_record(),
+                ),
+            ],
+            2,
+            ResourceRegistryRefusal::SecondAdmission,
+        ),
+        (
+            vec![presented(
+                subject.clone(),
+                ResourceCarrier::OrdinarySerialization,
+                ledger().durable_record(),
+            )],
+            1,
+            ResourceRegistryRefusal::Admission(ResourceError::OrdinaryCarrierRefused),
+        ),
+        (
+            vec![RecoveredResourceRecord::new(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                OwnerGeneration::new(3),
+                ledger().durable_record(),
+            )],
+            1,
+            ResourceRegistryRefusal::Admission(ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: OwnerGeneration::new(4),
+            }),
+        ),
+        (
+            vec![valid.clone(), second],
+            1,
+            ResourceRegistryRefusal::LiveResourceLimitReached { limit: 1 },
+        ),
+        (
+            vec![valid.clone()],
+            0,
+            ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 },
+        ),
+    ] {
+        let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+        assert_eq!(
+            ExecutionCoordinator::new_with_recovered_resources(tasks, sessions, limit, records)
+                .err(),
+            Some(CoordinatorResourceRefusal::Registry(expected))
+        );
+    }
+    let foreign_execution =
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [12; 32])
+            .unwrap_or_else(|error| panic!("foreign execution: {error}"));
+    let (tasks, sessions) = resource_recovery_inputs(foreign_execution, machine.task_id());
+    assert_eq!(
+        ExecutionCoordinator::new_with_recovered_resources(tasks, sessions, 1, vec![valid.clone()])
+            .err(),
+        Some(CoordinatorResourceRefusal::ForeignExecution)
+    );
+    let unknown_root =
+        ProtocolIdentity::derive(IdentityKind::Task, b"unknown-resource-recovery-root")
+            .unwrap_or_else(|error| panic!("unknown root: {error}"));
+    let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), unknown_root);
+    assert_eq!(
+        ExecutionCoordinator::new_with_recovered_resources(tasks, sessions, 1, vec![valid]).err(),
+        Some(CoordinatorResourceRefusal::UnknownTask)
+    );
+}
+
 /// Coordinator clones share admission and quota fences, and terminal cleanup retains records.
 #[test]
 fn coordinator_resource_accounts_share_one_owner_and_release_only_live_places() {

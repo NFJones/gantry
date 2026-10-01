@@ -278,6 +278,33 @@ impl ExecutionCoordinator {
         )
     }
 
+    /// Reconstructs execution-owned accounting only from declared resource records.
+    ///
+    /// Every binding must name this execution and a known task; terminal tasks may retain
+    /// accounting for cleanup. Carrier, kind, duplicate, owner-generation and live-limit checks
+    /// are delegated to the registry before any coordinator is published. Physical values,
+    /// pending-operation policy and pending work are not reconstructed.
+    pub fn new_with_recovered_resources(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        maximum_live_resources: u64,
+        recovered: Vec<crate::RecoveredResourceRecord>,
+    ) -> Result<Self, CoordinatorResourceRefusal> {
+        for record in &recovered {
+            if record.subject().execution_id() != tasks.execution_id() {
+                return Err(CoordinatorResourceRefusal::ForeignExecution);
+            }
+            if tasks.task_record(record.subject().task_id()).is_none() {
+                return Err(CoordinatorResourceRefusal::UnknownTask);
+            }
+        }
+        let resources =
+            crate::ResourceRegistry::reconstruct(Some(maximum_live_resources), recovered)
+                .map_err(CoordinatorResourceRefusal::Registry)?;
+        Self::new_inner(tasks, sessions, None, Some(resources))
+            .map_err(CoordinatorResourceRefusal::Task)
+    }
+
     fn new_inner(
         tasks: ConcurrentTaskStateV1,
         sessions: LogicalSessionRegistryV1,
