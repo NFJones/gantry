@@ -58,6 +58,8 @@ pub enum CoordinatorResourceRefusal {
     UnknownTask,
     /// Only a running task may admit a resource account.
     TaskNotRunning,
+    /// Requested task or execution cancellation has closed new resource admission.
+    TaskCancellationRequested,
     /// This coordinator was constructed without a resource registry.
     RegistryDisabled,
     /// The registry refused the exact pending subject or its accounting facts.
@@ -354,6 +356,14 @@ impl ExecutionCoordinator {
         if !matches!(task.status(), ConcurrentTaskStatusV1::Running) {
             return Err(CoordinatorResourceRefusal::TaskNotRunning);
         }
+        if state
+            .tasks
+            .task_cancellation_reason(machine.task_id())
+            .is_some()
+            || state.tasks.execution_cancellation_reason().is_some()
+        {
+            return Err(CoordinatorResourceRefusal::TaskCancellationRequested);
+        }
         state
             .resources
             .as_mut()
@@ -515,6 +525,14 @@ impl ExecutionCoordinator {
                 .ok_or(CoordinatorResourceRefusal::UnknownTask)?;
             if !matches!(task.status(), ConcurrentTaskStatusV1::Running) {
                 return Err(CoordinatorResourceRefusal::TaskNotRunning);
+            }
+            if state
+                .tasks
+                .task_cancellation_reason(subject.task_id())
+                .is_some()
+                || state.tasks.execution_cancellation_reason().is_some()
+            {
+                return Err(CoordinatorResourceRefusal::TaskCancellationRequested);
             }
             let resources = state
                 .resources

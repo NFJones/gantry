@@ -2322,9 +2322,62 @@ fn coordinator_host_attachment_refuses_after_task_settlement() {
     );
 }
 
+/// Cancellation requests close admission immediately without settling accepted accounting.
+#[test]
+fn coordinator_resource_admission_refuses_during_requested_cancellation() {
+    for execution_wide in [false, true] {
+        let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+        let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+        let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(2));
+        coordinator
+            .admit_resource(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        if execution_wide {
+            coordinator
+                .cancel_execution("resource admission regression")
+                .unwrap_or_else(|error| panic!("execution cancellation: {error:?}"));
+        } else {
+            coordinator
+                .cancel_task_tree(machine.task_id(), "resource admission regression")
+                .unwrap_or_else(|error| panic!("task cancellation: {error:?}"));
+        }
+        let before = coordinator.snapshot();
+        assert_eq!(
+            coordinator.admit_resource(
+                &sibling,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            ),
+            Err(gantry::runtime::CoordinatorResourceRefusal::TaskCancellationRequested)
+        );
+        assert_eq!(coordinator.snapshot(), before);
+        let refusal =
+            coordinator.attach_resource_host_value(&subject, OwnerGeneration::new(4), 17_u64);
+        let (error, returned) = *refusal
+            .err()
+            .unwrap_or_else(|| panic!("requested cancellation closes physical admission"));
+        assert_eq!(
+            error,
+            gantry::runtime::CoordinatorResourceRefusal::TaskCancellationRequested
+        );
+        assert_eq!(returned, 17);
+        assert_eq!(coordinator.snapshot(), before);
+        assert_eq!(
+            coordinator.emergency_release_resource(&subject, emergency_cleanup()),
+            Ok(ResourceLifetimeState::EmergencyReleased)
+        );
+    }
+}
+
 /// Physical attachment leaves registry quota and accounting ownership in place until settlement.
 #[test]
 fn registry_host_attachment_preserves_accounting_and_finalization_fences() {
+    // Accounting ownership is independent of cancellation-time admission fences.
     use gantry::runtime::HostResourceError;
     let subject = active_subject();
     let owner = OwnerGeneration::new(4);

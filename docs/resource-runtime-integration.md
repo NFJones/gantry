@@ -47,6 +47,9 @@ contains physical destruction only and does not synthesize semantic settlement.
 without changing accounting publication; refused inputs are returned untouched outside the lock.
 Attachment requires the issuing execution to match and its task to be known and running;
 task settlement closes physical admission without disabling accounting or physical cleanup.
+Recorded task or execution cancellation closes both accounting admission and physical attachment
+immediately with `TaskCancellationRequested`, before terminal settlement. Existing accepted work
+and its pending lease are not settled by that refusal; cleanup remains available.
 `dispose_resource_host_value` checks owner and durable-publication availability, marks cleanup
 pending and extracts exclusive physical ownership, then runs contained destruction without holding
 the coordinator or cleanup-status mutex. Pending cleanup blocks finalization and reaping, and another

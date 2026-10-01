@@ -15148,7 +15148,9 @@ owner, selecting its exact operation and resource generation under
 whole-resource lifetime. Successful poisoning releases the live place and retains the record.
 Admission MUST require a pending machine operation from a running task of the same execution;
 foreign executions, absent or non-running tasks, and disabled registries MUST be refused without
-mutation. A reserved durable publication MUST fence these accounting writes. Successful writes
+mutation. Recorded task or execution cancellation MUST close new accounting admission immediately,
+even before task settlement, with `TaskCancellationRequested`; it does not settle accepted work.
+A reserved durable publication MUST fence these accounting writes. Successful writes
 advance the coordinator publication; refusals change neither records nor publication. Immutable
 snapshot records are inspection only, not journal-committed resource state. Accounting cleanup
 MAY continue after task settlement, but MUST NOT reopen task admission. This optional boundary
@@ -15217,7 +15219,8 @@ The coordinator MAY expose physical attachment and disposal over its existing re
 and disposal extraction MUST respect the durable-publication reservation and current account owner.
 Physical attachment MUST additionally require the issuing execution to match and the issuing task
 to be known and running. Task settlement closes physical admission without disabling cleanup;
-refusal MUST leave the physical input and accounting unchanged.
+recorded task or execution cancellation also closes admission before settlement. Refusal MUST leave
+the physical input and accounting unchanged, and accepted-account cleanup MUST remain available.
 Refused attachment MUST return the physical input without destroying it under the coordinator lock.
 Disposal MUST mark a process-local pending status before extracting exclusive physical ownership,
 then execute contained destruction with neither coordinator nor status mutex held. Pending cleanup
