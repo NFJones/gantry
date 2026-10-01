@@ -47,6 +47,23 @@ pub struct ExecutionCoordinator {
     inner: Arc<CoordinatorInner>,
 }
 
+/// Refusal at the optional execution-scoped resource-accounting admission boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CoordinatorResourceRefusal {
+    /// A durable transaction currently reserves semantic publication.
+    Task(TaskStateError),
+    /// The presented machine belongs to another execution.
+    ForeignExecution,
+    /// The presented machine's task is absent from this coordinator.
+    UnknownTask,
+    /// Only a running task may admit a resource account.
+    TaskNotRunning,
+    /// This coordinator was constructed without a resource registry.
+    RegistryDisabled,
+    /// The registry refused the exact pending subject or its accounting facts.
+    Registry(crate::ResourceRegistryRefusal),
+}
+
 /// Failure while allocating one coordinator-owned per-task event sequence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TaskEventSequenceError {
@@ -82,6 +99,7 @@ struct CoordinatorState {
     tasks: ConcurrentTaskStateV1,
     sessions: LogicalSessionRegistryV1,
     execution_budget: Option<ExecutionBudget>,
+    resources: Option<crate::ResourceRegistry>,
     publication: u64,
     next_event_sequence: BTreeMap<ProtocolIdentity, u64>,
     task_event_completion_active: BTreeSet<ProtocolIdentity>,
@@ -124,6 +142,7 @@ pub struct ExecutionCoordinatorSnapshot {
     state: ConcurrentTaskStateV1,
     sessions: Vec<LogicalSessionV1>,
     execution_budget: Option<ExecutionBudgetSnapshot>,
+    resources: Option<Vec<crate::RecoveredResourceRecord>>,
     publication: u64,
 }
 
@@ -146,6 +165,15 @@ impl ExecutionCoordinatorSnapshot {
         self.execution_budget
     }
 
+    /// Returns immutable accounting records when this coordinator owns a resource registry.
+    ///
+    /// These records are a process-local inspection projection, not a committed journal cut or
+    /// physical host-resource reconstruction. A disabled registry is distinct from an empty one.
+    #[must_use]
+    pub fn resource_records(&self) -> Option<&[crate::RecoveredResourceRecord]> {
+        self.resources.as_deref()
+    }
+
     /// Returns the monotonic publication generation captured with the state.
     #[must_use]
     pub const fn publication(&self) -> u64 {
@@ -159,7 +187,7 @@ impl ExecutionCoordinator {
         tasks: ConcurrentTaskStateV1,
         sessions: LogicalSessionRegistryV1,
     ) -> Result<Self, TaskStateError> {
-        Self::new_inner(tasks, sessions, None)
+        Self::new_inner(tasks, sessions, None, None)
     }
 
     /// Creates one coordinator whose snapshots include a shared runtime budget.
@@ -171,13 +199,34 @@ impl ExecutionCoordinator {
         if execution_budget.snapshot().execution != tasks.execution_id() {
             return Err(TaskStateError::InvalidTaskMachine);
         }
-        Self::new_inner(tasks, sessions, Some(execution_budget))
+        Self::new_inner(tasks, sessions, Some(execution_budget), None)
+    }
+
+    /// Creates one shared accounting registry with an explicit live-account ceiling.
+    ///
+    /// Cloned coordinator handles share this registry under the existing coordinator mutex.
+    /// It is not attached automatically to evaluator dispatch or persisted in durable task cuts.
+    /// The ceiling limits live accounts only, not retained records or snapshot size.
+    pub fn new_with_resource_limit(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        maximum_live_resources: u64,
+    ) -> Result<Self, TaskStateError> {
+        Self::new_inner(
+            tasks,
+            sessions,
+            None,
+            Some(crate::ResourceRegistry::with_live_limit(
+                maximum_live_resources,
+            )),
+        )
     }
 
     fn new_inner(
         tasks: ConcurrentTaskStateV1,
         sessions: LogicalSessionRegistryV1,
         execution_budget: Option<ExecutionBudget>,
+        resources: Option<crate::ResourceRegistry>,
     ) -> Result<Self, TaskStateError> {
         if sessions
             .sessions()
@@ -191,6 +240,7 @@ impl ExecutionCoordinator {
                     tasks,
                     sessions,
                     execution_budget,
+                    resources,
                     publication: 0,
                     next_event_sequence: BTreeMap::new(),
                     task_event_completion_active: BTreeSet::new(),
@@ -224,6 +274,91 @@ impl ExecutionCoordinator {
     #[must_use]
     pub fn snapshot(&self) -> ExecutionCoordinatorSnapshot {
         snapshot_from(&lock(&self.inner.state))
+    }
+
+    /// Admits accounting facts for one running task's exact pending live-resource operation.
+    ///
+    /// Publication reservations, foreign executions, absent or non-running tasks, disabled
+    /// registries, and registry refusals change neither records nor publication. Successful
+    /// admission publishes once. The coordinator retains the account; callers receive no mutable
+    /// registry or account and snapshots contain only declared reconstruction-record facts.
+    pub fn admit_resource(
+        &self,
+        machine: &crate::Machine,
+        carrier: gantry_ir::ResourceCarrier,
+        record: gantry_ir::DurableResourceRecord,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        let mut state = lock(&self.inner.state);
+        require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+        if machine.execution_id() != state.tasks.execution_id() {
+            return Err(CoordinatorResourceRefusal::ForeignExecution);
+        }
+        let task = state
+            .tasks
+            .task_record(machine.task_id())
+            .ok_or(CoordinatorResourceRefusal::UnknownTask)?;
+        if !matches!(task.status(), ConcurrentTaskStatusV1::Running) {
+            return Err(CoordinatorResourceRefusal::TaskNotRunning);
+        }
+        state
+            .resources
+            .as_mut()
+            .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?
+            .admit_pending_operation(machine, carrier, record)
+            .map_err(CoordinatorResourceRefusal::Registry)?;
+        state.publication = state.publication.wrapping_add(1);
+        Ok(())
+    }
+
+    /// Advances one coordinator-owned account to finishing under its current owner.
+    pub fn begin_resource_finish(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+    ) -> Result<gantry_ir::ResourceLifetimeState, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.begin_finish(subject, owner))
+    }
+
+    /// Completes accounting finalization and releases the live place, not retained records.
+    pub fn complete_resource_finalization(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        settled_at: u64,
+    ) -> Result<gantry_ir::ResourceLifetimeState, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| {
+            resources.complete_finalization(subject, owner, settled_at)
+        })
+    }
+
+    /// Consumes one sealed cleanup witness to settle one coordinator-owned account.
+    ///
+    /// The witness is consumed even on refusal, just as at the registry boundary. Cleanup
+    /// remains available after task settlement; it does not revive task admission.
+    pub fn emergency_release_resource(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        cleanup: gantry_ir::EmergencyCleanupWitness,
+    ) -> Result<gantry_ir::ResourceLifetimeState, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.settle_from_emergency_cleanup(subject, cleanup))
+    }
+
+    /// Serializes one internal registry mutation and publishes only its successful result.
+    fn mutate_resources<T>(
+        &self,
+        mutation: impl FnOnce(&mut crate::ResourceRegistry) -> Result<T, crate::ResourceRegistryRefusal>,
+    ) -> Result<T, CoordinatorResourceRefusal> {
+        let mut state = lock(&self.inner.state);
+        require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+        let result = mutation(
+            state
+                .resources
+                .as_mut()
+                .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?,
+        )
+        .map_err(CoordinatorResourceRefusal::Registry)?;
+        state.publication = state.publication.wrapping_add(1);
+        Ok(result)
     }
 
     /// Installs a journal-committed sequential root cut after causal event evidence.
@@ -1582,6 +1717,10 @@ fn snapshot_from(state: &CoordinatorState) -> ExecutionCoordinatorSnapshot {
             .execution_budget
             .as_ref()
             .map(ExecutionBudget::snapshot),
+        resources: state
+            .resources
+            .as_ref()
+            .map(crate::ResourceRegistry::declared_records),
         publication: state.publication,
     }
 }
@@ -1760,6 +1899,43 @@ mod tests {
         assert_eq!(coordinator.snapshot().publication(), publication);
         assert_eq!(task_wakes.0.load(Ordering::Acquire), 1);
         assert_eq!(shutdown_wakes.0.load(Ordering::Acquire), 1);
+    }
+
+    /// Durable publication reservations fence accounting writes before their mutation executes.
+    #[test]
+    fn reserved_publication_refuses_resource_mutation_without_changing_snapshot() {
+        let execution = identity(IdentityKind::Execution, 1);
+        let root = ProtocolIdentity::derive(IdentityKind::Task, b"resource-reservation-root")
+            .unwrap_or_else(|error| panic!("task identity: {error}"));
+        let tasks = ConcurrentTaskStateV1::new(execution, root, 1)
+            .unwrap_or_else(|error| panic!("task state: {error:?}"));
+        let sessions = LogicalSessionRegistryV1::new(
+            execution,
+            identity(IdentityKind::Session, 2),
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+        let coordinator = ExecutionCoordinator::new_with_resource_limit(tasks, sessions, 1)
+            .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+        lock(&coordinator.inner.state).durable_publication_reserved = true;
+        let before = coordinator.snapshot();
+        let result: Result<(), CoordinatorResourceRefusal> = coordinator.mutate_resources(|_| {
+            panic!("a reserved publication must not execute the registry mutation")
+        });
+        assert_eq!(
+            result,
+            Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::DurablePublicationReserved
+            ))
+        );
+        assert_eq!(coordinator.snapshot(), before);
+        lock(&coordinator.inner.state).durable_publication_reserved = false;
+        assert_eq!(coordinator.mutate_resources(|_| Ok(())), Ok(()));
+        assert_eq!(
+            coordinator.snapshot().publication(),
+            before.publication() + 1
+        );
     }
 
     fn identity(kind: IdentityKind, byte: u8) -> ProtocolIdentity {

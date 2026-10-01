@@ -106,6 +106,262 @@ const UNAUTHENTICATED_FIXTURE_DECLARATION: &str =
     "crate::resource_runtime_unauthenticated_metadata";
 const FIXTURE_SITE: u64 = 45;
 
+/// Constructs the optional accounting owner around one known running root.
+fn resource_coordinator(
+    execution: ProtocolIdentity,
+    root: ProtocolIdentity,
+    limit: Option<u64>,
+) -> gantry::runtime::ExecutionCoordinator {
+    let tasks = gantry::runtime::ConcurrentTaskStateV1::new(execution, root, 1)
+        .unwrap_or_else(|error| panic!("coordinator task state: {error:?}"));
+    let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [7; 32])
+        .unwrap_or_else(|error| panic!("session identity: {error}"));
+    let sessions = gantry::runtime::LogicalSessionRegistryV1::new(
+        execution,
+        session,
+        gantry::runtime::SessionCreationModeV1::GantryRoot,
+        gantry::runtime::CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("coordinator sessions: {error:?}"));
+    match limit {
+        Some(limit) => {
+            gantry::runtime::ExecutionCoordinator::new_with_resource_limit(tasks, sessions, limit)
+        }
+        None => gantry::runtime::ExecutionCoordinator::new(tasks, sessions),
+    }
+    .unwrap_or_else(|error| panic!("resource coordinator: {error:?}"))
+}
+
+/// Coordinator clones share admission and quota fences, and terminal cleanup retains records.
+#[test]
+fn coordinator_resource_accounts_share_one_owner_and_release_only_live_places() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    let clone = coordinator.clone();
+    let initial = coordinator.snapshot();
+    assert_eq!(initial.resource_records(), Some([].as_slice()));
+    assert_eq!(
+        clone.admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Ok(())
+    );
+    let admitted = coordinator.snapshot();
+    assert_eq!(admitted.publication(), initial.publication() + 1);
+    assert_eq!(admitted.resource_records().map(<[_]>::len), Some(1));
+    assert_eq!(
+        coordinator.admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::SecondAdmission
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), admitted);
+
+    let (_, sibling, sibling_subject) =
+        machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let sibling_subject = sibling_subject.unwrap_or_else(|| panic!("sibling subject exists"));
+    assert_eq!(
+        clone.admit_resource(
+            &sibling,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::LiveResourceLimitReached { limit: 1 }
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), admitted);
+    assert!(matches!(
+        coordinator.begin_resource_finish(&subject, OwnerGeneration::new(3)),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Finish(ResourceError::StaleOwner { .. })
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), admitted);
+    assert_eq!(
+        clone.begin_resource_finish(&subject, OwnerGeneration::new(4)),
+        Ok(ResourceLifetimeState::Finishing)
+    );
+    assert_eq!(
+        coordinator.complete_resource_finalization(&subject, OwnerGeneration::new(4), 20),
+        Ok(ResourceLifetimeState::Finished)
+    );
+    assert_eq!(
+        clone.admit_resource(
+            &sibling,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Ok(())
+    );
+    coordinator
+        .settle_task(
+            machine.task_id(),
+            MachineOutcome::Succeeded(LogicalValue::unit()),
+        )
+        .unwrap_or_else(|error| panic!("task settles: {error:?}"));
+    let settled = coordinator.snapshot();
+    assert_eq!(
+        clone.admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(CoordinatorResourceRefusal::TaskNotRunning)
+    );
+    assert_eq!(coordinator.snapshot(), settled);
+    assert_eq!(
+        clone.emergency_release_resource(&sibling_subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+    let cleaned = coordinator.snapshot();
+    assert_eq!(cleaned.publication(), settled.publication() + 1);
+    let records = cleaned
+        .resource_records()
+        .unwrap_or_else(|| panic!("accounting records retained"));
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().all(|record| matches!(
+        record.record().lifetime(),
+        ResourceLifetimeState::Finished | ResourceLifetimeState::EmergencyReleased
+    )));
+    assert!(matches!(
+        coordinator.emergency_release_resource(&sibling_subject, emergency_cleanup()),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::EmergencyRelease(ResourceError::IllegalLifetimeTransition)
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), cleaned);
+}
+
+/// Execution, task, carrier and disabled-registry refusals leave the complete snapshot unchanged.
+#[test]
+fn coordinator_resource_admission_refuses_foreign_or_ineligible_machines() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let foreign_execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [8; 32])
+        .unwrap_or_else(|error| panic!("foreign execution: {error}"));
+    let foreign_task = ProtocolIdentity::derive(IdentityKind::Task, b"resource-unknown-task")
+        .unwrap_or_else(|error| panic!("foreign task: {error}"));
+    for (coordinator, refusal) in [
+        (
+            resource_coordinator(foreign_execution, machine.task_id(), Some(1)),
+            CoordinatorResourceRefusal::ForeignExecution,
+        ),
+        (
+            resource_coordinator(machine.execution_id(), foreign_task, Some(1)),
+            CoordinatorResourceRefusal::UnknownTask,
+        ),
+        (
+            resource_coordinator(machine.execution_id(), machine.task_id(), None),
+            CoordinatorResourceRefusal::RegistryDisabled,
+        ),
+        (
+            resource_coordinator(machine.execution_id(), machine.task_id(), Some(0)),
+            CoordinatorResourceRefusal::Registry(
+                ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 },
+            ),
+        ),
+    ] {
+        let before = coordinator.snapshot();
+        assert_eq!(
+            coordinator.admit_resource(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            ),
+            Err(refusal)
+        );
+        assert_eq!(coordinator.snapshot(), before);
+    }
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    let before = coordinator.snapshot();
+    assert_eq!(
+        coordinator.admit_resource(
+            &machine,
+            ResourceCarrier::OrdinarySerialization,
+            ledger().durable_record()
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Admission(ResourceError::OrdinaryCarrierRefused)
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    let (_, actionless, _) = machine_with_declared_subject(None);
+    assert_eq!(
+        coordinator.admit_resource(
+            &actionless,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::NoPendingResourceSubject
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+}
+
+/// Concurrent clone handles cannot publish two accounts for the same pending subject.
+#[test]
+fn coordinator_resource_admission_race_has_one_publication() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(2));
+    let before = coordinator.snapshot();
+    let barrier = std::sync::Barrier::new(2);
+    let clone = coordinator.clone();
+    let results = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            barrier.wait();
+            coordinator.admit_resource(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+        });
+        let second = scope.spawn(|| {
+            barrier.wait();
+            clone.admit_resource(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+        });
+        [
+            first
+                .join()
+                .unwrap_or_else(|_| panic!("first admission panicked")),
+            second
+                .join()
+                .unwrap_or_else(|_| panic!("second admission panicked")),
+        ]
+    });
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| **result
+                == Err(CoordinatorResourceRefusal::Registry(
+                    ResourceRegistryRefusal::SecondAdmission
+                )))
+            .count(),
+        1
+    );
+    let after = coordinator.snapshot();
+    assert_eq!(after.publication(), before.publication() + 1);
+    assert_eq!(after.resource_records().map(<[_]>::len), Some(1));
+}
+
 /// An operation whose Section 20 kind is not authenticated cannot be admitted as a live resource:
 /// the admission boundary reads the authenticated fact rather than defaulting one, on every
 /// account-construction path.

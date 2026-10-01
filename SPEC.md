@@ -15091,6 +15091,18 @@ of retention and physical reclamation. This mapping concerns accounting admissio
 create, discover, reconstruct, or claim ownership of a physical host resource, and it does not
 define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
 
+A runtime MAY expose this accounting registry through an explicitly configured execution
+coordinator with a finite live-account ceiling. Coordinator handles cloned from that owner MUST
+share one registry and serialize admission, accounting finalization, and emergency release.
+Admission MUST require a pending machine operation from a running task of the same execution;
+foreign executions, absent or non-running tasks, and disabled registries MUST be refused without
+mutation. A reserved durable publication MUST fence these accounting writes. Successful writes
+advance the coordinator publication; refusals change neither records nor publication. Immutable
+snapshot records are inspection only, not journal-committed resource state. Accounting cleanup
+MAY continue after task settlement, but MUST NOT reopen task admission. This optional boundary
+does not attach the registry automatically to evaluator dispatch or extend uniqueness beyond
+that coordinator, and its live-account ceiling does not bound retained records or snapshot size.
+
 <a id="GNT-28.12-operation-state-projection"></a>
 
 **[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile

@@ -88,6 +88,18 @@ canonical order and stops at the first refusal without rolling back an account t
 
 ## Non-claims
 
+`ExecutionCoordinator::new_with_resource_limit` optionally owns one accounting registry shared
+by cloned handles under its existing mutex (`GNT-28.11-runtime-admission-mapping`).
+`admit_resource` accepts only a running task's pending operation in that execution;
+`begin_resource_finish`, `complete_resource_finalization`, and `emergency_release_resource`
+retain the registry's owner and sealed-witness fences. Reserved durable publication refuses
+accounting writes. Success advances publication once; refusal changes neither records nor
+publication. `ExecutionCoordinatorSnapshot::resource_records` exposes immutable inspection facts,
+not committed journal state. Cleanup may settle an account after task settlement without reopening
+admission. No host future is polled under this mutex. This optional owner is not automatically
+connected to evaluator dispatch or durable task cuts. Its live-account ceiling bounds neither
+retained records nor snapshot size; whole-execution resource integration remains outstanding.
+
 - Account uniqueness is per registry: the runtime publishes no global uniqueness claim for one
   subject, and `GNT-28.10-resource-accounting-non-claims` is not widened here.
 - The containment settlement is runtime state of one account value under
