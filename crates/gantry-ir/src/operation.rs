@@ -1796,7 +1796,8 @@ impl LiveResource {
     ///
     /// The projection is derived from the exact settlement retained by this resource; an
     /// unsettled, foreign, stale-generation, stale-owner, or otherwise refused candidate cannot
-    /// produce one.
+    /// produce one. A generation fence overrides the projected state with Poisoned without
+    /// changing the accepted settlement, its progress, or its identity.
     #[must_use]
     pub fn operation_state_projection(&self) -> Option<OperationStateProjection> {
         let settlement = self.settlement.as_ref()?;
@@ -1804,7 +1805,11 @@ impl LiveResource {
             operation: settlement.operation().clone(),
             generation: settlement.generation().clone(),
             owner: settlement.owner(),
-            state: settlement.resource_state(),
+            state: if self.fenced.is_some() {
+                ResourceState::Poisoned
+            } else {
+                settlement.resource_state()
+            },
         })
     }
 

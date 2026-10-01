@@ -1818,6 +1818,14 @@ fn a_fenced_generation_or_an_exhausted_observation_budget_refuses_further_observ
     assert_eq!(settled(&fenced), Some(observed.canonical_text()));
     assert_eq!(fenced.state(), ResourceState::Poisoned);
 
+    assert_eq!(
+        fenced
+            .operation_state_projection()
+            .map(|projection| projection.state()),
+        Some(ResourceState::Poisoned),
+        "accepted completion evidence must not erase the generation's poison fence"
+    );
+
     let mut expired = resource(&current, owner, 1);
     expired.fence(FenceCategory::Expiry);
     assert_eq!(expired.fenced(), Some(FenceCategory::Expiry));

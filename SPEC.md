@@ -15292,8 +15292,10 @@ portable subject identity MUST refuse with `EvidenceSubjectMismatch`; foreign ru
 MUST refuse with `ForeignSubject`. Registry failure settlement and adapter-failure poisoning MUST
 require the same accompanying binding. Unsettled projection and absent evidence-selected accounts
 retain their existing refusal precedence. These bindings supply runtime context, not host authority.
-operation state MUST equal the accepted settlement's derived `ResourceState`, not a caller-selected
-state. This projection changes only the distinct Section 20 operation-state fact of that admitted
+The projected operation state MUST equal the accepted settlement's derived `ResourceState`, except
+that a generation fenced under Section 20 MUST project `Poisoned` regardless of that outcome.
+Projection MUST preserve the fence without rewriting the accepted settlement or its progress;
+the state is never caller-selected. This projection changes only the distinct Section 20 operation-state fact of that admitted
 account: it MUST NOT change whole-resource lifetime, quotas, liveness roots, ownership of a physical
 host resource, or the Section 20 settlement, progress, or generation. It creates no evaluator-wide
 settlement uniqueness, checkpoint format, or journal schema.

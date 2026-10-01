@@ -195,7 +195,9 @@ execution/task. `EvidenceSubjectMismatch` and `ForeignSubject` refuse before mut
 unsettled projection and absent evidence-selected account refusals retain precedence. A
 projection exists only after the supplied `LiveResource` accepted its own Section 20 settlement.
 That exact operation and resource generation select the account, and the accepted owner generation
-must still be current. The route updates only the distinct operation-state field; it does not settle
+must still be current. A fenced generation projects `Poisoned` even when its retained completion
+would otherwise derive another state; projection preserves the fence without rewriting settlement
+or progress evidence. The route updates only the distinct operation-state field; it does not settle
 whole-resource lifetime, change quotas or roots, or reconstruct or claim a host resource. Unsettled,
 unknown-subject, or stale-owner projections leave the account unchanged, as required by
 `GNT-28.12-operation-state-projection`.

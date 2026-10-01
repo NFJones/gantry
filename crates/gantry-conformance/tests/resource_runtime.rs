@@ -4906,6 +4906,81 @@ fn runtime_projects_only_the_cancellation_race_winner() {
     }
 }
 
+/// Projection preserves a generation fence regardless of when its completion was accepted.
+#[test]
+fn runtime_projection_preserves_fences_before_and_after_settlement() {
+    use gantry::ir::FenceCategory;
+    for fence_first in [false, true] {
+        let subject = active_subject();
+        let mut live = transport_live(FIXTURE_DECLARATION, 0, 4, false);
+        let completion = OperationSettlement::new(
+            live.operation(),
+            live.generation(),
+            live.owner(),
+            ExternalOutcome::Accepted,
+            ProgressObservation::CommittedProgress,
+            30,
+        )
+        .unwrap_or_else(|error| panic!("completion: {error:?}"));
+        if fence_first {
+            live.fence(FenceCategory::Revocation);
+        }
+        live.settle(&completion)
+            .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+        let mut registry = ResourceRegistry::with_live_limit(1);
+        registry
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        if !fence_first {
+            assert_eq!(
+                registry.project_operation_state(&live, &subject),
+                Ok(ResourceState::Consumed)
+            );
+            live.fence(FenceCategory::Revocation);
+        }
+        let before = registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("account retained"))
+            .durable_record();
+        assert_eq!(
+            registry.project_operation_state(&live, &subject),
+            Ok(ResourceState::Poisoned)
+        );
+        let after = registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("account retained"))
+            .durable_record();
+        assert_eq!(live.settlement(), Some(&completion));
+        assert_eq!(live.progress(), completion.progress());
+        assert_eq!(live.fenced(), Some(FenceCategory::Revocation));
+        assert_eq!(after.lifetime(), before.lifetime());
+        assert_eq!(after.quotas(), before.quotas());
+        assert_eq!(after.liveness_roots(), before.liveness_roots());
+        assert_eq!(after.owner(), before.owner());
+        assert_eq!(after.settlement(), before.settlement());
+        assert_eq!(registry.live_resources(), 1);
+        assert_eq!(
+            registry.project_operation_state(&live, &subject),
+            Ok(ResourceState::Poisoned)
+        );
+        assert_eq!(
+            registry
+                .account(&subject)
+                .unwrap_or_else(|| panic!("account retained"))
+                .durable_record(),
+            after
+        );
+        assert_eq!(
+            decode_resource_reconstruction_record(&encode_resource_reconstruction_record(&after)),
+            Ok(after)
+        );
+    }
+}
+
 #[test]
 fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     let mut admitted_resource = admitted_active();
