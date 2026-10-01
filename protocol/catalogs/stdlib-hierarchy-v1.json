@@ -97,6 +97,20 @@
       "interface_digest": "2289cb5b4d1e9cbf097ecc35f366beab43edafab41284146a9a530a9068d49f7"
     },
     {
+      "name": "std.env",
+      "class": "package",
+      "tier": "stable",
+      "modes": [
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [],
+      "interface_digest": "fe9834c35fe0b22e80fef0ce0775ce1da7f0dbd05cf797dca1b974f1b96ee484"
+    },
+    {
       "name": "std.num",
       "class": "package",
       "tier": "stable",

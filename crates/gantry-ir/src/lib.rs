@@ -27,6 +27,7 @@ mod constant;
 mod crypto;
 mod data;
 mod effects;
+mod env;
 pub mod error_semantics;
 mod executable;
 mod facts;
@@ -232,6 +233,12 @@ pub use fs::{
 pub use observe::{
     OBSERVE_CLAUSES, OBSERVE_ITEMS, OBSERVE_SURFACE_MODES, OBSERVE_SURFACE_TARGETS, ObserveItemRow,
     admit_observe_surface, declare_observe_surface,
+};
+// Section 49 publishes the declared `std.env` module surface. It adds no host access or runtime
+// environment behavior.
+pub use env::{
+    ENV_CLAUSES, ENV_ITEMS, ENV_SURFACE_MODES, ENV_SURFACE_TARGETS, EnvItemRow, admit_env_surface,
+    canonical_env_hierarchy, declare_env_package, declare_env_surface,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and

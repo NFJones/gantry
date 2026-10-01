@@ -3,11 +3,11 @@
 //!
 //! The aggregate is assembled, not authored, here: each family keeps ownership of its own item
 //! rows (`declare_collections_surface`, `declare_codec_surface`, `declare_crypto_surface`,
-//! `declare_data_surface`), and this module composes their published surfaces so package tests,
-//! tooling, cross-gate applications, and publication read one graph.
+//! `declare_data_surface`, `declare_env_surface`), and this module composes their published
+//! surfaces so package tests, tooling, cross-gate applications, and publication read one graph.
 
 use crate::stdlib::{StdGraph, StdlibError};
-use crate::{codec, collections, crypto, data};
+use crate::{codec, collections, crypto, data, env};
 
 /// Composes the canonical aggregate `std` hierarchy with every declared family item surface
 /// (`GNT-34.6-stability-tiers`, `GNT-34.8-defining-identity-and-interface-digest`).
@@ -21,5 +21,6 @@ pub fn canonical_std_hierarchy() -> Result<StdGraph, StdlibError> {
     codec::declare_codec_surface(&mut graph)?;
     crypto::declare_crypto_surface(&mut graph)?;
     data::declare_data_surface(&mut graph)?;
+    env::declare_env_package(&mut graph)?;
     Ok(graph)
 }

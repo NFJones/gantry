@@ -805,6 +805,7 @@ than one block.
 | Parallel execution | `GNT-10.0`, `GNT-10.1` through `GNT-10.14` |
 | Durable execution | `GNT-11.0`, `GNT-11.1` through `GNT-11.11`, `GNT-11.11-generic-artifact-recovery`, `GNT-11.6-compatibility-classes` |
 | Observability | `GNT-12.0`, `GNT-12.1` through `GNT-12.11`, `GNT-12.11-generic-diagnostics` |
+| Environment package declarations | `GNT-49.0-environment-foundation-scope` through `GNT-49.1-environment-modules-and-item-rows` |
 | Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10`, `GNT-15.1-automatic-execution`, `GNT-15.2-runtime-sessions`, `GNT-15.4-owned-work` |
 | Packages, manifests, and public interfaces | `GNT-16.0`, `GNT-16.1-package-identity`, `GNT-16.2-package-instances`, `GNT-16.3-dependency-aliases`, `GNT-16.4-visibility`, `GNT-16.5-reexports`, `GNT-16.6-target-kinds`, `GNT-16.7-public-interface-manifest`, `GNT-16.8-compatibility-axes`, `GNT-16.9-resolution-order-independence` |
@@ -16857,3 +16858,35 @@ redaction or release permission, backpressure, delivery policy, cancellation or 
 sink failure behavior, runtime event, telemetry operation, adapter, or runtime availability. It
 does not change Section 12's event contract or Section 15's protection and release rules, and it
 claims no performance, storage layout, or physical representation.
+
+<a id="GNT-49.0-environment-foundation-scope"></a>
+
+**[GNT-49.0-environment-foundation-scope] Environment foundation scope.** This section publishes
+the declaration surface of the capability-backed `std.env` family of
+`GNT-34.1-canonical-hierarchy-and-package-names`. Its intended source-level domain is bounded
+immutable arguments and environment snapshots plus logical working-directory data, subject to the launch
+snapshot and capability-closure contract of `GNT-30.2-bounded-launch-snapshot-and-capability-closure`
+and the exact values and attenuation rules of `GNT-30.3-arguments-environment-and-logical-cwd`.
+Logical working-directory data is not directory authority. This section declares only the family
+identity, its closed module rows, and their applicability; it does not read or mutate ambient
+process state, expose credentials, grant environment or directory authority, or implement a
+launcher, adapter, host trait, or runtime facility.
+
+<a id="GNT-49.1-environment-modules-and-item-rows"></a>
+
+**[GNT-49.1-environment-modules-and-item-rows] Environment modules and item rows.** This clause
+declares exactly three public modules of `std.env` — `std.env::arguments`, `std.env::environment`,
+and `std.env::working_directory` — in canonical name order. Each row is classified as a module at
+the stable tier of `GNT-34.2-name-classification` and `GNT-34.6-stability-tiers`, and each row has
+exactly the application semantic mode over the library and binary target kinds. No other module,
+item, alias, or spelling is declared. The model's `EnvItemRow` and `ENV_ITEMS` publish these rows;
+`declare_env_surface` and `admit_env_surface` declare and admit exactly this closed surface over
+one standard-library graph, refusing a missing, partial, extra, or mismatched declaration rather
+than repairing it.
+
+This clause publishes names, classification, tier, and applicability only. It declares no
+argument or environment encoding, lookup or enumeration operation, mutation, native directory
+handle, environment inheritance, protected-value release, adapter, capability grant, or runtime
+availability; those require their own normative contracts. It does not change Section 30's launch
+snapshot or attenuation rules and claims no process-global access, performance, storage layout, or
+physical representation.
