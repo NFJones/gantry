@@ -52,6 +52,8 @@ pub enum HostResourceError {
     AlreadyAttached,
     /// This account has no attached physical slot.
     NotAttached,
+    /// Physical disposal is already owned by another in-flight cleanup.
+    DisposalPending,
 }
 
 /// One unclonable host value bound to one consumed accounting account.
@@ -383,7 +385,56 @@ impl<T> Drop for HostReceiverLoan<'_, T> {
 pub(crate) struct HostValueSlot {
     value: Option<Box<dyn std::any::Any + Send>>,
     poison: AdapterPoison,
-    disposal_failure: Option<BoundaryFailure>,
+    disposal: std::sync::Arc<std::sync::Mutex<DisposalState>>,
+}
+
+/// Process-local cleanup status shared with the private unlocked disposal job.
+#[derive(Clone, Copy, Debug)]
+enum DisposalState {
+    Ready,
+    Pending,
+    Complete(Result<(), BoundaryFailure>),
+}
+
+/// Exclusive physical cleanup extracted without moving or duplicating accounting ownership.
+pub(crate) struct HostDisposalJob {
+    value: Option<Box<dyn std::any::Any + Send>>,
+    poison: AdapterPoison,
+    disposal: std::sync::Arc<std::sync::Mutex<DisposalState>>,
+}
+
+impl HostDisposalJob {
+    /// Contains destruction and publishes its status without acquiring the coordinator mutex.
+    pub(crate) fn run(mut self) -> Result<(), HostResourceError> {
+        self.complete().map_err(HostResourceError::Boundary)
+    }
+
+    /// Completes exactly once, including if this private job is abandoned.
+    fn complete(&mut self) -> Result<(), BoundaryFailure> {
+        let mut state = self
+            .disposal
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let DisposalState::Complete(result) = *state {
+            return result;
+        }
+        // Do not hold any status or coordinator lock while integration destruction executes.
+        drop(state);
+        let result = drop_integration(&self.poison, &mut self.value);
+        state = self
+            .disposal
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        *state = DisposalState::Complete(result);
+        result
+    }
+}
+
+impl Drop for HostDisposalJob {
+    /// Retains exclusive cleanup even if the internal caller abandons its extracted job.
+    fn drop(&mut self) {
+        let _ = self.complete();
+    }
 }
 
 impl std::fmt::Debug for HostValueSlot {
@@ -403,18 +454,26 @@ impl HostValueSlot {
         Self {
             value: Some(Box::new(value)),
             poison: AdapterPoison::default(),
-            disposal_failure: None,
+            disposal: std::sync::Arc::new(std::sync::Mutex::new(DisposalState::Ready)),
         }
     }
 
     /// Reports physical presence without exposing host identity or contents.
     pub(crate) fn is_present(&self) -> bool {
-        self.value.is_some()
+        self.value.is_some() || matches!(self.disposal_state(), DisposalState::Pending)
     }
 
     /// Retains failed destruction independently of physical presence or later disposal attempts.
-    pub(crate) const fn disposal_failed(&self) -> bool {
-        self.disposal_failure.is_some()
+    pub(crate) fn disposal_failed(&self) -> bool {
+        matches!(self.disposal_state(), DisposalState::Complete(Err(_)))
+    }
+
+    /// Reads a status projection without exposing physical ownership.
+    fn disposal_state(&self) -> DisposalState {
+        *self
+            .disposal
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
     }
 
     /// Contains unused callback destruction, including type or accounting refusals.
@@ -447,14 +506,31 @@ impl HostValueSlot {
 
     /// Removes the value before contained destruction; no second disposal can execute it.
     pub(crate) fn dispose(&mut self) -> Result<(), HostResourceError> {
-        if let Some(failure) = self.disposal_failure {
-            return Err(HostResourceError::Boundary(failure));
+        self.extract_disposal()?
+            .map_or(Ok(()), HostDisposalJob::run)
+    }
+
+    /// Marks cleanup pending before removing physical ownership for unlocked destruction.
+    pub(crate) fn extract_disposal(
+        &mut self,
+    ) -> Result<Option<HostDisposalJob>, HostResourceError> {
+        let mut state = self
+            .disposal
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        match *state {
+            DisposalState::Pending => return Err(HostResourceError::DisposalPending),
+            DisposalState::Complete(result) => {
+                return result.map(|()| None).map_err(HostResourceError::Boundary);
+            }
+            DisposalState::Ready => {}
         }
-        if let Err(failure) = drop_integration(&self.poison, &mut self.value) {
-            self.disposal_failure = Some(failure);
-            return Err(HostResourceError::Boundary(failure));
-        }
-        Ok(())
+        *state = DisposalState::Pending;
+        Ok(Some(HostDisposalJob {
+            value: self.value.take(),
+            poison: self.poison.clone(),
+            disposal: std::sync::Arc::clone(&self.disposal),
+        }))
     }
 }
 

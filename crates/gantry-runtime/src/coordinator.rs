@@ -62,6 +62,8 @@ pub enum CoordinatorResourceRefusal {
     RegistryDisabled,
     /// The registry refused the exact pending subject or its accounting facts.
     Registry(crate::ResourceRegistryRefusal),
+    /// Process-local physical attachment or contained disposal refused or failed.
+    Host(crate::HostResourceError),
 }
 
 /// Failure while allocating one coordinator-owned per-task event sequence.
@@ -402,6 +404,70 @@ impl ExecutionCoordinator {
         cleanup: gantry_ir::EmergencyCleanupWitness,
     ) -> Result<gantry_ir::ResourceLifetimeState, CoordinatorResourceRefusal> {
         self.mutate_resources(|resources| resources.settle_from_emergency_cleanup(subject, cleanup))
+    }
+
+    /// Attaches physical ownership to an existing account without changing accounting publication.
+    ///
+    /// Refused inputs remain owned outside the coordinator lock and are returned untouched.
+    /// The embedding caller authenticates association and authority; this grants neither.
+    pub fn attach_resource_host_value<T: std::any::Any + Send>(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        value: T,
+    ) -> Result<(), Box<(CoordinatorResourceRefusal, T)>> {
+        let mut value = Some(value);
+        let result = (|| {
+            let mut state = lock(&self.inner.state);
+            require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+            let resources = state
+                .resources
+                .as_mut()
+                .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?;
+            let input = value
+                .take()
+                .unwrap_or_else(|| unreachable!("input transferred once"));
+            match resources.attach_host_value(subject, owner, input) {
+                Ok(()) => Ok(()),
+                Err(refusal) => {
+                    let (error, returned) = *refusal;
+                    value = Some(returned);
+                    Err(CoordinatorResourceRefusal::Host(error))
+                }
+            }
+        })();
+        result.map_err(|error| {
+            Box::new((
+                error,
+                value
+                    .take()
+                    .unwrap_or_else(|| unreachable!("refused input remains owned")),
+            ))
+        })
+    }
+
+    /// Executes contained physical destruction after releasing the coordinator mutex.
+    ///
+    /// Extraction is owner- and publication-fenced. Its process-local pending status blocks
+    /// normal finalization until cleanup completes; failure remains recorded. Neither extraction
+    /// nor completion changes accounting publication or semantic quota.
+    pub fn dispose_resource_host_value(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        let job = {
+            let mut state = lock(&self.inner.state);
+            require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+            state
+                .resources
+                .as_mut()
+                .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?
+                .extract_host_disposal(subject, owner)
+                .map_err(CoordinatorResourceRefusal::Host)?
+        };
+        job.map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
+            .map_err(CoordinatorResourceRefusal::Host)
     }
 
     /// Serializes one internal registry mutation and publishes only its successful result.

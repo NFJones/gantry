@@ -985,6 +985,16 @@ impl ResourceRegistry {
         subject: &ResourceSubjectBinding,
         owner: OwnerGeneration,
     ) -> Result<(), crate::HostResourceError> {
+        self.extract_host_disposal(subject, owner)?
+            .map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
+    }
+
+    /// Extracts exclusive physical cleanup while retaining a shared process-local pending fence.
+    pub(crate) fn extract_host_disposal(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+    ) -> Result<Option<crate::resource_transport::HostDisposalJob>, crate::HostResourceError> {
         use crate::HostResourceError;
         let key = (subject.operation().clone(), subject.generation().clone());
         let account = self
@@ -1002,7 +1012,7 @@ impl ResourceRegistry {
         self.physical
             .get_mut(&key)
             .ok_or(HostResourceError::NotAttached)?
-            .dispose()
+            .extract_disposal()
     }
 
     /// Settles the account its own subject names from one model-issued post-failure settlement.

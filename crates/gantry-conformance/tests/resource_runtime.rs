@@ -1589,6 +1589,201 @@ impl Drop for TransportValue {
     }
 }
 
+/// A destructor reenters coordinator inspection and pauses so finalization can race with cleanup.
+struct CoordinatorDropProbe {
+    coordinator: gantry::runtime::ExecutionCoordinator,
+    entered: Arc<std::sync::Barrier>,
+    release: Arc<std::sync::Barrier>,
+    unlocked: Arc<std::sync::atomic::AtomicBool>,
+    drops: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Drop for CoordinatorDropProbe {
+    fn drop(&mut self) {
+        self.unlocked.store(
+            self.coordinator.try_snapshot().is_some(),
+            std::sync::atomic::Ordering::SeqCst,
+        );
+        self.drops.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.entered.wait();
+        self.release.wait();
+    }
+}
+
+/// Shared disposal executes unlocked, and in-flight destruction cannot authorize finalization.
+#[test]
+fn coordinator_host_disposal_is_unlocked_and_fences_inflight_finalization() {
+    use gantry::runtime::{CoordinatorResourceRefusal, HostResourceError};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let owner = OwnerGeneration::new(4);
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let before = coordinator.snapshot();
+    let entered = Arc::new(std::sync::Barrier::new(2));
+    let release = Arc::new(std::sync::Barrier::new(2));
+    let unlocked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    coordinator
+        .attach_resource_host_value(
+            &subject,
+            owner,
+            CoordinatorDropProbe {
+                coordinator: coordinator.clone(),
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+                unlocked: Arc::clone(&unlocked),
+                drops: Arc::clone(&drops),
+            },
+        )
+        .unwrap_or_else(|_| panic!("attachment"));
+    assert_eq!(
+        coordinator.snapshot(),
+        before,
+        "attachment is not accounting publication"
+    );
+    assert_eq!(
+        coordinator.dispose_resource_host_value(&subject, owner),
+        Err(CoordinatorResourceRefusal::Host(HostResourceError::Model(
+            ResourceError::IllegalLifetimeTransition
+        )))
+    );
+    assert_eq!(
+        coordinator.begin_resource_finish(&subject, owner),
+        Ok(ResourceLifetimeState::Finishing)
+    );
+    let finishing = coordinator.snapshot();
+    std::thread::scope(|scope| {
+        let cleanup = scope.spawn(|| {
+            coordinator
+                .clone()
+                .dispose_resource_host_value(&subject, owner)
+        });
+        entered.wait();
+        // Release destruction even if a following assertion fails, avoiding a test-induced hang.
+        let observed_unlocked = unlocked.load(std::sync::atomic::Ordering::SeqCst);
+        let finalization = coordinator.complete_resource_finalization(&subject, owner, 31);
+        let repeated = coordinator.dispose_resource_host_value(&subject, owner);
+        let during = coordinator.snapshot();
+        release.wait();
+        assert_eq!(
+            cleanup.join().unwrap_or_else(|_| panic!("cleanup thread")),
+            Ok(())
+        );
+        assert!(
+            observed_unlocked,
+            "destructor can inspect coordinator without its mutex held"
+        );
+        assert_eq!(
+            finalization,
+            Err(CoordinatorResourceRefusal::Registry(
+                ResourceRegistryRefusal::PhysicalValuePresent
+            ))
+        );
+        assert_eq!(
+            repeated,
+            Err(CoordinatorResourceRefusal::Host(
+                HostResourceError::DisposalPending
+            ))
+        );
+        assert_eq!(during, finishing);
+    });
+    assert_eq!(
+        coordinator.snapshot(),
+        finishing,
+        "disposal is not accounting publication"
+    );
+    assert_eq!(
+        coordinator.complete_resource_finalization(&subject, owner, 31),
+        Ok(ResourceLifetimeState::Finished)
+    );
+    assert_eq!(
+        coordinator.dispose_resource_host_value(&subject, owner),
+        Ok(())
+    );
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Shared attachment returns refused inputs and retains disposal failure without normal finish.
+#[test]
+fn coordinator_host_attachment_refusal_and_failed_disposal_preserve_accounting() {
+    use gantry::runtime::{CoordinatorResourceRefusal, HostResourceError};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let owner = OwnerGeneration::new(4);
+    let disabled = resource_coordinator(machine.execution_id(), machine.task_id(), None);
+    let (error, value) = *disabled
+        .attach_resource_host_value(&subject, owner, 17_u64)
+        .err()
+        .unwrap_or_else(|| panic!("disabled refuses"));
+    assert_eq!(error, CoordinatorResourceRefusal::RegistryDisabled);
+    assert_eq!(value, 17);
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let before = coordinator.snapshot();
+    let (error, value) = *coordinator
+        .attach_resource_host_value(&subject, OwnerGeneration::new(3), 17_u64)
+        .err()
+        .unwrap_or_else(|| panic!("stale owner refuses"));
+    assert!(matches!(
+        error,
+        CoordinatorResourceRefusal::Host(HostResourceError::Model(
+            ResourceError::StaleOwner { .. }
+        ))
+    ));
+    assert_eq!(value, 17);
+    assert_eq!(coordinator.snapshot(), before);
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    coordinator
+        .attach_resource_host_value(
+            &subject,
+            owner,
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: true,
+                value: 7,
+            },
+        )
+        .unwrap_or_else(|_| panic!("attachment"));
+    assert_eq!(
+        coordinator.begin_resource_finish(&subject, owner),
+        Ok(ResourceLifetimeState::Finishing)
+    );
+    let finishing = coordinator.snapshot();
+    for _ in 0..2 {
+        assert!(matches!(
+            coordinator.dispose_resource_host_value(&subject, owner),
+            Err(CoordinatorResourceRefusal::Host(
+                HostResourceError::Boundary(_)
+            ))
+        ));
+        assert_eq!(
+            coordinator.complete_resource_finalization(&subject, owner, 31),
+            Err(CoordinatorResourceRefusal::Registry(
+                ResourceRegistryRefusal::PhysicalDisposalFailed
+            ))
+        );
+        assert_eq!(coordinator.snapshot(), finishing);
+    }
+    assert_eq!(
+        coordinator.emergency_release_resource(&subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
 /// Physical attachment leaves registry quota and accounting ownership in place until settlement.
 #[test]
 fn registry_host_attachment_preserves_accounting_and_finalization_fences() {

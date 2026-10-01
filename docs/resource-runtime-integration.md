@@ -39,6 +39,15 @@ Deleted accounts are not reaped while a value remains attached. Captures and rec
 physical slots; no callback route is exposed through the coordinator's shared lock. Registry drop
 contains physical destruction only and does not synthesize semantic settlement.
 
+`ExecutionCoordinator::attach_resource_host_value` retains physical ownership in the same registry
+without changing accounting publication; refused inputs are returned untouched outside the lock.
+`dispose_resource_host_value` checks owner and durable-publication availability, marks cleanup
+pending and extracts exclusive physical ownership, then runs contained destruction without holding
+the coordinator or cleanup-status mutex. Pending cleanup blocks finalization and reaping, and another
+disposal refuses with `DisposalPending`. Completed cleanup retains success or failure in the slot.
+Attachment and disposal neither release semantic quota nor advance accounting publication; their
+process-local statuses are not journal cuts or physical recovery evidence.
+
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |
 | Admission | `new`, `admit` | `GNT-28.11-runtime-admission-mapping`, `GNT-28.7-durable-resource-reconstruction`, `GNT-20.1-operation-kinds` |

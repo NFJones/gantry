@@ -15197,6 +15197,15 @@ value is disposed. Captures and reconstruction MUST omit physical slots, and no 
 route may invoke integration under its shared lock. This boundary grants no host authority and
 does not establish automatic evaluator integration or physical reconstruction.
 
+The coordinator MAY expose physical attachment and disposal over its existing registry. Attachment
+and disposal extraction MUST respect the durable-publication reservation and current account owner.
+Refused attachment MUST return the physical input without destroying it under the coordinator lock.
+Disposal MUST mark a process-local pending status before extracting exclusive physical ownership,
+then execute contained destruction with neither coordinator nor status mutex held. Pending cleanup
+MUST fence finalization and record reclamation; repeated disposal MUST refuse while cleanup is pending.
+Completion records success or retained failure without changing accounting publication or semantic
+quota. These physical statuses are not journal-committed state or durable recovery evidence.
+
 <a id="GNT-28.12-operation-state-projection"></a>
 
 **[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile
