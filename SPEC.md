@@ -15297,8 +15297,11 @@ even if its observer or completion future is dropped. Submission, completion pol
 handle disposal MUST retain integration containment. Repeated observation returns the same sweep
 result; service completion and per-resource destruction outcomes remain distinct.
 Nondurable execution cancellation MUST submit any already-settled physical obligations after driver
-drainage and before observing shutdown quiescence. Observation MUST use the configured cancellation
-drain deadline; timeout stops observation without cancelling started destruction. Service/coordinator
+drainage and before observing shutdown quiescence.
+Already-terminal language outcomes MUST NOT bypass this physical cleanup and quiescence phase;
+successful observation retains the `AlreadyTerminal` result without changing fixed outcomes.
+Observation MUST use the configured cancellation drain deadline; timeout stops observation without
+cancelling started destruction. Service/coordinator
 failures and per-resource disposal failures MUST remain distinct. The first operational cleanup
 failure MUST remain visible in lifecycle snapshots independently of immutable language outcomes,
 including after terminal publication, rather than claiming successful cleanup. Recording errors

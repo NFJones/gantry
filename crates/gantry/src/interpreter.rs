@@ -11586,9 +11586,6 @@ impl Interpreter {
             .handle
             .publish_committed_cancellation(reason)
             .map_err(CancelExecutionError::Transition)?;
-        if matches!(record, CancellationRecord::AlreadyTerminal(_)) {
-            return Ok(record);
-        }
 
         let semantic_tasks = owner.coordinator.execution_cancellation_cohort();
         let semantic_waits = semantic_tasks

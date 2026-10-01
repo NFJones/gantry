@@ -133,6 +133,8 @@ after terminal publication. Fixed language outcomes and cancellation remain unch
 to record this classification propagate rather than being silently discarded.
 Physical-quiescence observation also records deadline or executor failure, including when an active
 resource remains held after driver terminal publication. It does not dispose or release that account.
+An already-terminal cancellation request still drains retained settled physical obligations and
+observes quiescence; success retains `AlreadyTerminal` without changing fixed language outcomes.
 Active and finishing accounts are not implicitly released. This phase does not enable source
 live-handle transport or complete durable cancellation/general interpreter shutdown integration.
 

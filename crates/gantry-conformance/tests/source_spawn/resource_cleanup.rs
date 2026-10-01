@@ -160,13 +160,15 @@ fn resource_machine(execution: ProtocolIdentity) -> Machine {
 /// Cancellation drains already-released fake-host values and reports disposal failures separately.
 #[test]
 fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
-    for (fails, times_out, remains_active, service_refuses, executor_fails) in [
-        (false, false, false, false, false),
-        (true, false, false, false, false),
-        (false, true, false, false, false),
-        (false, true, true, false, false),
-        (false, false, false, true, false),
-        (false, true, true, false, true),
+    for (fails, times_out, remains_active, service_refuses, executor_fails, already_terminal) in [
+        (false, false, false, false, false, false),
+        (true, false, false, false, false, false),
+        (false, true, false, false, false, false),
+        (false, true, true, false, false, false),
+        (false, false, false, true, false, false),
+        (false, true, true, false, true, false),
+        (false, false, false, false, false, true),
+        (true, false, false, false, false, true),
     ] {
         let root = TempDirectory::new("fn main() {}");
         let executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -274,6 +276,8 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
             .unwrap_or_else(|| panic!("records"))
             .to_vec();
         refuse.store(service_refuses, Ordering::Release);
+        let terminal_before =
+            already_terminal.then(|| drive_to_terminal(&executor, &interpreter, accepted.handle()));
         let reason = caller_cancellation_reason(Some(Arc::from("resource cleanup")), 64)
             .unwrap_or_else(|error| panic!("reason: {error:?}"));
         let mut cancellation = Box::pin(interpreter.cancel_execution(execution, reason));
@@ -420,6 +424,8 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
                     HostResourceError::Boundary(_)
                 ))
             ));
+        } else if already_terminal {
+            assert!(matches!(result, Ok(CancellationRecord::AlreadyTerminal(_))));
         } else {
             assert!(matches!(result, Ok(CancellationRecord::Accepted { .. })));
         }
@@ -431,6 +437,11 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
         assert_eq!(after_cleanup.terminal, snapshot.terminal);
         assert_eq!(after_cleanup.cancellation, snapshot.cancellation);
         assert_eq!(after_cleanup.resource_cleanup_failure, expected_failure);
+        if let Some(prior) = terminal_before {
+            assert_eq!(after_cleanup.foreground, prior.foreground);
+            assert_eq!(after_cleanup.terminal, prior.terminal);
+            assert_eq!(after_cleanup.cancellation, prior.cancellation);
+        }
         if expected_failure.is_some() {
             assert_eq!(
                 accepted.handle().record_resource_cleanup_failure(
