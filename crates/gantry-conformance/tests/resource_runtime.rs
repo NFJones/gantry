@@ -1589,6 +1589,186 @@ impl Drop for TransportValue {
     }
 }
 
+/// Cohort disposal continues after one destructor fails, without rolling back semantic release.
+#[test]
+fn coordinator_resource_cohort_cleanup_reports_semantic_and_physical_outcomes() {
+    use gantry::runtime::HostResourceError;
+    let (_, first_machine, first) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let (_, second_machine, second) =
+        machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let first = first.unwrap_or_else(|| panic!("first subject"));
+    let second = second.unwrap_or_else(|| panic!("second subject"));
+    let coordinator = resource_coordinator(
+        first_machine.execution_id(),
+        first_machine.task_id(),
+        Some(2),
+    );
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    for (machine, subject, fails) in [
+        (&first_machine, &first, true),
+        (&second_machine, &second, false),
+    ] {
+        coordinator
+            .admit_resource(
+                machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        coordinator
+            .attach_resource_host_value(
+                subject,
+                OwnerGeneration::new(4),
+                TransportValue {
+                    drops: Arc::clone(&drops),
+                    panic_on_drop: fails,
+                    value: 1,
+                },
+            )
+            .unwrap_or_else(|_| panic!("attachment"));
+    }
+    let before = coordinator.snapshot();
+    let report = coordinator
+        .emergency_release_resource_cohort(vec![
+            (second.clone(), emergency_cleanup()),
+            (first.clone(), emergency_cleanup()),
+            (first.clone(), emergency_cleanup()),
+        ])
+        .unwrap_or_else(|error| panic!("sweep: {error:?}"));
+    assert!(report.semantic().is_complete());
+    assert_eq!(report.semantic().settled().len(), 2);
+    assert_eq!(report.physical().len(), 2);
+    let mut expected = vec![first.clone(), second.clone()];
+    expected.sort_by(|left, right| {
+        (left.operation(), left.generation()).cmp(&(right.operation(), right.generation()))
+    });
+    assert_eq!(
+        report
+            .physical()
+            .iter()
+            .map(|(subject, _)| subject.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    for (subject, result) in report.physical() {
+        if subject == &first {
+            assert!(matches!(result, Err(HostResourceError::Boundary(_))));
+        } else {
+            assert_eq!(result, &Ok(()));
+        }
+    }
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 2);
+    let after = coordinator.snapshot();
+    assert_eq!(after.publication(), before.publication() + 1);
+    assert!(
+        after
+            .resource_records()
+            .unwrap_or_else(|| panic!("records"))
+            .iter()
+            .all(|record| record.record().lifetime() == ResourceLifetimeState::EmergencyReleased)
+    );
+    let repeated = coordinator
+        .emergency_release_resource_cohort(vec![(first, emergency_cleanup())])
+        .unwrap_or_else(|error| panic!("repeat report: {error:?}"));
+    assert!(repeated.semantic().settled().is_empty());
+    assert!(repeated.semantic().refusal().is_some());
+    assert!(repeated.physical().is_empty());
+    assert_eq!(coordinator.snapshot(), after);
+}
+
+/// Semantic refusal disposes only the exact settled prefix and preserves later members.
+#[test]
+fn coordinator_resource_cohort_cleanup_disposes_only_its_settled_prefix() {
+    let declarations = [
+        FIXTURE_DECLARATION,
+        SECOND_FIXTURE_DECLARATION,
+        THIRD_FIXTURE_DECLARATION,
+    ];
+    let fixtures = declarations.map(|declaration| machine_with_declared_subject(Some(declaration)));
+    let coordinator = resource_coordinator(
+        fixtures[0].1.execution_id(),
+        fixtures[0].1.task_id(),
+        Some(3),
+    );
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut subjects = Vec::new();
+    for (_, machine, subject) in &fixtures {
+        let subject = subject.as_ref().unwrap_or_else(|| panic!("subject"));
+        coordinator
+            .admit_resource(
+                machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        coordinator
+            .attach_resource_host_value(
+                subject,
+                OwnerGeneration::new(4),
+                TransportValue {
+                    drops: Arc::clone(&drops),
+                    panic_on_drop: false,
+                    value: 1,
+                },
+            )
+            .unwrap_or_else(|_| panic!("attachment"));
+        subjects.push(subject.clone());
+    }
+    subjects.sort_by(|left, right| {
+        (left.operation(), left.generation()).cmp(&(right.operation(), right.generation()))
+    });
+    coordinator
+        .emergency_release_resource(&subjects[1], emergency_cleanup())
+        .unwrap_or_else(|error| panic!("prior release: {error:?}"));
+    let before = coordinator.snapshot();
+    let report = coordinator
+        .emergency_release_resource_cohort(
+            subjects
+                .iter()
+                .rev()
+                .map(|subject| (subject.clone(), emergency_cleanup()))
+                .collect(),
+        )
+        .unwrap_or_else(|error| panic!("partial sweep: {error:?}"));
+    assert_eq!(report.semantic().settled().len(), 1);
+    assert_eq!(report.semantic().settled()[0].subject(), &subjects[0]);
+    assert!(matches!(report.semantic().refusal(), Some((subject,
+        ResourceRegistryRefusal::EmergencyRelease(ResourceError::IllegalLifetimeTransition))) if subject == &subjects[1]));
+    assert_eq!(report.physical(), &[(subjects[0].clone(), Ok(()))]);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let after = coordinator.snapshot();
+    assert_eq!(after.publication(), before.publication() + 1);
+    let before_records = before
+        .resource_records()
+        .unwrap_or_else(|| panic!("before records"));
+    let after_records = after
+        .resource_records()
+        .unwrap_or_else(|| panic!("after records"));
+    for subject in &subjects[1..] {
+        assert_eq!(
+            after_records
+                .iter()
+                .find(|record| record.subject() == subject),
+            before_records
+                .iter()
+                .find(|record| record.subject() == subject)
+        );
+        assert_eq!(
+            coordinator
+                .dispose_resource_host_value(subject, OwnerGeneration::new(4))
+                .is_ok(),
+            subject == &subjects[1]
+        );
+    }
+    coordinator
+        .emergency_release_resource(&subjects[2], emergency_cleanup())
+        .unwrap_or_else(|error| panic!("remaining release: {error:?}"));
+    coordinator
+        .dispose_resource_host_value(&subjects[2], OwnerGeneration::new(4))
+        .unwrap_or_else(|error| panic!("remaining disposal: {error:?}"));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 3);
+}
+
 /// A destructor reenters coordinator inspection and pauses so finalization can race with cleanup.
 struct CoordinatorDropProbe {
     coordinator: gantry::runtime::ExecutionCoordinator,

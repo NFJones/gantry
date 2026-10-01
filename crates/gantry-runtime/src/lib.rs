@@ -49,10 +49,10 @@ pub use configuration::{
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use coordinator::DurableGraphTransaction;
 pub use coordinator::{
-    BestEffortEventDeliveryWait, CoordinatorResourceRefusal, ExecutionCoordinator,
-    ExecutionCoordinatorSnapshot, ForegroundCompletionWait, JoinSettlementWait,
-    RequiredEventDeliveryWait, ShutdownQuiescenceWait, TaskEventSequenceError, TaskSettlementWait,
-    TerminalCompletionWait,
+    BestEffortEventDeliveryWait, CoordinatorResourceCleanup, CoordinatorResourceRefusal,
+    ExecutionCoordinator, ExecutionCoordinatorSnapshot, ForegroundCompletionWait,
+    JoinSettlementWait, RequiredEventDeliveryWait, ShutdownQuiescenceWait, TaskEventSequenceError,
+    TaskSettlementWait, TerminalCompletionWait,
 };
 #[cfg(feature = "durable")]
 pub use durable::{

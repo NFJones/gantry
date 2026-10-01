@@ -66,6 +66,37 @@ pub enum CoordinatorResourceRefusal {
     Host(crate::HostResourceError),
 }
 
+/// Semantic settled-prefix evidence and independent physical cleanup results for one sweep.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoordinatorResourceCleanup {
+    semantic: crate::CohortEmergencyCleanup,
+    physical: Vec<(
+        crate::ResourceSubjectBinding,
+        Result<(), crate::HostResourceError>,
+    )>,
+}
+
+impl CoordinatorResourceCleanup {
+    /// Returns the canonical settled prefix and first semantic refusal, if any.
+    #[must_use]
+    pub const fn semantic(&self) -> &crate::CohortEmergencyCleanup {
+        &self.semantic
+    }
+
+    /// Returns one physical result per settled member, in the same canonical order.
+    ///
+    /// A member without an attached slot needs no physical disposal and reports success.
+    #[must_use = "physical cleanup failures must be inspected separately from semantic release"]
+    pub fn physical(
+        &self,
+    ) -> &[(
+        crate::ResourceSubjectBinding,
+        Result<(), crate::HostResourceError>,
+    )] {
+        &self.physical
+    }
+}
+
 /// Failure while allocating one coordinator-owned per-task event sequence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TaskEventSequenceError {
@@ -404,6 +435,59 @@ impl ExecutionCoordinator {
         cleanup: gantry_ir::EmergencyCleanupWitness,
     ) -> Result<gantry_ir::ResourceLifetimeState, CoordinatorResourceRefusal> {
         self.mutate_resources(|resources| resources.settle_from_emergency_cleanup(subject, cleanup))
+    }
+
+    /// Settles a sealed cohort's canonical prefix and disposes that prefix outside shared locks.
+    ///
+    /// Semantic refusal preserves earlier releases and leaves later members unchanged. Physical
+    /// failure is reported separately and never skips another settled member's cleanup. Witnesses
+    /// are consumed on all paths. A nonempty settled prefix advances accounting publication once.
+    pub fn emergency_release_resource_cohort(
+        &self,
+        cleanups: Vec<(
+            crate::ResourceSubjectBinding,
+            gantry_ir::EmergencyCleanupWitness,
+        )>,
+    ) -> Result<CoordinatorResourceCleanup, CoordinatorResourceRefusal> {
+        let (semantic, jobs) = {
+            let mut state = lock(&self.inner.state);
+            require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+            let resources = state
+                .resources
+                .as_mut()
+                .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?;
+            let semantic = resources.settle_cohort_from_emergency_cleanup(cleanups);
+            let mut jobs = Vec::with_capacity(semantic.settled().len());
+            for settled in semantic.settled() {
+                let subject = settled.subject();
+                let owner = resources
+                    .account(subject)
+                    .unwrap_or_else(|| unreachable!("settled prefix retains its account"))
+                    .ledger()
+                    .owner();
+                let job = match resources.extract_host_disposal(subject, owner) {
+                    Err(crate::HostResourceError::NotAttached) => Ok(None),
+                    result => result,
+                };
+                jobs.push((subject.clone(), job));
+            }
+            if !semantic.settled().is_empty() {
+                state.publication = state.publication.wrapping_add(1);
+            }
+            (semantic, jobs)
+        };
+        let physical = jobs
+            .into_iter()
+            .map(|(subject, job)| {
+                let result = job.and_then(|job| {
+                    job.map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
+                });
+                (subject, result)
+            })
+            .collect();
+        let waiters = take_shutdown_waiters_if_quiescent(&mut lock(&self.inner.state));
+        wake_all(waiters);
+        Ok(CoordinatorResourceCleanup { semantic, physical })
     }
 
     /// Attaches physical ownership to an existing account without changing accounting publication.

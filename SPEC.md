@@ -15210,6 +15210,13 @@ attached host value. Disposal completion MUST wake registered quiescence observe
 including after contained destruction failure. Physical quiescence does not imply successful
 finalization, and this observer does not initiate resource cleanup itself.
 
+The coordinator MAY consume a sealed emergency-cleanup cohort through the registry's canonical
+settled-prefix sweep. Semantic refusal MUST preserve earlier releases and leave later members
+unchanged. Only the settled prefix's physical cleanup may be extracted, and all extracted jobs
+MUST run after unlocking even if one destruction fails. The report MUST distinguish semantic
+settlement/refusal from each member's physical outcome. A nonempty settled prefix advances
+accounting publication once; an empty prefix does not. Physical failure never rolls back release.
+
 <a id="GNT-28.12-operation-state-projection"></a>
 
 **[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile

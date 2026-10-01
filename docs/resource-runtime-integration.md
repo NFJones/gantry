@@ -51,6 +51,13 @@ process-local statuses are not journal cuts or physical recovery evidence.
 attached values, including extracted cleanup jobs. Completion wakes registered observers after
 unlocking even when destruction failed; it does not imply normal finalization or initiate cleanup.
 
+`emergency_release_resource_cohort` consumes sealed witnesses through the registry's canonical
+settled-prefix sweep. `CoordinatorResourceCleanup::semantic` preserves that prefix and first
+refusal; `physical` reports one independent disposal outcome per settled member. Cleanup jobs run
+after unlocking and continue despite another member's destruction failure. Later members remain
+unchanged after semantic refusal. A progressing sweep publishes once, while a zero-progress
+refusal does not publish; physical failure never rolls back semantic release.
+
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |
 | Admission | `new`, `admit` | `GNT-28.11-runtime-admission-mapping`, `GNT-28.7-durable-resource-reconstruction`, `GNT-20.1-operation-kinds` |
