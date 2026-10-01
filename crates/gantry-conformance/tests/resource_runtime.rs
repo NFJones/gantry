@@ -388,6 +388,97 @@ fn coordinator_resource_charging_is_atomic_and_owner_fenced() {
     );
 }
 
+/// Resource poisoning releases the shared live place; adapter-only evidence and retries do not.
+#[test]
+fn coordinator_resource_failure_settlement_releases_the_live_place_once() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("account admits: {error:?}"));
+    let before = coordinator.snapshot();
+    let adapter_failure = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::AdapterFailure,
+    );
+    assert_eq!(
+        coordinator.settle_resource_from_post_failure(&adapter_failure, 21),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Settlement(PostFailureSettlementRefusal::Model(
+                ResourceError::FailureDoesNotPoisonResource
+            ))
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    let resource_failure = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        coordinator
+            .clone()
+            .settle_resource_from_post_failure(&resource_failure, 22),
+        Ok(ResourceLifetimeState::Poisoned)
+    );
+    let poisoned = coordinator.snapshot();
+    assert_eq!(poisoned.publication(), before.publication() + 1);
+    let records = poisoned
+        .resource_records()
+        .unwrap_or_else(|| panic!("poisoned record retained"));
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].record().lifetime(),
+        ResourceLifetimeState::Poisoned
+    );
+    assert_eq!(
+        records[0].record().quotas(),
+        before
+            .resource_records()
+            .unwrap_or_else(|| panic!("initial record exists"))[0]
+            .record()
+            .quotas()
+    );
+    let baseline = records[0]
+        .record()
+        .settlement()
+        .unwrap_or_else(|| panic!("poison baseline exists"));
+    assert_eq!(baseline.owner(), OwnerGeneration::new(4));
+    assert_eq!(baseline.settled_at(), 22);
+    assert_eq!(
+        coordinator.settle_resource_from_post_failure(&resource_failure, 23),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Settlement(PostFailureSettlementRefusal::Model(
+                ResourceError::IllegalLifetimeTransition
+            ))
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), poisoned);
+    let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    assert_eq!(
+        coordinator.admit_resource(
+            &sibling,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Ok(())
+    );
+    let reused = coordinator.snapshot();
+    assert_eq!(reused.resource_records().map(<[_]>::len), Some(2));
+    assert_eq!(reused.publication(), poisoned.publication() + 1);
+}
+
 /// Concurrent clone handles cannot publish two accounts for the same pending subject.
 #[test]
 fn coordinator_resource_admission_race_has_one_publication() {

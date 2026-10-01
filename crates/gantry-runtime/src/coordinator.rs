@@ -344,6 +344,21 @@ impl ExecutionCoordinator {
         self.mutate_resources(|resources| resources.begin_finish(subject, owner))
     }
 
+    /// Settles accounting lifetime from model-issued resource-poisoning evidence.
+    ///
+    /// The evidence selects its own exact operation and resource generation. Adapter-only
+    /// failure evidence cannot settle this lifetime; successful resource poisoning releases
+    /// its live place while retaining the accounting record. Refusal advances no publication.
+    pub fn settle_resource_from_post_failure(
+        &self,
+        settlement: &gantry_ir::PostFailureSettlement,
+        settled_at: u64,
+    ) -> Result<gantry_ir::ResourceLifetimeState, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| {
+            resources.settle_from_post_failure(settlement, settled_at)
+        })
+    }
+
     /// Completes accounting finalization and releases the live place, not retained records.
     pub fn complete_resource_finalization(
         &self,

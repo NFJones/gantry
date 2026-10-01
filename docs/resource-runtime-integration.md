@@ -96,8 +96,12 @@ by cloned handles under its existing mutex (`GNT-28.11-runtime-admission-mapping
 settling whole-resource lifetime or releasing its live place (`GNT-28.12-operation-state-projection`).
 `begin_resource_finish`, `complete_resource_finalization`, and `emergency_release_resource`
 retain the registry's owner and sealed-witness fences. Reserved durable publication refuses
-accounting writes. Success advances publication once; refusal changes neither records nor
-publication. `ExecutionCoordinatorSnapshot::resource_records` exposes immutable inspection facts,
+accounting writes. `settle_resource_from_post_failure` selects the model-issued evidence's exact
+subject under `GNT-20.7-resource-state-after-failure-and-poisoning`; resource poisoning releases
+the live place while retaining the record, but adapter-only failure cannot settle that lifetime.
+Reserved durable publication also fences this route. Success advances publication once; refusal
+changes neither records nor publication.
+`ExecutionCoordinatorSnapshot::resource_records` exposes immutable inspection facts,
 not committed journal state. Cleanup may settle an account after task settlement without reopening
 admission. No host future is polled under this mutex. This optional owner is not automatically
 connected to evaluator dispatch or durable task cuts. Its live-account ceiling bounds neither

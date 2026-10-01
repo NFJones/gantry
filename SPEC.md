@@ -15098,6 +15098,10 @@ share one registry and serialize admission, atomic quota charging, accepted oper
 projection, accounting finalization, and emergency release. Charging retains the owner and
 whole-vector refusal rules of `GNT-28.3-atomic-copy-move-loan-update-and-release-charging`;
 projection retains every fence and non-claim of `GNT-28.12-operation-state-projection`.
+Model-issued resource-poisoning evidence MAY settle accounting lifetime through that same
+owner, selecting its exact operation and resource generation under
+`GNT-20.7-resource-state-after-failure-and-poisoning`. Adapter-only failure MUST NOT settle
+whole-resource lifetime. Successful poisoning releases the live place and retains the record.
 Admission MUST require a pending machine operation from a running task of the same execution;
 foreign executions, absent or non-running tasks, and disabled registries MUST be refused without
 mutation. A reserved durable publication MUST fence these accounting writes. Successful writes
