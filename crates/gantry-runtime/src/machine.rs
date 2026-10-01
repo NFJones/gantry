@@ -530,6 +530,8 @@ pub enum OperationCompletionError {
     IdentityMismatch,
     /// Cancellation has made the host result nonconsumable.
     Cancelled,
+    /// An authenticated live-resource result cannot use ordinary logical-value transport.
+    LiveResourceValueRefused,
     /// The normalized value does not match the expected outer type.
     TypeMismatch,
     /// The normalized value exceeds the machine's captured value limits.
@@ -2822,6 +2824,10 @@ impl Machine {
     }
 
     /// Supplies one normalized result for the exact pending logical operation.
+    ///
+    /// Authenticated live-resource results refuse ordinary value transport after identity and
+    /// cancellation checks, leaving pending operands and settlement ownership unchanged. A
+    /// handle-free attempted OperationError still undergoes normal value and result-type checks.
     pub fn complete_operation(
         &mut self,
         operation: ProtocolIdentity,
@@ -2836,6 +2842,22 @@ impl Machine {
         }
         if self.cancellation.is_some() {
             return Err(OperationCompletionError::Cancelled);
+        }
+        if pending
+            .occurrence
+            .metadata
+            .as_ref()
+            .is_some_and(|metadata| {
+                let attempted_error = metadata.attempted
+                    && matches!(value.view(), LogicalValueView::Result { is_ok: false })
+                    && value.payload().is_some_and(|error| {
+                        matches!(error.view(), LogicalValueView::OperationError(_))
+                    });
+                metadata.section20_kind == Some(gantry_ir::OperationKind::LiveResource)
+                    && !attempted_error
+            })
+        {
+            return Err(OperationCompletionError::LiveResourceValueRefused);
         }
         value
             .validate(self.limits.value_limits)

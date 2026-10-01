@@ -12136,6 +12136,18 @@ live-resource operation. Implementations MUST refuse to report other kinds as li
 live-resource operation as a durable value. No operation changes kind after declaration or may be
 read as, reported as, or substituted for another.
 
+The ordinary `Machine::complete_operation` logical-value path MUST refuse an authenticated
+live-resource result with `OperationCompletionError::LiveResourceValueRefused`, after pending
+identity and cancellation checks but before value validation or mutation. Refusal MUST retain
+the pending operation, operands, generation and settlement lease unchanged. For an attempted
+operation, a handle-free `Err(OperationError)` MAY proceed through the existing value-limit and
+expected-result-type validation and settle once; an `Ok` or an error payload of another kind
+MUST NOT bypass the live-resource refusal. Task cancellation still prevents error consumption.
+This preserves Section 5's catchable attempted failures and their exact durable replay without
+admitting a live handle as ordinary data. Until a separately
+declared live-handle completion path exists, ordinary serialized data MUST NOT substitute for
+that result; explicit operational failure and cancellation settlement remain available.
+
 <a id="GNT-20.2-logical-operation-and-resource-generation-identity"></a>
 
 **[GNT-20.2-logical-operation-and-resource-generation-identity] Logical operation

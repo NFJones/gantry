@@ -4317,6 +4317,108 @@ mod tests {
         ValidationErrorV1, recover_concurrent_authoritative_prefix, root_task_identity,
     };
 
+    /// Attempted live-resource failure replay retains the exact handle-free error cut.
+    #[test]
+    fn attempted_live_resource_failure_replays_the_exact_error_cut() {
+        let expected_type =
+            TypeDescriptor::result(TypeDescriptor::UNIT, TypeDescriptor::OPERATION_ERROR);
+        let metadata = gantry_ir::ExecutableOperation {
+            kind: gantry_ir::generated::OperationSiteKind::Prompt,
+            section20_kind: Some(gantry_ir::OperationKind::LiveResource),
+            result_type: TypeDescriptor::UNIT,
+            action: None,
+            template_segments: vec![Arc::from("fixture")],
+            interpolation_types: Vec::new(),
+            named_input_names: Vec::new(),
+            named_input_types: Vec::new(),
+            retry_limit: None,
+            session_mode: None,
+            attempted: true,
+        };
+        let program = Arc::new(
+            MachineProgram::new(vec![Workflow {
+                path: path("crate::main"),
+                parameters: Vec::new(),
+                result: expected_type.clone(),
+                effects: EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: position(0),
+                        ty: expected_type.clone(),
+                        kind: InstructionKind::OperationCall {
+                            operation: metadata,
+                            operands: 0,
+                        },
+                    },
+                    Instruction {
+                        site: position(1),
+                        ty: expected_type,
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+            .unwrap_or_else(|error| panic!("attempt program: {error:?}")),
+        );
+        let execution = fresh(IdentityKind::Execution, 91);
+        let task = root_task_identity(execution);
+        let session = fresh(IdentityKind::Session, 92);
+        let sessions = LogicalSessionRegistryV1::new(
+            execution,
+            session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+        let mut machine = Machine::new_with_context(
+            Arc::clone(&program),
+            &path("crate::main"),
+            vec![],
+            execution,
+            machine_limits(),
+            None,
+            Some(session),
+        )
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        let tasks = ConcurrentTaskStateV1::new(execution, task, 1)
+            .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+        let scheduler = ConcurrentSchedulerV1::new(tasks, machine.execution_budget())
+            .unwrap_or_else(|error| panic!("scheduler: {error:?}"));
+        let operation = match machine.step() {
+            MachineStep::Transition(crate::MachineLabel::OperationPrepared(operation)) => {
+                operation.identity
+            }
+            other => panic!("operation preparation: {other:?}"),
+        };
+        let boundary = ConcurrentDurableCheckpointV4::capture(&machine, &scheduler, &sessions)
+            .unwrap_or_else(|error| panic!("boundary: {error:?}"));
+        let error = gantry_core::value::OperationErrorValue::Declined("not available".into());
+        let value = LogicalValue::operation_error(error.clone(), DEFAULT_VALUE_LIMITS)
+            .and_then(|value| LogicalValue::err(value, DEFAULT_VALUE_LIMITS))
+            .unwrap_or_else(|error| panic!("error value: {error:?}"));
+        machine
+            .complete_operation(operation, value)
+            .unwrap_or_else(|error| panic!("attempt settlement: {error:?}"));
+        let current = ConcurrentDurableCheckpointV4::capture(&machine, &scheduler, &sessions)
+            .unwrap_or_else(|error| panic!("current cut: {error:?}"));
+        assert_eq!(
+            super::replay_attempt_failure_candidate(
+                &program, &boundary, &current, task, operation, error
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            super::replay_attempt_failure_candidate(
+                &program,
+                &boundary,
+                &boundary,
+                task,
+                operation,
+                gantry_core::value::OperationErrorValue::Declined("not available".into())
+            ),
+            Ok(false)
+        );
+    }
+
     #[test]
     fn journal_commit_recovers_pre_submission_graph_and_rejects_repeated_creation() {
         let program = program();

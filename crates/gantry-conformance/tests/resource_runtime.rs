@@ -483,7 +483,7 @@ fn coordinator_resource_failure_settlement_releases_the_live_place_once() {
 /// Pending capacity follows machine settlement rather than accounting lifetime or reclamation.
 #[test]
 fn pending_resource_operation_limit_releases_only_after_machine_settlement() {
-    for disposition in ["completion", "failure", "cancellation"] {
+    for disposition in ["failure", "cancellation"] {
         let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
         let subject = subject.unwrap_or_else(|| panic!("pending subject exists"));
         let operation = machine
@@ -526,7 +526,7 @@ fn pending_resource_operation_limit_releases_only_after_machine_settlement() {
         assert_eq!(registry.declared_records(), before);
         assert_eq!(
             machine.complete_operation(operation, LogicalValue::boolean(true)),
-            Err(OperationCompletionError::TypeMismatch)
+            Err(OperationCompletionError::LiveResourceValueRefused)
         );
         assert_eq!(
             registry.pending_operations(),
@@ -558,13 +558,6 @@ fn pending_resource_operation_limit_releases_only_after_machine_settlement() {
             Some(ResourceRegistryRefusal::PendingOperationLimitReached { limit: 1 })
         );
         match disposition {
-            "completion" => {
-                assert!(
-                    machine
-                        .complete_operation(operation, LogicalValue::unit())
-                        .is_ok()
-                );
-            }
             "failure" => {
                 assert!(
                     machine
@@ -696,7 +689,10 @@ fn pending_capacity_survives_poison_emergency_release_and_record_reclamation() {
         );
         assert!(
             machine
-                .complete_operation(operation, LogicalValue::unit())
+                .fail_operation(
+                    operation,
+                    gantry::portable::RuntimeErrorCategory::ExecutorFailure
+                )
                 .is_ok()
         );
         assert_eq!(registry.pending_operations(), 0);
@@ -815,7 +811,10 @@ fn coordinator_pending_resource_limit_is_shared_and_settlement_fenced() {
         .identity;
     assert!(
         machine
-            .complete_operation(operation, LogicalValue::unit())
+            .fail_operation(
+                operation,
+                gantry::portable::RuntimeErrorCategory::ExecutorFailure
+            )
             .is_ok()
     );
     assert_eq!(
@@ -996,8 +995,11 @@ fn registry_admission_uses_the_machines_pending_resource_subject() {
         .unwrap_or_else(|| panic!("fixture operation is pending"))
         .identity;
     completed_machine
-        .complete_operation(operation, LogicalValue::unit())
-        .unwrap_or_else(|error| panic!("fixture operation completes: {error:?}"));
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("fixture operation settles: {error:?}"));
     let registry_before_completed_refusal = registry.declared_records();
     assert_eq!(
         registry.admit_pending_operation(
@@ -1083,7 +1085,7 @@ fn registry_admission_uses_the_machines_pending_resource_subject() {
         .identity;
     assert_eq!(
         rejected_machine.complete_operation(rejected_operation, LogicalValue::boolean(true)),
-        Err(OperationCompletionError::TypeMismatch)
+        Err(OperationCompletionError::LiveResourceValueRefused)
     );
     assert_eq!(
         rejected_machine.pending_resource_subject(),
@@ -3253,10 +3255,7 @@ fn repeated_loop_site_gets_a_distinct_checkpointed_resource_generation() {
                         .unwrap_or_else(|_| unreachable!("operation site is canonical")),
                     ty: TypeDescriptor::UNIT,
                     kind: InstructionKind::OperationCall {
-                        operation: operation_metadata(
-                            Some(FIXTURE_DECLARATION),
-                            Some(OperationKind::LiveResource),
-                        ),
+                        operation: operation_metadata(Some(FIXTURE_DECLARATION), None),
                         operands: 0,
                     },
                 },
@@ -3341,20 +3340,29 @@ fn repeated_loop_site_gets_a_distinct_checkpointed_resource_generation() {
         "one declared operation site must not reuse a resource generation across loop invocations"
     );
     let mut registry = ResourceRegistry::new();
-    registry
-        .admit(
-            first_subject,
-            ResourceCarrier::ReconstructionRecord,
-            ledger().durable_record(),
-        )
-        .unwrap_or_else(|error| panic!("first generation is admitted: {error:?}"));
-    registry
-        .admit(
-            second_subject,
-            ResourceCarrier::ReconstructionRecord,
-            ledger().durable_record(),
-        )
-        .unwrap_or_else(|error| panic!("second generation is independently admitted: {error:?}"));
+    assert_eq!(
+        registry
+            .admit(
+                first_subject,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::UnauthenticatedOperationKind),
+        "the saved unauthenticated ordinary subject cannot admit an account"
+    );
+    assert_eq!(
+        registry
+            .admit(
+                second_subject,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::UnauthenticatedOperationKind),
+        "counter allocation does not authenticate a live-resource kind"
+    );
+    assert!(registry.declared_records().is_empty());
 }
 
 #[test]

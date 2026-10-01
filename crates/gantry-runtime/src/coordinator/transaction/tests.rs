@@ -671,8 +671,8 @@ fn dropping_failed_operation_stage_preserves_authoritative_resource_admission() 
             record.clone(),
         )
         .unwrap_or_else(|error| panic!("authoritative pending subject admits: {error:?}"));
-    root.complete_operation(operation, LogicalValue::unit())
-        .unwrap_or_else(|error| panic!("authoritative pending operation completes: {error:?}"));
+    root.fail_operation_with_code(operation, crate::RuntimeCode::InternalInvariant)
+        .unwrap_or_else(|error| panic!("authoritative pending operation settles: {error:?}"));
     assert_eq!(
         ResourceRegistry::new().admit(
             committed_staged_subject,

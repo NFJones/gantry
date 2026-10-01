@@ -1923,8 +1923,7 @@ mod tests {
     use gantry_ir::generated::{OperationSiteKind, RecoveryClass};
     use gantry_ir::{
         CanonicalPath, CanonicalSignature, EffectSet, ExecutableAction, ExecutableOperation,
-        Instruction, InstructionKind, MachineProgram, OperationKind, StructuralPosition,
-        TypeDescriptor, Workflow,
+        Instruction, InstructionKind, MachineProgram, StructuralPosition, TypeDescriptor, Workflow,
     };
 
     use super::{
@@ -2597,7 +2596,7 @@ mod tests {
         let action_path = path("crate::action");
         let operation = ExecutableOperation {
             kind: OperationSiteKind::Action,
-            section20_kind: Some(OperationKind::LiveResource),
+            section20_kind: None,
             result_type: TypeDescriptor::UNIT,
             action: Some(ExecutableAction {
                 path: action_path.clone(),

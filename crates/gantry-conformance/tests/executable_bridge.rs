@@ -5460,6 +5460,116 @@ fn monomorphic_receiver_call_operands_still_execute() {
     }
 }
 
+/// Ordinary serialized values cannot substitute for an authenticated live-resource result.
+#[test]
+fn authenticated_live_resource_refuses_ordinary_completion_without_mutation() {
+    use gantry::runtime::{decode_machine_program, encode_machine_program};
+
+    let root = TempDirectory::new(
+        "live_resource struct Handle { token: Int }\nfn main() { discard prompt \"x\" -> Handle; }",
+    );
+    let package = analyze(&root);
+    let entry = package.entry().unwrap_or_else(|| panic!("entry exists"));
+    let program = package
+        .executable_program()
+        .unwrap_or_else(|| panic!("analyzed executable exists"));
+    let decoded = decode_machine_program(&encode_machine_program(program))
+        .unwrap_or_else(|error| panic!("retained program decodes: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6b; 32])
+        .unwrap_or_else(|error| panic!("execution identity: {error}"));
+    let mut machine = Machine::new(Arc::new(decoded), &entry.path, vec![], execution, limits())
+        .unwrap_or_else(|error| panic!("machine builds: {error:?}"));
+    let occurrence = loop {
+        match machine.step() {
+            MachineStep::Transition(MachineLabel::OperationPrepared(occurrence)) => {
+                break occurrence;
+            }
+            MachineStep::Transition(_) => {}
+            other => panic!("unexpected preparation step: {other:?}"),
+        }
+    };
+    let value = LogicalValue::structure(
+        "crate::Handle",
+        vec![(
+            "token".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(1).unwrap_or_else(|| unreachable!("fixture integer")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("ordinary struct constructs: {error:?}"));
+    let before = machine.checkpoint().canonical_bytes();
+    assert_eq!(
+        machine.complete_operation(occurrence.identity, value),
+        Err(OperationCompletionError::LiveResourceValueRefused),
+        "ordinary data cannot fulfill authenticated live-resource transport"
+    );
+    assert_eq!(machine.checkpoint().canonical_bytes(), before);
+}
+
+/// Attempted live-resource success still refuses ordinary values; only sealed handle-free errors settle.
+#[test]
+fn attempted_live_resource_accepts_only_handle_free_failure_values() {
+    use gantry::value::OperationErrorValue;
+
+    let root = TempDirectory::new(
+        "live_resource struct Handle { token: Int }\nfn main() { discard attempt prompt \"x\" -> Handle; }",
+    );
+    let package = analyze(&root);
+    let entry = package.entry().unwrap_or_else(|| panic!("entry exists"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("analyzed executable exists"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6c; 32])
+        .unwrap_or_else(|error| panic!("execution identity: {error}"));
+    let mut machine = Machine::new(Arc::new(program), &entry.path, vec![], execution, limits())
+        .unwrap_or_else(|error| panic!("machine builds: {error:?}"));
+    let occurrence = loop {
+        match machine.step() {
+            MachineStep::Transition(MachineLabel::OperationPrepared(occurrence)) => {
+                break occurrence;
+            }
+            MachineStep::Transition(_) => {}
+            other => panic!("unexpected preparation step: {other:?}"),
+        }
+    };
+    let before = machine.checkpoint().canonical_bytes();
+    let ordinary = LogicalValue::structure("crate::Handle", vec![], DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|error| panic!("ordinary value: {error:?}"));
+    for candidate in [
+        LogicalValue::ok(ordinary, DEFAULT_VALUE_LIMITS),
+        LogicalValue::err(
+            LogicalValue::string("not a sealed error", DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("bounded string: {error:?}")),
+            DEFAULT_VALUE_LIMITS,
+        ),
+    ] {
+        let candidate = candidate.unwrap_or_else(|error| panic!("attempt value: {error:?}"));
+        assert_eq!(
+            machine.complete_operation(occurrence.identity, candidate),
+            Err(OperationCompletionError::LiveResourceValueRefused)
+        );
+        assert_eq!(machine.checkpoint().canonical_bytes(), before);
+    }
+    let error = LogicalValue::operation_error(
+        OperationErrorValue::Declined("not available".into()),
+        DEFAULT_VALUE_LIMITS,
+    )
+    .and_then(|error| LogicalValue::err(error, DEFAULT_VALUE_LIMITS))
+    .unwrap_or_else(|error| panic!("sealed attempted error: {error:?}"));
+    assert!(
+        machine
+            .complete_operation(occurrence.identity, error.clone())
+            .is_ok()
+    );
+    assert_eq!(
+        machine.complete_operation(occurrence.identity, error),
+        Err(OperationCompletionError::NotWaiting)
+    );
+}
+
 /// Section 20 kinds authenticated from analyzed result properties survive the retained-program
 /// wire: live-resource and protected arms remain distinct, while an unsealed result stays
 /// unauthenticated, and either authenticated arm selects the newest retained form.

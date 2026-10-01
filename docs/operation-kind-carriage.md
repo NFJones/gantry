@@ -11,7 +11,7 @@ carried it and no machine-retained metadata recorded it. This note records what 
   (`crates/gantry-ir/src/executable.rs`) records the kind an analysis authenticated. `None` means no
   layer authenticated one, and a consumer that needs the kind must fail closed rather than assume
   one: the hook-site `OperationSiteKind` is a different fact and never stands in for it.
-- **Analysis rule.** Lowering authenticates only the live-resource arm, from the result type's
+- **Analysis rule.** Lowering first authenticates the live-resource arm, from the result type's
   resource class through `OperationKind::for_value_resource_class`: a `LiveResource` class yields
   `Some(LiveResource)`, while a non-live class yields `None`, because the resource class cannot
   distinguish a value action from a protected operation. The class comes from
@@ -19,7 +19,8 @@ carried it and no machine-retained metadata recorded it. This note records what 
   publishes, so an operation whose analyzed result type carries the declaration below - a declared
   `live_resource struct` or a closed generic application of one - authenticates its arm, while a
   fold that refuses the descriptor leaves the kind unauthenticated rather than guessed, and a
-  non-live result stays `None`.
+  unsealed non-live result stays `None`. A sealed analyzed result authenticates the protected
+  arm through `prove_source_protection_class`; sealed operands and effects do not participate.
 - **Declaration surface.** `GNT-6.2j` declares the `live_resource` struct modifier: it seeds the
   `LiveResource` resource class of `GNT-5.20-parametric-types` for its declared type, an empty
   declaration remains `LiveResource`, a stored member that is itself `LiveResource` makes every
@@ -35,9 +36,20 @@ carried it and no machine-retained metadata recorded it. This note records what 
 
 ## Known gap
 
-`ProtectedOperation` is never authenticated today: no declaration-level fact separates a protected
-operation from a value action. That fact belongs to the protection/declaration owner rather than to
-this carriage, and the carriage is designed to stay unauthenticated until it lands.
+Lowering now also authenticates `ProtectedOperation` from the analyzed result's sealed protection
+class, after checking the live-resource class. An unsealed non-live result remains unauthenticated;
+sealed operands or effects do not authenticate the result kind.
+
+`Machine::complete_operation` refuses ordinary logical-value transport for authenticated
+live-resource results with `OperationCompletionError::LiveResourceValueRefused`. Pending identity
+and cancellation checks take precedence; refusal changes no checkpoint fact or settlement lease.
+An attempted operation's handle-free `Err(OperationError)` remains eligible for the existing
+value-limit and expected-result-type checks and one settlement, including durable replay. Neither
+an ordinary `Ok` nor an unsealed error payload bypasses the refusal; task cancellation still wins.
+The analyzer/retained-wire regression
+`executable_bridge.rs#authenticated_live_resource_refuses_ordinary_completion_without_mutation`
+checks this boundary with a structurally matching ordinary value. A separate source live-handle
+completion path remains unimplemented; this refusal does not grant one or roll back accepted work.
 
 ## Evidence
 
@@ -49,10 +61,10 @@ hand-built operations; none of them demonstrates an analyzer-produced `Some(Live
 source, and none demonstrates a runtime decision taken from the field, so they are carrier evidence
 rather than authentication or consumption evidence. The analyzer-produced kind is evidenced
 separately by
-`crates/gantry-conformance/tests/analyzer_lowering.rs#live_resource_result_authenticates_the_section20_kind_and_non_live_stays_unauthenticated`,
+`crates/gantry-conformance/tests/analyzer_lowering.rs#analyzed_operation_result_authenticates_live_and_protected_kinds_only`,
 which lowers a source operation returning a `live_resource struct` and asserts the authenticated arm
 beside an unauthenticated non-live result, and by
-`crates/gantry-conformance/tests/executable_bridge.rs#analyzer_authenticated_live_resource_kind_survives_the_retained_program_wire`,
+`crates/gantry-conformance/tests/executable_bridge.rs#analyzer_authenticated_operation_kinds_survive_the_retained_program_wire`,
 which encodes that analyzer-produced program with the published
 `gantry::runtime::{encode_machine_program, decode_machine_program}` pair, observes the `GNTPRG05`
 form, and decodes it back with the kind intact and a byte-identical re-encode. No runtime decision
@@ -76,5 +88,7 @@ carries no authenticated live-resource kind with
 that refusal. What is **not** in place: the wider integration arms the retry condition on `b87d011f`
 `GNT-GP-RESOURCE-RUNTIME-001` owns - quota enforcement in live paths, cleanup across cancellation,
 shutdown, and hard cancellation, adapter fault containment, and durable resource reconstruction -
-and the protected arm stays unauthenticated. The retry condition is therefore **partially**
-satisfied: carriage, emission, the wire proof, and the resource-admission boundary read are done.
+while source live-handle completion remains unavailable. The protected arm is authenticated from
+sealed analyzed results. Ordinary completion now consumes the authenticated live-resource kind
+by refusing cloneable logical-value substitution without changing pending ownership. These
+carriage and refusal boundaries are not complete runtime integration or qualification evidence.

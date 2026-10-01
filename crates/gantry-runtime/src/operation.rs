@@ -1820,6 +1820,42 @@ mod tests {
         assert_eq!(machine.status(), crate::MachineStatus::WaitingOperation);
     }
 
+    /// Live-resource success cannot use value transport, but a catchable attempted error can.
+    #[test]
+    fn attempted_live_resource_failure_is_consumed_once_without_a_handle() {
+        let metadata = gantry_ir::ExecutableOperation {
+            kind: gantry_ir::generated::OperationSiteKind::Prompt,
+            section20_kind: Some(gantry_ir::OperationKind::LiveResource),
+            result_type: TypeDescriptor::UNIT,
+            action: None,
+            template_segments: vec![Arc::from("fixture")],
+            interpolation_types: Vec::new(),
+            named_input_names: Vec::new(),
+            named_input_types: Vec::new(),
+            retry_limit: None,
+            session_mode: None,
+            attempted: true,
+        };
+        let attempted_type =
+            TypeDescriptor::result(TypeDescriptor::UNIT, TypeDescriptor::OPERATION_ERROR);
+        let (mut machine, occurrence) =
+            machine_with_operation_metadata(attempted_type, Some(metadata));
+        let mut lifecycle = operation_lifecycle(&occurrence);
+        lifecycle.state = OperationRuntimeState::Failed {
+            dispatch_id: None,
+            failure: OperationLifecycleFailureV1::Operation(OperationFailureV1::Declined(
+                Arc::from("not available"),
+            )),
+            attempt_consumed: false,
+        };
+        assert!(lifecycle.accept_attempt_failure(&mut machine).is_ok());
+        assert!(machine.checkpoint().pending_operation().is_none());
+        assert_eq!(
+            lifecycle.accept_attempt_failure(&mut machine),
+            Err(OperationLifecycleError::AttemptResultConsumed)
+        );
+    }
+
     #[test]
     fn attempt_consumes_success_or_catchable_failure_exactly_once() {
         let attempted_type =
@@ -2223,6 +2259,14 @@ mod tests {
     fn machine_with_operation_type(
         expected_type: TypeDescriptor,
     ) -> (Machine, crate::OperationOccurrence) {
+        machine_with_operation_metadata(expected_type, None)
+    }
+
+    /// Constructs ordinary or metadata-authenticated operation fixtures for settlement tests.
+    fn machine_with_operation_metadata(
+        expected_type: TypeDescriptor,
+        metadata: Option<gantry_ir::ExecutableOperation>,
+    ) -> (Machine, crate::OperationOccurrence) {
         let workflow_path = CanonicalPath::new("crate::main")
             .unwrap_or_else(|error| panic!("workflow path failed: {error}"));
         let site = StructuralPosition::new(vec![0])
@@ -2236,7 +2280,12 @@ mod tests {
                 Instruction {
                     site,
                     ty: expected_type.clone(),
-                    kind: InstructionKind::Operation,
+                    kind: metadata.map_or(InstructionKind::Operation, |operation| {
+                        InstructionKind::OperationCall {
+                            operation,
+                            operands: 0,
+                        }
+                    }),
                 },
                 Instruction {
                     site: StructuralPosition::new(vec![1])
