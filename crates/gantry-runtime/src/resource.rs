@@ -789,15 +789,12 @@ impl ResourceRegistry {
         // Inspect before locking the presented lease: a duplicate may share that mutex.
         // Stage pruning so refused admissions do not change even process-local bookkeeping.
         // Settlement only closes leases, so concurrent closure can conservatively refuse.
-        let mut pending_admissions = if self.pending_limit.is_some() {
-            self.pending_admissions
-                .iter()
-                .filter(|lease| lease.lock().map_or(true, |lease| lease.pending))
-                .cloned()
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
+        let mut pending_admissions = self
+            .pending_admissions
+            .iter()
+            .filter(|lease| lease.lock().map_or(true, |lease| lease.pending))
+            .cloned()
+            .collect::<Vec<_>>();
         let pending = u64::try_from(pending_admissions.len()).unwrap_or(u64::MAX);
         let admission_open = Arc::clone(&subject.admission_open);
         let admission_guard = admission_open
@@ -828,10 +825,8 @@ impl ResourceRegistry {
                 {
                     return Err(ResourceRegistryRefusal::PendingOperationLimitReached { limit });
                 }
-                if self.pending_limit.is_some() {
-                    pending_admissions.push(Arc::clone(&admission_open));
-                    self.pending_admissions = pending_admissions;
-                }
+                pending_admissions.push(Arc::clone(&admission_open));
+                self.pending_admissions = pending_admissions;
                 Ok(slot.insert(account))
             }
         }

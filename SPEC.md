@@ -15136,6 +15136,9 @@ without that ownership may identify only a foreign-provenance refusal, never a m
 This qualification does not change Section 20's portable identity derivation or grant authority.
 
 A registry MAY separately declare a finite ceiling on admitted pending resource operations.
+Every successful live admission MUST retain its pending settlement lease even without that ceiling;
+unlimited admission does not discharge accepted-work ownership. Accounting reconstruction still
+MUST NOT fabricate pending work from retained records.
 That ceiling counts admitted machine settlement leases, not active accounting lifetimes. An
 accepted machine completion, failure, or settled cancellation closes its lease and releases its
 pending place; a refused completion or a cancellation request alone does not.

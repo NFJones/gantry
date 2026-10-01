@@ -20,8 +20,9 @@ first; a portable alias without matching ownership can only produce a foreign-pr
 Portable identity derivation and host authority remain unchanged.
 
 `ResourceRegistry::with_limits` optionally declares independent live-account and pending
-resource-operation ceilings under `GNT-28.11-runtime-admission-mapping`. `pending_limit` and
-`pending_operations` inspect the enabled pending policy. Pending places follow admitted machine
+resource-operation ceilings under `GNT-28.11-runtime-admission-mapping`. `pending_limit` inspects
+the ceiling; `pending_operations` tracks accepted work even when that ceiling is absent.
+Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.
 Machine-local cancellation separately closes new admission through current and saved subjects
@@ -40,7 +41,8 @@ process-local pending policy, and unadmitted evaluator work is outside its scope
 
 `ExecutionCoordinator::new_with_resource_limits` enables both ceilings in one shared registry;
 cloned handles retain the same admission refusal and machine-settlement release boundaries.
-The existing `new_with_resource_limit` constructor leaves the pending policy disabled.
+The existing `new_with_resource_limit` constructor leaves the pending ceiling disabled, while
+still tracking successfully admitted work until machine settlement.
 
 `InterpreterConfiguration::with_resource_accounting_limits(live, pending)` opts fresh launch
 owners into finite accounting ceilings; the default `resource_accounting_limits()` is `None`.

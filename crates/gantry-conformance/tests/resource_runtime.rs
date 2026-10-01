@@ -934,6 +934,47 @@ fn pending_capacity_survives_poison_emergency_release_and_record_reclamation() {
     }
 }
 
+/// Unlimited pending admission still tracks accepted work independently of accounting release.
+#[test]
+fn unlimited_pending_policy_retains_accepted_resource_work() {
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    let mut registry = ResourceRegistry::with_live_limit(1);
+    assert_eq!(registry.pending_limit(), None);
+    registry
+        .admit_pending_operation(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    assert_eq!(
+        registry.pending_operations(),
+        1,
+        "no ceiling does not mean no accepted work"
+    );
+    registry
+        .settle_from_emergency_cleanup(&subject, emergency_cleanup())
+        .unwrap_or_else(|error| panic!("release: {error:?}"));
+    registry
+        .admit_pending_operation(
+            &sibling,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("unlimited pending admission: {error:?}"));
+    assert_eq!(registry.pending_operations(), 2);
+    assert!(machine.cancel("settle accepted work").is_some());
+    assert_eq!(
+        registry.pending_operations(),
+        2,
+        "cancellation alone does not release work"
+    );
+    let _ = machine.step();
+    assert_eq!(registry.pending_operations(), 1);
+}
+
 /// Zero pending capacity and stronger admission errors refuse without retaining a lease.
 #[test]
 fn pending_resource_operation_limit_preserves_admission_refusal_precedence() {
