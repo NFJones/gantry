@@ -5250,6 +5250,41 @@ fn speculative_resource_admission_closes_only_when_the_transition_commits() {
         subject.lock_admission().map(|lease| lease.pending),
         Some(false)
     );
+    for settled in [false, true] {
+        let mut authoritative = new_machine(
+            Arc::clone(&program),
+            "crate::main",
+            Vec::new(),
+            limits(8, 1, 1, 1, 8),
+        );
+        assert!(matches!(
+            authoritative.step(),
+            MachineStep::Transition(MachineLabel::OperationPrepared(_))
+        ));
+        let subject = authoritative
+            .pending_resource_subject()
+            .unwrap_or_else(|| panic!("pending subject"));
+        let (mut staged, mut guard) = authoritative.clone_durable_projection();
+        let mut shared = authoritative.clone();
+        assert!(shared.cancel("shared lease revocation").is_some());
+        if settled {
+            assert!(matches!(
+                shared.step(),
+                MachineStep::Transition(MachineLabel::TaskSettled(_))
+            ));
+        }
+        authoritative.commit_staged_resource_admission(&mut staged);
+        if let Some(guard) = guard.as_mut() {
+            guard.disarm();
+        }
+        assert_eq!(
+            subject
+                .lock_admission()
+                .map(|lease| (lease.pending, lease.cancellation_requested)),
+            Some((!settled, true)),
+            "staged publication must not reopen a revoked shared lease"
+        );
+    }
 }
 
 /// A normal owned return marks the caller place durably, and the mark survives recovery.

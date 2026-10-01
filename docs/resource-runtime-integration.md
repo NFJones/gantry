@@ -28,6 +28,8 @@ Machine-local cancellation separately closes new admission through current and s
 with `CancellationRequested`, without releasing accepted pending capacity. Recovery derives that
 refusal from recorded cancellation. Isolated staged cancellation affects the authoritative lease
 only when published, and publication retains pending capacity until settlement.
+Promotion merges lease facts monotonically: cancellation or settlement recorded by a shared
+authoritative clone cannot be reopened by publishing an older private projection.
 Physical attachment also refuses machine-local cancellation with `HostResourceError::CancellationRequested`,
 returning the input untouched. It checks the admitted account's lease, not a caller's recovered or
 speculative binding, and holds that lease through acquisition. Accepted-work settlement and cleanup

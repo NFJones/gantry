@@ -2484,7 +2484,11 @@ impl Machine {
         }
         let next_state = staged_lease.and_then(|(_, state)| state);
         if let Ok(mut state) = authoritative_lease.lock() {
-            *state = next_state.unwrap_or_default();
+            // Shared machine clones may revoke the authoritative lease during staging.
+            // Publication can close acquisition or settlement, never reopen either fact.
+            let next = next_state.unwrap_or_default();
+            state.pending &= next.pending;
+            state.cancellation_requested |= next.cancellation_requested;
         } else {
             return;
         }

@@ -15144,6 +15144,9 @@ bindings with `CancellationRequested` while retaining the pending place for acce
 MUST restore that admission refusal from recorded cancellation; an uncommitted staged cancellation
 MUST NOT revoke authoritative admission, and committed cancellation MUST preserve pending capacity
 until settlement. These are separate facts of one process-local lease, not a new checkpoint field.
+Staged lease promotion MUST preserve cancellation or terminal settlement already recorded by a
+shared authoritative machine clone: publication may close acquisition or pending settlement,
+but MUST NOT reopen either fact from an older private projection.
 Physical attachment to an admitted account MUST also refuse machine-local cancellation while
 returning the input untouched and retaining pending capacity. It MUST check the admitted account's
 lease rather than a caller's recovered or speculative binding, and linearize acquisition against
