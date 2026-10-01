@@ -513,6 +513,15 @@ impl ResourceSubjectBinding {
     pub const fn generation(&self) -> &ResourceGenerationId {
         &self.generation
     }
+
+    /// Qualifies portable identity with the issuing runtime owner for registry storage.
+    fn registry_key(&self) -> ResourceRegistryKey {
+        (
+            self.operation.clone(),
+            self.generation.clone(),
+            self.runtime_owner,
+        )
+    }
 }
 
 /// Why the runtime refused to apply one model-issued post-failure settlement.
@@ -539,6 +548,10 @@ pub enum PostFailureSettlementRefusal {
 /// rather than replaced. A settlement selects its account by the settlement's own operation and
 /// generation rather than by caller text, so a settlement naming an operation or generation this
 /// registry holds no account for changes nothing.
+///
+/// Storage qualifies that portable identity by issuing execution and task, so independent task
+/// counters cannot collapse sibling accounts. Cohort order and duplicate detection retain this
+/// runtime qualification without changing the Section 20 identity derivation.
 ///
 /// Uniqueness here is per registry: this type publishes no global uniqueness claim, and making one
 /// execution-layer registry the runtime's sole live-resource owner remains the next increment's
@@ -571,16 +584,23 @@ pub enum PostFailureSettlementRefusal {
 /// ```
 #[derive(Debug, Default)]
 pub struct ResourceRegistry {
-    accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource>,
-    physical: BTreeMap<
-        (LogicalOperationId, ResourceGenerationId),
-        crate::resource_transport::HostValueSlot,
-    >,
+    accounts: BTreeMap<ResourceRegistryKey, AdmittedResource>,
+    physical: BTreeMap<ResourceRegistryKey, crate::resource_transport::HostValueSlot>,
     live_limit: Option<u64>,
     pending_limit: Option<u64>,
     pending_admissions: Vec<Arc<Mutex<crate::machine::ResourceOperationLease>>>,
     adapter_faults: PoisonLedger,
 }
+
+/// Runtime storage identity, ordered by portable subject then issuing execution and task.
+type ResourceRegistryKey = (
+    LogicalOperationId,
+    ResourceGenerationId,
+    (
+        gantry_core::identity::ProtocolIdentity,
+        gantry_core::identity::ProtocolIdentity,
+    ),
+);
 
 /// One declared reconstruction record as a recovery pass presents it.
 ///
@@ -791,7 +811,7 @@ impl ResourceRegistry {
         }
         let live = self.live_resources();
         let limit = self.live_limit;
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = subject.registry_key();
         match self.accounts.entry(key) {
             std::collections::btree_map::Entry::Occupied(_) => {
                 Err(ResourceRegistryRefusal::SecondAdmission)
@@ -852,14 +872,10 @@ impl ResourceRegistry {
         live_limit: Option<u64>,
         recovered: impl IntoIterator<Item = RecoveredResourceRecord>,
     ) -> Result<Self, ResourceRegistryRefusal> {
-        let mut accounts: BTreeMap<(LogicalOperationId, ResourceGenerationId), AdmittedResource> =
-            BTreeMap::new();
+        let mut accounts: BTreeMap<ResourceRegistryKey, AdmittedResource> = BTreeMap::new();
         let mut live = 0_u64;
         for presented in recovered {
-            let key = (
-                presented.subject.operation().clone(),
-                presented.subject.generation().clone(),
-            );
+            let key = presented.subject.registry_key();
             if accounts.contains_key(&key) {
                 return Err(ResourceRegistryRefusal::SecondAdmission);
             }
@@ -936,8 +952,33 @@ impl ResourceRegistry {
     /// Returns the account one subject owns, when any.
     #[must_use]
     pub fn account(&self, subject: &ResourceSubjectBinding) -> Option<&AdmittedResource> {
+        self.accounts.get(&subject.registry_key())
+    }
+
+    /// Selects exact ownership first, retaining foreign-provenance refusal for a portable alias.
+    fn selection_key(&self, subject: &ResourceSubjectBinding) -> ResourceRegistryKey {
+        self.evidence_key(subject.operation(), subject.generation(), subject)
+    }
+
+    /// Selects portable evidence within its supplied runtime owner, never an arbitrary sibling.
+    ///
+    /// A fallback only identifies a foreign account so existing guards can report ForeignSubject;
+    /// no mutation may use it without checking the presented binding's provenance.
+    fn evidence_key(
+        &self,
+        operation: &LogicalOperationId,
+        generation: &ResourceGenerationId,
+        subject: &ResourceSubjectBinding,
+    ) -> ResourceRegistryKey {
+        let exact = (operation.clone(), generation.clone(), subject.runtime_owner);
+        if self.accounts.contains_key(&exact) {
+            return exact;
+        }
         self.accounts
-            .get(&(subject.operation().clone(), subject.generation().clone()))
+            .keys()
+            .find(|key| &key.0 == operation && &key.1 == generation)
+            .cloned()
+            .unwrap_or(exact)
     }
 
     /// Attaches one physical value without moving its account or changing quota facts.
@@ -951,7 +992,7 @@ impl ResourceRegistry {
         value: T,
     ) -> Result<(), Box<(crate::HostResourceError, T)>> {
         use crate::HostResourceError;
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let refusal = match self.accounts.get(&key) {
             None => Some(HostResourceError::UnknownSubject),
             Some(account) => {
@@ -1006,7 +1047,7 @@ impl ResourceRegistry {
             return false;
         }
         self.physical
-            .get(&(subject.operation().clone(), subject.generation().clone()))
+            .get(&subject.registry_key())
             .is_some_and(crate::resource_transport::HostValueSlot::is_present)
     }
 
@@ -1021,7 +1062,7 @@ impl ResourceRegistry {
         callback: impl FnOnce(&mut T) -> Result<R, gantry_host::contracts::HostError>,
     ) -> Result<R, crate::HostResourceError> {
         use crate::HostResourceError;
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let refusal = match self.accounts.get(&key) {
             None => Some(HostResourceError::UnknownSubject),
             Some(account) => {
@@ -1078,7 +1119,7 @@ impl ResourceRegistry {
         owner: OwnerGeneration,
     ) -> Result<Option<crate::resource_transport::HostDisposalJob>, crate::HostResourceError> {
         use crate::HostResourceError;
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get(&key)
@@ -1111,10 +1152,7 @@ impl ResourceRegistry {
         settled_at: u64,
         subject: &ResourceSubjectBinding,
     ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
-        let key = (
-            settlement.operation().clone(),
-            settlement.generation().clone(),
-        );
+        let key = self.evidence_key(settlement.operation(), settlement.generation(), subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1141,10 +1179,7 @@ impl ResourceRegistry {
         let projection = live
             .operation_state_projection()
             .ok_or(ResourceRegistryRefusal::OperationStateProjectionNotSettled)?;
-        let key = (
-            projection.operation().clone(),
-            projection.generation().clone(),
-        );
+        let key = self.evidence_key(projection.operation(), projection.generation(), subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1169,7 +1204,7 @@ impl ResourceRegistry {
         subject: &ResourceSubjectBinding,
         cleanup: EmergencyCleanupWitness,
     ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1196,7 +1231,7 @@ impl ResourceRegistry {
         action: ResourceAction,
         charges: &[Charge],
     ) -> Result<(), ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1224,7 +1259,7 @@ impl ResourceRegistry {
         family: QuotaFamily,
         increase: u64,
     ) -> Result<(), ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1249,7 +1284,7 @@ impl ResourceRegistry {
         subject: &ResourceSubjectBinding,
         presented_owner: OwnerGeneration,
     ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1274,7 +1309,7 @@ impl ResourceRegistry {
         presented_owner: OwnerGeneration,
         settled_at: u64,
     ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1317,7 +1352,7 @@ impl ResourceRegistry {
         presented_owner: OwnerGeneration,
         root: LivenessRoot,
     ) -> Result<(), ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1343,7 +1378,7 @@ impl ResourceRegistry {
         succeeding_owner: OwnerGeneration,
         at: u64,
     ) -> Result<(), ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1367,7 +1402,7 @@ impl ResourceRegistry {
         subject: &ResourceSubjectBinding,
         presented_owner: OwnerGeneration,
     ) -> Result<ResourceLifetimeState, ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1396,7 +1431,7 @@ impl ResourceRegistry {
         presented_owner: OwnerGeneration,
         completion: Completion,
     ) -> Result<ExternalOutcome, ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1426,7 +1461,7 @@ impl ResourceRegistry {
         presented_owner: OwnerGeneration,
         instance: AdapterInstance,
     ) -> Result<(), ResourceRegistryRefusal> {
-        let key = (subject.operation().clone(), subject.generation().clone());
+        let key = self.selection_key(subject);
         let account = self
             .accounts
             .get_mut(&key)
@@ -1441,7 +1476,7 @@ impl ResourceRegistry {
     #[must_use]
     pub fn adapter_instance(&self, subject: &ResourceSubjectBinding) -> Option<&AdapterInstance> {
         self.accounts
-            .get(&(subject.operation().clone(), subject.generation().clone()))
+            .get(&subject.registry_key())
             .and_then(AdmittedResource::adapter_instance)
     }
 
@@ -1461,8 +1496,8 @@ impl ResourceRegistry {
         presented_owner: OwnerGeneration,
         reason: PoisonReason,
     ) -> Result<PoisonReason, ResourceRegistryRefusal> {
+        let key = self.selection_key(subject);
         let ledger = &mut self.adapter_faults;
-        let key = (subject.operation().clone(), subject.generation().clone());
         let account = self
             .accounts
             .get_mut(&key)
@@ -1488,10 +1523,7 @@ impl ResourceRegistry {
         reason: PoisonReason,
         subject: &ResourceSubjectBinding,
     ) -> Result<PoisonReason, ResourceRegistryRefusal> {
-        let key = (
-            settlement.operation().clone(),
-            settlement.generation().clone(),
-        );
+        let key = self.evidence_key(settlement.operation(), settlement.generation(), subject);
         let ledger = &mut self.adapter_faults;
         let account = self
             .accounts
@@ -1525,16 +1557,11 @@ impl ResourceRegistry {
         cleanups: Vec<(ResourceSubjectBinding, EmergencyCleanupWitness)>,
     ) -> CohortEmergencyCleanup {
         let mut ordered = cleanups;
-        ordered.sort_by(|left, right| {
-            (left.0.operation(), left.0.generation())
-                .cmp(&(right.0.operation(), right.0.generation()))
-        });
-        ordered.dedup_by(|left, right| {
-            left.0.operation() == right.0.operation() && left.0.generation() == right.0.generation()
-        });
+        ordered.sort_by_key(|entry| entry.0.registry_key());
+        ordered.dedup_by(|left, right| left.0.registry_key() == right.0.registry_key());
         let mut settled = Vec::new();
         for (subject, cleanup) in ordered {
-            let key = (subject.operation().clone(), subject.generation().clone());
+            let key = self.selection_key(&subject);
             let Some(account) = self.accounts.get_mut(&key) else {
                 return CohortEmergencyCleanup {
                     settled,

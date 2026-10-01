@@ -15126,6 +15126,15 @@ of retention and physical reclamation. This mapping concerns accounting admissio
 create, discover, reconstruct, or claim ownership of a physical host resource, and it does not
 define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
 
+A registry's storage subject MUST qualify portable operation/resource-generation identity with
+the issuing execution and task. Equal portable identities from independent task-local counters
+MUST remain separate accounts and physical slots, each counted against the same registry ceiling.
+Capture and accounting reconstruction MUST preserve this qualification. Cohort order is portable
+operation, resource generation, execution, then task; deduplication MUST use all four identities.
+Exact runtime ownership MUST be selected before evidence mutates an account; a portable alias
+without that ownership may identify only a foreign-provenance refusal, never a mutable fallback.
+This qualification does not change Section 20's portable identity derivation or grant authority.
+
 A registry MAY separately declare a finite ceiling on admitted pending resource operations.
 That ceiling counts admitted machine settlement leases, not active accounting lifetimes. An
 accepted machine completion, failure, or settled cancellation closes its lease and releases its

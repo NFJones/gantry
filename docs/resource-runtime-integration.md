@@ -11,6 +11,14 @@ below. Where a clause owns a fence rather than the runtime policy that consumes 
 
 ## Registry surfaces
 
+Registry storage keys qualify portable operation/resource-generation identity with the issuing
+execution and task. Independent sibling counters can produce equal portable identities without
+collapsing their accounts or physical slots; each account consumes the shared registry ceiling.
+Inspection, capture and accounting reconstruction preserve that distinction. Cohort ordering and
+deduplication use operation, generation, execution and task. Mutations select exact runtime ownership
+first; a portable alias without matching ownership can only produce a foreign-provenance refusal.
+Portable identity derivation and host authority remain unchanged.
+
 `ResourceRegistry::with_limits` optionally declares independent live-account and pending
 resource-operation ceilings under `GNT-28.11-runtime-admission-mapping`. `pending_limit` and
 `pending_operations` inspect the enabled pending policy. Pending places follow admitted machine

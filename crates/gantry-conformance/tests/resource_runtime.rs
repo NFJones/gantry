@@ -1754,6 +1754,97 @@ fn registry_physical_routes_refuse_a_foreign_execution_with_matching_static_iden
         registry.dispose_host_value(&subject, OwnerGeneration::new(4)),
         Ok(())
     );
+    assert!(
+        registry
+            .admit(
+                other_task.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            )
+            .is_ok(),
+        "sibling runtime ownership must not collide on equal portable identities"
+    );
+    assert_eq!(registry.live_resources(), 2);
+    registry
+        .attach_host_value(&other_task, OwnerGeneration::new(4), 19_u64)
+        .unwrap_or_else(|_| panic!("sibling physical ownership"));
+    assert_eq!(
+        registry.invoke_host_value::<u64, u64>(&other_task, OwnerGeneration::new(4), |value| Ok(
+            *value
+        )),
+        Ok(19)
+    );
+    assert!(!registry.has_host_value(&subject));
+    let reconstructed = ResourceRegistry::reconstruct(None, registry.declared_records())
+        .unwrap_or_else(|error| panic!("sibling accounting recovery: {error:?}"));
+    assert_eq!(reconstructed.live_resources(), 2);
+    assert_eq!(
+        reconstructed.declared_records(),
+        registry.declared_records()
+    );
+    let local_before = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("local account retained"))
+        .durable_record();
+    assert_eq!(
+        registry.charge(
+            &other_task,
+            OwnerGeneration::new(4),
+            ResourceAction::Update,
+            &[Charge {
+                owner: QuotaOwner::Owner,
+                family: QuotaFamily::Bytes,
+                amount: 1
+            }]
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        registry.project_operation_state(&live, &other_task),
+        Ok(ResourceState::Consumed)
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .unwrap_or_else(|| panic!("local account retained"))
+            .durable_record(),
+        local_before,
+        "sibling charging and evidence projection leave local accounting unchanged"
+    );
+    let mut limited = ResourceRegistry::with_live_limit(1);
+    limited
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("first limited admission: {error:?}"));
+    assert_eq!(
+        limited
+            .admit(
+                other_task.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            )
+            .err(),
+        Some(ResourceRegistryRefusal::LiveResourceLimitReached { limit: 1 })
+    );
+    let sweep = registry.settle_cohort_from_emergency_cleanup(vec![
+        (other_task.clone(), emergency_cleanup()),
+        (subject.clone(), emergency_cleanup()),
+        (other_task.clone(), emergency_cleanup()),
+    ]);
+    assert!(sweep.is_complete());
+    assert_eq!(
+        sweep.settled().len(),
+        2,
+        "portable aliases are separate cohort members"
+    );
+    assert_eq!(registry.live_resources(), 0);
+    assert_eq!(
+        registry.dispose_host_value(&other_task, OwnerGeneration::new(4)),
+        Ok(())
+    );
 }
 
 /// Returns the machine-issued subject of one declared fixture operation.
