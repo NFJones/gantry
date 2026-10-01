@@ -791,6 +791,20 @@ fn validate_entry_input(
             "missing-entry-input",
         )
     })?;
+    let capabilities = analysis
+        .type_capabilities(parameter, configuration.required().frontend_limits)
+        .map_err(|_| {
+            failure(
+                StartFailureCategory::Internal,
+                "entry-resource-classification-failed",
+            )
+        })?;
+    if capabilities.is_live_resource() {
+        return Err(failure(
+            StartFailureCategory::EntryInputValidation,
+            "live-resource-entry-value-refused",
+        ));
+    }
     let limits = json_limits(
         configuration,
         configuration

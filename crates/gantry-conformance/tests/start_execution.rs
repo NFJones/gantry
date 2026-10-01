@@ -315,8 +315,59 @@ fn live_resource_transport_rejects_start_before_preflight_or_execution_identity(
     }
 }
 
+/// Live-resource classification cannot be fulfilled by ordinary serialized entry data.
+#[test]
+fn live_resource_entry_refuses_ordinary_json_before_execution() {
+    for (source, input) in [
+        (
+            &b"live_resource struct Handle { token: Int }\nfn main(value: Handle) { discard value; }"[..],
+            &br#"{"token":1}"#[..],
+        ),
+        (
+            &b"live_resource struct Handle { token: Int }\nstruct Envelope { handle: Handle }\nfn main(value: Envelope) { discard value; }"[..],
+            &br#"{"handle":{"token":1}}"#[..],
+        ),
+        (
+            &b"live_resource struct Handle { token: Int }\nfn main(value: Option<Handle>) { discard value; }"[..],
+            &b"null"[..],
+        ),
+    ] {
+    let root = TempDirectory::new(source);
+    let services = Arc::new(Services::default());
+    let configuration = configuration(Arc::clone(&services));
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock;
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
+    let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
+    let coordinator = StartExecutionCoordinator::new(
+        &package,
+        &lifecycle,
+        &configuration,
+        &allocator,
+        preflight.clone(),
+    );
+    let selection = selection();
+    let result = block_on(coordinator.start(request(&root.0, &selection, Some(input), None)));
+    let StartExecutionResult::Rejected(failure) = result else {
+        panic!("ordinary JSON cannot supply live-resource entry ownership");
+    };
+    assert_eq!(failure.category, StartFailureCategory::EntryInputValidation);
+    assert_eq!(&*failure.code, "live-resource-entry-value-refused");
+    assert!(failure.package_activity.is_some());
+    assert!(preflight.calls().is_empty());
+    assert!(!services.calls().contains(&IdentityKind::Execution));
+    }
+}
+
 #[test]
 fn mapping_and_root_preflight_precede_identity_and_accept_normalized_entry() {
+    // Ordinary entry normalization remains separate from live-resource transport admission.
     let root = TempDirectory::new(
         br#"
 agents { worker }

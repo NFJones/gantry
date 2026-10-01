@@ -58,6 +58,13 @@ or execution acceptance. Source analysis remains valid; an unsupported transport
 an external dispatch and then fail only when its successful result reaches the machine.
 The low-level attempted-error and replay contract remains available to its existing owners.
 
+Ordinary JSON entry normalization separately refuses an analyzed live-resource parameter,
+including enclosing aggregates, with `live-resource-entry-value-refused` in the
+entry-input-validation category. Classification is checked after required-input presence and
+before parsing or normalization, mapping calls and execution acceptance. Even an absent optional
+payload cannot make a statically live-resource entry type eligible for ordinary data transport.
+This check supplies no host authority or live-handle entry path.
+
 ## Evidence
 
 Codec tests in `crates/gantry-runtime/src/machine/program_codec.rs` (compiled under

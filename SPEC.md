@@ -12156,6 +12156,13 @@ includes workflow and spawned task-body operations, including attempted operatio
 an unsupported transport refusal, not a source-analysis error or a fabricated operation outcome.
 It does not remove the low-level handle-free attempted-error settlement contract above.
 
+Ordinary JSON entry input MUST NOT supply a type whose analyzed stored-member resource class
+is live-resource, including enclosing aggregates. Once required entry input is present, product
+start MUST refuse such a type with `live-resource-entry-value-refused` in the entry-input-validation
+category before JSON parsing, normalization, integration preflight or execution acceptance.
+This is type-qualified transport admission, not authority derived from serialized fields; it
+does not create an affine live-handle entry path or change source type classification.
+
 <a id="GNT-20.2-logical-operation-and-resource-generation-identity"></a>
 
 **[GNT-20.2-logical-operation-and-resource-generation-identity] Logical operation
