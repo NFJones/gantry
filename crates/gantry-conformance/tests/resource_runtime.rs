@@ -2281,6 +2281,47 @@ fn coordinator_host_attachment_refusal_and_failed_disposal_preserve_accounting()
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Task settlement closes physical admission but leaves accounting cleanup available.
+#[test]
+fn coordinator_host_attachment_refuses_after_task_settlement() {
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let owner = OwnerGeneration::new(4);
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    coordinator
+        .settle_task(
+            machine.task_id(),
+            MachineOutcome::Succeeded(LogicalValue::unit()),
+        )
+        .unwrap_or_else(|error| panic!("task settlement: {error:?}"));
+    let before = coordinator.snapshot();
+    let refusal = coordinator.attach_resource_host_value(&subject, owner, 17_u64);
+    assert!(
+        refusal.is_err(),
+        "settled task must not gain new physical ownership"
+    );
+    let (error, returned) = *refusal
+        .err()
+        .unwrap_or_else(|| panic!("attachment refuses"));
+    assert_eq!(
+        error,
+        gantry::runtime::CoordinatorResourceRefusal::TaskNotRunning
+    );
+    assert_eq!(returned, 17);
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(
+        coordinator.emergency_release_resource(&subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+}
+
 /// Physical attachment leaves registry quota and accounting ownership in place until settlement.
 #[test]
 fn registry_host_attachment_preserves_accounting_and_finalization_fences() {

@@ -506,6 +506,16 @@ impl ExecutionCoordinator {
         let result = (|| {
             let mut state = lock(&self.inner.state);
             require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+            if subject.execution_id() != state.tasks.execution_id() {
+                return Err(CoordinatorResourceRefusal::ForeignExecution);
+            }
+            let task = state
+                .tasks
+                .task_record(subject.task_id())
+                .ok_or(CoordinatorResourceRefusal::UnknownTask)?;
+            if !matches!(task.status(), ConcurrentTaskStatusV1::Running) {
+                return Err(CoordinatorResourceRefusal::TaskNotRunning);
+            }
             let resources = state
                 .resources
                 .as_mut()

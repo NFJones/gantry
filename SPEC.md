@@ -15215,6 +15215,9 @@ does not establish automatic evaluator integration or physical reconstruction.
 
 The coordinator MAY expose physical attachment and disposal over its existing registry. Attachment
 and disposal extraction MUST respect the durable-publication reservation and current account owner.
+Physical attachment MUST additionally require the issuing execution to match and the issuing task
+to be known and running. Task settlement closes physical admission without disabling cleanup;
+refusal MUST leave the physical input and accounting unchanged.
 Refused attachment MUST return the physical input without destroying it under the coordinator lock.
 Disposal MUST mark a process-local pending status before extracting exclusive physical ownership,
 then execute contained destruction with neither coordinator nor status mutex held. Pending cleanup

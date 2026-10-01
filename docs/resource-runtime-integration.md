@@ -45,6 +45,8 @@ contains physical destruction only and does not synthesize semantic settlement.
 
 `ExecutionCoordinator::attach_resource_host_value` retains physical ownership in the same registry
 without changing accounting publication; refused inputs are returned untouched outside the lock.
+Attachment requires the issuing execution to match and its task to be known and running;
+task settlement closes physical admission without disabling accounting or physical cleanup.
 `dispose_resource_host_value` checks owner and durable-publication availability, marks cleanup
 pending and extracts exclusive physical ownership, then runs contained destruction without holding
 the coordinator or cleanup-status mutex. Pending cleanup blocks finalization and reaping, and another
