@@ -92,6 +92,12 @@ task settlement closes physical admission without disabling accounting or physic
 Recorded task or execution cancellation closes both accounting admission and physical attachment
 immediately with `TaskCancellationRequested`, before terminal settlement. Existing accepted work
 and its pending lease are not settled by that refusal; cleanup remains available.
+`close_resource_admission` separately closes acquisition during cooperative shutdown, returning
+true only on the first closure. `ResourceAdmissionClosed` refuses new accounting and attachment
+while preserving returned inputs, existing records, publication and accepted leases. Clones share
+the monotonic fence and cleanup remains available. Shutdown closes current launch handoffs and
+closes later owners before exposing them, without nesting registry/coordinator locks. This fence
+is process-local, including during a publication reservation, not recovered graph policy.
 `dispose_resource_host_value` checks owner and durable-publication availability, marks cleanup
 pending and extracts exclusive physical ownership, then runs contained destruction without holding
 the coordinator or cleanup-status mutex. Pending cleanup blocks finalization and reaping, and another

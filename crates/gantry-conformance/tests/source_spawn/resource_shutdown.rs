@@ -8,6 +8,86 @@ use gantry::ir::{
     OwnerGeneration, ReceiverOwnership, ResourceCarrier, ResourceLedger, ResourceState,
 };
 
+/// First shutdown observation closes acquisition before cancellation or driver settlement.
+#[test]
+fn shutdown_closes_resource_acquisition_before_driver_drainage() {
+    let root = TempDirectory::new("fn main() {}");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
+        (1_u8..=192).map(|byte| Ok([byte; 32])),
+    ));
+    let interpreter = interpreter_with_accounting_policy(
+        executor.clone(),
+        integration.clone(),
+        integration,
+        AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacities: {error}")),
+        8,
+        SinkPlan::default(),
+        identities,
+        Some((2, 2)),
+    );
+    let accepted = accepted(&interpreter, &root);
+    let coordinator = interpreter
+        .test_nondurable_resource_coordinator(accepted.execution_id())
+        .unwrap_or_else(|| panic!("resource owner"));
+    let machine = resource_machine(accepted.execution_id());
+    let subject = machine
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("subject"));
+    let owner = OwnerGeneration::new(4);
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("record: {error:?}"));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let before = coordinator.snapshot();
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(
+        shutdown
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert!(coordinator.resource_admission_is_closed());
+    assert_eq!(
+        coordinator.snapshot(),
+        before,
+        "closure is not cancellation or accounting publication"
+    );
+    assert_eq!(
+        coordinator.admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record()
+        ),
+        Err(gantry::runtime::CoordinatorResourceRefusal::ResourceAdmissionClosed)
+    );
+    let (error, returned) = *coordinator
+        .attach_resource_host_value(&subject, owner, 17_u64)
+        .err()
+        .unwrap_or_else(|| panic!("closed attachment refuses"));
+    assert_eq!(
+        error,
+        gantry::runtime::CoordinatorResourceRefusal::ResourceAdmissionClosed
+    );
+    assert_eq!(returned, 17);
+    assert_eq!(coordinator.snapshot(), before);
+    drop(shutdown);
+}
+
 /// Terminal language settlement must not hide physical cleanup from interpreter shutdown.
 #[test]
 fn shutdown_drains_terminal_resource_ownership_before_closing_blocking_service() {

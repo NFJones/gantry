@@ -133,6 +133,49 @@ fn resource_coordinator(
     .unwrap_or_else(|error| panic!("resource coordinator: {error:?}"))
 }
 
+/// Cooperative closure is clone-visible and does not cancel or settle accepted work.
+#[test]
+fn coordinator_resource_admission_closure_preserves_accepted_work() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(2));
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let before = coordinator.snapshot();
+    assert!(!coordinator.resource_admission_is_closed());
+    assert!(coordinator.clone().close_resource_admission());
+    assert!(coordinator.resource_admission_is_closed());
+    assert!(!coordinator.close_resource_admission());
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(
+        coordinator.admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(CoordinatorResourceRefusal::ResourceAdmissionClosed)
+    );
+    let (error, returned) = *coordinator
+        .attach_resource_host_value(&subject, OwnerGeneration::new(4), 17_u64)
+        .err()
+        .unwrap_or_else(|| panic!("closed attachment refuses"));
+    assert_eq!(error, CoordinatorResourceRefusal::ResourceAdmissionClosed);
+    assert_eq!(returned, 17);
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(machine.pending_resource_subject().is_some());
+    assert_eq!(
+        coordinator.emergency_release_resource(&subject, emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+    assert!(coordinator.resource_admission_is_closed());
+}
+
 /// Builds task/session inputs for an accounting-only reconstruction boundary.
 fn resource_recovery_inputs(
     execution: ProtocolIdentity,

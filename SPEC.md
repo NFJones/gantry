@@ -15177,6 +15177,12 @@ Admission MUST require a pending machine operation from a running task of the sa
 foreign executions, absent or non-running tasks, and disabled registries MUST be refused without
 mutation. Recorded task or execution cancellation MUST close new accounting admission immediately,
 even before task settlement, with `TaskCancellationRequested`; it does not settle accepted work.
+Cooperative shutdown MUST separately close new accounting admission and physical attachment with
+`ResourceAdmissionClosed`, without cancelling tasks, closing accepted leases or changing accounting
+publication. Closure is monotonic and shared by coordinator clones; cleanup remains available.
+Shutdown MUST close existing handoff owners and close later owners before exposing them, without
+holding the execution registry lock while acquiring the coordinator lock. This process-local
+closure may proceed during reserved durable publication but is not recovered from graph records.
 A reserved durable publication MUST fence these accounting writes. Successful writes
 advance the coordinator publication; refusals change neither records nor publication. Immutable
 snapshot records are inspection only, not journal-committed resource state. Accounting cleanup

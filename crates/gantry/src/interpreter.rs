@@ -159,6 +159,7 @@ struct NondurableExecutionRegistry {
 struct NondurableExecutionRegistryState {
     executions: BTreeMap<ProtocolIdentity, NondurableExecutionRegistration>,
     waiters: BTreeMap<ProtocolIdentity, Vec<Waker>>,
+    resource_admission_closed: bool,
 }
 
 enum NondurableExecutionRegistration {
@@ -238,6 +239,12 @@ impl NondurableExecutionRegistry {
         workflow: gantry_ir::CanonicalPath,
     ) {
         let mut state = lock_shutdown(&self.state);
+        if state.resource_admission_closed {
+            // Close before exposing the handoff owner, without nesting coordinator locks.
+            drop(state);
+            coordinator.close_resource_admission();
+            state = lock_shutdown(&self.state);
+        }
         state
             .executions
             .entry(execution_id)
@@ -316,6 +323,27 @@ impl NondurableExecutionRegistry {
                     owner.cancellation.control_is_active()
                 }
             })
+    }
+
+    /// Closes existing and future handoff owners without nesting registry/coordinator locks.
+    fn close_resource_admission(&self) {
+        let owners = {
+            let mut state = lock_shutdown(&self.state);
+            state.resource_admission_closed = true;
+            state
+                .executions
+                .values()
+                .map(|registration| match registration {
+                    NondurableExecutionRegistration::Pending { coordinator, .. } => {
+                        coordinator.clone()
+                    }
+                    NondurableExecutionRegistration::Owned(owner) => owner.coordinator.clone(),
+                })
+                .collect::<Vec<_>>()
+        };
+        for owner in owners {
+            owner.close_resource_admission();
+        }
     }
 
     fn requested_executions(&self, execution_ids: &[ProtocolIdentity]) -> Vec<ProtocolIdentity> {
@@ -11929,6 +11957,7 @@ impl Interpreter {
                 }
             },
         };
+        self.inner.nondurable_executions.close_resource_admission();
         if self
             .inner
             .nondurable_executions
@@ -14678,6 +14707,59 @@ fn should_defer_execution_completion_event(
             label,
             MachineLabel::ForegroundCompletion(_) | MachineLabel::TerminalCompletion(_)
         )
+}
+
+#[cfg(test)]
+mod resource_handoff_tests {
+    use super::*;
+
+    /// Shutdown closes both already-registered owners and later launch handoffs.
+    #[test]
+    fn shutdown_closes_existing_and_late_resource_handoffs() {
+        let registry = NondurableExecutionRegistry::default();
+        let owner = |byte| {
+            let execution =
+                ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [byte; 32])
+                    .unwrap_or_else(|error| panic!("execution: {error}"));
+            let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [byte; 32])
+                .unwrap_or_else(|error| panic!("session: {error}"));
+            let root = root_task_identity(execution);
+            let tasks = ConcurrentTaskStateV1::new(execution, root, 1)
+                .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+            let sessions = LogicalSessionRegistryV1::new(
+                execution,
+                session,
+                SessionCreationModeV1::GantryRoot,
+                gantry_runtime::CanonicalTranscriptV1::empty(),
+            )
+            .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+            let coordinator = ExecutionCoordinator::new_with_resource_limits(tasks, sessions, 2, 2)
+                .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+            (execution, coordinator)
+        };
+        let path = gantry_ir::CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("path: {error}"));
+        let (first_id, first) = owner(91);
+        registry.mark(first_id, first.clone(), path.clone());
+        let before = first.snapshot();
+        assert!(!first.resource_admission_is_closed());
+        registry.close_resource_admission();
+        assert!(first.resource_admission_is_closed());
+        assert_eq!(first.snapshot(), before);
+        let (late_id, late) = owner(92);
+        let before_late = late.snapshot();
+        registry.mark(late_id, late.clone(), path);
+        assert!(
+            registry
+                .coordinator(late_id)
+                .unwrap_or_else(|| panic!("late owner exposed"))
+                .resource_admission_is_closed()
+        );
+        assert_eq!(late.snapshot(), before_late);
+        registry.close_resource_admission();
+        assert_eq!(first.snapshot(), before);
+        assert_eq!(late.snapshot(), before_late);
+    }
 }
 
 #[cfg(all(test, feature = "evaluator", not(feature = "concurrent")))]

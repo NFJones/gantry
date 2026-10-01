@@ -60,6 +60,8 @@ pub enum CoordinatorResourceRefusal {
     TaskNotRunning,
     /// Requested task or execution cancellation has closed new resource admission.
     TaskCancellationRequested,
+    /// Cooperative shutdown has monotonically closed new resource acquisition.
+    ResourceAdmissionClosed,
     /// This coordinator was constructed without a resource registry.
     RegistryDisabled,
     /// The registry refused the exact pending subject or its accounting facts.
@@ -141,6 +143,7 @@ struct CoordinatorState {
     sessions: LogicalSessionRegistryV1,
     execution_budget: Option<ExecutionBudget>,
     resources: Option<crate::ResourceRegistry>,
+    resource_admission_closed: bool,
     publication: u64,
     next_event_sequence: BTreeMap<ProtocolIdentity, u64>,
     task_event_completion_active: BTreeSet<ProtocolIdentity>,
@@ -355,6 +358,7 @@ impl ExecutionCoordinator {
                     sessions,
                     execution_budget,
                     resources,
+                    resource_admission_closed: false,
                     publication: 0,
                     next_event_sequence: BTreeMap::new(),
                     task_event_completion_active: BTreeSet::new(),
@@ -421,6 +425,9 @@ impl ExecutionCoordinator {
             || state.tasks.execution_cancellation_reason().is_some()
         {
             return Err(CoordinatorResourceRefusal::TaskCancellationRequested);
+        }
+        if state.resource_admission_closed {
+            return Err(CoordinatorResourceRefusal::ResourceAdmissionClosed);
         }
         state
             .resources
@@ -592,6 +599,9 @@ impl ExecutionCoordinator {
             {
                 return Err(CoordinatorResourceRefusal::TaskCancellationRequested);
             }
+            if state.resource_admission_closed {
+                return Err(CoordinatorResourceRefusal::ResourceAdmissionClosed);
+            }
             let resources = state
                 .resources
                 .as_mut()
@@ -644,6 +654,23 @@ impl ExecutionCoordinator {
         let waiters = take_shutdown_waiters_if_quiescent(&mut lock(&self.inner.state));
         wake_all(waiters);
         result
+    }
+
+    /// Closes new accounting and physical acquisition without cancelling accepted work.
+    ///
+    /// Returns true only for the first closure. This process-local fence may close during a
+    /// durable publication reservation; it changes no accounting publication, lease or quota.
+    pub fn close_resource_admission(&self) -> bool {
+        let mut state = lock(&self.inner.state);
+        let changed = !state.resource_admission_closed;
+        state.resource_admission_closed = true;
+        changed
+    }
+
+    /// Reports whether resource acquisition has been closed by this execution owner.
+    #[must_use]
+    pub fn resource_admission_is_closed(&self) -> bool {
+        lock(&self.inner.state).resource_admission_closed
     }
 
     /// Reports whether active or finishing accounting still requires semantic settlement.
@@ -2309,6 +2336,33 @@ mod tests {
         assert_eq!(coordinator.snapshot().publication(), publication);
         assert_eq!(task_wakes.0.load(Ordering::Acquire), 1);
         assert_eq!(shutdown_wakes.0.load(Ordering::Acquire), 1);
+    }
+
+    /// Acquisition closure remains monotonic even while semantic publication is reserved.
+    #[test]
+    fn reserved_publication_does_not_reopen_resource_admission() {
+        let execution = identity(IdentityKind::Execution, 11);
+        let root = crate::root_task_identity(execution);
+        let tasks = ConcurrentTaskStateV1::new(execution, root, 1)
+            .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+        let sessions = LogicalSessionRegistryV1::new(
+            execution,
+            identity(IdentityKind::Session, 12),
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+        let coordinator = ExecutionCoordinator::new_with_resource_limits(tasks, sessions, 2, 2)
+            .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+        lock(&coordinator.inner.state).durable_publication_reserved = true;
+        let before = coordinator.snapshot();
+        assert!(coordinator.close_resource_admission());
+        assert!(coordinator.resource_admission_is_closed());
+        assert!(!coordinator.clone().close_resource_admission());
+        assert_eq!(coordinator.snapshot(), before);
+        lock(&coordinator.inner.state).durable_publication_reserved = false;
+        assert!(coordinator.resource_admission_is_closed());
+        assert_eq!(coordinator.snapshot(), before);
     }
 
     /// Durable publication reservations fence accounting writes before their mutation executes.
