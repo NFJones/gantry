@@ -466,8 +466,12 @@ impl ExecutionCoordinator {
                 .extract_host_disposal(subject, owner)
                 .map_err(CoordinatorResourceRefusal::Host)?
         };
-        job.map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
-            .map_err(CoordinatorResourceRefusal::Host)
+        let result = job
+            .map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
+            .map_err(CoordinatorResourceRefusal::Host);
+        let waiters = take_shutdown_waiters_if_quiescent(&mut lock(&self.inner.state));
+        wake_all(waiters);
+        result
     }
 
     /// Serializes one internal registry mutation and publishes only its successful result.
@@ -1357,7 +1361,7 @@ impl ExecutionCoordinator {
         }
     }
 
-    /// Registers a race-safe observer for physical task-driver quiescence.
+    /// Registers a race-safe observer for task-driver and attached physical-value quiescence.
     #[must_use]
     pub fn wait_for_shutdown_quiescence(&self) -> ShutdownQuiescenceWait {
         ShutdownQuiescenceWait {
@@ -1782,7 +1786,7 @@ impl Drop for TerminalCompletionWait {
     }
 }
 
-/// Independent observer for physical completion of every task driver.
+/// Independent observer for physical completion of every task driver and attached host value.
 pub struct ShutdownQuiescenceWait {
     inner: Arc<CoordinatorInner>,
     waiter_id: u64,
@@ -1795,7 +1799,7 @@ impl Future for ShutdownQuiescenceWait {
     fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         let ready = {
             let mut state = lock(&self.inner.state);
-            if state.tasks.drivers_are_quiescent() {
+            if shutdown_is_quiescent(&state) {
                 remove_waiter(&mut state.shutdown_waiters, self.waiter_id);
                 true
             } else {
@@ -1917,8 +1921,17 @@ fn remove_task_waiter(
     }
 }
 
+/// Requires both settled task drivers and completed physical resource destruction.
+fn shutdown_is_quiescent(state: &CoordinatorState) -> bool {
+    state.tasks.drivers_are_quiescent()
+        && state
+            .resources
+            .as_ref()
+            .is_none_or(crate::ResourceRegistry::host_values_are_quiescent)
+}
+
 fn take_shutdown_waiters_if_quiescent(state: &mut CoordinatorState) -> Vec<RegisteredWaiter> {
-    if state.tasks.drivers_are_quiescent() {
+    if shutdown_is_quiescent(state) {
         std::mem::take(&mut state.shutdown_waiters)
     } else {
         Vec::new()

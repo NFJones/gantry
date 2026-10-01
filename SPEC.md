@@ -15205,6 +15205,10 @@ then execute contained destruction with neither coordinator nor status mutex hel
 MUST fence finalization and record reclamation; repeated disposal MUST refuse while cleanup is pending.
 Completion records success or retained failure without changing accounting publication or semantic
 quota. These physical statuses are not journal-committed state or durable recovery evidence.
+Physical shutdown quiescence MUST require both settled task drivers and no held or in-flight
+attached host value. Disposal completion MUST wake registered quiescence observers after unlocking,
+including after contained destruction failure. Physical quiescence does not imply successful
+finalization, and this observer does not initiate resource cleanup itself.
 
 <a id="GNT-28.12-operation-state-projection"></a>
 

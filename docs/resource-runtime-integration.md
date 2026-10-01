@@ -47,6 +47,9 @@ the coordinator or cleanup-status mutex. Pending cleanup blocks finalization and
 disposal refuses with `DisposalPending`. Completed cleanup retains success or failure in the slot.
 Attachment and disposal neither release semantic quota nor advance accounting publication; their
 process-local statuses are not journal cuts or physical recovery evidence.
+`wait_for_shutdown_quiescence` requires settled task drivers and completed destruction of all
+attached values, including extracted cleanup jobs. Completion wakes registered observers after
+unlocking even when destruction failed; it does not imply normal finalization or initiate cleanup.
 
 | Surface | Runtime route | Decided by |
 | --- | --- | --- |

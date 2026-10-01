@@ -694,6 +694,15 @@ impl ResourceRegistry {
             .fold(0_u64, |count, _| count.saturating_add(1))
     }
 
+    /// Reports whether every attached physical value has completed destruction.
+    ///
+    /// In-flight disposal retains physical ownership even after its value leaves the slot.
+    /// A completed destruction failure is physically settled, not successful finalization.
+    #[must_use]
+    pub fn host_values_are_quiescent(&self) -> bool {
+        self.physical.values().all(|slot| !slot.is_present())
+    }
+
     /// Removes the accounts whose lifetime has reached the terminal retention state.
     ///
     /// Deletion is the only state in which the retained record is gone, so reaping is physical

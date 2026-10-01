@@ -1610,6 +1610,16 @@ impl Drop for CoordinatorDropProbe {
     }
 }
 
+/// Counts physical-quiescence notifications without polling or scheduling cleanup itself.
+#[derive(Default)]
+struct ResourceShutdownWake(std::sync::atomic::AtomicUsize);
+
+impl std::task::Wake for ResourceShutdownWake {
+    fn wake(self: Arc<Self>) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 /// Shared disposal executes unlocked, and in-flight destruction cannot authorize finalization.
 #[test]
 fn coordinator_host_disposal_is_unlocked_and_fences_inflight_finalization() {
@@ -1658,6 +1668,18 @@ fn coordinator_host_disposal_is_unlocked_and_fences_inflight_finalization() {
         coordinator.begin_resource_finish(&subject, owner),
         Ok(ResourceLifetimeState::Finishing)
     );
+    coordinator
+        .settle_task(
+            machine.task_id(),
+            MachineOutcome::Succeeded(LogicalValue::unit()),
+        )
+        .unwrap_or_else(|error| panic!("task settlement: {error:?}"));
+    coordinator
+        .mark_driver_physically_settled(machine.task_id())
+        .unwrap_or_else(|error| panic!("driver settlement: {error:?}"));
+    let mut shutdown = Box::pin(coordinator.wait_for_shutdown_quiescence());
+    let wakes = Arc::new(ResourceShutdownWake::default());
+    let waker = std::task::Waker::from(Arc::clone(&wakes));
     let finishing = coordinator.snapshot();
     std::thread::scope(|scope| {
         let cleanup = scope.spawn(|| {
@@ -1671,6 +1693,10 @@ fn coordinator_host_disposal_is_unlocked_and_fences_inflight_finalization() {
         let finalization = coordinator.complete_resource_finalization(&subject, owner, 31);
         let repeated = coordinator.dispose_resource_host_value(&subject, owner);
         let during = coordinator.snapshot();
+        let shutdown_during = std::future::Future::poll(
+            shutdown.as_mut(),
+            &mut std::task::Context::from_waker(&waker),
+        );
         release.wait();
         assert_eq!(
             cleanup.join().unwrap_or_else(|_| panic!("cleanup thread")),
@@ -1693,7 +1719,19 @@ fn coordinator_host_disposal_is_unlocked_and_fences_inflight_finalization() {
             ))
         );
         assert_eq!(during, finishing);
+        assert!(
+            shutdown_during.is_pending(),
+            "physical cleanup is not quiescent while destruction runs"
+        );
     });
+    assert_eq!(wakes.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        std::future::Future::poll(
+            shutdown.as_mut(),
+            &mut std::task::Context::from_waker(&waker)
+        )
+        .is_ready()
+    );
     assert_eq!(
         coordinator.snapshot(),
         finishing,
@@ -1761,6 +1799,25 @@ fn coordinator_host_attachment_refusal_and_failed_disposal_preserve_accounting()
         coordinator.begin_resource_finish(&subject, owner),
         Ok(ResourceLifetimeState::Finishing)
     );
+    coordinator
+        .settle_task(
+            machine.task_id(),
+            MachineOutcome::Succeeded(LogicalValue::unit()),
+        )
+        .unwrap_or_else(|error| panic!("task settlement: {error:?}"));
+    coordinator
+        .mark_driver_physically_settled(machine.task_id())
+        .unwrap_or_else(|error| panic!("driver settlement: {error:?}"));
+    let mut shutdown = Box::pin(coordinator.wait_for_shutdown_quiescence());
+    let wakes = Arc::new(ResourceShutdownWake::default());
+    let waker = std::task::Waker::from(Arc::clone(&wakes));
+    assert!(
+        std::future::Future::poll(
+            shutdown.as_mut(),
+            &mut std::task::Context::from_waker(&waker)
+        )
+        .is_pending()
+    );
     let finishing = coordinator.snapshot();
     for _ in 0..2 {
         assert!(matches!(
@@ -1777,6 +1834,14 @@ fn coordinator_host_attachment_refusal_and_failed_disposal_preserve_accounting()
         );
         assert_eq!(coordinator.snapshot(), finishing);
     }
+    assert_eq!(wakes.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        std::future::Future::poll(
+            shutdown.as_mut(),
+            &mut std::task::Context::from_waker(&waker)
+        )
+        .is_ready()
+    );
     assert_eq!(
         coordinator.emergency_release_resource(&subject, emergency_cleanup()),
         Ok(ResourceLifetimeState::EmergencyReleased)
