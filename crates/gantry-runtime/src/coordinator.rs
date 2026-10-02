@@ -2680,6 +2680,72 @@ mod tests {
                 TaskStateError::DurablePublicationReserved
             ))
         );
+        let reserved = CoordinatorResourceRefusal::Task(TaskStateError::DurablePublicationReserved);
+        assert_eq!(
+            coordinator.renew_resource_quota(
+                &subject,
+                owner,
+                gantry_ir::QuotaOwner::Owner,
+                gantry_ir::QuotaFamily::Bytes,
+                1,
+            ),
+            Err(reserved.clone())
+        );
+        assert_eq!(
+            coordinator.close_resource_liveness_root(
+                &subject,
+                owner,
+                gantry_ir::LivenessRoot::Resource
+            ),
+            Err(reserved.clone())
+        );
+        assert_eq!(
+            coordinator.retire_resource_record(
+                &subject,
+                gantry_ir::RetentionFence::new(1, 1)
+                    .unwrap_or_else(|error| panic!("fence: {error:?}")),
+                owner,
+                gantry_ir::OwnerGeneration::new(5),
+                3,
+            ),
+            Err(reserved.clone())
+        );
+        assert_eq!(
+            coordinator.delete_resource_record(&subject, owner),
+            Err(reserved.clone())
+        );
+        let receiver =
+            gantry_ir::TypeExpression::from_canonical_string("crate::ReservedAdapter", 4)
+                .unwrap_or_else(|error| panic!("receiver: {error:?}"));
+        let adapter = gantry_ir::AdapterInstance::bind(
+            &gantry_ir::CanonicalImplementationIdentity::inherent(&receiver),
+            gantry_ir::RightsSet::empty(),
+            owner,
+            0,
+        );
+        assert_eq!(
+            coordinator.bind_resource_adapter(&subject, owner, adapter),
+            Err(reserved.clone())
+        );
+        let abi = gantry_ir::OperationAbi::new(
+            gantry_ir::OperationKind::LiveResource,
+            &path,
+            subject.site(),
+            0,
+            gantry_ir::generated::RecoveryClass::Idempotent,
+            gantry_ir::ReceiverOwnership::RetainedByCaller,
+        )
+        .unwrap_or_else(|error| panic!("abi: {error:?}"));
+        let failure = abi.settle_failure(gantry_ir::FailureClass::AdapterFailure);
+        assert_eq!(
+            coordinator.poison_resource_adapter_from_post_failure(
+                &failure,
+                owner,
+                gantry_ir::PoisonReason::InvariantFailure,
+                &subject,
+            ),
+            Err(reserved)
+        );
         assert_eq!(
             coordinator.settle_resource_containment(
                 &subject,
