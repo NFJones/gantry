@@ -5589,9 +5589,10 @@ fn evaluate_primitive(
             }
             let left = string_operand(operands, 0)?;
             let right = string_operand(operands, 1)?;
-            let mut value = String::with_capacity(left.len().saturating_add(right.len()));
-            value.push_str(left);
-            value.push_str(right);
+            let mut value = String::new();
+            let mut scalars = 0;
+            append_bounded_string(&mut value, &mut scalars, left, limits)?;
+            append_bounded_string(&mut value, &mut scalars, right, limits)?;
             LogicalValue::string(value, limits).map_err(map_string_value_error)
         }),
         Primitive::Subtract => numeric_binary(operands, NumericBinary::Subtract),
@@ -5821,6 +5822,37 @@ mod bounded_string_tests {
             append_bounded_string(&mut output, &mut scalars, "", limits),
             Ok(())
         );
+    }
+
+    /// Concatenation preserves scalar identity and refuses combined output beyond the limit.
+    #[test]
+    fn concatenation_preserves_multibyte_scalar_bounds() {
+        let limits = ValueLimits::new(8, 16, 3, 8).unwrap_or_else(|| panic!("positive limits"));
+        for (left, right, expected) in [
+            ("", "é", Some("é")),
+            ("é", "😀a", Some("é😀a")),
+            ("éa", "😀a", None),
+        ] {
+            let operands = [left, right].map(|value| {
+                LogicalValue::string(value, DEFAULT_STRING_TEST_LIMITS)
+                    .unwrap_or_else(|error| panic!("operand: {error:?}"))
+            });
+            let result = evaluate_primitive(Primitive::Add, &operands, limits);
+            match expected {
+                Some(expected) => assert_eq!(
+                    result
+                        .ok()
+                        .and_then(|value| value.as_string().map(str::to_owned)),
+                    Some(expected.to_owned())
+                ),
+                None => assert_eq!(
+                    result,
+                    Err(RuntimeCode::Deterministic(
+                        DeterministicEvaluationCode::StringSizeLimit
+                    ))
+                ),
+            }
+        }
     }
 
     /// Replacement remains nonoverlapping and does not rescan replacement text at the limit.

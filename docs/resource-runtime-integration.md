@@ -402,7 +402,7 @@ retained records nor snapshot size; whole-execution resource integration remains
 
 ## Bounded deterministic string construction
 
-Replacement and list joining check each next output piece's Unicode-scalar contribution before
+Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans
 replacement text. This enforces captured String limits during composition, not complete semantic

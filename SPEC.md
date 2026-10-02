@@ -3507,7 +3507,7 @@ Format major changes may alter eligibility, framing, order, or hashing; a minor 
     evaluation error and the operation remains undispatched. Concatenation,
     case mapping, replacement, splitting, and joining
     are atomic: a `string-size-limit` or `list-size-limit` deterministic-
-    evaluation error leaves the assignment target unchanged. Replacement and joining
+    evaluation error leaves the assignment target unchanged. Concatenation, replacement and joining
     MUST check each next output piece's Unicode-scalar contribution before allocating
     or appending that piece; exceeding the captured String limit MUST publish no
     result or partial state. Replacement text MUST NOT be rescanned. This bounds
