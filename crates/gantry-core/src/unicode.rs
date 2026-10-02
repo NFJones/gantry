@@ -437,6 +437,16 @@ pub fn push_full_uppercase(value: char, output: &mut String) {
 /// of Gantry's deterministic String semantics.
 #[must_use]
 pub fn to_full_lowercase(value: &str) -> String {
+    to_full_lowercase_bounded(value, u64::MAX)
+        .unwrap_or_else(|| unreachable!("a native String cannot exceed u64 scalar capacity"))
+}
+
+/// Returns the contextual lowercase mapping only within an explicit output-scalar bound.
+///
+/// Each scalar's pinned mapping is checked before appending to private output. Refusal returns
+/// no prefix. Input context scanning remains linear and is not a cancellation or work budget.
+#[must_use]
+pub fn to_full_lowercase_bounded(value: &str, maximum_scalars: u64) -> Option<String> {
     let characters = value.chars().collect::<Vec<_>>();
     // One backward pass records, for every position, whether the next non-Case_Ignorable scalar
     // after it is Cased; the forward pass carries the same fact for the previous one. The
@@ -453,27 +463,60 @@ pub fn to_full_lowercase(value: &str) -> String {
     }
     let mut output = String::new();
     let mut before_is_cased = false;
+    let mut scalars = 0_u64;
+    let mut piece = String::new();
     for (index, character) in characters.iter().copied().enumerate() {
+        piece.clear();
         if character == '\u{03A3}' && before_is_cased && !after_is_cased[index] {
-            output.push('\u{03C2}');
+            piece.push('\u{03C2}');
         } else {
-            push_full_lowercase(character, &mut output);
+            push_full_lowercase(character, &mut piece);
         }
+        append_case_mapping(&mut output, &mut scalars, &piece, maximum_scalars)?;
         if !in_ranges(character, CASE_IGNORABLE) {
             before_is_cased = in_ranges(character, CASED);
         }
     }
-    output
+    Some(output)
 }
 
 /// Returns the full locale-independent uppercase mapping for a String.
 #[must_use]
 pub fn to_full_uppercase(value: &str) -> String {
+    to_full_uppercase_bounded(value, u64::MAX)
+        .unwrap_or_else(|| unreachable!("a native String cannot exceed u64 scalar capacity"))
+}
+
+/// Returns the full uppercase mapping only within an explicit output-scalar bound.
+///
+/// Refusal publishes no prefix; the small per-scalar mapping scratch is not accumulated output.
+#[must_use]
+pub fn to_full_uppercase_bounded(value: &str, maximum_scalars: u64) -> Option<String> {
     let mut output = String::new();
+    let mut scalars = 0_u64;
+    let mut piece = String::new();
     for character in value.chars() {
-        push_full_uppercase(character, &mut output);
+        piece.clear();
+        push_full_uppercase(character, &mut piece);
+        append_case_mapping(&mut output, &mut scalars, &piece, maximum_scalars)?;
     }
-    output
+    Some(output)
+}
+
+/// Checks a whole pinned scalar mapping before changing accumulated output or its count.
+fn append_case_mapping(
+    output: &mut String,
+    scalars: &mut u64,
+    piece: &str,
+    maximum_scalars: u64,
+) -> Option<()> {
+    let next = scalars.checked_add(u64::try_from(piece.chars().count()).ok()?)?;
+    if next > maximum_scalars {
+        return None;
+    }
+    output.push_str(piece);
+    *scalars = next;
+    Some(())
 }
 
 /// Computes the Unicode 16 UTS #39 confusable skeleton.
@@ -740,6 +783,45 @@ mod tests {
         is_white_space, is_xid_continue, is_xid_start, normalize_nfc, normalize_nfd,
         push_full_lowercase, push_full_uppercase, script, script_extensions, to_full_lowercase,
     };
+
+    /// Output bounds preserve full expansions and contextual sigma without publishing prefixes.
+    #[test]
+    fn bounded_case_mapping_preserves_context_and_expansion() {
+        for input in ["", "ΟΣ", "ΟΣΑ", "AΣ\u{0301}", "İ", "ß", "😀"] {
+            let lower = to_full_lowercase(input);
+            let upper = super::to_full_uppercase(input);
+            let lower_count = lower.chars().count() as u64;
+            let upper_count = upper.chars().count() as u64;
+            assert_eq!(
+                super::to_full_lowercase_bounded(input, lower_count),
+                Some(lower)
+            );
+            assert_eq!(
+                super::to_full_uppercase_bounded(input, upper_count),
+                Some(upper)
+            );
+            if lower_count > 0 {
+                assert_eq!(
+                    super::to_full_lowercase_bounded(input, lower_count - 1),
+                    None
+                );
+            }
+            if upper_count > 0 {
+                assert_eq!(
+                    super::to_full_uppercase_bounded(input, upper_count - 1),
+                    None
+                );
+            }
+        }
+        assert_eq!(
+            super::to_full_lowercase_bounded("ΟΣ", 2),
+            Some("ος".to_owned())
+        );
+        assert_eq!(
+            super::to_full_uppercase_bounded("ß", 2),
+            Some("SS".to_owned())
+        );
+    }
 
     /// The adversarial size is chosen so that the quadratic implementations this module replaced
     /// (an insertion sort per non-starter and a backward scan per capital sigma) could not finish:

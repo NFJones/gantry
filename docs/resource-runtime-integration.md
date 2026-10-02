@@ -410,3 +410,6 @@ work metering or cancellation safe points; those resource-runtime obligations re
 Splitting checks each next segment against the List-item limit before constructing its String;
 an excess item refuses without publishing the private prefix. Leading, trailing and adjacent
 empty segments and exact Unicode separator matching remain unchanged.
+Case mapping uses bounded variants in the pinned Unicode owner, preserving contextual Final_Sigma
+and full expansions. Each scalar mapping is checked before accumulation; small mapping scratch
+and input-context scanning remain outside the output bound and do not establish work metering.

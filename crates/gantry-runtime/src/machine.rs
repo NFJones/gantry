@@ -9,7 +9,7 @@ use gantry_core::limit::ResourceLimit;
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind};
 use gantry_core::strict_json::{JsonLimits, JsonNode, StrictJsonDocument};
-use gantry_core::unicode::{is_white_space, to_full_lowercase, to_full_uppercase};
+use gantry_core::unicode::{is_white_space, to_full_lowercase_bounded, to_full_uppercase_bounded};
 use gantry_core::value::{
     LogicalValue, LogicalValueView, ValueError, ValueLimitKind, ValueLimits, ValuePathSegment,
 };
@@ -5670,12 +5670,24 @@ fn evaluate_primitive(
             LogicalValue::string(trimmed, limits).map_err(map_string_value_error)
         }
         Primitive::StringLowercase => {
-            LogicalValue::string(to_full_lowercase(string_operand(operands, 0)?), limits)
-                .map_err(map_string_value_error)
+            let output = to_full_lowercase_bounded(
+                string_operand(operands, 0)?,
+                limits.maximum_string_scalars(),
+            )
+            .ok_or(RuntimeCode::Deterministic(
+                DeterministicEvaluationCode::StringSizeLimit,
+            ))?;
+            LogicalValue::string(output, limits).map_err(map_string_value_error)
         }
         Primitive::StringUppercase => {
-            LogicalValue::string(to_full_uppercase(string_operand(operands, 0)?), limits)
-                .map_err(map_string_value_error)
+            let output = to_full_uppercase_bounded(
+                string_operand(operands, 0)?,
+                limits.maximum_string_scalars(),
+            )
+            .ok_or(RuntimeCode::Deterministic(
+                DeterministicEvaluationCode::StringSizeLimit,
+            ))?;
+            LogicalValue::string(output, limits).map_err(map_string_value_error)
         }
         Primitive::StringReplace => {
             let source = string_operand(operands, 0)?;
@@ -5838,6 +5850,36 @@ mod bounded_string_tests {
                     .unwrap_or_else(|error| panic!("operand: {error:?}"))
             });
             let result = evaluate_primitive(Primitive::Add, &operands, limits);
+            match expected {
+                Some(expected) => assert_eq!(
+                    result
+                        .ok()
+                        .and_then(|value| value.as_string().map(str::to_owned)),
+                    Some(expected.to_owned())
+                ),
+                None => assert_eq!(
+                    result,
+                    Err(RuntimeCode::Deterministic(
+                        DeterministicEvaluationCode::StringSizeLimit
+                    ))
+                ),
+            }
+        }
+    }
+
+    /// Case mapping retains contextual Unicode semantics while refusing expanded excess output.
+    #[test]
+    fn case_mapping_preserves_context_and_output_bounds() {
+        for (primitive, input, maximum, expected) in [
+            (Primitive::StringLowercase, "ΟΣ", 2, Some("ος")),
+            (Primitive::StringLowercase, "İ", 1, None),
+            (Primitive::StringUppercase, "ß", 2, Some("SS")),
+            (Primitive::StringUppercase, "ß", 1, None),
+        ] {
+            let limits = ValueLimits::new(8, 16, maximum, 8).unwrap_or_else(|| panic!("limits"));
+            let operands = [LogicalValue::string(input, DEFAULT_STRING_TEST_LIMITS)
+                .unwrap_or_else(|error| panic!("operand: {error:?}"))];
+            let result = evaluate_primitive(primitive, &operands, limits);
             match expected {
                 Some(expected) => assert_eq!(
                     result
