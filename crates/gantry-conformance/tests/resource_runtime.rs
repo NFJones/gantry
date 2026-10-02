@@ -7082,6 +7082,57 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     );
 }
 
+/// A poisoned adapter cannot carry another physical callback, while siblings remain usable.
+#[test]
+fn registry_physical_invocation_refuses_a_poisoned_bound_adapter() {
+    let subject = active_subject();
+    let sibling = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::new();
+    for (binding, name) in [(&subject, "physical"), (&sibling, "sibling")] {
+        registry
+            .admit_host_value(
+                binding.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+                17_u64,
+            )
+            .unwrap_or_else(|_| panic!("admit"));
+        registry
+            .bind_adapter_instance(binding, owner, adapter_instance(name, 4, 0))
+            .unwrap_or_else(|error| panic!("bind: {error:?}"));
+        assert_eq!(
+            registry.invoke_host_value::<u64, u64>(binding, owner, |value| Ok(*value)),
+            Ok(17)
+        );
+    }
+    registry
+        .poison_adapter_instance(&subject, owner, PoisonReason::InvariantFailure)
+        .unwrap_or_else(|error| panic!("poison: {error:?}"));
+    let before = registry.declared_records();
+    let called = std::sync::atomic::AtomicBool::new(false);
+    let result = registry.invoke_host_value::<u64, ()>(&subject, owner, |_| {
+        called.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    });
+    assert!(
+        matches!(
+            result,
+            Err(gantry::runtime::HostResourceError::Operation(
+                OperationAbiError::AdapterInstancePoisoned { .. }
+            ))
+        ),
+        "poisoned adapter cannot carry physical invocation"
+    );
+    assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(
+        registry.invoke_host_value::<u64, u64>(&sibling, owner, |value| Ok(*value)),
+        Ok(17)
+    );
+    assert!(registry.has_host_value(&subject));
+}
+
 #[test]
 fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
     let subject = active_subject();

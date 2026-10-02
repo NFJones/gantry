@@ -74,6 +74,9 @@ projections when retained resource state would be omitted. It does not undo an e
 account without moving or duplicating accounting and without changing quotas. The embedding caller
 authenticates its association and authority. Duplicate, unknown, stale-owner and inactive refusals
 return the value untouched. `invoke_host_value` checks the exact Rust type and accounting fences;
+after provenance, owner and active/open checks, a poisoned bound adapter refuses with
+`HostResourceError::Operation(AdapterInstancePoisoned)` before executing the callback. Accounting,
+physical ownership and sibling usability remain unchanged; unused callback disposal stays contained.
 physical attachment, invocation, presence inspection and disposal also require the binding's
 issuing execution/task to match the admitted account. `execution_id` and `task_id` retain machine
 provenance across checkpoint recovery without changing portable operation/generation identities.

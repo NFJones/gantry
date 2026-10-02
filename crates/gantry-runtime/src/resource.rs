@@ -1134,6 +1134,14 @@ impl ResourceRegistry {
                     Some(HostResourceError::Model(
                         ResourceError::IllegalLifetimeTransition,
                     ))
+                } else if let Some(adapter) = account.adapter_instance()
+                    && adapter.is_poisoned()
+                {
+                    Some(HostResourceError::Operation(
+                        OperationAbiError::AdapterInstancePoisoned {
+                            instance: Arc::from(adapter.as_str()),
+                        },
+                    ))
                 } else {
                     None
                 }

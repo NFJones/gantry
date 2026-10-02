@@ -15295,7 +15295,10 @@ emergency release MUST likewise require matching issuing execution/task provenan
 selection and before mutation. Foreign provenance MUST refuse with `ForeignSubject` and preserve
 accounting and bindings, so semantic release cannot bypass the physical-access fence.
 Typed bounded synchronous invocation MUST retain account and containment fences, including contained unused
-callback destruction. Accounting finalization MUST refuse while a physical value remains held.
+callback destruction. After provenance, current-owner and active/open checks, a poisoned bound
+adapter MUST refuse physical invocation with `AdapterInstancePoisoned` before executing the callback.
+Refusal MUST retain accounting and physical ownership and leave unrelated adapters usable; unused
+callback destruction MUST retain containment and panic precedence. Accounting finalization MUST refuse while a physical value remains held.
 Contained destruction failure MUST remain recorded after the physical slot becomes empty;
 repeated disposal MUST report that failure without destroying again, and normal finalization
 MUST refuse without mutation. Sealed emergency release remains available from finishing.
