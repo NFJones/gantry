@@ -293,6 +293,9 @@ fn live_resource_transport_rejects_start_before_preflight_or_execution_identity(
         &b"live_resource struct Handle {}\nfn main() { spawn child -> Unit { discard Handle {}; } discard join(child); }"[..],
         &b"live_resource struct Handle {}\nstruct Envelope { handle: Handle }\nfn main() { discard Envelope { handle: Handle {} }; }"[..],
         &b"live_resource struct Handle {}\nstruct Envelope { handle: Option<Handle> }\nfn main() { discard Envelope { handle: None }; }"[..],
+        &b"live_resource struct Handle {}\nfn main() -> Option<Handle> { None }"[..],
+        &b"live_resource struct Handle {}\nenum Choice { Empty, Held(Handle) }\nfn main() -> Choice { Choice::Empty }"[..],
+        &b"live_resource struct Handle {}\nfn main() -> List<Handle> { [] }"[..],
     ] {
         let root = TempDirectory::new(source);
         let services = Arc::new(Services::default());
@@ -326,6 +329,9 @@ fn ordinary_struct_construction_with_unused_live_declarations_is_accepted() {
     for source in [
         &b"live_resource struct Handle {}\nstruct Data { value: Int }\nfn main() { discard Data { value: 1 }; }"[..],
         &b"live_resource struct Handle {}\nfn unused() { discard Handle {}; }\nstruct Data {}\nfn main() { discard Data {}; }"[..],
+        &b"live_resource struct Handle {}\nfn main() -> Option<Int> { None }"[..],
+        &b"live_resource struct Handle {}\nenum Choice { Empty, Held(Int) }\nfn main() -> Choice { Choice::Empty }"[..],
+        &b"live_resource struct Handle {}\nfn main() -> List<Int> { [] }"[..],
     ] {
         let root = TempDirectory::new(source);
         let services = Arc::new(Services::default());

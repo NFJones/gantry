@@ -57,10 +57,11 @@ rejects authenticated live-resource results, including attempted operations, wit
 or execution acceptance. Source analysis remains valid; an unsupported transport cannot cause
 an external dispatch and then fail only when its successful result reaches the machine.
 The low-level attempted-error and replay contract remains available to its existing owners.
-Reachable struct literals are also classified using the configured frontend limits and refused
-with the same transport code when their analyzed type is live-resource, including empty structs.
-Ordinary fields cannot fabricate live-handle ownership. Unused declarations do not trigger this
-instruction-level refusal, and ordinary non-live struct construction remains eligible.
+Reachable aggregate constructors are also classified using the configured frontend limits and refused
+with the same transport code when their analyzed type is live-resource, including empty structs,
+absent options, empty lists, and payload-free enum variants. Ordinary data cannot fabricate
+live-handle ownership or bypass static transport eligibility. Unused declarations do not trigger
+this instruction-level refusal, and ordinary non-live aggregate construction remains eligible.
 
 Ordinary JSON entry normalization separately refuses an analyzed live-resource parameter,
 including enclosing aggregates, with `live-resource-entry-value-refused` in the

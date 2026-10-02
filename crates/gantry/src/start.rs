@@ -742,13 +742,7 @@ pub(crate) fn mapping_dependencies(
                 .flat_map(|body| body.instructions().iter()),
         )
     {
-        if matches!(
-            instruction.kind,
-            InstructionKind::Aggregate {
-                kind: gantry_ir::AggregateKind::Struct { .. },
-                ..
-            }
-        ) {
+        if matches!(instruction.kind, InstructionKind::Aggregate { .. }) {
             let capabilities = analysis
                 .type_capabilities(&instruction.ty, frontend_limits)
                 .map_err(|_| {
