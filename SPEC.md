@@ -12155,6 +12155,11 @@ calls, root-session or execution identity allocation, and execution acceptance. 
 includes workflow and spawned task-body operations, including attempted operations. This is
 an unsupported transport refusal, not a source-analysis error or a fabricated operation outcome.
 It does not remove the low-level handle-free attempted-error settlement contract above.
+The same inventory MUST refuse reachable ordinary struct aggregation whose analyzed result type
+has the live-resource stored-member class, including empty live-resource declarations. Ordinary
+field data MUST NOT fabricate live-handle ownership. Classification MUST use the configured
+frontend limits before integration preflight; unused live-resource declarations alone do not
+make otherwise ordinary executable instructions ineligible.
 
 Ordinary JSON entry input MUST NOT supply a type whose analyzed stored-member resource class
 is live-resource, including enclosing aggregates. Once required entry input is present, product

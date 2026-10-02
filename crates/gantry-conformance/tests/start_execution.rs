@@ -288,6 +288,10 @@ fn live_resource_transport_rejects_start_before_preflight_or_execution_identity(
     for source in [
         &b"live_resource struct Handle { token: Int }\nfn main() { discard prompt \"x\" -> Handle; }"[..],
         &b"live_resource struct Handle { token: Int }\nfn main() { discard attempt prompt \"x\" -> Handle; }"[..],
+        &b"live_resource struct Handle { token: Int }\nfn main() { discard Handle { token: 1 }; }"[..],
+        &b"live_resource struct Handle {}\nfn main() { discard Handle {}; }"[..],
+        &b"live_resource struct Handle {}\nfn main() { spawn child -> Unit { discard Handle {}; } discard join(child); }"[..],
+        &b"live_resource struct Handle {}\nstruct Envelope { handle: Handle }\nfn main() { discard Envelope { handle: Handle {} }; }"[..],
     ] {
         let root = TempDirectory::new(source);
         let services = Arc::new(Services::default());
@@ -312,6 +316,39 @@ fn live_resource_transport_rejects_start_before_preflight_or_execution_identity(
         assert!(failure.package_activity.is_some());
         assert!(preflight.calls().is_empty());
         assert_eq!(services.calls(), [IdentityKind::Activity, IdentityKind::Event, IdentityKind::Event]);
+    }
+}
+
+/// Unused live declarations must not turn ordinary struct construction into resource transport.
+#[test]
+fn ordinary_struct_construction_with_unused_live_declarations_is_accepted() {
+    for source in [
+        &b"live_resource struct Handle {}\nstruct Data { value: Int }\nfn main() { discard Data { value: 1 }; }"[..],
+        &b"live_resource struct Handle {}\nfn unused() { discard Handle {}; }\nstruct Data {}\nfn main() { discard Data {}; }"[..],
+    ] {
+        let root = TempDirectory::new(source);
+        let services = Arc::new(Services::default());
+        let configuration = configuration(Arc::clone(&services));
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let allocator = FreshIdentityAllocator::default();
+        let package = AnalyzePackageCoordinator::new(
+            &allocator,
+            services.as_ref(),
+            &FixedClock,
+            gantry_conformance::blocking_work(),
+        );
+        let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
+        let coordinator = StartExecutionCoordinator::new(
+            &package,
+            &lifecycle,
+            &configuration,
+            &allocator,
+            preflight,
+        );
+        let selection = selection();
+        let result = block_on(coordinator.start(request(&root.0, &selection, None, None)));
+        assert!(matches!(result, StartExecutionResult::Accepted(_)));
+        assert!(services.calls().contains(&IdentityKind::Execution));
     }
 }
 

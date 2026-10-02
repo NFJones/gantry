@@ -525,7 +525,8 @@ impl<'a> StartExecutionCoordinator<'a> {
         &self,
         analysis: &TypedPackage,
     ) -> Result<MappingRevisions, StartExecutionFailure> {
-        let dependencies = mapping_dependencies(analysis)?;
+        let dependencies =
+            mapping_dependencies(analysis, self.configuration.required().frontend_limits)?;
         let agents = dependencies
             .agents
             .iter()
@@ -705,6 +706,7 @@ pub(crate) struct MappingDependencies {
 /// Collects the complete reachable integration dependency closure for one valid package.
 pub(crate) fn mapping_dependencies(
     analysis: &TypedPackage,
+    frontend_limits: gantry_core::source::FrontendLimits,
 ) -> Result<MappingDependencies, StartExecutionFailure> {
     let entry = analysis
         .entry()
@@ -740,6 +742,28 @@ pub(crate) fn mapping_dependencies(
                 .flat_map(|body| body.instructions().iter()),
         )
     {
+        if matches!(
+            instruction.kind,
+            InstructionKind::Aggregate {
+                kind: gantry_ir::AggregateKind::Struct { .. },
+                ..
+            }
+        ) {
+            let capabilities = analysis
+                .type_capabilities(&instruction.ty, frontend_limits)
+                .map_err(|_| {
+                    failure(
+                        StartFailureCategory::Internal,
+                        "aggregate-resource-classification-failed",
+                    )
+                })?;
+            if capabilities.is_live_resource() {
+                return Err(failure(
+                    StartFailureCategory::IntegrationPreflight,
+                    "unsupported-live-resource-transport",
+                ));
+            }
+        }
         match &instruction.kind {
             InstructionKind::OperationCall { operation, .. }
                 if operation.section20_kind == Some(gantry_ir::OperationKind::LiveResource) =>

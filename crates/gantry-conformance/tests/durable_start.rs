@@ -909,6 +909,51 @@ fn durable_journal_failure_wakes_waiters_without_fabricating_terminal_state() {
     assert_eq!(storage.release_calls(), 1);
 }
 
+/// Durable admission must refuse live construction without committing an execution start.
+#[test]
+fn durable_live_struct_construction_rejects_without_preflight_or_commit() {
+    let root =
+        TempDirectory::new(b"live_resource struct Handle {}\nfn main() { discard Handle {}; }");
+    let services = Arc::new(Services::default());
+    let configuration = test_configuration(Arc::clone(&services));
+    let selection = selection();
+    let storage = Arc::new(InstrumentedJournalStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &FixedClock,
+        gantry_conformance::blocking_work(),
+    );
+    let preflight = Arc::new(RecordingPreflight::default());
+    let start = StartExecutionCoordinator::new(
+        &package,
+        &lifecycle,
+        &configuration,
+        &allocator,
+        preflight.clone(),
+    );
+    let durable = DurableStartExecutionCoordinator::new(start, &configuration, storage_adapter);
+    let journal_id = JournalId::new("live-struct-refusal")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let result = block_on(durable.start(DurableStartExecutionRequest {
+        journal_id,
+        start: start_request(&root.0, &selection),
+    }));
+    let DurableStartExecutionResult::Rejected(failure) = result else {
+        panic!("durable live construction was accepted");
+    };
+    assert!(matches!(
+        failure.failure.category,
+        StartFailureCategory::Analysis | StartFailureCategory::IntegrationPreflight
+    ));
+    assert!(preflight.mapping_requests().is_empty());
+    assert_eq!(storage.commit_calls(), 0);
+    assert_eq!(storage.release_calls(), 1);
+}
+
 #[test]
 fn durable_start_preflight_authenticates_the_transitive_reachable_dependency_closure() {
     let root = TempDirectory::new(

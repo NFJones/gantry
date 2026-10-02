@@ -2500,7 +2500,7 @@ fn execution_start_metadata(
             .as_ref()
             .map(|value| value.as_str()),
     );
-    let dependencies = mapping_dependencies(analysis)?;
+    let dependencies = mapping_dependencies(analysis, configuration.required().frontend_limits)?;
     output.push_str(",\"action_signatures\":[");
     for (index, action) in dependencies.actions.iter().enumerate() {
         if index > 0 {
