@@ -4278,6 +4278,101 @@ fn coordinator_atomic_host_admission_refuses_requested_cancellation() {
     assert!(!coordinator.has_pending_resource_operations());
 }
 
+/// Cancellation and acquisition linearize to either a complete acquisition or no acquisition.
+#[test]
+fn coordinator_atomic_host_admission_cancellation_race_never_splits_acquisition() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+    for _ in 0..32 {
+        let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+        let before = coordinator.snapshot();
+        let barrier = std::sync::Barrier::new(2);
+        let result = std::thread::scope(|scope| {
+            let acquisition = scope.spawn(|| {
+                barrier.wait();
+                coordinator.admit_resource_host_value(
+                    &machine,
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                    17_u64,
+                )
+            });
+            barrier.wait();
+            coordinator
+                .cancel_execution(Arc::from("atomic race cancellation"))
+                .unwrap_or_else(|error| panic!("cancel: {error:?}"));
+            acquisition
+                .join()
+                .unwrap_or_else(|_| panic!("acquisition thread"))
+        });
+        let after = coordinator.snapshot();
+        match result {
+            Ok(()) => {
+                assert_eq!(after.resource_records().map(<[_]>::len), Some(1));
+                assert!(coordinator.has_resource_host_values());
+                assert!(coordinator.has_pending_resource_operations());
+                assert_eq!(after.publication(), before.publication() + 2);
+            }
+            Err(refusal) => {
+                let (error, value) = *refusal;
+                assert_eq!(error, CoordinatorResourceRefusal::TaskCancellationRequested);
+                assert_eq!(value, 17);
+                assert_eq!(after.resource_records().map(<[_]>::len), Some(0));
+                assert!(!coordinator.has_resource_host_values());
+                assert!(!coordinator.has_pending_resource_operations());
+                assert_eq!(after.publication(), before.publication() + 1);
+            }
+        }
+        assert!(machine.checkpoint().pending_operation().is_some());
+    }
+}
+
+/// Refused physical inputs remain caller-owned and can reenter coordinator inspection on drop.
+#[test]
+fn coordinator_atomic_host_admission_returns_refused_destructor_outside_lock() {
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(0));
+    let entered = Arc::new(std::sync::Barrier::new(2));
+    let release = Arc::new(std::sync::Barrier::new(2));
+    let unlocked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let before = coordinator.snapshot();
+    let (error, value) = *coordinator
+        .admit_resource_host_value(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            CoordinatorDropProbe {
+                coordinator: coordinator.clone(),
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+                unlocked: Arc::clone(&unlocked),
+                drops: Arc::clone(&drops),
+            },
+        )
+        .err()
+        .unwrap_or_else(|| panic!("zero live quota refuses"));
+    assert_eq!(
+        error,
+        gantry::runtime::CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 }
+        )
+    );
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    std::thread::scope(|scope| {
+        let destructor = scope.spawn(|| drop(value));
+        entered.wait();
+        let observed = unlocked.load(std::sync::atomic::Ordering::SeqCst);
+        release.wait();
+        destructor
+            .join()
+            .unwrap_or_else(|_| panic!("destructor thread"));
+        assert!(observed);
+    });
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
 /// Same-task owner advancement retains physical identity and rejects outstanding obligations.
 #[test]
 fn registry_owner_advancement_preserves_physical_ownership_and_fences_old_owners() {
