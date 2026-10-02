@@ -292,6 +292,7 @@ fn live_resource_transport_rejects_start_before_preflight_or_execution_identity(
         &b"live_resource struct Handle {}\nfn main() { discard Handle {}; }"[..],
         &b"live_resource struct Handle {}\nfn main() { spawn child -> Unit { discard Handle {}; } discard join(child); }"[..],
         &b"live_resource struct Handle {}\nstruct Envelope { handle: Handle }\nfn main() { discard Envelope { handle: Handle {} }; }"[..],
+        &b"live_resource struct Handle {}\nstruct Envelope { handle: Option<Handle> }\nfn main() { discard Envelope { handle: None }; }"[..],
     ] {
         let root = TempDirectory::new(source);
         let services = Arc::new(Services::default());
