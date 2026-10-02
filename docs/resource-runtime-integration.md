@@ -399,3 +399,11 @@ retained records nor snapshot size; whole-execution resource integration remains
 - Physical reclamation is not semantic release: `reap_deleted` frees registry memory only, and under
   `GNT-28.9-retirement-deletion-and-stale-owner-fences` no retention state returns a released live
   place.
+
+## Bounded deterministic string construction
+
+Replacement and list joining check each next output piece's Unicode-scalar contribution before
+appending it to private construction state. Over-limit pieces are not allocated or appended;
+only the complete logical value is published. Replacement stays nonoverlapping and never rescans
+replacement text. This enforces captured String limits during composition, not complete semantic
+work metering or cancellation safe points; those resource-runtime obligations remain outstanding.

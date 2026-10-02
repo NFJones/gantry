@@ -5685,7 +5685,16 @@ fn evaluate_primitive(
                     DeterministicEvaluationCode::StringEmptyPattern,
                 ));
             }
-            LogicalValue::string(source.replace(from, to), limits).map_err(map_string_value_error)
+            let mut output = String::new();
+            let mut scalars = 0;
+            let mut offset = 0;
+            for (start, matched) in source.match_indices(from) {
+                append_bounded_string(&mut output, &mut scalars, &source[offset..start], limits)?;
+                append_bounded_string(&mut output, &mut scalars, to, limits)?;
+                offset = start + matched.len();
+            }
+            append_bounded_string(&mut output, &mut scalars, &source[offset..], limits)?;
+            LogicalValue::string(output, limits).map_err(map_string_value_error)
         }
         Primitive::StringSplit => {
             let source = string_operand(operands, 0)?;
@@ -5731,18 +5740,157 @@ fn evaluate_primitive(
             };
             let separator = string_operand(operands, 1)?;
             let mut output = String::new();
+            let mut scalars = 0;
             for index in 0..length {
                 if index > 0 {
-                    output.push_str(separator);
+                    append_bounded_string(&mut output, &mut scalars, separator, limits)?;
                 }
                 let item = operands[0]
                     .member(index)
                     .ok_or(RuntimeCode::InternalInvariant)?;
-                output.push_str(item.as_string().ok_or(RuntimeCode::InternalInvariant)?);
+                append_bounded_string(
+                    &mut output,
+                    &mut scalars,
+                    item.as_string().ok_or(RuntimeCode::InternalInvariant)?,
+                    limits,
+                )?;
             }
             LogicalValue::string(output, limits).map_err(map_string_value_error)
         }
     }
+}
+
+/// Checks each piece's scalar contribution before allocating or appending any of that piece.
+///
+/// Refusal preserves the private prefix and count; callers publish only a completed logical value.
+fn append_bounded_string(
+    output: &mut String,
+    scalars: &mut u64,
+    piece: &str,
+    limits: ValueLimits,
+) -> Result<(), RuntimeCode> {
+    let mut next = *scalars;
+    for _ in piece.chars() {
+        next = next
+            .checked_add(1)
+            .filter(|count| *count <= limits.maximum_string_scalars())
+            .ok_or(RuntimeCode::Deterministic(
+                DeterministicEvaluationCode::StringSizeLimit,
+            ))?;
+    }
+    output.push_str(piece);
+    *scalars = next;
+    Ok(())
+}
+
+#[cfg(test)]
+mod bounded_string_tests {
+    use super::*;
+
+    /// A refused piece is neither appended nor counted, including multibyte Unicode scalars.
+    #[test]
+    fn append_checks_the_whole_piece_before_mutation() {
+        let limits = ValueLimits::new(8, 16, 3, 8).unwrap_or_else(|| panic!("positive limits"));
+        let mut output = String::from("é");
+        let mut scalars = 1;
+        assert_eq!(
+            append_bounded_string(&mut output, &mut scalars, "😀a", limits),
+            Ok(())
+        );
+        assert_eq!(output, "é😀a");
+        assert_eq!(scalars, 3);
+        let capacity = output.capacity();
+        assert_eq!(
+            append_bounded_string(&mut output, &mut scalars, "x", limits),
+            Err(RuntimeCode::Deterministic(
+                DeterministicEvaluationCode::StringSizeLimit
+            ))
+        );
+        assert_eq!(output, "é😀a");
+        assert_eq!(scalars, 3);
+        assert_eq!(output.capacity(), capacity);
+        assert_eq!(
+            append_bounded_string(&mut output, &mut scalars, "", limits),
+            Ok(())
+        );
+    }
+
+    /// Replacement remains nonoverlapping and does not rescan replacement text at the limit.
+    #[test]
+    fn replacement_preserves_exact_semantics_and_scalar_bounds() {
+        let limits = ValueLimits::new(8, 16, 3, 8).unwrap_or_else(|| panic!("positive limits"));
+        for (source, from, to, expected) in [
+            ("éé", "é", "😀", Some("😀😀")),
+            ("aaa", "aa", "a", Some("aa")),
+            ("a", "a", "aa", Some("aa")),
+            ("abc", "z", "😀", Some("abc")),
+            ("aaa", "a", "😀x", None),
+        ] {
+            let operands = [source, from, to].map(|value| {
+                LogicalValue::string(value, DEFAULT_STRING_TEST_LIMITS)
+                    .unwrap_or_else(|error| panic!("operand: {error:?}"))
+            });
+            let result = evaluate_primitive(Primitive::StringReplace, &operands, limits);
+            match expected {
+                Some(value) => assert_eq!(
+                    result
+                        .ok()
+                        .and_then(|value| value.as_string().map(str::to_owned)),
+                    Some(value.to_owned())
+                ),
+                None => assert_eq!(
+                    result,
+                    Err(RuntimeCode::Deterministic(
+                        DeterministicEvaluationCode::StringSizeLimit
+                    ))
+                ),
+            }
+        }
+    }
+
+    /// Join inserts separators only between items and enforces the combined scalar bound.
+    #[test]
+    fn joining_preserves_empty_singleton_and_multibyte_boundaries() {
+        let limits = ValueLimits::new(8, 16, 3, 8).unwrap_or_else(|| panic!("positive limits"));
+        for (items, separator, expected) in [
+            (vec![], "😀", Some("")),
+            (vec!["é"], "😀", Some("é")),
+            (vec!["é", "a"], "😀", Some("é😀a")),
+            (vec!["é", "ab"], "😀", None),
+        ] {
+            let items = items
+                .into_iter()
+                .map(|value| {
+                    LogicalValue::string(value, DEFAULT_STRING_TEST_LIMITS)
+                        .unwrap_or_else(|error| panic!("item: {error:?}"))
+                })
+                .collect();
+            let operands = [
+                LogicalValue::list(items, DEFAULT_STRING_TEST_LIMITS)
+                    .unwrap_or_else(|error| panic!("list: {error:?}")),
+                LogicalValue::string(separator, DEFAULT_STRING_TEST_LIMITS)
+                    .unwrap_or_else(|error| panic!("separator: {error:?}")),
+            ];
+            let result = evaluate_primitive(Primitive::StringListJoin, &operands, limits);
+            match expected {
+                Some(value) => assert_eq!(
+                    result
+                        .ok()
+                        .and_then(|value| value.as_string().map(str::to_owned)),
+                    Some(value.to_owned())
+                ),
+                None => assert_eq!(
+                    result,
+                    Err(RuntimeCode::Deterministic(
+                        DeterministicEvaluationCode::StringSizeLimit
+                    ))
+                ),
+            }
+        }
+    }
+
+    /// Fixture inputs are independently admitted before testing a smaller output limit.
+    const DEFAULT_STRING_TEST_LIMITS: ValueLimits = gantry_core::value::DEFAULT_VALUE_LIMITS;
 }
 
 #[derive(Clone, Copy)]
