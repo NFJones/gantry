@@ -15219,7 +15219,11 @@ omitted. This refusal does not undo a previously committed journal cut or claim 
 
 An implementation MAY separately bind one consumed active accounting account to one owned
 process-local host value through `OwnedHostResource`. The embedding caller MUST authenticate
-the value/account association and supply authority; this binding grants none. Invocation MUST
+the value/account association and supply authority; this binding grants none. Binding MUST check
+the consumed account's machine lease and refuse recorded cancellation with `CancellationRequested`,
+returning both inputs untouched. An unreadable lease MUST refuse with `PendingOperation` rather
+than authorize acquisition. The check and physical binding MUST linearize against cancellation
+under that lease; binding MUST NOT close pending settlement or change accounting facts. Invocation MUST
 check current ownership and active lifetime before running a bounded synchronous callback.
 Integration panics MUST be contained and poison the transport boundary without fabricating
 resource-poisoning evidence. Unused callbacks MUST be disposed under containment on every

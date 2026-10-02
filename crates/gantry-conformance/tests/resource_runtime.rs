@@ -4020,6 +4020,42 @@ fn registry_host_record_reclamation_waits_for_physical_disposal() {
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Cancellation closes standalone physical acquisition without consuming either input.
+#[test]
+fn owned_host_resource_binding_refuses_machine_cancellation_without_mutation() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject exists"));
+    let account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject.clone(),
+    )
+    .unwrap_or_else(|error| panic!("account admits before cancellation: {error:?}"));
+    let before = account.durable_record();
+    assert!(machine.cancel("standalone acquisition cancelled").is_some());
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let refusal = OwnedHostResource::bind(
+        account,
+        TransportValue {
+            drops: Arc::clone(&drops),
+            panic_on_drop: false,
+            value: 17,
+        },
+    );
+    let (error, returned_account, returned_value) = *refusal
+        .err()
+        .unwrap_or_else(|| panic!("cancelled account cannot acquire physical ownership"));
+    assert_eq!(error, HostResourceError::CancellationRequested);
+    assert_eq!(returned_account.durable_record(), before);
+    assert_eq!(returned_account.subject(), &subject);
+    assert_eq!(returned_value.value, 17);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(machine.checkpoint().pending_operation().is_some());
+    drop(returned_value);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
 /// Prepares a standalone active account with optional outstanding transport obligations.
 fn transfer_account(pending: bool, loan: bool, containment_pending: bool) -> AdmittedResource {
     let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));

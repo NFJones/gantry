@@ -75,7 +75,9 @@ impl<T> OwnedHostResource<T> {
     /// Binds an active account, returning both owned inputs untouched on refusal.
     ///
     /// The caller is responsible for authenticating the host value's association with this
-    /// account and granting its authority. This constructor does not discover a host resource.
+    /// account and granting its authority. Acquisition checks the account's machine lease and
+    /// linearizes against cancellation; an unreadable lease conservatively refuses binding.
+    /// This constructor does not discover a host resource or settle pending work.
     pub fn bind(
         account: AdmittedResource,
         value: T,
@@ -90,12 +92,29 @@ impl<T> OwnedHostResource<T> {
                 value,
             )));
         }
-        Ok(Self {
+        let subject = account.subject().clone();
+        let Some(admission) = subject.lock_admission() else {
+            return Err(Box::new((
+                HostResourceError::PendingOperation,
+                account,
+                value,
+            )));
+        };
+        if admission.cancellation_requested {
+            return Err(Box::new((
+                HostResourceError::CancellationRequested,
+                account,
+                value,
+            )));
+        }
+        let bound = Self {
             account,
             value: Some(value),
             poison: AdapterPoison::default(),
             loan_pending: false,
-        })
+        };
+        drop(admission);
+        Ok(bound)
     }
 
     /// Returns immutable accounting facts only, never the host value.

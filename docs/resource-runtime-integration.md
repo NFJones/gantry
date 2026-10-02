@@ -221,7 +221,10 @@ expand that cohort. Recorded failures prevent orderly reporting and are retained
 `OwnedHostResource<T>` is a separate affine process-local owner under
 `GNT-28.11-runtime-admission-mapping`. `bind` consumes one active `AdmittedResource` and one
 host value, returning both on refusal. The embedding caller authenticates their association and
-supplies authority. `invoke` fences the current owner and active lifetime before a bounded
+supplies authority. Binding holds the consumed account's machine lease through physical acquisition;
+recorded cancellation refuses with `CancellationRequested`, and an unreadable lease refuses with
+`PendingOperation`. Both inputs and accounting facts remain untouched on refusal; binding never
+settles pending work. `invoke` fences the current owner and active lifetime before a bounded
 synchronous callback, using existing `gantry-host` unwind containment. A panic poisons this
 transport boundary, not the accounting lifetime. Unused callbacks are disposed under containment
 on refusal, including an already-poisoned boundary, without executing their bodies; a destruction
