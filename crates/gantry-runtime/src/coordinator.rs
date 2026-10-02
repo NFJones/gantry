@@ -457,6 +457,33 @@ impl ExecutionCoordinator {
         self.mutate_resources(|resources| resources.charge(subject, owner, action, charges))
     }
 
+    /// Advances same-task accounting ownership without moving its account or physical slot.
+    ///
+    /// The registry enforces exact provenance and all existing transfer obligations. A successful
+    /// advancement publishes once; refusal leaves publication unchanged. This grants no authority
+    /// and does not transfer ownership to another task or reconstruct a physical resource.
+    pub fn advance_resource_owner(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        successor: gantry_ir::OwnerGeneration,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.advance_owner(subject, owner, successor))
+    }
+
+    /// Records one coordinator-held account's accepted containment completion.
+    ///
+    /// Historical containment remains independent of resource lifetime and machine settlement;
+    /// refusal publishes nothing and success never releases resource or pending-operation quota.
+    pub fn settle_resource_containment(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        completion: gantry_ir::Completion,
+    ) -> Result<gantry_ir::ExternalOutcome, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.settle_containment(subject, owner, completion))
+    }
+
     /// Projects only a live resource's retained accepted settlement into its matching account.
     ///
     /// This changes operation-state accounting only, not whole-resource lifetime or quota
@@ -2492,6 +2519,26 @@ mod tests {
         let value = ReservationDropProbe(Arc::clone(&drops));
         lock(&coordinator.inner.state).durable_publication_reserved = true;
         let before_attachment = coordinator.snapshot();
+        assert_eq!(
+            coordinator.advance_resource_owner(&subject, owner, gantry_ir::OwnerGeneration::new(5)),
+            Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::DurablePublicationReserved
+            ))
+        );
+        assert_eq!(
+            coordinator.settle_resource_containment(
+                &subject,
+                owner,
+                gantry_ir::Completion::observed(
+                    gantry_ir::ExternalOutcome::Accepted,
+                    gantry_ir::EffectState::NotStarted,
+                ),
+            ),
+            Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::DurablePublicationReserved
+            ))
+        );
+        assert_eq!(coordinator.snapshot(), before_attachment);
         let (error, value) = *coordinator
             .attach_resource_host_value(&subject, owner, value)
             .err()

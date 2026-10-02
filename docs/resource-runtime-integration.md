@@ -134,6 +134,15 @@ association. `submit_task_resource_cleanup` runs the same checks when its blocki
 Neither route creates escalation authority, reopens admission or settles pending machine work;
 the synchronous route still requires a blocking caller for physical destruction.
 
+`ResourceRegistry::advance_owner` and `ExecutionCoordinator::advance_resource_owner` advance
+only same-task accounting ownership. They retain the account's runtime subject and physical slot,
+check exact provenance and current owner before physical eligibility, and reuse the standalone
+transfer obligations (active/open, strict successor, no loan, settled machine work and containment,
+no bound adapter). Poisoned, disposed and disposal-pending slots refuse. Refusal changes no facts
+or publication; coordinator success publishes once. `settle_resource_containment` exposes the
+existing containment settlement through the same publication fence, without settling resource
+lifetime or pending machine work. Neither route implements source-task transfer or grants authority.
+
 `dispose_settled_resource_host_values` drains already-settled physical obligations in canonical
 runtime-subject order, reporting `ResourcePhysicalCleanupResults`. Active and finishing accounts
 are excluded. Selection respects publication reservations; jobs execute after unlocking and continue

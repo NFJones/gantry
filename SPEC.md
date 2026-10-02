@@ -15282,6 +15282,17 @@ value is disposed. Captures and reconstruction MUST omit physical slots, and no 
 route may invoke integration under its shared lock. This boundary grants no host authority and
 does not establish automatic evaluator integration or physical reconstruction.
 
+The registry MAY advance same-task current ownership without moving its account or physical slot.
+It MUST require exact runtime provenance and current owner before checking physical eligibility,
+then enforce the standalone transfer obligations: active/open accounting, a strict successor,
+no loan root, settled machine work and historical containment, and no bound adapter. A poisoned,
+disposed, or disposal-pending physical slot MUST refuse advancement. Success changes only current
+accounting ownership; subject, quotas, roots, historical containment and physical ownership remain
+unchanged. Refusal MUST mutate nothing. The coordinator MAY expose this advancement and the
+existing containment settlement under its durable-publication fence: success publishes once and
+refusal publishes nothing. Neither route grants authority, settles whole-resource lifetime or
+pending machine work, or implements source-task transfer.
+
 The coordinator MAY expose physical attachment and disposal over its existing registry. Attachment
 and disposal extraction MUST respect the durable-publication reservation and current account owner.
 Physical attachment MUST additionally require the issuing execution to match and the issuing task

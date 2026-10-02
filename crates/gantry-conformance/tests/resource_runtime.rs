@@ -2018,6 +2018,13 @@ fn registry_physical_routes_refuse_a_foreign_execution_with_matching_static_iden
         assert_eq!(registry.adapter_instance(&subject), None);
     }
     let refusal = registry.attach_host_value(&foreign, OwnerGeneration::new(4), 17_u64);
+    for requested in [&foreign, &other_task] {
+        assert_eq!(
+            registry.advance_owner(requested, OwnerGeneration::new(4), OwnerGeneration::new(5)),
+            Err(ResourceRegistryRefusal::ForeignSubject)
+        );
+        assert_eq!(registry.declared_records(), before);
+    }
     assert_eq!(
         registry.begin_finish(&foreign, OwnerGeneration::new(4)),
         Err(ResourceRegistryRefusal::ForeignSubject)
@@ -4018,6 +4025,178 @@ fn registry_host_record_reclamation_waits_for_physical_disposal() {
     assert!(registry.account(&subject).is_none());
     assert!(!registry.has_host_value(&subject));
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Same-task owner advancement retains physical identity and rejects outstanding obligations.
+#[test]
+fn registry_owner_advancement_preserves_physical_ownership_and_fences_old_owners() {
+    use gantry::runtime::HostResourceError;
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let owner = OwnerGeneration::new(4);
+    let successor = OwnerGeneration::new(5);
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("record: {error:?}"))
+        .durable_record();
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    registry
+        .attach_host_value(&subject, owner, 17_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    let before = registry.declared_records();
+    assert_eq!(
+        registry.advance_owner(&subject, owner, successor),
+        Err(ResourceRegistryRefusal::OwnershipTransfer(
+            HostResourceError::PendingOperation
+        ))
+    );
+    assert_eq!(registry.declared_records(), before);
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    assert_eq!(
+        registry.advance_owner(&subject, owner, successor),
+        Err(ResourceRegistryRefusal::OwnershipTransfer(
+            HostResourceError::ContainmentPending
+        ))
+    );
+    assert_eq!(registry.declared_records(), before);
+    registry
+        .settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    assert_eq!(
+        registry.advance_owner(&subject, owner, owner),
+        Err(ResourceRegistryRefusal::OwnershipTransfer(
+            HostResourceError::Model(ResourceError::InvalidSuccessorGeneration)
+        ))
+    );
+    assert_eq!(registry.advance_owner(&subject, owner, successor), Ok(()));
+    let account = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("account"));
+    let after = account.durable_record();
+    assert_eq!(after.owner(), successor);
+    assert_eq!(after.quotas(), record.quotas());
+    assert_eq!(after.liveness_roots(), record.liveness_roots());
+    assert_eq!(after.lifetime(), record.lifetime());
+    assert_eq!(after.operation_state(), record.operation_state());
+    assert_eq!(account.subject(), &subject);
+    assert_eq!(account.containment().owner(), owner);
+    assert_eq!(
+        account.containment().outcome(),
+        Some(ExternalOutcome::Accepted)
+    );
+    assert_eq!(registry.live_resources(), 1);
+    assert_eq!(registry.pending_operations(), 0);
+    assert!(registry.has_host_value(&subject));
+    assert!(matches!(
+        registry.invoke_host_value::<u64, ()>(&subject, owner, |_| panic!("stale")),
+        Err(HostResourceError::Model(ResourceError::StaleOwner { .. }))
+    ));
+    assert_eq!(
+        registry.invoke_host_value::<u64, u64>(&subject, successor, |value| Ok(*value)),
+        Ok(17)
+    );
+    let before_poison = registry.declared_records();
+    assert!(matches!(
+        registry.invoke_host_value::<u64, ()>(&subject, successor, |_| panic!("poison")),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert_eq!(
+        registry.advance_owner(&subject, successor, OwnerGeneration::new(6)),
+        Err(ResourceRegistryRefusal::OwnershipTransfer(
+            HostResourceError::TransportPoisoned
+        ))
+    );
+    assert_eq!(registry.declared_records(), before_poison);
+}
+
+/// Coordinator-held advancement publishes once and stale or unfinished attempts publish nothing.
+#[test]
+fn coordinator_owner_advancement_and_containment_preserve_publication_boundaries() {
+    use gantry::runtime::{CoordinatorResourceRefusal, HostResourceError};
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    let owner = OwnerGeneration::new(4);
+    let successor = OwnerGeneration::new(5);
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("record: {error:?}"))
+        .durable_record();
+    coordinator
+        .admit_resource(&machine, ResourceCarrier::ReconstructionRecord, record)
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let before = coordinator.snapshot();
+    assert_eq!(
+        coordinator.advance_resource_owner(&subject, owner, successor),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::OwnershipTransfer(HostResourceError::PendingOperation)
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    assert_eq!(
+        coordinator.settle_resource_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted)
+        ),
+        Ok(ExternalOutcome::Accepted)
+    );
+    let contained = coordinator.snapshot();
+    assert_eq!(contained.publication(), before.publication() + 1);
+    assert_eq!(
+        coordinator
+            .clone()
+            .advance_resource_owner(&subject, owner, successor),
+        Ok(())
+    );
+    let advanced = coordinator.snapshot();
+    assert_eq!(advanced.publication(), contained.publication() + 1);
+    assert_eq!(
+        advanced
+            .resource_records()
+            .unwrap_or_else(|| panic!("records"))[0]
+            .owner(),
+        successor
+    );
+    assert!(matches!(
+        coordinator.advance_resource_owner(&subject, owner, OwnerGeneration::new(6)),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::OwnershipTransfer(HostResourceError::Model(
+                ResourceError::StaleOwner { .. }
+            ))
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), advanced);
 }
 
 /// Cancellation closes standalone physical acquisition without consuming either input.

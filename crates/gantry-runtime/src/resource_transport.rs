@@ -493,6 +493,20 @@ impl HostValueSlot {
         self.value.is_some() || matches!(self.disposal_state(), DisposalState::Pending)
     }
 
+    /// Refuses ownership advancement when physical transport cannot remain in service.
+    pub(crate) fn require_transfer_eligible(&self) -> Result<(), HostResourceError> {
+        if matches!(self.disposal_state(), DisposalState::Pending) {
+            return Err(HostResourceError::DisposalPending);
+        }
+        if self.poison.is_poisoned() {
+            return Err(HostResourceError::TransportPoisoned);
+        }
+        if self.value.is_none() {
+            return Err(HostResourceError::Disposed);
+        }
+        Ok(())
+    }
+
     /// Retains failed destruction independently of physical presence or later disposal attempts.
     pub(crate) fn disposal_failed(&self) -> bool {
         matches!(self.disposal_state(), DisposalState::Complete(Err(_)))
@@ -611,6 +625,32 @@ impl<T> Drop for OwnedHostResource<T> {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    /// Extracted or disposed physical ownership cannot be advanced back into service.
+    #[test]
+    fn physical_owner_advancement_requires_an_eligible_slot() {
+        let mut slot = HostValueSlot::new(17_u64);
+        assert_eq!(slot.require_transfer_eligible(), Ok(()));
+        let job = slot
+            .extract_disposal()
+            .unwrap_or_else(|error| panic!("extract: {error:?}"))
+            .unwrap_or_else(|| panic!("held value creates a job"));
+        assert_eq!(
+            slot.require_transfer_eligible(),
+            Err(HostResourceError::DisposalPending)
+        );
+        assert_eq!(job.run(), Ok(()));
+        assert_eq!(
+            slot.require_transfer_eligible(),
+            Err(HostResourceError::Disposed)
+        );
+        let poisoned = HostValueSlot::new(19_u64);
+        poisoned.poison.poison();
+        assert_eq!(
+            poisoned.require_transfer_eligible(),
+            Err(HostResourceError::TransportPoisoned)
+        );
+    }
 
     /// A poisoned acquisition lease cannot become implicit permission to bind a host value.
     #[test]

@@ -1285,6 +1285,36 @@ impl ResourceRegistry {
             .map_err(ResourceRegistryRefusal::Charge)
     }
 
+    /// Advances only the current owner generation of one registry-held account.
+    ///
+    /// Exact runtime provenance and current ownership are checked before physical eligibility.
+    /// Existing transfer obligations then require active/open accounting, a strict successor,
+    /// no loan, settled machine work and containment, and no adapter binding. The account and
+    /// physical slot stay in this registry; refusal changes neither. This is not task transfer.
+    pub fn advance_owner(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+    ) -> Result<(), ResourceRegistryRefusal> {
+        let key = self.selection_key(subject);
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
+        account.require_current_owner(owner).map_err(|error| {
+            ResourceRegistryRefusal::OwnershipTransfer(crate::HostResourceError::Model(error))
+        })?;
+        if let Some(slot) = self.physical.get(&key) {
+            slot.require_transfer_eligible()
+                .map_err(ResourceRegistryRefusal::OwnershipTransfer)?;
+        }
+        account
+            .transfer_owner(owner, successor)
+            .map_err(ResourceRegistryRefusal::OwnershipTransfer)
+    }
+
     /// Renews exactly one declared quota of one admitted account through the current owner.
     ///
     /// The caller names the subject, so the account is selected by the subject's own operation and
@@ -1686,6 +1716,8 @@ pub enum ResourceRegistryRefusal {
     Charge(ResourceError),
     /// The account's own ledger refused the presented renewal.
     Renewal(ResourceError),
+    /// Existing ownership or physical transport obligations prevent owner advancement.
+    OwnershipTransfer(crate::HostResourceError),
     /// The account's own finish step refused the presented owner or the lifetime transition.
     Finish(ResourceError),
     /// The account's own owner-qualified root closure refused the presented owner or the root.
