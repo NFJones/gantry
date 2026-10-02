@@ -4327,6 +4327,49 @@ fn coordinator_atomic_host_admission_cancellation_race_never_splits_acquisition(
     }
 }
 
+/// Machine-local cancellation shares the acquisition lease even without coordinator cancellation.
+#[test]
+fn atomic_host_admission_machine_cancellation_race_never_splits_acquisition() {
+    for _ in 0..32 {
+        let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+        let mut registry = ResourceRegistry::with_limits(1, 1);
+        let barrier = std::sync::Barrier::new(2);
+        let result = std::thread::scope(|scope| {
+            let acquisition = scope.spawn(|| {
+                barrier.wait();
+                registry.admit_host_value(
+                    subject.clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                    17_u64,
+                )
+            });
+            barrier.wait();
+            assert!(machine.cancel("machine acquisition race").is_some());
+            acquisition
+                .join()
+                .unwrap_or_else(|_| panic!("acquisition thread"))
+        });
+        match result {
+            Ok(()) => {
+                assert_eq!(registry.declared_records().len(), 1);
+                assert!(registry.has_host_value(&subject));
+                assert_eq!(registry.pending_operations(), 1);
+            }
+            Err(refusal) => {
+                let (error, value) = *refusal;
+                assert_eq!(error, ResourceRegistryRefusal::CancellationRequested);
+                assert_eq!(value, 17);
+                assert!(registry.declared_records().is_empty());
+                assert!(!registry.has_host_value(&subject));
+                assert_eq!(registry.pending_operations(), 0);
+            }
+        }
+        assert!(machine.checkpoint().pending_operation().is_some());
+    }
+}
+
 /// Refused physical inputs remain caller-owned and can reenter coordinator inspection on drop.
 #[test]
 fn coordinator_atomic_host_admission_returns_refused_destructor_outside_lock() {
