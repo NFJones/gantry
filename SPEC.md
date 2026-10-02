@@ -15218,6 +15218,10 @@ and the existing substitution checks. Adapter-failure poisoning MUST retain evid
 operation/resource generation, accepting-owner provenance, current ownership and the one-way
 reason ledger. Neither route settles whole-resource lifetime or pending machine work; adapter
 bindings and poison reasons remain process-local, not reconstructed accounting facts.
+Within one registry, successful adapter poisoning MUST fence every binding of that exact adapter
+identity and refuse later rebinding of the recorded poisoned identity. Such aliases are the same
+failed instance, not unrelated siblings. Distinct adapter identities and all accounting facts
+MUST remain unchanged; this fence makes no cross-registry or durable poison-record claim.
 Admission MUST require a pending machine operation from a running task of the same execution;
 foreign executions, absent or non-running tasks, and disabled registries MUST be refused without
 mutation. Recorded task or execution cancellation MUST close new accounting admission immediately,

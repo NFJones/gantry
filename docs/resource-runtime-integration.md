@@ -159,6 +159,9 @@ adapter binding and evidence-qualified one-way poisoning through coordinator pub
 Binding retains current-owner and substitution checks; failure poisoning retains the evidence's
 exact operation, resource generation and accepting owner. Neither settles whole-resource lifetime
 or pending work. Bindings and poison reasons remain process-local, not accounting recovery facts.
+Successful poisoning fences all aliases of the exact adapter identity in that registry; later
+rebinding of its recorded poisoned identity refuses. Distinct identities and accounting stay
+unchanged. This is an identity-wide process-local fence, not a cross-registry or recovery claim.
 
 `dispose_settled_resource_host_values` drains already-settled physical obligations in canonical
 runtime-subject order, reporting `ResourcePhysicalCleanupResults`. Active and finishing accounts

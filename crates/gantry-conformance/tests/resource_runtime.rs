@@ -7158,6 +7158,78 @@ fn registry_physical_invocation_refuses_a_poisoned_bound_adapter() {
     assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
 }
 
+/// Aliases of one adapter identity are the same failed instance, not unaffected siblings.
+#[test]
+fn registry_adapter_poison_fences_aliases_and_rebinding() {
+    for evidence_qualified in [false, true] {
+        let subject = active_subject();
+        let alias = declared_subject(SECOND_FIXTURE_DECLARATION);
+        let later = declared_subject(THIRD_FIXTURE_DECLARATION);
+        let owner = OwnerGeneration::new(4);
+        let instance = adapter_instance("shared_physical", 4, 0);
+        let mut registry = ResourceRegistry::new();
+        for binding in [&subject, &alias, &later] {
+            registry
+                .admit_host_value(
+                    binding.clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                    17_u64,
+                )
+                .unwrap_or_else(|_| panic!("admit"));
+        }
+        for binding in [&subject, &alias] {
+            registry
+                .bind_adapter_instance(binding, owner, instance.clone())
+                .unwrap_or_else(|error| panic!("bind: {error:?}"));
+        }
+        let before = registry.declared_records();
+        if evidence_qualified {
+            let failure = failure_settlement_in(
+                FIXTURE_WORKFLOW,
+                FIXTURE_DECLARATION,
+                vec![FIXTURE_SITE],
+                0,
+                FailureClass::AdapterFailure,
+            );
+            registry
+                .poison_adapter_from_post_failure(
+                    &failure,
+                    owner,
+                    PoisonReason::InvariantFailure,
+                    &subject,
+                )
+                .unwrap_or_else(|error| panic!("evidence poison: {error:?}"));
+        } else {
+            registry
+                .poison_adapter_instance(&subject, owner, PoisonReason::InvariantFailure)
+                .unwrap_or_else(|error| panic!("poison: {error:?}"));
+        }
+        assert_eq!(
+            registry
+                .adapter_instance(&alias)
+                .map(AdapterInstance::is_poisoned),
+            Some(true)
+        );
+        assert!(matches!(
+            registry.invoke_host_value::<u64, ()>(&alias, owner, |_| Ok(())),
+            Err(gantry::runtime::HostResourceError::Operation(
+                OperationAbiError::AdapterInstancePoisoned { .. }
+            ))
+        ));
+        assert!(matches!(
+            registry.bind_adapter_instance(&later, owner, instance),
+            Err(ResourceRegistryRefusal::AdapterBinding(
+                AdapterBindingRefusal::Substitution(
+                    OperationAbiError::AdapterInstancePoisoned { .. }
+                )
+            ))
+        ));
+        assert_eq!(registry.adapter_instance(&later), None);
+        assert_eq!(registry.declared_records(), before);
+    }
+}
+
 #[test]
 fn post_failure_adapter_poisoning_requires_matching_model_evidence() {
     let subject = active_subject();

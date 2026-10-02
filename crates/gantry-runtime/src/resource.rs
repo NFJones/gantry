@@ -1597,9 +1597,12 @@ impl ResourceRegistry {
         &mut self,
         subject: &ResourceSubjectBinding,
         presented_owner: OwnerGeneration,
-        instance: AdapterInstance,
+        mut instance: AdapterInstance,
     ) -> Result<(), ResourceRegistryRefusal> {
         let key = self.selection_key(subject);
+        if self.adapter_faults.recorded_reason(&instance).is_some() {
+            instance.poison();
+        }
         let account = self
             .accounts
             .get_mut(&key)
@@ -1641,9 +1644,16 @@ impl ResourceRegistry {
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
         require_subject_provenance(account, subject)?;
-        account
+        let reason = account
             .poison_adapter_instance(presented_owner, reason, ledger)
-            .map_err(ResourceRegistryRefusal::AdapterBinding)
+            .map_err(ResourceRegistryRefusal::AdapterBinding)?;
+        let identity = account
+            .adapter_instance()
+            .unwrap_or_else(|| unreachable!("successful poisoning retains its adapter"))
+            .as_str()
+            .to_owned();
+        self.poison_adapter_aliases(&identity);
+        Ok(reason)
     }
 
     /// Poisons only the bound adapter named by a model-issued adapter-failure settlement.
@@ -1668,9 +1678,27 @@ impl ResourceRegistry {
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
         require_evidence_subject(account, subject)?;
-        account
+        let reason = account
             .poison_adapter_from_post_failure(settlement, presented_owner, reason, ledger)
-            .map_err(ResourceRegistryRefusal::Settlement)
+            .map_err(ResourceRegistryRefusal::Settlement)?;
+        let identity = account
+            .adapter_instance()
+            .unwrap_or_else(|| unreachable!("successful poisoning retains its adapter"))
+            .as_str()
+            .to_owned();
+        self.poison_adapter_aliases(&identity);
+        Ok(reason)
+    }
+
+    /// Marks aliases of one failed identity unusable without changing unrelated bindings or facts.
+    fn poison_adapter_aliases(&mut self, identity: &str) {
+        for account in self.accounts.values_mut() {
+            if let Some(adapter) = account.adapter.as_mut()
+                && adapter.as_str() == identity
+            {
+                adapter.poison();
+            }
+        }
     }
 
     /// Settles every account of one hard-cancelled cohort from that cohort's sealed cleanup witnesses.
