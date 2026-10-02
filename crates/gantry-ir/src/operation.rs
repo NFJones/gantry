@@ -1978,10 +1978,17 @@ impl LiveResource {
     /// instance that carried the operation. A failure without an open half is refused
     /// rather than reported as a half-close. A resource failure poisons the resource,
     /// and poisoning a poisoned resource is refused rather than repeated.
+    /// An already accepted settlement refuses with [`OperationAbiError::SecondSettlement`]
+    /// before changing state or issuing failure evidence, preserving the recorded winner.
     pub fn settle_failure(
         &mut self,
         failure: FailureClass,
     ) -> Result<PostFailureSettlement, OperationAbiError> {
+        if self.settlement.is_some() {
+            return Err(OperationAbiError::SecondSettlement {
+                operation: Arc::from(self.abi.operation().as_str()),
+            });
+        }
         match failure {
             FailureClass::AdapterFailure => {
                 if !self.state.is_open() {

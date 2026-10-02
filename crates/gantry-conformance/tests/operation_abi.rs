@@ -997,6 +997,37 @@ fn observations_after_partial_settlement_preserve_the_winner_and_allowance() {
     }
 }
 
+/// Accepted success cannot later manufacture adapter or resource failure evidence.
+#[test]
+fn failures_after_accepted_settlement_preserve_the_winner() {
+    let owner = OwnerGeneration::initial();
+    let current = abi(
+        OperationKind::LiveResource,
+        1,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    );
+    for progress in [
+        ProgressObservation::ShortRead,
+        ProgressObservation::CommittedProgress,
+    ] {
+        let mut live = resource(&current, owner, 1);
+        live.observe(progress)
+            .unwrap_or_else(|error| panic!("observation: {error:?}"));
+        let winner = settlement(&current, owner, ExternalOutcome::Accepted, progress, 10);
+        live.settle(&winner)
+            .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+        let before = live.clone();
+        for failure in FailureClass::ALL {
+            assert_eq!(
+                refusal(live.settle_failure(failure)),
+                OperationAbiDiagnosticCode::SecondSettlement
+            );
+            assert_eq!(live, before);
+        }
+    }
+}
+
 #[test]
 fn a_duplicate_late_or_wrong_generation_completion_settles_exactly_once() {
     let owner = OwnerGeneration::initial();

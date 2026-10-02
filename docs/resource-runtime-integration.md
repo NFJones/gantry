@@ -289,7 +289,9 @@ historical containment; it neither rebinds an adapter nor implements source-task
 site, resource generation, current owner and declared loan root. The underlying `LiveResource`
 refuses observation after accepted settlement with `SecondSettlement`, preserving progress,
 state and observation allowance even for a partial winner with an open half. Generation fencing
-retains precedence. `observe` retains Section 20
+retains observation-refusal precedence. Later failure settlement also refuses with
+`SecondSettlement` without changing state or issuing new poisoning evidence after a winner.
+`observe` retains Section 20
 allowances and progress rules; accepted `settle` projects operation state and closes only the
 loan root. Refusal retains the guard and progress for another candidate. Whole-resource lifetime,
 quotas and pending machine work remain separate. Owner invocation, finish and transfer stay

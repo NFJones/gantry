@@ -12255,7 +12255,10 @@ and a duplicate, late, or wrong-generation completion MUST be refused rather tha
 settled, so a cancellation race has exactly one winner. After accepted settlement, later
 progress observations MUST refuse with `SecondSettlement` before changing progress, state,
 or observation allowance, including when a partial settlement retains an open half.
-An existing generation fence MUST retain refusal precedence. A settlement MUST NOT claim
+An existing generation fence MUST retain observation-refusal precedence. A later failure
+settlement MUST likewise refuse with `SecondSettlement` before changing state or issuing
+post-failure evidence; it MUST NOT manufacture poisoning authority after an accepted winner.
+A settlement MUST NOT claim
 a completion the resource never observed, and MUST NOT claim an end of stream where
 only a short read or a short write was observed. A fenced generation records its
 observed outcome without reopening.
