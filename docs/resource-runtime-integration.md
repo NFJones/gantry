@@ -219,9 +219,10 @@ expand that cohort. Recorded failures prevent orderly reporting and are retained
 ## Account surfaces
 
 `OwnedHostResource<T>` is a separate affine process-local owner under
-`GNT-28.11-runtime-admission-mapping`. `bind` consumes one active `AdmittedResource` and one
+`GNT-28.11-runtime-admission-mapping`. `bind` consumes one active/open `AdmittedResource` and one
 host value, returning both on refusal. The embedding caller authenticates their association and
-supplies authority. Binding holds the consumed account's machine lease through physical acquisition;
+supplies authority. After active lifetime, binding checks open operation state and refuses other
+states with `IllegalLifetimeTransition` before acquisition. Binding holds the consumed account's machine lease through physical acquisition;
 recorded cancellation refuses with `CancellationRequested`, and an unreadable lease refuses with
 `PendingOperation`. Both inputs and accounting facts remain untouched on refusal; binding never
 settles pending work. `invoke` fences the current owner and active lifetime before a bounded

@@ -4056,6 +4056,57 @@ fn owned_host_resource_binding_refuses_machine_cancellation_without_mutation() {
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Physical acquisition is eligible only for the two open operation states.
+#[test]
+fn owned_host_resource_binding_requires_open_operation_state() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    for state in [
+        ResourceState::Usable,
+        ResourceState::PartiallyAdvanced,
+        ResourceState::HalfClosed,
+        ResourceState::Poisoned,
+        ResourceState::Consumed,
+        ResourceState::Closed,
+    ] {
+        let source = ledger().durable_record();
+        let record = DurableResourceRecord::from_durable_facts(
+            source.owner(),
+            ResourceLifetimeState::Active,
+            state,
+            source.quotas().clone(),
+            source.liveness_roots().clone(),
+            None,
+            None,
+        )
+        .unwrap_or_else(|error| panic!("active accounting record: {error:?}"));
+        let account = admitted(
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+            active_subject(),
+        )
+        .unwrap_or_else(|error| panic!("account admission: {error:?}"));
+        match OwnedHostResource::bind(account, 17_u64) {
+            Ok(resource) => {
+                assert!(
+                    state.is_open(),
+                    "closed operation state cannot acquire a host value"
+                );
+                assert_eq!(resource.account().durable_record(), record);
+            }
+            Err(refusal) => {
+                let (error, account, value) = *refusal;
+                assert!(!state.is_open(), "open operation state remains eligible");
+                assert_eq!(
+                    error,
+                    HostResourceError::Model(ResourceError::IllegalLifetimeTransition)
+                );
+                assert_eq!(account.durable_record(), record);
+                assert_eq!(value, 17);
+            }
+        }
+    }
+}
+
 /// Prepares a standalone active account with optional outstanding transport obligations.
 fn transfer_account(pending: bool, loan: bool, containment_pending: bool) -> AdmittedResource {
     let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));

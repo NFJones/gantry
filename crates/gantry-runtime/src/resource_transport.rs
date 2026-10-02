@@ -72,7 +72,7 @@ pub struct OwnedHostResource<T> {
 }
 
 impl<T> OwnedHostResource<T> {
-    /// Binds an active account, returning both owned inputs untouched on refusal.
+    /// Binds an active/open account, returning both owned inputs untouched on refusal.
     ///
     /// The caller is responsible for authenticating the host value's association with this
     /// account and granting its authority. Acquisition checks the account's machine lease and
@@ -88,6 +88,13 @@ impl<T> OwnedHostResource<T> {
                 HostResourceError::Model(ResourceError::LifetimeDoesNotAdmitCharge {
                     state: lifetime,
                 }),
+                account,
+                value,
+            )));
+        }
+        if !account.ledger().operation_state().is_open() {
+            return Err(Box::new((
+                HostResourceError::Model(ResourceError::IllegalLifetimeTransition),
                 account,
                 value,
             )));

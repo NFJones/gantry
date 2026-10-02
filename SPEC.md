@@ -15217,9 +15217,11 @@ Sequential committed-root installation MUST likewise refuse `ResourceStateUnsupp
 changing task, session, budget, event or retained-root projections when resource state would be
 omitted. This refusal does not undo a previously committed journal cut or claim its completeness.
 
-An implementation MAY separately bind one consumed active accounting account to one owned
+An implementation MAY separately bind one consumed active/open accounting account to one owned
 process-local host value through `OwnedHostResource`. The embedding caller MUST authenticate
 the value/account association and supply authority; this binding grants none. Binding MUST check
+active lifetime first, then open operation state; a non-open operation state MUST refuse with
+`IllegalLifetimeTransition` and return both inputs unchanged. Binding MUST check
 the consumed account's machine lease and refuse recorded cancellation with `CancellationRequested`,
 returning both inputs untouched. An unreadable lease MUST refuse with `PendingOperation` rather
 than authorize acquisition. The check and physical binding MUST linearize against cancellation
