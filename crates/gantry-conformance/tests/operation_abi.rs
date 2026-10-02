@@ -1943,6 +1943,19 @@ fn a_fenced_generation_or_an_exhausted_observation_budget_refuses_further_observ
     assert_eq!(expired.fenced(), Some(FenceCategory::Expiry));
     assert_ne!(expired.fenced(), fenced.fenced());
 
+    // Repeated fencing cannot relabel the first category, even after settlement.
+    let before = fenced.clone();
+    fenced.fence(FenceCategory::Expiry);
+    assert_eq!(fenced, before);
+    assert_eq!(
+        refusal(fenced.observe(ProgressObservation::PartialAdvance)),
+        OperationAbiDiagnosticCode::FencedResource
+    );
+    assert_eq!(fenced, before);
+    let before = expired.clone();
+    expired.fence(FenceCategory::Revocation);
+    assert_eq!(expired, before);
+
     // The declared observation allowance bounds how far an adapter may observe, and the
     // charge is consumed from that Section 20 allowance alone: a Section 15 disclosure
     // budget is charged per accepted release and is never charged by an observation.

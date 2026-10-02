@@ -1973,8 +1973,9 @@ impl LiveResource {
     /// A fenced generation is poisoned: it can be neither observed nor reused, and a
     /// later settlement records the observed outcome without reopening it. The
     /// category is preserved so revocation and expiry are never relabelled.
+    /// Repeated fencing retains the first category, including after accepted settlement.
     pub fn fence(&mut self, category: FenceCategory) -> PostFailureSettlement {
-        self.fenced = Some(category);
+        self.fenced.get_or_insert(category);
         self.state = ResourceState::Poisoned;
         self.post_failure(ResourceState::Poisoned, false)
     }

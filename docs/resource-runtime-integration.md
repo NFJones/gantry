@@ -289,7 +289,8 @@ historical containment; it neither rebinds an adapter nor implements source-task
 site, resource generation, current owner and declared loan root. The underlying `LiveResource`
 refuses observation after accepted settlement with `SecondSettlement`, preserving progress,
 state and observation allowance even for a partial winner with an open half. Generation fencing
-retains observation-refusal precedence. Later failure settlement also refuses with
+retains observation-refusal precedence and the first fencing category on repeated requests,
+including after accepted settlement. Later failure settlement also refuses with
 `SecondSettlement` without changing state or issuing new poisoning evidence after a winner.
 Failure-first settlement retains its exact evidence through `failure_settlement()`, separately
 from successful operation settlement. It refuses later completion, observation and failure

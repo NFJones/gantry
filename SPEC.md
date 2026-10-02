@@ -12306,7 +12306,8 @@ half-close, poisoning a poisoned resource MUST NOT be repeated, and a partial
 failure MUST NOT leave a resource in an undeclared or ambiguous state. An
 observation on a resource that has no open half, or whose generation was fenced,
 MUST be refused, and the category of a fenced generation MUST be preserved rather
-than relabelled.
+than relabelled. Repeated fencing MUST retain the first category, including after
+accepted settlement, without changing retained settlement, progress or observation allowance.
 
 Post-failure evidence issued by a `LiveResource` MUST retain that resource's accepting owner
 generation. Declaration-only `OperationAbi` failure classification has no accepting runtime
