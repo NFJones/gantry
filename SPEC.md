@@ -3511,7 +3511,10 @@ Format major changes may alter eligibility, framing, order, or hashing; a minor 
     MUST check each next output piece's Unicode-scalar contribution before allocating
     or appending that piece; exceeding the captured String limit MUST publish no
     result or partial state. Replacement text MUST NOT be rescanned. This bounds
-    output construction, not semantic work or cancellation latency. The same checks
+    output construction, not semantic work or cancellation latency. Splitting MUST
+    check the next segment against the captured List-item limit before constructing
+    that segment; an excess segment MUST refuse with `list-size-limit` without
+    publishing the private prefix. The same checks
     apply recursively to source construction, entry input, hook output, and
     resumed values. Deterministic String operations dispatch no hook, create no
     model rationale or operation event, and consume no validation-retry budget.

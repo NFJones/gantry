@@ -5704,10 +5704,18 @@ fn evaluate_primitive(
                     DeterministicEvaluationCode::StringEmptySeparator,
                 ));
             }
-            let items = source
-                .split(separator)
-                .map(|item| LogicalValue::string(item, limits).map_err(map_string_value_error))
-                .collect::<Result<Vec<_>, _>>()?;
+            let mut items = Vec::new();
+            for item in source.split(separator) {
+                let next = u64::try_from(items.len())
+                    .ok()
+                    .and_then(|count| count.checked_add(1));
+                if next.is_none_or(|count| count > limits.maximum_list_items()) {
+                    return Err(RuntimeCode::Deterministic(
+                        DeterministicEvaluationCode::ListSizeLimit,
+                    ));
+                }
+                items.push(LogicalValue::string(item, limits).map_err(map_string_value_error)?);
+            }
             LogicalValue::list(items, limits).map_err(map_list_value_error)
         }
         Primitive::StringParseBool => {
@@ -5887,6 +5895,56 @@ mod bounded_string_tests {
                 ),
             }
         }
+    }
+
+    /// Splitting preserves empty segments and Unicode matches, refusing before an excess item.
+    #[test]
+    fn splitting_preserves_segments_and_enforces_item_bounds() {
+        let limits = ValueLimits::new(8, 16, 3, 3).unwrap_or_else(|| panic!("positive limits"));
+        for (source, separator, expected) in [
+            ("", ",", Some(vec![""])),
+            (",é,", ",", Some(vec!["", "é", ""])),
+            ("é😀a", "😀", Some(vec!["é", "a"])),
+            ("abc", ",", Some(vec!["abc"])),
+            (",,,", ",", None),
+        ] {
+            let operands = [source, separator].map(|value| {
+                LogicalValue::string(value, DEFAULT_STRING_TEST_LIMITS)
+                    .unwrap_or_else(|error| panic!("operand: {error:?}"))
+            });
+            let result = evaluate_primitive(Primitive::StringSplit, &operands, limits);
+            match expected {
+                Some(expected) => {
+                    let value = result.unwrap_or_else(|error| panic!("split: {error:?}"));
+                    assert_eq!(value.view(), LogicalValueView::List(expected.len()));
+                    for (index, expected) in expected.into_iter().enumerate() {
+                        assert_eq!(
+                            value
+                                .member(index)
+                                .and_then(|item| item.as_string().map(str::to_owned)),
+                            Some(expected.to_owned())
+                        );
+                    }
+                }
+                None => assert_eq!(
+                    result,
+                    Err(RuntimeCode::Deterministic(
+                        DeterministicEvaluationCode::ListSizeLimit
+                    ))
+                ),
+            }
+        }
+        // The excess segment is not constructed, so its scalar excess cannot mask item refusal.
+        let operands = [",,,long", ","].map(|value| {
+            LogicalValue::string(value, DEFAULT_STRING_TEST_LIMITS)
+                .unwrap_or_else(|error| panic!("operand: {error:?}"))
+        });
+        assert_eq!(
+            evaluate_primitive(Primitive::StringSplit, &operands, limits),
+            Err(RuntimeCode::Deterministic(
+                DeterministicEvaluationCode::ListSizeLimit
+            ))
+        );
     }
 
     /// Fixture inputs are independently admitted before testing a smaller output limit.

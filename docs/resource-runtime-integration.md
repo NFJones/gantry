@@ -407,3 +407,6 @@ appending it to private construction state. Over-limit pieces are not allocated 
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans
 replacement text. This enforces captured String limits during composition, not complete semantic
 work metering or cancellation safe points; those resource-runtime obligations remain outstanding.
+Splitting checks each next segment against the List-item limit before constructing its String;
+an excess item refuses without publishing the private prefix. Leading, trailing and adjacent
+empty segments and exact Unicode separator matching remain unchanged.
