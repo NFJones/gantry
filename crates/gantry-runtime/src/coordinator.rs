@@ -610,6 +610,35 @@ impl ExecutionCoordinator {
         self.mutate_resources(|resources| resources.settle_containment(subject, owner, completion))
     }
 
+    /// Binds a resource-bearing adapter under the registry's current-owner and substitution rules.
+    ///
+    /// Exact runtime provenance and durable publication fencing remain authoritative. This
+    /// records a process-local binding only, without granting authority or recovering a host value.
+    pub fn bind_resource_adapter(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        instance: gantry_ir::AdapterInstance,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.bind_adapter_instance(subject, owner, instance))
+    }
+
+    /// Poisons a bound adapter only from matching model-issued adapter-failure evidence.
+    ///
+    /// The registry retains accepting-owner provenance, current ownership and its one-way reason
+    /// ledger. This never settles whole-resource lifetime, pending machine work or sibling accounts.
+    pub fn poison_resource_adapter_from_post_failure(
+        &self,
+        settlement: &gantry_ir::PostFailureSettlement,
+        owner: gantry_ir::OwnerGeneration,
+        reason: gantry_ir::PoisonReason,
+        subject: &crate::ResourceSubjectBinding,
+    ) -> Result<gantry_ir::PoisonReason, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| {
+            resources.poison_adapter_from_post_failure(settlement, owner, reason, subject)
+        })
+    }
+
     /// Projects only a live resource's retained accepted settlement into its matching account.
     ///
     /// This changes operation-state accounting only, not whole-resource lifetime or quota

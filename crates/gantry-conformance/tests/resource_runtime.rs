@@ -842,6 +842,98 @@ fn coordinator_resource_renewal_and_retention_preserve_model_fences() {
     assert_eq!(coordinator.snapshot(), deleted);
 }
 
+/// Adapter poisoning retains accounting and pending work while preserving publication fences.
+#[test]
+fn coordinator_resource_adapter_binding_and_failure_preserve_accounting() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    let owner = OwnerGeneration::new(4);
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let before = coordinator.snapshot();
+    assert!(matches!(
+        coordinator.bind_resource_adapter(
+            &subject,
+            OwnerGeneration::new(3),
+            adapter_instance("coordinator", 4, 0)
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::AdapterBinding(AdapterBindingRefusal::StaleOwner(_))
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(
+        coordinator.bind_resource_adapter(&subject, owner, adapter_instance("coordinator", 4, 0)),
+        Ok(())
+    );
+    let bound = coordinator.snapshot();
+    assert_eq!(bound.publication(), before.publication() + 1);
+    let resource_failure = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::ResourceFailure,
+    );
+    assert_eq!(
+        coordinator.poison_resource_adapter_from_post_failure(
+            &resource_failure,
+            owner,
+            PoisonReason::InvariantFailure,
+            &subject
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Settlement(
+                PostFailureSettlementRefusal::AdapterPoisoningNotRequired
+            )
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), bound);
+    let failure = failure_settlement_in(
+        FIXTURE_WORKFLOW,
+        FIXTURE_DECLARATION,
+        vec![FIXTURE_SITE],
+        0,
+        FailureClass::AdapterFailure,
+    );
+    let reason = PoisonReason::ForeignFailure(ForeignFailureKind::Protocol);
+    assert_eq!(
+        coordinator.poison_resource_adapter_from_post_failure(&failure, owner, reason, &subject),
+        Ok(reason)
+    );
+    let poisoned = coordinator.snapshot();
+    assert_eq!(poisoned.publication(), bound.publication() + 1);
+    assert_eq!(poisoned.resource_records(), before.resource_records());
+    assert!(coordinator.has_pending_resource_operations());
+    assert_eq!(
+        coordinator.poison_resource_adapter_from_post_failure(
+            &failure,
+            owner,
+            PoisonReason::InvariantFailure,
+            &subject
+        ),
+        Ok(reason)
+    );
+    let repeated = coordinator.snapshot();
+    assert_eq!(repeated.resource_records(), before.resource_records());
+    assert!(matches!(
+        coordinator.bind_resource_adapter(&subject, owner, adapter_instance("replacement", 5, 1)),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::AdapterBinding(AdapterBindingRefusal::Substitution(
+                OperationAbiError::AdapterInstancePoisoned { .. }
+            ))
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), repeated);
+}
+
 /// Resource poisoning releases the shared live place; adapter-only evidence and retries do not.
 #[test]
 fn coordinator_resource_failure_settlement_releases_the_live_place_once() {

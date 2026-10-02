@@ -151,6 +151,12 @@ or publication; coordinator success publishes once. `settle_resource_containment
 existing containment settlement through the same publication fence, without settling resource
 lifetime or pending machine work. Neither route implements source-task transfer or grants authority.
 
+`bind_resource_adapter` and `poison_resource_adapter_from_post_failure` expose the registry's
+adapter binding and evidence-qualified one-way poisoning through coordinator publication fencing.
+Binding retains current-owner and substitution checks; failure poisoning retains the evidence's
+exact operation, resource generation and accepting owner. Neither settles whole-resource lifetime
+or pending work. Bindings and poison reasons remain process-local, not accounting recovery facts.
+
 `dispose_settled_resource_host_values` drains already-settled physical obligations in canonical
 runtime-subject order, reporting `ResourcePhysicalCleanupResults`. Active and finishing accounts
 are excluded. Selection respects publication reservations; jobs execute after unlocking and continue

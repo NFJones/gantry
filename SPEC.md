@@ -15202,6 +15202,12 @@ Model-issued resource-poisoning evidence MAY settle accounting lifetime through 
 owner, selecting its exact operation and resource generation under
 `GNT-20.7-resource-state-after-failure-and-poisoning`. Adapter-only failure MUST NOT settle
 whole-resource lifetime. Successful poisoning releases the live place and retains the record.
+The coordinator MAY expose registry adapter binding and model-issued adapter-failure poisoning
+under the same publication fence. Binding MUST retain exact runtime provenance, current ownership
+and the existing substitution checks. Adapter-failure poisoning MUST retain evidence-selected
+operation/resource generation, accepting-owner provenance, current ownership and the one-way
+reason ledger. Neither route settles whole-resource lifetime or pending machine work; adapter
+bindings and poison reasons remain process-local, not reconstructed accounting facts.
 Admission MUST require a pending machine operation from a running task of the same execution;
 foreign executions, absent or non-running tasks, and disabled registries MUST be refused without
 mutation. Recorded task or execution cancellation MUST close new accounting admission immediately,
