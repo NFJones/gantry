@@ -945,10 +945,14 @@ fn durable_live_struct_construction_rejects_without_preflight_or_commit() {
     let DurableStartExecutionResult::Rejected(failure) = result else {
         panic!("durable live construction was accepted");
     };
-    assert!(matches!(
+    assert_eq!(
         failure.failure.category,
-        StartFailureCategory::Analysis | StartFailureCategory::IntegrationPreflight
-    ));
+        StartFailureCategory::IntegrationPreflight
+    );
+    assert_eq!(
+        &*failure.failure.code,
+        "unsupported-live-resource-transport"
+    );
     assert!(preflight.mapping_requests().is_empty());
     assert_eq!(storage.commit_calls(), 0);
     assert_eq!(storage.release_calls(), 1);
