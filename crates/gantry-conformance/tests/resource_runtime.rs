@@ -4199,6 +4199,98 @@ fn coordinator_owner_advancement_and_containment_preserve_publication_boundaries
     assert_eq!(coordinator.snapshot(), advanced);
 }
 
+/// The registry route retains every accounting obligation before advancing an owner.
+#[test]
+fn registry_owner_advancement_refuses_loan_adapter_and_ineligible_accounting() {
+    use gantry::runtime::HostResourceError;
+    for (state, loan, adapter, finishing, expected) in [
+        (
+            ResourceState::Usable,
+            true,
+            false,
+            false,
+            HostResourceError::LoanOutstanding,
+        ),
+        (
+            ResourceState::Usable,
+            false,
+            true,
+            false,
+            HostResourceError::AdapterBound,
+        ),
+        (
+            ResourceState::Closed,
+            false,
+            false,
+            false,
+            HostResourceError::Model(ResourceError::IllegalLifetimeTransition),
+        ),
+        (
+            ResourceState::Usable,
+            false,
+            false,
+            true,
+            HostResourceError::Model(ResourceError::IllegalLifetimeTransition),
+        ),
+    ] {
+        let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+        let owner = OwnerGeneration::new(4);
+        let roots = if loan {
+            vec![LivenessRoot::Resource, LivenessRoot::Loan]
+        } else {
+            vec![LivenessRoot::Resource]
+        };
+        let record = ResourceLedger::new(owner, state, &roots, &[])
+            .unwrap_or_else(|error| panic!("record: {error:?}"))
+            .durable_record();
+        let mut registry = ResourceRegistry::new();
+        registry
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                record,
+            )
+            .unwrap_or_else(|error| panic!("admit: {error:?}"));
+        let operation = machine
+            .checkpoint()
+            .pending_operation()
+            .unwrap_or_else(|| panic!("pending"))
+            .identity;
+        machine
+            .fail_operation(
+                operation,
+                gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+            )
+            .unwrap_or_else(|error| panic!("settle: {error:?}"));
+        registry
+            .settle_containment(
+                &subject,
+                owner,
+                Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+            )
+            .unwrap_or_else(|error| panic!("containment: {error:?}"));
+        if adapter {
+            registry
+                .bind_adapter_instance(&subject, owner, adapter_instance("advance", 4, 0))
+                .unwrap_or_else(|error| panic!("adapter: {error:?}"));
+        }
+        if finishing {
+            registry
+                .begin_finish(&subject, owner)
+                .unwrap_or_else(|error| panic!("finish: {error:?}"));
+        }
+        let before = registry.declared_records();
+        let binding = registry.adapter_instance(&subject).cloned();
+        assert_eq!(
+            registry.advance_owner(&subject, owner, OwnerGeneration::new(5)),
+            Err(ResourceRegistryRefusal::OwnershipTransfer(expected))
+        );
+        assert_eq!(registry.declared_records(), before);
+        assert_eq!(registry.adapter_instance(&subject).cloned(), binding);
+    }
+}
+
 /// Cancellation closes standalone physical acquisition without consuming either input.
 #[test]
 fn owned_host_resource_binding_refuses_machine_cancellation_without_mutation() {
