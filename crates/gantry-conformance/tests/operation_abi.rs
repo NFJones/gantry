@@ -962,6 +962,41 @@ fn partial_progress_is_distinct_from_completion_and_eof() {
     );
 }
 
+/// A partial winner remains immutable even when its operation state retains an open half.
+#[test]
+fn observations_after_partial_settlement_preserve_the_winner_and_allowance() {
+    let owner = OwnerGeneration::initial();
+    let current = abi(
+        OperationKind::LiveResource,
+        1,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    );
+    let mut live = resource(&current, owner, 1);
+    live.observe(ProgressObservation::ShortRead)
+        .unwrap_or_else(|error| panic!("initial observation: {error:?}"));
+    let winner = settlement(
+        &current,
+        owner,
+        ExternalOutcome::Accepted,
+        ProgressObservation::ShortRead,
+        10,
+    );
+    live.settle(&winner)
+        .unwrap_or_else(|error| panic!("partial settlement: {error:?}"));
+    let before = live.clone();
+    for observation in [
+        ProgressObservation::NotStarted,
+        ProgressObservation::PartialAdvance,
+    ] {
+        assert_eq!(
+            refusal(live.observe(observation)),
+            OperationAbiDiagnosticCode::SecondSettlement
+        );
+        assert_eq!(live, before);
+    }
+}
+
 #[test]
 fn a_duplicate_late_or_wrong_generation_completion_settles_exactly_once() {
     let owner = OwnerGeneration::initial();

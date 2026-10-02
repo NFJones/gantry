@@ -286,7 +286,10 @@ historical containment; it neither rebinds an adapter nor implements source-task
 
 `OwnedHostResource::borrow_receiver` consumes an exact borrowed `LiveResource` into an exclusive
 `HostReceiverLoan`, returning the handle on refusal. Admission checks the account's operation,
-site, resource generation, current owner and declared loan root. `observe` retains Section 20
+site, resource generation, current owner and declared loan root. The underlying `LiveResource`
+refuses observation after accepted settlement with `SecondSettlement`, preserving progress,
+state and observation allowance even for a partial winner with an open half. Generation fencing
+retains precedence. `observe` retains Section 20
 allowances and progress rules; accepted `settle` projects operation state and closes only the
 loan root. Refusal retains the guard and progress for another candidate. Whole-resource lifetime,
 quotas and pending machine work remain separate. Owner invocation, finish and transfer stay

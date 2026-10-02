@@ -1817,7 +1817,9 @@ impl LiveResource {
     ///
     /// The observation is refused when the resource has no open half or its
     /// generation was fenced, and it is refused when the declared observation allowance
-    /// is exhausted, so an adapter can never observe beyond that allowance. The charge
+    /// is exhausted, so an adapter can never observe beyond that allowance. An accepted
+    /// settlement refuses later observation before progress or allowance changes, even when
+    /// its result state retains an open half; generation fencing retains precedence. The charge
     /// is consumed from the Section 20 allowance alone and never from a Section 15
     /// disclosure budget, which is charged per accepted release. Progress advances the
     /// resource to [`ResourceState::PartiallyAdvanced`] and an end of stream closes it.
@@ -1827,6 +1829,11 @@ impl LiveResource {
     ) -> Result<ProgressRecord, OperationAbiError> {
         if let Some(category) = self.fenced {
             return Err(OperationAbiError::FencedResource { category });
+        }
+        if self.settlement.is_some() {
+            return Err(OperationAbiError::SecondSettlement {
+                operation: Arc::from(self.abi.operation().as_str()),
+            });
         }
         if !self.state.is_open() {
             return Err(OperationAbiError::ResourceNotUsable { state: self.state });

@@ -12252,7 +12252,10 @@ and changes no resource state. A cancellation request races with admission and
 dispatch and MUST NOT be reported as a definite not-started effect. One resource
 generation has exactly one settlement: the first settlement of one generation wins,
 and a duplicate, late, or wrong-generation completion MUST be refused rather than
-settled, so a cancellation race has exactly one winner. A settlement MUST NOT claim
+settled, so a cancellation race has exactly one winner. After accepted settlement, later
+progress observations MUST refuse with `SecondSettlement` before changing progress, state,
+or observation allowance, including when a partial settlement retains an open half.
+An existing generation fence MUST retain refusal precedence. A settlement MUST NOT claim
 a completion the resource never observed, and MUST NOT claim an end of stream where
 only a short read or a short write was observed. A fenced generation records its
 observed outcome without reopening.
