@@ -4797,6 +4797,386 @@ fn coordinator_owner_advancement_and_containment_preserve_publication_boundaries
     assert_eq!(coordinator.snapshot(), advanced);
 }
 
+/// Builds one running child alongside the issuing root for runtime resource handoff tests.
+fn resource_handoff_fixture(
+    machine: &Machine,
+) -> (
+    gantry::runtime::ExecutionCoordinator,
+    ProtocolIdentity,
+    gantry::runtime::ConcurrentTaskStateV1,
+    gantry::runtime::LogicalSessionRegistryV1,
+) {
+    let (_, mut sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    let mut tasks =
+        gantry::runtime::ConcurrentTaskStateV1::new(machine.execution_id(), machine.task_id(), 2)
+            .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+    let session = sessions
+        .sessions()
+        .next()
+        .unwrap_or_else(|| panic!("root session"))
+        .id;
+    let child = tasks
+        .create_child(
+            &mut sessions,
+            gantry::runtime::TaskCreationRequestV1 {
+                parent_task_id: machine.task_id(),
+                handle_name: Arc::from("resource_owner"),
+                workflow: CanonicalPath::new(FIXTURE_WORKFLOW)
+                    .unwrap_or_else(|error| panic!("path: {error}")),
+                spawn_site: StructuralPosition::new(vec![0])
+                    .unwrap_or_else(|error| panic!("site: {error}")),
+                spawn_occurrence: 0,
+                result_type: TypeDescriptor::UNIT,
+                captures: Vec::new(),
+                inherited_agent: None,
+                parent_session_id: session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("child: {error:?}"));
+    tasks
+        .resolve_submission(child.task_id, Ok(()))
+        .unwrap_or_else(|error| panic!("submit: {error:?}"));
+    let coordinator = gantry::runtime::ExecutionCoordinator::new_with_resource_limit(
+        tasks.clone(),
+        sessions.clone(),
+        1,
+    )
+    .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+    (coordinator, child.task_id, tasks, sessions)
+}
+
+/// Handoff changes cleanup ownership, never issuing provenance or physical ownership.
+#[test]
+fn resource_task_handoff_preserves_provenance_recovery_and_cleanup_selection() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ExecutionCoordinator};
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let (coordinator, child, tasks, sessions) = resource_handoff_fixture(&machine);
+    let owner = OwnerGeneration::new(4);
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("ledger: {error:?}"))
+        .durable_record();
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    coordinator
+        .admit_resource_host_value(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: false,
+                value: 17,
+            },
+        )
+        .unwrap_or_else(|_| panic!("acquisition"));
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    coordinator
+        .settle_resource_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    let before = coordinator.snapshot();
+    assert_eq!(
+        coordinator.transfer_resource_task_owner(
+            &subject,
+            machine.task_id(),
+            child,
+            owner,
+            OwnerGeneration::new(5)
+        ),
+        Ok(())
+    );
+    let after = coordinator.snapshot();
+    assert_eq!(after.publication(), before.publication() + 1);
+    let records = after
+        .resource_records()
+        .unwrap_or_else(|| panic!("records"));
+    assert_eq!(records[0].subject(), &subject);
+    assert_eq!(records[0].task_owner(), child);
+    assert_eq!(records[0].owner(), OwnerGeneration::new(5));
+    assert_eq!(records[0].record().quotas(), record.quotas());
+    assert_eq!(
+        records[0].record().liveness_roots(),
+        record.liveness_roots()
+    );
+    assert!(coordinator.has_resource_host_values());
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(matches!(
+        coordinator.transfer_resource_task_owner(
+            &subject,
+            machine.task_id(),
+            child,
+            OwnerGeneration::new(5),
+            OwnerGeneration::new(6)
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::TaskOwnerMismatch
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), after);
+    let recovered =
+        ExecutionCoordinator::new_with_recovered_resources(tasks, sessions, 1, records.to_vec())
+            .unwrap_or_else(|error| panic!("reconstruction: {error:?}"));
+    assert_eq!(recovered.snapshot().resource_records(), Some(records));
+    assert!(!recovered.has_resource_host_values());
+    assert!(!recovered.has_pending_resource_operations());
+    coordinator
+        .cancel_execution("handoff cleanup")
+        .unwrap_or_else(|error| panic!("cancel: {error:?}"));
+    for task in [machine.task_id(), child] {
+        coordinator
+            .settle_task(
+                task,
+                MachineOutcome::Cancelled(Arc::from("handoff cleanup")),
+            )
+            .unwrap_or_else(|error| panic!("task settlement: {error:?}"));
+        coordinator
+            .mark_driver_physically_settled(task)
+            .unwrap_or_else(|error| panic!("driver: {error:?}"));
+    }
+    let issuing_cleanup = coordinator
+        .emergency_release_task_resources(&[machine.task_id()], emergency_escalation_at(21))
+        .unwrap_or_else(|error| panic!("issuing cleanup: {error:?}"));
+    assert!(issuing_cleanup.semantic().settled().is_empty());
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let current_cleanup = coordinator
+        .emergency_release_task_resources(&[child], emergency_escalation_at(21))
+        .unwrap_or_else(|error| panic!("owner cleanup: {error:?}"));
+    assert_eq!(current_cleanup.semantic().settled().len(), 1);
+    assert_eq!(current_cleanup.semantic().settled()[0].subject(), &subject);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Handoff refusals never publish a partial owner change or consume pending work.
+#[test]
+fn resource_task_handoff_refuses_ineligible_tasks_and_outstanding_work() {
+    use gantry::runtime::{CoordinatorResourceRefusal, HostResourceError};
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let (coordinator, child, _, _) = resource_handoff_fixture(&machine);
+    let owner = OwnerGeneration::new(4);
+    let successor = OwnerGeneration::new(5);
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("ledger: {error:?}"))
+        .durable_record();
+    coordinator
+        .admit_resource(&machine, ResourceCarrier::ReconstructionRecord, record)
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let before = coordinator.snapshot();
+    let unknown = ProtocolIdentity::derive(IdentityKind::Task, b"unknown-handoff-task")
+        .unwrap_or_else(|error| panic!("identity: {error}"));
+    for (source, destination, expected) in [
+        (
+            machine.task_id(),
+            machine.task_id(),
+            CoordinatorResourceRefusal::SameTaskTransfer,
+        ),
+        (
+            machine.task_id(),
+            unknown,
+            CoordinatorResourceRefusal::UnknownTask,
+        ),
+        (
+            machine.task_id(),
+            child,
+            CoordinatorResourceRefusal::Registry(ResourceRegistryRefusal::OwnershipTransfer(
+                HostResourceError::PendingOperation,
+            )),
+        ),
+    ] {
+        assert_eq!(
+            coordinator.transfer_resource_task_owner(
+                &subject,
+                source,
+                destination,
+                owner,
+                successor
+            ),
+            Err(expected)
+        );
+        assert_eq!(coordinator.snapshot(), before);
+    }
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    assert_eq!(
+        coordinator.transfer_resource_task_owner(
+            &subject,
+            machine.task_id(),
+            child,
+            owner,
+            successor
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::OwnershipTransfer(HostResourceError::ContainmentPending)
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    coordinator
+        .settle_resource_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    let contained = coordinator.snapshot();
+    assert!(matches!(
+        coordinator.transfer_resource_task_owner(
+            &subject,
+            machine.task_id(),
+            child,
+            OwnerGeneration::new(3),
+            successor
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::OwnershipTransfer(HostResourceError::Model(
+                ResourceError::StaleOwner { .. }
+            ))
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), contained);
+    assert!(coordinator.close_resource_admission());
+    assert_eq!(
+        coordinator.transfer_resource_task_owner(
+            &subject,
+            machine.task_id(),
+            child,
+            owner,
+            successor
+        ),
+        Err(CoordinatorResourceRefusal::ResourceAdmissionClosed)
+    );
+    assert_eq!(coordinator.snapshot(), contained);
+}
+
+/// Attachment after handoff follows the current task even after the issuing task settles.
+#[test]
+fn resource_task_handoff_attachment_uses_current_cleanup_task() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let (coordinator, child, tasks, sessions) = resource_handoff_fixture(&machine);
+    let owner = OwnerGeneration::new(4);
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+                .unwrap_or_else(|error| panic!("ledger: {error:?}"))
+                .durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    coordinator
+        .settle_resource_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    coordinator
+        .transfer_resource_task_owner(
+            &subject,
+            machine.task_id(),
+            child,
+            owner,
+            OwnerGeneration::new(5),
+        )
+        .unwrap_or_else(|error| panic!("handoff: {error:?}"));
+    let records = coordinator
+        .snapshot()
+        .resource_records()
+        .unwrap_or_else(|| panic!("records"))
+        .to_vec();
+    let (root_only, root_sessions) =
+        resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    assert_eq!(
+        gantry::runtime::ExecutionCoordinator::new_with_recovered_resources(
+            root_only,
+            root_sessions,
+            1,
+            records.clone()
+        )
+        .err(),
+        Some(CoordinatorResourceRefusal::UnknownTask),
+        "reconstruction validates the cleanup task too"
+    );
+    let reconstructed = gantry::runtime::ExecutionCoordinator::new_with_recovered_resources(
+        tasks, sessions, 1, records,
+    )
+    .unwrap_or_else(|error| panic!("reconstruct: {error:?}"));
+    reconstructed
+        .settle_task(
+            machine.task_id(),
+            MachineOutcome::Succeeded(LogicalValue::unit()),
+        )
+        .unwrap_or_else(|error| panic!("root settlement: {error:?}"));
+    assert_eq!(
+        reconstructed.attach_resource_host_value(&subject, OwnerGeneration::new(5), 17_u64),
+        Ok(())
+    );
+    reconstructed
+        .begin_resource_finish(&subject, OwnerGeneration::new(5))
+        .unwrap_or_else(|error| panic!("finish: {error:?}"));
+    assert_eq!(
+        reconstructed.dispose_resource_host_value(&subject, OwnerGeneration::new(5)),
+        Ok(())
+    );
+    coordinator
+        .cancel_task_tree(child, Arc::from("destination cancelled"))
+        .unwrap_or_else(|error| panic!("cancel: {error:?}"));
+    let before = coordinator.snapshot();
+    let (error, value) = *coordinator
+        .attach_resource_host_value(&subject, OwnerGeneration::new(5), 19_u64)
+        .err()
+        .unwrap_or_else(|| panic!("cancelled cleanup task refuses attachment"));
+    assert_eq!(error, CoordinatorResourceRefusal::TaskCancellationRequested);
+    assert_eq!(value, 19);
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(
+        coordinator.transfer_resource_task_owner(
+            &subject,
+            child,
+            machine.task_id(),
+            OwnerGeneration::new(5),
+            OwnerGeneration::new(6)
+        ),
+        Err(CoordinatorResourceRefusal::TaskCancellationRequested)
+    );
+    assert_eq!(coordinator.snapshot(), before);
+}
+
 /// The registry route retains every accounting obligation before advancing an owner.
 #[test]
 fn registry_owner_advancement_refuses_loan_adapter_and_ineligible_accounting() {

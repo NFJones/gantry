@@ -62,6 +62,8 @@ pub enum CoordinatorResourceRefusal {
     TaskCancellationRequested,
     /// Cooperative shutdown has monotonically closed new resource acquisition.
     ResourceAdmissionClosed,
+    /// A runtime task handoff requires distinct source and destination tasks.
+    SameTaskTransfer,
     /// Task-qualified emergency cleanup requires a fixed cancellation outcome.
     TaskNotCancelled,
     /// Task-qualified emergency cleanup requires confirmed physical driver cessation.
@@ -335,6 +337,9 @@ impl ExecutionCoordinator {
             if tasks.task_record(record.subject().task_id()).is_none() {
                 return Err(CoordinatorResourceRefusal::UnknownTask);
             }
+            if tasks.task_record(record.task_owner()).is_none() {
+                return Err(CoordinatorResourceRefusal::UnknownTask);
+            }
         }
         let resources =
             crate::ResourceRegistry::reconstruct(Some(maximum_live_resources), recovered)
@@ -597,6 +602,54 @@ impl ExecutionCoordinator {
         self.mutate_resources(|resources| resources.advance_owner(subject, owner, successor))
     }
 
+    /// Transfers runtime cleanup ownership between distinct running tasks of this execution.
+    ///
+    /// The caller authenticates authority and association. This route advances owner generation,
+    /// retaining issuing provenance, accounting facts and the physical slot. It admits no source
+    /// syntax, handle copying or durable graph format. Refusal changes no state or publication.
+    pub fn transfer_resource_task_owner(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        source: ProtocolIdentity,
+        destination: ProtocolIdentity,
+        owner: gantry_ir::OwnerGeneration,
+        successor: gantry_ir::OwnerGeneration,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        let mut state = lock(&self.inner.state);
+        require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+        if subject.execution_id() != state.tasks.execution_id() {
+            return Err(CoordinatorResourceRefusal::ForeignExecution);
+        }
+        if source == destination {
+            return Err(CoordinatorResourceRefusal::SameTaskTransfer);
+        }
+        for task_id in [source, destination] {
+            let task = state
+                .tasks
+                .task_record(task_id)
+                .ok_or(CoordinatorResourceRefusal::UnknownTask)?;
+            if !matches!(task.status(), ConcurrentTaskStatusV1::Running) {
+                return Err(CoordinatorResourceRefusal::TaskNotRunning);
+            }
+            if state.tasks.task_cancellation_reason(task_id).is_some()
+                || state.tasks.execution_cancellation_reason().is_some()
+            {
+                return Err(CoordinatorResourceRefusal::TaskCancellationRequested);
+            }
+        }
+        if state.resource_admission_closed {
+            return Err(CoordinatorResourceRefusal::ResourceAdmissionClosed);
+        }
+        state
+            .resources
+            .as_mut()
+            .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?
+            .transfer_task_owner(subject, source, destination, owner, successor)
+            .map_err(CoordinatorResourceRefusal::Registry)?;
+        state.publication = state.publication.wrapping_add(1);
+        Ok(())
+    }
+
     /// Records one coordinator-held account's accepted containment completion.
     ///
     /// Historical containment remains independent of resource lifetime and machine settlement;
@@ -823,17 +876,19 @@ impl ExecutionCoordinator {
             if subject.execution_id() != state.tasks.execution_id() {
                 return Err(CoordinatorResourceRefusal::ForeignExecution);
             }
+            let task_owner = state
+                .resources
+                .as_ref()
+                .and_then(|resources| resources.account(subject))
+                .map_or(subject.task_id(), crate::AdmittedResource::task_owner);
             let task = state
                 .tasks
-                .task_record(subject.task_id())
+                .task_record(task_owner)
                 .ok_or(CoordinatorResourceRefusal::UnknownTask)?;
             if !matches!(task.status(), ConcurrentTaskStatusV1::Running) {
                 return Err(CoordinatorResourceRefusal::TaskNotRunning);
             }
-            if state
-                .tasks
-                .task_cancellation_reason(subject.task_id())
-                .is_some()
+            if state.tasks.task_cancellation_reason(task_owner).is_some()
                 || state.tasks.execution_cancellation_reason().is_some()
             {
                 return Err(CoordinatorResourceRefusal::TaskCancellationRequested);
@@ -2712,6 +2767,16 @@ mod tests {
         );
         assert_eq!(
             coordinator.delete_resource_record(&subject, owner),
+            Err(reserved.clone())
+        );
+        assert_eq!(
+            coordinator.transfer_resource_task_owner(
+                &subject,
+                root,
+                root,
+                owner,
+                gantry_ir::OwnerGeneration::new(5),
+            ),
             Err(reserved.clone())
         );
         let receiver =

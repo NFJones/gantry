@@ -15334,9 +15334,21 @@ existing containment settlement under its durable-publication fence: success pub
 refusal publishes nothing. Neither route grants authority, settles whole-resource lifetime or
 pending machine work, or implements source-task transfer.
 
+The coordinator MAY separately hand off runtime cleanup responsibility between distinct known,
+running tasks of the same execution. It MUST reject cancellation of either task, closed admission,
+reserved publication, a mismatched current cleanup task, or any existing owner-advancement
+obligation before mutation. Success MUST strictly advance the owner generation and change only
+the current cleanup task and owner generation, publishing once. The immutable issuing subject,
+registry key, physical slot, quotas, roots and historical containment MUST remain unchanged.
+Inspection and accounting reconstruction MUST preserve the current cleanup task separately from
+issuing provenance; coordinator reconstruction MUST validate both tasks. Task-selected emergency
+cleanup and new physical attachment MUST use the current cleanup task, while subject provenance
+and current-generation fences remain required. This route grants no authority, source syntax,
+copyable handle or durable graph format and does not settle accepted machine work.
+
 The coordinator MAY expose physical attachment and disposal over its existing registry. Attachment
 and disposal extraction MUST respect the durable-publication reservation and current account owner.
-Physical attachment MUST additionally require the issuing execution to match and the issuing task
+Physical attachment MUST additionally require the issuing execution to match and the current cleanup task
 to be known and running. Task settlement closes physical admission without disabling cleanup;
 recorded task or execution cancellation also closes admission before settlement. Refusal MUST leave
 the physical input and accounting unchanged, and accepted-account cleanup MUST remain available.

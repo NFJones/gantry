@@ -103,7 +103,8 @@ the machine operation, grants authority or enables source live-handle transport.
 `ExecutionCoordinator::attach_resource_host_value` retains physical ownership in the same registry
 without changing accounting publication; refused inputs are returned untouched outside the lock.
 Attachment requires the issuing execution to match and its task to be known and running;
-task settlement closes physical admission without disabling accounting or physical cleanup.
+after handoff, this task check uses the current cleanup owner. Task settlement closes physical
+admission without disabling accounting or physical cleanup.
 Recorded task or execution cancellation closes both accounting admission and physical attachment
 immediately with `TaskCancellationRequested`, before terminal settlement. Existing accepted work
 and its pending lease are not settled by that refusal; cleanup remains available.
@@ -153,6 +154,16 @@ no bound adapter). Poisoned, disposed and disposal-pending slots refuse. Refusal
 or publication; coordinator success publishes once. `settle_resource_containment` exposes the
 existing containment settlement through the same publication fence, without settling resource
 lifetime or pending machine work. Neither route implements source-task transfer or grants authority.
+
+`transfer_resource_task_owner` separately hands off runtime cleanup responsibility between distinct
+known, running, uncancelled tasks of the same execution. It retains the issuing subject and registry
+key, physical slot, quotas, roots and historical containment while advancing owner generation and
+changing the current cleanup task. Admission closure and publication reservations fence handoff;
+refusal changes nothing. `task_owner()` inspects current cleanup ownership on admitted accounts and
+captured records; reconstruction preserves it and validates both issuing and cleanup tasks. Emergency
+task selection and physical attachment follow current cleanup ownership, not the original issuing
+task. The caller authenticates authority; this route enables neither source syntax nor durable graph
+resource transport and does not settle pending machine work.
 
 `bind_resource_adapter` and `poison_resource_adapter_from_post_failure` expose the registry's
 adapter binding and evidence-qualified one-way poisoning through coordinator publication fencing.

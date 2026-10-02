@@ -614,6 +614,7 @@ pub struct RecoveredResourceRecord {
     subject: ResourceSubjectBinding,
     carrier: ResourceCarrier,
     owner: OwnerGeneration,
+    task_owner: gantry_core::identity::ProtocolIdentity,
     record: DurableResourceRecord,
 }
 
@@ -627,11 +628,18 @@ impl RecoveredResourceRecord {
         record: DurableResourceRecord,
     ) -> Self {
         Self {
+            task_owner: subject.task_id(),
             subject,
             carrier,
             owner,
             record,
         }
+    }
+
+    /// Returns current cleanup ownership, independently of immutable issuing provenance.
+    #[must_use]
+    pub const fn task_owner(&self) -> gantry_core::identity::ProtocolIdentity {
+        self.task_owner
     }
 
     /// Returns the subject this record is presented for.
@@ -937,11 +945,12 @@ impl ResourceRegistry {
             if accounts.contains_key(&key) {
                 return Err(ResourceRegistryRefusal::SecondAdmission);
             }
-            let account = AdmittedResource::admit_reconstructed(
+            let mut account = AdmittedResource::admit_reconstructed(
                 presented.carrier,
                 presented.record,
                 presented.subject,
             )?;
+            account.task_owner = presented.task_owner;
             let current = account.ledger().owner();
             if current != presented.owner {
                 return Err(ResourceRegistryRefusal::Admission(
@@ -997,12 +1006,14 @@ impl ResourceRegistry {
         self.accounts
             .values()
             .map(|account| {
-                RecoveredResourceRecord::new(
+                let mut record = RecoveredResourceRecord::new(
                     account.subject().clone(),
                     ResourceCarrier::ReconstructionRecord,
                     account.ledger().owner(),
                     account.durable_record(),
-                )
+                );
+                record.task_owner = account.task_owner;
+                record
             })
             .collect()
     }
@@ -1178,7 +1189,7 @@ impl ResourceRegistry {
             .map_or(Ok(()), crate::resource_transport::HostDisposalJob::run)
     }
 
-    /// Selects live accounting for exact issuing tasks in canonical runtime-subject order.
+    /// Selects live accounting for current cleanup owners in canonical runtime-subject order.
     ///
     /// Task validation and escalation authority belong to the coordinator. This inspection
     /// excludes terminal accounts and neither settles accounting nor releases pending work.
@@ -1189,7 +1200,7 @@ impl ResourceRegistry {
         self.accounts
             .values()
             .filter(|account| {
-                task_ids.contains(&account.subject().task_id())
+                task_ids.contains(&account.task_owner())
                     && matches!(
                         account.ledger().lifetime(),
                         ResourceLifetimeState::Active | ResourceLifetimeState::Finishing
@@ -1378,6 +1389,35 @@ impl ResourceRegistry {
         account
             .transfer_owner(owner, successor)
             .map_err(ResourceRegistryRefusal::OwnershipTransfer)
+    }
+
+    /// Moves cleanup responsibility after validating the current task and transfer obligations.
+    ///
+    /// Only the coordinator may call this route after validating both tasks in its execution.
+    /// The issuing subject, storage key, physical slot and historical containment stay fixed.
+    pub(crate) fn transfer_task_owner(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        source: gantry_core::identity::ProtocolIdentity,
+        destination: gantry_core::identity::ProtocolIdentity,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+    ) -> Result<(), ResourceRegistryRefusal> {
+        let key = self.selection_key(subject);
+        let account = self
+            .accounts
+            .get(&key)
+            .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
+        require_subject_provenance(account, subject)?;
+        if account.task_owner() != source {
+            return Err(ResourceRegistryRefusal::TaskOwnerMismatch);
+        }
+        self.advance_owner(subject, owner, successor)?;
+        self.accounts
+            .get_mut(&key)
+            .unwrap_or_else(|| unreachable!("validated account remains registered"))
+            .task_owner = destination;
+        Ok(())
     }
 
     /// Renews exactly one declared quota of one admitted account through the current owner.
@@ -1813,6 +1853,8 @@ pub enum ResourceRegistryRefusal {
     Renewal(ResourceError),
     /// Existing ownership or physical transport obligations prevent owner advancement.
     OwnershipTransfer(crate::HostResourceError),
+    /// A handoff names a source task that no longer owns cleanup for this account.
+    TaskOwnerMismatch,
     /// The account's own finish step refused the presented owner or the lifetime transition.
     Finish(ResourceError),
     /// The account's own owner-qualified root closure refused the presented owner or the root.
@@ -1965,6 +2007,7 @@ impl CohortEmergencyCleanup {
 pub struct AdmittedResource {
     ledger: ResourceLedger,
     subject: ResourceSubjectBinding,
+    task_owner: gantry_core::identity::ProtocolIdentity,
     containment: ContainmentSettlement,
     adapter: Option<AdapterInstance>,
 }
@@ -2013,6 +2056,7 @@ impl AdmittedResource {
         let containment = ContainmentSettlement::open(ledger.owner());
         Ok(Self {
             ledger,
+            task_owner: subject.task_id(),
             subject,
             containment,
             adapter: None,
@@ -2023,6 +2067,12 @@ impl AdmittedResource {
     #[must_use]
     pub const fn subject(&self) -> &ResourceSubjectBinding {
         &self.subject
+    }
+
+    /// Returns the task currently responsible for cleanup, not the immutable issuing task.
+    #[must_use]
+    pub const fn task_owner(&self) -> gantry_core::identity::ProtocolIdentity {
+        self.task_owner
     }
 
     /// Returns the reconstructed accounting ledger of this resource.
