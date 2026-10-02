@@ -296,10 +296,13 @@ fn live_resource_transport_rejects_start_before_preflight_or_execution_identity(
         &b"live_resource struct Handle {}\nfn main() -> Option<Handle> { None }"[..],
         &b"live_resource struct Handle {}\nenum Choice { Empty, Held(Handle) }\nfn main() -> Choice { Choice::Empty }"[..],
         &b"live_resource struct Handle {}\nfn main() -> List<Handle> { [] }"[..],
+        &b"live_resource struct Handle {}\nfn main() -> Result<Handle,Int> { Err(1) }"[..],
+        &b"live_resource struct Handle {}\nfn main() -> Tuple<Option<Handle>,Int> { (None, 1) }"[..],
+        &b"live_resource struct Handle {}\nfn main() { spawn child -> Unit { let value: Option<Handle> = None; discard value; } discard join(child); }"[..],
     ] {
         let root = TempDirectory::new(source);
         let services = Arc::new(Services::default());
-        let configuration = configuration(Arc::clone(&services));
+        let configuration = configuration_with_type_depth(Arc::clone(&services), 16);
         let lifecycle = InterpreterLifecycle::new(&configuration);
         let allocator = FreshIdentityAllocator::default();
         let clock = FixedClock;
@@ -323,15 +326,17 @@ fn live_resource_transport_rejects_start_before_preflight_or_execution_identity(
     }
 }
 
-/// Unused live declarations must not turn ordinary struct construction into resource transport.
+/// Unused live declarations must not turn ordinary aggregate construction into resource transport.
 #[test]
-fn ordinary_struct_construction_with_unused_live_declarations_is_accepted() {
+fn ordinary_aggregate_construction_with_unused_live_declarations_is_accepted() {
     for source in [
         &b"live_resource struct Handle {}\nstruct Data { value: Int }\nfn main() { discard Data { value: 1 }; }"[..],
         &b"live_resource struct Handle {}\nfn unused() { discard Handle {}; }\nstruct Data {}\nfn main() { discard Data {}; }"[..],
         &b"live_resource struct Handle {}\nfn main() -> Option<Int> { None }"[..],
         &b"live_resource struct Handle {}\nenum Choice { Empty, Held(Int) }\nfn main() -> Choice { Choice::Empty }"[..],
         &b"live_resource struct Handle {}\nfn main() -> List<Int> { [] }"[..],
+        &b"live_resource struct Handle {}\nfn main() -> Result<String,Int> { Err(1) }"[..],
+        &b"live_resource struct Handle {}\nfn main() -> Tuple<Option<Int>,Int> { (None, 1) }"[..],
     ] {
         let root = TempDirectory::new(source);
         let services = Arc::new(Services::default());
