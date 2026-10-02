@@ -7131,6 +7131,31 @@ fn registry_physical_invocation_refuses_a_poisoned_bound_adapter() {
         Ok(17)
     );
     assert!(registry.has_host_value(&subject));
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let unused = TransportValue {
+        drops: Arc::clone(&drops),
+        panic_on_drop: true,
+        value: 0,
+    };
+    let result = registry.invoke_host_value::<u64, ()>(&subject, owner, move |_| {
+        drop(unused);
+        panic!("poisoned adapter cannot execute this callback")
+    });
+    assert!(matches!(
+        result,
+        Err(gantry::runtime::HostResourceError::Boundary(_))
+    ));
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(registry.declared_records(), before);
+    assert!(registry.has_host_value(&subject));
+    assert_eq!(
+        registry.invoke_host_value::<u64, u64>(&sibling, owner, |value| Ok(*value)),
+        Ok(17)
+    );
+    registry
+        .begin_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("finish: {error:?}"));
+    assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
 }
 
 #[test]
