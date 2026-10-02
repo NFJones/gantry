@@ -786,6 +786,42 @@ impl ResourceRegistry {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
+        self.admit_with_optional_host_value(subject, carrier, record, &mut None::<()>)
+    }
+
+    /// Atomically admits accounting and one caller-authenticated physical value.
+    ///
+    /// The machine lease fences cancellation through both insertions. Refusal returns the host
+    /// value untouched and publishes no account, slot or pending capacity. This grants no authority
+    /// and does not complete the machine operation or enable source live-handle transport.
+    pub fn admit_host_value<T: std::any::Any + Send>(
+        &mut self,
+        subject: ResourceSubjectBinding,
+        carrier: ResourceCarrier,
+        record: DurableResourceRecord,
+        value: T,
+    ) -> Result<(), Box<(ResourceRegistryRefusal, T)>> {
+        let mut value = Some(value);
+        self.admit_with_optional_host_value(subject, carrier, record, &mut value)
+            .map(|_| ())
+            .map_err(|error| {
+                Box::new((
+                    error,
+                    value
+                        .take()
+                        .unwrap_or_else(|| unreachable!("refused input remains owned")),
+                ))
+            })
+    }
+
+    /// Shares admission validation and commits optional physical ownership only after all checks.
+    fn admit_with_optional_host_value<'a, T: std::any::Any + Send>(
+        &'a mut self,
+        subject: ResourceSubjectBinding,
+        carrier: ResourceCarrier,
+        record: DurableResourceRecord,
+        value: &mut Option<T>,
+    ) -> Result<&'a AdmittedResource, ResourceRegistryRefusal> {
         // Inspect before locking the presented lease: a duplicate may share that mutex.
         // Stage pruning so refused admissions do not change even process-local bookkeeping.
         // Settlement only closes leases, so concurrent closure can conservatively refuse.
@@ -812,7 +848,7 @@ impl ResourceRegistry {
         let live = self.live_resources();
         let limit = self.live_limit;
         let key = subject.registry_key();
-        match self.accounts.entry(key) {
+        match self.accounts.entry(key.clone()) {
             std::collections::btree_map::Entry::Occupied(_) => {
                 Err(ResourceRegistryRefusal::SecondAdmission)
             }
@@ -829,8 +865,29 @@ impl ResourceRegistry {
                 {
                     return Err(ResourceRegistryRefusal::PendingOperationLimitReached { limit });
                 }
+                if value.is_some() {
+                    let lifetime = account.ledger().lifetime();
+                    if lifetime != ResourceLifetimeState::Active {
+                        return Err(ResourceRegistryRefusal::PhysicalAdmission(
+                            crate::HostResourceError::Model(
+                                ResourceError::LifetimeDoesNotAdmitCharge { state: lifetime },
+                            ),
+                        ));
+                    }
+                    if !account.ledger().operation_state().is_open() {
+                        return Err(ResourceRegistryRefusal::PhysicalAdmission(
+                            crate::HostResourceError::Model(
+                                ResourceError::IllegalLifetimeTransition,
+                            ),
+                        ));
+                    }
+                }
                 if !retained {
                     pending_admissions.push(Arc::clone(&admission_open));
+                }
+                if let Some(value) = value.take() {
+                    self.physical
+                        .insert(key, crate::resource_transport::HostValueSlot::new(value));
                 }
                 self.pending_admissions = pending_admissions;
                 Ok(slot.insert(account))
@@ -1704,6 +1761,8 @@ pub enum ResourceRegistryRefusal {
     PhysicalValuePresent,
     /// Contained physical destruction failed and cannot authorize normal finalization.
     PhysicalDisposalFailed,
+    /// Atomic acquisition requires accounting eligible for physical attachment.
+    PhysicalAdmission(crate::HostResourceError),
     /// The subject's operation carries no authenticated live-resource Section 20 kind.
     UnauthenticatedOperationKind,
     /// The machine has no pending action-backed operation with a resource subject.

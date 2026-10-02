@@ -15141,6 +15141,17 @@ Exact runtime ownership MUST be selected before evidence mutates an account; a p
 without that ownership may identify only a foreign-provenance refusal, never a mutable fallback.
 This qualification does not change Section 20's portable identity derivation or grant authority.
 
+A registry MAY separately admit accounting and one caller-authenticated process-local host value
+atomically. It MUST apply the accounting admission rules first, then require active lifetime and
+open operation state for physical acquisition. The machine admission lease MUST remain held through
+both insertions so cancellation cannot split acquisition. Refusal MUST return the host input
+untouched and change no account, physical slot or pending-capacity bookkeeping. Success retains
+one account and one physical slot without completing the machine operation. The coordinator MAY
+expose this route only under the same running-task, execution, cancellation, admission-closure and
+durable-publication fences as separate admission and attachment; success publishes once. Refused
+host inputs MUST remain owned outside the coordinator lock. This route grants no authority,
+enables no source live-handle transport and serializes no physical value.
+
 A registry MAY separately declare a finite ceiling on admitted pending resource operations.
 Every successful live admission MUST retain its pending settlement lease even without that ceiling;
 unlimited admission does not discharge accepted-work ownership. Accounting reconstruction still

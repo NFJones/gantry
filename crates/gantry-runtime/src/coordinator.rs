@@ -443,6 +443,75 @@ impl ExecutionCoordinator {
         Ok(())
     }
 
+    /// Atomically admits accounting and physical ownership for one running task's pending operation.
+    ///
+    /// Acquisition retains the machine cancellation lease through both registry insertions and
+    /// publishes once. Refusal returns the physical input outside the coordinator lock, without
+    /// an account, physical slot or pending-capacity mutation. Association and authority are the
+    /// embedding caller's responsibility; this does not complete source-resource transport.
+    pub fn admit_resource_host_value<T: std::any::Any + Send>(
+        &self,
+        machine: &crate::Machine,
+        carrier: gantry_ir::ResourceCarrier,
+        record: gantry_ir::DurableResourceRecord,
+        value: T,
+    ) -> Result<(), Box<(CoordinatorResourceRefusal, T)>> {
+        let mut value = Some(value);
+        let result = (|| {
+            let mut state = lock(&self.inner.state);
+            require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
+            if machine.execution_id() != state.tasks.execution_id() {
+                return Err(CoordinatorResourceRefusal::ForeignExecution);
+            }
+            let task = state
+                .tasks
+                .task_record(machine.task_id())
+                .ok_or(CoordinatorResourceRefusal::UnknownTask)?;
+            if !matches!(task.status(), ConcurrentTaskStatusV1::Running) {
+                return Err(CoordinatorResourceRefusal::TaskNotRunning);
+            }
+            if state
+                .tasks
+                .task_cancellation_reason(machine.task_id())
+                .is_some()
+                || state.tasks.execution_cancellation_reason().is_some()
+            {
+                return Err(CoordinatorResourceRefusal::TaskCancellationRequested);
+            }
+            if state.resource_admission_closed {
+                return Err(CoordinatorResourceRefusal::ResourceAdmissionClosed);
+            }
+            let resources = state
+                .resources
+                .as_mut()
+                .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?;
+            let subject =
+                machine
+                    .pending_resource_subject()
+                    .ok_or(CoordinatorResourceRefusal::Registry(
+                        crate::ResourceRegistryRefusal::NoPendingResourceSubject,
+                    ))?;
+            let input = value
+                .take()
+                .unwrap_or_else(|| unreachable!("input transferred once"));
+            if let Err(refusal) = resources.admit_host_value(subject, carrier, record, input) {
+                let (error, returned) = *refusal;
+                value = Some(returned);
+                return Err(CoordinatorResourceRefusal::Registry(error));
+            }
+            state.publication = state.publication.wrapping_add(1);
+            Ok(())
+        })();
+        result.map_err(|error| {
+            Box::new((
+                error,
+                value
+                    .take()
+                    .unwrap_or_else(|| unreachable!("refused input remains owned")),
+            ))
+        })
+    }
+
     /// Charges a complete vector against one coordinator-owned account under its current owner.
     ///
     /// The registry's subject, owner, lifetime and quota rules remain authoritative. Refusal

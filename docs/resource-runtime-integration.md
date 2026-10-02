@@ -89,6 +89,14 @@ Deleted accounts are not reaped while a value remains attached. Captures and rec
 physical slots; no callback route is exposed through the coordinator's shared lock. Registry drop
 contains physical destruction only and does not synthesize semantic settlement.
 
+`ResourceRegistry::admit_host_value` atomically admits accounting and one caller-authenticated
+physical value under the same machine lease. Accounting refusals retain their precedence, then
+physical acquisition requires active/open accounting. Refusal returns the host input untouched
+without publishing an account, slot or pending-capacity change. `admit_resource_host_value` exposes
+this through the coordinator's execution/running-task, cancellation, closure and publication fences;
+success publishes once and refused inputs remain owned outside the lock. Neither route completes
+the machine operation, grants authority or enables source live-handle transport.
+
 `ExecutionCoordinator::attach_resource_host_value` retains physical ownership in the same registry
 without changing accounting publication; refused inputs are returned untouched outside the lock.
 Attachment requires the issuing execution to match and its task to be known and running;

@@ -4027,6 +4027,257 @@ fn registry_host_record_reclamation_waits_for_physical_disposal() {
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Atomic acquisition retains one account and physical slot, with one pending settlement lease.
+#[test]
+fn atomic_host_admission_preserves_refused_inputs_and_complete_acquisition() {
+    use gantry::runtime::HostResourceError;
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let record = ledger().durable_record();
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    assert_eq!(
+        registry.admit_host_value(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+            17_u64
+        ),
+        Ok(())
+    );
+    assert_eq!(registry.live_resources(), 1);
+    assert_eq!(registry.pending_operations(), 1);
+    assert!(registry.has_host_value(&subject));
+    assert_eq!(
+        registry.invoke_host_value::<u64, u64>(&subject, record.owner(), |value| Ok(*value)),
+        Ok(17)
+    );
+    assert!(machine.checkpoint().pending_operation().is_some());
+    let before = registry.declared_records();
+    let (error, value) = *registry
+        .admit_host_value(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record,
+            19_u64,
+        )
+        .err()
+        .unwrap_or_else(|| panic!("duplicate refuses"));
+    assert_eq!(error, ResourceRegistryRefusal::SecondAdmission);
+    assert_eq!(value, 19);
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(registry.pending_operations(), 1);
+    assert_eq!(
+        registry
+            .invoke_host_value::<u64, u64>(&subject, OwnerGeneration::new(4), |value| Ok(*value)),
+        Ok(17)
+    );
+    assert_eq!(
+        registry.dispose_host_value(&subject, OwnerGeneration::new(4)),
+        Err(HostResourceError::Model(
+            ResourceError::IllegalLifetimeTransition
+        ))
+    );
+}
+
+/// Quota, cancellation and physical eligibility failures cannot leave a half-published account.
+#[test]
+fn atomic_host_admission_refusals_publish_no_account_slot_or_pending_capacity() {
+    use gantry::runtime::HostResourceError;
+    for (live_limit, pending_limit, cancel, closed, finishing, expected) in [
+        (
+            0,
+            1,
+            false,
+            false,
+            false,
+            ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 },
+        ),
+        (
+            1,
+            0,
+            false,
+            false,
+            false,
+            ResourceRegistryRefusal::PendingOperationLimitReached { limit: 0 },
+        ),
+        (
+            1,
+            1,
+            true,
+            false,
+            false,
+            ResourceRegistryRefusal::CancellationRequested,
+        ),
+        (
+            1,
+            1,
+            false,
+            true,
+            false,
+            ResourceRegistryRefusal::PhysicalAdmission(HostResourceError::Model(
+                ResourceError::IllegalLifetimeTransition,
+            )),
+        ),
+        (
+            1,
+            1,
+            false,
+            false,
+            true,
+            ResourceRegistryRefusal::PhysicalAdmission(HostResourceError::Model(
+                ResourceError::LifetimeDoesNotAdmitCharge {
+                    state: ResourceLifetimeState::Finishing,
+                },
+            )),
+        ),
+    ] {
+        let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+        let mut source = ledger();
+        if finishing {
+            source
+                .begin_finish()
+                .unwrap_or_else(|error| panic!("finish: {error:?}"));
+        }
+        let source = source.durable_record();
+        let record = DurableResourceRecord::from_durable_facts(
+            source.owner(),
+            source.lifetime(),
+            if closed {
+                ResourceState::Closed
+            } else {
+                source.operation_state()
+            },
+            source.quotas().clone(),
+            source.liveness_roots().clone(),
+            source.settlement(),
+            source.successor_fence(),
+        )
+        .unwrap_or_else(|error| panic!("record: {error:?}"));
+        if cancel {
+            assert!(machine.cancel("atomic acquisition cancelled").is_some());
+        }
+        let mut registry = ResourceRegistry::with_limits(live_limit, pending_limit);
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (error, value) = *registry
+            .admit_host_value(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                record,
+                TransportValue {
+                    drops: Arc::clone(&drops),
+                    panic_on_drop: false,
+                    value: 17,
+                },
+            )
+            .err()
+            .unwrap_or_else(|| panic!("ineligible acquisition refuses"));
+        assert_eq!(error, expected);
+        assert_eq!(value.value, 17);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(registry.declared_records().is_empty());
+        assert!(!registry.has_host_value(&subject));
+        assert_eq!(registry.pending_operations(), 0);
+        assert_eq!(registry.live_resources(), 0);
+        assert!(machine.checkpoint().pending_operation().is_some());
+        drop(value);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+}
+
+/// Atomic coordinator acquisition publishes once and returns refused values without new state.
+#[test]
+fn coordinator_atomic_host_admission_publishes_once_and_preserves_refusal() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    let before = coordinator.snapshot();
+    assert_eq!(
+        coordinator.admit_resource_host_value(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            17_u64
+        ),
+        Ok(())
+    );
+    let acquired = coordinator.snapshot();
+    assert_eq!(acquired.publication(), before.publication() + 1);
+    assert_eq!(
+        acquired
+            .resource_records()
+            .unwrap_or_else(|| panic!("records"))
+            .len(),
+        1
+    );
+    assert!(coordinator.has_resource_host_values());
+    assert!(coordinator.has_pending_resource_operations());
+    let (error, value) = *coordinator
+        .clone()
+        .admit_resource_host_value(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            19_u64,
+        )
+        .err()
+        .unwrap_or_else(|| panic!("duplicate refuses"));
+    assert_eq!(
+        error,
+        CoordinatorResourceRefusal::Registry(ResourceRegistryRefusal::SecondAdmission)
+    );
+    assert_eq!(value, 19);
+    assert_eq!(coordinator.snapshot(), acquired);
+    assert!(coordinator.close_resource_admission());
+    let (error, value) = *coordinator
+        .admit_resource_host_value(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            21_u64,
+        )
+        .err()
+        .unwrap_or_else(|| panic!("closure refuses"));
+    assert_eq!(error, CoordinatorResourceRefusal::ResourceAdmissionClosed);
+    assert_eq!(value, 21);
+    assert_eq!(coordinator.snapshot(), acquired);
+    assert_eq!(
+        coordinator.begin_resource_finish(&subject, OwnerGeneration::new(4)),
+        Ok(ResourceLifetimeState::Finishing)
+    );
+    assert_eq!(
+        coordinator.dispose_resource_host_value(&subject, OwnerGeneration::new(4)),
+        Ok(())
+    );
+}
+
+/// Coordinator cancellation refuses complete acquisition without consuming the physical input.
+#[test]
+fn coordinator_atomic_host_admission_refuses_requested_cancellation() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    coordinator
+        .cancel_execution(Arc::from("atomic acquisition cancelled"))
+        .unwrap_or_else(|error| panic!("cancel: {error:?}"));
+    let before = coordinator.snapshot();
+    let (error, value) = *coordinator
+        .admit_resource_host_value(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            17_u64,
+        )
+        .err()
+        .unwrap_or_else(|| panic!("cancelled acquisition refuses"));
+    assert_eq!(error, CoordinatorResourceRefusal::TaskCancellationRequested);
+    assert_eq!(value, 17);
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(!coordinator.has_resource_host_values());
+    assert!(!coordinator.has_pending_resource_operations());
+}
+
 /// Same-task owner advancement retains physical identity and rejects outstanding obligations.
 #[test]
 fn registry_owner_advancement_preserves_physical_ownership_and_fences_old_owners() {
