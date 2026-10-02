@@ -291,6 +291,10 @@ refuses observation after accepted settlement with `SecondSettlement`, preservin
 state and observation allowance even for a partial winner with an open half. Generation fencing
 retains observation-refusal precedence. Later failure settlement also refuses with
 `SecondSettlement` without changing state or issuing new poisoning evidence after a winner.
+Failure-first settlement retains its exact evidence through `failure_settlement()`, separately
+from successful operation settlement. It refuses later completion, observation and failure
+settlement without mutation, before repeated poison or half-close classification. It supplies
+no fabricated successful outcome, progress or ordinary operation-state projection.
 `observe` retains Section 20
 allowances and progress rules; accepted `settle` projects operation state and closes only the
 loan root. Refusal retains the guard and progress for another candidate. Whole-resource lifetime,

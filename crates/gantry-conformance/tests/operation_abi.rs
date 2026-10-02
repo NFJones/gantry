@@ -1028,6 +1028,52 @@ fn failures_after_accepted_settlement_preserve_the_winner() {
     }
 }
 
+/// A failed generation cannot accept a later successful completion or reopen its state.
+#[test]
+fn failure_first_settlement_refuses_late_success_without_mutation() {
+    let owner = OwnerGeneration::initial();
+    let current = abi(
+        OperationKind::LiveResource,
+        1,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    );
+    for failure in FailureClass::ALL {
+        let mut live = resource(&current, owner, 1);
+        let evidence = live
+            .settle_failure(failure)
+            .unwrap_or_else(|error| panic!("failure settlement: {error:?}"));
+        assert_eq!(live.failure_settlement(), Some(&evidence));
+        assert!(live.settlement().is_none());
+        assert!(live.operation_state_projection().is_none());
+        let before = live.clone();
+        let late = settlement(
+            &current,
+            owner,
+            ExternalOutcome::Accepted,
+            ProgressObservation::NotStarted,
+            10,
+        );
+        assert_eq!(
+            refusal(live.settle(&late)),
+            OperationAbiDiagnosticCode::SecondSettlement
+        );
+        assert_eq!(live, before);
+        for repeated in FailureClass::ALL {
+            assert_eq!(
+                refusal(live.settle_failure(repeated)),
+                OperationAbiDiagnosticCode::SecondSettlement
+            );
+            assert_eq!(live, before);
+        }
+        assert_eq!(
+            refusal(live.observe(ProgressObservation::PartialAdvance)),
+            OperationAbiDiagnosticCode::SecondSettlement
+        );
+        assert_eq!(live, before);
+    }
+}
+
 #[test]
 fn a_duplicate_late_or_wrong_generation_completion_settles_exactly_once() {
     let owner = OwnerGeneration::initial();
@@ -1256,7 +1302,7 @@ fn failure_settlement_yields_exactly_one_declared_state_and_poisons_the_adapter_
     assert_eq!(poisoned.state(), ResourceState::Poisoned);
     assert_eq!(
         refusal(poisoned.settle_failure(FailureClass::ResourceFailure)),
-        OperationAbiDiagnosticCode::PoisonedResourceReuse
+        OperationAbiDiagnosticCode::SecondSettlement
     );
 
     // A value action and a protected operation carry no live half, so their declared

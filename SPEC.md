@@ -12258,6 +12258,12 @@ or observation allowance, including when a partial settlement retains an open ha
 An existing generation fence MUST retain observation-refusal precedence. A later failure
 settlement MUST likewise refuse with `SecondSettlement` before changing state or issuing
 post-failure evidence; it MUST NOT manufacture poisoning authority after an accepted winner.
+An accepted failure settlement MUST retain its exact `PostFailureSettlement` as the terminal
+winner, distinct from an `OperationSettlement`. `failure_settlement()` MUST inspect that
+winner without fabricating a successful outcome, progress, or ordinary operation-state projection.
+Later completion, observation, or failure settlement MUST refuse with `SecondSettlement`
+without mutation; an existing generation fence retains observation-refusal precedence.
+Failure-winner refusal precedes repeated resource-poison or half-close classification.
 A settlement MUST NOT claim
 a completion the resource never observed, and MUST NOT claim an end of stream where
 only a short read or a short write was observed. A fenced generation records its

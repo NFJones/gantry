@@ -1506,6 +1506,7 @@ impl OperationAbi {
             allowance,
             fenced: None,
             settlement: None,
+            failure_settlement: None,
         })
     }
 
@@ -1716,6 +1717,7 @@ pub struct LiveResource {
     allowance: ObservationAllowance,
     fenced: Option<FenceCategory>,
     settlement: Option<OperationSettlement>,
+    failure_settlement: Option<PostFailureSettlement>,
 }
 
 impl LiveResource {
@@ -1786,10 +1788,16 @@ impl LiveResource {
         self.fenced
     }
 
-    /// Returns the single settlement of this resource generation, when it settled.
+    /// Returns the accepted operation completion, never substituting a failure winner for it.
     #[must_use]
     pub const fn settlement(&self) -> Option<&OperationSettlement> {
         self.settlement.as_ref()
+    }
+
+    /// Returns the retained failure winner without fabricating a successful outcome or progress.
+    #[must_use]
+    pub const fn failure_settlement(&self) -> Option<&PostFailureSettlement> {
+        self.failure_settlement.as_ref()
     }
 
     /// Returns an opaque runtime state projection only after this live resource accepted a settlement.
@@ -1830,7 +1838,7 @@ impl LiveResource {
         if let Some(category) = self.fenced {
             return Err(OperationAbiError::FencedResource { category });
         }
-        if self.settlement.is_some() {
+        if self.settlement.is_some() || self.failure_settlement.is_some() {
             return Err(OperationAbiError::SecondSettlement {
                 operation: Arc::from(self.abi.operation().as_str()),
             });
@@ -1891,7 +1899,7 @@ impl LiveResource {
     /// recorded, because the observed outcome is recorded rather than allowed to reopen
     /// the generation.
     pub fn settle(&mut self, candidate: &OperationSettlement) -> Result<(), OperationAbiError> {
-        if self.settlement.is_some() {
+        if self.settlement.is_some() || self.failure_settlement.is_some() {
             return Err(OperationAbiError::SecondSettlement {
                 operation: Arc::from(self.abi.operation().as_str()),
             });
@@ -1980,22 +1988,25 @@ impl LiveResource {
     /// and poisoning a poisoned resource is refused rather than repeated.
     /// An already accepted settlement refuses with [`OperationAbiError::SecondSettlement`]
     /// before changing state or issuing failure evidence, preserving the recorded winner.
+    /// Successful failure settlement retains its exact evidence as a terminal winner, preventing
+    /// later success, observation or failure from replacing it. Failure-winner refusal precedes
+    /// repeated poison and half-close classification; no normal operation completion is fabricated.
     pub fn settle_failure(
         &mut self,
         failure: FailureClass,
     ) -> Result<PostFailureSettlement, OperationAbiError> {
-        if self.settlement.is_some() {
+        if self.settlement.is_some() || self.failure_settlement.is_some() {
             return Err(OperationAbiError::SecondSettlement {
                 operation: Arc::from(self.abi.operation().as_str()),
             });
         }
-        match failure {
+        let evidence = match failure {
             FailureClass::AdapterFailure => {
                 if !self.state.is_open() {
                     return Err(OperationAbiError::HalfCloseWithoutOpenHalf { state: self.state });
                 }
                 self.state = ResourceState::HalfClosed;
-                Ok(self.post_failure(ResourceState::HalfClosed, true))
+                self.post_failure(ResourceState::HalfClosed, true)
             }
             FailureClass::ResourceFailure => {
                 if self.state == ResourceState::Poisoned {
@@ -2004,9 +2015,11 @@ impl LiveResource {
                     });
                 }
                 self.state = ResourceState::Poisoned;
-                Ok(self.post_failure(ResourceState::Poisoned, false))
+                self.post_failure(ResourceState::Poisoned, false)
             }
-        }
+        };
+        self.failure_settlement = Some(evidence.clone());
+        Ok(evidence)
     }
 
     /// Returns one declared post-failure settlement of this resource.
