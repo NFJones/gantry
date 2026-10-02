@@ -606,3 +606,59 @@ impl<T> Drop for OwnedHostResource<T> {
         let _ = self.dispose();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// A poisoned acquisition lease cannot become implicit permission to bind a host value.
+    #[test]
+    fn binding_refuses_an_unreadable_lease_without_consuming_inputs() {
+        let lease = Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open()));
+        let path = gantry_ir::CanonicalPath::new("crate::resource")
+            .unwrap_or_else(|error| panic!("fixture path: {error}"));
+        let execution = gantry_core::identity::ProtocolIdentity::from_fresh_material(
+            gantry_core::portable::IdentityKind::Execution,
+            [31; 32],
+        )
+        .unwrap_or_else(|error| panic!("fixture identity: {error}"));
+        let subject = crate::ResourceSubjectBinding::derive(
+            &path,
+            path.clone(),
+            gantry_ir::StructuralPosition::new(vec![0])
+                .unwrap_or_else(|error| panic!("fixture site: {error}")),
+            0,
+            Some(gantry_ir::OperationKind::LiveResource),
+            Arc::clone(&lease),
+            (execution, execution),
+        );
+        let record = gantry_ir::ResourceLedger::new(
+            OwnerGeneration::new(4),
+            ResourceState::Usable,
+            &[LivenessRoot::Loan],
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("fixture ledger: {error:?}"))
+        .durable_record();
+        let account = AdmittedResource::admit(
+            gantry_ir::ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+            subject.clone(),
+        )
+        .unwrap_or_else(|error| panic!("fixture admission: {error:?}"));
+        let poisoned = std::panic::catch_unwind(|| {
+            let _guard = lease.lock().unwrap_or_else(|_| panic!("fixture lease"));
+            panic!("poison acquisition lease");
+        });
+        assert!(poisoned.is_err());
+        let (error, account, value) = *OwnedHostResource::bind(account, 17_u64)
+            .err()
+            .unwrap_or_else(|| panic!("an unreadable lease must refuse acquisition"));
+        assert_eq!(error, HostResourceError::PendingOperation);
+        assert_eq!(account.durable_record(), record);
+        assert_eq!(account.subject(), &subject);
+        assert_eq!(value, 17);
+        assert!(lease.lock().is_err());
+    }
+}
