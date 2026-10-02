@@ -526,6 +526,63 @@ impl ExecutionCoordinator {
         self.mutate_resources(|resources| resources.charge(subject, owner, action, charges))
     }
 
+    /// Renews one declared quota through the account's current owner and bounded allowance.
+    ///
+    /// The registry preserves exact subject, owner, lifetime and exhaustion checks. Successful
+    /// renewal publishes once; refusal changes neither accounting nor publication.
+    pub fn renew_resource_quota(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        quota_owner: gantry_ir::QuotaOwner,
+        family: gantry_ir::QuotaFamily,
+        increase: u64,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| {
+            resources.renew(subject, owner, quota_owner, family, increase)
+        })
+    }
+
+    /// Closes one explicitly declared liveness root without transferring resource ownership.
+    ///
+    /// Exact provenance, current owner and root presence remain registry decisions. This route
+    /// neither disposes physical ownership nor closes an accepted machine operation's lease.
+    pub fn close_resource_liveness_root(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        root: gantry_ir::LivenessRoot,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.close_liveness_root(subject, owner, root))
+    }
+
+    /// Retires a settled account only after its explicit roots and retention fence permit it.
+    ///
+    /// Logical time and the strictly succeeding owner fence are caller-declared model inputs,
+    /// not host-clock observations. Refusal publishes nothing; success retains the settled record.
+    pub fn retire_resource_record(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        fence: gantry_ir::RetentionFence,
+        owner: gantry_ir::OwnerGeneration,
+        successor: gantry_ir::OwnerGeneration,
+        at: u64,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.retire(subject, fence, owner, successor, at))
+    }
+
+    /// Marks one retired account deleted without reclaiming physical ownership or pending work.
+    ///
+    /// The registry retains its current-owner and lifetime fences. Deletion publishes once;
+    /// it neither reopens admission nor refunds a live place already released by settlement.
+    pub fn delete_resource_record(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+    ) -> Result<gantry_ir::ResourceLifetimeState, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.delete(subject, owner))
+    }
+
     /// Advances same-task accounting ownership without moving its account or physical slot.
     ///
     /// The registry enforces exact provenance and all existing transfer obligations. A successful

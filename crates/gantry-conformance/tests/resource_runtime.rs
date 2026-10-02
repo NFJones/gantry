@@ -725,6 +725,123 @@ fn coordinator_resource_charging_is_atomic_and_owner_fenced() {
     );
 }
 
+/// Coordinator retention keeps pending work separate and publishes only accepted model transitions.
+#[test]
+fn coordinator_resource_renewal_and_retention_preserve_model_fences() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    let owner = OwnerGeneration::new(4);
+    coordinator
+        .admit_resource(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let before = coordinator.snapshot();
+    assert_eq!(
+        coordinator.renew_resource_quota(&subject, owner, QuotaOwner::Owner, QuotaFamily::Bytes, 4),
+        Ok(())
+    );
+    let renewed = coordinator.snapshot();
+    assert_eq!(renewed.publication(), before.publication() + 1);
+    assert_eq!(
+        renewed
+            .resource_records()
+            .unwrap_or_else(|| panic!("records"))[0]
+            .record()
+            .quotas()
+            .get(&(QuotaOwner::Owner, QuotaFamily::Bytes))
+            .map(|quota| quota.limit()),
+        Some(12)
+    );
+    assert_eq!(
+        coordinator.renew_resource_quota(&subject, owner, QuotaOwner::Owner, QuotaFamily::Bytes, 4),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Renewal(ResourceError::RenewalExhausted)
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), renewed);
+    assert!(matches!(
+        coordinator.close_resource_liveness_root(
+            &subject,
+            OwnerGeneration::new(3),
+            LivenessRoot::Resource
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::RootClosure(ResourceError::StaleOwner { .. })
+        ))
+    ));
+    assert_eq!(coordinator.snapshot(), renewed);
+    coordinator
+        .begin_resource_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("finish: {error:?}"));
+    coordinator
+        .complete_resource_finalization(&subject, owner, 31)
+        .unwrap_or_else(|error| panic!("finalize: {error:?}"));
+    let fence = RetentionFence::new(1, 10).unwrap_or_else(|error| panic!("fence: {error:?}"));
+    let settled = coordinator.snapshot();
+    assert_eq!(
+        coordinator.retire_resource_record(&subject, fence, owner, OwnerGeneration::new(5), 41),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Retirement(ResourceError::LivenessRootsRemain)
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), settled);
+    for root in ROOTS {
+        let before = coordinator.snapshot();
+        assert_eq!(
+            coordinator
+                .clone()
+                .close_resource_liveness_root(&subject, owner, *root),
+            Ok(())
+        );
+        assert_eq!(
+            coordinator.snapshot().publication(),
+            before.publication() + 1
+        );
+    }
+    let closed = coordinator.snapshot();
+    assert_eq!(
+        coordinator.retire_resource_record(&subject, fence, owner, OwnerGeneration::new(5), 41),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Retirement(ResourceError::RetentionNotExpired)
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), closed);
+    assert_eq!(
+        coordinator.retire_resource_record(&subject, fence, owner, OwnerGeneration::new(5), 42),
+        Ok(())
+    );
+    let retired = coordinator.snapshot();
+    assert_eq!(retired.publication(), closed.publication() + 1);
+    assert_eq!(
+        coordinator.delete_resource_record(&subject, owner),
+        Ok(ResourceLifetimeState::Deleted)
+    );
+    let deleted = coordinator.snapshot();
+    assert_eq!(deleted.publication(), retired.publication() + 1);
+    assert_eq!(
+        deleted
+            .resource_records()
+            .unwrap_or_else(|| panic!("records"))[0]
+            .record()
+            .lifetime(),
+        ResourceLifetimeState::Deleted
+    );
+    assert!(coordinator.has_pending_resource_operations());
+    assert!(machine.checkpoint().pending_operation().is_some());
+    assert_eq!(
+        coordinator.delete_resource_record(&subject, owner),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::Deletion(ResourceError::IllegalLifetimeTransition)
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), deleted);
+}
+
 /// Resource poisoning releases the shared live place; adapter-only evidence and retries do not.
 #[test]
 fn coordinator_resource_failure_settlement_releases_the_live_place_once() {

@@ -356,7 +356,11 @@ by cloned handles under its existing mutex (`GNT-28.11-runtime-admission-mapping
 settling whole-resource lifetime or releasing its live place (`GNT-28.12-operation-state-projection`).
 `begin_resource_finish`, `complete_resource_finalization`, and `emergency_release_resource`
 retain the registry's owner and sealed-witness fences. Reserved durable publication refuses
-accounting writes. `settle_resource_from_post_failure` selects the model-issued evidence's exact
+accounting writes. `renew_resource_quota`, `close_resource_liveness_root`, `retire_resource_record`
+and `delete_resource_record` retain the existing registry renewal and retention checks under that
+same publication fence. They do not dispose physical ownership, settle pending machine work or
+refund a released live-account place; logical instants and successor generations are explicit
+model inputs. `settle_resource_from_post_failure` selects the model-issued evidence's exact
 subject under `GNT-20.7-resource-state-after-failure-and-poisoning`; resource poisoning releases
 the live place while retaining the record, but adapter-only failure cannot settle that lifetime.
 Reserved durable publication also fences this route. Success advances publication once; refusal

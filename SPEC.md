@@ -15191,6 +15191,13 @@ share one registry and serialize admission, atomic quota charging, accepted oper
 projection, accounting finalization, and emergency release. Charging retains the owner and
 whole-vector refusal rules of `GNT-28.3-atomic-copy-move-loan-update-and-release-charging`;
 projection retains every fence and non-claim of `GNT-28.12-operation-state-projection`.
+The coordinator MAY expose the registry's bounded quota renewal, explicit liveness-root closure,
+retirement, and deletion through that same owner and publication fence. These routes MUST retain
+the registry's exact provenance, current-owner, lifetime, root, renewal-allowance and retention
+checks. Success publishes once; refusal changes neither records nor publication. Root closure,
+retirement and deletion MUST NOT dispose a host value, settle pending machine work, or refund
+a live-account place already released by lifetime settlement. Logical retention instants and
+successor generations remain declared model inputs, never inferred host observations.
 Model-issued resource-poisoning evidence MAY settle accounting lifetime through that same
 owner, selecting its exact operation and resource generation under
 `GNT-20.7-resource-state-after-failure-and-poisoning`. Adapter-only failure MUST NOT settle
