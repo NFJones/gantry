@@ -13,13 +13,15 @@ use gantry_ir::{
     ProgressRecord, ResourceError, ResourceLifetimeState, ResourceState,
 };
 
-use crate::AdmittedResource;
+use crate::{AdmittedResource, PostFailureSettlementRefusal};
 
 /// Failure at a process-local resource boundary, without panic payload disclosure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HostResourceError {
     /// Accounting owner or lifetime refused the transition before host invocation.
     Model(ResourceError),
+    /// Resource-poisoning evidence failed subject, owner, or lifetime validation.
+    Settlement(PostFailureSettlementRefusal),
     /// The host value has already been disposed.
     Disposed,
     /// Integration invocation or destruction panicked, poisoning this boundary.
@@ -282,6 +284,27 @@ impl<T> OwnedHostResource<T> {
         self.account
             .complete_finalization_for(owner, settled_at)
             .map_err(HostResourceError::Model)
+    }
+
+    /// Settles evidence-qualified resource poisoning before contained physical disposal.
+    ///
+    /// A pending transport loan refuses before accounting mutation. The accounting owner
+    /// checks exact operation, generation, accepting owner and resource-poisoning evidence.
+    /// Disposal failure cannot undo semantic release; pending machine work remains owned.
+    pub fn poison_from_failure(
+        &mut self,
+        settlement: &PostFailureSettlement,
+        settled_at: u64,
+    ) -> Result<ResourceLifetimeState, HostResourceError> {
+        if self.loan_pending {
+            return Err(HostResourceError::LoanOutstanding);
+        }
+        let lifetime = self
+            .account
+            .settle_from_post_failure(settlement, settled_at)
+            .map_err(HostResourceError::Settlement)?;
+        self.dispose()?;
+        Ok(lifetime)
     }
 
     /// Settles sealed emergency release before attempting contained physical disposal.

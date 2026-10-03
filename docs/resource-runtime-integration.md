@@ -282,6 +282,11 @@ records finished only after callback and contained physical disposal succeed. Fa
 finishing without implicit retry; sealed `emergency_release` settles accounting before disposal,
 so destruction failure cannot undo semantic release. Disposal removes the value before destruction;
 wrapper drop contains physical destruction but never fabricates semantic finish. This owner is
+also able to perform normal evidence-qualified cleanup through `poison_from_failure`: an outstanding
+transport loan refuses first, then the accounting owner validates exact operation/generation,
+accepting owner and resource-poisoning evidence before lifetime settlement and contained disposal.
+Refusal retains accounting and physical ownership; disposal failure cannot undo poisoning or
+cause a second destruction. Roots and pending machine work remain unchanged. This owner is
 not automatically attached to the registry or evaluator and publishes no async cancellation,
 source transfer, authority admission, or host reconstruction. Its host value is never placed in
 `LogicalValue`, hook bytes, or accounting reconstruction records.

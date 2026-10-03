@@ -15293,6 +15293,11 @@ Explicit finish MUST enter finishing before its callback and record
 finished only after callback and contained disposal succeed. A failed finish remains finishing,
 is not implicitly retried, and does not roll back accepted external work. Sealed emergency release
 MUST settle accounting before physical disposal; disposal failure MUST NOT undo semantic release.
+The wrapper MAY expose `poison_from_failure` for normal evidence-qualified cleanup. It MUST
+refuse an outstanding transport loan before mutation, validate the exact operation, generation,
+accepting owner and resource-poisoning evidence through the accounting owner, then settle lifetime
+before contained disposal. Refusal preserves accounting and physical ownership; disposal failure
+cannot undo poisoning. This route MUST NOT settle pending machine work or close liveness roots.
 Physical disposal MUST remove the held value before destruction and contain destructor panics.
 Dropping the wrapper performs physical disposal only, never implicit semantic finalization.
 The wrapper MAY expose consuming process-local transfer to a strictly succeeding owner

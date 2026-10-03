@@ -5767,6 +5767,19 @@ fn host_receiver_loan_abandonment_and_forgetting_fence_reuse() {
             .err()
             .unwrap_or_else(|| panic!("loan blocks transfer"));
         assert_eq!(error, HostResourceError::LoanOutstanding);
+        let failure = failure_settlement_in(
+            FIXTURE_WORKFLOW,
+            FIXTURE_DECLARATION,
+            vec![FIXTURE_SITE],
+            0,
+            FailureClass::ResourceFailure,
+        );
+        assert_eq!(
+            resource.poison_from_failure(&failure, 31),
+            Err(HostResourceError::LoanOutstanding)
+        );
+        assert_eq!(resource.account().durable_record(), before);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
         assert_eq!(
             resource.emergency_release(emergency_cleanup()),
             Ok(ResourceLifetimeState::EmergencyReleased)
@@ -6200,6 +6213,99 @@ fn owned_host_resource_contains_disposal_panics_without_fabricating_finish() {
     );
     drop(resource);
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Resource-failure cleanup releases accounting before disposal and never destroys twice.
+#[test]
+fn owned_host_resource_poison_cleanup_preserves_release_and_refusals() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    for panic_on_drop in [false, true] {
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut resource = OwnedHostResource::bind(
+            admitted_active(),
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop,
+                value: 11,
+            },
+        )
+        .unwrap_or_else(|_| panic!("bind"));
+        let before = resource.account().durable_record();
+        let adapter_failure = failure_settlement_in(
+            FIXTURE_WORKFLOW,
+            FIXTURE_DECLARATION,
+            vec![FIXTURE_SITE],
+            0,
+            FailureClass::AdapterFailure,
+        );
+        assert_eq!(
+            resource.poison_from_failure(&adapter_failure, 31),
+            Err(HostResourceError::Settlement(
+                PostFailureSettlementRefusal::Model(ResourceError::FailureDoesNotPoisonResource)
+            ))
+        );
+        assert_eq!(resource.account().durable_record(), before);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let failure = failure_settlement_in(
+            FIXTURE_WORKFLOW,
+            FIXTURE_DECLARATION,
+            vec![FIXTURE_SITE],
+            0,
+            FailureClass::ResourceFailure,
+        );
+        let foreign = failure_settlement_in(
+            FIXTURE_WORKFLOW,
+            SECOND_FIXTURE_DECLARATION,
+            vec![FIXTURE_SITE],
+            0,
+            FailureClass::ResourceFailure,
+        );
+        assert_eq!(
+            resource.poison_from_failure(&foreign, 31),
+            Err(HostResourceError::Settlement(
+                PostFailureSettlementRefusal::ForeignOperation
+            ))
+        );
+        let mut stale = transport_live(FIXTURE_DECLARATION, 0, 3, false);
+        let stale = stale
+            .settle_failure(FailureClass::ResourceFailure)
+            .unwrap_or_else(|error| panic!("stale failure fixture: {error:?}"));
+        assert_eq!(
+            resource.poison_from_failure(&stale, 31),
+            Err(HostResourceError::Settlement(
+                PostFailureSettlementRefusal::Model(ResourceError::StaleOwner {
+                    presented: OwnerGeneration::new(3),
+                    current: OwnerGeneration::new(4),
+                })
+            ))
+        );
+        assert_eq!(resource.account().durable_record(), before);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let result = resource.poison_from_failure(&failure, 32);
+        if panic_on_drop {
+            assert!(matches!(result, Err(HostResourceError::Boundary(_))));
+        } else {
+            assert_eq!(result, Ok(ResourceLifetimeState::Poisoned));
+        }
+        let after = resource.account().durable_record();
+        assert_eq!(after.lifetime(), ResourceLifetimeState::Poisoned);
+        assert_eq!(
+            after.settlement().map(|baseline| baseline.settled_at()),
+            Some(32)
+        );
+        assert_eq!(after.quotas(), before.quotas());
+        assert_eq!(after.liveness_roots(), before.liveness_roots());
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            resource.poison_from_failure(&failure, 33),
+            Err(HostResourceError::Settlement(
+                PostFailureSettlementRefusal::Model(ResourceError::IllegalLifetimeTransition)
+            ))
+        );
+        assert_eq!(resource.account().durable_record(), after);
+        drop(resource);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 }
 
 #[test]
