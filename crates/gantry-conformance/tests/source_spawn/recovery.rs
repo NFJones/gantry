@@ -269,47 +269,58 @@ fn bounded_accounting_survives_durable_launch_and_public_resume() {
         );
         assert_eq!(evidence.checkpoint().retained_resource_limit(), Some(4));
     }
-    let recovered = recover_concurrent_authoritative_prefix(program, &prefix)
+    let recovered = recover_concurrent_authoritative_prefix(Arc::clone(&program), &prefix)
         .unwrap_or_else(|error| panic!("bounded launch replay: {error:?}"));
     assert_eq!(
         recovered.execution().scheduler().retained_resource_limit(),
         Some(4)
     );
-    let fixed = Arc::new(FixedPrefixJournalStore::new(prefix));
-    let replacement_executor = Arc::new(DeterministicConcurrentExecutor::default());
-    let replacement = build(replacement_executor.clone(), false);
-    let selection = selection();
-    let mut resume = pin!(replacement.resume_durable_execution(
-        fixed.clone(),
-        DurableResumeExecutionRequest {
-            journal_id,
-            protocol_selection: &selection,
-            candidate_package_root: None,
-            expected_execution_id: Some(accepted.execution_id()),
-            event_delivery: None,
-        },
-    ));
-    let result = (0..1_000)
-        .find_map(|_| {
-            if let Poll::Ready(result) = resume
-                .as_mut()
-                .poll(&mut Context::from_waker(Waker::noop()))
-            {
-                return Some(result);
-            }
-            for task in replacement_executor.task_ids() {
-                if replacement_executor.is_runnable(task) {
-                    let _ = replacement_executor.poll_task(task);
-                }
-            }
-            None
-        })
-        .unwrap_or_else(|| panic!("bounded public resume did not settle"));
-    let DurableResumeExecutionResult::Accepted(resumed) = result else {
-        panic!("matching bounded policy rejected: {result:?}");
+    let JournalPrefixV1::Full(full) = &prefix else {
+        panic!("bounded launch requires a full prefix")
     };
-    assert_eq!(resumed.execution_id(), accepted.execution_id());
-    assert_eq!(fixed.commit_calls.load(Ordering::Acquire), 0);
+    let retained = gantry::runtime::ConcurrentFinishSnapshotV1::from_full_prefix(
+        Arc::clone(&program),
+        full,
+        16_777_216,
+    )
+    .unwrap_or_else(|error| panic!("bounded restart snapshot: {error:?}"));
+    for prefix in [prefix, JournalPrefixV1::Snapshot(retained.prefix())] {
+        let fixed = Arc::new(FixedPrefixJournalStore::new(prefix));
+        let replacement_executor = Arc::new(DeterministicConcurrentExecutor::default());
+        let replacement = build(replacement_executor.clone(), false);
+        let selection = selection();
+        let mut resume = pin!(replacement.resume_durable_execution(
+            fixed.clone(),
+            DurableResumeExecutionRequest {
+                journal_id: journal_id.clone(),
+                protocol_selection: &selection,
+                candidate_package_root: None,
+                expected_execution_id: Some(accepted.execution_id()),
+                event_delivery: None,
+            },
+        ));
+        let result = (0..1_000)
+            .find_map(|_| {
+                if let Poll::Ready(result) = resume
+                    .as_mut()
+                    .poll(&mut Context::from_waker(Waker::noop()))
+                {
+                    return Some(result);
+                }
+                for task in replacement_executor.task_ids() {
+                    if replacement_executor.is_runnable(task) {
+                        let _ = replacement_executor.poll_task(task);
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| panic!("bounded public resume did not settle"));
+        let DurableResumeExecutionResult::Accepted(resumed) = result else {
+            panic!("matching bounded policy rejected: {result:?}");
+        };
+        assert_eq!(resumed.execution_id(), accepted.execution_id());
+        assert_eq!(fixed.commit_calls.load(Ordering::Acquire), 0);
+    }
 }
 
 #[test]
