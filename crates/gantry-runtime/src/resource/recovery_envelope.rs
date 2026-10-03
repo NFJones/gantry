@@ -31,6 +31,8 @@ pub enum ResourceRecoveryEnvelopeError {
     Encoding,
     /// Legacy accounting facts have no validated issuing evidence to carry.
     MissingIssuingEvidence,
+    /// Process-local ownership or accepted work cannot be represented by these envelopes.
+    UnsupportedRuntimeState,
     /// Serialized cleanup ownership disagrees with the recovery pass's expected task.
     CleanupTaskMismatch,
     /// Declared subject-free reconstruction bytes fail their closed schema or model checks.

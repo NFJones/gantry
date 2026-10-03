@@ -9253,6 +9253,87 @@ fn reconstruction_from_issuing_checkpoint_validates_origin_and_closes_admission(
     }
 }
 
+/// Complete-set envelope capture refuses omitted obligations and shares one framed byte ceiling.
+#[test]
+fn complete_resource_envelope_capture_is_bounded_and_failure_atomic() {
+    use gantry::runtime::{ResourceRecoveryEnvelopeError, encode_resource_recovery_envelope};
+    let empty = ResourceRegistry::new();
+    assert_eq!(empty.capture_recovery_envelopes(8), Ok(vec![]));
+    assert_eq!(
+        empty.capture_recovery_envelopes(7),
+        Err(ResourceRecoveryEnvelopeError::ByteLimit)
+    );
+    let mut registry = ResourceRegistry::with_limits(2, 2);
+    let mut subjects = Vec::new();
+    for declaration in [FIXTURE_DECLARATION, SECOND_FIXTURE_DECLARATION] {
+        let (_, mut machine, subject) = machine_with_declared_subject(Some(declaration));
+        let subject = subject.unwrap_or_else(|| panic!("subject"));
+        let record = ResourceLedger::new(
+            OwnerGeneration::new(4),
+            ResourceState::Usable,
+            &[LivenessRoot::Resource],
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+        registry
+            .admit_pending_operation_with_issuing_evidence(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                record.durable_record(),
+                65_536,
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        let before = registry.declared_records_with_containment();
+        assert_eq!(
+            registry.capture_recovery_envelopes(131_072),
+            Err(ResourceRecoveryEnvelopeError::UnsupportedRuntimeState)
+        );
+        assert_eq!(registry.declared_records_with_containment(), before);
+        let operation = machine
+            .checkpoint()
+            .pending_operation()
+            .unwrap_or_else(|| panic!("pending"))
+            .identity;
+        machine
+            .fail_operation(
+                operation,
+                gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+            )
+            .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+        subjects.push(subject);
+    }
+    let before = registry.declared_records_with_containment();
+    let expected = before
+        .iter()
+        .map(|record| {
+            encode_resource_recovery_envelope(record, 65_536)
+                .unwrap_or_else(|error| panic!("envelope: {error:?}"))
+        })
+        .collect::<Vec<_>>();
+    let exact = expected
+        .iter()
+        .fold(8_u64, |total, bytes| total + 8 + bytes.len() as u64);
+    assert_eq!(registry.capture_recovery_envelopes(exact), Ok(expected));
+    assert_eq!(
+        registry.capture_recovery_envelopes(exact - 1),
+        Err(ResourceRecoveryEnvelopeError::ByteLimit)
+    );
+    assert_eq!(registry.declared_records_with_containment(), before);
+    registry
+        .bind_adapter_instance(
+            &subjects[0],
+            OwnerGeneration::new(4),
+            adapter_instance("capture_adapter", 4, 0),
+        )
+        .unwrap_or_else(|error| panic!("bind: {error:?}"));
+    let before_adapter = registry.declared_records_with_containment();
+    assert_eq!(
+        registry.capture_recovery_envelopes(exact),
+        Err(ResourceRecoveryEnvelopeError::UnsupportedRuntimeState)
+    );
+    assert_eq!(registry.declared_records_with_containment(), before_adapter);
+}
+
 /// Bounded live admission retains issuing facts after machine work settles.
 #[test]
 fn bounded_live_admission_retains_issuing_evidence_after_settlement() {

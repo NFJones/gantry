@@ -136,6 +136,13 @@ refuses second settlement. Future historical owners, unknown tags, impossible wi
 containment bytes refuse. Ordinary declared capture remains accounting-only and opens fresh
 containment during reconstruction. Neither path restores adapters or accepted machine work.
 
+`capture_recovery_envelopes(maximum_bytes)` captures all registry records in canonical
+runtime-subject order, preserving issuing and containment evidence under one shared ceiling.
+The ceiling includes an eight-byte count and eight-byte lengths for every envelope. Pending
+work, live loan roots, physical slots, adapter bindings and poison history refuse before
+projection. Missing evidence or byte exhaustion returns no partial set and changes no
+accounting; combined graph eligibility remains unchanged.
+
 `admit_pending_operation_with_issuing_evidence` opts live accounting admission into retaining
 validated issuing facts under an explicit envelope byte ceiling. Evidence and byte admission run
 before insertion; ordinary machine-lease and quota checks still decide acquisition. The admitted

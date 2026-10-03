@@ -1304,6 +1304,49 @@ impl ResourceRegistry {
         records
     }
 
+    /// Captures complete accounting envelopes under one count-and-member framed byte ceiling.
+    ///
+    /// Refuses physical slots, adapter bindings/history, pending work and loan roots before
+    /// projecting records. Success preserves issuing and containment evidence in registry order;
+    /// refusal publishes no partial set and changes no accounting. Graph eligibility is unchanged.
+    #[cfg(feature = "durable")]
+    pub fn capture_recovery_envelopes(
+        &self,
+        maximum_bytes: u64,
+    ) -> Result<Vec<Vec<u8>>, ResourceRecoveryEnvelopeError> {
+        if !self.physical.is_empty()
+            || !self.adapter_faults.is_empty()
+            || self.pending_operations() != 0
+            || self.accounts.values().any(|account| {
+                account.adapter_instance().is_some()
+                    || account
+                        .ledger()
+                        .liveness_roots()
+                        .contains(&LivenessRoot::Loan)
+            })
+        {
+            return Err(ResourceRecoveryEnvelopeError::UnsupportedRuntimeState);
+        }
+        let mut remaining = maximum_bytes
+            .checked_sub(8)
+            .ok_or(ResourceRecoveryEnvelopeError::ByteLimit)?;
+        let mut envelopes = Vec::new();
+        for record in self.declared_records_with_containment() {
+            remaining = remaining
+                .checked_sub(8)
+                .ok_or(ResourceRecoveryEnvelopeError::ByteLimit)?;
+            let envelope = encode_resource_recovery_envelope(&record, remaining)?;
+            remaining = remaining
+                .checked_sub(
+                    u64::try_from(envelope.len())
+                        .map_err(|_| ResourceRecoveryEnvelopeError::ByteLimit)?,
+                )
+                .ok_or(ResourceRecoveryEnvelopeError::ByteLimit)?;
+            envelopes.push(envelope);
+        }
+        Ok(envelopes)
+    }
+
     /// Selects exact ownership first, retaining foreign-provenance refusal for a portable alias.
     fn selection_key(&self, subject: &ResourceSubjectBinding) -> ResourceRegistryKey {
         self.evidence_key(subject.operation(), subject.generation(), subject)

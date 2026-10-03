@@ -15351,6 +15351,13 @@ containment evidence retain `GNTRRE01` bytes and legacy accounting-only reconstr
 ordinary declared capture still opens fresh containment on reconstruction. This projection creates
 no adapter bindings, physical ownership or pending work and does not qualify journal provenance.
 
+`capture_recovery_envelopes` MAY capture the complete registry in canonical runtime-subject order
+under one total ceiling accounting for an eight-byte count and each eight-byte member length.
+Pending admitted work, live loan roots, physical slots, adapter bindings and retained poison history
+MUST refuse before record projection because these envelopes cannot preserve those obligations.
+Missing issuing evidence or aggregate byte exhaustion MUST refuse the whole capture without
+publishing partial output or changing accounting. This capture does not relax graph eligibility.
+
 `admit_pending_operation_with_issuing_evidence` MAY retain validated issuing evidence during
 live accounting admission under an explicit envelope byte ceiling. Evidence validation and byte
 admission MUST precede registry insertion; ordinary authoritative machine-lease and quota checks
