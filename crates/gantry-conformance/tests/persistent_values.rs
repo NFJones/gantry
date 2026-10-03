@@ -129,6 +129,93 @@ fn reviewed_persistent_value_evidence_is_closed() {
     }
 }
 
+/// Checkpoint recovery preserves logical value facts independently of physical sharing.
+#[test]
+fn public_value_checkpoint_recovery_is_representation_independent() {
+    use gantry::identity::ProtocolIdentity;
+    use gantry::ir::{
+        CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, StructuralPosition,
+        TypeDescriptor, Workflow,
+    };
+    use gantry::portable::IdentityKind;
+    use gantry::runtime::{
+        ExecutionBudget, Machine, MachineCheckpointV3, MachineLimits, MachineOutcome, MachineStep,
+    };
+
+    let original = fixture();
+    let detached = original
+        .detached_copy(DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|error| panic!("detached value: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [47; 32])
+        .unwrap_or_else(|error| panic!("execution: {error}"));
+    let path = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+    let ty = TypeDescriptor::from_canonical_string("crate::Envelope")
+        .unwrap_or_else(|error| panic!("type: {error:?}"));
+    let limits = MachineLimits::new(16, 2, 2, 8, 16, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("positive limits"));
+    let mut representation = None;
+    for value in [original.clone(), detached] {
+        let program = Arc::new(
+            MachineProgram::new(vec![Workflow {
+                path: path.clone(),
+                parameters: Vec::new(),
+                result: ty.clone(),
+                effects: EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: StructuralPosition::new(vec![0])
+                            .unwrap_or_else(|error| panic!("site: {error}")),
+                        ty: ty.clone(),
+                        kind: InstructionKind::Push(value),
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![1])
+                            .unwrap_or_else(|error| panic!("site: {error}")),
+                        ty: ty.clone(),
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+        );
+        let mut machine = Machine::new(Arc::clone(&program), &path, Vec::new(), execution, limits)
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let bytes = machine.checkpoint().canonical_bytes();
+        let budget = machine.budget_checkpoint();
+        if let Some((expected_bytes, expected_budget)) = &representation {
+            assert_eq!(&bytes, expected_bytes);
+            assert_eq!(&budget, expected_budget);
+        } else {
+            representation = Some((bytes.clone(), budget));
+        }
+        let checkpoint = MachineCheckpointV3::decode(&program, &bytes)
+            .unwrap_or_else(|error| panic!("decode: {error:?}"));
+        assert_eq!(checkpoint.canonical_bytes(), bytes);
+        let mut recovered = Machine::recover_from_checkpoint(
+            program,
+            checkpoint,
+            ExecutionBudget::recover_from_checkpoint(budget)
+                .unwrap_or_else(|error| panic!("budget recovery: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("machine recovery: {error:?}"));
+        for _ in 0..16 {
+            assert_eq!(machine.step(), recovered.step());
+            assert_eq!(machine.budget_checkpoint(), recovered.budget_checkpoint());
+            if machine.outcome().is_some() {
+                break;
+            }
+        }
+        let Some(MachineOutcome::Succeeded(value)) = recovered.outcome() else {
+            panic!("recovered machine did not succeed");
+        };
+        assert_eq!(value, &original);
+        assert_eq!(value.metrics(), original.metrics());
+        assert_eq!(value.canonical_json(), original.canonical_json());
+        assert_eq!(hash(value), hash(&original));
+    }
+}
+
 #[test]
 fn public_persistent_values_are_representation_independent_and_nonaliasing() {
     let vectors: PersistentValueVectors =

@@ -31,6 +31,12 @@ diagnostic, whose owning clause is `GNT-35.11`. Canonical text, external encodin
 projections round-trip exactly, and a projection that loses an octet, a width, or an identity is
 refused rather than repaired.
 
+`public_value_checkpoint_recovery_is_representation_independent` in
+`crates/gantry-conformance/tests/persistent_values.rs` checks shared and detached logical values
+through public machine checkpoint decoding and recovery. It compares checkpoint bytes, execution
+budget charges, recovered metrics, canonical value bytes and hashes. This is focused logical-value
+recovery evidence, not complete storage-strategy, release-point or profile qualification.
+
 ## Accounting vocabulary preserved from Section 28
 
 `GNT-28.2-logical-measures-and-representation-equivalence`: the closed logical measure vocabulary is
