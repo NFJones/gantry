@@ -444,7 +444,11 @@ recorded cancellation refuses with `CancellationRequested`, and an unreadable le
 `PendingOperation`. Both inputs and accounting facts remain untouched on refusal; binding never
 settles pending work. `invoke` fences the current owner and active lifetime before a bounded
 synchronous callback, using existing `gantry-host` unwind containment. A panic poisons this
-transport boundary, not the accounting lifetime. Unused callbacks are disposed under containment
+transport boundary, not the accounting lifetime. `invoke_with_charges` additionally admits an
+explicit whole update-charge vector under the cancellation lease after eligibility and adapter
+checks. Poisoned transport and quota refusal spend nothing; accepted callback error or panic
+retains charges. Callback execution and unused destruction run after releasing the lease.
+Unused callbacks are disposed under containment
 on refusal, including an already-poisoned boundary, without executing their bodies; a destruction
 panic takes precedence over the original refusal. `finish` enters finishing before the callback and
 records finished only after callback and contained physical disposal succeed. Bound finalizers

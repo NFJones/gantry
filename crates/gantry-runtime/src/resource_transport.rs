@@ -260,6 +260,30 @@ impl<T> OwnedHostResource<T> {
         owner: OwnerGeneration,
         invoke: impl FnOnce(&mut T) -> Result<R, HostError>,
     ) -> Result<R, HostResourceError> {
+        self.invoke_using(owner, None, invoke)
+    }
+
+    /// Admits a callback with one explicit, atomic Section 28 update-charge vector.
+    ///
+    /// Eligibility, adapter and cancellation refusals spend nothing. A poisoned transport
+    /// also refuses before charging. Accepted charges remain after callback failure or panic;
+    /// integration and unused callback destruction run outside the machine lease lock.
+    pub fn invoke_with_charges<R>(
+        &mut self,
+        owner: OwnerGeneration,
+        charges: &[gantry_ir::Charge],
+        invoke: impl FnOnce(&mut T) -> Result<R, HostError>,
+    ) -> Result<R, HostResourceError> {
+        self.invoke_using(owner, Some(charges), invoke)
+    }
+
+    /// Shares eligibility and lease admission while leaving legacy uncharged invocation unchanged.
+    fn invoke_using<R>(
+        &mut self,
+        owner: OwnerGeneration,
+        charges: Option<&[gantry_ir::Charge]>,
+        invoke: impl FnOnce(&mut T) -> Result<R, HostError>,
+    ) -> Result<R, HostResourceError> {
         if let Err(error) = self.require_owner(owner) {
             return self.refuse_callback(invoke, error);
         }
@@ -289,7 +313,18 @@ impl<T> OwnedHostResource<T> {
             Some(lease) if lease.cancellation_requested => {
                 Some(HostResourceError::CancellationRequested)
             }
-            Some(_) => None,
+            Some(_lease) => charges.and_then(|charges| {
+                if self.poison.is_poisoned() {
+                    Some(HostResourceError::Boundary(BoundaryFailure {
+                        origin: gantry_host::containment::PanicOrigin::Integration,
+                    }))
+                } else {
+                    self.account
+                        .charge(owner, gantry_ir::ResourceAction::Update, charges)
+                        .err()
+                        .map(HostResourceError::Model)
+                }
+            }),
         };
         if let Some(error) = refusal {
             return self.refuse_callback(invoke, error);

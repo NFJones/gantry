@@ -15501,6 +15501,11 @@ recorded cancellation with `CancellationRequested`, or an unreadable lease with 
 Admission linearizes under that lease, but callback execution and unused callback destruction MUST
 run after releasing it. Cancellation after admission MUST NOT undo the accepted callback; existing
 loan settlement and explicit cleanup remain available. Refusal MUST preserve accounting and ownership.
+`invoke_with_charges` MAY admit one explicit Section 28 update-charge vector under that same
+lease after eligibility, adapter and cancellation checks. A poisoned transport MUST refuse before
+charging. Quota refusal MUST spend nothing and contain unused callback destruction outside the
+lease lock. Once admitted, charges MUST remain after callback error or panic; accepted work is
+not rolled back. Legacy uncharged invocation remains separate and no physical-size charge is inferred.
 Integration panics MUST be contained and poison the transport boundary without fabricating
 resource-poisoning evidence. Unused callbacks MUST be disposed under containment on every
 refusal, including an already-poisoned boundary, without executing their bodies. A callback

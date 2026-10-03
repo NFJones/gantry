@@ -6260,6 +6260,123 @@ fn charged_receiver_loan_acquisition_preserves_refusal_and_commits_once() {
     );
 }
 
+/// Direct update charges commit only for admitted callbacks and are not rolled back after failure.
+#[test]
+fn charged_host_invocation_preserves_refusals_and_accepted_charges() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let owner = OwnerGeneration::new(4);
+    let mut resource =
+        OwnedHostResource::bind(admitted_active(), 11_u64).unwrap_or_else(|_| panic!("bind"));
+    let charge = |family, amount| Charge {
+        owner: QuotaOwner::Owner,
+        family,
+        amount,
+    };
+    let before = resource.account().durable_record();
+    assert_eq!(
+        resource.invoke_with_charges::<()>(
+            owner,
+            &[
+                charge(QuotaFamily::Bytes, 3),
+                charge(QuotaFamily::Handles, 1)
+            ],
+            |_| panic!("refused vector cannot execute")
+        ),
+        Err(HostResourceError::Model(ResourceError::UndeclaredQuota))
+    );
+    assert_eq!(resource.account().durable_record(), before);
+    assert_eq!(
+        resource.invoke_with_charges(owner, &[charge(QuotaFamily::Bytes, 3)], |value| {
+            *value += 1;
+            Ok(*value)
+        }),
+        Ok(12)
+    );
+    assert_eq!(
+        resource
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(5)
+    );
+    let failure = gantry::host::contracts::HostError {
+        code: Arc::from("fixture-failure"),
+        protected_diagnostic: None,
+    };
+    assert_eq!(
+        resource.invoke_with_charges::<()>(owner, &[charge(QuotaFamily::Bytes, 2)], |_| Err(
+            failure.clone()
+        )),
+        Err(HostResourceError::Host(failure))
+    );
+    assert_eq!(
+        resource
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(3)
+    );
+    let before = resource.account().durable_record();
+    assert_eq!(
+        resource.invoke_with_charges::<()>(owner, &[charge(QuotaFamily::Bytes, 4)], |_| panic!(
+            "exhausted quota cannot execute"
+        )),
+        Err(HostResourceError::Model(ResourceError::QuotaExhausted))
+    );
+    assert_eq!(resource.account().durable_record(), before);
+    assert_eq!(resource.invoke(owner, |value| Ok(*value)), Ok(12));
+    assert!(matches!(
+        resource.invoke_with_charges::<()>(owner, &[charge(QuotaFamily::Bytes, 1)], |_| {
+            panic!("accepted integration panic");
+        }),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert_eq!(
+        resource
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(2)
+    );
+    let before = resource.account().durable_record();
+    assert!(matches!(
+        resource.invoke_with_charges::<()>(owner, &[charge(QuotaFamily::Bytes, 1)], |_| {
+            panic!("poisoned transport cannot dispatch again");
+        }),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert_eq!(resource.account().durable_record(), before);
+
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject.unwrap_or_else(|| panic!("machine subject")),
+    )
+    .unwrap_or_else(|error| panic!("account: {error:?}"));
+    let mut resource = OwnedHostResource::bind(account, 17_u64)
+        .unwrap_or_else(|_| panic!("bind cancellation fixture"));
+    assert_eq!(
+        resource.invoke_with_charges(owner, &[charge(QuotaFamily::Bytes, 1)], |value| {
+            assert!(machine.cancel("cancel inside charged callback").is_some());
+            Ok(*value)
+        }),
+        Ok(17)
+    );
+    assert_eq!(
+        resource
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(7)
+    );
+    let before = resource.account().durable_record();
+    assert_eq!(
+        resource.invoke_with_charges::<()>(owner, &[charge(QuotaFamily::Bytes, 9)], |_| panic!(
+            "cancelled callback cannot execute"
+        )),
+        Err(HostResourceError::CancellationRequested)
+    );
+    assert_eq!(resource.account().durable_record(), before);
+    assert!(machine.checkpoint().pending_operation().is_some());
+}
+
 /// Accepted settlement releases only the receiver loan, while refused progress claims retain it.
 #[test]
 fn host_receiver_loan_retains_progress_until_exact_settlement() {
