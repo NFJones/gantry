@@ -5826,6 +5826,135 @@ fn owned_host_resource_binding_refuses_machine_cancellation_without_mutation() {
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Charged registry callbacks spend nothing on refusal and retain charges after admitted work.
+#[test]
+fn charged_registry_invocation_preserves_physical_and_quota_admission() {
+    use gantry::runtime::HostResourceError;
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit_host_value(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            17_u64,
+        )
+        .unwrap_or_else(|_| panic!("admit"));
+    let charge = |family, amount| Charge {
+        owner: QuotaOwner::Owner,
+        family,
+        amount,
+    };
+    let before = registry.declared_records();
+    assert_eq!(
+        registry.invoke_host_value_with_charges::<String, ()>(
+            &subject,
+            owner,
+            &[charge(QuotaFamily::Bytes, 3)],
+            |_| panic!("wrong type cannot dispatch")
+        ),
+        Err(HostResourceError::TypeMismatch)
+    );
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(
+        registry.invoke_host_value_with_charges::<u64, ()>(
+            &subject,
+            owner,
+            &[
+                charge(QuotaFamily::Bytes, 3),
+                charge(QuotaFamily::Handles, 1)
+            ],
+            |_| panic!("refused vector cannot dispatch")
+        ),
+        Err(HostResourceError::Model(ResourceError::UndeclaredQuota))
+    );
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(
+        registry.invoke_host_value_with_charges::<u64, u64>(
+            &subject,
+            owner,
+            &[charge(QuotaFamily::Bytes, 3)],
+            |value| {
+                *value += 1;
+                Ok(*value)
+            }
+        ),
+        Ok(18)
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .and_then(|account| account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes)),
+        Some(5)
+    );
+    let failure = gantry::host::contracts::HostError {
+        code: Arc::from("fixture-failure"),
+        protected_diagnostic: None,
+    };
+    assert_eq!(
+        registry.invoke_host_value_with_charges::<u64, ()>(
+            &subject,
+            owner,
+            &[charge(QuotaFamily::Bytes, 2)],
+            |_| Err(failure.clone())
+        ),
+        Err(HostResourceError::Host(failure))
+    );
+    assert_eq!(
+        registry
+            .account(&subject)
+            .and_then(|account| account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes)),
+        Some(3)
+    );
+    assert!(registry.has_host_value(&subject));
+    assert_eq!(registry.pending_operations(), 1);
+}
+
+/// Charged transport failures preserve admitted charges but refuse subsequent poisoned work.
+#[test]
+fn charged_registry_panic_retains_charges_and_fences_reuse() {
+    use gantry::runtime::HostResourceError;
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit_host_value(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            17_u64,
+        )
+        .unwrap_or_else(|_| panic!("admit"));
+    let charges = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 1,
+    }];
+    assert!(matches!(
+        registry.invoke_host_value_with_charges::<u64, ()>(&subject, owner, &charges, |_| panic!(
+            "accepted integration panic"
+        )),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert_eq!(
+        registry
+            .account(&subject)
+            .and_then(|account| account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes)),
+        Some(7)
+    );
+    let before = registry.declared_records();
+    assert!(matches!(
+        registry.invoke_host_value_with_charges::<u64, ()>(&subject, owner, &charges, |_| panic!(
+            "poisoned work cannot dispatch"
+        )),
+        Err(HostResourceError::Boundary(_))
+    ));
+    assert_eq!(registry.declared_records(), before);
+    assert!(registry.has_host_value(&subject));
+    assert_eq!(registry.pending_operations(), 1);
+}
+
 /// Direct registry invocation admits before cancellation, never through a recovered caller lease.
 #[test]
 fn registry_host_invocation_refuses_account_cancellation_and_releases_the_lease() {
@@ -5868,6 +5997,20 @@ fn registry_host_invocation_refuses_account_cancellation_and_releases_the_lease(
                 "cancelled callback must not execute"
             )),
             Err(HostResourceError::CancellationRequested)
+        );
+        assert_eq!(
+            registry.invoke_host_value_with_charges::<String, ()>(
+                binding,
+                owner,
+                &[Charge {
+                    owner: QuotaOwner::Owner,
+                    family: QuotaFamily::Bytes,
+                    amount: 9,
+                }],
+                |_| panic!("cancelled charged callback must not execute"),
+            ),
+            Err(HostResourceError::CancellationRequested),
+            "account cancellation precedes type mismatch and quota exhaustion",
         );
         assert_eq!(registry.declared_records(), before);
         assert!(registry.has_host_value(&subject));

@@ -682,6 +682,25 @@ impl HostValueSlot {
         Err(error)
     }
 
+    /// Checks physical dispatch before a charged admission can commit accounting.
+    ///
+    /// This mirrors invocation's type/disposal and poisoned-boundary refusals without calling
+    /// integration or changing ownership. Exclusive registry access preserves eligibility.
+    pub(crate) fn require_invocation_eligible<T: std::any::Any + Send>(
+        &self,
+    ) -> Result<(), HostResourceError> {
+        let value = self.value.as_ref().ok_or(HostResourceError::Disposed)?;
+        if !value.is::<T>() {
+            return Err(HostResourceError::TypeMismatch);
+        }
+        if self.poison.is_poisoned() {
+            return Err(HostResourceError::Boundary(BoundaryFailure {
+                origin: gantry_host::containment::PanicOrigin::Integration,
+            }));
+        }
+        Ok(())
+    }
+
     /// Invokes the exact attached Rust type through the existing synchronous containment owner.
     pub(crate) fn invoke<T: std::any::Any + Send, R>(
         &mut self,

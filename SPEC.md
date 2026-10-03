@@ -15592,6 +15592,12 @@ Eligible fresh registry invocation MUST check the admitted account's cancellatio
 a caller's recovered or speculative binding. Recorded cancellation and unreadable leases MUST
 refuse with `CancellationRequested` and `PendingOperation` respectively; integration and callback
 destruction MUST run outside that lease lock. Accepted callbacks and explicit cleanup remain separate.
+`invoke_host_value_with_charges` MAY additionally admit an explicit whole update-charge vector.
+Account, adapter and cancellation checks MUST precede physical type/transport checks, which MUST
+precede charging under the same admitted lease. Refused work MUST spend no quota; admitted callback
+error or panic MUST retain its charges. Integration and unused callback destruction MUST run after
+releasing the lease. Legacy uncharged invocation remains unchanged and no callback runs under a
+coordinator lock. This boundary supplies no source transport or implicit physical-size charges.
 Refusal MUST retain accounting and physical ownership and leave unrelated adapters usable; unused
 callback destruction MUST retain containment and panic precedence. Accounting finalization MUST refuse while a physical value remains held.
 Contained destruction failure MUST remain recorded after the physical slot becomes empty;

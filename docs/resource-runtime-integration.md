@@ -254,6 +254,10 @@ Eligible direct invocation also checks the admitted account's machine lease: rec
 refuses with `CancellationRequested`, and an unreadable lease with `PendingOperation`. Recovered
 caller bindings cannot bypass this check. Admission linearizes under the lease, then releases it
 before integration or callback destruction; accepted callbacks and cleanup are not rolled back.
+`invoke_host_value_with_charges` additionally admits a complete explicit update-charge vector
+under that lease after account, adapter, cancellation and physical type/transport validation.
+Refusals spend nothing; admitted callback errors and panics retain charges. Legacy uncharged
+invocation remains unchanged. This grants no source transport or implicit physical-size charging.
 physical attachment, invocation, presence inspection and disposal also require the binding's
 issuing execution/task to match the admitted account. `execution_id` and `task_id` retain machine
 provenance across checkpoint recovery without changing portable operation/generation identities.

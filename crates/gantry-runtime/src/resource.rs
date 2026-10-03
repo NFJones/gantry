@@ -1596,6 +1596,32 @@ impl ResourceRegistry {
         owner: OwnerGeneration,
         callback: impl FnOnce(&mut T) -> Result<R, gantry_host::contracts::HostError>,
     ) -> Result<R, crate::HostResourceError> {
+        self.invoke_host_value_using(subject, owner, None, callback)
+    }
+
+    /// Admits physical callback work with an explicit atomic update-charge vector.
+    ///
+    /// Eligibility, cancellation, type and transport refusals spend nothing. Charges commit
+    /// under the admitted account lease and remain after callback error or panic. Integration
+    /// and unused callback destruction run after releasing that lease, never under a coordinator.
+    pub fn invoke_host_value_with_charges<T: std::any::Any + Send, R>(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+        charges: &[Charge],
+        callback: impl FnOnce(&mut T) -> Result<R, gantry_host::contracts::HostError>,
+    ) -> Result<R, crate::HostResourceError> {
+        self.invoke_host_value_using(subject, owner, Some(charges), callback)
+    }
+
+    /// Shares account selection and lease admission without changing legacy uncharged dispatch.
+    fn invoke_host_value_using<T: std::any::Any + Send, R>(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+        charges: Option<&[Charge]>,
+        callback: impl FnOnce(&mut T) -> Result<R, gantry_host::contracts::HostError>,
+    ) -> Result<R, crate::HostResourceError> {
         use crate::HostResourceError;
         let key = self.selection_key(subject);
         let refusal = match self.accounts.get(&key) {
@@ -1642,7 +1668,16 @@ impl ResourceRegistry {
             Some(lease) if lease.cancellation_requested => {
                 Some(HostResourceError::CancellationRequested)
             }
-            Some(_) => None,
+            Some(_lease) => charges.and_then(|charges| {
+                slot.require_invocation_eligible::<T>().err().or_else(|| {
+                    self.accounts
+                        .get_mut(&key)
+                        .unwrap_or_else(|| unreachable!("eligible invocation retains its account"))
+                        .charge(owner, ResourceAction::Update, charges)
+                        .err()
+                        .map(HostResourceError::Model)
+                })
+            }),
         };
         if let Some(error) = refusal {
             return slot.refuse(callback, error);
