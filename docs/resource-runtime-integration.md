@@ -380,6 +380,11 @@ The route updates only the distinct operation-state field; it does not settle wh
 lifetime, change quotas or roots, or reconstruct or claim a host resource. Unsettled,
 unknown-subject, or stale-owner projections leave the account unchanged, as required by
 `GNT-28.12-operation-state-projection`.
+`ResourceRegistry::project_failure_state` and
+`ExecutionCoordinator::project_resource_failure_state` separately consume the retained failure
+projection through the same subject/provenance, current-owner, terminal-state and publication fences.
+They change only operation state, preserving lifetime, quotas, roots, physical ownership and pending
+work. Ordinary successful projection still refuses failure winners; refusal publishes nothing.
 
 - `GNT-28.11-runtime-admission-mapping` maps only accounting admission: the registry derives its
   subject from the machine's authenticated live-resource operation, admits only the declared

@@ -15519,6 +15519,11 @@ provenance and generation fencing without fabricating a successful outcome or ch
 Ordinary `operation_state_projection()` remains absent for failure winners. Exclusively admitted
 receiver-loan failure settlement MAY consume this separate projection under the same current-owner
 and terminal-state fences, then close only the loan root as declared by `GNT-28.11`.
+The registry MAY separately expose `project_failure_state`, and its coordinator MAY expose
+`project_resource_failure_state`, consuming only this retained failure projection with the same
+exact subject, runtime provenance, current-owner, terminal-state and publication fences as ordinary
+projection. These routes MUST change only operation state: lifetime, quotas, roots, physical
+ownership and pending machine work remain unchanged. Refusal MUST advance no publication.
 
 ## 29. Portable Host-Domain and Standard Host-Family Contracts
 

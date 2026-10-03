@@ -1304,6 +1304,30 @@ impl ResourceRegistry {
         let projection = live
             .operation_state_projection()
             .ok_or(ResourceRegistryRefusal::OperationStateProjectionNotSettled)?;
+        self.project_retained_state(&projection, subject)
+    }
+
+    /// Projects only a retained failure winner's state, without settling lifetime or work.
+    ///
+    /// Failure evidence retains exact subject, runtime provenance, current-owner and terminal
+    /// state fences. Ordinary successful projection remains unavailable for failure winners.
+    pub fn project_failure_state(
+        &mut self,
+        live: &gantry_ir::LiveResource,
+        subject: &ResourceSubjectBinding,
+    ) -> Result<ResourceState, ResourceRegistryRefusal> {
+        let projection = live
+            .failure_state_projection()
+            .ok_or(ResourceRegistryRefusal::OperationStateProjectionNotSettled)?;
+        self.project_retained_state(&projection, subject)
+    }
+
+    /// Selects exact evidence-qualified accounting and applies its model-owned state fence.
+    fn project_retained_state(
+        &mut self,
+        projection: &gantry_ir::OperationStateProjection,
+        subject: &ResourceSubjectBinding,
+    ) -> Result<ResourceState, ResourceRegistryRefusal> {
         let key = self.evidence_key(projection.operation(), projection.generation(), subject);
         let account = self
             .accounts
@@ -1312,7 +1336,7 @@ impl ResourceRegistry {
         require_evidence_subject(account, subject)?;
         account
             .ledger
-            .project_operation_state(&projection)
+            .project_operation_state(projection)
             .map_err(ResourceRegistryRefusal::OperationStateProjection)
     }
 

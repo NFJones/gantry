@@ -704,6 +704,18 @@ impl ExecutionCoordinator {
         self.mutate_resources(|resources| resources.project_operation_state(live, subject))
     }
 
+    /// Projects a retained failure winner under the shared publication and provenance fences.
+    ///
+    /// This changes only operation state; lifetime, quotas, roots, physical ownership and
+    /// pending machine work remain unchanged. Refusal advances no publication.
+    pub fn project_resource_failure_state(
+        &self,
+        live: &gantry_ir::LiveResource,
+        subject: &crate::ResourceSubjectBinding,
+    ) -> Result<gantry_ir::ResourceState, CoordinatorResourceRefusal> {
+        self.mutate_resources(|resources| resources.project_failure_state(live, subject))
+    }
+
     /// Advances one coordinator-owned account to finishing under its current owner.
     pub fn begin_resource_finish(
         &self,

@@ -6886,6 +6886,116 @@ fn emergency_release_survives_declared_registry_reconstruction() {
     assert_eq!(settlement.settled_at(), 21);
 }
 
+/// Failure-state projection changes no lifetime, roots, quota, or accepted-work lease.
+#[test]
+fn runtime_projects_retained_failure_state_without_releasing_accounting() {
+    for failure in FailureClass::ALL {
+        let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+        let mut registry = ResourceRegistry::with_limits(1, 1);
+        registry
+            .admit_pending_operation(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admission: {error:?}"));
+        let before = registry.declared_records();
+        let mut live = transport_live(FIXTURE_DECLARATION, 0, 4, false);
+        assert_eq!(
+            registry.project_failure_state(&live, &subject),
+            Err(ResourceRegistryRefusal::OperationStateProjectionNotSettled)
+        );
+        assert_eq!(registry.declared_records(), before);
+        assert!(live.settle_failure(failure).is_ok());
+        let projection = live
+            .failure_state_projection()
+            .unwrap_or_else(|| panic!("failure projects state"));
+        let mut expected = ResourceLedger::reconstruct(before[0].record().clone());
+        assert!(expected.project_operation_state(&projection).is_ok());
+        assert_eq!(
+            registry.project_failure_state(&live, &subject),
+            Ok(projection.state())
+        );
+        assert_eq!(
+            registry
+                .account(&subject)
+                .map(AdmittedResource::durable_record),
+            Some(expected.durable_record())
+        );
+        assert_eq!(registry.live_resources(), 1);
+        assert_eq!(registry.pending_operations(), 1);
+        assert_eq!(
+            registry.project_operation_state(&live, &subject),
+            Err(ResourceRegistryRefusal::OperationStateProjectionNotSettled)
+        );
+        let records = registry.declared_records();
+        let stale = transport_live(FIXTURE_DECLARATION, 0, 3, false);
+        let mut stale = stale;
+        assert!(stale.settle_failure(failure).is_ok());
+        assert_eq!(
+            registry.project_failure_state(&stale, &subject),
+            Err(ResourceRegistryRefusal::OperationStateProjection(
+                ResourceError::StaleOwner {
+                    presented: OwnerGeneration::new(3),
+                    current: OwnerGeneration::new(4),
+                }
+            ))
+        );
+        assert_eq!(registry.declared_records(), records);
+        let older = live.clone();
+        live.fence(gantry::ir::FenceCategory::Revocation);
+        assert_eq!(
+            registry.project_failure_state(&live, &subject),
+            Ok(ResourceState::Poisoned)
+        );
+        if failure == FailureClass::AdapterFailure {
+            let poisoned = registry.declared_records();
+            assert_eq!(
+                registry.project_failure_state(&older, &subject),
+                Err(ResourceRegistryRefusal::OperationStateProjection(
+                    ResourceError::PoisonedOperationStateRevival
+                ))
+            );
+            assert_eq!(registry.declared_records(), poisoned);
+        }
+
+        let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+        assert!(
+            coordinator
+                .admit_resource(
+                    &machine,
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record()
+                )
+                .is_ok()
+        );
+        let prior = coordinator.snapshot();
+        assert_eq!(
+            coordinator.project_resource_failure_state(&older, &subject),
+            Ok(projection.state())
+        );
+        let after = coordinator.snapshot();
+        assert_eq!(after.publication(), prior.publication() + 1);
+        assert_eq!(
+            after.resource_records().map(|records| records[0].record()),
+            Some(&expected.durable_record())
+        );
+        assert!(coordinator.has_unsettled_resource_accounts());
+        assert!(coordinator.has_pending_resource_operations());
+        assert_eq!(
+            coordinator.project_resource_failure_state(&stale, &subject),
+            Err(gantry::runtime::CoordinatorResourceRefusal::Registry(
+                ResourceRegistryRefusal::OperationStateProjection(ResourceError::StaleOwner {
+                    presented: OwnerGeneration::new(3),
+                    current: OwnerGeneration::new(4),
+                })
+            ))
+        );
+        assert_eq!(coordinator.snapshot(), after);
+    }
+}
+
 #[test]
 fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() {
     let subject = active_subject();
