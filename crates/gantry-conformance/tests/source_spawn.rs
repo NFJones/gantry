@@ -555,6 +555,7 @@ impl JournalStorage for FailingGraphJournalStore {
 struct FixedPrefixJournalStore {
     inner: InMemoryJournalStore,
     prefix: JournalPrefixV1,
+    commit_calls: AtomicU64,
 }
 
 impl FixedPrefixJournalStore {
@@ -562,6 +563,7 @@ impl FixedPrefixJournalStore {
         Self {
             inner: InMemoryJournalStore::new(),
             prefix,
+            commit_calls: AtomicU64::new(0),
         }
     }
 }
@@ -585,6 +587,7 @@ impl JournalStorage for FixedPrefixJournalStore {
         &'a self,
         request: JournalCommitRequestV1,
     ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        self.commit_calls.fetch_add(1, Ordering::AcqRel);
         self.inner.commit(request)
     }
 

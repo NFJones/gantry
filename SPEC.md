@@ -15240,7 +15240,10 @@ with changed ceilings, removed retained policy or disabled accounting MUST refus
 from a zero ceiling. This identity check does not itself reconstruct accounting or host resources.
 After validating execution-start identity, serial root-driver recovery MUST restore enabled empty
 accounting with the same live, pending and retained policy and the recovered machine's shared budget.
-It MUST create no resource records, physical slots or accepted-work leases. This configuration
+It MUST create no resource records, physical slots or accepted-work leases. Concurrent resume MUST
+also compare recovered graph accounting policy with the identity-validated configuration before
+lifecycle admission, journal repair or replacement-driver submission. A disagreement MUST refuse
+`graph-accounting-policy-mismatch` without journal mutation. This configuration
 MUST NOT enable unsupported live-handle transport or grant host authority. The version-six combined
 graph recovers enabled empty-registry admission policy as declared below; resource records,
 physical handles and admitted pending work remain unsupported by that wire.

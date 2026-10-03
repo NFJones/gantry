@@ -75,6 +75,135 @@ fn missing_dispatch_event_is_repaired_before_redispatch() {
     );
 }
 
+/// Structurally valid graph policy cannot replace policy bound to execution-start identity.
+#[test]
+fn resume_refuses_graph_accounting_policy_substitution() {
+    let root = TempDirectory::new("fn main() { spawn child -> Int { 7 } discard join(child); }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let interpreter = interpreter_with_delivery(
+        executor.clone(),
+        integration,
+        8,
+        65_536,
+        SinkPlan::default(),
+    );
+    let storage = Arc::new(CountingJournalStore::default());
+    let journal_id = JournalId::new("graph-accounting-substitution")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let accepted = durable_accepted(&interpreter, &root, storage.clone(), journal_id.clone());
+    assert!(
+        drive_to_terminal(&executor, &interpreter, accepted.handle())
+            .terminal
+            .is_some()
+    );
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let (program, _) = durable_graph_entries(&prefix);
+    let JournalPrefixV1::Full(mut full) = prefix else {
+        panic!("full prefix")
+    };
+    let mut entries = full.evidence.to_vec();
+    for entry in &mut entries {
+        if !matches!(
+            entry.kind.as_ref(),
+            CONCURRENT_DURABLE_EVIDENCE_KIND_V4 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
+        ) {
+            continue;
+        }
+        let body: serde_json::Value = serde_json::from_slice(&entry.canonical_body)
+            .unwrap_or_else(|error| panic!("body: {error:?}"));
+        let encoded = body["checkpoint"]
+            .as_str()
+            .unwrap_or_else(|| panic!("checkpoint hex"));
+        let mut bytes = encoded
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| {
+                let text =
+                    std::str::from_utf8(pair).unwrap_or_else(|error| panic!("hex: {error:?}"));
+                u8::from_str_radix(text, 16).unwrap_or_else(|error| panic!("hex byte: {error:?}"))
+            })
+            .collect::<Vec<_>>();
+        bytes[..8].copy_from_slice(b"GNTCDP07");
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&7_u64.to_be_bytes());
+        let replacement: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+        let original = std::str::from_utf8(&entry.canonical_body)
+            .unwrap_or_else(|error| panic!("evidence UTF-8: {error:?}"));
+        entry.canonical_body = Arc::from(original.replacen(encoded, &replacement, 1).into_bytes());
+    }
+    full.evidence = Arc::from(entries);
+    let substituted = JournalPrefixV1::Full(full);
+    recover_concurrent_authoritative_prefix(program, &substituted).unwrap_or_else(|error| {
+        panic!("policy substitution must otherwise be a valid graph: {error:?}")
+    });
+    let fixed = Arc::new(FixedPrefixJournalStore::new(substituted.clone()));
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let resumed = interpreter_with_delivery(
+        resume_executor.clone(),
+        Arc::new(ScriptedIntegration::new([], [])),
+        8,
+        65_536,
+        SinkPlan::default(),
+    );
+    let selection = selection();
+    let mut resume = pin!(resumed.resume_durable_execution(
+        fixed.clone(),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(accepted.execution_id()),
+            event_delivery: None,
+        },
+    ));
+    let result = (0..1_000)
+        .find_map(|_| {
+            if let Poll::Ready(result) = resume
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                return Some(result);
+            }
+            for task in resume_executor.task_ids() {
+                if resume_executor.is_runnable(task) {
+                    let _ = resume_executor.poll_task(task);
+                }
+            }
+            None
+        })
+        .unwrap_or_else(|| panic!("resume preparation did not settle"));
+    let DurableResumeExecutionResult::Rejected(failure) = result else {
+        panic!("substituted policy accepted")
+    };
+    assert_eq!(failure.code.as_ref(), "graph-accounting-policy-mismatch");
+    assert_eq!(fixed.commit_calls.load(Ordering::Acquire), 0);
+    assert!(
+        resume_executor.task_ids().len() <= 1,
+        "no replacement drivers may be submitted"
+    );
+    assert_eq!(
+        block_on(fixed.read_prefix(ReadJournalPrefixV1 { journal_id }))
+            .unwrap_or_else(|error| panic!("unchanged prefix: {error:?}")),
+        substituted
+    );
+}
+
 #[test]
 fn missing_operation_result_event_is_replaced_before_source_consumption() {
     recover_missing_operation_event(

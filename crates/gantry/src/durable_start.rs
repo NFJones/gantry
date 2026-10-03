@@ -926,6 +926,33 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 )
                 .await;
         }
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        if let RecoveredDurablePrefix::Concurrent {
+            recovered: graph, ..
+        } = &recovered
+        {
+            let expected = self
+                .configuration
+                .resource_accounting_limits()
+                .map(|(live, pending)| (Some(live), Some(pending)));
+            let scheduler = graph.execution().scheduler();
+            if scheduler.resource_policy() != expected
+                || scheduler.retained_resource_limit()
+                    != self.configuration.retained_resource_limit()
+            {
+                drop(recovered);
+                return self
+                    .reject_resume_and_release(
+                        journal_id,
+                        ownership.token,
+                        ResumeRejection::new(
+                            ResumeStartFailureCategory::SourceOrConfigurationIncompatibility,
+                            "graph-accounting-policy-mismatch",
+                        ),
+                    )
+                    .await;
+            }
+        }
         let recovered = match recovered {
             RecoveredDurablePrefix::Serial(recovered) => PreparedDurableRecovery::Serial(recovered),
             #[cfg(all(feature = "concurrent", feature = "durable"))]

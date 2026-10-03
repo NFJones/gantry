@@ -2206,6 +2206,20 @@ impl ConcurrentSchedulerV1 {
         self.execution_budget.snapshot()
     }
 
+    /// Returns validated empty-registry admission policy retained by durable recovery.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub const fn resource_policy(&self) -> Option<(Option<u64>, Option<u64>)> {
+        self.resource_policy
+    }
+
+    /// Returns the retained-account ceiling restored by durable recovery.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub const fn retained_resource_limit(&self) -> Option<u64> {
+        self.retained_resource_limit
+    }
+
     /// Records one child before an executor submission is attempted.
     pub fn create_child(
         &mut self,

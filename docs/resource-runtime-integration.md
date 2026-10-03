@@ -86,6 +86,10 @@ not itself resource reconstruction or host authority admission.
 Serial root-driver recovery restores enabled empty accounting from identity-validated configuration,
 retaining the recovered machine's shared execution budget and all configured ceilings. It creates
 no resource records, physical slots or accepted-work leases; graph record refusal remains intact.
+Concurrent resume additionally compares recovered graph accounting policy with that validated
+configuration before lifecycle admission, journal repair or replacement-driver submission.
+Disagreement refuses with `graph-accounting-policy-mismatch` without journal mutation, even when
+the substituted policy is otherwise structurally valid and consistent across all graph cuts.
 
 `ExecutionCoordinator::new_with_recovered_resources` constructs one shared accounting owner
 atomically from declared reconstruction records. Each binding must name the execution and a known
