@@ -36,6 +36,9 @@ Coordinated capture and journal-first staging retain this policy, replay preserv
 coordinator-backed driver recovery rebuilds the empty registry with the same limits. This is
 policy carriage only: retained resource records, physical slots and admitted pending work still
 refuse with `ResourceStateUnsupported`. It establishes no durable host reconstruction claim.
+The version-seven graph (`GNTCDP07`) additionally retains the exact retained-account ceiling.
+Legacy v4–v6 bytes remain unchanged; replay rejects changes or removal of any ceiling, and
+coordinator-backed recovery restores the same admission policy without creating accepted work.
 
 `ExecutionCoordinator::stage_graph` provides an exclusive quiescent transaction
 primitive over borrowed root and child machines. Its private copies share one

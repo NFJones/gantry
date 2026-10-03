@@ -15169,8 +15169,8 @@ Excess admission MUST refuse `RetainedResourceLimitReached` without changing acc
 physical inputs or pending-capacity bookkeeping. Duplicate, kind, carrier, live and pending
 refusals retain precedence. Existing constructors leave the retained ceiling absent.
 `new_with_budget_and_accounting_limits` MAY expose this policy through the shared coordinator.
-The current durable graph wire MUST refuse configured retained-account policy, even when empty,
-rather than silently omit it; legacy empty-registry policy carriage remains available.
+Enabled empty-registry retained-account policy MUST use `GNTCDP07` carriage rather than
+silently omitting the ceiling; legacy empty-registry policy carriage remains available.
 
 A registry's storage subject MUST qualify portable operation/resource-generation identity with
 the issuing execution and task. Equal portable identities from independent task-local counters
@@ -15287,13 +15287,17 @@ Until a reviewed graph wire carries resource reconstruction records and runtime 
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
 slots or admitted pending work would be omitted. Refusal MUST precede private machine cloning or
 publication reservation and leave accounting, machines and publication unchanged. An empty configured
-registry without retained-account policy alone does not require refusal. This boundary does not implement durable resource recovery.
+registry alone does not require refusal. This boundary does not implement durable resource recovery.
 For an enabled empty registry, combined graph capture MAY retain the exact optional live-account
 and pending-operation ceilings in `GNTCDP06`. Absent accounting and enabled unlimited accounting
 MUST remain distinct. Capture, staging, replay and coordinator-backed driver recovery MUST preserve
 this policy without creating resource records, physical slots, adapter bindings or accepted work.
 Legacy `GNTCDP04` and `GNTCDP05` bytes remain unchanged and identify absent accounting policy;
 exact-version decoders MUST reject another version. Policy cannot change within a replayed graph.
+`GNTCDP07` additionally carries an enabled empty registry's retained-account ceiling as an exact
+unsigned integer, including zero. Legacy v4–v6 encodings remain unchanged. Capture, staging,
+replay and coordinator-backed driver recovery MUST retain all ceilings; every graph transition
+MUST reject a changed or removed retained ceiling. This carries policy only, not resource records.
 Machine-only recovery consumption MUST refuse policy-bearing graphs and return the complete
 recovered owner unchanged; coordinator-backed driver admission retains that policy instead.
 Sequential committed-root installation MUST likewise refuse `ResourceStateUnsupported` before

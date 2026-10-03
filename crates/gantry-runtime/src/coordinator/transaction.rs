@@ -35,6 +35,7 @@ pub struct DurableGraphTransaction<'a> {
     budget: ExecutionBudget,
     original_budget: ExecutionBudgetSnapshot,
     resource_policy: Option<(Option<u64>, Option<u64>)>,
+    retained_resource_limit: Option<u64>,
     original_checkpoint: Box<ConcurrentDurableCheckpointV4>,
     commit_started: bool,
     installed: bool,
@@ -110,6 +111,10 @@ impl ExecutionCoordinator {
                 .resources
                 .as_ref()
                 .map(|registry| (registry.live_limit(), registry.pending_limit())),
+            state
+                .resources
+                .as_ref()
+                .and_then(crate::ResourceRegistry::retained_limit),
         )
         .map_err(|_| TaskStateError::InvalidTaskMachine)?;
         state.durable_publication_reserved = true;
@@ -129,6 +134,10 @@ impl ExecutionCoordinator {
                 .resources
                 .as_ref()
                 .map(|registry| (registry.live_limit(), registry.pending_limit())),
+            retained_resource_limit: state
+                .resources
+                .as_ref()
+                .and_then(crate::ResourceRegistry::retained_limit),
             original_checkpoint: Box::new(original_checkpoint),
             commit_started: false,
             installed: false,
@@ -280,6 +289,7 @@ impl DurableGraphTransaction<'_> {
             &self.sessions,
             &self.budget,
             self.resource_policy,
+            self.retained_resource_limit,
         )
         .map_err(|error| {
             DurableCommitError::Evidence(crate::DurableEvidenceError::ConcurrentCheckpoint(error))

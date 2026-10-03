@@ -145,14 +145,14 @@ fn resource_records_refuse_durable_graph_capture_and_staging_without_mutation() 
     lock(&coordinator.inner.state).resources =
         Some(ResourceRegistry::with_accounting_limits(1, 1, 1));
     let before_policy = coordinator.snapshot();
-    assert_eq!(
-        coordinator.capture_checkpoint(&root, &children).err(),
-        Some(crate::ConcurrentDurableCheckpointError::ResourceStateUnsupported)
-    );
-    assert_eq!(
-        coordinator.stage_graph(&mut root, &mut children).err(),
-        Some(TaskStateError::ResourceStateUnsupported)
-    );
+    let checkpoint = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("empty retained policy capture: {error:?}"));
+    assert_eq!(checkpoint.retained_resource_limit(), Some(1));
+    let stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("empty retained policy staging: {error:?}"));
+    drop(stage);
     assert_eq!(coordinator.snapshot(), before_policy);
     assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
     lock(&coordinator.inner.state).resources = Some(ResourceRegistry::with_live_limit(1));
@@ -200,6 +200,7 @@ fn resource_records_refuse_durable_graph_capture_and_staging_without_mutation() 
 /// Empty accounting remains enabled with exact limits after durable graph recovery.
 #[test]
 fn empty_resource_policy_survives_graph_recovery() {
+    // Legacy two-ceiling policy remains on the version-six wire.
     let (coordinator, root, children, program) = fixture_with_program();
     lock(&coordinator.inner.state).resources = Some(ResourceRegistry::with_limits(0, 3));
     let checkpoint = coordinator
@@ -243,6 +244,46 @@ fn empty_resource_policy_survives_graph_recovery() {
     assert_eq!(registry.pending_limit(), Some(3));
     assert!(registry.declared_records().is_empty());
     assert_eq!(registry.pending_operations(), 0);
+}
+
+/// Retained ceilings survive empty-registry graph recovery without creating accepted work.
+#[test]
+fn retained_resource_policy_survives_graph_recovery() {
+    for retained in [0, 1, u64::MAX] {
+        let (coordinator, root, children, program) = fixture_with_program();
+        lock(&coordinator.inner.state).resources =
+            Some(ResourceRegistry::with_accounting_limits(2, 3, retained));
+        let checkpoint = coordinator
+            .capture_checkpoint(&root, &children)
+            .unwrap_or_else(|error| panic!("retained policy capture: {error:?}"));
+        let bytes = checkpoint.canonical_bytes();
+        assert_eq!(bytes.get(..8), Some(b"GNTCDP07".as_slice()));
+        assert!(crate::ConcurrentDurableCheckpointV6::decode(&program, &bytes).is_err());
+        assert!(crate::ConcurrentDurableCheckpointV7::decode(&program, &bytes).is_ok());
+        assert!(
+            crate::ConcurrentDurableCheckpointV7::decode(&program, &bytes[..bytes.len() - 1])
+                .is_err()
+        );
+        let decoded = crate::ConcurrentDurableCheckpointV4::decode_compatible(&program, &bytes)
+            .unwrap_or_else(|error| panic!("retained policy decode: {error:?}"));
+        assert_eq!(decoded.canonical_bytes(), bytes);
+        let admission = decoded
+            .recover(program)
+            .unwrap_or_else(|error| panic!("retained policy recovery: {error:?}"))
+            .into_driver_admission()
+            .unwrap_or_else(|error| panic!("driver admission: {error:?}"));
+        let state = lock(&admission.coordinator().inner.state);
+        let registry = state
+            .resources
+            .as_ref()
+            .unwrap_or_else(|| panic!("enabled registry"));
+        assert_eq!(registry.retained_limit(), Some(retained));
+        assert_eq!(registry.live_limit(), Some(2));
+        assert_eq!(registry.pending_limit(), Some(3));
+        assert_eq!(registry.retained_resources(), 0);
+        assert_eq!(registry.pending_operations(), 0);
+        assert!(!state.durable_publication_reserved);
+    }
 }
 
 /// Optional ceilings retain absence, unlimited accounting, and mixed limits distinctly.
@@ -964,7 +1005,8 @@ fn successful_commit_installs_machine_and_budget_together() {
 #[test]
 fn recovered_coordinator_bootstraps_durable_graph_baseline() {
     let (coordinator, root, children, program) = fixture_with_program();
-    lock(&coordinator.inner.state).resources = Some(ResourceRegistry::with_limits(0, 3));
+    lock(&coordinator.inner.state).resources =
+        Some(ResourceRegistry::with_accounting_limits(0, 3, 5));
     let execution = root.execution_id();
     let task = root.task_id();
     let storage = Arc::new(InMemoryJournalStore::new());
@@ -1031,6 +1073,14 @@ fn recovered_coordinator_bootstraps_durable_graph_baseline() {
             .unwrap_or_else(|error| panic!("replayed checkpoint: {error:?}"))
             .resource_policy(),
         Some((Some(0), Some(3)))
+    );
+    assert_eq!(
+        recovered
+            .execution()
+            .capture_replayed_checkpoint()
+            .unwrap_or_else(|error| panic!("retained replay capture: {error:?}"))
+            .retained_resource_limit(),
+        Some(5)
     );
 }
 

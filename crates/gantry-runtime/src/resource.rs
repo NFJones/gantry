@@ -759,6 +759,19 @@ impl ResourceRegistry {
         }
     }
 
+    /// Rebuilds empty accounting with all independently optional policy ceilings.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn with_optional_accounting_limits(
+        live: Option<u64>,
+        pending: Option<u64>,
+        retained: Option<u64>,
+    ) -> Self {
+        Self {
+            retained_limit: retained,
+            ..Self::with_optional_limits(live, pending)
+        }
+    }
+
     /// Counts admitted operations whose machine settlement lease remains open.
     ///
     /// A poisoned lease conservatively retains capacity. Accounting finalization, record
@@ -1039,14 +1052,11 @@ impl ResourceRegistry {
 
     /// Reports process-local resource state that the current durable graph wire cannot retain.
     ///
-    /// Retained-account policy, accounts, physical slots and still-pending admitted work
-    /// require explicit reconstruction integration; legacy empty-registry policy does not.
+    /// Accounts, physical slots and still-pending admitted work require explicit
+    /// reconstruction integration; empty-registry policy is carried by the graph wire.
     #[must_use]
     pub(crate) fn has_uncheckpointed_state(&self) -> bool {
-        self.retained_limit.is_some()
-            || !self.accounts.is_empty()
-            || !self.physical.is_empty()
-            || self.pending_operations() != 0
+        !self.accounts.is_empty() || !self.physical.is_empty() || self.pending_operations() != 0
     }
 
     /// Captures the declared reconstruction records of every admitted account.

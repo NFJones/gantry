@@ -39,8 +39,8 @@ retirement and deletion do not free a retained place; eligible `reap_deleted` re
 Excess admission returns `RetainedResourceLimitReached` after existing accounting quota checks,
 without consuming physical inputs or publishing pending capacity. Existing constructors leave
 this policy disabled. `new_with_budget_and_accounting_limits` exposes it through coordinator
-ownership. The current graph wire refuses this policy even for an empty registry rather than
-silently dropping the retained ceiling; ordinary v6 empty-policy carriage is unchanged.
+ownership. Empty retained-account policy uses `GNTCDP07` to preserve its exact ceiling;
+ordinary v6 empty-policy carriage is unchanged. Actual resource records remain unsupported.
 Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.

@@ -259,12 +259,21 @@ impl ExecutionCoordinator {
         sessions: LogicalSessionRegistryV1,
         execution_budget: ExecutionBudget,
         policy: Option<(Option<u64>, Option<u64>)>,
+        retained_resource_limit: Option<u64>,
     ) -> Result<Self, TaskStateError> {
         if execution_budget.snapshot().execution != tasks.execution_id() {
             return Err(TaskStateError::InvalidTaskMachine);
         }
-        let resources = policy
-            .map(|(live, pending)| crate::ResourceRegistry::with_optional_limits(live, pending));
+        if policy.is_none() && retained_resource_limit.is_some() {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        let resources = policy.map(|(live, pending)| {
+            crate::ResourceRegistry::with_optional_accounting_limits(
+                live,
+                pending,
+                retained_resource_limit,
+            )
+        });
         Self::new_inner(tasks, sessions, Some(execution_budget), resources)
     }
 
@@ -296,7 +305,7 @@ impl ExecutionCoordinator {
     /// Creates budget-sharing accounting with independent live, pending and retained ceilings.
     ///
     /// Retained capacity survives semantic settlement until eligible record reclamation.
-    /// The current durable wire cannot retain this policy and refuses graph capture/staging.
+    /// Empty accounting retains all ceilings through the version-seven durable graph wire.
     pub fn new_with_budget_and_accounting_limits(
         tasks: ConcurrentTaskStateV1,
         sessions: LogicalSessionRegistryV1,
@@ -1324,6 +1333,10 @@ impl ExecutionCoordinator {
                 .resources
                 .as_ref()
                 .map(|registry| (registry.live_limit(), registry.pending_limit())),
+            state
+                .resources
+                .as_ref()
+                .and_then(crate::ResourceRegistry::retained_limit),
         )
     }
 

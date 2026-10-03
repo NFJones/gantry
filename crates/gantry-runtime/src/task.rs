@@ -42,8 +42,8 @@ mod combined_checkpoint;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
     ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointV5,
-    ConcurrentDurableCheckpointV6, RecoveredConcurrentDriverAdmissionV1,
-    RecoveredConcurrentDurableExecutionV1,
+    ConcurrentDurableCheckpointV6, ConcurrentDurableCheckpointV7,
+    RecoveredConcurrentDriverAdmissionV1, RecoveredConcurrentDurableExecutionV1,
 };
 
 /// One analyzer-selected value binding copied into a child task.
@@ -2165,6 +2165,9 @@ pub struct ConcurrentSchedulerV1 {
     /// Empty-registry policy retained by durable recovery and replay, not physical ownership.
     #[cfg(feature = "durable")]
     resource_policy: Option<(Option<u64>, Option<u64>)>,
+    /// Retained-account policy carried separately to preserve the legacy graph encodings.
+    #[cfg(feature = "durable")]
+    retained_resource_limit: Option<u64>,
     machines: BTreeMap<ProtocolIdentity, Machine>,
     runnable: VecDeque<ProtocolIdentity>,
 }
@@ -2184,6 +2187,8 @@ impl ConcurrentSchedulerV1 {
             execution_budget,
             #[cfg(feature = "durable")]
             resource_policy: None,
+            #[cfg(feature = "durable")]
+            retained_resource_limit: None,
             machines: BTreeMap::new(),
             runnable: VecDeque::new(),
         })

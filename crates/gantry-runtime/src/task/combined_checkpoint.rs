@@ -27,6 +27,7 @@ use super::{
 const MAGIC_V4: &[u8; 8] = b"GNTCDP04";
 const MAGIC_V5: &[u8; 8] = b"GNTCDP05";
 const MAGIC_V6: &[u8; 8] = b"GNTCDP06";
+const MAGIC_V7: &[u8; 8] = b"GNTCDP07";
 const MAX_CAPTURE_ATTEMPTS: usize = 8;
 
 /// One versioned commit-cut snapshot of the composed concurrent-durable runtime.
@@ -38,6 +39,7 @@ const MAX_CAPTURE_ATTEMPTS: usize = 8;
 pub struct ConcurrentDurableCheckpointV4 {
     execution_budget: ExecutionBudgetSnapshot,
     resource_policy: Option<(Option<u64>, Option<u64>)>,
+    retained_resource_limit: Option<u64>,
     foreground: MachineCheckpointV3,
     sessions: LogicalSessionRegistryCheckpointV1,
     state: TaskStateCheckpointV1,
@@ -127,11 +129,45 @@ impl std::ops::Deref for ConcurrentDurableCheckpointV6 {
     }
 }
 
+/// Exact version-seven graph decoder preserving retained-account policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConcurrentDurableCheckpointV7(ConcurrentDurableCheckpointV4);
+
+impl ConcurrentDurableCheckpointV7 {
+    /// Decodes only the canonical retained-ceiling-bearing graph representation.
+    pub fn decode(
+        program: &MachineProgram,
+        bytes: &[u8],
+    ) -> Result<Self, ConcurrentDurableCheckpointError> {
+        ConcurrentDurableCheckpointV4::decode_with_magic(program, bytes, MAGIC_V7).map(Self)
+    }
+}
+
+impl From<ConcurrentDurableCheckpointV7> for ConcurrentDurableCheckpointV4 {
+    fn from(checkpoint: ConcurrentDurableCheckpointV7) -> Self {
+        checkpoint.0
+    }
+}
+
+impl std::ops::Deref for ConcurrentDurableCheckpointV7 {
+    type Target = ConcurrentDurableCheckpointV4;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl ConcurrentDurableCheckpointV4 {
     /// Reports enabled empty accounting policy separately from absent accounting.
     #[must_use]
     pub const fn resource_policy(&self) -> Option<(Option<u64>, Option<u64>)> {
         self.resource_policy
+    }
+
+    /// Returns the independently retained accounting ceiling carried by version seven.
+    #[must_use]
+    pub const fn retained_resource_limit(&self) -> Option<u64> {
+        self.retained_resource_limit
     }
 
     /// Captures immutably borrowed machines under the coordinator's state lock.
@@ -142,6 +178,7 @@ impl ConcurrentDurableCheckpointV4 {
         sessions: &LogicalSessionRegistryV1,
         budget: &ExecutionBudget,
         resource_policy: Option<(Option<u64>, Option<u64>)>,
+        retained_resource_limit: Option<u64>,
     ) -> Result<Self, ConcurrentDurableCheckpointError> {
         if !budget.same_owner(&foreground.execution_budget())
             || children
@@ -154,6 +191,7 @@ impl ConcurrentDurableCheckpointV4 {
         let checkpoint = Self {
             execution_budget: before,
             resource_policy,
+            retained_resource_limit,
             foreground: foreground.checkpoint(),
             sessions: sessions.checkpoint(),
             state: TaskStateCheckpointV1::from_state(tasks),
@@ -224,6 +262,7 @@ impl ConcurrentDurableCheckpointV4 {
             let checkpoint = Self {
                 execution_budget: budget_before,
                 resource_policy: scheduler.resource_policy,
+                retained_resource_limit: scheduler.retained_resource_limit,
                 foreground: foreground.checkpoint(),
                 sessions: sessions.checkpoint(),
                 state: TaskStateCheckpointV1::from_state(&scheduler.state),
@@ -426,6 +465,7 @@ impl ConcurrentDurableCheckpointV4 {
             || self.execution_budget != previous.execution_budget
             || self.sessions != previous.sessions
             || self.resource_policy != previous.resource_policy
+            || self.retained_resource_limit != previous.retained_resource_limit
         {
             return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
         }
@@ -584,10 +624,13 @@ impl ConcurrentDurableCheckpointV4 {
     /// Graphs containing only machine v3 state retain `GNTCDP04`; a graph
     /// containing any machine v4 state uses `GNTCDP05`. Enabled empty-registry
     /// accounting policy requires `GNTCDP06`, preserving both optional ceilings.
+    /// A retained-account ceiling additionally requires `GNTCDP07`.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         let mut writer = Writer::default();
-        writer.raw(if self.resource_policy.is_some() {
+        writer.raw(if self.retained_resource_limit.is_some() {
+            MAGIC_V7
+        } else if self.resource_policy.is_some() {
             MAGIC_V6
         } else if self.uses_successor_wire() {
             MAGIC_V5
@@ -622,6 +665,9 @@ impl ConcurrentDurableCheckpointV4 {
                 }
             }
         }
+        if let Some(limit) = self.retained_resource_limit {
+            writer.u64(limit);
+        }
         writer.finish()
     }
 
@@ -652,6 +698,9 @@ impl ConcurrentDurableCheckpointV4 {
             }
             Some(magic) if magic == MAGIC_V6 => {
                 ConcurrentDurableCheckpointV6::decode(program, bytes).map(Into::into)
+            }
+            Some(magic) if magic == MAGIC_V7 => {
+                ConcurrentDurableCheckpointV7::decode(program, bytes).map(Into::into)
             }
             _ => Err(ConcurrentDurableCheckpointError::InvalidEncoding),
         }
@@ -692,7 +741,7 @@ impl ConcurrentDurableCheckpointV4 {
         for _ in 0..runnable_count {
             runnable.push_back(read_identity(&mut reader, IdentityKind::Task)?);
         }
-        let resource_policy = if expected_magic == MAGIC_V6 {
+        let resource_policy = if expected_magic == MAGIC_V6 || expected_magic == MAGIC_V7 {
             let live = if reader.boolean()? {
                 Some(reader.u64()?)
             } else {
@@ -707,12 +756,18 @@ impl ConcurrentDurableCheckpointV4 {
         } else {
             None
         };
+        let retained_resource_limit = if expected_magic == MAGIC_V7 {
+            Some(reader.u64()?)
+        } else {
+            None
+        };
         if !reader.is_empty() {
             return Err(ConcurrentDurableCheckpointError::InvalidEncoding);
         }
         let checkpoint = Self {
             execution_budget,
             resource_policy,
+            retained_resource_limit,
             foreground,
             sessions,
             state,
@@ -757,6 +812,7 @@ impl ConcurrentDurableCheckpointV4 {
                 state,
                 execution_budget,
                 resource_policy: self.resource_policy,
+                retained_resource_limit: self.retained_resource_limit,
                 machines,
                 runnable: self.runnable,
             },
@@ -765,6 +821,9 @@ impl ConcurrentDurableCheckpointV4 {
     }
 
     fn validate(&self) -> Result<(), ConcurrentDurableCheckpointError> {
+        if self.retained_resource_limit.is_some() && self.resource_policy.is_none() {
+            return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+        }
         let sessions = LogicalSessionRegistryV1::recover_from_checkpoint(self.sessions.clone())?;
         let state = self
             .state
@@ -1006,6 +1065,7 @@ impl RecoveredConcurrentDurableExecutionV1 {
             &self.sessions,
             &self.foreground.execution_budget(),
             self.scheduler.resource_policy,
+            self.scheduler.retained_resource_limit,
         )
     }
 
@@ -1079,6 +1139,7 @@ impl RecoveredConcurrentDurableExecutionV1 {
             state,
             execution_budget,
             resource_policy,
+            retained_resource_limit,
             machines,
             runnable: _,
         } = scheduler;
@@ -1087,6 +1148,7 @@ impl RecoveredConcurrentDurableExecutionV1 {
             sessions,
             execution_budget,
             resource_policy,
+            retained_resource_limit,
         )?;
         let unfinished_task_ids = coordinator.prepare_recovered_driver_admission();
         Ok(RecoveredConcurrentDriverAdmissionV1 {
@@ -3147,6 +3209,7 @@ mod tests {
         ConcurrentDurableCheckpointV4 {
             execution_budget: fixture.budget.snapshot(),
             resource_policy: fixture.scheduler.resource_policy,
+            retained_resource_limit: fixture.scheduler.retained_resource_limit,
             foreground: fixture.foreground.checkpoint(),
             sessions: fixture.sessions.checkpoint(),
             state: super::TaskStateCheckpointV1::from_state(&fixture.scheduler.state),

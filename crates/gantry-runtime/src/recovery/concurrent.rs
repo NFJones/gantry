@@ -3014,7 +3014,10 @@ fn validate_transition(
     {
         return Err(DurableEvidenceError::MixedExecution);
     }
-    if current.checkpoint().resource_policy() != previous.checkpoint().resource_policy() {
+    if current.checkpoint().resource_policy() != previous.checkpoint().resource_policy()
+        || current.checkpoint().retained_resource_limit()
+            != previous.checkpoint().retained_resource_limit()
+    {
         return Err(DurableEvidenceError::InvalidState);
     }
     validate_budget_successor(
@@ -6836,6 +6839,7 @@ mod tests {
             &sessions,
             &foreground.execution_budget(),
             Some((Some(0), Some(3))),
+            Some(5),
         )
         .unwrap_or_else(|error| panic!("initial checkpoint failed: {error:?}"));
         let initial = ConcurrentDurableEvidenceV4::new(
@@ -6857,6 +6861,7 @@ mod tests {
             &sessions,
             &foreground.execution_budget(),
             Some((Some(0), Some(3))),
+            Some(5),
         )
         .unwrap_or_else(|error| panic!("prepared checkpoint failed: {error:?}"));
         let dispatch_id = fresh(IdentityKind::Dispatch, 43);
@@ -6948,8 +6953,9 @@ mod tests {
         };
         for policy in [None, Some((None, None)), Some((Some(1), Some(3)))] {
             let mut bytes = prepared.checkpoint().canonical_bytes();
-            bytes.truncate(bytes.len() - 18);
+            bytes.truncate(bytes.len() - 26);
             if let Some((live, pending)) = policy {
+                bytes[..8].copy_from_slice(b"GNTCDP06");
                 for limit in [live, pending] {
                     bytes.push(u8::from(limit.is_some()));
                     if let Some(limit) = limit {
@@ -6975,6 +6981,28 @@ mod tests {
                     Err(DurableEvidenceError::InvalidState)
                 ),
                 "operation replay must refuse changed or removed accounting policy"
+            );
+        }
+        for limit in [0_u64, 6, u64::MAX] {
+            let mut bytes = prepared.checkpoint().canonical_bytes();
+            let offset = bytes.len() - 8;
+            bytes[offset..].copy_from_slice(&limit.to_be_bytes());
+            let mut changed = prepared.clone();
+            changed.checkpoint = ConcurrentDurableCheckpointV4::decode_compatible(&program, &bytes)
+                .unwrap_or_else(|error| panic!("changed retained ceiling decodes: {error:?}"));
+            let mut tampered = full.clone();
+            let mut envelopes = tampered.evidence.to_vec();
+            envelopes[2].canonical_body = Arc::from(changed.canonical_body());
+            tampered.evidence = Arc::from(envelopes);
+            assert!(
+                matches!(
+                    recover_concurrent_authoritative_prefix(
+                        Arc::clone(&program),
+                        &JournalPrefixV1::Full(tampered)
+                    ),
+                    Err(DurableEvidenceError::InvalidState)
+                ),
+                "operation replay must refuse changed retained ceilings"
             );
         }
         let recovered = recover_concurrent_authoritative_prefix(
