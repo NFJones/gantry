@@ -627,8 +627,8 @@ impl Decoder {
 ///
 /// Whitespace, non-number JSON values and trailing bytes refuse. Shares grammar and exact
 /// decimal range conversion with document decoding without copying input or constructing an
-/// arena. Decimal normalization still uses input-dependent scratch; this is not a work,
-/// cancellation, or total-allocation bound.
+/// arena. Exact decimal normalization borrows its significant span rather than copying digits;
+/// binary64 parsing and input-dependent work are not a cancellation or total-allocation bound.
 #[must_use]
 pub fn parse_json_float(token: &str) -> Option<f64> {
     let mut cursor = 0;
@@ -695,21 +695,21 @@ fn decimal_to_float(lexeme: &str) -> Result<f64, NumberError> {
 
 fn decimal_to_int(lexeme: &str) -> Result<i64, NumberError> {
     let value = decimal_view(lexeme);
-    if value.digits.is_empty() {
+    if value.digit_count == 0 {
         return Ok(0);
     }
     if value.scale < 0 {
         return Err(NumberError::NonIntegral);
     }
     let appended = usize::try_from(value.scale).map_err(|_| NumberError::OutOfRange)?;
-    if value.digits.len().saturating_add(appended) > 16 {
+    if value.digit_count.saturating_add(appended) > 16 {
         return Err(NumberError::OutOfRange);
     }
     let mut magnitude = 0_u64;
-    for digit in &value.digits {
+    for digit in value.digits() {
         magnitude = magnitude
             .checked_mul(10)
-            .and_then(|value| value.checked_add(u64::from(*digit - b'0')))
+            .and_then(|value| value.checked_add(u64::from(digit - b'0')))
             .ok_or(NumberError::OutOfRange)?;
     }
     for _ in 0..appended {
@@ -727,13 +727,26 @@ fn decimal_to_int(lexeme: &str) -> Result<i64, NumberError> {
     })
 }
 
-struct DecimalView {
+/// Normalized decimal facts borrowing the significant input span, including any decimal point.
+struct DecimalView<'a> {
     negative: bool,
-    digits: Vec<u8>,
+    significand: &'a [u8],
+    digit_count: usize,
     scale: i128,
 }
 
-fn decimal_view(lexeme: &str) -> DecimalView {
+impl DecimalView<'_> {
+    /// Traverses significant digits without materializing a normalized copy.
+    fn digits(&self) -> impl Iterator<Item = u8> + '_ {
+        self.significand
+            .iter()
+            .copied()
+            .filter(|byte| *byte != b'.')
+    }
+}
+
+/// Derives exact normalized facts from an already admitted JSON numeric token.
+fn decimal_view(lexeme: &str) -> DecimalView<'_> {
     let bytes = lexeme.as_bytes();
     let negative = bytes.first() == Some(&b'-');
     let unsigned = if negative { &bytes[1..] } else { bytes };
@@ -747,30 +760,29 @@ fn decimal_view(lexeme: &str) -> DecimalView {
         .position(|byte| *byte == b'.')
         .map(|index| significand.len().saturating_sub(index + 1))
         .unwrap_or(0);
-    let mut digits = significand
+    let leading = significand
         .iter()
-        .copied()
-        .filter(|byte| *byte != b'.')
-        .collect::<Vec<_>>();
-    let leading = digits
+        .position(|byte| !matches!(byte, b'0' | b'.'))
+        .unwrap_or(significand.len());
+    let end = significand
         .iter()
-        .position(|byte| *byte != b'0')
-        .unwrap_or(digits.len());
-    digits.drain(..leading);
-    let trailing = digits
+        .rposition(|byte| !matches!(byte, b'0' | b'.'))
+        .map_or(leading, |index| index + 1);
+    let trailing = significand[end..]
         .iter()
-        .rev()
-        .take_while(|byte| **byte == b'0')
+        .filter(|byte| **byte != b'.')
         .count();
-    digits.truncate(digits.len().saturating_sub(trailing));
+    let significant = &significand[leading..end];
+    let digit_count = significant.len() - usize::from(significant.contains(&b'.'));
     let fraction_len = i128::try_from(fraction_len).unwrap_or(i128::MAX);
     let trailing = i128::try_from(trailing).unwrap_or(i128::MAX);
     let scale = exponent
         .saturating_sub(fraction_len)
         .saturating_add(trailing);
     DecimalView {
-        negative: negative && !digits.is_empty(),
-        digits,
+        negative: negative && digit_count != 0,
+        significand: significant,
+        digit_count,
         scale,
     }
 }
@@ -790,20 +802,21 @@ fn compare_decimal_magnitude(left: &str, right: &str) -> Ordering {
     compare_views_magnitude(&decimal_view(left), &decimal_view(right))
 }
 
-fn compare_views_magnitude(left: &DecimalView, right: &DecimalView) -> Ordering {
-    if left.digits.is_empty() || right.digits.is_empty() {
-        return left.digits.len().cmp(&right.digits.len());
+fn compare_views_magnitude(left: &DecimalView<'_>, right: &DecimalView<'_>) -> Ordering {
+    if left.digit_count == 0 || right.digit_count == 0 {
+        return left.digit_count.cmp(&right.digit_count);
     }
-    let left_digits = i128::try_from(left.digits.len()).unwrap_or(i128::MAX);
-    let right_digits = i128::try_from(right.digits.len()).unwrap_or(i128::MAX);
+    let left_digits = i128::try_from(left.digit_count).unwrap_or(i128::MAX);
+    let right_digits = i128::try_from(right.digit_count).unwrap_or(i128::MAX);
     let left_exponent = left.scale.saturating_add(left_digits.saturating_sub(1));
     let right_exponent = right.scale.saturating_add(right_digits.saturating_sub(1));
     match left_exponent.cmp(&right_exponent) {
         Ordering::Equal => {
-            let count = left.digits.len().max(right.digits.len());
-            (0..count)
-                .map(|index| left.digits.get(index).copied().unwrap_or(b'0'))
-                .cmp((0..count).map(|index| right.digits.get(index).copied().unwrap_or(b'0')))
+            let count = left.digit_count.max(right.digit_count);
+            left.digits()
+                .chain(std::iter::repeat(b'0'))
+                .take(count)
+                .cmp(right.digits().chain(std::iter::repeat(b'0')).take(count))
         }
         ordering => ordering,
     }
@@ -962,6 +975,103 @@ mod tests {
         assert_eq!(
             number("1e999999999999999999999999999999999999").to_gantry_float(),
             Err(NumberError::OutOfRange)
+        );
+    }
+
+    /// Borrowed normalized facts must agree with the previous owned-digit representation.
+    #[test]
+    fn borrowed_decimal_views_preserve_owned_normalization() {
+        fn owned(source: &str) -> (bool, Vec<u8>, i128) {
+            let negative = source.starts_with('-');
+            let unsigned = source.strip_prefix('-').unwrap_or(source);
+            let exponent_index = unsigned
+                .bytes()
+                .position(|byte| matches!(byte, b'e' | b'E'));
+            let significand = &unsigned[..exponent_index.unwrap_or(unsigned.len())];
+            let exponent = exponent_index.map_or(0, |index| {
+                super::parse_exponent_saturating(&unsigned.as_bytes()[index + 1..])
+            });
+            let fraction = significand
+                .find('.')
+                .map_or(0, |index| significand.len() - index - 1);
+            let mut digits = significand
+                .bytes()
+                .filter(|byte| *byte != b'.')
+                .collect::<Vec<_>>();
+            let leading = digits
+                .iter()
+                .position(|byte| *byte != b'0')
+                .unwrap_or(digits.len());
+            digits.drain(..leading);
+            let trailing = digits
+                .iter()
+                .rev()
+                .take_while(|byte| **byte == b'0')
+                .count();
+            digits.truncate(digits.len() - trailing);
+            (
+                negative && !digits.is_empty(),
+                digits,
+                exponent
+                    .saturating_sub(fraction as i128)
+                    .saturating_add(trailing as i128),
+            )
+        }
+        let mut sources = vec![
+            "0".to_owned(),
+            "-0.000".to_owned(),
+            "0.0010200".to_owned(),
+            "100.001000".to_owned(),
+            "1e999999999999999999999999999999999999999999999999".to_owned(),
+            "1e-999999999999999999999999999999999999999999999999".to_owned(),
+            format!("0.{}12300", "0".repeat(100_000)),
+            format!("120{}.0", "0".repeat(100_000)),
+        ];
+        for integer in [0, 1, 10, 101, 9007199254740991_u64] {
+            for fraction in ["", ".0", ".001", ".1000", ".10200"] {
+                for exponent in ["", "e0", "e+3", "e-3", "E308", "E-324"] {
+                    for sign in ["", "-"] {
+                        sources.push(format!("{sign}{integer}{fraction}{exponent}"));
+                    }
+                }
+            }
+        }
+        for source in sources {
+            let expected = owned(&source);
+            let actual = super::decimal_view(&source);
+            assert_eq!(
+                (
+                    actual.negative,
+                    actual.digits().collect::<Vec<_>>(),
+                    actual.scale
+                ),
+                expected,
+                "{source:.80}"
+            );
+            assert_eq!(actual.digit_count, actual.digits().count());
+            let input = source.as_bytes().as_ptr_range();
+            let borrowed = actual.significand.as_ptr_range();
+            assert!(
+                borrowed.start >= input.start && borrowed.end <= input.end,
+                "significant span must borrow its input, not normalized scratch"
+            );
+        }
+        for (left, right, expected) in [
+            ("0.0010200", "102e-5", std::cmp::Ordering::Equal),
+            ("100.001000", "100.0011", std::cmp::Ordering::Less),
+            ("-100.001000", "-100.0011", std::cmp::Ordering::Greater),
+            ("-0.000", "0e99999", std::cmp::Ordering::Equal),
+        ] {
+            assert_eq!(super::compare_decimals(left, right), expected);
+        }
+        assert_eq!(super::decimal_to_int("100.001000e3"), Ok(100_001));
+        assert_eq!(
+            super::decimal_to_int("0.0010200"),
+            Err(NumberError::NonIntegral)
+        );
+        assert_eq!(
+            super::parse_json_float("-0.000").map(f64::to_bits),
+            Some(0.0_f64.to_bits())
         );
     }
 

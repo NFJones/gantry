@@ -3493,6 +3493,8 @@ Format major changes may alter eligibility, framing, order, or hashing; a minor 
       trim and never fail the task for invalid input.
       Runtime Float token admission MAY borrow the String and share the strict JSON number
       scanner and exact decimal range converter without constructing a JSON document.
+      Exact decimal normalization MAY borrow its significant span without materializing digits;
+      exact ordering, integer conversion and zero normalization MUST remain unchanged.
       This MUST NOT restrict admitted noncanonical number spellings or alter rounding,
       normalized zero, transition charging or refusal. It declares no work or cancellation bound.
     `List<String>.join(separator) -> String` joins items in list order with the
