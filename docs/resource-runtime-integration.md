@@ -146,6 +146,13 @@ containment stays unsettled. Success preserves issuing/history facts, roots and 
 Refusal leaves the source unchanged. This is not physical transfer or journal publication authority;
 durable publication requires the exact ownership cut below, not ordinary graph-image replacement.
 
+`stage_task_handoff` additionally qualifies a private cleanup-task candidate against a supplied
+task-state snapshot: matching execution, distinct known running tasks and no cancellation precede
+current cleanup-owner and transfer checks. Move charges, generation and cleanup task change together
+only in the candidate; issuing provenance and containment history remain unchanged. The caller
+authenticates the snapshot and authority. This enables no physical transfer or journal handoff cut,
+and the same-task ownership carrier still rejects cleanup-task changes.
+
 `ResourceOwnerEvidenceV1` reproduces one same-cleanup-task advancement between executable-validated
 complete graphs. Its `GNTRWA01` carrier retains the authored Move vector under a 128-member limit
 and a caller-supplied complete byte ceiling; closed tags, canonical framing and exact successor

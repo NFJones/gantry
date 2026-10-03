@@ -12734,8 +12734,106 @@ fn owner_candidates_preserve_history_and_refuse_outstanding_work() {
     let bytes = encode_resource_recovery_envelope(&moved, 65_536)
         .unwrap_or_else(|error| panic!("encode: {error:?}"));
     assert_eq!(
-        decode_resource_recovery_envelope(program, &bytes, 65_536, successor, machine.task_id()),
+        decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &bytes,
+            65_536,
+            successor,
+            machine.task_id()
+        ),
         Ok(moved)
+    );
+    // A task-state snapshot qualifies cleanup ownership but never rewrites issuing provenance.
+    let (_, child, tasks, _) = resource_handoff_fixture(&machine);
+    let unknown = ProtocolIdentity::derive(IdentityKind::Task, b"unknown-candidate-task")
+        .unwrap_or_else(|error| panic!("task: {error}"));
+    use gantry::runtime::CoordinatorResourceRefusal;
+    for (source, destination, expected) in [
+        (
+            machine.task_id(),
+            machine.task_id(),
+            CoordinatorResourceRefusal::SameTaskTransfer,
+        ),
+        (
+            machine.task_id(),
+            unknown,
+            CoordinatorResourceRefusal::UnknownTask,
+        ),
+        (
+            child,
+            machine.task_id(),
+            CoordinatorResourceRefusal::Registry(ResourceRegistryRefusal::TaskOwnerMismatch),
+        ),
+    ] {
+        assert_eq!(
+            original.stage_task_handoff(
+                &tasks,
+                (source, destination),
+                (owner, successor),
+                &[charge]
+            ),
+            Err(expected)
+        );
+        assert_eq!(registry.declared_records_with_containment(), captured);
+    }
+    let mut cancelled = tasks.clone();
+    cancelled
+        .cancel_task_tree(child, "handoff candidate cancellation")
+        .unwrap_or_else(|error| panic!("cancel: {error:?}"));
+    assert_eq!(
+        original.stage_task_handoff(
+            &cancelled,
+            (machine.task_id(), child),
+            (owner, successor),
+            &[Charge {
+                amount: 9,
+                ..charge
+            }]
+        ),
+        Err(CoordinatorResourceRefusal::TaskCancellationRequested)
+    );
+    let mut settled = tasks.clone();
+    settled
+        .settle(child, MachineOutcome::Succeeded(LogicalValue::unit()))
+        .unwrap_or_else(|error| panic!("settle child: {error:?}"));
+    assert_eq!(
+        original.stage_task_handoff(
+            &settled,
+            (machine.task_id(), child),
+            (owner, successor),
+            &[charge]
+        ),
+        Err(CoordinatorResourceRefusal::TaskNotRunning)
+    );
+    let handed = original
+        .stage_task_handoff(
+            &tasks,
+            (machine.task_id(), child),
+            (owner, successor),
+            &[charge],
+        )
+        .unwrap_or_else(|error| panic!("handoff candidate: {error:?}"));
+    assert_eq!(handed.owner(), successor);
+    assert_eq!(handed.task_owner(), child);
+    assert_eq!(handed.subject(), original.subject());
+    assert_eq!(handed.issuing_evidence(), original.issuing_evidence());
+    assert_eq!(
+        handed.containment_evidence(),
+        original.containment_evidence()
+    );
+    assert_eq!(
+        handed.record().liveness_roots(),
+        original.record().liveness_roots()
+    );
+    assert_eq!(
+        handed.record().quotas()[&(QuotaOwner::Owner, QuotaFamily::Bytes)].used(),
+        2
+    );
+    let bytes = encode_resource_recovery_envelope(&handed, 65_536)
+        .unwrap_or_else(|error| panic!("handoff encode: {error:?}"));
+    assert_eq!(
+        decode_resource_recovery_envelope(program, &bytes, 65_536, successor, child),
+        Ok(handed)
     );
     assert_eq!(registry.declared_records_with_containment(), captured);
     let legacy = registry.declared_records();

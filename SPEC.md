@@ -15396,6 +15396,14 @@ current owner and explicit quota use, preserving issuing evidence, cleanup task,
 containment. Refusal MUST preserve the source. This candidate grants no physical transfer, journal
 publication by itself; durable publication requires the separately declared exact ownership cut.
 
+`RecoveredResourceRecord::stage_task_handoff` MAY build a private cleanup-task candidate against
+a caller-authenticated task-state snapshot. The issuing execution MUST match; source and destination
+MUST be distinct known running tasks without task or execution cancellation. Current cleanup ownership
+and existing transfer obligations MUST validate before atomic Move charging and generation advancement.
+Success changes only cleanup task, current owner and explicit quota use, preserving issuing provenance
+and historical evidence. Refusal MUST preserve the source. This grants no physical transfer or journal
+task-handoff cut; the same-task ownership carrier MUST NOT authorize changing cleanup tasks.
+
 `ResourceOwnerEvidenceV1` MAY validate exactly one same-cleanup-task owner advancement between
 complete executable-validated graphs. Applying the owner-qualified candidate and explicit Move
 vector at the canonical record index MUST reproduce the entire successor; unrelated graph, policy,

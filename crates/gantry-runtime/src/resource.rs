@@ -852,6 +852,69 @@ impl RecoveredResourceRecord {
         candidate.record = account.durable_record();
         Ok(candidate)
     }
+
+    /// Builds a private cleanup-task handoff after task-qualified admission checks.
+    ///
+    /// The caller authenticates the task-state snapshot and transfer authority. Both tasks must
+    /// be distinct, running and uncancelled in the issuing execution. Existing cleanup ownership,
+    /// generation, loan, pending-work and containment fences precede atomic Move charging.
+    /// Refusal preserves the source; success preserves issuing and historical evidence.
+    /// This candidate supplies no journal cut, physical transfer or accepted-work recovery.
+    #[cfg(feature = "durable")]
+    pub fn stage_task_handoff(
+        &self,
+        tasks: &crate::ConcurrentTaskStateV1,
+        task_owners: (
+            gantry_core::identity::ProtocolIdentity,
+            gantry_core::identity::ProtocolIdentity,
+        ),
+        generations: (OwnerGeneration, OwnerGeneration),
+        charges: &[Charge],
+    ) -> Result<Self, crate::CoordinatorResourceRefusal> {
+        use crate::CoordinatorResourceRefusal;
+        let (source, destination) = task_owners;
+        if self.subject.execution_id() != tasks.execution_id() {
+            return Err(CoordinatorResourceRefusal::ForeignExecution);
+        }
+        if source == destination {
+            return Err(CoordinatorResourceRefusal::SameTaskTransfer);
+        }
+        for task_id in [source, destination] {
+            let task = tasks
+                .task_record(task_id)
+                .ok_or(CoordinatorResourceRefusal::UnknownTask)?;
+            if !matches!(task.status(), crate::ConcurrentTaskStatusV1::Running) {
+                return Err(CoordinatorResourceRefusal::TaskNotRunning);
+            }
+            if tasks.task_cancellation_reason(task_id).is_some()
+                || tasks.execution_cancellation_reason().is_some()
+            {
+                return Err(CoordinatorResourceRefusal::TaskCancellationRequested);
+            }
+        }
+        let mut registry =
+            ResourceRegistry::reconstruct_bounded(None, None, std::iter::once(self.clone()))
+                .map_err(CoordinatorResourceRefusal::Registry)?;
+        registry
+            .transfer_task_owner(
+                &self.subject,
+                source,
+                destination,
+                generations.0,
+                generations.1,
+                charges,
+            )
+            .map_err(CoordinatorResourceRefusal::Registry)?;
+        let account = registry
+            .accounts
+            .get(&self.subject.registry_key())
+            .unwrap_or_else(|| unreachable!("successful handoff retains the selected account"));
+        let mut candidate = self.clone();
+        candidate.owner = generations.1;
+        candidate.record = account.durable_record();
+        candidate.task_owner = destination;
+        Ok(candidate)
+    }
 }
 
 /// One explicit logical finish transition for a retained accounting candidate.
