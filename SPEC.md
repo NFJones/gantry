@@ -15358,6 +15358,14 @@ MUST refuse before record projection because these envelopes cannot preserve tho
 Missing issuing evidence or aggregate byte exhaustion MUST refuse the whole capture without
 publishing partial output or changing accounting. This capture does not relax graph eligibility.
 
+`reconstruct_recovery_envelopes` MAY atomically restore a complete canonical set under separately
+supplied current owners, cleanup tasks and optional live, pending and retained ceilings. Aggregate
+framed byte admission MUST precede decoding. Duplicate or reordered subjects, malformed members,
+missing explicit containment evidence and live loan roots MUST refuse the complete set. Live and
+retained capacity checks MUST succeed before exposing the registry; pending policy governs future
+admission only and MUST NOT create accepted-work leases. This restore does not authenticate journal
+provenance or relax combined-graph resource-state refusal.
+
 `admit_pending_operation_with_issuing_evidence` MAY retain validated issuing evidence during
 live accounting admission under an explicit envelope byte ceiling. Evidence validation and byte
 admission MUST precede registry insertion; ordinary authoritative machine-lease and quota checks

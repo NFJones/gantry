@@ -1163,6 +1163,72 @@ impl ResourceRegistry {
         Ok(registry)
     }
 
+    /// Restores a complete canonical envelope set under independent ownership and policy inputs.
+    ///
+    /// The total ceiling includes count and member framing and is checked before decoding.
+    /// Expected owners and cleanup tasks remain caller-authenticated. All records validate before
+    /// a registry is returned; pending policy governs future work and creates no accepted leases.
+    #[cfg(feature = "durable")]
+    pub fn reconstruct_recovery_envelopes(
+        program: Arc<gantry_ir::MachineProgram>,
+        envelopes: &[(
+            &[u8],
+            OwnerGeneration,
+            gantry_core::identity::ProtocolIdentity,
+        )],
+        maximum_bytes: u64,
+        policy: (Option<u64>, Option<u64>, Option<u64>),
+    ) -> Result<Self, ResourceRecoveryEnvelopeError> {
+        let total = envelopes
+            .iter()
+            .try_fold(8_u64, |total, (bytes, _, _)| {
+                total
+                    .checked_add(8)?
+                    .checked_add(u64::try_from(bytes.len()).ok()?)
+            })
+            .ok_or(ResourceRecoveryEnvelopeError::ByteLimit)?;
+        if total > maximum_bytes {
+            return Err(ResourceRecoveryEnvelopeError::ByteLimit);
+        }
+        let mut records = Vec::new();
+        let mut previous = None;
+        for (bytes, owner, cleanup) in envelopes {
+            let record = decode_resource_recovery_envelope(
+                Arc::clone(&program),
+                bytes,
+                maximum_bytes,
+                *owner,
+                *cleanup,
+            )?;
+            let key = record.subject.registry_key();
+            if let Some(prior) = &previous {
+                if prior == &key {
+                    return Err(ResourceRecoveryEnvelopeError::Origin(
+                        ResourceOriginRecoveryError::Registry(
+                            ResourceRegistryRefusal::SecondAdmission,
+                        ),
+                    ));
+                }
+                if prior > &key {
+                    return Err(ResourceRecoveryEnvelopeError::Encoding);
+                }
+            }
+            if record.containment_evidence.is_none()
+                || record.record.liveness_roots().contains(&LivenessRoot::Loan)
+            {
+                return Err(ResourceRecoveryEnvelopeError::UnsupportedRuntimeState);
+            }
+            previous = Some(key);
+            records.push(record);
+        }
+        let mut registry =
+            Self::reconstruct_bounded(policy.0, policy.2, records).map_err(|error| {
+                ResourceRecoveryEnvelopeError::Origin(ResourceOriginRecoveryError::Registry(error))
+            })?;
+        registry.pending_limit = policy.1;
+        Ok(registry)
+    }
+
     /// Validates the complete reconstruction set with optional independent capacity bounds.
     fn reconstruct_bounded(
         live_limit: Option<u64>,

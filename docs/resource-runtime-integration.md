@@ -143,6 +143,13 @@ work, live loan roots, physical slots, adapter bindings and poison history refus
 projection. Missing evidence or byte exhaustion returns no partial set and changes no
 accounting; combined graph eligibility remains unchanged.
 
+`reconstruct_recovery_envelopes` restores a complete ordered set with independently supplied
+owner generations, cleanup tasks and optional live/pending/retained policy. Aggregate framed
+byte admission runs before decoding; malformed, duplicate, reordered, containment-absent or
+loan-bearing records refuse without exposing a partial registry. Live and retained ceilings
+apply to reconstructed accounting; pending policy applies only to future admission. No physical
+slots or accepted-work leases are created, and journal authentication remains the caller's duty.
+
 `admit_pending_operation_with_issuing_evidence` opts live accounting admission into retaining
 validated issuing facts under an explicit envelope byte ceiling. Evidence and byte admission run
 before insertion; ordinary machine-lease and quota checks still decide acquisition. The admitted

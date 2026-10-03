@@ -9334,6 +9334,146 @@ fn complete_resource_envelope_capture_is_bounded_and_failure_atomic() {
     assert_eq!(registry.declared_records_with_containment(), before_adapter);
 }
 
+/// Complete-set envelope restore preserves policy without manufacturing accepted work.
+#[test]
+fn resource_envelope_set_restore_preserves_policy_and_refuses_partial_sets() {
+    use gantry::runtime::{ResourceOriginRecoveryError, ResourceRecoveryEnvelopeError};
+    let (program, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let owner = OwnerGeneration::new(4);
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+    let mut registry = ResourceRegistry::with_accounting_limits(1, 2, 3);
+    registry
+        .admit_pending_operation_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+    let envelopes = registry
+        .capture_recovery_envelopes(65_536)
+        .unwrap_or_else(|error| panic!("capture: {error:?}"));
+    let inputs = [(envelopes[0].as_slice(), owner, machine.task_id())];
+    let exact = 16 + envelopes[0].len() as u64;
+    for policy in [
+        (Some(1), Some(2), Some(3)),
+        (None, None, None),
+        (Some(1), Some(0), None),
+    ] {
+        let empty =
+            ResourceRegistry::reconstruct_recovery_envelopes(Arc::clone(&program), &[], 8, policy)
+                .unwrap_or_else(|error| panic!("empty restore: {error:?}"));
+        assert_eq!(
+            (
+                empty.live_limit(),
+                empty.pending_limit(),
+                empty.retained_limit()
+            ),
+            policy
+        );
+        assert!(empty.declared_records().is_empty());
+        let recovered = ResourceRegistry::reconstruct_recovery_envelopes(
+            Arc::clone(&program),
+            &inputs,
+            exact,
+            policy,
+        )
+        .unwrap_or_else(|error| panic!("restore: {error:?}"));
+        assert_eq!(
+            (
+                recovered.live_limit(),
+                recovered.pending_limit(),
+                recovered.retained_limit()
+            ),
+            policy
+        );
+        assert_eq!(
+            recovered.declared_records_with_containment(),
+            registry.declared_records_with_containment()
+        );
+        assert_eq!(recovered.pending_operations(), 0);
+        assert!(!recovered.has_host_value(&subject));
+    }
+    assert_eq!(
+        ResourceRegistry::reconstruct_recovery_envelopes(
+            Arc::clone(&program),
+            &inputs,
+            exact - 1,
+            (Some(1), Some(2), Some(3)),
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::ByteLimit)
+    );
+    assert_eq!(
+        ResourceRegistry::reconstruct_recovery_envelopes(
+            Arc::clone(&program),
+            &inputs,
+            exact,
+            (Some(1), Some(2), Some(0)),
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Origin(
+            ResourceOriginRecoveryError::Registry(
+                ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 0 }
+            )
+        ))
+    );
+    let duplicate = [inputs[0], inputs[0]];
+    assert_eq!(
+        ResourceRegistry::reconstruct_recovery_envelopes(
+            Arc::clone(&program),
+            &inputs,
+            exact,
+            (Some(0), Some(2), Some(3)),
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Origin(
+            ResourceOriginRecoveryError::Registry(
+                ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 }
+            )
+        ))
+    );
+    assert_eq!(
+        ResourceRegistry::reconstruct_recovery_envelopes(
+            Arc::clone(&program),
+            &duplicate,
+            131_072,
+            (Some(2), Some(2), Some(3)),
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Origin(
+            ResourceOriginRecoveryError::Registry(ResourceRegistryRefusal::SecondAdmission)
+        ))
+    );
+    let mut corrupt = envelopes[0].clone();
+    corrupt[0] = 0;
+    let invalid_tail = [inputs[0], (corrupt.as_slice(), owner, machine.task_id())];
+    assert_eq!(
+        ResourceRegistry::reconstruct_recovery_envelopes(
+            program,
+            &invalid_tail,
+            131_072,
+            (Some(2), Some(2), Some(3)),
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Encoding)
+    );
+    assert_eq!(registry.capture_recovery_envelopes(65_536), Ok(envelopes));
+}
+
 /// Bounded live admission retains issuing facts after machine work settles.
 #[test]
 fn bounded_live_admission_retains_issuing_evidence_after_settlement() {
