@@ -802,7 +802,7 @@ fn empty_resource_policy_survives_graph_recovery() {
 /// A writer must not append policy changes that authoritative replay would reject.
 #[test]
 fn graph_writer_refuses_resource_policy_drift_before_storage() {
-    let (coordinator, root, children, _) = fixture_with_program();
+    let (coordinator, root, children, program) = fixture_with_program();
     lock(&coordinator.inner.state).resources =
         Some(ResourceRegistry::with_accounting_limits(2, 3, 4));
     let checkpoint = coordinator
@@ -811,12 +811,16 @@ fn graph_writer_refuses_resource_policy_drift_before_storage() {
     let storage = Arc::new(InMemoryJournalStore::new());
     let journal = JournalId::new("writer-resource-policy")
         .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let counted = Arc::new(CountedCommitStore {
+        storage: Arc::clone(&storage),
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
     let ownership = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
         journal_id: journal.clone(),
         operation: JournalOwnerOperationV1::Start,
     }))
     .unwrap_or_else(|error| panic!("ownership: {error:?}"));
-    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), ownership.token);
+    let sink = DurableTransitionSink::new(counted.clone(), journal.clone(), ownership.token);
     let mut commits =
         DurableCommitCoordinatorV1::new(&sink, root.execution_id(), root.task_id(), None)
             .unwrap_or_else(|error| panic!("committer: {error:?}"));
@@ -831,6 +835,10 @@ fn graph_writer_refuses_resource_policy_drift_before_storage() {
     }))
     .unwrap_or_else(|error| panic!("prefix: {error:?}"));
     let frontier = commits.frontier();
+    assert_eq!(counted.calls.load(std::sync::atomic::Ordering::Acquire), 1);
+    let mut recovered =
+        DurableCommitCoordinatorV1::from_concurrent_prefix(&sink, Arc::clone(&program), &prefix)
+            .unwrap_or_else(|error| panic!("recovered writer: {error:?}"));
     for resources in [
         None,
         Some(ResourceRegistry::with_optional_limits(None, None)),
@@ -847,10 +855,20 @@ fn graph_writer_refuses_resource_policy_drift_before_storage() {
             ready(commits.commit_graph_checkpoint(
                 DurableCommitCutV1::Checkpoint,
                 root.task_id(),
-                changed
+                changed.clone()
             )),
             Err(DurableCommitError::InvalidState)
         );
+        assert_eq!(
+            ready(recovered.commit_graph_checkpoint(
+                DurableCommitCutV1::Checkpoint,
+                root.task_id(),
+                changed,
+            )),
+            Err(DurableCommitError::InvalidState),
+        );
+        assert_eq!(recovered.frontier(), frontier);
+        assert_eq!(counted.calls.load(std::sync::atomic::Ordering::Acquire), 1);
         assert_eq!(commits.frontier(), frontier);
         assert_eq!(
             ready(storage.read_prefix(ReadJournalPrefixV1 {
@@ -1939,6 +1957,46 @@ fn settlement_checkpoint_and_join_continue_from_committed_semantic_baseline() {
 /// Rejects the event write after accepting the graph's semantic cut.
 #[derive(Default)]
 struct EventFailureStore(InMemoryJournalStore);
+
+/// Counts storage invocations before delegating, including futures never polled.
+struct CountedCommitStore {
+    storage: Arc<InMemoryJournalStore>,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl JournalStorage for CountedCommitStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.storage.acquire_owner(request)
+    }
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.storage.read_prefix(request)
+    }
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.storage.commit(request)
+    }
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.storage.resolve_payload(request)
+    }
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.storage.release_owner(request)
+    }
+}
 
 impl JournalStorage for EventFailureStore {
     fn acquire_owner<'a>(
