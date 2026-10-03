@@ -5521,8 +5521,16 @@ fn host_receiver_loan_retains_progress_until_exact_settlement() {
 fn host_receiver_loan_failure_closes_the_loan_once() {
     use gantry::runtime::{HostResourceError, OwnedHostResource};
     for failure in FailureClass::ALL {
-        let mut resource =
-            OwnedHostResource::bind(admitted_active(), 11_u64).unwrap_or_else(|_| panic!("bind"));
+        let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut resource = OwnedHostResource::bind(
+            admitted_active(),
+            TransportValue {
+                drops: Arc::clone(&drops),
+                panic_on_drop: false,
+                value: 11,
+            },
+        )
+        .unwrap_or_else(|_| panic!("bind"));
         let before = resource.account().durable_record();
         let state = match failure {
             FailureClass::AdapterFailure => ResourceState::HalfClosed,
@@ -5562,6 +5570,7 @@ fn host_receiver_loan_failure_closes_the_loan_once() {
         let after = resource.account().durable_record();
         assert!(!after.liveness_roots().contains(&LivenessRoot::Loan));
         assert_eq!(after.operation_state(), state);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
         assert_eq!(after.owner(), before.owner());
         assert_eq!(after.quotas(), before.quotas());
         assert_eq!(after.lifetime(), before.lifetime());
@@ -5607,11 +5616,15 @@ fn host_receiver_loan_failure_closes_the_loan_once() {
                 ))
             );
             assert_eq!(resource.account().durable_record(), before_finish);
-            assert_eq!(
-                resource.emergency_release(emergency_cleanup()),
-                Ok(ResourceLifetimeState::EmergencyReleased)
-            );
         }
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(
+            resource.emergency_release(emergency_cleanup()),
+            Ok(ResourceLifetimeState::EmergencyReleased)
+        );
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+        drop(resource);
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }
 
