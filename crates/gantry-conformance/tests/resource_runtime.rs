@@ -11802,6 +11802,23 @@ fn adapter_identity_capacity_retains_failed_fences_after_reclamation() {
         .unwrap_or_else(|error| panic!("replacement binding: {error:?}"));
     assert_eq!(replacement.retained_adapter_identities(), 2);
     let held = replacement.adapter_instance(&subject).cloned();
+    for sequence in [0, 1] {
+        assert_eq!(
+            replacement.bind_adapter_instance(
+                &subject,
+                owner,
+                adapter_instance("replacement", 6, sequence)
+            ),
+            Err(ResourceRegistryRefusal::AdapterBinding(
+                AdapterBindingRefusal::BindingSequenceNotAdvanced {
+                    presented: sequence,
+                    held: 1,
+                }
+            ))
+        );
+        assert_eq!(replacement.adapter_instance(&subject).cloned(), held);
+        assert_eq!(replacement.retained_adapter_identities(), 2);
+    }
     assert_eq!(
         replacement.bind_adapter_instance(&subject, owner, adapter_instance("replacement", 6, 2)),
         Err(ResourceRegistryRefusal::AdapterIdentityLimitReached { limit: 2 })

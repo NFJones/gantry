@@ -2411,6 +2411,13 @@ pub enum AdapterBindingRefusal {
     Unbound,
     /// The model's own substitution rule refused the replacement binding.
     Substitution(OperationAbiError),
+    /// Deployment replacement did not advance the held binding sequence.
+    BindingSequenceNotAdvanced {
+        /// The proposed replacement sequence.
+        presented: u64,
+        /// The sequence of the existing binding.
+        held: u64,
+    },
 }
 
 /// One account settled by one cohort emergency-cleanup sweep.
@@ -2781,14 +2788,23 @@ impl AdmittedResource {
             ));
         }
         match &self.adapter {
-            Some(held) => held
-                .substitute(
-                    instance.implementation(),
-                    instance.rights(),
-                    instance.generation(),
-                    instance.binding_sequence(),
-                )
-                .map_err(AdapterBindingRefusal::Substitution),
+            Some(held) => {
+                let replacement = held
+                    .substitute(
+                        instance.implementation(),
+                        instance.rights(),
+                        instance.generation(),
+                        instance.binding_sequence(),
+                    )
+                    .map_err(AdapterBindingRefusal::Substitution)?;
+                if instance.binding_sequence() <= held.binding_sequence() {
+                    return Err(AdapterBindingRefusal::BindingSequenceNotAdvanced {
+                        presented: instance.binding_sequence(),
+                        held: held.binding_sequence(),
+                    });
+                }
+                Ok(replacement)
+            }
             None => Ok(instance),
         }
     }

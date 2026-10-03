@@ -45,7 +45,11 @@ ordinary v6 empty-policy carriage is unchanged. Eligible accounting records use 
 the registry lifetime. Bindings and substitutions validate existing fences before reserving a
 place; aliases share a place and refusals preserve bindings and accounting. Reservations survive
 account reclamation so poisoning can always retain failed-identity fences. `adapter_identity_limit`
-and `retained_adapter_identities` inspect this policy and its occupancy. Legacy constructors leave
+and `retained_adapter_identities` inspect this policy and its occupancy.
+Runtime replacements also require a strictly advanced binding sequence after model validation
+and before capacity admission; `BindingSequenceNotAdvanced` preserves the held binding and
+reservations. This enforces deployment ordering without changing the pure substitution model.
+Legacy constructors leave
 it absent. Configured policy currently refuses graph/envelope capture even when empty, because
 those wires cannot retain it; it enables no host authority or durable adapter reconstruction.
 `with_adapter_bounded_resource_accounting_limits(live, pending, retained, adapters)` applies all

@@ -15198,6 +15198,10 @@ A registry MAY separately declare a finite adapter-identity ceiling through
 accepted identity before publishing the binding; aliases consume no additional place. Existing
 subject, owner and substitution checks MUST precede capacity admission. Excess identities MUST
 refuse `AdapterIdentityLimitReached` without changing bindings, accounting or reservations.
+Runtime replacement MUST additionally advance the held binding sequence after model substitution
+validation and before identity-capacity admission. Equal or decreasing sequences MUST refuse
+`BindingSequenceNotAdvanced` without changing the binding or consuming a reservation. The pure
+adapter model still leaves deployment sequence management to its caller.
 Reservations MUST survive settlement and account reclamation so later poisoning never discards
 a failed-identity reuse fence. Existing constructors leave this policy absent. Current graph and
 envelope capture MUST refuse configured adapter-identity policy, even when empty, rather than
