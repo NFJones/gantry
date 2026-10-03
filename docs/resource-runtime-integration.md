@@ -314,6 +314,13 @@ quotas and pending machine work remain separate. Owner invocation, finish and tr
 fenced even if the guard is forgotten; dropping an unsettled guard poisons transport without
 claiming settlement. Sealed emergency cleanup can still dispose the held value. These are
 process-local synchronous loans, not source-evaluator borrowing or durable loan recovery.
+`HostReceiverLoan::settle_failure` explicitly accepts one classified failure winner, projects
+its operation state through `LiveResource::failure_state_projection`, and closes only the loan
+root. Adapter failure additionally poisons transport; resource failure projects Poisoned operation
+state. Neither releases accounting lifetime or pending machine work, nor disposes the held value.
+Refused classification retains progress and the guard; either terminal loan route refuses later
+settlement with `LoanSettled`. Failure projection remains distinct from ordinary successful
+operation-state projection and cannot fabricate an accepted successful outcome.
 
 `AdmittedResource` publishes `admit`, `subject`, `ledger`, `quota`, `remaining`, `durable_record`,
 `containment`, `settle_containment`, `adapter_instance`, `bind_adapter_instance`,

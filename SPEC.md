@@ -15307,6 +15307,12 @@ The wrapper MAY admit an exclusive `HostReceiverLoan` only from an unsettled bor
 active/open accounting retains a declared loan root. Accepted Section 20 settlement MUST project
 only operation state and close that loan root; refused settlement MUST retain the guard and
 observed progress. No loan settlement releases whole-resource lifetime or pending machine work.
+The guard MAY explicitly settle a classified adapter or resource failure through the retained
+Section 20 failure winner. Failure settlement MUST project only that winner's operation state
+and close only the loan root; adapter failure additionally poisons the transport boundary.
+Repeated success or failure settlement MUST refuse `LoanSettled` without mutation. Refused
+failure classification retains the guard, loan root, and observed progress. Failure settlement
+does not dispose the host value or settle whole-resource lifetime or pending machine work.
 Owner invocation, finish and transfer MUST remain fenced while the transport loan is pending,
 even if its guard is forgotten. Dropping an unsettled guard MUST poison transport and retain
 the pending fence without fabricating settlement. Sealed emergency release remains available.
@@ -15504,6 +15510,12 @@ The state is never caller-selected. This projection changes only the distinct Se
 account: it MUST NOT change whole-resource lifetime, quotas, liveness roots, ownership of a physical
 host resource, or the Section 20 settlement, progress, or generation. It creates no evaluator-wide
 settlement uniqueness, checkpoint format, or journal schema.
+A separate `failure_state_projection()` MAY derive the same opaque state carrier only from the
+exact `PostFailureSettlement` retained by a `LiveResource`. It MUST preserve accepting-owner
+provenance and generation fencing without fabricating a successful outcome or changing progress.
+Ordinary `operation_state_projection()` remains absent for failure winners. Exclusively admitted
+receiver-loan failure settlement MAY consume this separate projection under the same current-owner
+and terminal-state fences, then close only the loan root as declared by `GNT-28.11`.
 
 ## 29. Portable Host-Domain and Standard Host-Family Contracts
 

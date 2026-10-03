@@ -2098,6 +2098,7 @@ impl AdmittedResource {
         }
         let projection = live
             .operation_state_projection()
+            .or_else(|| live.failure_state_projection())
             .unwrap_or_else(|| unreachable!("loan handle has accepted its settlement"));
         let state = self.ledger.project_operation_state(&projection)?;
         self.ledger.close_liveness_root(LivenessRoot::Loan)?;

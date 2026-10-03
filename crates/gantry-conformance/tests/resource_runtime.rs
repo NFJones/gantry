@@ -5495,6 +5495,10 @@ fn host_receiver_loan_retains_progress_until_exact_settlement() {
         assert_eq!(loan.settle(&accepted), Ok(ResourceState::PartiallyAdvanced));
         assert_eq!(loan.settle(&accepted), Err(HostResourceError::LoanSettled));
         assert_eq!(
+            loan.settle_failure(FailureClass::ResourceFailure),
+            Err(HostResourceError::LoanSettled)
+        );
+        assert_eq!(
             loan.invoke::<()>(|_| panic!("settled loan cannot invoke")),
             Err(HostResourceError::LoanSettled)
         );
@@ -5509,6 +5513,110 @@ fn host_receiver_loan_retains_progress_until_exact_settlement() {
     assert_eq!(
         resource.invoke(OwnerGeneration::new(4), |value| Ok(*value)),
         Ok(12)
+    );
+}
+
+/// Failure winners close only the loan and fence later transport use without releasing accounting.
+#[test]
+fn host_receiver_loan_failure_closes_the_loan_once() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    for failure in FailureClass::ALL {
+        let mut resource =
+            OwnedHostResource::bind(admitted_active(), 11_u64).unwrap_or_else(|_| panic!("bind"));
+        let before = resource.account().durable_record();
+        let state = match failure {
+            FailureClass::AdapterFailure => ResourceState::HalfClosed,
+            FailureClass::ResourceFailure => ResourceState::Poisoned,
+        };
+        {
+            let mut loan = resource
+                .borrow_receiver(transport_live(FIXTURE_DECLARATION, 0, 4, true))
+                .unwrap_or_else(|_| panic!("exact loan admits"));
+            assert!(loan.observe(ProgressObservation::ShortRead).is_ok());
+            let evidence = loan
+                .settle_failure(failure)
+                .unwrap_or_else(|error| panic!("loan failure: {error:?}"));
+            assert_eq!(evidence.state(), state);
+            assert_eq!(loan.live().failure_settlement(), Some(&evidence));
+            assert!(loan.live().settlement().is_none());
+            assert_eq!(loan.live().progress(), ProgressObservation::ShortRead);
+            let late = OperationSettlement::new(
+                loan.live().operation(),
+                loan.live().generation(),
+                loan.live().owner(),
+                ExternalOutcome::Accepted,
+                ProgressObservation::ShortRead,
+                32,
+            )
+            .unwrap_or_else(|error| panic!("late settlement: {error:?}"));
+            assert_eq!(loan.settle(&late), Err(HostResourceError::LoanSettled));
+            assert_eq!(
+                loan.settle_failure(failure),
+                Err(HostResourceError::LoanSettled)
+            );
+            assert_eq!(
+                loan.invoke::<()>(|_| panic!("settled loan cannot invoke")),
+                Err(HostResourceError::LoanSettled)
+            );
+        }
+        let after = resource.account().durable_record();
+        assert!(!after.liveness_roots().contains(&LivenessRoot::Loan));
+        assert_eq!(after.operation_state(), state);
+        assert_eq!(after.owner(), before.owner());
+        assert_eq!(after.quotas(), before.quotas());
+        assert_eq!(after.lifetime(), before.lifetime());
+        assert_eq!(after.settlement(), before.settlement());
+        assert_eq!(
+            resource.is_poisoned(),
+            failure == FailureClass::AdapterFailure
+        );
+        assert!(
+            resource
+                .invoke::<()>(OwnerGeneration::new(4), |_| {
+                    panic!("failed resource cannot invoke")
+                })
+                .is_err()
+        );
+    }
+}
+
+/// A refused adapter classification retains the loan until an admissible terminal winner.
+#[test]
+fn host_receiver_loan_refused_failure_retains_progress_until_settlement() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let mut resource =
+        OwnedHostResource::bind(admitted_active(), 11_u64).unwrap_or_else(|_| panic!("bind"));
+    {
+        let mut loan = resource
+            .borrow_receiver(transport_live(FIXTURE_DECLARATION, 0, 4, true))
+            .unwrap_or_else(|_| panic!("exact loan admits"));
+        assert!(loan.observe(ProgressObservation::Eof).is_ok());
+        let before = loan.live().clone();
+        assert_eq!(
+            loan.settle_failure(FailureClass::AdapterFailure),
+            Err(HostResourceError::Operation(
+                OperationAbiError::HalfCloseWithoutOpenHalf {
+                    state: ResourceState::Closed
+                }
+            ))
+        );
+        assert_eq!(loan.live(), &before);
+        assert!(loan.settle_failure(FailureClass::ResourceFailure).is_ok());
+    }
+    assert!(
+        !resource
+            .account()
+            .ledger()
+            .liveness_roots()
+            .contains(&LivenessRoot::Loan)
+    );
+    assert_eq!(
+        resource.account().ledger().operation_state(),
+        ResourceState::Poisoned
+    );
+    assert_eq!(
+        resource.account().ledger().lifetime(),
+        ResourceLifetimeState::Active
     );
 }
 

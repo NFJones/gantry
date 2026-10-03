@@ -8,9 +8,9 @@ use gantry_host::containment::{
 };
 use gantry_host::contracts::HostError;
 use gantry_ir::{
-    EmergencyCleanupWitness, LiveResource, LivenessRoot, OperationAbiError, OperationSettlement,
-    OwnerGeneration, ProgressObservation, ProgressRecord, ResourceError, ResourceLifetimeState,
-    ResourceState,
+    EmergencyCleanupWitness, FailureClass, LiveResource, LivenessRoot, OperationAbiError,
+    OperationSettlement, OwnerGeneration, PostFailureSettlement, ProgressObservation,
+    ProgressRecord, ResourceError, ResourceLifetimeState, ResourceState,
 };
 
 use crate::AdmittedResource;
@@ -399,6 +399,36 @@ impl<T> HostReceiverLoan<'_, T> {
         self.resource.loan_pending = false;
         self.settled = true;
         Ok(state)
+    }
+
+    /// Accepts one classified failure, projects its state, and releases only the loan root.
+    ///
+    /// Adapter failure poisons this transport; resource failure projects Poisoned accounting
+    /// operation state. Neither settles whole-resource lifetime, machine work, or disposal.
+    /// Refused classification preserves the guard, roots, and previously observed progress.
+    pub fn settle_failure(
+        &mut self,
+        failure: FailureClass,
+    ) -> Result<PostFailureSettlement, HostResourceError> {
+        if self.settled {
+            return Err(HostResourceError::LoanSettled);
+        }
+        let evidence = self
+            .live
+            .settle_failure(failure)
+            .map_err(HostResourceError::Operation)?;
+        self.resource
+            .account
+            .settle_receiver_loan(&self.live)
+            .unwrap_or_else(|_| {
+                unreachable!("exclusive admitted failure retains its subject, owner and root")
+            });
+        if evidence.poisons_adapter() {
+            self.resource.poison.poison();
+        }
+        self.resource.loan_pending = false;
+        self.settled = true;
+        Ok(evidence)
     }
 }
 

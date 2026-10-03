@@ -1201,8 +1201,9 @@ impl OperationSettlement {
 
 /// An opaque projection of an accepted live-resource settlement into its runtime accounting record.
 ///
-/// The only constructor is [`LiveResource::operation_state_projection`], which requires the
-/// settlement retained by that same live resource. The operation, resource generation, owner, and
+/// Constructors are [`LiveResource::operation_state_projection`] and
+/// [`LiveResource::failure_state_projection`], which require the corresponding winner
+/// retained by that same live resource. The operation, resource generation, owner, and
 /// state therefore come from one Section 20-accepted settlement rather than caller-selected facts.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationStateProjection {
@@ -1817,6 +1818,25 @@ impl LiveResource {
                 ResourceState::Poisoned
             } else {
                 settlement.resource_state()
+            },
+        })
+    }
+
+    /// Projects only the state of this resource's retained failure winner.
+    ///
+    /// This does not fabricate a successful outcome or alter progress. A later generation
+    /// fence projects Poisoned while preserving the exact accepted failure evidence.
+    #[must_use]
+    pub fn failure_state_projection(&self) -> Option<OperationStateProjection> {
+        let settlement = self.failure_settlement.as_ref()?;
+        Some(OperationStateProjection {
+            operation: settlement.operation().clone(),
+            generation: settlement.generation().clone(),
+            owner: settlement.owner()?,
+            state: if self.fenced.is_some() {
+                ResourceState::Poisoned
+            } else {
+                settlement.state()
             },
         })
     }
