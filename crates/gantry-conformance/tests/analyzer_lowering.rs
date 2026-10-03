@@ -426,6 +426,83 @@ fn analyzed_operation_result_authenticates_live_and_protected_kinds_only() {
     );
 }
 
+/// Aggregate classification survives source-free executable recovery without type-name inference.
+#[test]
+fn analyzed_aggregate_resource_classes_survive_retained_program_recovery() {
+    use gantry::ir::{InstructionKind, ValueResourceClass};
+    for (source, expected) in [
+        (
+            "live_resource struct Handle {} fn main() { discard Handle {}; }",
+            ValueResourceClass::LiveResource,
+        ),
+        (
+            "struct Handle {} fn main() { discard Handle {}; }",
+            ValueResourceClass::NonLiveResource,
+        ),
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let program = package
+            .executable_program()
+            .unwrap_or_else(|| panic!("executable program"));
+        let aggregate = program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| &workflow.instructions)
+            .find(|instruction| matches!(instruction.kind, InstructionKind::Aggregate { .. }))
+            .unwrap_or_else(|| panic!("aggregate instruction"));
+        assert_eq!(
+            program.aggregate_resource_class(&aggregate.ty),
+            Some(expected)
+        );
+        let bytes = gantry::runtime::encode_machine_program(program);
+        assert_eq!(&bytes[..8], b"GNTPRG06");
+        let decoded = gantry::runtime::decode_machine_program(&bytes)
+            .unwrap_or_else(|error| panic!("retained program: {error:?}"));
+        assert_eq!(&decoded, program);
+        assert_eq!(
+            decoded.aggregate_resource_class(&aggregate.ty),
+            Some(expected)
+        );
+        assert_eq!(gantry::runtime::encode_machine_program(&decoded), bytes);
+        let mut unknown_class = bytes.clone();
+        *unknown_class
+            .last_mut()
+            .unwrap_or_else(|| panic!("class tag")) = 255;
+        assert!(gantry::runtime::decode_machine_program(&unknown_class).is_err());
+        assert!(
+            program
+                .clone()
+                .with_aggregate_resource_classes(Default::default())
+                .is_err()
+        );
+        let mut extra = program.aggregate_resource_classes().clone();
+        extra.insert(
+            gantry::ir::TypeDescriptor::INT,
+            ValueResourceClass::NonLiveResource,
+        );
+        assert!(
+            program
+                .clone()
+                .with_aggregate_resource_classes(extra)
+                .is_err()
+        );
+        let legacy = gantry::runtime::MachineProgram::new(program.workflows().to_vec())
+            .unwrap_or_else(|error| panic!("legacy program: {error:?}"));
+        let legacy_bytes = gantry::runtime::encode_machine_program(&legacy);
+        assert_ne!(&legacy_bytes[..8], b"GNTPRG06");
+        assert_eq!(
+            gantry::runtime::decode_machine_program(&legacy_bytes),
+            Ok(legacy)
+        );
+    }
+}
+
 /// A value-producing agent context must retain both discarded operations and its tail action.
 #[test]
 fn executable_agent_context_preserves_discarded_prompt_and_tail_action() {

@@ -962,13 +962,14 @@ fn durable_live_struct_construction_rejects_without_preflight_or_commit() {
 fn durable_start_preflight_authenticates_the_transitive_reachable_dependency_closure() {
     let root = TempDirectory::new(
         br#"
+struct Handle {}
 agents { worker, unused }
 default agent = worker;
 action read_only direct(value: Int) -> Int;
 action idempotent unreachable(value: Int) -> Int;
 fn leaf() -> Int { with worker { discard prompt "reachable" -> String; action direct(1) } }
 fn unused_leaf() -> Int { action unreachable(2) }
-fn main() -> Int { leaf() }
+fn main() -> Int { discard Handle {}; leaf() }
 "#,
     );
     let services = Arc::new(Services::default());
@@ -1044,64 +1045,82 @@ fn main() -> Int { leaf() }
     assert!(changed, "fixture reaches an operation");
     let unsupported = gantry::runtime::MachineProgram::new(workflows)
         .unwrap_or_else(|error| panic!("unsupported program: {error:?}"));
-    let retained = DurableExecutionStartV3::new(
-        execution_start.execution_id(),
-        execution_start.task_id(),
-        &unsupported,
-        Arc::<[u8]>::from(execution_start.metadata()),
-        execution_start.state().clone(),
-    )
-    .unwrap_or_else(|error| panic!("retained unsupported start: {error:?}"));
-    let JournalPrefixV1::Full(mut full) = prefix else {
-        panic!("full prefix")
-    };
-    let mut evidence = full.evidence.to_vec();
-    evidence[0].canonical_body = Arc::from(retained.canonical_body());
-    full.evidence = Arc::from(evidence);
-    let unsupported_prefix = JournalPrefixV1::Full(full);
-    recover_authoritative_prefix_with_retained_program(&unsupported_prefix)
-        .unwrap_or_else(|error| panic!("otherwise valid retained program: {error:?}"));
-    storage.set_prefix_override(unsupported_prefix.clone());
+    let live_classes = program
+        .aggregate_resource_classes()
+        .keys()
+        .cloned()
+        .map(|ty| (ty, gantry::ir::ValueResourceClass::LiveResource))
+        .collect();
+    let unsupported_aggregate = program
+        .as_ref()
+        .clone()
+        .with_aggregate_resource_classes(live_classes)
+        .unwrap_or_else(|error| panic!("retained aggregate facts: {error:?}"));
+    let unclassified = gantry::runtime::MachineProgram::new(program.workflows().to_vec())
+        .unwrap_or_else(|error| panic!("legacy unclassified program: {error:?}"));
     release(
         storage.as_ref(),
         &journal_id,
         accepted.test_ownership_token().clone(),
     );
-    let commits_before = storage.commit_calls();
-    let resume_lifecycle = InterpreterLifecycle::new(&configuration);
-    let resume_allocator = FreshIdentityAllocator::default();
-    let resume_package = AnalyzePackageCoordinator::new(
-        &resume_allocator,
-        services.as_ref(),
-        &FixedClock,
-        gantry_conformance::blocking_work(),
-    );
-    let resume_start = StartExecutionCoordinator::new(
-        &resume_package,
-        &resume_lifecycle,
-        &configuration,
-        &resume_allocator,
-        preflight.clone(),
-    );
-    let resume =
-        DurableStartExecutionCoordinator::new(resume_start, &configuration, storage_adapter);
-    let result = block_on(resume.resume(DurableResumeExecutionRequest {
-        journal_id: journal_id.clone(),
-        protocol_selection: &selection,
-        candidate_package_root: None,
-        expected_execution_id: Some(accepted.execution_id()),
-        event_delivery: None,
-    }));
-    let DurableResumeExecutionResult::Rejected(failure) = result else {
-        panic!("unsupported retained live-resource transport accepted");
-    };
-    assert_eq!(failure.code.as_ref(), "unsupported-live-resource-transport");
-    assert_eq!(preflight.mapping_requests().len(), 1);
-    assert_eq!(storage.commit_calls(), commits_before);
-    assert_eq!(
-        read_prefix(storage.as_ref(), &journal_id),
-        unsupported_prefix
-    );
+    for unsupported in [unsupported, unsupported_aggregate, unclassified] {
+        let retained = DurableExecutionStartV3::new(
+            execution_start.execution_id(),
+            execution_start.task_id(),
+            &unsupported,
+            Arc::<[u8]>::from(execution_start.metadata()),
+            execution_start.state().clone(),
+        )
+        .unwrap_or_else(|error| panic!("retained unsupported start: {error:?}"));
+        let JournalPrefixV1::Full(mut full) = prefix.clone() else {
+            panic!("full prefix")
+        };
+        let mut evidence = full.evidence.to_vec();
+        evidence[0].canonical_body = Arc::from(retained.canonical_body());
+        full.evidence = Arc::from(evidence);
+        let unsupported_prefix = JournalPrefixV1::Full(full);
+        recover_authoritative_prefix_with_retained_program(&unsupported_prefix)
+            .unwrap_or_else(|error| panic!("otherwise valid retained program: {error:?}"));
+        storage.set_prefix_override(unsupported_prefix.clone());
+        let commits_before = storage.commit_calls();
+        let resume_lifecycle = InterpreterLifecycle::new(&configuration);
+        let resume_allocator = FreshIdentityAllocator::default();
+        let resume_package = AnalyzePackageCoordinator::new(
+            &resume_allocator,
+            services.as_ref(),
+            &FixedClock,
+            gantry_conformance::blocking_work(),
+        );
+        let resume_start = StartExecutionCoordinator::new(
+            &resume_package,
+            &resume_lifecycle,
+            &configuration,
+            &resume_allocator,
+            preflight.clone(),
+        );
+        let resume = DurableStartExecutionCoordinator::new(
+            resume_start,
+            &configuration,
+            storage_adapter.clone(),
+        );
+        let result = block_on(resume.resume(DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(accepted.execution_id()),
+            event_delivery: None,
+        }));
+        let DurableResumeExecutionResult::Rejected(failure) = result else {
+            panic!("unsupported retained live-resource transport accepted");
+        };
+        assert_eq!(failure.code.as_ref(), "unsupported-live-resource-transport");
+        assert_eq!(preflight.mapping_requests().len(), 1);
+        assert_eq!(storage.commit_calls(), commits_before);
+        assert_eq!(
+            read_prefix(storage.as_ref(), &journal_id),
+            unsupported_prefix
+        );
+    }
 }
 
 #[test]

@@ -33,6 +33,11 @@ carried it and no machine-retained metadata recorded it. This note records what 
   (`write_operation` writes it, `read_operation` decodes it strictly and refuses an unknown
   spelling). `GNTPRG02`, `GNTPRG03`, and `GNTPRG04` keep their byte layout and decode the field as
   unauthenticated, so committed durable programs still decode.
+- **Aggregate resource facts.** The analyzer retains a complete map of reachable aggregate result
+  types to `ValueResourceClass`, including spawned bodies. `GNTPRG06` carries this ordered map
+  alongside all predecessor metadata. Exact type coverage and closed class tags are validated;
+  predecessor programs retain absent classification, never an inferred non-live default. The
+  caller remains responsible for authenticating retained executable artifacts.
 
 ## Known gap
 
@@ -60,8 +65,9 @@ The low-level attempted-error and replay contract remains available to its exist
 Source-free durable resume also checks the retained program's workflow and spawned-body
 operation inventory before mapping calls, lifecycle admission, journal repair or replacement
 submission. An authenticated live-resource result refuses with the same transport code without
-appending evidence. This operation check does not reanalyze aggregate constructors or create a
-live-handle recovery path.
+appending evidence. Resume additionally requires retained non-live classification for each aggregate;
+live and unclassified predecessor aggregates refuse without reanalysis or type-name inference.
+Neither check creates a live-handle recovery path.
 Reachable aggregate constructors are also classified using the configured frontend limits and refused
 with the same transport code when their analyzed type is live-resource, including empty structs,
 absent options, empty lists, and payload-free enum variants. Ordinary data cannot fabricate

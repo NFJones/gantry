@@ -12180,6 +12180,14 @@ options, empty lists, and payload-free enum variants. Ordinary aggregate data MU
 live-handle ownership or bypass static transport eligibility. Classification MUST use the configured
 frontend limits before integration preflight; unused live-resource declarations alone do not
 make otherwise ordinary executable instructions ineligible.
+The analyzer MUST retain the complete resource classification of reachable aggregate result
+types, including spawned-body aggregates, in the executable program. `GNTPRG06` carries this
+canonical type-to-class map alongside predecessor metadata; missing, extra, duplicate, reordered
+or unknown classification entries MUST refuse decoding. Predecessor wires retain absence rather
+than infer a non-live class. Source-free resume MUST require retained non-live classification for
+each aggregate; live or absent classification MUST refuse `unsupported-live-resource-transport`
+before mappings, lifecycle admission, repair or submission, without appending evidence. Retention
+does not itself authenticate a caller-supplied program or grant live-handle authority.
 
 Ordinary JSON entry input MUST NOT supply a type whose analyzed stored-member resource class
 is live-resource, including enclosing aggregates. Once required entry input is present, product

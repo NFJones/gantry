@@ -623,6 +623,7 @@ pub struct MachineProgram {
     entry_indexes: BTreeMap<CanonicalPath, usize>,
     task_bodies: Vec<ExecutableTaskBody>,
     task_body_indexes: BTreeMap<TaskBodyIdentity, usize>,
+    aggregate_resource_classes: BTreeMap<TypeDescriptor, crate::ValueResourceClass>,
 }
 
 impl MachineProgram {
@@ -739,7 +740,52 @@ impl MachineProgram {
             entry_indexes,
             task_bodies,
             task_body_indexes,
+            aggregate_resource_classes: BTreeMap::new(),
         })
+    }
+
+    /// Retains a complete classification of the program's aggregate result types.
+    ///
+    /// The caller authenticates these analyzed facts. Missing, extra or partial type coverage
+    /// refuses rather than inferring a class from a type name; legacy constructors retain none.
+    pub fn with_aggregate_resource_classes(
+        mut self,
+        classes: BTreeMap<TypeDescriptor, crate::ValueResourceClass>,
+    ) -> Result<Self, ProgramError> {
+        let types = self
+            .workflows
+            .iter()
+            .flat_map(|workflow| &workflow.instructions)
+            .chain(
+                self.task_bodies
+                    .iter()
+                    .flat_map(ExecutableTaskBody::instructions),
+            )
+            .filter(|instruction| matches!(instruction.kind, InstructionKind::Aggregate { .. }))
+            .map(|instruction| instruction.ty.clone())
+            .collect::<BTreeSet<_>>();
+        if classes.keys().cloned().collect::<BTreeSet<_>>() != types {
+            return Err(ProgramError::InvalidAggregateResourceClasses);
+        }
+        self.aggregate_resource_classes = classes;
+        Ok(self)
+    }
+
+    /// Returns retained aggregate classifications, with absence distinct from non-live.
+    #[must_use]
+    pub const fn aggregate_resource_classes(
+        &self,
+    ) -> &BTreeMap<TypeDescriptor, crate::ValueResourceClass> {
+        &self.aggregate_resource_classes
+    }
+
+    /// Looks up an analyzer-issued aggregate classification without repeating analysis.
+    #[must_use]
+    pub fn aggregate_resource_class(
+        &self,
+        ty: &TypeDescriptor,
+    ) -> Option<crate::ValueResourceClass> {
+        self.aggregate_resource_classes.get(ty).copied()
     }
 
     /// Returns workflows in the same canonical callable-identity order as
@@ -844,6 +890,8 @@ pub enum ProgramError {
     InvalidCall(CanonicalPath),
     /// Aggregate metadata and operand count disagree.
     InvalidAggregate(CanonicalPath),
+    /// Retained resource classifications do not exactly cover aggregate result types.
+    InvalidAggregateResourceClasses,
     /// A source loop limit is zero or attached to a condition phase.
     InvalidLoopLimit(CanonicalPath),
     /// Spawned bodies are duplicated or not in canonical identity order.

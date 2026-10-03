@@ -900,6 +900,11 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                         matches!(&instruction.kind,
                         gantry_ir::InstructionKind::OperationCall { operation, .. }
                         if operation.section20_kind == Some(gantry_ir::OperationKind::LiveResource))
+                            || (matches!(
+                                instruction.kind,
+                                gantry_ir::InstructionKind::Aggregate { .. }
+                            ) && program.aggregate_resource_class(&instruction.ty)
+                                != Some(gantry_ir::ValueResourceClass::NonLiveResource))
                     })
             });
         if unsupported_transport {

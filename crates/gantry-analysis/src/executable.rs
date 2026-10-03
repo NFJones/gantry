@@ -309,7 +309,28 @@ pub(crate) fn lower_executable_program(
     }
     lowered.sort_by(|left, right| left.0.cmp(&right.0));
     task_bodies.sort_by(|left, right| left.identity().cmp(right.identity()));
-    MachineProgram::with_task_bodies(lowered, task_bodies).map_err(|_| AnalysisError::Invariant)
+    let program = MachineProgram::with_task_bodies(lowered, task_bodies)
+        .map_err(|_| AnalysisError::Invariant)?;
+    let types = program
+        .workflows()
+        .iter()
+        .flat_map(|workflow| &workflow.instructions)
+        .chain(
+            program
+                .task_bodies()
+                .iter()
+                .flat_map(ExecutableTaskBody::instructions),
+        )
+        .filter(|instruction| matches!(instruction.kind, InstructionKind::Aggregate { .. }))
+        .map(|instruction| instruction.ty.clone())
+        .collect::<BTreeSet<_>>();
+    let classes = types
+        .into_iter()
+        .map(|ty| prove_resource_class(&ty, capability_declarations).map(|class| (ty, class)))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    program
+        .with_aggregate_resource_classes(classes)
+        .map_err(|_| AnalysisError::Invariant)
 }
 
 fn find_callable<'a>(

@@ -33,6 +33,8 @@ const MAGIC_V4: &[u8; 8] = b"GNTPRG04";
 /// V5 is selected exactly when at least one operation records such a kind, so a program whose
 /// operations are all unauthenticated keeps the predecessor wire byte-for-byte.
 const MAGIC_V5: &[u8; 8] = b"GNTPRG05";
+/// V6 retains complete analyzer-issued aggregate resource classification.
+const MAGIC_V6: &[u8; 8] = b"GNTPRG06";
 
 /// Canonical program wire selected for one machine program.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -41,6 +43,7 @@ enum ProgramWire {
     V3,
     V4,
     V5,
+    V6,
 }
 
 impl ProgramWire {
@@ -51,6 +54,7 @@ impl ProgramWire {
             Self::V3 => MAGIC_V3,
             Self::V4 => MAGIC_V4,
             Self::V5 => MAGIC_V5,
+            Self::V6 => MAGIC_V6,
         });
     }
 
@@ -64,12 +68,12 @@ impl ProgramWire {
     /// V5 is a successor of V4 and therefore carries everything V4 carries, including the
     /// caller-place ownership class, alongside the authenticated Section 20 kind.
     const fn carries_caller_place_ownership(self) -> bool {
-        matches!(self, Self::V4 | Self::V5)
+        matches!(self, Self::V4 | Self::V5 | Self::V6)
     }
 
     /// Returns whether this wire carries the authenticated Section 20 operation kind.
     const fn carries_section20_kind(self) -> bool {
-        matches!(self, Self::V5)
+        matches!(self, Self::V5 | Self::V6)
     }
 }
 
@@ -203,12 +207,14 @@ fn codec_limits() -> ValueLimits {
 
 /// Encodes one program in the retained-program wire, selecting the oldest form that carries it.
 ///
-/// The newest form is selected exactly when the program carries an authenticated Section 20
-/// operation kind, so a program whose kinds are all unauthenticated keeps its predecessor layout.
+/// Version six carries complete aggregate resource classification. Otherwise, an authenticated
+/// Section 20 operation kind selects version five; predecessor metadata keeps its older layout.
 #[must_use]
 pub fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
     let mut writer = Writer::default();
-    let wire = if program_carries_section20_kind(program) {
+    let wire = if !program.aggregate_resource_classes().is_empty() {
+        ProgramWire::V6
+    } else if program_carries_section20_kind(program) {
         ProgramWire::V5
     } else if program_carries_caller_place_ownership(program) {
         ProgramWire::V4
@@ -252,6 +258,16 @@ pub fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
     for body in program.task_bodies() {
         write_task_body(&mut writer, body, wire);
     }
+    if wire == ProgramWire::V6 {
+        writer.count(program.aggregate_resource_classes().len());
+        for (ty, class) in program.aggregate_resource_classes() {
+            writer.string(&ty.canonical_string());
+            writer.u8(match class {
+                gantry_ir::ValueResourceClass::NonLiveResource => 0,
+                gantry_ir::ValueResourceClass::LiveResource => 1,
+            });
+        }
+    }
     writer.finish()
 }
 
@@ -266,6 +282,7 @@ pub fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, MachineRec
         magic if magic == MAGIC_V3 => ProgramWire::V3,
         magic if magic == MAGIC_V4 => ProgramWire::V4,
         magic if magic == MAGIC_V5 => ProgramWire::V5,
+        magic if magic == MAGIC_V6 => ProgramWire::V6,
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     };
     let workflow_count = reader.count()?;
@@ -327,11 +344,36 @@ pub fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, MachineRec
     for _ in 0..body_count {
         task_bodies.push(read_task_body(&mut reader, wire)?);
     }
+    let mut classes = std::collections::BTreeMap::new();
+    if wire == ProgramWire::V6 {
+        let count = reader.count()?;
+        let mut previous = None;
+        for _ in 0..count {
+            let ty = ty(&reader.string()?)?;
+            if previous.as_ref().is_some_and(|prior| prior >= &ty) {
+                return Err(MachineRecoveryError::InvalidEncoding);
+            }
+            let class = match reader.u8()? {
+                0 => gantry_ir::ValueResourceClass::NonLiveResource,
+                1 => gantry_ir::ValueResourceClass::LiveResource,
+                _ => return Err(MachineRecoveryError::InvalidEncoding),
+            };
+            previous = Some(ty.clone());
+            classes.insert(ty, class);
+        }
+    }
     if !reader.is_empty() {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
     let program = MachineProgram::with_task_bodies(callables, task_bodies)
         .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    let program = if wire == ProgramWire::V6 {
+        program
+            .with_aggregate_resource_classes(classes)
+            .map_err(|_| MachineRecoveryError::InvalidEncoding)?
+    } else {
+        program
+    };
     if encode_machine_program(&program) != bytes {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
