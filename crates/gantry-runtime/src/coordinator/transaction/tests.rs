@@ -326,6 +326,79 @@ fn resource_records_survive_version_eight_graph_recovery() {
     assert!(
         crate::ConcurrentDurableCheckpointV8::decode(&program, &bytes[..bytes.len() - 1]).is_err()
     );
+    // Reframe the one-record section to distinguish raw byte admission from member validation.
+    let envelope =
+        crate::encode_resource_recovery_envelope(&checkpoint.resource_records()[0], 65_536)
+            .unwrap_or_else(|error| panic!("fixture envelope: {error:?}"));
+    let cleanup = root.task_id().to_string();
+    let section_start = bytes.len() - (32 + cleanup.len() + envelope.len());
+    let reframe = |payload: &[u8], count: u64, current_owner: u64, cleanup: &str| {
+        let mut framed = bytes[..section_start].to_vec();
+        framed.extend_from_slice(&count.to_be_bytes());
+        framed.extend_from_slice(&current_owner.to_be_bytes());
+        for member in [cleanup.as_bytes(), payload] {
+            framed.extend_from_slice(
+                &u64::try_from(member.len())
+                    .unwrap_or_else(|_| panic!("bounded member"))
+                    .to_be_bytes(),
+            );
+            framed.extend_from_slice(member);
+        }
+        framed
+    };
+    assert_eq!(reframe(&envelope, 1, owner.value(), &cleanup), bytes);
+    let maximum = 1_048_576_usize; // Normative GNTCDP08 resource-section ceiling.
+    let raw_exact = reframe(
+        &vec![0; maximum - 32 - cleanup.len()],
+        1,
+        owner.value(),
+        &cleanup,
+    );
+    assert_eq!(
+        crate::ConcurrentDurableCheckpointV8::decode(&program, &raw_exact).err(),
+        Some(crate::ConcurrentDurableCheckpointError::InvalidCheckpoint),
+        "an admitted exact-size section must reach member validation"
+    );
+    let raw_excess = reframe(
+        &vec![0; maximum - 31 - cleanup.len()],
+        1,
+        owner.value(),
+        &cleanup,
+    );
+    assert_eq!(
+        crate::ConcurrentDurableCheckpointV8::decode(&program, &raw_excess).err(),
+        Some(crate::ConcurrentDurableCheckpointError::InvalidEncoding),
+        "excess raw section bytes must refuse before member recovery"
+    );
+    assert_eq!(
+        crate::ConcurrentDurableCheckpointV8::decode(
+            &program,
+            &reframe(&envelope, u64::MAX, owner.value(), &cleanup)
+        )
+        .err(),
+        Some(crate::ConcurrentDurableCheckpointError::InvalidEncoding)
+    );
+    assert_eq!(
+        crate::ConcurrentDurableCheckpointV8::decode(
+            &program,
+            &reframe(&envelope, 1, u64::MAX, &cleanup)
+        )
+        .err(),
+        Some(crate::ConcurrentDurableCheckpointError::InvalidCheckpoint)
+    );
+    assert_eq!(
+        crate::ConcurrentDurableCheckpointV8::decode(
+            &program,
+            &reframe(
+                &envelope,
+                1,
+                owner.value(),
+                &root.execution_id().to_string()
+            )
+        )
+        .err(),
+        Some(crate::ConcurrentDurableCheckpointError::InvalidEncoding)
+    );
     let refused = checkpoint
         .clone()
         .recover(Arc::clone(&program))
