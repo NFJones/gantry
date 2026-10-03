@@ -556,6 +556,74 @@ fn resource_records_survive_version_eight_graph_recovery() {
         assert_eq!(owner_coordinator.snapshot(), owner_before);
         assert!(!lock(&owner_coordinator.inner.state).durable_publication_reserved);
     }
+    // Submitted owner cuts retain their old publication until a valid receipt arrives.
+    for invalid_receipt in [false, true] {
+        let admission = checkpoint
+            .clone()
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("failed owner recovery: {error:?}"))
+            .into_driver_admission()
+            .unwrap_or_else(|error| panic!("failed owner admission: {error:?}"));
+        let (failed_owner, mut failed_root, mut failed_children, _) = admission.into_parts();
+        let before = failed_owner.snapshot();
+        let machine_before = failed_root.checkpoint();
+        let failed_storage = Arc::new(FinishFailureStore {
+            storage: Arc::clone(&owner_storage),
+            invalid_receipt,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let failed_sink = DurableTransitionSink::new(
+            failed_storage.clone(),
+            owner_journal.clone(),
+            JournalOwnershipToken::new("failed-owner-cut")
+                .unwrap_or_else(|error| panic!("failure token: {error:?}")),
+        );
+        let mut failed_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+            &failed_sink,
+            Arc::clone(&program),
+            &owner_prefix,
+        )
+        .unwrap_or_else(|error| panic!("failed owner writer: {error:?}"));
+        let frontier = failed_writer.frontier();
+        let mut stage = failed_owner
+            .stage_graph(&mut failed_root, &mut failed_children)
+            .unwrap_or_else(|error| panic!("failed owner stage: {error:?}"));
+        stage
+            .stage_resource_owner_advance(&subject, (owner, successor), &charges)
+            .unwrap_or_else(|error| panic!("failed owner candidate: {error:?}"));
+        let result = ready(stage.commit(
+            &mut failed_writer,
+            DurableCommitCutV1::ResourceOwnerAdvance,
+            root.task_id(),
+        ));
+        assert_eq!(
+            result,
+            if invalid_receipt {
+                Err(DurableCommitError::InvalidReceipt)
+            } else {
+                Err(DurableCommitError::Journal(JournalError::new(
+                    JournalErrorCode::Internal,
+                )))
+            }
+        );
+        assert_eq!(
+            failed_storage
+                .calls
+                .load(std::sync::atomic::Ordering::Acquire),
+            1
+        );
+        assert_eq!(failed_writer.frontier(), frontier);
+        assert_eq!(failed_owner.snapshot(), before);
+        assert_eq!(failed_root.checkpoint(), machine_before);
+        assert!(lock(&failed_owner.inner.state).durable_publication_reserved);
+        assert_eq!(
+            ready(owner_storage.read_prefix(ReadJournalPrefixV1 {
+                journal_id: owner_journal.clone(),
+            }))
+            .unwrap_or_else(|error| panic!("failure prefix: {error:?}")),
+            owner_prefix
+        );
+    }
     owner_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
         &owner_sink,
         Arc::clone(&program),
