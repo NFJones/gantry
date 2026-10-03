@@ -335,6 +335,12 @@ this through the coordinator's execution/running-task, cancellation, closure and
 success publishes once and refused inputs remain owned outside the lock. Neither route completes
 the machine operation, grants authority or enables source live-handle transport.
 
+`admit_host_value_with_charges` admits a caller-declared action and whole explicit vector after
+cancellation, capacity and active/open physical eligibility checks. The private account is charged
+under the same machine lease before either insertion. Refusal returns the input untouched without
+publishing accounting, a slot or pending capacity. Legacy acquisition remains uncharged; physical
+size implies no charge and this boundary grants no authority.
+
 `ExecutionCoordinator::attach_resource_host_value` retains physical ownership in the same registry
 without changing accounting publication; refused inputs are returned untouched outside the lock.
 Attachment requires the issuing execution to match and its task to be known and running;

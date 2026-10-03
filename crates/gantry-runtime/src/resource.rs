@@ -1067,7 +1067,7 @@ impl ResourceRegistry {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
     ) -> Result<&AdmittedResource, ResourceRegistryRefusal> {
-        self.admit_with_optional_host_value(subject, carrier, record, &mut None::<()>)
+        self.admit_with_optional_host_value(subject, carrier, record, &mut None::<()>, None)
     }
 
     /// Atomically admits accounting and one caller-authenticated physical value.
@@ -1082,8 +1082,34 @@ impl ResourceRegistry {
         record: DurableResourceRecord,
         value: T,
     ) -> Result<(), Box<(ResourceRegistryRefusal, T)>> {
+        self.admit_host_value_using(subject, carrier, record, value, None)
+    }
+
+    /// Admits an explicit action/charge vector with accounting and physical ownership.
+    /// Existing eligibility and capacity checks precede charging under the machine lease.
+    /// Refusal returns the input untouched and publishes no account, slot or pending place.
+    pub fn admit_host_value_with_charges<T: std::any::Any + Send>(
+        &mut self,
+        subject: ResourceSubjectBinding,
+        carrier: ResourceCarrier,
+        record: DurableResourceRecord,
+        value: T,
+        accounting: (ResourceAction, &[Charge]),
+    ) -> Result<(), Box<(ResourceRegistryRefusal, T)>> {
+        self.admit_host_value_using(subject, carrier, record, value, Some(accounting))
+    }
+
+    /// Retains physical input ownership until shared admission has completely succeeded.
+    fn admit_host_value_using<T: std::any::Any + Send>(
+        &mut self,
+        subject: ResourceSubjectBinding,
+        carrier: ResourceCarrier,
+        record: DurableResourceRecord,
+        value: T,
+        accounting: Option<(ResourceAction, &[Charge])>,
+    ) -> Result<(), Box<(ResourceRegistryRefusal, T)>> {
         let mut value = Some(value);
-        self.admit_with_optional_host_value(subject, carrier, record, &mut value)
+        self.admit_with_optional_host_value(subject, carrier, record, &mut value, accounting)
             .map(|_| ())
             .map_err(|error| {
                 Box::new((
@@ -1102,6 +1128,7 @@ impl ResourceRegistry {
         carrier: ResourceCarrier,
         record: DurableResourceRecord,
         value: &mut Option<T>,
+        accounting: Option<(ResourceAction, &[Charge])>,
     ) -> Result<&'a AdmittedResource, ResourceRegistryRefusal> {
         // Inspect before locking the presented lease: a duplicate may share that mutex.
         // Stage pruning so refused admissions do not change even process-local bookkeeping.
@@ -1135,7 +1162,7 @@ impl ResourceRegistry {
                 Err(ResourceRegistryRefusal::SecondAdmission)
             }
             std::collections::btree_map::Entry::Vacant(slot) => {
-                let account = AdmittedResource::admit_reconstructed(carrier, record, subject)?;
+                let mut account = AdmittedResource::admit_reconstructed(carrier, record, subject)?;
                 if let Some(limit) = limit
                     && live >= limit
                     && matches!(
@@ -1172,6 +1199,11 @@ impl ResourceRegistry {
                             ),
                         ));
                     }
+                }
+                if let Some((action, charges)) = accounting {
+                    account
+                        .charge(account.ledger().owner(), action, charges)
+                        .map_err(ResourceRegistryRefusal::Admission)?;
                 }
                 if !retained {
                     pending_admissions.push(Arc::clone(&admission_open));

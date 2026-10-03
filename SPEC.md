@@ -15251,6 +15251,12 @@ durable-publication fences as separate admission and attachment; success publish
 host inputs MUST remain owned outside the coordinator lock. This route grants no authority,
 enables no source live-handle transport and serializes no physical value.
 
+`ResourceRegistry::admit_host_value_with_charges` MAY additionally admit a caller-declared action
+and explicit whole charge vector after cancellation, capacity and physical eligibility checks.
+Charging and both insertions MUST share the machine lease. Refusal MUST return the physical input
+untouched and publish no account, slot, quota use or pending capacity. No charge is inferred from
+physical size; legacy acquisition remains uncharged and the caller still authenticates authority.
+
 A registry MAY separately declare a finite ceiling on admitted pending resource operations.
 Every successful live admission MUST retain its pending settlement lease even without that ceiling;
 unlimited admission does not discharge accepted-work ownership. Accounting reconstruction still

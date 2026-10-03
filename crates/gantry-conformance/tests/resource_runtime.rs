@@ -4786,6 +4786,119 @@ fn atomic_host_admission_preserves_refused_inputs_and_complete_acquisition() {
     );
 }
 
+/// Explicit acquisition charges cannot survive a refused physical ownership admission.
+#[test]
+fn charged_host_acquisition_preserves_inputs_and_commits_complete_accounting() {
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let record = ledger().durable_record();
+    let charge = Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 2,
+    };
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    for (vector, expected) in [
+        (
+            vec![
+                charge,
+                Charge {
+                    family: QuotaFamily::Operations,
+                    ..charge
+                },
+            ],
+            ResourceError::UndeclaredQuota,
+        ),
+        (
+            vec![Charge {
+                amount: 9,
+                ..charge
+            }],
+            ResourceError::QuotaExhausted,
+        ),
+    ] {
+        let (error, returned) = *registry
+            .admit_host_value_with_charges(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                record.clone(),
+                17_u64,
+                (ResourceAction::Move, &vector),
+            )
+            .err()
+            .unwrap_or_else(|| panic!("quota vector must refuse"));
+        assert_eq!(error, ResourceRegistryRefusal::Admission(expected));
+        assert_eq!(returned, 17);
+        assert!(registry.declared_records().is_empty());
+        assert!(!registry.has_host_value(&subject));
+        assert_eq!(registry.pending_operations(), 0);
+    }
+    assert_eq!(
+        registry.admit_host_value_with_charges(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+            17_u64,
+            (ResourceAction::Move, &[charge]),
+        ),
+        Ok(())
+    );
+    let account = registry
+        .account(&subject)
+        .unwrap_or_else(|| panic!("account"));
+    assert_eq!(
+        account.remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(6)
+    );
+    assert_eq!(registry.pending_operations(), 1);
+    assert_eq!(
+        registry.invoke_host_value::<u64, u64>(&subject, record.owner(), |value| Ok(*value)),
+        Ok(17)
+    );
+    let before = registry.declared_records();
+    let (error, returned) = *registry
+        .admit_host_value_with_charges(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+            19_u64,
+            (
+                ResourceAction::Copy,
+                &[Charge {
+                    amount: 9,
+                    ..charge
+                }],
+            ),
+        )
+        .err()
+        .unwrap_or_else(|| panic!("duplicate must refuse"));
+    assert_eq!(error, ResourceRegistryRefusal::SecondAdmission);
+    assert_eq!(returned, 19);
+    assert_eq!(registry.declared_records(), before);
+    assert!(machine.cancel("acquisition cancellation").is_some());
+    let mut cancelled_registry = ResourceRegistry::with_limits(1, 1);
+    let (error, returned) = *cancelled_registry
+        .admit_host_value_with_charges(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record,
+            23_u64,
+            (
+                ResourceAction::Move,
+                &[Charge {
+                    amount: 9,
+                    ..charge
+                }],
+            ),
+        )
+        .err()
+        .unwrap_or_else(|| panic!("cancellation must refuse"));
+    assert_eq!(error, ResourceRegistryRefusal::CancellationRequested);
+    assert_eq!(returned, 23);
+    assert!(cancelled_registry.declared_records().is_empty());
+    assert_eq!(cancelled_registry.pending_operations(), 0);
+}
+
 /// Quota, cancellation and physical eligibility failures cannot leave a half-published account.
 #[test]
 fn atomic_host_admission_refusals_publish_no_account_slot_or_pending_capacity() {
