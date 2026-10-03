@@ -203,6 +203,7 @@ impl<T> OwnedHostResource<T> {
         } else if live.operation() != self.account.subject().operation()
             || live.generation() != self.account.subject().generation()
             || live.site() != self.account.subject().site()
+            || self.account.subject().operation_recovery() != Some(live.abi().recovery())
             || !live.ownership().is_borrowed_loan()
             || live.settlement().is_some()
             || live.fenced().is_some()
@@ -801,16 +802,40 @@ mod tests {
         // Binding happened before the fault in this second owner; loan acquisition must
         // still consult the exact account lease instead of treating prior binding as permission.
         let second_lease = Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open()));
-        let second_subject = crate::ResourceSubjectBinding::derive(
+        let recovery = gantry_ir::generated::RecoveryClass::Idempotent;
+        let metadata = gantry_ir::ExecutableOperation {
+            kind: gantry_ir::generated::OperationSiteKind::Action,
+            section20_kind: Some(gantry_ir::OperationKind::LiveResource),
+            result_type: gantry_ir::TypeDescriptor::UNIT,
+            action: Some(gantry_ir::ExecutableAction {
+                path: path.clone(),
+                signature: gantry_ir::CanonicalSignature::action(
+                    recovery,
+                    &path,
+                    &[],
+                    &gantry_ir::TypeDescriptor::UNIT,
+                ),
+                recovery,
+                parameters: Vec::new(),
+            }),
+            template_segments: Vec::new(),
+            interpolation_types: Vec::new(),
+            named_input_names: Vec::new(),
+            named_input_types: Vec::new(),
+            retry_limit: None,
+            session_mode: None,
+            attempted: false,
+        };
+        let second_subject = crate::ResourceSubjectBinding::from_declared_operation(
             &path,
-            path.clone(),
-            gantry_ir::StructuralPosition::new(vec![0])
+            &gantry_ir::StructuralPosition::new(vec![0])
                 .unwrap_or_else(|error| panic!("fixture site: {error}")),
+            &metadata,
             0,
-            Some(gantry_ir::OperationKind::LiveResource),
             Arc::clone(&second_lease),
             (execution, execution),
-        );
+        )
+        .unwrap_or_else(|| panic!("declared action subject"));
         let second_account = AdmittedResource::admit(
             gantry_ir::ResourceCarrier::ReconstructionRecord,
             record.clone(),

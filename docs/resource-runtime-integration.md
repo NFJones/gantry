@@ -470,7 +470,10 @@ historical containment; it neither rebinds an adapter nor implements source-task
 
 `OwnedHostResource::borrow_receiver` consumes an exact borrowed `LiveResource` into an exclusive
 `HostReceiverLoan`, returning the handle on refusal. Admission checks the account's operation,
-site, resource generation, current owner and declared loan root. Eligible acquisition then checks
+site, resource generation, current owner and declared loan root. The loan's recovery class must
+match issuing executable metadata retained by the account; absent or mismatched metadata refuses
+`ForeignLoan` without changing either input. Subject identity alone cannot substitute a recovery
+contract. Eligible acquisition then checks
 the admitted account's machine lease: cancellation refuses with `CancellationRequested`, and an
 unreadable lease refuses with `PendingOperation`. The check and acquisition share the lease lock;
 refusal returns the complete handle without changing accounting or poisoning transport. Already

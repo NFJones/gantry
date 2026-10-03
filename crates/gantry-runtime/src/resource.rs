@@ -475,6 +475,11 @@ impl ResourceSubjectBinding {
         self.kind
     }
 
+    /// Returns the recovery class retained from issuing executable action metadata.
+    pub(crate) const fn operation_recovery(&self) -> Option<gantry_ir::generated::RecoveryClass> {
+        self.recovery
+    }
+
     /// Derives the binding one decoded operation metadata declares at one site.
     ///
     /// The declaration is the metadata's canonical action path, so an operation whose decoded

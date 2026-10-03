@@ -15528,7 +15528,10 @@ roots and historical containment evidence MUST remain unchanged. This does not r
 reopen settlement, grant authority, or implement source-task transfer.
 The wrapper MAY admit an exclusive `HostReceiverLoan` only from an unsettled borrowed
 `LiveResource` with its exact operation, site, resource generation and current owner, while
-active/open accounting retains a declared loan root. After those eligibility checks, loan admission
+active/open accounting retains a declared loan root. Its recovery class MUST equal the admitted
+account's issuing executable recovery class; absent or mismatched metadata MUST refuse `ForeignLoan`
+without consuming the handle or changing accounting. Equal subject identity alone does not authorize
+recovery-contract substitution. After those eligibility checks, loan admission
 MUST check the admitted account's machine lease and refuse recorded cancellation with
 `CancellationRequested`, or an unreadable lease with `PendingOperation`, returning the model handle
 unchanged. The cancellation check and loan acquisition MUST linearize under that lease; refusal

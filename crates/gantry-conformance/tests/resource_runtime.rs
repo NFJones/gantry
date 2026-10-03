@@ -6415,6 +6415,42 @@ fn host_receiver_loan_refuses_foreign_identity_and_missing_roots() {
     let mut resource =
         OwnedHostResource::bind(admitted_active(), 1_u64).unwrap_or_else(|_| panic!("bind"));
     let before = resource.account().durable_record();
+    for recovery in [RecoveryClass::ReadOnly, RecoveryClass::NonIdempotent] {
+        let declaration = CanonicalPath::new(FIXTURE_DECLARATION)
+            .unwrap_or_else(|error| panic!("declaration: {error}"));
+        let subject = active_subject();
+        let abi = OperationAbi::new(
+            OperationKind::LiveResource,
+            &declaration,
+            subject.site(),
+            0,
+            recovery,
+            ReceiverOwnership::BorrowedLoan(gantry::ir::LoanId::seal(
+                &declaration,
+                subject.site(),
+                subject.generation(),
+            )),
+        )
+        .unwrap_or_else(|error| panic!("loan ABI: {error:?}"));
+        let live = abi
+            .open_live(
+                OwnerGeneration::new(4),
+                OperationAbi::observation_allowance(
+                    1,
+                    DisclosureCharge::new(1).unwrap_or_else(|| panic!("charge")),
+                ),
+            )
+            .unwrap_or_else(|error| panic!("loan: {error:?}"));
+        let preserved = live.clone();
+        let (error, returned) = *resource
+            .borrow_receiver(live)
+            .err()
+            .unwrap_or_else(|| panic!("mismatched recovery must refuse"));
+        assert_eq!(error, HostResourceError::ForeignLoan);
+        assert_eq!(returned, preserved);
+        assert_eq!(resource.account().durable_record(), before);
+        assert!(!resource.is_poisoned());
+    }
     for (live, expected) in [
         (
             transport_live(SECOND_FIXTURE_DECLARATION, 0, 4, true),
