@@ -4384,6 +4384,68 @@ mod tests {
                     )
                     .is_err()
                 );
+                // Hostile journal length, envelope count and framed sequence width must
+                // refuse before unchecked allocation or authoritative publication.
+                let count_offset = 24 + journal.as_str().len();
+                for offset in [8, count_offset, count_offset + 8] {
+                    let mut hostile = snapshot.canonical_bytes().to_vec();
+                    hostile[offset..offset + 8].copy_from_slice(&u64::MAX.to_be_bytes());
+                    assert!(
+                        gantry_runtime::ConcurrentFinishSnapshotV1::decode(
+                            Arc::clone(&program),
+                            &hostile,
+                            exact,
+                        )
+                        .is_err(),
+                        "hostile snapshot framing at {offset}"
+                    );
+                }
+                let mut trailing = snapshot.canonical_bytes().to_vec();
+                trailing.push(0);
+                assert!(
+                    gantry_runtime::ConcurrentFinishSnapshotV1::decode(
+                        Arc::clone(&program),
+                        &trailing,
+                        exact + 1,
+                    )
+                    .is_err()
+                );
+                for changed in 0..3 {
+                    let mut invalid = snapshot.prefix();
+                    match changed {
+                        0 => {
+                            invalid.journal_id = JournalId::new("wrong-snapshot-journal")
+                                .unwrap_or_else(|error| panic!("journal: {error:?}"))
+                        }
+                        1 => {
+                            invalid.frontier += 1;
+                            invalid.committed_through += 1;
+                        }
+                        _ => {
+                            let original = *invalid
+                                .retained_evidence
+                                .keys()
+                                .next()
+                                .unwrap_or_else(|| panic!("retained identity"));
+                            let sequence = invalid
+                                .retained_evidence
+                                .remove(&original)
+                                .unwrap_or_else(|| panic!("retained sequence"));
+                            invalid.retained_evidence.insert(
+                                ProtocolIdentity::from_storage_material([93; 32]),
+                                sequence,
+                            );
+                        }
+                    }
+                    assert!(
+                        recover_concurrent_authoritative_prefix(
+                            Arc::clone(&program),
+                            &JournalPrefixV1::Snapshot(invalid),
+                        )
+                        .is_err(),
+                        "altered snapshot coordinate {changed}"
+                    );
+                }
             }
             assert_eq!(
                 recovered.latest_cut(),
