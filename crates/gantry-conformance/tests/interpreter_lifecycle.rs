@@ -168,6 +168,7 @@ fn public_configuration_defaults_bounds_and_classes_are_exact() {
     assert_eq!(configuration.post_cancellation_drain().get(), 5_000_000);
     assert_eq!(configuration.maximum_tasks_per_execution().maximum(), None);
     assert_eq!(configuration.resource_accounting_limits(), None);
+    assert_eq!(configuration.retained_resource_limit(), None);
 
     let frontend = configuration.required().frontend_limits;
     assert_eq!(frontend.maximum_package_files(), 128);
@@ -259,6 +260,13 @@ fn public_configuration_defaults_bounds_and_classes_are_exact() {
 
 #[test]
 fn public_configuration_admits_an_explicit_fully_unlimited_policy() {
+    let bounded = configuration().with_bounded_resource_accounting_limits(2, 3, 0);
+    assert_eq!(bounded.resource_accounting_limits(), Some((2, 3)));
+    assert_eq!(bounded.retained_resource_limit(), Some(0));
+    let replaced = bounded.with_resource_accounting_limits(4, 5);
+    assert_eq!(replaced.resource_accounting_limits(), Some((4, 5)));
+    assert_eq!(replaced.retained_resource_limit(), None);
+
     let required = RequiredConfiguration::unlimited(
         FrontendLimits::unlimited(),
         ValueLimits::unlimited(),

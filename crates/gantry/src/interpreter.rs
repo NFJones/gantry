@@ -1752,6 +1752,19 @@ impl PreparedRootDriver {
         .map_err(RunExecutionError::TaskState)?;
         #[cfg(feature = "concurrent")]
         let coordinator = match inner.configuration.resource_accounting_limits() {
+            Some((live, pending)) if inner.configuration.retained_resource_limit().is_some() => {
+                ExecutionCoordinator::new_with_budget_and_accounting_limits(
+                    tasks,
+                    sessions,
+                    execution_budget.clone(),
+                    live,
+                    pending,
+                    inner
+                        .configuration
+                        .retained_resource_limit()
+                        .unwrap_or_else(|| unreachable!("guard requires retained policy")),
+                )
+            }
             Some((live, pending)) => ExecutionCoordinator::new_with_budget_and_resource_limits(
                 tasks,
                 sessions,
@@ -1772,6 +1785,7 @@ impl PreparedRootDriver {
                 tasks,
                 sessions,
                 inner.configuration.resource_accounting_limits(),
+                inner.configuration.retained_resource_limit(),
             )
             .map_err(RunExecutionError::TaskState)?
         };
@@ -14819,8 +14833,19 @@ fn sequential_execution_coordinator(
     tasks: ConcurrentTaskStateV1,
     sessions: LogicalSessionRegistryV1,
     accounting: Option<(u64, u64)>,
+    retained: Option<u64>,
 ) -> Result<ExecutionCoordinator, TaskStateError> {
     match accounting {
+        Some((live, pending)) if retained.is_some() => {
+            ExecutionCoordinator::new_with_budget_and_accounting_limits(
+                tasks,
+                sessions,
+                machine.execution_budget(),
+                live,
+                pending,
+                retained.unwrap_or_else(|| unreachable!("guard requires retained policy")),
+            )
+        }
         Some((live, pending)) => ExecutionCoordinator::new_with_budget_and_resource_limits(
             tasks,
             sessions,
@@ -14949,7 +14974,13 @@ mod evaluator_only_tests {
         );
         let limits = MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
             .unwrap_or_else(|| panic!("positive limits"));
-        for accounting in [None, Some((0, 0)), Some((2, 3))] {
+        for (accounting, retained) in [
+            (None, None),
+            (Some((0, 0)), None),
+            (Some((2, 3)), None),
+            (Some((2, 3)), Some(0)),
+            (Some((2, 3)), Some(4)),
+        ] {
             let mut machine =
                 Machine::new(Arc::clone(&program), &path, Vec::new(), execution, limits)
                     .unwrap_or_else(|error| panic!("machine: {error:?}"));
@@ -14962,9 +14993,11 @@ mod evaluator_only_tests {
                 CanonicalTranscriptV1::empty(),
             )
             .unwrap_or_else(|error| panic!("sessions: {error:?}"));
-            let coordinator =
-                super::sequential_execution_coordinator(&machine, tasks, sessions, accounting)
-                    .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+            let coordinator = super::sequential_execution_coordinator(
+                &machine, tasks, sessions, accounting, retained,
+            )
+            .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+            assert_eq!(coordinator.retained_resource_limit(), retained);
             assert_eq!(
                 coordinator.snapshot().resource_records(),
                 accounting.map(|_| &[][..])

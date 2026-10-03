@@ -73,6 +73,11 @@ accounting ownership only, not live-handle transport or host authority; current 
 reconstructs enabled empty-registry policy only through the version-six combined graph. For example, an embedder can use
 `configuration.with_resource_accounting_limits(64, 16)` for new execution owners while retaining
 the existing raw-byte-hook refusal for live-resource results.
+`with_bounded_resource_accounting_limits(64, 16, 128)` additionally limits retained account records
+in both sequential and concurrent fresh owners, preserving their shared execution budget.
+`retained_resource_limit()` inspects this independent ceiling. The default leaves it absent;
+calling the two-ceiling builder replaces and clears retained policy. Zero denies record admission,
+not ordinary source execution. Empty bounded policy uses version-seven graph carriage.
 
 `ExecutionCoordinator::new_with_recovered_resources` constructs one shared accounting owner
 atomically from declared reconstruction records. Each binding must name the execution and a known

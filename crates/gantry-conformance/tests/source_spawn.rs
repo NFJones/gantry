@@ -627,7 +627,13 @@ impl Drop for TempDirectory {
 /// Accounting configuration changes ownership inspection, not ordinary source eligibility.
 #[test]
 fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
-    for accounting in [None, Some((0, 0)), Some((2, 3))] {
+    for (accounting, retained) in [
+        (None, None),
+        (Some((0, 0)), None),
+        (Some((2, 3)), None),
+        (Some((2, 3)), Some(0)),
+        (Some((2, 3)), Some(4)),
+    ] {
         let root = TempDirectory::new("fn main() {}");
         let executor = Arc::new(DeterministicConcurrentExecutor::default());
         let integration = Arc::new(ScriptedIntegration::new(
@@ -640,7 +646,7 @@ fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
         let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
             (1_u8..=192).map(|byte| Ok([byte; 32])),
         ));
-        let interpreter = interpreter_with_accounting_policy(
+        let interpreter = interpreter_with_accounting_service(
             executor.clone(),
             integration.clone(),
             integration,
@@ -650,12 +656,21 @@ fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
             SinkPlan::default(),
             identities,
             accounting,
+            retained,
+            None,
         );
         let accepted = accepted(&interpreter, &root);
         let handle = accepted.handle().clone();
         assert_eq!(
             interpreter.test_nondurable_resource_records(handle.execution_id()),
             Some(accounting.map(|_| Vec::new()))
+        );
+        assert_eq!(
+            interpreter
+                .test_nondurable_resource_coordinator(handle.execution_id())
+                .unwrap_or_else(|| panic!("fresh execution owner exists"))
+                .retained_resource_limit(),
+            retained,
         );
         drop(accepted);
         let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
@@ -4319,6 +4334,7 @@ fn interpreter_with_accounting_policy(
         identities,
         accounting,
         None,
+        None,
     )
 }
 
@@ -4333,6 +4349,7 @@ fn interpreter_with_accounting_service(
     event_delivery: SinkPlan,
     identities: Arc<dyn IdentitySource>,
     accounting: Option<(u64, u64)>,
+    retained: Option<u64>,
     service: Option<Box<dyn gantry::host::contracts::BlockingWorkService>>,
 ) -> Interpreter {
     let required = RequiredConfiguration::new(
@@ -4355,10 +4372,17 @@ fn interpreter_with_accounting_service(
         .unwrap_or_else(|error| panic!("task-limit configuration failed: {error}"));
     assert_eq!(configuration.resource_accounting_limits(), None);
     let configuration = match accounting {
+        Some((live, pending)) if retained.is_some() => configuration
+            .with_bounded_resource_accounting_limits(
+                live,
+                pending,
+                retained.unwrap_or_else(|| panic!("retained policy exists")),
+            ),
         Some((live, pending)) => configuration.with_resource_accounting_limits(live, pending),
         None => configuration,
     };
     assert_eq!(configuration.resource_accounting_limits(), accounting);
+    assert_eq!(configuration.retained_resource_limit(), retained);
     let configuration = match service {
         Some(service) => configuration
             .with_blocking_work_service(service)

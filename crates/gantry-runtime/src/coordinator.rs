@@ -1105,6 +1105,15 @@ impl ExecutionCoordinator {
         lock(&self.inner.state).resource_admission_closed
     }
 
+    /// Reports the configured retained-account ceiling without changing ownership or publication.
+    #[must_use]
+    pub fn retained_resource_limit(&self) -> Option<u64> {
+        lock(&self.inner.state)
+            .resources
+            .as_ref()
+            .and_then(crate::ResourceRegistry::retained_limit)
+    }
+
     /// Reports whether active or finishing accounting still requires semantic settlement.
     ///
     /// This obligation is independent of physical slot presence and does not release quota.

@@ -297,6 +297,7 @@ fn public_cancellation_drains_settled_physical_resources_before_quiescence() {
             SinkPlan::default(),
             identities,
             Some((2, 2)),
+            None,
             service,
         );
         let accepted = accepted(&interpreter, &root);

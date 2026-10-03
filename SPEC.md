@@ -15228,6 +15228,11 @@ Interpreter configuration MAY opt fresh execution owners into explicit finite li
 pending-operation ceilings, including zero to deny admission. The default MUST leave accounting
 disabled. Fresh root construction MUST retain the shared execution budget when enabling this
 registry; ordinary source execution remains eligible with zero accounting ceilings. This policy
+MAY additionally select a retained-account ceiling through
+`with_bounded_resource_accounting_limits(live, pending, retained)`. Both sequential and concurrent
+fresh owners MUST retain that ceiling; zero permits ordinary source execution but denies new
+account records. Replacing this policy with `with_resource_accounting_limits` MUST clear the
+retained ceiling. Default retained policy is absent. This configuration
 MUST NOT enable unsupported live-handle transport or grant host authority. The version-six combined
 graph recovers enabled empty-registry admission policy as declared below; resource records,
 physical handles and admitted pending work remain unsupported by that wire.
