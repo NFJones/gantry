@@ -15396,6 +15396,15 @@ current owner and explicit quota use, preserving issuing evidence, cleanup task,
 containment. Refusal MUST preserve the source. This candidate grants no physical transfer, journal
 publication or durable ownership mutation cut; existing graph-image fences remain required.
 
+`ResourceOwnerEvidenceV1` MAY validate exactly one same-cleanup-task owner advancement between
+complete executable-validated graphs. Applying the owner-qualified candidate and explicit Move
+vector at the canonical record index MUST reproduce the entire successor; unrelated graph, policy,
+budget, cleanup-task or historical changes MUST refuse. The `GNTRWA01` carrier MUST bound the
+authored vector to 128 members before deduplication, admit the caller's complete byte ceiling before
+input parsing and output checkpoint copying, and reject unknown quota tags, malformed framing,
+trailing bytes and noncanonical encodings. This validator grants no journal publication authority;
+ordinary graph writers and replay MUST continue refusing unadmitted ownership changes.
+
 `RecoveredResourceRecord::stage_finish` MAY build a logical begin/complete finish candidate.
 It MUST validate the presented current owner before applying the existing ledger transition,
 preserve subject, cleanup ownership, issuing and containment evidence, roots and quotas, and

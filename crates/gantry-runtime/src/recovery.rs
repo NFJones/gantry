@@ -12,6 +12,10 @@ mod resource_finish;
 pub use resource_finish::{
     RESOURCE_FINISH_EVIDENCE_KIND_V1, RESOURCE_FINISH_EVIDENCE_KIND_V2, ResourceFinishEvidenceV1,
 };
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+mod resource_owner;
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub use resource_owner::ResourceOwnerEvidenceV1;
 mod execution_start;
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]

@@ -360,6 +360,105 @@ fn resource_records_survive_version_eight_graph_recovery() {
         .unwrap_or_else(|error| panic!("resource capture: {error:?}"));
     let bytes = checkpoint.canonical_bytes();
     // Finish evidence validates an exact logical candidate; it does not authorize graph writes.
+    let charges = [gantry_ir::Charge {
+        owner: gantry_ir::QuotaOwner::Owner,
+        family: gantry_ir::QuotaFamily::Bytes,
+        amount: 2,
+    }];
+    let successor = OwnerGeneration::new(5);
+    let mut owner_records = checkpoint.resource_records().to_vec();
+    owner_records[0] = owner_records[0]
+        .stage_owner_advance(owner, successor, &charges)
+        .unwrap_or_else(|error| panic!("owner candidate: {error:?}"));
+    let advanced = checkpoint
+        .clone()
+        .with_resource_records(Arc::clone(&program), owner_records)
+        .unwrap_or_else(|error| panic!("owner graph: {error:?}"));
+    let owner_evidence = crate::ResourceOwnerEvidenceV1::new(
+        Arc::clone(&program),
+        checkpoint.clone(),
+        advanced.clone(),
+        0,
+        (owner, successor),
+        &charges,
+    )
+    .unwrap_or_else(|error| panic!("owner evidence: {error:?}"));
+    let owner_bytes = owner_evidence
+        .encode(1_048_576)
+        .unwrap_or_else(|error| panic!("owner encode: {error:?}"));
+    let exact_owner_bytes = owner_bytes.len() as u64;
+    assert_eq!(
+        owner_evidence.encode(exact_owner_bytes),
+        Ok(owner_bytes.clone())
+    );
+    assert!(owner_evidence.encode(exact_owner_bytes - 1).is_err());
+    assert_eq!(
+        crate::ResourceOwnerEvidenceV1::decode(
+            Arc::clone(&program),
+            &owner_bytes,
+            exact_owner_bytes,
+        ),
+        Ok(owner_evidence.clone())
+    );
+    assert!(
+        crate::ResourceOwnerEvidenceV1::decode(
+            Arc::clone(&program),
+            &owner_bytes,
+            exact_owner_bytes - 1,
+        )
+        .is_err()
+    );
+    assert_eq!(owner_evidence.previous(), &checkpoint);
+    assert_eq!(owner_evidence.current(), &advanced);
+    assert_eq!(owner_evidence.charges(), charges);
+    for offset in [0, 15, 23, 31, 39, 40, 41, 49] {
+        let mut corrupt = owner_bytes.clone();
+        corrupt[offset] ^= 0xff;
+        assert!(
+            crate::ResourceOwnerEvidenceV1::decode(
+                Arc::clone(&program),
+                &corrupt,
+                exact_owner_bytes,
+            )
+            .is_err(),
+            "altered owner carrier field at {offset}"
+        );
+    }
+    let mut trailing_owner_bytes = owner_bytes.clone();
+    trailing_owner_bytes.push(0);
+    assert!(
+        crate::ResourceOwnerEvidenceV1::decode(
+            Arc::clone(&program),
+            &trailing_owner_bytes,
+            exact_owner_bytes + 1,
+        )
+        .is_err()
+    );
+    for (current, index, generations, vector) in [
+        (checkpoint.clone(), 0, (owner, successor), charges.to_vec()),
+        (advanced.clone(), 1, (owner, successor), charges.to_vec()),
+        (
+            advanced.clone(),
+            0,
+            (OwnerGeneration::new(3), successor),
+            charges.to_vec(),
+        ),
+        (advanced.clone(), 0, (owner, owner), charges.to_vec()),
+        (advanced.clone(), 0, (owner, successor), Vec::new()),
+    ] {
+        assert!(
+            crate::ResourceOwnerEvidenceV1::new(
+                Arc::clone(&program),
+                checkpoint.clone(),
+                current,
+                index,
+                generations,
+                &vector,
+            )
+            .is_err()
+        );
+    }
+    assert_eq!(coordinator.snapshot(), before);
     let mut previous = checkpoint.clone();
     for transition in [
         crate::ResourceFinishTransition::Begin,

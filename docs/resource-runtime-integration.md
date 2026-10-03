@@ -146,6 +146,12 @@ containment stays unsettled. Success preserves issuing/history facts, roots and 
 Refusal leaves the source unchanged. This is not physical transfer or journal publication authority;
 no durable ownership mutation cut is enabled and existing graph-image fences remain intact.
 
+`ResourceOwnerEvidenceV1` reproduces one same-cleanup-task advancement between executable-validated
+complete graphs. Its `GNTRWA01` carrier retains the authored Move vector under a 128-member limit
+and a caller-supplied complete byte ceiling; closed tags, canonical framing and exact successor
+comparison reject unrelated changes. Output admission precedes checkpoint copying, not temporary
+checkpoint allocation. This is validation only, not a journal kind or admitted ownership cut.
+
 `stage_finish(owner, ResourceFinishTransition::Begin)` builds a finishing candidate; `Complete`
 records a declared logical settlement instant using the same ledger rules. Both leave the source
 record unchanged and preserve its subject, cleanup ownership, quotas, roots and historical evidence.
