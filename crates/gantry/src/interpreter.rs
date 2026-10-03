@@ -5204,7 +5204,9 @@ impl Interpreter {
                             .as_ref()
                             .is_some_and(|metadata| metadata.kind == OperationSiteKind::Action)
                         {
-                            self.drive_durable_graph_action_operation(
+                            // Keep the action future out of the enclosing task's frame even when
+                            // this task drives model recovery; both operation branches are boxed.
+                            Box::pin(self.drive_durable_graph_action_operation(
                                 &graph,
                                 &owner,
                                 &coordinator,
@@ -5214,7 +5216,7 @@ impl Interpreter {
                                 &cancellation,
                                 &operation,
                                 recovery,
-                            )
+                            ))
                             .await?;
                         } else {
                             Box::pin(self.drive_durable_graph_model_operation(

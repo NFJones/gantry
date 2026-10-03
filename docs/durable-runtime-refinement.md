@@ -40,6 +40,12 @@ The version-seven graph (`GNTCDP07`) additionally retains the exact retained-acc
 Legacy v4–v6 bytes remain unchanged; replay rejects changes or removal of any ceiling, and
 coordinator-backed recovery restores the same admission policy without creating accepted work.
 
+The graph task driver heap-pins both action and model operation futures. Keeping either large
+operation future inline inflates the enclosing task's polling frame on every branch, including
+replacement model execution. Normal-stack child-prompt recovery and the source-spawn suite cover
+this boundary without increasing the test-thread stack. This is an implementation stack-usage
+repair, not a portable stack-size or allocation guarantee.
+
 `ExecutionCoordinator::stage_graph` provides an exclusive quiescent transaction
 primitive over borrowed root and child machines. Its private copies share one
 isolated budget; ordinary coordinator semantic writers are rejected until
