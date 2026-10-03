@@ -974,7 +974,8 @@ fn main() -> Int { leaf() }
     let services = Arc::new(Services::default());
     let configuration = test_configuration(Arc::clone(&services));
     let selection = selection();
-    let storage: Arc<dyn JournalStorage> = Arc::new(InMemoryJournalStore::new());
+    let storage = Arc::new(InstrumentedJournalStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
     let package = AnalyzePackageCoordinator::new(
@@ -991,20 +992,21 @@ fn main() -> Int { leaf() }
         &allocator,
         preflight.clone(),
     );
-    let durable = DurableStartExecutionCoordinator::new(start, &configuration, storage);
+    let durable =
+        DurableStartExecutionCoordinator::new(start, &configuration, storage_adapter.clone());
     let journal_id = JournalId::new("reachable-mapping-dependencies")
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let result = block_on(durable.start(DurableStartExecutionRequest {
-        journal_id,
+        journal_id: journal_id.clone(),
         start: start_request(&root.0, &selection),
     }));
-    match result {
-        DurableStartExecutionResult::Accepted(_) => {}
+    let accepted = match result {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
         DurableStartExecutionResult::Rejected(failure) => panic!(
             "reachable dependency fixture was rejected: {:?} {}",
             failure.failure.category, failure.failure.code
         ),
-    }
+    };
     let requests = preflight.mapping_requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["agent_names"], serde_json::json!(["worker"]));
@@ -1022,6 +1024,84 @@ fn main() -> Int { leaf() }
             .as_str()
             .is_some_and(|value| !value.contains("unreachable"))
     }));
+    let prefix = read_prefix(storage.as_ref(), &journal_id);
+    let (program, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("retained start: {error:?}"));
+    let execution_start = recovered
+        .execution_start()
+        .unwrap_or_else(|| panic!("start retained"));
+    let mut workflows = program.workflows().to_vec();
+    let mut changed = false;
+    for instruction in workflows
+        .iter_mut()
+        .flat_map(|workflow| &mut workflow.instructions)
+    {
+        if let InstructionKind::OperationCall { operation, .. } = &mut instruction.kind {
+            operation.section20_kind = Some(gantry::ir::OperationKind::LiveResource);
+            changed = true;
+        }
+    }
+    assert!(changed, "fixture reaches an operation");
+    let unsupported = gantry::runtime::MachineProgram::new(workflows)
+        .unwrap_or_else(|error| panic!("unsupported program: {error:?}"));
+    let retained = DurableExecutionStartV3::new(
+        execution_start.execution_id(),
+        execution_start.task_id(),
+        &unsupported,
+        Arc::<[u8]>::from(execution_start.metadata()),
+        execution_start.state().clone(),
+    )
+    .unwrap_or_else(|error| panic!("retained unsupported start: {error:?}"));
+    let JournalPrefixV1::Full(mut full) = prefix else {
+        panic!("full prefix")
+    };
+    let mut evidence = full.evidence.to_vec();
+    evidence[0].canonical_body = Arc::from(retained.canonical_body());
+    full.evidence = Arc::from(evidence);
+    let unsupported_prefix = JournalPrefixV1::Full(full);
+    recover_authoritative_prefix_with_retained_program(&unsupported_prefix)
+        .unwrap_or_else(|error| panic!("otherwise valid retained program: {error:?}"));
+    storage.set_prefix_override(unsupported_prefix.clone());
+    release(
+        storage.as_ref(),
+        &journal_id,
+        accepted.test_ownership_token().clone(),
+    );
+    let commits_before = storage.commit_calls();
+    let resume_lifecycle = InterpreterLifecycle::new(&configuration);
+    let resume_allocator = FreshIdentityAllocator::default();
+    let resume_package = AnalyzePackageCoordinator::new(
+        &resume_allocator,
+        services.as_ref(),
+        &FixedClock,
+        gantry_conformance::blocking_work(),
+    );
+    let resume_start = StartExecutionCoordinator::new(
+        &resume_package,
+        &resume_lifecycle,
+        &configuration,
+        &resume_allocator,
+        preflight.clone(),
+    );
+    let resume =
+        DurableStartExecutionCoordinator::new(resume_start, &configuration, storage_adapter);
+    let result = block_on(resume.resume(DurableResumeExecutionRequest {
+        journal_id: journal_id.clone(),
+        protocol_selection: &selection,
+        candidate_package_root: None,
+        expected_execution_id: Some(accepted.execution_id()),
+        event_delivery: None,
+    }));
+    let DurableResumeExecutionResult::Rejected(failure) = result else {
+        panic!("unsupported retained live-resource transport accepted");
+    };
+    assert_eq!(failure.code.as_ref(), "unsupported-live-resource-transport");
+    assert_eq!(preflight.mapping_requests().len(), 1);
+    assert_eq!(storage.commit_calls(), commits_before);
+    assert_eq!(
+        read_prefix(storage.as_ref(), &journal_id),
+        unsupported_prefix
+    );
 }
 
 #[test]

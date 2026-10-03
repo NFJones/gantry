@@ -57,6 +57,11 @@ rejects authenticated live-resource results, including attempted operations, wit
 or execution acceptance. Source analysis remains valid; an unsupported transport cannot cause
 an external dispatch and then fail only when its successful result reaches the machine.
 The low-level attempted-error and replay contract remains available to its existing owners.
+Source-free durable resume also checks the retained program's workflow and spawned-body
+operation inventory before mapping calls, lifecycle admission, journal repair or replacement
+submission. An authenticated live-resource result refuses with the same transport code without
+appending evidence. This operation check does not reanalyze aggregate constructors or create a
+live-handle recovery path.
 Reachable aggregate constructors are also classified using the configured frontend limits and refused
 with the same transport code when their analyzed type is live-resource, including empty structs,
 absent options, empty lists, and payload-free enum variants. Ordinary data cannot fabricate

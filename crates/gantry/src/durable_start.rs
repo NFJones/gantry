@@ -882,6 +882,38 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 )
                 .await;
         }
+        let unsupported_transport = recovered
+            .execution_start()
+            .and_then(|start| start.program().ok())
+            .is_none_or(|program| {
+                program
+                    .workflows()
+                    .iter()
+                    .flat_map(|workflow| &workflow.instructions)
+                    .chain(
+                        program
+                            .task_bodies()
+                            .iter()
+                            .flat_map(|body| body.instructions()),
+                    )
+                    .any(|instruction| {
+                        matches!(&instruction.kind,
+                        gantry_ir::InstructionKind::OperationCall { operation, .. }
+                        if operation.section20_kind == Some(gantry_ir::OperationKind::LiveResource))
+                    })
+            });
+        if unsupported_transport {
+            return self
+                .reject_resume_and_release(
+                    journal_id,
+                    ownership.token,
+                    ResumeRejection::new(
+                        ResumeStartFailureCategory::IntegrationPreflight,
+                        "unsupported-live-resource-transport",
+                    ),
+                )
+                .await;
+        }
         let event_delivery = request.event_delivery.cloned().unwrap_or_default();
         if required_sinks_json(&event_delivery) != metadata.required_event_sinks {
             return self

@@ -12165,6 +12165,11 @@ calls, root-session or execution identity allocation, and execution acceptance. 
 includes workflow and spawned task-body operations, including attempted operations. This is
 an unsupported transport refusal, not a source-analysis error or a fabricated operation outcome.
 It does not remove the low-level handle-free attempted-error settlement contract above.
+Source-free durable resume MUST inspect the retained program's workflow and spawned-body
+operation inventory for the same authenticated live-resource result and refuse
+`unsupported-live-resource-transport` before mapping calls, lifecycle admission, journal repair
+or replacement-driver submission. Refusal MUST preserve the journal prefix and append no evidence;
+retained metadata does not grant an unsupported live-handle transport path.
 The same inventory MUST refuse reachable ordinary aggregation whose analyzed result type
 has the live-resource stored-member class, including empty live-resource declarations, absent
 options, empty lists, and payload-free enum variants. Ordinary aggregate data MUST NOT fabricate
