@@ -1,0 +1,8 @@
+{
+  "scenarios": [
+    {"class": "host", "expected": "review completed", "hooks": [{"kind": "decide", "output": {"decision": true, "rationale": "Checks passed"}, "assert_request": {"/operation_request/expected_type": "Decision"}}]},
+    {"class": "host", "expected": "review completed", "hooks": [{"kind": "decide", "output": {"decision": false, "rationale": "Checks pending"}}]},
+    {"class": "host", "expected": "review unavailable", "hooks": [{"kind": "decide", "error": "timeout"}]},
+    {"class": "host", "expected": "review unavailable", "hooks": [{"kind": "decide", "output": {"decision": true, "rationale": ""}}]}
+  ]
+}

@@ -1,0 +1,24 @@
+struct BatchRequest { items: List<String>, summary: String }
+struct Batch { receipts: String, count: Int }
+
+action idempotent record_batch(request: BatchRequest) -> Batch;
+
+pure fn prepare(items: List<String>) -> BatchRequest {
+    let mut summary: String = "";
+    for item in items {
+        summary += item + ";";
+    }
+    BatchRequest { items, summary }
+}
+
+fn process(request: BatchRequest) -> Batch {
+    action record_batch(request)
+}
+
+fn main(items: List<String>) -> Batch {
+    if items.len() == 0 {
+        return Batch { receipts: "", count: 0 };
+    }
+    let request: BatchRequest = prepare(items);
+    process(request)
+}

@@ -1,0 +1,8 @@
+enum Status { Ready, Waiting(Int) }
+struct Response { status: Status, pair: Tuple<Int, String> }
+
+action read_only inspect() -> Response;
+
+fn main() -> Response {
+    action(retry_limit = 0) inspect()
+}

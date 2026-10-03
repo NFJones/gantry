@@ -1,0 +1,8 @@
+fn main(fail: Bool) -> Int {
+    spawn background -> Int {
+        if fail { return 1 / 0; }
+        9
+    }
+    detach(background);
+    42
+}

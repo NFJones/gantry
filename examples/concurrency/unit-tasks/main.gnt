@@ -1,0 +1,10 @@
+fn main() -> Unit {
+    spawn implicit { return; }
+    spawn explicit -> Unit { () }
+    let waited: Unit = join(explicit, implicit);
+    spawn fallthrough { let local: Int = 1; discard local; }
+    spawn returned -> Unit { return (); }
+    let scoped: Unit = joinall();
+    waited;
+    scoped
+}

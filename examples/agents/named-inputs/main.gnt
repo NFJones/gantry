@@ -1,0 +1,8 @@
+// SPEC.md#GNT-7.5: using inputs stay separate and retain source order.
+agents { writer }
+default agent = writer;
+
+fn main(topic: String) -> String {
+    let count: Int = 2;
+    prompt "Summarize the supplied topic." using { topic, maximum: count + 1 } -> String
+}

@@ -1,0 +1,13 @@
+// SPEC.md#146-reusable-model-judgments-and-conditional-chains.
+agents { reviewer }
+default agent = reviewer;
+
+fn main() -> String {
+    if decide "Ready to publish?" {
+        return "publish";
+    } else if decide "Needs human review?" {
+        return "review";
+    } else {
+        return "revise";
+    }
+}

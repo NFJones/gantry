@@ -1,0 +1,17 @@
+{
+  "class": "host", "expected": ["quoted", "raw", "block"],
+  "hooks": [
+    {"kind": "prompt", "output": "quoted", "assert_request": {
+      "/operation_request/model/rendered_prompt": "Topic: stock\nQuote: \"ok\"",
+      "/operation_request/model/interpolation_inputs": [{"position": 0, "type": "String", "value": "stock"}]
+    }},
+    {"kind": "prompt", "output": "raw", "assert_request": {
+      "/operation_request/model/rendered_prompt": "Topic: stock; path: C:\\stock; literal: ${topic}",
+      "/operation_request/model/interpolation_inputs": [{"position": 0, "type": "String", "value": "stock"}]
+    }},
+    {"kind": "prompt", "output": "block", "assert_request": {
+      "/operation_request/model/rendered_prompt": "Topic: stock\nKeep it short.",
+      "/operation_request/model/interpolation_inputs": [{"position": 0, "type": "String", "value": "stock"}]
+    }}
+  ]
+}

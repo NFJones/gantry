@@ -1,0 +1,28 @@
+{
+  "class": "host", "expected": ["branch", "parent"],
+  "hooks": [
+    {"kind": "prompt", "output": null},
+    {"kind": "prompt", "output": "branch", "assert_request": {
+      "/operation_request/model/selected_agent": "writer",
+      "/operation_request/model/rendered_prompt": "Branch.",
+      "/operation_request/model/session_use/kind": "create",
+      "/operation_request/model/session_use/mode": "fork",
+      "/operation_request/model/transcript/turns": [{
+        "operation_kind": "prompt", "template_representation": ["Seed."],
+        "rendered_prompt": "Seed.", "interpolation_inputs": [], "using_inputs": [],
+        "selected_agent": "writer",
+        "accepted_result": {"kind": "unit", "type": "Unit", "value": null}
+      }]
+    }},
+    {"kind": "prompt", "output": "parent", "assert_request": {
+      "/operation_request/model/rendered_prompt": "Parent.",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": [{
+        "operation_kind": "prompt", "template_representation": ["Seed."],
+        "rendered_prompt": "Seed.", "interpolation_inputs": [], "using_inputs": [],
+        "selected_agent": "writer",
+        "accepted_result": {"kind": "unit", "type": "Unit", "value": null}
+      }]
+    }}
+  ]
+}

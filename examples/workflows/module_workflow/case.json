@@ -1,0 +1,6 @@
+{"scenarios":[
+  {"class":"host","input":"  Modules  ","expected":{"topic":"Modules","summary":"Modules compose workflows."},"hooks":[
+    {"kind":"prompt","output":"Modules compose workflows.","assert_request":{"/operation_request/site/workflow":"crate::drafting::draft","/operation_request/model/selected_agent":"editor","/operation_request/model/named_inputs/0/value":"Modules"}}
+  ]},
+  {"class":"host","input":"   ","expected":{"topic":"","summary":"No topic supplied."},"hooks":[]}
+]}

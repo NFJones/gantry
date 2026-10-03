@@ -1,0 +1,18 @@
+action read_only witness() -> Int;
+
+fn named() -> List<Int> {
+    spawn failed -> Int { 1 / 0 }
+    spawn completed -> Int { action witness() }
+    join(failed, completed)
+}
+
+fn lexical() -> List<Int> {
+    spawn failed -> Int { 1 / 0 }
+    spawn completed -> Int { action witness() }
+    joinall()
+}
+
+fn main(scoped: Bool) -> List<Int> {
+    if scoped { return lexical(); }
+    named()
+}

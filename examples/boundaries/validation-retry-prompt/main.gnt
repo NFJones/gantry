@@ -1,0 +1,11 @@
+agents { writer }
+default agent = writer;
+
+struct Summary { title: String, count: Int }
+
+fn main() -> Summary {
+    let topic: String = "offline examples";
+    prompt(retry_limit = 1) "Summarize the supplied topic."
+        using { topic }
+        -> Summary
+}

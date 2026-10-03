@@ -1,0 +1,15 @@
+struct Holder<T> { value: T }
+
+pure fn preserve<T>(value: T) -> T { value }
+
+pure fn replace<T>(mut holder: Holder<T>, replacement: T) -> Holder<T> {
+    holder.value = replacement;
+    holder
+}
+
+pure fn main() -> Tuple<Int, Int, String> {
+    let original: Holder<Int> = Holder::<Int> { value: 4 };
+    let changed: Holder<Int> = replace(original, preserve::<Int>(9));
+    let message: String = preserve("reused");
+    (original.value, changed.value, message)
+}

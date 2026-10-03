@@ -1,0 +1,15 @@
+{
+  "class": "host",
+  "expected": "Hello from Gantry!",
+  "hooks": [{
+    "kind": "prompt",
+    "output": "Hello from Gantry!",
+    "assert_request": {
+      "/operation_request/model/selected_agent": "writer",
+      "/operation_request/model/rendered_prompt": "Write a short greeting.",
+      "/operation_request/model/interpolation_inputs": [],
+      "/operation_request/model/named_inputs": [],
+      "/operation_request/model/session_use": {"kind": "inline"}
+    }
+  }]
+}

@@ -1,0 +1,10 @@
+// SPEC.md#GNT-7.12: an operation-local fork snapshots the parent prefix.
+agents { writer }
+default agent = writer;
+
+fn main() -> Tuple<String, String> {
+    prompt "Seed.";
+    let branch: String = prompt(session = fork) "Branch." -> String;
+    let parent: String = prompt "Parent." -> String;
+    (branch, parent)
+}

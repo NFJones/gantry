@@ -1,0 +1,1 @@
+{"class":"cli","expected":{"booleans":[true,false,null,null],"floats":[1,125,0,null,null,null],"integers":[0,-42,null,null,null,null],"trimmed":42}}

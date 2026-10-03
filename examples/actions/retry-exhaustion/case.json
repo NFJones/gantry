@@ -1,0 +1,16 @@
+{
+  "class": "runtime-failure",
+  "expected_error": "structured-output-exhaustion",
+  "hooks": [
+    {"kind": "action", "output": "wrong", "assert_request": {
+      "/operation_request/action/recovery_class": "idempotent",
+      "/operation_request/validation_attempt": 0
+    }},
+    {"kind": "action", "output": false, "assert_request": {
+      "/operation_request/action/recovery_class": "idempotent",
+      "/operation_request/action/arguments/0/value": "answer",
+      "/operation_request/validation_attempt": 1,
+      "/operation_request/validation_errors/0/category": "schema"
+    }}
+  ]
+}

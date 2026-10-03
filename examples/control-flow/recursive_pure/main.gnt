@@ -1,0 +1,36 @@
+pure fn factorial(number: Int) -> Int {
+    if number <= 1 {
+        return 1;
+    }
+    number * factorial(number - 1)
+}
+
+pure fn is_even(number: Int) -> Bool {
+    if number == 0 {
+        return true;
+    }
+    is_odd(number - 1)
+}
+
+pure fn is_odd(number: Int) -> Bool {
+    if number == 0 {
+        return false;
+    }
+    is_even(number - 1)
+}
+
+struct Recursion {
+    base: Int,
+    factorial: Int,
+    even: Bool,
+    odd: Bool,
+}
+
+pure fn main() -> Recursion {
+    Recursion {
+        base: factorial(0),
+        factorial: factorial(5),
+        even: is_even(6),
+        odd: is_odd(5),
+    }
+}

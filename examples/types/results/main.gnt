@@ -1,0 +1,12 @@
+fn describe(outcome: Result<Int, String>) -> String {
+    match outcome {
+        Ok(value) => "accepted: " + value.to_string(),
+        Err(message) => "rejected: " + message,
+    }
+}
+
+fn main() -> Tuple<Result<Int, String>, Result<Int, String>, String, String> {
+    let success: Result<Int, String> = Ok(7);
+    let failure: Result<Int, String> = Err("negative");
+    (success, failure, describe(success), describe(failure))
+}

@@ -1,0 +1,1 @@
+fn main() { spawn child { return; } discard join(child); detach(child); }

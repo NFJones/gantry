@@ -1,0 +1,31 @@
+agents { writer, reviewer }
+default agent = writer;
+
+struct ReviewResult {
+    text: String,
+    revisions: Int,
+    accepted: Bool,
+}
+
+fn review(text: String) -> Decision {
+    with reviewer {
+        decide "Is this draft ready?" using { text }
+    }
+}
+
+fn revise(text: String) -> String {
+    prompt "Revise this draft once." using { text } -> String
+}
+
+fn main(mut text: String) -> ReviewResult {
+    let mut revisions: Int = 0;
+    while revisions < 2 {
+        let readiness: Decision = review(text);
+        if readiness {
+            return ReviewResult { text, revisions, accepted: true };
+        }
+        text = revise(text);
+        revisions += 1;
+    }
+    ReviewResult { text, revisions, accepted: false }
+}

@@ -1,0 +1,16 @@
+// SPEC.md#146-reusable-model-judgments-and-conditional-chains.
+agents { reviewer }
+default agent = reviewer;
+
+fn is_complete(report: String) -> Decision {
+    let checklist: String = prompt "Make a checklist." using { report } -> String;
+    decide "Is the report complete?" using { report, checklist }
+}
+
+fn main() -> String {
+    let judgment: Decision = is_complete("Draft");
+    if judgment {
+        return "complete";
+    }
+    "needs revision"
+}

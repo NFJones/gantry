@@ -1,0 +1,29 @@
+{
+  "scenarios": [
+    {
+      "class": "host",
+      "expected": {"title": "Offline examples", "count": 15},
+      "hooks": [
+        {"kind": "prompt", "output": {"title": "Offline examples", "count": "fifteen"}, "assert_request": {
+          "/operation_request/expected_type": "crate::Summary",
+          "/operation_request/validation_attempt": 0,
+          "/operation_request/model/named_inputs": [{"name": "topic", "type": "String", "value": "offline examples"}]
+        }},
+        {"kind": "prompt", "output": {"title": "Offline examples", "count": 15}, "assert_request": {
+          "/operation_request/expected_type": "crate::Summary",
+          "/operation_request/validation_attempt": 1,
+          "/operation_request/validation_errors/0/category": "schema",
+          "/operation_request/model/named_inputs": [{"name": "topic", "type": "String", "value": "offline examples"}]
+        }}
+      ]
+    },
+    {
+      "class": "runtime-failure",
+      "expected_error": "structured-output-exhaustion",
+      "hooks": [
+        {"kind": "prompt", "output": {"title": "Incomplete"}},
+        {"kind": "prompt", "output": {"title": "Still incomplete"}, "assert_request": {"/operation_request/validation_attempt": 1}}
+      ]
+    }
+  ]
+}

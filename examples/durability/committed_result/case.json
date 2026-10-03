@@ -1,0 +1,1 @@
+{"class":"durable","expected":"receipt-7","hooks":[{"kind":"action","output":"receipt-7","assert_request":{"/operation_request/expected_type":"String"}}]}

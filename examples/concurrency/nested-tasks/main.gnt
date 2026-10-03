@@ -1,0 +1,15 @@
+struct Nested { parent: Int, outer: Int, sibling: String }
+
+fn main() -> Nested {
+    let mut seed: Int = 7;
+    spawn outer -> Int {
+        let local: Int = 3;
+        spawn inner -> Int { seed += local; seed }
+        let result: Int = joinall();
+        result
+    }
+    spawn sibling -> String { "independent" }
+    seed = 100;
+    let (outer_value, sibling_value): Tuple<Int, String> = joinall();
+    Nested { parent: seed, outer: outer_value, sibling: sibling_value }
+}

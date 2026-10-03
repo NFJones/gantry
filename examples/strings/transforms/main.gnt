@@ -1,0 +1,7 @@
+fn main() -> Tuple<String, String, String, String, String, String, String> {
+    let original: String = "  Gantry  ";
+    let trimmed: String = original.trim();
+    let expanded: String = "aaa".replace("a", "aa");
+    let replaced: String = "ababa".replace("aba", "X");
+    (original, original.trim_start(), original.trim_end(), trimmed.to_lowercase(), trimmed.to_uppercase(), expanded, "result=" + replaced)
+}

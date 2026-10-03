@@ -1,0 +1,11 @@
+fn count_to(stop: Int) -> Int {
+    let mut counter: Int = 0;
+    while(limit = 3) counter < stop {
+        counter += 1;
+    }
+    counter
+}
+
+fn main() -> List<Int> {
+    [count_to(0), count_to(3)]
+}

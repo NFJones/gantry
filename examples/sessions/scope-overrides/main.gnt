@@ -1,0 +1,15 @@
+// SPEC.md#GNT-7.3 and #GNT-7.12: nested and operation-local choices restore.
+agents { writer, reviewer }
+default agent = writer;
+
+fn main() -> String {
+    prompt "Seed.";
+    session(fork) {
+        session(new) { prompt "Nested fresh."; }
+        with reviewer {
+            discard decide(session = new) "One-off judgment?";
+        }
+        prompt(session = inline) "Back to fork.";
+    }
+    prompt "Back to root." -> String
+}

@@ -1,0 +1,13 @@
+action read_only lookup() -> Int;
+action idempotent save(value: Int) -> Int;
+action non_idempotent publish(value: Int) -> Int;
+
+fn main(kind: Int) -> Int {
+    if kind == 0 {
+        return action lookup();
+    } else if kind == 1 {
+        return action save(41);
+    } else {
+        return action publish(41);
+    }
+}

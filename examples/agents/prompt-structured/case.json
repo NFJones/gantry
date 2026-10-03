@@ -1,0 +1,12 @@
+{
+  "class": "host",
+  "expected": {"title": "Inventory", "count": 3},
+  "hooks": [{
+    "kind": "prompt",
+    "output": {"title": "Inventory", "count": 3},
+    "assert_request": {
+      "/operation_request/model/selected_agent": "writer",
+      "/operation_request/model/rendered_prompt": "Return a title and item count."
+    }
+  }]
+}

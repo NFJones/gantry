@@ -1,0 +1,5 @@
+action non_idempotent publish(value: Int) -> String;
+
+fn main() -> String {
+    action publish(7)
+}

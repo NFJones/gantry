@@ -1,0 +1,12 @@
+{
+  "class": "host",
+  "expected": null,
+  "hooks": [{
+    "kind": "prompt",
+    "output": null,
+    "assert_request": {
+      "/operation_request/model/selected_agent": "reviewer",
+      "/operation_request/model/rendered_prompt": "Consider the checklist and return null."
+    }
+  }]
+}

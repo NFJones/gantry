@@ -1,0 +1,22 @@
+struct Details {
+    name: String,
+    count: Int,
+}
+
+enum State {
+    Idle,
+    Ready(Details),
+}
+
+fn describe(state: State) -> String {
+    match state {
+        State::Idle => "idle",
+        State::Ready(details) => details.name + ": " + details.count.to_string(),
+    }
+}
+
+fn main() -> Tuple<State, State, String, String> {
+    let idle: State = State::Idle;
+    let ready: State = State::Ready(Details { name: "jobs", count: 2 });
+    (idle, ready, describe(idle), describe(ready))
+}

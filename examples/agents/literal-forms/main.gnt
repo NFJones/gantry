@@ -1,0 +1,14 @@
+// SPEC.md#GNT-7.8 and #GNT-13.7: quoted, raw and dedented block templates.
+agents { writer }
+default agent = writer;
+
+fn main() -> Tuple<String, String, String> {
+    let topic: String = "stock";
+    let quoted: String = prompt "Topic: ${topic}\nQuote: \"ok\"" -> String;
+    let raw: String = prompt r#"Topic: ${topic}; path: C:\stock; literal: $${topic}"# -> String;
+    let block: String = prompt """
+        Topic: ${topic}
+        Keep it short.
+        """ -> String;
+    (quoted, raw, block)
+}

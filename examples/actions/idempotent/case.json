@@ -1,0 +1,14 @@
+{
+  "class": "host",
+  "expected": {"key": "alerts", "enabled": true},
+  "hooks": [{
+    "kind": "action",
+    "output": {"key": "alerts", "enabled": true},
+    "assert_request": {
+      "/operation_request/action/canonical_path": "crate::set_enabled",
+      "/operation_request/action/recovery_class": "idempotent",
+      "/operation_request/action/arguments": [{"name": "setting", "type": "crate::Setting", "value": {"key": "alerts", "enabled": true}}],
+      "/operation_request/expected_type": "crate::Receipt"
+    }
+  }]
+}

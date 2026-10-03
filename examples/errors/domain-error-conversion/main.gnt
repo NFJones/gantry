@@ -1,0 +1,28 @@
+struct ValidationError { code: Int }
+struct WorkflowError { code: Int, stage: String }
+struct Request { checked: Result<Int, ValidationError> }
+
+trait ErrorConversion { pure fn convert(self) -> WorkflowError; }
+
+impl ErrorConversion for ValidationError {
+    pure fn convert(self) -> WorkflowError {
+        WorkflowError { code: self.code, stage: "validation" }
+    }
+}
+
+fn finish(request: Request) -> Result<Int, WorkflowError> {
+    let accepted: Int = request.checked?;
+    Ok(accepted + 1)
+}
+
+fn main() -> Tuple<Int, WorkflowError> {
+    let success: Int = match finish(Request { checked: Ok(41) }) {
+        Ok(value) => value,
+        Err(_) => -1,
+    };
+    let failure: WorkflowError = match finish(Request { checked: Err(ValidationError { code: 7 }) }) {
+        Ok(_) => WorkflowError { code: 0, stage: "unexpected-success" },
+        Err(error) => error,
+    };
+    (success, failure)
+}

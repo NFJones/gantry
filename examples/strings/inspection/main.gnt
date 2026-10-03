@@ -1,0 +1,5 @@
+fn main() -> Tuple<Int, Bool, Bool, Bool, Bool, Bool, Bool, Bool> {
+    let text: String = "Gantry CLI";
+    let empty: String = "";
+    (text.len(), text.is_empty(), empty.is_empty(), text.contains("try"), text.starts_with("Gantry"), text.ends_with("CLI"), text.contains(""), text.contains("cli"))
+}

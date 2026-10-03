@@ -1,0 +1,37 @@
+struct Settings {
+    name: String,
+    enabled: Bool = true,
+    retries: Int = 2,
+    ratio: Float = 1.5,
+    note: Option<String>,
+    label: Option<String> = "automatic",
+    absent: Option<Int> = None,
+    completed: Unit = (),
+}
+
+fn main() -> Tuple<Settings, Settings> {
+    let name: String = "default";
+    // Match the declared defaults explicitly; omission materialization is blocked.
+    let defaults: Settings = Settings {
+        name,
+        enabled: true,
+        retries: 2,
+        ratio: 1.5,
+        note: None,
+        label: Some("automatic"),
+        absent: None,
+        completed: (),
+    };
+    // Explicit values override the declaration defaults, including explicit None.
+    let explicit: Settings = Settings {
+        name: "explicit",
+        enabled: false,
+        retries: 2,
+        ratio: 1.5,
+        note: Some("provided"),
+        label: None,
+        absent: None,
+        completed: (),
+    };
+    (defaults, explicit)
+}

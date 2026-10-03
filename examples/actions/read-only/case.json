@@ -1,0 +1,15 @@
+{
+  "class": "host",
+  "expected": {"key": "answer", "value": 42},
+  "hooks": [{
+    "kind": "action",
+    "output": {"key": "answer", "value": 42},
+    "assert_request": {
+      "/operation_request/action/canonical_path": "crate::lookup",
+      "/operation_request/action/recovery_class": "read_only",
+      "/operation_request/action/arguments": [{"name": "request", "type": "crate::Lookup", "value": {"key": "answer"}}],
+      "/operation_request/expected_type": "crate::Record",
+      "/operation_request/validation_attempt": 0
+    }
+  }]
+}

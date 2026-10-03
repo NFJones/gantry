@@ -1,0 +1,1 @@
+{"scenarios":[{"class":"concurrent","input":false,"expected":42},{"class":"concurrent","input":true,"expected":42,"expected_terminal":"detached-task-failure"}]}

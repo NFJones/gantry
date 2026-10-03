@@ -1,0 +1,3 @@
+struct Left { right: Right }
+struct Right { left: Left }
+fn main() {}

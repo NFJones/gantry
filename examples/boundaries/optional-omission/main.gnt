@@ -1,0 +1,8 @@
+struct Detail { note: Option<String> }
+struct Request { name: String, detail: Detail, count: Option<Int> }
+
+action read_only echo(request: Request) -> Request;
+
+fn main(request: Request) -> Request {
+    action echo(request)
+}

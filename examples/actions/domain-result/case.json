@@ -1,0 +1,24 @@
+{
+  "scenarios": [
+    {
+      "class": "host",
+      "expected": "found: 42",
+      "hooks": [{"kind": "action", "output": {"variant": "Ok", "value": {"value": 42}}, "assert_request": {
+        "/operation_request/expected_type": "Result<crate::Reading,crate::Missing>",
+        "/operation_request/action/arguments/0/value": "answer"
+      }}]
+    },
+    {
+      "class": "host",
+      "expected": "missing: answer",
+      "hooks": [{"kind": "action", "output": {"variant": "Err", "value": {"key": "answer"}}, "assert_request": {
+        "/operation_request/validation_attempt": 0
+      }}]
+    },
+    {
+      "class": "runtime-failure",
+      "expected_error": "policy-denied",
+      "hooks": [{"kind": "action", "error": "policy-denied"}]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+fn main() -> Int { let values: List<Int> = [7]; values[1] }

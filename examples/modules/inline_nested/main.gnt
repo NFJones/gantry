@@ -1,0 +1,29 @@
+struct Input {
+    text: String,
+}
+
+mod quality {
+    use crate::Input;
+
+    struct Finding {
+        summary: String,
+    }
+
+    mod formatting {
+        use super::Finding;
+
+        pure fn normalize(mut finding: Finding) -> Finding {
+            finding.summary += " checked";
+            finding
+        }
+    }
+
+    pure fn inspect(input: Input) -> self::Finding {
+        let finding: self::Finding = self::Finding { summary: input.text };
+        formatting::normalize(finding)
+    }
+}
+
+fn main() -> quality::Finding {
+    quality::inspect(Input { text: "Inline modules" })
+}

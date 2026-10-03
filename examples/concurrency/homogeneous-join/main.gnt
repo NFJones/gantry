@@ -1,0 +1,6 @@
+fn main() -> List<Int> {
+    spawn first -> Int { 10 }
+    spawn second -> Int { 20 }
+    spawn third -> Int { 30 }
+    join(third, first, second)
+}

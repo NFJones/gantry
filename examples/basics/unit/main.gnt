@@ -1,0 +1,9 @@
+fn finish() -> Unit {
+    return;
+}
+
+fn main() -> Unit {
+    let completed: Unit = finish();
+    discard completed;
+    ()
+}

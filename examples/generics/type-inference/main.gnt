@@ -1,0 +1,23 @@
+struct Envelope<T> { value: T }
+enum Outcome<T, E> { Ready(T), Failed(E) }
+
+pure fn wrap<T>(value: T) -> Envelope<T> {
+    Envelope::<T> { value }
+}
+
+pure fn empty<T>() -> Option<T> { None }
+
+pure fn main() -> Tuple<String, Bool> {
+    let envelope: Envelope<String> = wrap("ready");
+    let outcome: Outcome<Envelope<String>, Int> = Outcome::Ready(envelope);
+    let absent: Option<String> = empty();
+    let message: String = match outcome {
+        Outcome::Ready(item) => item.value,
+        Outcome::Failed(_) => "failed",
+    };
+    let missing: Bool = match absent {
+        Some(_) => false,
+        None => true,
+    };
+    (message, missing)
+}

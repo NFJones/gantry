@@ -1,0 +1,7 @@
+mod render;
+
+use crate::domain::Report;
+
+fn produce_report(title: String) -> Report {
+    Report { title, summary: render::summary() }
+}

@@ -1,0 +1,2 @@
+struct Bad { value: Option<Unit> }
+fn main() {}

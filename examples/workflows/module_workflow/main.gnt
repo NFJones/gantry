@@ -1,0 +1,12 @@
+agents { editor }
+default agent = editor;
+mod domain;
+mod preparation;
+mod drafting;
+
+use domain::Brief;
+
+fn main(topic: String) -> Brief {
+    let prepared: String = preparation::clean(topic);
+    drafting::draft(prepared)
+}

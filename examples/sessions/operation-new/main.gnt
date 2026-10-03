@@ -1,0 +1,10 @@
+// SPEC.md#GNT-7.12: new has no inherited transcript and is operation-local.
+agents { writer }
+default agent = writer;
+
+fn main() -> Tuple<String, String> {
+    prompt "Seed.";
+    let fresh: String = prompt(session = new) "Fresh." -> String;
+    let parent: String = prompt "Parent." -> String;
+    (fresh, parent)
+}

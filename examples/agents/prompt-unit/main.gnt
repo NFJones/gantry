@@ -1,0 +1,7 @@
+// SPEC.md#GNT-7.5: an omitted result annotation requests Unit (JSON null).
+agents { reviewer }
+default agent = reviewer;
+
+fn main() {
+    prompt "Consider the checklist and return null.";
+}

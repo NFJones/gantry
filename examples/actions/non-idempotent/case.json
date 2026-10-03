@@ -1,0 +1,21 @@
+{
+  "scenarios": [
+    {
+      "class": "host",
+      "expected": {"number": 7},
+      "hooks": [{"kind": "action", "output": {"number": 7}, "assert_request": {
+        "/operation_request/action/recovery_class": "non_idempotent",
+        "/operation_request/action/arguments/0/value": {"body": "Release ready"},
+        "/operation_request/validation_attempt": 0
+      }}]
+    },
+    {
+      "class": "runtime-failure",
+      "expected_error": "structured-output-exhaustion",
+      "hooks": [{"kind": "action", "output": {"number": "invalid"}, "assert_request": {
+        "/operation_request/action/recovery_class": "non_idempotent",
+        "/operation_request/validation_attempt": 0
+      }}]
+    }
+  ]
+}

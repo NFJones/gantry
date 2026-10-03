@@ -1,0 +1,8 @@
+fn main() -> Tuple<List<String>, String, List<String>, String, String, List<String>> {
+    let source: String = ",red,,blue,";
+    let parts: List<String> = source.split(",");
+    let empty: List<String> = [];
+    let single: List<String> = ["solo"];
+    let no_match: List<String> = "whole".split(",");
+    (parts, parts.join("|"), no_match, empty.join("|"), single.join("|"), "".split(","))
+}

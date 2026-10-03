@@ -1,0 +1,9 @@
+// SPEC.md#GNT-7.9: the hook returns strict JSON matching the declared struct.
+agents { writer }
+default agent = writer;
+
+struct Summary { title: String, count: Int }
+
+fn main() -> Summary {
+    prompt "Return a title and item count." -> Summary
+}

@@ -1,0 +1,4 @@
+trait Label { pure fn label(self) -> String; }
+struct Missing {}
+pure fn render<T>(value: T) -> String where T: Label { value.label() }
+fn main() -> String { render(Missing {}) }

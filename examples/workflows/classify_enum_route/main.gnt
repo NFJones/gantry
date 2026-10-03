@@ -1,0 +1,26 @@
+agents { classifier, specialist }
+default agent = classifier;
+
+enum Route { Documentation, Defect, Ignore }
+
+fn classify(text: String) -> Route {
+    prompt "Classify this request as Documentation, Defect, or Ignore."
+        using { text } -> Route
+}
+
+fn route_request(route: Route, text: String) -> String {
+    match route {
+        Route::Documentation => with specialist {
+            prompt "Draft a documentation response." using { text } -> String
+        },
+        Route::Defect => with specialist {
+            prompt "Draft a defect triage response." using { text } -> String
+        },
+        Route::Ignore => "No response required.",
+    }
+}
+
+fn main(text: String) -> String {
+    let route: Route = classify(text);
+    route_request(route, text)
+}

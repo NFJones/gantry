@@ -1,0 +1,16 @@
+{
+  "class": "host",
+  "expected": "rendered",
+  "hooks": [{
+    "kind": "prompt", "output": "rendered",
+    "assert_request": {
+      "/operation_request/model/selected_agent": "writer",
+      "/operation_request/model/rendered_prompt": "Text=${not_recursive} $$; item={\"count\":2,\"label\":\"stock\"}; option=\"stock\"; again=${not_recursive} $$; literal=${text}",
+      "/operation_request/model/interpolation_inputs/0": {"position": 0, "type": "String", "value": "${not_recursive} $$"},
+      "/operation_request/model/interpolation_inputs/1/value": {"label": "stock", "count": 2},
+      "/operation_request/model/interpolation_inputs/2": {"position": 2, "type": "Option<String>", "value": "stock"},
+      "/operation_request/model/interpolation_inputs/3": {"position": 3, "type": "String", "value": "${not_recursive} $$"},
+      "/operation_request/model/named_inputs": []
+    }
+  }]
+}

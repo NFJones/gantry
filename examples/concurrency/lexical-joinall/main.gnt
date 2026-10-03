@@ -1,0 +1,23 @@
+struct Collected {
+    consumed: Int,
+    nested: Int,
+    selected: List<Int>,
+    later: Int,
+}
+
+fn main() -> Collected {
+    spawn taken -> Int { 5 }
+    let consumed: Int = join(taken);
+    let mut nested: Int = 0;
+    if true {
+        spawn local -> Int { 33 }
+        nested = joinall();
+    }
+    spawn first -> Int { 11 }
+    spawn second -> Int { 22 }
+    let selected: List<Int> = joinall();
+    spawn last -> Int { 44 }
+    let later: Int = joinall();
+    joinall();
+    Collected { consumed, nested, selected, later }
+}

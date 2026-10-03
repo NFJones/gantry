@@ -1,0 +1,16 @@
+{"scenarios":[
+  {"class":"host","input":"Ready draft","expected":{"text":"Ready draft","revisions":0,"accepted":true},"hooks":[
+    {"kind":"decide","output":{"decision":true,"rationale":"Already complete"},"assert_request":{"/operation_request/model/selected_agent":"reviewer","/operation_request/model/named_inputs/0/value":"Ready draft"}}
+  ]},
+  {"class":"host","input":"Rough","expected":{"text":"Improved","revisions":1,"accepted":true},"hooks":[
+    {"kind":"decide","output":{"decision":false,"rationale":"Needs clarity"},"assert_request":{"/operation_request/model/named_inputs/0/value":"Rough"}},
+    {"kind":"prompt","output":"Improved","assert_request":{"/operation_request/model/selected_agent":"writer","/operation_request/model/named_inputs/0/value":"Rough"}},
+    {"kind":"decide","output":{"decision":true,"rationale":"Clear"},"assert_request":{"/operation_request/model/selected_agent":"reviewer","/operation_request/model/named_inputs/0/value":"Improved"}}
+  ]},
+  {"class":"host","input":"Rough","expected":{"text":"Still incomplete","revisions":2,"accepted":false},"hooks":[
+    {"kind":"decide","output":{"decision":false,"rationale":"Incomplete"},"assert_request":{"/operation_request/model/named_inputs/0/value":"Rough"}},
+    {"kind":"prompt","output":"Intermediate","assert_request":{"/operation_request/model/named_inputs/0/value":"Rough"}},
+    {"kind":"decide","output":{"decision":false,"rationale":"Still incomplete"},"assert_request":{"/operation_request/model/named_inputs/0/value":"Intermediate"}},
+    {"kind":"prompt","output":"Still incomplete","assert_request":{"/operation_request/model/named_inputs/0/value":"Intermediate"}}
+  ]}
+]}

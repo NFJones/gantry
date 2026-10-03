@@ -1,0 +1,12 @@
+struct Settings {
+    enabled: Bool = true,
+    retries: Int = 2,
+    note: Option<String>,
+}
+
+// In source, Settings {} should use enabled = true, retries = 2, note = None.
+// These cases exercise JSON validation, not source-default materialization.
+
+fn main(settings: Settings) -> Settings {
+    settings
+}

@@ -1,0 +1,9 @@
+struct Query { key: String }
+struct Reading { value: Int }
+
+action read_only load(query: Query) -> Reading;
+
+fn main() -> Int {
+    let reading: Reading = action(retry_limit = 1) load(Query { key: "answer" });
+    reading.value
+}

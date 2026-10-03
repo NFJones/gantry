@@ -1,0 +1,1 @@
+fn main() { let value: Int = 1; if true { let value: Int = 2; discard value; } }

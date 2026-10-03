@@ -1,0 +1,15 @@
+fn classify(number: Int) -> String {
+    if number < 0 {
+        return "negative";
+    } else if number == 0 {
+        return "zero";
+    } else if number < 10 {
+        return "small";
+    } else {
+        return "large";
+    }
+}
+
+fn main() -> List<String> {
+    [classify(0 - 2), classify(0), classify(3), classify(10)]
+}

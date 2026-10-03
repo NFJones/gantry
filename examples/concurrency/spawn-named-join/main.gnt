@@ -1,0 +1,5 @@
+fn main() -> Int {
+    spawn answer -> Int { return 40 + 2; }
+    let result: Int = join(answer);
+    result
+}

@@ -1,0 +1,26 @@
+struct ReadError { code: Int }
+struct WorkflowError { code: Int }
+struct Reading { value: Int }
+
+trait ErrorConversion { pure fn convert(self) -> WorkflowError; }
+
+impl ErrorConversion for ReadError {
+    pure fn convert(self) -> WorkflowError { WorkflowError { code: self.code } }
+}
+
+fn read() -> Result<Reading, ReadError> {
+    Ok(Reading { value: 37 })
+}
+
+fn calculate() -> Result<Int, WorkflowError> {
+    let reading: Int = read()?.value;
+    let total: Int = reading + 2 + 3;
+    Ok(total)
+}
+
+fn main() -> Int {
+    match calculate() {
+        Ok(value) => value,
+        Err(_) => -1,
+    }
+}

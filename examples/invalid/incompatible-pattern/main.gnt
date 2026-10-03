@@ -1,0 +1,1 @@
+fn main(value: Int) -> Int { match value { Some(item) => item, _ => 0 } }

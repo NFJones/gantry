@@ -171,6 +171,7 @@ packaged as a version-locked crate set; the CLI remains source-only.
 
 **Learn the language**
 
+- [Categorized executable examples and offline runner](examples/README.md)
 - [Authoring examples and common errors](SPEC.md#14-authoring-examples-and-common-errors)
 - [Generics and traits](docs/generics-and-traits.md)
 - [Parallel execution](docs/parallel-execution.md)

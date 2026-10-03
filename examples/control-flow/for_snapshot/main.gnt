@@ -1,0 +1,26 @@
+struct Traversal {
+    total: Int,
+    visits: Int,
+    current: Int,
+    empty_visits: Int,
+}
+
+fn main() -> Traversal {
+    let mut numbers: List<Int> = [1, 2, 3];
+    let mut total: Int = 0;
+    let mut visits: Int = 0;
+    for number in numbers {
+        total += number;
+        visits += 1;
+        numbers = [99];
+    }
+
+    let empty: List<Int> = [];
+    let mut empty_visits: Int = 0;
+    for unused in empty {
+        discard unused;
+        empty_visits += 1;
+    }
+
+    Traversal { total, visits, current: numbers[0], empty_visits }
+}

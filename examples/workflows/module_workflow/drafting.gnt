@@ -1,0 +1,10 @@
+use crate::domain::Brief;
+
+fn draft(topic: String) -> Brief {
+    if topic.len() == 0 {
+        return Brief { topic, summary: "No topic supplied." };
+    }
+    let summary: String = prompt "Draft a module-owned brief."
+        using { topic } -> String;
+    Brief { topic, summary }
+}

@@ -1,0 +1,27 @@
+trait Label { pure fn label(self) -> String; }
+trait Repack { pure fn repack(self) -> Self; }
+
+struct Report { title: String }
+struct Envelope<T> { value: T }
+
+impl Label for Report {
+    pure fn label(self) -> String { self.title }
+}
+
+impl<T> Label for Envelope<T> where T: Label {
+    pure fn label(self) -> String { self.value.label() }
+}
+
+impl<T> Repack for Envelope<T> {
+    pure fn repack(self) -> Self { self }
+}
+
+pure fn render<T>(value: T) -> String where T: Label {
+    value.label()
+}
+
+pure fn main() -> Tuple<String, String> {
+    let original: Envelope<Report> = Envelope::<Report> { value: Report { title: "release" } };
+    let repacked: Envelope<Report> = Repack::repack(original);
+    (render(repacked), Label::label(original))
+}

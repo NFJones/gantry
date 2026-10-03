@@ -1,0 +1,16 @@
+{
+  "scenarios": [
+    {
+      "class": "host",
+      "input": {"count": 2, "enabled": true, "mode": {"variant": "Fast"}, "coordinates": [3, 4], "tags": ["offline"]},
+      "expected": {"count": 2, "enabled": true, "mode": {"variant": "Fast"}, "coordinates": [3, 4], "tags": ["offline"]},
+      "hooks": []
+    },
+    {
+      "class": "host",
+      "input": {"count": 0, "enabled": false, "mode": {"variant": "Named", "value": "careful"}, "coordinates": [0, -1], "tags": []},
+      "expected": {"count": 0, "enabled": false, "mode": {"variant": "Named", "value": "careful"}, "coordinates": [0, -1], "tags": []},
+      "hooks": []
+    }
+  ]
+}

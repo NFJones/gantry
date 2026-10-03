@@ -1,0 +1,21 @@
+agents { researcher, reviewer }
+default agent = researcher;
+
+fn main() -> Tuple<String, Int, String> {
+    spawn research -> String {
+        session(inline) {
+            return prompt "Research the offline topic." -> String;
+        }
+    }
+    spawn independent -> Int { 17 }
+    let brief: String = join(research);
+    spawn review -> String {
+        with reviewer {
+            session(new) {
+                return prompt "Review ${brief}." -> String;
+            }
+        }
+    }
+    let (number, reviewed): Tuple<Int, String> = join(independent, review);
+    (brief, number, reviewed)
+}

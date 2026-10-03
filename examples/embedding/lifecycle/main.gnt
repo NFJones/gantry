@@ -1,0 +1,2 @@
+action read_only wait_for_host() -> Int;
+fn main() -> Int { action wait_for_host() }

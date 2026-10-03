@@ -1,0 +1,16 @@
+{
+  "scenarios": [
+    {
+      "class": "host",
+      "input": {"enabled": false, "retries": 5},
+      "expected": {"enabled": false, "retries": 5, "note": null},
+      "hooks": []
+    },
+    {
+      "class": "host",
+      "input": {"enabled": true, "retries": 2, "note": "explicit"},
+      "expected": {"enabled": true, "retries": 2, "note": "explicit"},
+      "hooks": []
+    }
+  ]
+}

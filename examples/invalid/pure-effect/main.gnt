@@ -1,0 +1,4 @@
+action read_only inspect() -> String;
+fn leaf() -> String { action inspect() }
+pure fn wrapper() -> String { leaf() }
+fn main() {}

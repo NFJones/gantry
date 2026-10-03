@@ -1,0 +1,21 @@
+{
+  "class": "host",
+  "expected": 42,
+  "hooks": [
+    {"kind": "action", "output": {"value": "wrong"}, "assert_request": {
+      "/operation_request/validation_attempt": 0,
+      "/operation_request/action/canonical_path": "crate::load",
+      "/operation_request/action/recovery_class": "read_only",
+      "/operation_request/action/action_mapping_revision": "corpus-actions-v1",
+      "/operation_request/action/arguments": [{"name": "query", "type": "crate::Query", "value": {"key": "answer"}}]
+    }},
+    {"kind": "action", "output": {"value": 42}, "assert_request": {
+      "/operation_request/validation_attempt": 1,
+      "/operation_request/validation_errors/0/category": "schema",
+      "/operation_request/action/canonical_path": "crate::load",
+      "/operation_request/action/recovery_class": "read_only",
+      "/operation_request/action/action_mapping_revision": "corpus-actions-v1",
+      "/operation_request/action/arguments": [{"name": "query", "type": "crate::Query", "value": {"key": "answer"}}]
+    }}
+  ]
+}

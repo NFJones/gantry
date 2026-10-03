@@ -1,0 +1,15 @@
+struct Item {
+    label: String,
+    values: List<Int>,
+}
+
+fn main() -> Tuple<Bool, Bool, Bool, Bool, Bool> {
+    let zero: Int = 0;
+    let skipped_and: Bool = false && (1 / zero == 0);
+    let skipped_or: Bool = true || (1 / zero == 0);
+    let left: Item = Item { label: "same", values: [1, 2] };
+    let right: Item = Item { label: "same", values: [1, 2] };
+    let different: Item = Item { label: "same", values: [2, 1] };
+    let ordered: Bool = !(3 < 2) && (3 >= 3) && (2 <= 3) && (3 > 2);
+    (skipped_and, skipped_or, left == right, left != different, ordered)
+}

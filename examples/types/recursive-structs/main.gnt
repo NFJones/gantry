@@ -1,0 +1,17 @@
+struct Node {
+    value: Int,
+    next: Option<Node>,
+}
+
+struct Tree {
+    name: String,
+    children: List<Tree>,
+}
+
+fn main() -> Tuple<Node, Tree> {
+    let tail: Node = Node { value: 2, next: None };
+    let head: Node = Node { value: 1, next: Some(tail) };
+    let leaf: Tree = Tree { name: "leaf", children: [] };
+    let root: Tree = Tree { name: "root", children: [leaf] };
+    (head, root)
+}

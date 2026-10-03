@@ -1,0 +1,8 @@
+fn main() -> Tuple<Float, Option<Int>, Option<Int>, Option<Int>, String, String, String> {
+    let count: Int = 42;
+    let exact: Float = count.to_float();
+    let fraction: Float = 3.5;
+    let too_large: Float = 9007199254740992.0;
+    let flag: Bool = true;
+    (exact, exact.to_int(), fraction.to_int(), too_large.to_int(), flag.to_string(), count.to_string(), fraction.to_string())
+}

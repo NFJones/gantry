@@ -1,0 +1,11 @@
+{"scenarios": [
+  {"class": "host", "expected": "publish:confirmed", "hooks": [
+    {"kind": "decide", "output": {"decision": true, "rationale": "Complete"}, "assert_request": {
+      "/operation_request/model/selected_agent": "reviewer",
+      "/operation_request/model/rendered_prompt": "Is the draft ready?"
+    }}
+  ]},
+  {"class": "host", "expected": "revise", "hooks": [
+    {"kind": "decide", "output": {"decision": false, "rationale": "Missing evidence"}}
+  ]}
+]}

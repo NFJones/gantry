@@ -1,0 +1,7 @@
+{
+  "scenarios": [
+    {"class": "host", "expected": "Ready.", "hooks": [{"kind": "prompt", "output": "Ready.", "assert_request": {"/operation_request/expected_type": "String"}}]},
+    {"class": "host", "expected": "summary unavailable", "hooks": [{"kind": "prompt", "error": "provider-failure"}]},
+    {"class": "host", "expected": "summary unavailable", "hooks": [{"kind": "prompt", "output": 42, "assert_request": {"/operation_request/validation_attempt": 0}}]}
+  ]
+}

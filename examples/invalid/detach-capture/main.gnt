@@ -1,0 +1,6 @@
+affine struct Ticket { value: Int }
+fn main() {
+    let ticket: Ticket = Ticket { value: 1 };
+    spawn child { discard ticket; }
+    detach(child);
+}

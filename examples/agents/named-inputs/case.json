@@ -1,0 +1,15 @@
+{
+  "class": "host", "input": "shipping", "expected": "Three shipping notes",
+  "hooks": [{
+    "kind": "prompt", "output": "Three shipping notes",
+    "assert_request": {
+      "/operation_request/model/selected_agent": "writer",
+      "/operation_request/model/rendered_prompt": "Summarize the supplied topic.",
+      "/operation_request/model/interpolation_inputs": [],
+      "/operation_request/model/named_inputs": [
+        {"name": "topic", "type": "String", "value": "shipping"},
+        {"name": "maximum", "type": "Int", "value": 3}
+      ]
+    }
+  }]
+}

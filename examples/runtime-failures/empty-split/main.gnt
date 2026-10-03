@@ -1,0 +1,1 @@
+fn main() -> List<String> { "value".split("") }

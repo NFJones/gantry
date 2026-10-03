@@ -1,0 +1,10 @@
+// SPEC.md#GNT-7.12: explicit inline use retains the active transcript.
+agents { writer }
+default agent = writer;
+
+fn main() -> String {
+    prompt "Seed.";
+    session(inline) {
+        prompt(session = inline) "Continue." -> String
+    }
+}

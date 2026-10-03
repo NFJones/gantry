@@ -1,0 +1,19 @@
+fn describe(value: Option<String>) -> String {
+    match value {
+        Some(text) => text,
+        None => "missing",
+    }
+}
+
+fn length_or_zero(value: Option<String>) -> Int {
+    if let Some(text) = value {
+        return text.len();
+    }
+    0
+}
+
+fn main() -> Tuple<Option<String>, Option<String>, String, String, Int, Int> {
+    let present: Option<String> = Some("ready");
+    let absent: Option<String> = None;
+    (present, absent, describe(present), describe(absent), length_or_zero(present), length_or_zero(absent))
+}

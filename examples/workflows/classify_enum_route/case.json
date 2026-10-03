@@ -1,0 +1,13 @@
+{"scenarios":[
+  {"class":"host","input":"Explain modules","expected":"Module guide","hooks":[
+    {"kind":"prompt","output":{"variant":"Documentation"},"assert_request":{"/operation_request/expected_type":"crate::Route","/operation_request/model/selected_agent":"classifier","/operation_request/model/named_inputs/0/value":"Explain modules"}},
+    {"kind":"prompt","output":"Module guide","assert_request":{"/operation_request/model/rendered_prompt":"Draft a documentation response.","/operation_request/model/selected_agent":"specialist"}}
+  ]},
+  {"class":"host","input":"Crash report","expected":"Defect triage","hooks":[
+    {"kind":"prompt","output":{"variant":"Defect"},"assert_request":{"/operation_request/model/named_inputs/0/value":"Crash report"}},
+    {"kind":"prompt","output":"Defect triage","assert_request":{"/operation_request/model/rendered_prompt":"Draft a defect triage response.","/operation_request/model/named_inputs/0/value":"Crash report"}}
+  ]},
+  {"class":"host","input":"Noise","expected":"No response required.","hooks":[
+    {"kind":"prompt","output":{"variant":"Ignore"},"assert_request":{"/operation_request/model/named_inputs/0/value":"Noise"}}
+  ]}
+]}

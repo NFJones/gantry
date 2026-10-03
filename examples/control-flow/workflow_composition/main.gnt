@@ -1,0 +1,31 @@
+struct Draft {
+    title: String,
+    revisions: Int,
+}
+
+fn make_draft(title: String) -> Draft {
+    Draft { title, revisions: 0 }
+}
+
+fn revise(mut draft: Draft) -> Draft {
+    draft.title += " reviewed";
+    draft.revisions += 1;
+    draft
+}
+
+fn publish(draft: Draft) -> String {
+    draft.title
+}
+
+struct Composition {
+    original: Draft,
+    revised: Draft,
+    published: String,
+}
+
+fn main() -> Composition {
+    let original: Draft = make_draft("Guide");
+    let revised: Draft = revise(original);
+    let published: String = publish(revised);
+    Composition { original, revised, published }
+}

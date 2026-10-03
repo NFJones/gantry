@@ -1,0 +1,8 @@
+struct Setting { key: String, enabled: Bool }
+struct Receipt { key: String, enabled: Bool }
+
+action idempotent set_enabled(setting: Setting) -> Receipt;
+
+fn main() -> Receipt {
+    action set_enabled(Setting { key: "alerts", enabled: true })
+}

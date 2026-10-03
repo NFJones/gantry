@@ -1,0 +1,13 @@
+struct Bundle {
+    rows: List<Tuple<String, Option<Int>>>,
+    outcome: Result<List<Int>, String>,
+}
+
+fn main() -> Tuple<Bundle, Int, String, Option<Int>, Int, Bool> {
+    let numbers: List<Int> = [10, 20, 30];
+    let empty: List<Int> = [];
+    let pair: Tuple<String, Option<Int>> = ("first", Some(numbers[1]));
+    let (name, optional): Tuple<String, Option<Int>> = pair;
+    let bundle: Bundle = Bundle { rows: [pair, ("second", None)], outcome: Ok(numbers) };
+    (bundle, numbers.len(), name, optional, empty.len(), pair[0] == "first")
+}

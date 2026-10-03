@@ -1,0 +1,16 @@
+{"scenarios":[
+  {"class":"host","input":"Publish note","expected":"receipt-1","hooks":[
+    {"kind":"prompt","output":"Proposed note","assert_request":{"/operation_request/model/selected_agent":"planner"}},
+    {"kind":"decide","output":{"decision":true,"rationale":"Ready"},"assert_request":{"/operation_request/model/selected_agent":"reviewer","/operation_request/model/named_inputs/0/value":"Proposed note"}},
+    {"kind":"action","output":"receipt-1","assert_request":{"/operation_request/action/canonical_path":"crate::submit","/operation_request/action/recovery_class":"non_idempotent","/operation_request/action/arguments/0/value":"Proposed note"}}
+  ]},
+  {"class":"host","input":"Publish note","expected":"Application review declined.","hooks":[
+    {"kind":"prompt","output":"Proposed note","assert_request":{"/operation_request/model/rendered_prompt":"Draft a submission proposal."}},
+    {"kind":"decide","output":{"decision":false,"rationale":"Needs revision"},"assert_request":{"/operation_request/model/named_inputs/0/value":"Proposed note"}}
+  ]},
+  {"class":"host","input":"Publish note","expected":"Submission failed; no automatic resubmission.","hooks":[
+    {"kind":"prompt","output":"Proposed note","assert_request":{"/operation_request/model/rendered_prompt":"Draft a submission proposal."}},
+    {"kind":"decide","output":{"decision":true,"rationale":"Ready"},"assert_request":{"/operation_request/model/selected_agent":"reviewer"}},
+    {"kind":"action","error":"policy-denied","assert_request":{"/operation_request/action/recovery_class":"non_idempotent","/operation_request/action/arguments/0/value":"Proposed note"}}
+  ]}
+]}

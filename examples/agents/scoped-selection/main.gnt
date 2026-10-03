@@ -1,0 +1,21 @@
+// SPEC.md#GNT-7.3: selection is dynamically inherited and restored on exit.
+agents { writer, reviewer, editor }
+default agent = writer;
+
+fn ask() -> String { prompt "Name your task." -> String }
+
+fn main() -> Tuple<String, String, String, String, String> {
+    let first: String = ask();
+    let review: String = with reviewer {
+        ask()
+    };
+    let nested: String = with reviewer {
+        with editor { ask() }
+    };
+    let restored: String = with reviewer {
+        with editor { prompt "Consider editing."; }
+        ask()
+    };
+    let last: String = ask();
+    (first, review, nested, restored, last)
+}

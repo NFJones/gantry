@@ -1,0 +1,16 @@
+struct Envelope<T> where T: Equatable { value: T }
+
+pure fn same<T>(left: T, right: T) -> Bool where T: Equatable {
+    left == right
+}
+
+pure fn compare<U>(left: U, right: U) -> Bool where U: Equatable {
+    same(left, right)
+}
+
+pure fn main() -> Tuple<Bool, Bool> {
+    let first: Envelope<String> = Envelope::<String> { value: "ready" };
+    let equal: Envelope<String> = Envelope::<String> { value: "ready" };
+    let different: Envelope<String> = Envelope::<String> { value: "pending" };
+    (compare(first, equal), compare(first, different))
+}

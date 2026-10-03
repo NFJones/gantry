@@ -1,0 +1,13 @@
+fn change(mut value: Int) -> Int {
+    value += 5;
+    value
+}
+
+fn main() -> Tuple<Int, Int, Int> {
+    let original: Int = 3;
+    let mut current: Int = original;
+    current = current + 4;
+    current *= 2;
+    let changed: Int = change(current);
+    (original, current, changed)
+}

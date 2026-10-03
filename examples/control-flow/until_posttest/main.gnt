@@ -1,0 +1,24 @@
+struct Posttest {
+    count: Int,
+    recorded: Int,
+    once: Int,
+}
+
+fn main() -> Posttest {
+    let mut count: Int = 0;
+    let mut recorded: Int = 0;
+    until(limit = 3) {
+        count += 1;
+        if count < 3 {
+            continue;
+        }
+        recorded += 1;
+    } when count >= 3;
+
+    let mut once: Int = 10;
+    until(limit = 1) {
+        once += 1;
+    } when once >= 10;
+
+    Posttest { count, recorded, once }
+}

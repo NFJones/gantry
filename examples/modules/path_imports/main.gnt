@@ -1,0 +1,37 @@
+mod domain {
+    struct Item {
+        label: String,
+    }
+}
+
+mod helpers {
+    pure fn decorate(text: String) -> String {
+        text + "!"
+    }
+}
+
+mod routing {
+    use crate::domain::Item;
+    use super::helpers::decorate;
+    use self::local::render;
+
+    mod local {
+        use super::super::domain::Item;
+
+        pure fn render(item: Item) -> String {
+            item.label
+        }
+    }
+
+    pure fn route(item: Item) -> String {
+        decorate(render(item))
+    }
+}
+
+use crate::routing::route;
+use domain::Item;
+
+fn main() -> List<String> {
+    [route(Item { label: "imported" }),
+     crate::routing::route(domain::Item { label: "qualified" })]
+}

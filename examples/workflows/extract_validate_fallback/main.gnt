@@ -1,0 +1,23 @@
+agents { extractor }
+default agent = extractor;
+
+struct Record { title: String, count: Int }
+
+fn extract(text: String) -> Record {
+    let outcome: Result<Record, OperationError> =
+        attempt prompt(retry_limit = 1) "Extract title and count."
+            using { text } -> Record;
+    match outcome {
+        Ok(record) => record,
+        Err(error) => prompt(retry_limit = 0) "Recover a conservative record."
+            using { text, error } -> Record,
+    }
+}
+
+fn main(text: String) -> Record {
+    let record: Record = extract(text);
+    if record.count < 0 {
+        return Record { title: record.title, count: 0 };
+    }
+    record
+}

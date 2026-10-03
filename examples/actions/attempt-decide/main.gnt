@@ -1,0 +1,11 @@
+agents { reviewer }
+default agent = reviewer;
+
+fn main() -> String {
+    let outcome: Result<Decision, OperationError> =
+        attempt decide(retry_limit = 0) "Is the release ready?";
+    match outcome {
+        Ok(_) => "review completed",
+        Err(_) => "review unavailable",
+    }
+}

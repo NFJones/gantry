@@ -1,0 +1,12 @@
+pure fn count<T>(value: T, remaining: Int) -> Int {
+    if remaining == 0 {
+        return 0;
+    }
+    let smaller: Int = remaining - 1;
+    let previous: Int = count::<T>(value, smaller);
+    previous + 1
+}
+
+pure fn main() -> Int {
+    count("step", 3)
+}

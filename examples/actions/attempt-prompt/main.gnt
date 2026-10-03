@@ -1,0 +1,11 @@
+agents { writer }
+default agent = writer;
+
+fn main() -> String {
+    let outcome: Result<String, OperationError> =
+        attempt prompt(retry_limit = 0) "Write a short summary." -> String;
+    match outcome {
+        Ok(summary) => summary,
+        Err(_) => "summary unavailable",
+    }
+}

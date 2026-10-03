@@ -1,0 +1,19 @@
+{
+  "scenarios": [
+    {"class":"durable","input":0,"expected":42,"hooks":[{"kind":"action","output":42,"assert_request":{
+      "/operation_request/action/canonical_path":"crate::lookup",
+      "/operation_request/action/recovery_class":"read_only",
+      "/operation_request/action/arguments":[]
+    }}]},
+    {"class":"durable","input":1,"expected":42,"hooks":[{"kind":"action","output":42,"assert_request":{
+      "/operation_request/action/canonical_path":"crate::save",
+      "/operation_request/action/recovery_class":"idempotent",
+      "/operation_request/action/arguments":[{"name":"value","type":"Int","value":41}]
+    }}]},
+    {"class":"durable","input":2,"expected":42,"hooks":[{"kind":"action","output":42,"assert_request":{
+      "/operation_request/action/canonical_path":"crate::publish",
+      "/operation_request/action/recovery_class":"non_idempotent",
+      "/operation_request/action/arguments":[{"name":"value","type":"Int","value":41}]
+    }}]}
+  ]
+}

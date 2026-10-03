@@ -1,0 +1,13 @@
+{
+  "scenarios": [
+    {"class": "host", "expected": "Summary ready.", "hooks": [{"kind": "prompt", "output": "Summary ready."}]},
+    {"class": "host", "expected": "Summary unavailable.", "hooks": [
+      {"kind": "prompt", "error": "provider-failure"},
+      {"kind": "prompt", "output": "Summary unavailable."}
+    ]},
+    {"class": "runtime-failure", "expected_error": "timeout", "hooks": [
+      {"kind": "prompt", "error": "provider-failure"},
+      {"kind": "prompt", "error": "timeout"}
+    ]}
+  ]
+}

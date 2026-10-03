@@ -1,0 +1,15 @@
+// SPEC.md#146-reusable-model-judgments-and-conditional-chains.
+agents { reviewer }
+default agent = reviewer;
+
+fn main() -> String {
+    let readiness: Decision = decide "Is the draft ready?";
+    let mut route: String = "revise";
+    if readiness {
+        route = "publish";
+    }
+    if readiness {
+        route += ":confirmed";
+    }
+    route
+}

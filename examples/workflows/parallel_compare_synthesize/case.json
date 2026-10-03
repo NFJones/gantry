@@ -1,0 +1,6 @@
+{"scenarios":[
+  {"class":"concurrent","input":{"left":"  Same ","right":"SAME"},"expected":"same","hooks":[]},
+  {"class":"concurrent","input":{"left":" Alpha ","right":"BETA"},"expected":"Alpha and beta combined","hooks":[
+    {"kind":"prompt","output":"Alpha and beta combined","assert_request":{"/operation_request/model/rendered_prompt":"Synthesize the compared candidates.","/operation_request/model/named_inputs/0/value":{"same":false,"combined":"alpha | beta"},"/operation_request/site/workflow":"crate::main"}}
+  ]}
+]}

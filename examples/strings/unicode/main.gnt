@@ -1,0 +1,9 @@
+fn main() -> Tuple<Int, Int, Int, Bool, String, Int, String, String> {
+    let composed: String = "é";
+    let decomposed: String = "é";
+    let emoji: String = "🙂";
+    let upper: String = "straße".to_uppercase();
+    let padded: String = "　hello　";
+    let greek: String = "ΟΣ";
+    (composed.len(), decomposed.len(), emoji.len(), composed == decomposed, upper, upper.len(), padded.trim(), greek.to_lowercase())
+}

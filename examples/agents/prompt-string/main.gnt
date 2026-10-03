@@ -1,0 +1,7 @@
+// SPEC.md#GNT-7.5: explicit typed model generation using the default agent.
+agents { writer }
+default agent = writer;
+
+fn main() -> String {
+    prompt "Write a short greeting." -> String
+}

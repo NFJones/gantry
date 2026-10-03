@@ -1,0 +1,11 @@
+{
+  "scenarios": [
+    {"class": "host", "expected": {"status": {"variant": "Ready"}, "pair": [42, "ok"]}, "hooks": [{"kind": "action", "output": {"status": {"variant": "Ready"}, "pair": [42, "ok"]}, "assert_request": {"/operation_request/expected_type": "crate::Response"}}]},
+    {"class": "runtime-failure", "expected_error": "structured-output-exhaustion", "hooks": [{"kind": "action", "output": {"status": {"variant": "Ready"}, "pair": [42, "ok"], "extra": true}}]},
+    {"class": "runtime-failure", "expected_error": "structured-output-exhaustion", "hooks": [{"kind": "action", "output": {"status": {"variant": "Unknown"}, "pair": [42, "ok"]}}]},
+    {"class": "runtime-failure", "expected_error": "structured-output-exhaustion", "hooks": [{"kind": "action", "output": {"status": {"variant": "Ready", "value": 1}, "pair": [42, "ok"]}}]},
+    {"class": "runtime-failure", "expected_error": "structured-output-exhaustion", "hooks": [{"kind": "action", "output": {"status": {"variant": "Waiting"}, "pair": [42, "ok"]}}]},
+    {"class": "runtime-failure", "expected_error": "structured-output-exhaustion", "hooks": [{"kind": "action", "output": {"status": {"variant": "Ready"}, "pair": [42]}}]},
+    {"class": "runtime-failure", "expected_error": "structured-output-exhaustion", "hooks": [{"kind": "action", "output": {"status": {"variant": "Ready"}, "pair": ["42", "ok"]}}]}
+  ]
+}

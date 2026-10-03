@@ -1,0 +1,9 @@
+{"scenarios":[
+  {"class":"host","input":"gantry","expected":"Typed orchestration brief","hooks":[
+    {"kind":"action","output":"Gantry composes typed workflows.","assert_request":{"/operation_request/action/canonical_path":"crate::read_readme","/operation_request/action/arguments/0/value":"gantry","/operation_request/action/recovery_class":"read_only"}},
+    {"kind":"prompt","output":"Typed orchestration brief","assert_request":{"/operation_request/model/rendered_prompt":"Write a research brief grounded only in this README.","/operation_request/model/named_inputs/0/value":"gantry","/operation_request/model/named_inputs/1/value":"Gantry composes typed workflows.","/operation_request/site/workflow":"crate::write_brief"}}
+  ]},
+  {"class":"host","input":"empty","expected":"No README evidence available.","hooks":[
+    {"kind":"action","output":"","assert_request":{"/operation_request/action/arguments/0/value":"empty"}}
+  ]}
+]}

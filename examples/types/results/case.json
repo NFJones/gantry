@@ -1,0 +1,1 @@
+{"class":"cli","expected":[{"value":7,"variant":"Ok"},{"value":"negative","variant":"Err"},"accepted: 7","rejected: negative"]}

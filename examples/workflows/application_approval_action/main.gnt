@@ -1,0 +1,31 @@
+agents { planner, reviewer }
+default agent = planner;
+
+action non_idempotent submit(message: String) -> String;
+
+fn plan(request: String) -> String {
+    prompt "Draft a submission proposal." using { request } -> String
+}
+
+fn approve(proposal: String) -> Decision {
+    with reviewer {
+        decide "Does this proposal pass application review?" using { proposal }
+    }
+}
+
+fn main(request: String) -> String {
+    let proposal: String = plan(request);
+    let approval: Decision = approve(proposal);
+    if approval {
+        return execute(proposal);
+    }
+    "Application review declined."
+}
+
+fn execute(proposal: String) -> String {
+    let outcome: Result<String, OperationError> = attempt action submit(proposal);
+    match outcome {
+        Ok(receipt) => receipt,
+        Err(error) => "Submission failed; no automatic resubmission.",
+    }
+}

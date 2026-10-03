@@ -1,0 +1,7 @@
+fn main() -> Int {
+    spawn left -> Int { 20 }
+    spawn right -> Int { 22 }
+    let a: Int = join(left);
+    let b: Int = join(right);
+    a + b
+}

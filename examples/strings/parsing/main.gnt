@@ -1,0 +1,16 @@
+struct Parsed {
+    booleans: List<Option<Bool>>,
+    integers: List<Option<Int>>,
+    floats: List<Option<Float>>,
+    trimmed: Option<Int>,
+}
+
+fn main() -> Parsed {
+    let trimmed_text: String = " 42 ".trim();
+    Parsed {
+        booleans: ["true".parse_bool(), "false".parse_bool(), "True".parse_bool(), " true".parse_bool()],
+        integers: ["0".parse_int(), "-42".parse_int(), "01".parse_int(), "-0".parse_int(), "+1".parse_int(), "9007199254740992".parse_int()],
+        floats: ["1".parse_float(), "1.25e2".parse_float(), "-0.0".parse_float(), "NaN".parse_float(), " 1".parse_float(), "1e999".parse_float()],
+        trimmed: trimmed_text.parse_int(),
+    }
+}

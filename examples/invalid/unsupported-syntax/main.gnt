@@ -1,0 +1,1 @@
+fn main() { for value in 0..3 { discard value; } }

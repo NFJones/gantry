@@ -1,0 +1,20 @@
+struct Limited {
+    entries: Int,
+    total: Int,
+}
+
+fn main() -> Limited {
+    let mut entries: Int = 0;
+    let mut total: Int = 0;
+    loop(limit = 4) {
+        entries += 1;
+        if entries % 2 != 0 {
+            continue;
+        }
+        total += entries;
+        if entries == 4 {
+            break;
+        }
+    }
+    Limited { entries, total }
+}

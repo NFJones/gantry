@@ -1,0 +1,3 @@
+fn summary() -> String {
+    "Loaded sibling and nested file modules"
+}

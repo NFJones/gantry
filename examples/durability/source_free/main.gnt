@@ -1,0 +1,3 @@
+fn main(seed: Int) -> Int {
+    seed + 1
+}

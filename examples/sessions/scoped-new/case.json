@@ -1,0 +1,29 @@
+{
+  "class": "host", "expected": ["fresh", "parent"],
+  "hooks": [
+    {"kind": "prompt", "output": null},
+    {"kind": "prompt", "output": null, "assert_request": {
+      "/operation_request/model/rendered_prompt": "Start fresh.",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": []
+    }},
+    {"kind": "prompt", "output": "fresh", "assert_request": {
+      "/operation_request/model/selected_agent": "writer",
+      "/operation_request/model/rendered_prompt": "Continue fresh.",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": [{
+        "operation_kind": "prompt", "template_representation": ["Start fresh."],
+        "rendered_prompt": "Start fresh.", "interpolation_inputs": [], "using_inputs": [],
+        "selected_agent": "writer", "accepted_result": {"kind": "unit", "type": "Unit", "value": null}
+      }]
+    }},
+    {"kind": "prompt", "output": "parent", "assert_request": {
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": [{
+        "operation_kind": "prompt", "template_representation": ["Seed."],
+        "rendered_prompt": "Seed.", "interpolation_inputs": [], "using_inputs": [],
+        "selected_agent": "writer", "accepted_result": {"kind": "unit", "type": "Unit", "value": null}
+      }]
+    }}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "scenarios": [
+    {"class": "host", "expected": "found: 42", "hooks": [{"kind": "action", "output": 42, "assert_request": {"/operation_request/expected_type": "Int"}}]},
+    {"class": "host", "expected": "action unavailable", "hooks": [{"kind": "action", "error": "policy-denied"}]},
+    {"class": "host", "expected": "action unavailable", "hooks": [{"kind": "action", "error": "timeout"}]},
+    {"class": "host", "expected": "action unavailable", "hooks": [{"kind": "action", "output": "wrong", "assert_request": {"/operation_request/validation_attempt": 0}}]}
+  ]
+}

@@ -1,0 +1,18 @@
+struct Inner { value: Int }
+struct State { inner: Inner, label: String }
+struct Copies { parent: State, changed: State, original: State }
+
+fn main() -> Copies {
+    let mut state: State = State { inner: Inner { value: 7 }, label: "seed" };
+    spawn changed -> State {
+        state.inner.value += 1;
+        state.label = "child";
+        state
+    }
+    spawn original -> State { state }
+    state.inner.value = 20;
+    state.label = "parent";
+    let changed_value: State = join(changed);
+    let original_value: State = join(original);
+    Copies { parent: state, changed: changed_value, original: original_value }
+}

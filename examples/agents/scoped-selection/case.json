@@ -1,0 +1,11 @@
+{
+  "class": "host", "expected": ["write", "review", "edit", "review again", "write again"],
+  "hooks": [
+    {"kind": "prompt", "output": "write", "assert_request": {"/operation_request/model/selected_agent": "writer"}},
+    {"kind": "prompt", "output": "review", "assert_request": {"/operation_request/model/selected_agent": "reviewer"}},
+    {"kind": "prompt", "output": "edit", "assert_request": {"/operation_request/model/selected_agent": "editor"}},
+    {"kind": "prompt", "output": null, "assert_request": {"/operation_request/model/selected_agent": "editor"}},
+    {"kind": "prompt", "output": "review again", "assert_request": {"/operation_request/model/selected_agent": "reviewer"}},
+    {"kind": "prompt", "output": "write again", "assert_request": {"/operation_request/model/selected_agent": "writer"}}
+  ]
+}

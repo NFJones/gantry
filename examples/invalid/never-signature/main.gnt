@@ -1,0 +1,2 @@
+fn impossible(value: Never) {}
+fn main() {}

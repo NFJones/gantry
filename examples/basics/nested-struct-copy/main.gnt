@@ -1,0 +1,22 @@
+struct Counter {
+    value: Int,
+}
+
+struct Record {
+    name: String,
+    counter: Counter,
+}
+
+fn revise(mut record: Record) -> Record {
+    record.counter.value += 10;
+    record
+}
+
+fn main() -> Tuple<Record, Record, Record> {
+    let original: Record = Record { name: "original", counter: Counter { value: 1 } };
+    let mut changed: Record = original;
+    changed.counter.value = 7;
+    changed.name = "changed";
+    let revised: Record = revise(changed);
+    (original, changed, revised)
+}

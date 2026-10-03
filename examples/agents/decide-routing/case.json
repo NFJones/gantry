@@ -1,0 +1,18 @@
+{"scenarios": [
+  {"class": "host", "expected": "publish", "hooks": [
+    {"kind": "decide", "output": {"decision": true, "rationale": "Ready"}, "assert_request": {
+      "/operation_request/model/selected_agent": "reviewer",
+      "/operation_request/model/rendered_prompt": "Ready to publish?"
+    }}
+  ]},
+  {"class": "host", "expected": "review", "hooks": [
+    {"kind": "decide", "output": {"decision": false, "rationale": "Not ready"}},
+    {"kind": "decide", "output": {"decision": true, "rationale": "Human needed"}, "assert_request": {
+      "/operation_request/model/rendered_prompt": "Needs human review?"
+    }}
+  ]},
+  {"class": "host", "expected": "revise", "hooks": [
+    {"kind": "decide", "output": {"decision": false, "rationale": "Not ready"}},
+    {"kind": "decide", "output": {"decision": false, "rationale": "Revise first"}}
+  ]}
+]}

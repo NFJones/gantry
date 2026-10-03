@@ -1,0 +1,8 @@
+struct Message { body: String }
+struct Receipt { number: Int }
+
+action non_idempotent send(message: Message) -> Receipt;
+
+fn main() -> Receipt {
+    action(retry_limit = 0) send(Message { body: "Release ready" })
+}

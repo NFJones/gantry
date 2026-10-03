@@ -1,0 +1,25 @@
+agents { synthesizer }
+default agent = synthesizer;
+
+struct Candidates { left: String, right: String }
+struct Comparison { same: Bool, combined: String }
+
+pure fn normalize(text: String) -> String {
+    let trimmed: String = text.trim();
+    trimmed.to_lowercase()
+}
+
+pure fn compare(left: String, right: String) -> Comparison {
+    Comparison { same: left == right, combined: left + " | " + right }
+}
+
+fn main(candidates: Candidates) -> String {
+    spawn left -> String { normalize(candidates.left) }
+    spawn right -> String { normalize(candidates.right) }
+    let values: List<String> = join(left, right);
+    let comparison: Comparison = compare(values[0], values[1]);
+    if comparison.same {
+        return values[0];
+    }
+    prompt "Synthesize the compared candidates." using { comparison } -> String
+}

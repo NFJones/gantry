@@ -1,0 +1,1 @@
+{"class":"concurrent","expected":{"parent":{"inner":{"value":20},"label":"parent"},"changed":{"inner":{"value":8},"label":"child"},"original":{"inner":{"value":7},"label":"seed"}}}

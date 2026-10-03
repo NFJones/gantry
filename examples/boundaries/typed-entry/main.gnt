@@ -1,0 +1,12 @@
+enum Mode { Fast, Named(String) }
+struct Request {
+    count: Int,
+    enabled: Bool,
+    mode: Mode,
+    coordinates: Tuple<Int, Int>,
+    tags: List<String>,
+}
+
+fn main(request: Request) -> Request {
+    request
+}

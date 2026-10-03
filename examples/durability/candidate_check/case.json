@@ -1,0 +1,1 @@
+{"scenarios":[{"class":"durable","durable_mode":"candidate-exact","expected":42},{"class":"durable","durable_mode":"candidate-mismatch","expected":42}]}

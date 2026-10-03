@@ -1,0 +1,37 @@
+{
+  "class": "host", "expected": "restored",
+  "hooks": [
+    {"kind": "prompt", "output": null},
+    {"kind": "prompt", "output": null, "assert_request": {
+      "/operation_request/model/rendered_prompt": "Nested fresh.",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": []
+    }},
+    {"kind": "decide", "output": {"decision": true, "rationale": "Ready"}, "assert_request": {
+      "/operation_request/model/selected_agent": "reviewer",
+      "/operation_request/model/rendered_prompt": "One-off judgment?",
+      "/operation_request/model/session_use/kind": "create",
+      "/operation_request/model/session_use/mode": "new",
+      "/operation_request/model/transcript/turns": []
+    }},
+    {"kind": "prompt", "output": null, "assert_request": {
+      "/operation_request/model/selected_agent": "writer",
+      "/operation_request/model/rendered_prompt": "Back to fork.",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": [{
+        "operation_kind": "prompt", "template_representation": ["Seed."],
+        "rendered_prompt": "Seed.", "interpolation_inputs": [], "using_inputs": [],
+        "selected_agent": "writer", "accepted_result": {"kind": "unit", "type": "Unit", "value": null}
+      }]
+    }},
+    {"kind": "prompt", "output": "restored", "assert_request": {
+      "/operation_request/model/rendered_prompt": "Back to root.",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": [{
+        "operation_kind": "prompt", "template_representation": ["Seed."],
+        "rendered_prompt": "Seed.", "interpolation_inputs": [], "using_inputs": [],
+        "selected_agent": "writer", "accepted_result": {"kind": "unit", "type": "Unit", "value": null}
+      }]
+    }}
+  ]
+}

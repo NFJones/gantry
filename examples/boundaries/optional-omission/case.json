@@ -1,0 +1,24 @@
+{
+  "scenarios": [
+    {
+      "class": "host",
+      "input": {"name": "omitted", "detail": {}},
+      "expected": {"name": "omitted", "detail": {"note": null}, "count": null},
+      "hooks": [{"kind": "action", "output": {"name": "omitted", "detail": {}}, "assert_request": {
+        "/operation_request/action/arguments/0/value": {"name": "omitted", "detail": {"note": null}, "count": null}
+      }}]
+    },
+    {
+      "class": "host",
+      "input": {"name": "explicit", "detail": {"note": null}, "count": null},
+      "expected": {"name": "explicit", "detail": {"note": null}, "count": null},
+      "hooks": [{"kind": "action", "output": {"name": "explicit", "detail": {"note": null}, "count": null}}]
+    },
+    {
+      "class": "host",
+      "input": {"name": "present", "detail": {"note": "ready"}, "count": 3},
+      "expected": {"name": "present", "detail": {"note": "ready"}, "count": 3},
+      "hooks": [{"kind": "action", "output": {"name": "present", "detail": {"note": "ready"}, "count": 3}}]
+    }
+  ]
+}

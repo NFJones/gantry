@@ -1,0 +1,21 @@
+agents { researcher }
+default agent = researcher;
+
+action read_only read_readme(project: String) -> String;
+
+fn collect(project: String) -> String {
+    action read_readme(project)
+}
+
+fn write_brief(project: String, readme: String) -> String {
+    if readme.len() == 0 {
+        return "No README evidence available.";
+    }
+    prompt "Write a research brief grounded only in this README."
+        using { project, readme } -> String
+}
+
+fn main(project: String) -> String {
+    let readme: String = collect(project);
+    write_brief(project, readme)
+}

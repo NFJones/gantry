@@ -1,0 +1,12 @@
+// SPEC.md#GNT-7.7: Strings render verbatim, other values as canonical JSON.
+agents { writer }
+default agent = writer;
+
+struct Item { label: String, count: Int }
+
+fn main() -> String {
+    let text: String = "${not_recursive} $$";
+    let item: Item = Item { label: "stock", count: 2 };
+    let optional: Option<String> = Some("stock");
+    prompt "Text=${text}; item=${item}; option=${optional}; again=${text}; literal=$${text}" -> String
+}

@@ -1,0 +1,15 @@
+// SPEC.md#GNT-7.12: a lexical fork establishes one child for the whole block.
+agents { writer, reviewer }
+default agent = writer;
+
+fn continue_work() -> String { prompt "Continue branch." -> String }
+
+fn main() -> Tuple<String, String> {
+    prompt "Seed.";
+    let branch: String = session(fork) {
+        prompt "Start branch.";
+        with reviewer { continue_work() }
+    };
+    let parent: String = prompt "Parent." -> String;
+    (branch, parent)
+}

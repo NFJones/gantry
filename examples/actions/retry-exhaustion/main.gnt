@@ -1,0 +1,5 @@
+action idempotent update(key: String) -> Int;
+
+fn main() -> Int {
+    action(retry_limit = 1) update("answer")
+}

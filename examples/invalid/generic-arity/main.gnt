@@ -1,0 +1,2 @@
+struct Envelope<T> { value: T }
+fn main(value: Envelope<Int, String>) {}

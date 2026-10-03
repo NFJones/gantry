@@ -1,0 +1,9 @@
+mod domain;
+mod workflows;
+
+use domain::Report;
+use workflows::produce_report;
+
+fn main() -> Report {
+    produce_report("Module guide")
+}

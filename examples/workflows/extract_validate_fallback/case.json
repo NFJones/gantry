@@ -1,0 +1,18 @@
+{"scenarios":[
+  {"class":"host","input":"Guide: 4","expected":{"title":"Guide","count":4},"hooks":[
+    {"kind":"prompt","output":{"title":"Guide","count":4},"assert_request":{"/operation_request/model/named_inputs/0/value":"Guide: 4","/operation_request/expected_type":"crate::Record"}}
+  ]},
+  {"class":"host","input":"Guide: 4","expected":{"title":"Guide","count":4},"hooks":[
+    {"kind":"prompt","output":{"title":"Guide","count":"four"},"assert_request":{"/operation_request/model/rendered_prompt":"Extract title and count."}},
+    {"kind":"prompt","output":{"title":"Guide","count":4},"assert_request":{"/operation_request/model/rendered_prompt":"Extract title and count.","/operation_request/model/named_inputs/0/value":"Guide: 4","/operation_request/validation_attempt":1}}
+  ]},
+  {"class":"host","input":"Unreadable","expected":{"title":"Unknown","count":0},"hooks":[
+    {"kind":"prompt","output":{},"assert_request":{"/operation_request/model/rendered_prompt":"Extract title and count."}},
+    {"kind":"prompt","output":{},"assert_request":{"/operation_request/validation_attempt":1}},
+    {"kind":"prompt","output":{"title":"Unknown","count":-1},"assert_request":{"/operation_request/model/rendered_prompt":"Recover a conservative record.","/operation_request/model/named_inputs/1/value":{"variant":"InvalidOutput"}}}
+  ]},
+  {"class":"host","input":"Unavailable","expected":{"title":"Unavailable","count":0},"hooks":[
+    {"kind":"prompt","error":"provider-failure","assert_request":{"/operation_request/model/rendered_prompt":"Extract title and count."}},
+    {"kind":"prompt","output":{"title":"Unavailable","count":0},"assert_request":{"/operation_request/model/rendered_prompt":"Recover a conservative record.","/operation_request/model/named_inputs/1/value":{"variant":"ProviderFailure","value":"offline scripted failure"}}}
+  ]}
+]}

@@ -1,0 +1,7 @@
+fn main() -> Tuple<String, Bool, Int> {
+    spawn count -> Int { 7 }
+    spawn label -> String { "ready" }
+    spawn flag -> Bool { true }
+    let (text, enabled, total): Tuple<String, Bool, Int> = join(label, flag, count);
+    (text, enabled, total)
+}

@@ -1,0 +1,16 @@
+fn main() -> Tuple<Int, Int, Int, Int, Bool, Float> {
+    let maximum: Int = 9007199254740991;
+    let near_limit: Int = maximum - 1;
+    let dividend: Int = -17;
+    let divisor: Int = 5;
+    let quotient: Int = dividend / divisor;
+    let remainder: Int = dividend % divisor;
+    let restored: Int = quotient * divisor + remainder;
+    let sum: Float = 1.5 + 2.5;
+    let product: Float = sum * 2.0;
+    let scaled: Float = product / 4.0;
+    let boundary: Int = near_limit + 1;
+    let positive: Int = -dividend;
+    let identity: Bool = restored == dividend;
+    (boundary, quotient, remainder, positive, identity, scaled)
+}

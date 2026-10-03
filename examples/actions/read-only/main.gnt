@@ -1,0 +1,8 @@
+struct Lookup { key: String }
+struct Record { key: String, value: Int }
+
+action read_only lookup(request: Lookup) -> Record;
+
+fn main() -> Record {
+    action lookup(Lookup { key: "answer" })
+}

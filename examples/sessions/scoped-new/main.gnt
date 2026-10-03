@@ -1,0 +1,13 @@
+// SPEC.md#GNT-7.12: a lexical new session starts empty and shares later turns.
+agents { writer }
+default agent = writer;
+
+fn main() -> Tuple<String, String> {
+    prompt "Seed.";
+    let fresh: String = session(new) {
+        prompt "Start fresh.";
+        prompt "Continue fresh." -> String
+    };
+    let parent: String = prompt "Parent." -> String;
+    (fresh, parent)
+}

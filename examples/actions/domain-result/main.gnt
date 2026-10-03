@@ -1,0 +1,12 @@
+struct Reading { value: Int }
+struct Missing { key: String }
+
+action read_only read(key: String) -> Result<Reading, Missing>;
+
+fn main() -> String {
+    let result: Result<Reading, Missing> = action read("answer");
+    match result {
+        Ok(reading) => "found: " + reading.value.to_string(),
+        Err(missing) => "missing: " + missing.key,
+    }
+}

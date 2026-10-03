@@ -1,0 +1,21 @@
+struct Counter<T> {
+    label: T,
+    count: Int,
+}
+
+impl<T> Counter<T> {
+    pure fn read(self) -> Int { self.count }
+
+    pure fn bump(mut self, delta: Int) -> Self {
+        self.count += delta;
+        self
+    }
+}
+
+pure fn main() -> Tuple<Int, Int, Int> {
+    let original: Counter<String> = Counter::<String> { label: "jobs", count: 2 };
+    let changed: Counter<String> = original.bump(5);
+    let mut retained: Counter<String> = changed;
+    retained = retained.bump(3);
+    (original.read(), changed.read(), retained.read())
+}

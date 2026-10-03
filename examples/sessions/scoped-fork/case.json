@@ -1,0 +1,33 @@
+{
+  "class": "host", "expected": ["reviewed", "parent"],
+  "hooks": [
+    {"kind": "prompt", "output": null},
+    {"kind": "prompt", "output": null, "assert_request": {
+      "/operation_request/model/rendered_prompt": "Start branch.",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns/0/rendered_prompt": "Seed."
+    }},
+    {"kind": "prompt", "output": "reviewed", "assert_request": {
+      "/operation_request/model/selected_agent": "reviewer",
+      "/operation_request/model/rendered_prompt": "Continue branch.",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": [
+        {"operation_kind": "prompt", "template_representation": ["Seed."],
+         "rendered_prompt": "Seed.", "interpolation_inputs": [], "using_inputs": [],
+         "selected_agent": "writer", "accepted_result": {"kind": "unit", "type": "Unit", "value": null}},
+        {"operation_kind": "prompt", "template_representation": ["Start branch."],
+         "rendered_prompt": "Start branch.", "interpolation_inputs": [], "using_inputs": [],
+         "selected_agent": "writer", "accepted_result": {"kind": "unit", "type": "Unit", "value": null}}
+      ]
+    }},
+    {"kind": "prompt", "output": "parent", "assert_request": {
+      "/operation_request/model/selected_agent": "writer",
+      "/operation_request/model/session_use": {"kind": "inline"},
+      "/operation_request/model/transcript/turns": [{
+        "operation_kind": "prompt", "template_representation": ["Seed."],
+        "rendered_prompt": "Seed.", "interpolation_inputs": [], "using_inputs": [],
+        "selected_agent": "writer", "accepted_result": {"kind": "unit", "type": "Unit", "value": null}
+      }]
+    }}
+  ]
+}

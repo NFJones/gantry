@@ -1,0 +1,32 @@
+enum Stage {
+    Next(Int),
+    Done,
+}
+
+struct Scores {
+    value: Int,
+    effect: Int,
+}
+
+fn score(stage: Stage) -> Scores {
+    let value: Int = match stage {
+        Stage::Next(amount) => { amount * 2 },
+        Stage::Done => { 0 },
+    };
+
+    let mut effect: Int = 0;
+    match stage {
+        Stage::Next(increment) => { effect = increment * 3; },
+        Stage::Done => { effect = 1; },
+    }
+
+    discard match stage {
+        Stage::Next(_) => "pending",
+        Stage::Done => "complete",
+    };
+    Scores { value, effect }
+}
+
+fn main() -> List<Scores> {
+    [score(Stage::Next(4)), score(Stage::Done)]
+}

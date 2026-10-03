@@ -1,0 +1,4 @@
+struct Report {
+    title: String,
+    summary: String,
+}

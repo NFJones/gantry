@@ -1,0 +1,9 @@
+action read_only lookup() -> Int;
+
+fn main() -> String {
+    let outcome: Result<Int, OperationError> = attempt action lookup();
+    match outcome {
+        Ok(value) => "found: " + value.to_string(),
+        Err(_) => "action unavailable",
+    }
+}

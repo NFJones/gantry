@@ -1,0 +1,2 @@
+pure fn missing_type<T>() -> Unit { () }
+fn main() { missing_type(); }

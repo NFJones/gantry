@@ -1,0 +1,7 @@
+fn increment(value: Int) -> Int { value + 1 }
+
+fn main() -> Tuple<Int, Int> {
+    let step: Fn(Int) -> Int = increment;
+    let again: Fn(Int) -> Int = step;
+    (step(41), again(1) + 1)
+}

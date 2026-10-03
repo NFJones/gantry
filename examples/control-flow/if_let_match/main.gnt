@@ -1,0 +1,19 @@
+fn option_value(candidate: Option<Int>) -> Int {
+    if let Some(found) = candidate {
+        return found;
+    } else {
+        return 0;
+    }
+}
+
+fn result_value(outcome: Result<Int, String>) -> Int {
+    match outcome {
+        Ok(value) => value,
+        Err(_) => -1,
+    }
+}
+
+fn main() -> List<Int> {
+    [option_value(Some(7)), option_value(None),
+     result_value(Ok(9)), result_value(Err("missing"))]
+}

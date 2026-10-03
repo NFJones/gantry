@@ -1,0 +1,25 @@
+{
+  "class": "cli",
+  "expected": [
+    {
+      "name": "default",
+      "enabled": true,
+      "retries": 2,
+      "ratio": 1.5,
+      "note": null,
+      "label": "automatic",
+      "absent": null,
+      "completed": null
+    },
+    {
+      "name": "explicit",
+      "enabled": false,
+      "retries": 2,
+      "ratio": 1.5,
+      "note": "provided",
+      "label": null,
+      "absent": null,
+      "completed": null
+    }
+  ]
+}

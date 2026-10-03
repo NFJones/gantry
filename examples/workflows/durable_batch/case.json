@@ -1,0 +1,6 @@
+{"scenarios":[
+  {"class":"durable","input":["alpha","beta"],"expected":{"receipts":"receipt-alpha;receipt-beta;","count":2},"hooks":[
+    {"kind":"action","output":{"receipts":"receipt-alpha;receipt-beta;","count":2},"assert_request":{"/operation_request/action/canonical_path":"crate::record_batch","/operation_request/action/recovery_class":"idempotent","/operation_request/action/arguments/0/value":{"items":["alpha","beta"],"summary":"alpha;beta;"},"/operation_request/site/workflow":"crate::process"}}
+  ]},
+  {"class":"durable","input":[],"expected":{"receipts":"","count":0},"hooks":[]}
+]}

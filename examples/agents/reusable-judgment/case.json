@@ -1,0 +1,19 @@
+{"scenarios": [
+  {"class": "host", "expected": "complete", "hooks": [
+    {"kind": "prompt", "output": "Evidence and conclusion", "assert_request": {
+      "/operation_request/model/named_inputs": [{"name": "report", "type": "String", "value": "Draft"}]
+    }},
+    {"kind": "decide", "output": {"decision": true, "rationale": "All covered"}, "assert_request": {
+      "/operation_request/model/selected_agent": "reviewer",
+      "/operation_request/model/rendered_prompt": "Is the report complete?",
+      "/operation_request/model/named_inputs": [
+        {"name": "report", "type": "String", "value": "Draft"},
+        {"name": "checklist", "type": "String", "value": "Evidence and conclusion"}
+      ]
+    }}
+  ]},
+  {"class": "host", "expected": "needs revision", "hooks": [
+    {"kind": "prompt", "output": "Evidence and conclusion"},
+    {"kind": "decide", "output": {"decision": false, "rationale": "Evidence missing"}}
+  ]}
+]}

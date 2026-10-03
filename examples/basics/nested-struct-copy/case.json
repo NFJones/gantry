@@ -1,0 +1,1 @@
+{"class":"cli","expected":[{"counter":{"value":1},"name":"original"},{"counter":{"value":7},"name":"changed"},{"counter":{"value":17},"name":"changed"}]}

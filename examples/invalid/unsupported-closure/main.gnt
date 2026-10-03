@@ -1,0 +1,1 @@
+fn main() { discard fn(value: Int) -> Int { value + 1 }; }

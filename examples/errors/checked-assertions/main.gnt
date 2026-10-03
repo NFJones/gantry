@@ -1,0 +1,13 @@
+fn checked_total(left: Int, right: Int) -> Int {
+    assert(left >= 0);
+    assert(right >= 0);
+    let total: Int = left + right;
+    assert(total == 42);
+    total
+}
+
+fn main() -> Int {
+    let result: Int = checked_total(19, 23);
+    assert(result == 42);
+    result
+}
