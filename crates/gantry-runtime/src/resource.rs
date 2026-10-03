@@ -408,6 +408,7 @@ pub struct ResourceSubjectBinding {
     operation: LogicalOperationId,
     generation: ResourceGenerationId,
     kind: Option<OperationKind>,
+    recovery: Option<gantry_ir::generated::RecoveryClass>,
     runtime_owner: (
         gantry_core::identity::ProtocolIdentity,
         gantry_core::identity::ProtocolIdentity,
@@ -421,6 +422,7 @@ impl PartialEq for ResourceSubjectBinding {
             && self.operation == other.operation
             && self.generation == other.generation
             && self.kind == other.kind
+            && self.recovery == other.recovery
             && self.runtime_owner == other.runtime_owner
     }
 }
@@ -450,6 +452,7 @@ impl ResourceSubjectBinding {
             operation,
             generation,
             kind,
+            recovery: None,
             runtime_owner,
             admission_open,
         }
@@ -490,7 +493,7 @@ impl ResourceSubjectBinding {
         ),
     ) -> Option<Self> {
         let action = metadata.action.as_ref()?;
-        Some(Self::derive(
+        let mut subject = Self::derive(
             &action.path,
             workflow.clone(),
             position.clone(),
@@ -498,7 +501,9 @@ impl ResourceSubjectBinding {
             metadata.section20_kind,
             admission_open,
             runtime_owner,
-        ))
+        );
+        subject.recovery = Some(action.recovery);
+        Some(subject)
     }
 
     /// Returns the issuing execution, independently of portable operation identity.
@@ -1601,16 +1606,8 @@ impl ResourceRegistry {
                     Some(HostResourceError::Model(
                         ResourceError::IllegalLifetimeTransition,
                     ))
-                } else if let Some(adapter) = account.adapter_instance()
-                    && adapter.is_poisoned()
-                {
-                    Some(HostResourceError::Operation(
-                        OperationAbiError::AdapterInstancePoisoned {
-                            instance: Arc::from(adapter.as_str()),
-                        },
-                    ))
                 } else {
-                    None
+                    account.require_adapter_dispatch().err()
                 }
             }
         };
@@ -2724,6 +2721,23 @@ impl AdmittedResource {
     #[must_use]
     pub const fn containment(&self) -> &ContainmentSettlement {
         &self.containment
+    }
+
+    /// Requires bound-adapter dispatch rights from this account's issuing metadata.
+    ///
+    /// Unbound embedding callbacks retain their separate caller-authenticated authority
+    /// contract. A bound adapter cannot use caller-selected recovery policy to gain rights.
+    pub(crate) fn require_adapter_dispatch(&self) -> Result<(), crate::HostResourceError> {
+        let Some(adapter) = self.adapter_instance() else {
+            return Ok(());
+        };
+        let recovery = self
+            .subject
+            .recovery
+            .ok_or(crate::HostResourceError::UnauthenticatedRecoveryClass)?;
+        adapter
+            .dispatch_for_recovery(recovery)
+            .map_err(crate::HostResourceError::Operation)
     }
 
     /// Settles this operation's containment path from one completion a boundary observed.

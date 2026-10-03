@@ -8599,6 +8599,89 @@ fn runtime_post_failure_settlement_is_bound_to_the_admitted_subject() {
     );
 }
 
+/// Bound adapter dispatch must require the issuing operation's recovery-class right.
+#[test]
+fn registry_adapter_invocation_requires_authenticated_dispatch_rights() {
+    let subject = active_subject();
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::new();
+    registry
+        .admit_host_value(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            17_u64,
+        )
+        .unwrap_or_else(|_| panic!("admit"));
+    registry
+        .bind_adapter_instance(&subject, owner, adapter_instance("no_dispatch", 4, 0))
+        .unwrap_or_else(|error| panic!("bind: {error:?}"));
+    let before = registry.declared_records();
+    assert_eq!(
+        registry.invoke_host_value::<u64, ()>(&subject, owner, |_| panic!(
+            "insufficient adapter rights must not dispatch"
+        )),
+        Err(gantry::runtime::HostResourceError::Operation(
+            OperationAbiError::AdapterRightsInsufficient {
+                recovery: RecoveryClass::Idempotent,
+                rights: 0,
+            }
+        ))
+    );
+    assert_eq!(registry.declared_records(), before);
+    assert!(registry.has_host_value(&subject));
+    assert_eq!(registry.pending_operations(), 1);
+}
+
+/// Affine-owner and admitted-loan callbacks use the same account-qualified dispatch rights.
+#[test]
+fn owned_adapter_invocation_requires_authenticated_dispatch_rights() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let owner = OwnerGeneration::new(4);
+    for authorized in [false, true] {
+        let mut account = admitted_active();
+        let rights = if authorized {
+            RightsSet::from_rights(&[gantry::ir::AuthorityRight::InvokeIdempotent])
+        } else {
+            RightsSet::empty()
+        };
+        account
+            .bind_adapter_instance(owner, adapter_instance_with("owned_dispatch", rights, 4, 0))
+            .unwrap_or_else(|error| panic!("bind: {error:?}"));
+        let mut resource =
+            OwnedHostResource::bind(account, 17_u64).unwrap_or_else(|_| panic!("physical binding"));
+        let before = resource.account().durable_record();
+        let expected = if authorized {
+            Ok(17)
+        } else {
+            Err(HostResourceError::Operation(
+                OperationAbiError::AdapterRightsInsufficient {
+                    recovery: RecoveryClass::Idempotent,
+                    rights: 0,
+                },
+            ))
+        };
+        assert_eq!(resource.invoke(owner, |value| Ok(*value)), expected);
+        {
+            let mut loan = resource
+                .borrow_receiver(transport_live(FIXTURE_DECLARATION, 0, 4, true))
+                .unwrap_or_else(|_| panic!("loan admission"));
+            assert_eq!(loan.invoke(|value| Ok(*value)), expected);
+            loan.settle_failure(FailureClass::ResourceFailure)
+                .unwrap_or_else(|error| panic!("loan settlement: {error:?}"));
+        }
+        assert_eq!(
+            resource.account().durable_record().quotas(),
+            before.quotas()
+        );
+        assert!(!resource.is_poisoned());
+        assert_eq!(
+            resource.emergency_release(emergency_cleanup()),
+            Ok(ResourceLifetimeState::EmergencyReleased)
+        );
+    }
+}
+
 /// A poisoned adapter cannot carry another physical callback, while siblings remain usable.
 #[test]
 fn registry_physical_invocation_refuses_a_poisoned_bound_adapter() {
@@ -8616,7 +8699,16 @@ fn registry_physical_invocation_refuses_a_poisoned_bound_adapter() {
             )
             .unwrap_or_else(|_| panic!("admit"));
         registry
-            .bind_adapter_instance(binding, owner, adapter_instance(name, 4, 0))
+            .bind_adapter_instance(
+                binding,
+                owner,
+                adapter_instance_with(
+                    name,
+                    RightsSet::from_rights(&[gantry::ir::AuthorityRight::InvokeIdempotent]),
+                    4,
+                    0,
+                ),
+            )
             .unwrap_or_else(|error| panic!("bind: {error:?}"));
         assert_eq!(
             registry.invoke_host_value::<u64, u64>(binding, owner, |value| Ok(*value)),

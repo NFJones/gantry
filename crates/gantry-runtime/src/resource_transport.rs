@@ -60,6 +60,8 @@ pub enum HostResourceError {
     DisposalPending,
     /// Machine cancellation prevents acquiring a new physical value for this account.
     CancellationRequested,
+    /// Bound-adapter invocation lacks machine-authenticated recovery metadata.
+    UnauthenticatedRecoveryClass,
 }
 
 /// One unclonable host value bound to one consumed accounting account.
@@ -258,6 +260,9 @@ impl<T> OwnedHostResource<T> {
         let Some(value) = self.value.as_mut() else {
             return self.refuse_callback(invoke, HostResourceError::Disposed);
         };
+        if let Err(error) = self.account.require_adapter_dispatch() {
+            return self.refuse_callback(invoke, error);
+        }
         let subject = self.account.subject().clone();
         let refusal = match subject.lock_admission() {
             None => Some(HostResourceError::PendingOperation),
@@ -418,6 +423,9 @@ impl<T> HostReceiverLoan<'_, T> {
             return self
                 .resource
                 .refuse_callback(callback, HostResourceError::ForeignLoan);
+        }
+        if let Err(error) = self.resource.account.require_adapter_dispatch() {
+            return self.resource.refuse_callback(callback, error);
         }
         let Some(value) = self.resource.value.as_mut() else {
             return self

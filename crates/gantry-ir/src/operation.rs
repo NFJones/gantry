@@ -2194,6 +2194,14 @@ impl AdapterInstance {
     /// failed or retired instance is never reused. The binding must carry the landed
     /// right its operation's declared recovery class demands.
     pub fn dispatch(&self, abi: &OperationAbi) -> Result<(), OperationAbiError> {
+        self.dispatch_for_recovery(abi.recovery())
+    }
+
+    /// Checks dispatch rights for an independently authenticated recovery class.
+    ///
+    /// The caller authenticates that class; this check grants no authority and retains
+    /// poison, retirement and insufficient-right refusal precedence.
+    pub fn dispatch_for_recovery(&self, recovery: RecoveryClass) -> Result<(), OperationAbiError> {
         if self.poisoned {
             return Err(OperationAbiError::AdapterInstancePoisoned {
                 instance: Arc::from(self.text.as_ref()),
@@ -2204,9 +2212,9 @@ impl AdapterInstance {
                 instance: Arc::from(self.text.as_ref()),
             });
         }
-        if !self.rights.contains(required_right(abi.recovery())) {
+        if !self.rights.contains(required_right(recovery)) {
             return Err(OperationAbiError::AdapterRightsInsufficient {
-                recovery: abi.recovery(),
+                recovery,
                 rights: self.rights.bits(),
             });
         }

@@ -15552,6 +15552,13 @@ accounting and bindings, so semantic release cannot bypass the physical-access f
 Typed bounded synchronous invocation MUST retain account and containment fences, including contained unused
 callback destruction. After provenance, current-owner and active/open checks, a poisoned bound
 adapter MUST refuse physical invocation with `AdapterInstancePoisoned` before executing the callback.
+Bound-adapter callbacks through registry, affine-owner and admitted receiver-loan routes MUST
+also enforce retired-instance and dispatch-right checks using the admitted account's issuing
+operation recovery class. That class MUST come from authenticated executable action metadata,
+not a caller-selected ABI or recovered alias. Missing metadata MUST refuse
+`UnauthenticatedRecoveryClass`; insufficient rights MUST refuse `AdapterRightsInsufficient`.
+Refusal MUST retain accounting and physical ownership and contain unused callback destruction.
+Unbound callbacks retain their separate embedding-authority contract; these checks grant no authority.
 Eligible fresh registry invocation MUST check the admitted account's cancellation lease rather than
 a caller's recovered or speculative binding. Recorded cancellation and unreadable leases MUST
 refuse with `CancellationRequested` and `PendingOperation` respectively; integration and callback

@@ -240,6 +240,11 @@ return the value untouched. `invoke_host_value` checks the exact Rust type and a
 after provenance, owner and active/open checks, a poisoned bound adapter refuses with
 `HostResourceError::Operation(AdapterInstancePoisoned)` before executing the callback. Accounting,
 physical ownership and sibling usability remain unchanged; unused callback disposal stays contained.
+Bound adapters also require retirement and dispatch-right admission from the account's issuing
+recovery metadata. Registry, affine-owner and admitted-loan callbacks share that check; callers
+cannot substitute a weaker recovery class. Missing metadata refuses `UnauthenticatedRecoveryClass`,
+and insufficient rights refuses `AdapterRightsInsufficient` without releasing ownership or work.
+Unbound callbacks still require embedding-authenticated authority; this supplies no capability grant.
 Eligible direct invocation also checks the admitted account's machine lease: recorded cancellation
 refuses with `CancellationRequested`, and an unreadable lease with `PendingOperation`. Recovered
 caller bindings cannot bypass this check. Admission linearizes under the lease, then releases it
