@@ -997,6 +997,46 @@ fn observations_after_partial_settlement_preserve_the_winner_and_allowance() {
     }
 }
 
+/// Half-close cannot mutate an accepted winner, even when it retains an open half.
+#[test]
+fn half_close_after_settlement_preserves_the_complete_winner() {
+    let owner = OwnerGeneration::initial();
+    let current = abi(
+        OperationKind::LiveResource,
+        1,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    );
+    for progress in [
+        ProgressObservation::NotStarted,
+        ProgressObservation::ShortRead,
+        ProgressObservation::CommittedProgress,
+        ProgressObservation::Eof,
+    ] {
+        let mut live = resource(&current, owner, 1);
+        let winner = settlement(&current, owner, ExternalOutcome::Accepted, progress, 10);
+        live.settle(&winner)
+            .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+        let before = live.clone();
+        assert_eq!(
+            refusal(live.half_close()),
+            OperationAbiDiagnosticCode::SecondSettlement
+        );
+        assert_eq!(live, before);
+    }
+    for failure in FailureClass::ALL {
+        let mut live = resource(&current, owner, 1);
+        live.settle_failure(failure)
+            .unwrap_or_else(|error| panic!("failure settlement: {error:?}"));
+        let before = live.clone();
+        assert_eq!(
+            refusal(live.half_close()),
+            OperationAbiDiagnosticCode::SecondSettlement
+        );
+        assert_eq!(live, before);
+    }
+}
+
 /// Accepted success cannot later manufacture adapter or resource failure evidence.
 #[test]
 fn failures_after_accepted_settlement_preserve_the_winner() {
@@ -1426,7 +1466,7 @@ fn half_close_preserves_the_still_open_half_and_its_generation() {
     assert_eq!(consumed.state(), ResourceState::Consumed);
     assert_eq!(
         refusal(consumed.half_close()),
-        OperationAbiDiagnosticCode::HalfCloseWithoutOpenHalf
+        OperationAbiDiagnosticCode::SecondSettlement
     );
 }
 

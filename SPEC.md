@@ -12322,7 +12322,10 @@ provenance and stale-owner evidence MUST leave accounting and adapter state unch
 ownership.** A half-close is meaningful exactly while an open half survives: it
 preserves the still-open half, its resource generation, and its owner generation,
 and it MUST be refused for a resource that is closed, consumed, poisoned, or already
-half-closed. A half-close MUST NOT create, release, or rebind ownership, and the
+half-closed. After an accepted success or failure settlement, half-close MUST refuse
+with `SecondSettlement` before state classification or mutation, including when the
+winner retains an open half. Generation fencing remains available without rewriting
+the accepted settlement or its progress. A half-close MUST NOT create, release, or rebind ownership, and the
 surviving half remains the same generation under the same owner. Post-failure
 ownership is exactly one declared receiver arrangement for one failure: the
 arrangement is preserved unchanged by the failure, so a failure MUST NOT silently

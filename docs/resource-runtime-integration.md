@@ -296,6 +296,9 @@ Failure-first settlement retains its exact evidence through `failure_settlement(
 from successful operation settlement. It refuses later completion, observation and failure
 settlement without mutation, before repeated poison or half-close classification. It supplies
 no fabricated successful outcome, progress or ordinary operation-state projection.
+Half-close also refuses after either kind of winner with `SecondSettlement` before state
+classification or mutation, including partial winners retaining an open half. Generation fencing
+remains available and does not rewrite accepted settlement or progress evidence.
 `observe` retains Section 20
 allowances and progress rules; accepted `settle` projects operation state and closes only the
 loan root. Refusal retains the guard and progress for another candidate. Whole-resource lifetime,

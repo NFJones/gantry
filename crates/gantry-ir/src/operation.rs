@@ -1960,7 +1960,14 @@ impl LiveResource {
     /// is already closed, consumed, poisoned, or half-closed. The generation and the
     /// owner generation are unchanged by a half-close, so the surviving half stays
     /// the same generation.
+    /// An accepted success or failure winner refuses with `SecondSettlement` before
+    /// state classification or mutation, even when the winner retains an open half.
     pub fn half_close(&mut self) -> Result<(), OperationAbiError> {
+        if self.settlement.is_some() || self.failure_settlement.is_some() {
+            return Err(OperationAbiError::SecondSettlement {
+                operation: Arc::from(self.abi.operation().as_str()),
+            });
+        }
         if !self.state.is_open() {
             return Err(OperationAbiError::HalfCloseWithoutOpenHalf { state: self.state });
         }
