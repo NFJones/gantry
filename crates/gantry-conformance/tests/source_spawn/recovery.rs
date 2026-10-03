@@ -213,6 +213,105 @@ fn missing_operation_result_event_is_replaced_before_source_consumption() {
     );
 }
 
+/// Actual durable launch and public restart retain the same bounded empty accounting policy.
+#[test]
+fn bounded_accounting_survives_durable_launch_and_public_resume() {
+    let root = TempDirectory::new("fn main() { spawn child -> Int { 7 } discard join(child); }");
+    let build = |executor: Arc<DeterministicConcurrentExecutor>, child_session: bool| {
+        let mut preflight = vec![ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )];
+        if child_session {
+            preflight.push(ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ));
+        }
+        let integration = Arc::new(ScriptedIntegration::new(preflight, []));
+        interpreter_with_accounting_service(
+            executor,
+            integration.clone(),
+            integration,
+            AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+                .unwrap_or_else(|error| panic!("capacities: {error}")),
+            8,
+            SinkPlan::default(),
+            Arc::new(DeterministicIdentitySource::new(
+                (1_u8..=192).map(|byte| Ok([byte; 32])),
+            )),
+            Some((2, 3)),
+            Some(4),
+            None,
+        )
+    };
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let interpreter = build(executor.clone(), true);
+    let storage = Arc::new(CountingJournalStore::default());
+    let journal_id = JournalId::new("bounded-accounting-public-restart")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let accepted = durable_accepted(&interpreter, &root, storage.clone(), journal_id.clone());
+    assert!(
+        drive_to_terminal(&executor, &interpreter, accepted.handle())
+            .terminal
+            .is_some()
+    );
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let (program, entries) = durable_graph_entries(&prefix);
+    assert!(!entries.is_empty());
+    for (_, evidence) in entries {
+        assert_eq!(
+            evidence.checkpoint().resource_policy(),
+            Some((Some(2), Some(3)))
+        );
+        assert_eq!(evidence.checkpoint().retained_resource_limit(), Some(4));
+    }
+    let recovered = recover_concurrent_authoritative_prefix(program, &prefix)
+        .unwrap_or_else(|error| panic!("bounded launch replay: {error:?}"));
+    assert_eq!(
+        recovered.execution().scheduler().retained_resource_limit(),
+        Some(4)
+    );
+    let fixed = Arc::new(FixedPrefixJournalStore::new(prefix));
+    let replacement_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let replacement = build(replacement_executor.clone(), false);
+    let selection = selection();
+    let mut resume = pin!(replacement.resume_durable_execution(
+        fixed.clone(),
+        DurableResumeExecutionRequest {
+            journal_id,
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(accepted.execution_id()),
+            event_delivery: None,
+        },
+    ));
+    let result = (0..1_000)
+        .find_map(|_| {
+            if let Poll::Ready(result) = resume
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                return Some(result);
+            }
+            for task in replacement_executor.task_ids() {
+                if replacement_executor.is_runnable(task) {
+                    let _ = replacement_executor.poll_task(task);
+                }
+            }
+            None
+        })
+        .unwrap_or_else(|| panic!("bounded public resume did not settle"));
+    let DurableResumeExecutionResult::Accepted(resumed) = result else {
+        panic!("matching bounded policy rejected: {result:?}");
+    };
+    assert_eq!(resumed.execution_id(), accepted.execution_id());
+    assert_eq!(fixed.commit_calls.load(Ordering::Acquire), 0);
+}
+
 #[test]
 fn missing_operation_completion_event_is_replaced_before_outcome_processing() {
     recover_missing_operation_event(
