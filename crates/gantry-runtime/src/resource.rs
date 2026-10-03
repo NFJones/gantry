@@ -1575,6 +1575,24 @@ impl ResourceRegistry {
         if let Some(error) = refusal {
             return slot.refuse(callback, error);
         }
+        let admitted_subject = self
+            .accounts
+            .get(&key)
+            .unwrap_or_else(|| unreachable!("eligible invocation selects a retained account"))
+            .subject()
+            .clone();
+        let refusal = match admitted_subject.lock_admission() {
+            None => Some(HostResourceError::PendingOperation),
+            Some(lease) if lease.cancellation_requested => {
+                Some(HostResourceError::CancellationRequested)
+            }
+            Some(_) => None,
+        };
+        if let Some(error) = refusal {
+            return slot.refuse(callback, error);
+        }
+        // Admission linearizes under the account lease, not the caller's possibly recovered lease.
+        // Integration and unused callback destruction never run while that lease is locked.
         slot.invoke(callback)
     }
 

@@ -5826,6 +5826,66 @@ fn owned_host_resource_binding_refuses_machine_cancellation_without_mutation() {
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Direct registry invocation admits before cancellation, never through a recovered caller lease.
+#[test]
+fn registry_host_invocation_refuses_account_cancellation_and_releases_the_lease() {
+    use gantry::runtime::HostResourceError;
+    let (program, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let recovered = Machine::recover_from_checkpoint(
+        program,
+        machine.checkpoint(),
+        ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+            .unwrap_or_else(|error| panic!("budget: {error:?}")),
+    )
+    .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+    let recovered_subject = recovered
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("recovered subject"));
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    registry
+        .admit_host_value(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            17_u64,
+        )
+        .unwrap_or_else(|_| panic!("admit"));
+    let before = registry.declared_records();
+    assert_eq!(
+        registry.invoke_host_value::<u64, u64>(&subject, owner, |value| {
+            assert!(machine.cancel("cancel inside accepted callback").is_some());
+            *value += 1;
+            Ok(*value)
+        }),
+        Ok(18),
+        "accepted integration must run outside the lease lock"
+    );
+    for binding in [&subject, &recovered_subject] {
+        assert_eq!(
+            registry.invoke_host_value::<u64, ()>(binding, owner, |_| panic!(
+                "cancelled callback must not execute"
+            )),
+            Err(HostResourceError::CancellationRequested)
+        );
+        assert_eq!(registry.declared_records(), before);
+        assert!(registry.has_host_value(&subject));
+        assert_eq!(registry.pending_operations(), 1);
+    }
+    assert!(matches!(
+        registry.invoke_host_value::<u64, ()>(&subject, OwnerGeneration::new(3), |_| panic!(
+            "stale callback must not execute"
+        )),
+        Err(HostResourceError::Model(ResourceError::StaleOwner { .. }))
+    ));
+    registry
+        .begin_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("cleanup: {error:?}"));
+    assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
+    assert!(machine.checkpoint().pending_operation().is_some());
+}
+
 /// Cancellation after physical binding must refuse a fresh loan without disposing its receiver.
 #[test]
 fn host_receiver_loan_admission_refuses_machine_cancellation() {
@@ -5842,6 +5902,15 @@ fn host_receiver_loan_admission_refuses_machine_cancellation() {
         .unwrap_or_else(|_| panic!("physical binding admits"));
     let before = resource.account().durable_record();
     assert!(machine.cancel("loan acquisition cancelled").is_some());
+    assert_eq!(
+        resource.invoke(OwnerGeneration::new(4), |value| {
+            *value += 1;
+            Ok(*value)
+        }),
+        Err(HostResourceError::CancellationRequested),
+        "fresh direct invocation must not bypass cancelled loan admission"
+    );
+    assert_eq!(resource.account().durable_record(), before);
     let live = transport_live(FIXTURE_DECLARATION, 0, 4, true);
     let preserved = live.clone();
     let (error, returned) = *resource

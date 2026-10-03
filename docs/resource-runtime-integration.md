@@ -215,6 +215,10 @@ return the value untouched. `invoke_host_value` checks the exact Rust type and a
 after provenance, owner and active/open checks, a poisoned bound adapter refuses with
 `HostResourceError::Operation(AdapterInstancePoisoned)` before executing the callback. Accounting,
 physical ownership and sibling usability remain unchanged; unused callback disposal stays contained.
+Eligible direct invocation also checks the admitted account's machine lease: recorded cancellation
+refuses with `CancellationRequested`, and an unreadable lease with `PendingOperation`. Recovered
+caller bindings cannot bypass this check. Admission linearizes under the lease, then releases it
+before integration or callback destruction; accepted callbacks and cleanup are not rolled back.
 physical attachment, invocation, presence inspection and disposal also require the binding's
 issuing execution/task to match the admitted account. `execution_id` and `task_id` retain machine
 provenance across checkpoint recovery without changing portable operation/generation identities.

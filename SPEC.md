@@ -15439,6 +15439,11 @@ returning both inputs untouched. An unreadable lease MUST refuse with `PendingOp
 than authorize acquisition. The check and physical binding MUST linearize against cancellation
 under that lease; binding MUST NOT close pending settlement or change accounting facts. Invocation MUST
 check current ownership and active lifetime before running a bounded synchronous callback.
+Fresh direct invocation MUST then check the admitted account's cancellation lease and refuse
+recorded cancellation with `CancellationRequested`, or an unreadable lease with `PendingOperation`.
+Admission linearizes under that lease, but callback execution and unused callback destruction MUST
+run after releasing it. Cancellation after admission MUST NOT undo the accepted callback; existing
+loan settlement and explicit cleanup remain available. Refusal MUST preserve accounting and ownership.
 Integration panics MUST be contained and poison the transport boundary without fabricating
 resource-poisoning evidence. Unused callbacks MUST be disposed under containment on every
 refusal, including an already-poisoned boundary, without executing their bodies. A callback
@@ -15503,6 +15508,10 @@ accounting and bindings, so semantic release cannot bypass the physical-access f
 Typed bounded synchronous invocation MUST retain account and containment fences, including contained unused
 callback destruction. After provenance, current-owner and active/open checks, a poisoned bound
 adapter MUST refuse physical invocation with `AdapterInstancePoisoned` before executing the callback.
+Eligible fresh registry invocation MUST check the admitted account's cancellation lease rather than
+a caller's recovered or speculative binding. Recorded cancellation and unreadable leases MUST
+refuse with `CancellationRequested` and `PendingOperation` respectively; integration and callback
+destruction MUST run outside that lease lock. Accepted callbacks and explicit cleanup remain separate.
 Refusal MUST retain accounting and physical ownership and leave unrelated adapters usable; unused
 callback destruction MUST retain containment and panic precedence. Accounting finalization MUST refuse while a physical value remains held.
 Contained destruction failure MUST remain recorded after the physical slot becomes empty;

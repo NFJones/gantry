@@ -258,6 +258,18 @@ impl<T> OwnedHostResource<T> {
         let Some(value) = self.value.as_mut() else {
             return self.refuse_callback(invoke, HostResourceError::Disposed);
         };
+        let subject = self.account.subject().clone();
+        let refusal = match subject.lock_admission() {
+            None => Some(HostResourceError::PendingOperation),
+            Some(lease) if lease.cancellation_requested => {
+                Some(HostResourceError::CancellationRequested)
+            }
+            Some(_) => None,
+        };
+        if let Some(error) = refusal {
+            return self.refuse_callback(invoke, error);
+        }
+        // The lease check linearizes admission; accepted callbacks run without the lease lock.
         invoke_contained(&self.poison, value, invoke)
     }
 
@@ -831,6 +843,12 @@ mod tests {
             .unwrap_or_else(|| panic!("unreadable loan lease refuses"));
         assert_eq!(error, HostResourceError::PendingOperation);
         assert_eq!(returned, preserved);
+        assert_eq!(
+            resource.invoke::<()>(OwnerGeneration::new(4), |_| panic!(
+                "unreadable lease cannot invoke"
+            )),
+            Err(HostResourceError::PendingOperation)
+        );
         assert_eq!(resource.account().durable_record(), record);
         assert!(!resource.loan_pending);
         assert!(!resource.is_poisoned());
