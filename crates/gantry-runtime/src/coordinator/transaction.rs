@@ -17,6 +17,14 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+/// One privately staged ownership mutation and its exact optional task handoff.
+struct StagedResourceOwner {
+    index: usize,
+    generations: (gantry_ir::OwnerGeneration, gantry_ir::OwnerGeneration),
+    charges: Vec<gantry_ir::Charge>,
+    handoff: Option<(ProtocolIdentity, ProtocolIdentity)>,
+}
+
 /// Exclusive staged machine, task, session, and budget successor.
 ///
 /// This primitive must be driven by a must-settle execution owner, not a public
@@ -44,11 +52,7 @@ pub struct DurableGraphTransaction<'a> {
         crate::ResourceFinishTransition,
         Vec<gantry_ir::Charge>,
     )>,
-    resource_owner: Option<(
-        usize,
-        (gantry_ir::OwnerGeneration, gantry_ir::OwnerGeneration),
-        Vec<gantry_ir::Charge>,
-    )>,
+    resource_owner: Option<StagedResourceOwner>,
     commit_started: bool,
     installed: bool,
     events: Vec<(
@@ -239,6 +243,30 @@ impl DurableGraphTransaction<'_> {
         generations: (gantry_ir::OwnerGeneration, gantry_ir::OwnerGeneration),
         charges: &[gantry_ir::Charge],
     ) -> Result<(), CoordinatorResourceRefusal> {
+        self.stage_resource_owner_using(subject, generations, charges, None)
+    }
+
+    /// Privately stages task-qualified cleanup handoff without changing issuing provenance.
+    /// Uses the original graph's task facts and rechecks them against live cancellation/closure.
+    /// No physical ownership or accepted-work lease is reconstructed by publication.
+    pub fn stage_resource_task_handoff(
+        &mut self,
+        subject: &crate::ResourceSubjectBinding,
+        tasks: (ProtocolIdentity, ProtocolIdentity),
+        generations: (gantry_ir::OwnerGeneration, gantry_ir::OwnerGeneration),
+        charges: &[gantry_ir::Charge],
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        self.stage_resource_owner_using(subject, generations, charges, Some(tasks))
+    }
+
+    /// Shares bounded mutation staging while keeping same-task and handoff evidence distinct.
+    fn stage_resource_owner_using(
+        &mut self,
+        subject: &crate::ResourceSubjectBinding,
+        generations: (gantry_ir::OwnerGeneration, gantry_ir::OwnerGeneration),
+        charges: &[gantry_ir::Charge],
+        handoff: Option<(ProtocolIdentity, ProtocolIdentity)>,
+    ) -> Result<(), CoordinatorResourceRefusal> {
         if charges.len() > crate::ResourceOwnerEvidenceV1::MAXIMUM_CHARGES
             || self.resource_finish.is_some()
             || self.resource_owner.is_some()
@@ -256,11 +284,44 @@ impl DurableGraphTransaction<'_> {
             .ok_or(CoordinatorResourceRefusal::Registry(
                 crate::ResourceRegistryRefusal::UnknownSubject,
             ))?;
-        let candidate = self.resource_records[index]
-            .stage_owner_advance(generations.0, generations.1, charges)
-            .map_err(CoordinatorResourceRefusal::Registry)?;
+        let candidate = if let Some(tasks) = handoff {
+            let state = lock(&self.coordinator.inner.state);
+            if state.resource_admission_closed {
+                return Err(CoordinatorResourceRefusal::ResourceAdmissionClosed);
+            }
+            // Process-local cancellation may race the reserved transaction; it must close handoff.
+            self.resource_records[index].stage_task_handoff(
+                &state.tasks,
+                tasks,
+                generations,
+                charges,
+            )?;
+            drop(state);
+            let recovered = self
+                .original_checkpoint
+                .clone()
+                .recover(self.staged_foreground.program_arc())
+                .map_err(|_| {
+                    CoordinatorResourceRefusal::Task(TaskStateError::InvalidTaskMachine)
+                })?;
+            self.resource_records[index].stage_task_handoff(
+                recovered.scheduler().state(),
+                tasks,
+                generations,
+                charges,
+            )?
+        } else {
+            self.resource_records[index]
+                .stage_owner_advance(generations.0, generations.1, charges)
+                .map_err(CoordinatorResourceRefusal::Registry)?
+        };
         self.resource_records[index] = candidate;
-        self.resource_owner = Some((index, generations, charges.to_vec()));
+        self.resource_owner = Some(StagedResourceOwner {
+            index,
+            generations,
+            charges: charges.to_vec(),
+            handoff,
+        });
         Ok(())
     }
 
@@ -510,7 +571,13 @@ impl DurableGraphTransaction<'_> {
                     self.commit_started = true;
                 })
                 .await?
-        } else if let Some((index, generations, charges)) = self.resource_owner.take() {
+        } else if let Some(StagedResourceOwner {
+            index,
+            generations,
+            charges,
+            handoff,
+        }) = self.resource_owner.take()
+        {
             if cut != DurableCommitCutV1::ResourceOwnerAdvance
                 || self.operation.is_some()
                 || !self.events.is_empty()
@@ -519,14 +586,34 @@ impl DurableGraphTransaction<'_> {
             {
                 return Err(DurableCommitError::InvalidState);
             }
-            let evidence = crate::ResourceOwnerEvidenceV1::new(
-                self.staged_foreground.program_arc(),
-                (*self.original_checkpoint).clone(),
-                checkpoint,
-                index,
-                generations,
-                &charges,
-            )
+            let evidence = if let Some(tasks) = handoff {
+                let state = lock(&self.coordinator.inner.state);
+                if state.resource_admission_closed {
+                    return Err(DurableCommitError::InvalidState);
+                }
+                self.original_checkpoint.resource_records()[index]
+                    .stage_task_handoff(&state.tasks, tasks, generations, &charges)
+                    .map_err(|_| DurableCommitError::InvalidState)?;
+                drop(state);
+                crate::ResourceOwnerEvidenceV1::new_task_handoff(
+                    self.staged_foreground.program_arc(),
+                    (*self.original_checkpoint).clone(),
+                    checkpoint,
+                    index,
+                    generations,
+                    tasks,
+                    &charges,
+                )
+            } else {
+                crate::ResourceOwnerEvidenceV1::new(
+                    self.staged_foreground.program_arc(),
+                    (*self.original_checkpoint).clone(),
+                    checkpoint,
+                    index,
+                    generations,
+                    &charges,
+                )
+            }
             .map_err(DurableCommitError::Evidence)?;
             staged_resources = Some(self.reconstruct_staged_resources()?);
             commits

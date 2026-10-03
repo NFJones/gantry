@@ -17,6 +17,362 @@ use gantry_ir::{
     ResourceCarrier, ResourceLedger, ResourceState, TaskBodyIdentity, TypeDescriptor, Workflow,
 };
 
+/// A task-qualified journal cut changes cleanup ownership, not the issuing machine or history.
+#[test]
+fn durable_resource_handoff_preserves_exact_graph_and_task_eligibility() {
+    let (base, original, _, original_program) = join_fixture_with_program();
+    let execution = original.execution_id();
+    let path = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+    let action = CanonicalPath::new("crate::handoff_resource")
+        .unwrap_or_else(|error| panic!("action: {error}"));
+    let mut workflows = original_program.workflows().to_vec();
+    workflows[0].instructions[1].kind = InstructionKind::OperationCall {
+        operation: ExecutableOperation {
+            kind: OperationSiteKind::Action,
+            section20_kind: Some(OperationKind::LiveResource),
+            result_type: TypeDescriptor::UNIT,
+            action: Some(ExecutableAction {
+                path: action.clone(),
+                signature: CanonicalSignature::action(
+                    RecoveryClass::Idempotent,
+                    &action,
+                    &[],
+                    &TypeDescriptor::UNIT,
+                ),
+                recovery: RecoveryClass::Idempotent,
+                parameters: vec![],
+            }),
+            template_segments: vec![],
+            interpolation_types: vec![],
+            named_input_names: vec![],
+            named_input_types: vec![],
+            retry_limit: None,
+            session_mode: None,
+            attempted: false,
+        },
+        operands: 0,
+    };
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(
+            original_program
+                .callable_identities()
+                .iter()
+                .cloned()
+                .zip(workflows)
+                .collect(),
+            original_program.task_bodies().to_vec(),
+        )
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let (mut tasks, mut sessions) = {
+        let state = lock(&base.inner.state);
+        (state.tasks.clone(), state.sessions.clone())
+    };
+    let session = base.snapshot().sessions()[0].id;
+    let limits = original.checkpoint().machine_limits();
+    let mut root = Machine::new_with_context(
+        Arc::clone(&program),
+        &path,
+        vec![],
+        execution,
+        limits,
+        None,
+        Some(session),
+    )
+    .unwrap_or_else(|error| panic!("root: {error:?}"));
+    let spawn = match root.step() {
+        MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(spawn)) => spawn,
+        other => panic!("spawn: {other:?}"),
+    };
+    let created = tasks
+        .create_child(
+            &mut sessions,
+            crate::TaskCreationRequestV1 {
+                parent_task_id: root.task_id(),
+                handle_name: Arc::from(spawn.handle.name()),
+                workflow: spawn.workflow.clone(),
+                spawn_site: spawn.site.clone(),
+                spawn_occurrence: spawn.occurrence,
+                result_type: spawn.handle.result_type().clone(),
+                captures: vec![],
+                inherited_agent: None,
+                parent_session_id: session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("child: {error:?}"));
+    tasks
+        .resolve_submission(created.task_id, Ok(()))
+        .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    root.complete_spawn(&spawn, created.handle_id)
+        .unwrap_or_else(|error| panic!("complete spawn: {error:?}"));
+    let child = Machine::new_concurrent_task_body_with_context(
+        Arc::clone(&program),
+        &spawn.body,
+        &[],
+        execution,
+        created.task_id,
+        Arc::from(
+            tasks
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("child record"))
+                .task_path(),
+        ),
+        limits,
+        root.execution_budget(),
+        None,
+        Some(created.base_session_id),
+    )
+    .unwrap_or_else(|error| panic!("child machine: {error:?}"));
+    let mut children = BTreeMap::from([(created.task_id, child)]);
+    let coordinator = ExecutionCoordinator::new_with_budget_and_accounting_limits(
+        tasks,
+        sessions,
+        root.execution_budget(),
+        1,
+        1,
+        1,
+    )
+    .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+    assert!(matches!(
+        root.step(),
+        MachineStep::Transition(crate::MachineLabel::OperationPrepared(_))
+    ));
+    let subject = root
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("subject"));
+    let owner = OwnerGeneration::new(4);
+    let successor = OwnerGeneration::new(5);
+    let record = ResourceLedger::new(
+        owner,
+        ResourceState::Usable,
+        &[LivenessRoot::Resource],
+        &[(
+            gantry_ir::QuotaOwner::Owner,
+            gantry_ir::QuotaFamily::Bytes,
+            gantry_ir::Quota::new(8, 0),
+        )],
+    )
+    .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+    coordinator
+        .admit_resource_with_issuing_evidence(
+            &root,
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    coordinator
+        .settle_resource_containment(
+            &subject,
+            owner,
+            gantry_ir::Completion::observed(
+                gantry_ir::ExternalOutcome::Accepted,
+                gantry_ir::EffectState::NotStarted,
+            ),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    let operation = root
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("operation"))
+        .identity;
+    root.fail_operation(
+        operation,
+        gantry_core::portable::RuntimeErrorCategory::ExecutorFailure,
+    )
+    .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    let previous = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("capture: {error:?}"));
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal = JournalId::new("durable-resource-task-handoff")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let ownership = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("ownership: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), ownership.token);
+    let source = root.task_id();
+    let mut writer = DurableCommitCoordinatorV1::new(&sink, execution, source, None)
+        .unwrap_or_else(|error| panic!("writer: {error:?}"));
+    ready(writer.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, source, previous.clone()))
+        .unwrap_or_else(|error| panic!("base: {error:?}"));
+    let charge = gantry_ir::Charge {
+        owner: gantry_ir::QuotaOwner::Owner,
+        family: gantry_ir::QuotaFamily::Bytes,
+        amount: 2,
+    };
+    let before = coordinator.snapshot();
+    let machine_before = root.checkpoint();
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage: {error:?}"));
+    assert_eq!(
+        stage.stage_resource_task_handoff(
+            &subject,
+            (source, source),
+            (owner, successor),
+            &[charge]
+        ),
+        Err(CoordinatorResourceRefusal::SameTaskTransfer)
+    );
+    stage
+        .stage_resource_task_handoff(
+            &subject,
+            (source, created.task_id),
+            (owner, successor),
+            &[charge],
+        )
+        .unwrap_or_else(|error| panic!("handoff: {error:?}"));
+    drop(stage);
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(root.checkpoint(), machine_before);
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("publish stage: {error:?}"));
+    stage
+        .stage_resource_task_handoff(
+            &subject,
+            (source, created.task_id),
+            (owner, successor),
+            &[charge],
+        )
+        .unwrap_or_else(|error| panic!("publish candidate: {error:?}"));
+    ready(stage.commit(
+        &mut writer,
+        DurableCommitCutV1::ResourceOwnerAdvance,
+        created.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("commit: {error:?}"));
+    assert_eq!(
+        coordinator.snapshot().publication(),
+        before.publication() + 1
+    );
+    assert_eq!(root.checkpoint(), machine_before);
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal,
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let replay = crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &prefix)
+        .unwrap_or_else(|error| panic!("replay: {error:?}"));
+    let current = replay
+        .execution()
+        .capture_replayed_checkpoint()
+        .unwrap_or_else(|error| panic!("replay capture: {error:?}"));
+    assert_eq!(current.resource_records()[0].task_owner(), created.task_id);
+    assert_eq!(current.resource_records()[0].subject(), &subject);
+    assert_eq!(current.resource_records()[0].owner(), successor);
+    assert_eq!(
+        current.resource_records()[0].issuing_evidence(),
+        previous.resource_records()[0].issuing_evidence()
+    );
+    assert_eq!(
+        current.resource_records()[0].containment_evidence(),
+        previous.resource_records()[0].containment_evidence()
+    );
+    assert!(
+        crate::ResourceOwnerEvidenceV1::new(
+            Arc::clone(&program),
+            previous.clone(),
+            current.clone(),
+            0,
+            (owner, successor),
+            &[charge]
+        )
+        .is_err()
+    );
+    let evidence = crate::ResourceOwnerEvidenceV1::new_task_handoff(
+        Arc::clone(&program),
+        previous.clone(),
+        current.clone(),
+        0,
+        (owner, successor),
+        (source, created.task_id),
+        &[charge],
+    )
+    .unwrap_or_else(|error| panic!("exact handoff evidence: {error:?}"));
+    for tasks in [(source, source), (created.task_id, source)] {
+        assert!(
+            crate::ResourceOwnerEvidenceV1::new_task_handoff(
+                Arc::clone(&program),
+                previous.clone(),
+                current.clone(),
+                0,
+                (owner, successor),
+                tasks,
+                &[charge],
+            )
+            .is_err(),
+            "task eligibility must derive from the predecessor"
+        );
+    }
+    let encoded = evidence
+        .encode(4_194_304)
+        .unwrap_or_else(|error| panic!("encode: {error:?}"));
+    assert_eq!(&encoded[..8], b"GNTRWA02");
+    assert_eq!(
+        evidence.journal_kind(),
+        crate::RESOURCE_OWNER_EVIDENCE_KIND_V2
+    );
+    assert_eq!(
+        crate::ResourceOwnerEvidenceV1::decode(
+            Arc::clone(&program),
+            &encoded,
+            encoded.len() as u64
+        ),
+        Ok(evidence.clone())
+    );
+    assert!(evidence.encode(encoded.len() as u64 - 1).is_err());
+    assert!(
+        crate::ResourceOwnerEvidenceV1::decode(
+            Arc::clone(&program),
+            &encoded,
+            encoded.len() as u64 - 1,
+        )
+        .is_err()
+    );
+    for offset in [0, 15, 23, 31, 32, 40] {
+        let mut corrupt = encoded.clone();
+        corrupt[offset] ^= 0xff;
+        assert!(
+            crate::ResourceOwnerEvidenceV1::decode(
+                Arc::clone(&program),
+                &corrupt,
+                encoded.len() as u64,
+            )
+            .is_err(),
+            "altered handoff framing or identity at {offset}"
+        );
+    }
+    let JournalPrefixV1::Full(full) = &prefix else {
+        panic!("full handoff prefix")
+    };
+    for payload in [false, true] {
+        let mut invalid = full.clone();
+        let mut entries = invalid.evidence.to_vec();
+        let last = entries
+            .last_mut()
+            .unwrap_or_else(|| panic!("handoff entry"));
+        if payload {
+            last.protected_payloads = Arc::from([JournalPayloadKey::new("unexpected-handoff")
+                .unwrap_or_else(|error| panic!("payload: {error:?}"))]);
+        } else {
+            last.kind = Arc::from(crate::RESOURCE_OWNER_EVIDENCE_KIND_V1);
+        }
+        invalid.evidence = entries.into();
+        assert!(
+            crate::recover_concurrent_authoritative_prefix(
+                Arc::clone(&program),
+                &JournalPrefixV1::Full(invalid),
+            )
+            .is_err(),
+            "handoff must reject kind substitution and undeclared payloads"
+        );
+    }
+}
+
 /// Probes publication from inside a wake callback to catch lock-held notification.
 struct SettlementWake {
     coordinator: ExecutionCoordinator,

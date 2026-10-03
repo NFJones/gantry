@@ -15402,7 +15402,18 @@ MUST be distinct known running tasks without task or execution cancellation. Cur
 and existing transfer obligations MUST validate before atomic Move charging and generation advancement.
 Success changes only cleanup task, current owner and explicit quota use, preserving issuing provenance
 and historical evidence. Refusal MUST preserve the source. This grants no physical transfer or journal
-task-handoff cut; the same-task ownership carrier MUST NOT authorize changing cleanup tasks.
+publication by itself; the same-task ownership carrier MUST NOT authorize changing cleanup tasks.
+
+`ResourceOwnerEvidenceV1::new_task_handoff` MAY validate one exact cleanup-task handoff using task
+facts recovered from its complete predecessor graph, never a substituted caller snapshot. Source and
+destination MUST be distinct known running uncancelled tasks and the source MUST own cleanup.
+`GNTRWA02` MUST retain both task identities with the bounded authored Move vector; its journal kind
+MUST be `gantry.resource-owner-evidence/v2`, with exact kind/carrier correspondence. Same-task
+`GNTRWA01` bytes remain unchanged. `stage_resource_task_handoff` MAY privately stage this transition
+under `ResourceOwnerAdvance`, rechecking live cancellation and admission closure before submission.
+Only a validated receipt MAY install cleanup task, generation and quota use together. The existing
+authoritative predecessor, rollback, indeterminate fencing, empty protected-payload list and 4 MiB
+journal limits apply. This supplies no source-handle transfer, physical transfer or accepted-work recovery.
 
 `ResourceOwnerEvidenceV1` MAY validate exactly one same-cleanup-task owner advancement between
 complete executable-validated graphs. Applying the owner-qualified candidate and explicit Move

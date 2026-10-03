@@ -150,8 +150,16 @@ durable publication requires the exact ownership cut below, not ordinary graph-i
 task-state snapshot: matching execution, distinct known running tasks and no cancellation precede
 current cleanup-owner and transfer checks. Move charges, generation and cleanup task change together
 only in the candidate; issuing provenance and containment history remain unchanged. The caller
-authenticates the snapshot and authority. This enables no physical transfer or journal handoff cut,
+authenticates the snapshot and authority. This enables no physical transfer or journal publication by itself,
 and the same-task ownership carrier still rejects cleanup-task changes.
+
+`new_task_handoff` derives eligibility from tasks recovered from the exact predecessor graph.
+`GNTRWA02` retains source/destination tasks and authored Move charges under the same vector and
+4 MiB journal limits, selecting `gantry.resource-owner-evidence/v2`. Kind/carrier correspondence
+prevents relabeling same-task evidence. `stage_resource_task_handoff` privately stages the candidate
+and rechecks live cancellation and admission closure before submission; cleanup task, generation
+and quota use install together only after a validated receipt. Existing rollback and indeterminate
+publication fencing remain intact. No physical, source-handle or accepted-work recovery is supplied.
 
 `ResourceOwnerEvidenceV1` reproduces one same-cleanup-task advancement between executable-validated
 complete graphs. Its `GNTRWA01` carrier retains the authored Move vector under a 128-member limit

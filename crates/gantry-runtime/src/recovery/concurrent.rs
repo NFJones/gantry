@@ -2846,22 +2846,28 @@ pub fn recover_concurrent_authoritative_prefix(
                 | super::RESOURCE_FINISH_EVIDENCE_KIND_V1
                 | super::RESOURCE_FINISH_EVIDENCE_KIND_V2
                 | super::RESOURCE_OWNER_EVIDENCE_KIND_V1
+                | super::RESOURCE_OWNER_EVIDENCE_KIND_V2
         ) {
             let evidence = if envelope.kind.as_ref() == CONCURRENT_DURABLE_EVIDENCE_KIND_V4 {
                 let evidence =
                     ConcurrentDurableEvidenceV4::decode(&program, &envelope.canonical_body)?;
                 ConcurrentDurableEvidenceBody::V4(Box::new(evidence))
-            } else if envelope.kind.as_ref() == super::RESOURCE_OWNER_EVIDENCE_KIND_V1 {
+            } else if matches!(
+                envelope.kind.as_ref(),
+                super::RESOURCE_OWNER_EVIDENCE_KIND_V1 | super::RESOURCE_OWNER_EVIDENCE_KIND_V2
+            ) {
                 if !envelope.protected_payloads.is_empty() {
                     return Err(DurableEvidenceError::Encoding);
                 }
-                ConcurrentDurableEvidenceBody::Owner(Box::new(
-                    super::ResourceOwnerEvidenceV1::decode(
-                        Arc::clone(&program),
-                        &envelope.canonical_body,
-                        super::resource_owner::MAXIMUM_RESOURCE_OWNER_EVIDENCE_BYTES,
-                    )?,
-                ))
+                let owner = super::ResourceOwnerEvidenceV1::decode(
+                    Arc::clone(&program),
+                    &envelope.canonical_body,
+                    super::resource_owner::MAXIMUM_RESOURCE_OWNER_EVIDENCE_BYTES,
+                )?;
+                if owner.journal_kind() != envelope.kind.as_ref() {
+                    return Err(DurableEvidenceError::Encoding);
+                }
+                ConcurrentDurableEvidenceBody::Owner(Box::new(owner))
             } else if matches!(
                 envelope.kind.as_ref(),
                 super::RESOURCE_FINISH_EVIDENCE_KIND_V1 | super::RESOURCE_FINISH_EVIDENCE_KIND_V2
