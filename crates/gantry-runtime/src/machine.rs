@@ -6185,17 +6185,7 @@ fn length_value(length: usize) -> Result<LogicalValue, RuntimeCode> {
 }
 
 fn parse_int(value: &str) -> Option<GantryInt> {
-    if value == "0" {
-        return GantryInt::new(0);
-    }
-    let unsigned = value.strip_prefix('-').unwrap_or(value);
-    if unsigned.starts_with('0')
-        || unsigned.is_empty()
-        || !unsigned.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return None;
-    }
-    value.parse::<i64>().ok().and_then(GantryInt::new)
+    gantry_ir::parse_canonical_int(value)
 }
 
 fn parse_float(value: &str) -> Option<GantryFloat> {

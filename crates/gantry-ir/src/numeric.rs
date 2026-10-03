@@ -93,6 +93,12 @@ pub fn format_canonical_int(value: GantryInt) -> String {
 /// domain is refused rather than normalized.
 #[must_use]
 pub fn parse_canonical_int(text: &str) -> Option<GantryInt> {
+    // The fixed canonical domain has at most sixteen decimal magnitude digits.
+    // Refuse impossible sizes before any content scan or formatting allocation.
+    let magnitude = text.strip_prefix('-').unwrap_or(text);
+    if magnitude.len() > 16 {
+        return None;
+    }
     let value = GantryInt::new(text.parse::<i64>().ok()?)?;
     (format_canonical_int(value) == text).then_some(value)
 }

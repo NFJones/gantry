@@ -111,6 +111,9 @@ fn canonical_numeric_text_round_trips_exactly() {
     }
     assert_eq!(format_canonical_int(element(0)), "0");
     assert_eq!(format_canonical_int(element(-7)), "-7");
+    for oversized in ["9".repeat(1_048_576), format!("-{}", "9".repeat(1_048_576))] {
+        assert_eq!(parse_canonical_int(&oversized), None);
+    }
     for refused in [
         "+1",
         "01",
