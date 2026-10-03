@@ -12155,7 +12155,9 @@ derived from its action path, recovery class, declaration-order parameters and s
 type. Present action metadata MUST belong to an action-kind operation, and its operand count MUST
 equal the declared parameter count. Every metadata-bearing operation instruction MUST consume
 its declared successful result type, or exactly `Result<successful-result, OperationError>` when
-attempted; neither result nor sealed error type may be substituted. Contradictory workflow metadata
+attempted; neither result nor sealed error type may be substituted. Prompt and decision instructions
+MUST also refuse when named input names and types differ in count, or when the operand count differs
+from the checked sum of interpolation and named inputs. Contradictory workflow metadata
 MUST refuse with `InvalidOperationMetadata`; spawned-body
 validation wraps that refusal as `InvalidTaskBody`. Both MUST refuse before machine execution;
 retained decoding MUST NOT silently repair an in-memory contradiction. This consistency check

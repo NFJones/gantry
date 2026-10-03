@@ -16,6 +16,8 @@ carried it and no machine-retained metadata recorded it. This note records what 
   action metadata also requires an action-kind operation and the declared parameter count as its
   operand count. Every metadata-bearing instruction requires the same successful result type,
   or its exact `Result<successful-result, OperationError>` wrapper for an attempted operation. A
+  model operation also requires matching named-input name/type counts and an operand count equal
+  to the checked sum of interpolation and named inputs. A
   workflow contradiction refuses with `InvalidOperationMetadata`; spawned-body validation wraps
   it as `InvalidTaskBody`, rather than changing meaning when the
   retained codec reconstructs the signature. This is consistency validation, not authentication

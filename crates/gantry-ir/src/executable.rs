@@ -1055,6 +1055,21 @@ fn validate_instruction(
         InstructionKind::OperationCall {
             operation,
             operands,
+        } if matches!(
+            operation.kind,
+            OperationSiteKind::Prompt | OperationSiteKind::Decide
+        ) && (operation.named_input_names.len() != operation.named_input_types.len()
+            || operation
+                .interpolation_types
+                .len()
+                .checked_add(operation.named_input_types.len())
+                != Some(*operands)) =>
+        {
+            return Err(ProgramError::InvalidOperationMetadata(workflow.clone()));
+        }
+        InstructionKind::OperationCall {
+            operation,
+            operands,
         } if operation.action.as_ref().is_some_and(|action| {
             operation.kind != OperationSiteKind::Action
                 || *operands != action.parameters.len()
@@ -1390,6 +1405,29 @@ mod tests {
         assert!(
             admit_result(operation.clone(), TypeDescriptor::BOOL).is_err(),
             "instruction type cannot substitute for the declared successful result"
+        );
+        let mut model = operation.clone();
+        model.kind = OperationSiteKind::Prompt;
+        model.action = None;
+        model.template_segments = vec![Arc::from("literal")];
+        assert!(admit_result(model.clone(), TypeDescriptor::UNIT).is_ok());
+        model.named_input_names = vec![Arc::from("input")];
+        assert!(
+            admit_result(model.clone(), TypeDescriptor::UNIT).is_err(),
+            "model input names must have matching declared types"
+        );
+        model.named_input_types = vec![TypeDescriptor::INT];
+        assert!(
+            admit_result(model.clone(), TypeDescriptor::UNIT).is_err(),
+            "model operand count must cover every declared input"
+        );
+        model.named_input_names.clear();
+        model.named_input_types.clear();
+        model.interpolation_types = vec![TypeDescriptor::INT];
+        model.template_segments = vec![Arc::from("before"), Arc::from("after")];
+        assert!(
+            admit_result(model, TypeDescriptor::UNIT).is_err(),
+            "model operand count must cover every interpolation"
         );
         let mut attempted = operation;
         attempted.attempted = true;
