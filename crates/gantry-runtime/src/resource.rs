@@ -605,6 +605,8 @@ pub struct ResourceRegistry {
     retained_limit: Option<u64>,
     pending_admissions: Vec<Arc<Mutex<crate::machine::ResourceOperationLease>>>,
     adapter_faults: PoisonLedger,
+    adapter_identity_limit: Option<u64>,
+    adapter_identities: std::collections::BTreeSet<Arc<str>>,
 }
 
 /// Runtime storage identity, ordered by portable subject then issuing execution and task.
@@ -775,6 +777,8 @@ impl ResourceRegistry {
             retained_limit: None,
             pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
+            adapter_identity_limit: None,
+            adapter_identities: std::collections::BTreeSet::new(),
         }
     }
 
@@ -793,6 +797,8 @@ impl ResourceRegistry {
             retained_limit: None,
             pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
+            adapter_identity_limit: None,
+            adapter_identities: std::collections::BTreeSet::new(),
         }
     }
 
@@ -824,6 +830,30 @@ impl ResourceRegistry {
     #[must_use]
     pub const fn retained_limit(&self) -> Option<u64> {
         self.retained_limit
+    }
+
+    /// Creates accounting with a finite lifetime ceiling on distinct adapter identities.
+    ///
+    /// Successful bindings reserve places permanently, including after account reclamation,
+    /// so later poisoning always retains its one-way identity fence. Aliases share a place.
+    #[must_use]
+    pub fn with_adapter_identity_limit(limit: u64) -> Self {
+        Self {
+            adapter_identity_limit: Some(limit),
+            ..Self::new()
+        }
+    }
+
+    /// Returns the separately declared adapter identity ceiling, when enabled.
+    #[must_use]
+    pub const fn adapter_identity_limit(&self) -> Option<u64> {
+        self.adapter_identity_limit
+    }
+
+    /// Counts reserved distinct adapter identities, not active bindings or poison reasons.
+    #[must_use]
+    pub fn retained_adapter_identities(&self) -> u64 {
+        u64::try_from(self.adapter_identities.len()).unwrap_or(u64::MAX)
     }
 
     /// Counts all accounts still held by the registry, independently of semantic lifetime.
@@ -1297,6 +1327,8 @@ impl ResourceRegistry {
             retained_limit,
             pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
+            adapter_identity_limit: None,
+            adapter_identities: std::collections::BTreeSet::new(),
         })
     }
 
@@ -1309,6 +1341,7 @@ impl ResourceRegistry {
         !self.accounts.is_empty()
             || !self.physical.is_empty()
             || self.adapter_faults != PoisonLedger::new()
+            || self.adapter_identity_limit.is_some()
             || self.pending_operations() != 0
     }
 
@@ -1382,6 +1415,7 @@ impl ResourceRegistry {
     ) -> Result<Vec<Vec<u8>>, ResourceRecoveryEnvelopeError> {
         if !self.physical.is_empty()
             || !self.adapter_faults.is_empty()
+            || self.adapter_identity_limit.is_some()
             || self.pending_operations() != 0
             || self.accounts.values().any(|account| {
                 account.adapter_instance().is_some()
@@ -2092,9 +2126,20 @@ impl ResourceRegistry {
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
         require_subject_provenance(account, subject)?;
-        account
-            .bind_adapter_instance(presented_owner, instance)
-            .map_err(ResourceRegistryRefusal::AdapterBinding)
+        let candidate = account
+            .validated_adapter_binding(presented_owner, instance)
+            .map_err(ResourceRegistryRefusal::AdapterBinding)?;
+        if let Some(limit) = self.adapter_identity_limit
+            && !self.adapter_identities.contains(candidate.as_str())
+        {
+            if u64::try_from(self.adapter_identities.len()).map_or(true, |count| count >= limit) {
+                return Err(ResourceRegistryRefusal::AdapterIdentityLimitReached { limit });
+            }
+            self.adapter_identities
+                .insert(Arc::from(candidate.as_str()));
+        }
+        account.adapter = Some(candidate);
+        Ok(())
     }
 
     /// Returns the adapter instance bound to one admitted account, when one is bound.
@@ -2311,6 +2356,11 @@ pub enum ResourceRegistryRefusal {
     Containment(ContainmentError),
     /// The account's own adapter binding, replacement, or poisoning refused the request.
     AdapterBinding(AdapterBindingRefusal),
+    /// A new adapter identity would exceed the lifetime reservation ceiling.
+    AdapterIdentityLimitReached {
+        /// The declared ceiling.
+        limit: u64,
+    },
     /// The registry's declared live-resource limit is already reached.
     LiveResourceLimitReached {
         /// The declared limit.
@@ -2690,6 +2740,16 @@ impl AdmittedResource {
         presented_owner: OwnerGeneration,
         instance: AdapterInstance,
     ) -> Result<(), AdapterBindingRefusal> {
+        self.adapter = Some(self.validated_adapter_binding(presented_owner, instance)?);
+        Ok(())
+    }
+
+    /// Validates a proposed binding without changing the current adapter or identity reservations.
+    fn validated_adapter_binding(
+        &self,
+        presented_owner: OwnerGeneration,
+        instance: AdapterInstance,
+    ) -> Result<AdapterInstance, AdapterBindingRefusal> {
         self.require_current_owner(presented_owner)
             .map_err(AdapterBindingRefusal::StaleOwner)?;
         if instance.is_poisoned() {
@@ -2707,20 +2767,16 @@ impl AdmittedResource {
             ));
         }
         match &self.adapter {
-            Some(held) => {
-                let replacement = held
-                    .substitute(
-                        instance.implementation(),
-                        instance.rights(),
-                        instance.generation(),
-                        instance.binding_sequence(),
-                    )
-                    .map_err(AdapterBindingRefusal::Substitution)?;
-                self.adapter = Some(replacement);
-            }
-            None => self.adapter = Some(instance),
+            Some(held) => held
+                .substitute(
+                    instance.implementation(),
+                    instance.rights(),
+                    instance.generation(),
+                    instance.binding_sequence(),
+                )
+                .map_err(AdapterBindingRefusal::Substitution),
+            None => Ok(instance),
         }
-        Ok(())
     }
 
     /// Poisons this account's bound adapter instance through one model reason ledger.

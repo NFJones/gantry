@@ -11679,6 +11679,138 @@ fn adapter_instance(name: &str, generation: u64, binding_sequence: u64) -> Adapt
 /// replaced only through the model's own substitution rule, poisoned once through the model's own
 /// one-way poison and reason ledger, and refused as unbound when no instance is bound.
 #[test]
+fn adapter_identity_capacity_retains_failed_fences_after_reclamation() {
+    let subject = active_subject();
+    let sibling = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let owner = OwnerGeneration::new(4);
+    let first = adapter_instance("bounded_adapter", 4, 0);
+    let mut registry = ResourceRegistry::with_adapter_identity_limit(1);
+    assert_eq!(registry.adapter_identity_limit(), Some(1));
+    for binding in [&subject, &sibling] {
+        registry
+            .admit(
+                binding.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admit: {error:?}"));
+        registry
+            .bind_adapter_instance(binding, owner, first.clone())
+            .unwrap_or_else(|error| panic!("alias binding: {error:?}"));
+    }
+    assert_eq!(registry.retained_adapter_identities(), 1);
+    let before = registry.declared_records();
+    let before_binding = registry.adapter_instance(&subject).cloned();
+    assert!(matches!(
+        registry.bind_adapter_instance(
+            &subject,
+            OwnerGeneration::new(3),
+            adapter_instance("other", 5, 1)
+        ),
+        Err(ResourceRegistryRefusal::AdapterBinding(
+            AdapterBindingRefusal::StaleOwner(_)
+        ))
+    ));
+    assert_eq!(
+        registry.bind_adapter_instance(&subject, owner, adapter_instance("other", 5, 1)),
+        Err(ResourceRegistryRefusal::AdapterIdentityLimitReached { limit: 1 })
+    );
+    assert_eq!(registry.adapter_instance(&subject).cloned(), before_binding);
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(
+        registry.poison_adapter_instance(&subject, owner, PoisonReason::AmbiguousEffect),
+        Ok(PoisonReason::AmbiguousEffect)
+    );
+    assert_eq!(
+        registry.poison_adapter_instance(&subject, owner, PoisonReason::InvariantFailure),
+        Ok(PoisonReason::AmbiguousEffect)
+    );
+    assert!(
+        registry
+            .adapter_instance(&sibling)
+            .unwrap_or_else(|| panic!("alias"))
+            .is_poisoned()
+    );
+    registry
+        .begin_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("finish: {error:?}"));
+    registry
+        .complete_finalization(&subject, owner, 20)
+        .unwrap_or_else(|error| panic!("finalize: {error:?}"));
+    for root in ROOTS {
+        registry
+            .close_liveness_root(&subject, owner, *root)
+            .unwrap_or_else(|error| panic!("close: {error:?}"));
+    }
+    registry
+        .retire(
+            &subject,
+            RetentionFence::new(2, 10).unwrap_or_else(|error| panic!("fence: {error:?}")),
+            owner,
+            OwnerGeneration::new(5),
+            35,
+        )
+        .unwrap_or_else(|error| panic!("retire: {error:?}"));
+    registry
+        .delete(&subject, owner)
+        .unwrap_or_else(|error| panic!("delete: {error:?}"));
+    assert_eq!(registry.reap_deleted(), 1);
+    assert_eq!(registry.retained_adapter_identities(), 1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("readmit: {error:?}"));
+    assert!(matches!(
+        registry.bind_adapter_instance(&subject, owner, first),
+        Err(ResourceRegistryRefusal::AdapterBinding(
+            AdapterBindingRefusal::Substitution(OperationAbiError::AdapterInstancePoisoned { .. })
+        ))
+    ));
+    assert_eq!(
+        registry.bind_adapter_instance(&subject, owner, adapter_instance("new", 4, 0)),
+        Err(ResourceRegistryRefusal::AdapterIdentityLimitReached { limit: 1 })
+    );
+    let mut zero = ResourceRegistry::with_adapter_identity_limit(0);
+    zero.admit(
+        subject.clone(),
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+    )
+    .unwrap_or_else(|error| panic!("zero accounting: {error:?}"));
+    assert_eq!(
+        zero.bind_adapter_instance(&subject, owner, adapter_instance("zero", 4, 0)),
+        Err(ResourceRegistryRefusal::AdapterIdentityLimitReached { limit: 0 })
+    );
+    assert_eq!(zero.retained_adapter_identities(), 0);
+    assert_eq!(ResourceRegistry::new().adapter_identity_limit(), None);
+    let mut replacement = ResourceRegistry::with_adapter_identity_limit(2);
+    replacement
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("replacement accounting: {error:?}"));
+    replacement
+        .bind_adapter_instance(&subject, owner, adapter_instance("replacement", 4, 0))
+        .unwrap_or_else(|error| panic!("first binding: {error:?}"));
+    replacement
+        .bind_adapter_instance(&subject, owner, adapter_instance("replacement", 5, 1))
+        .unwrap_or_else(|error| panic!("replacement binding: {error:?}"));
+    assert_eq!(replacement.retained_adapter_identities(), 2);
+    let held = replacement.adapter_instance(&subject).cloned();
+    assert_eq!(
+        replacement.bind_adapter_instance(&subject, owner, adapter_instance("replacement", 6, 2)),
+        Err(ResourceRegistryRefusal::AdapterIdentityLimitReached { limit: 2 })
+    );
+    assert_eq!(replacement.adapter_instance(&subject).cloned(), held);
+}
+
+/// Existing adapter binding remains owner-qualified without an opt-in identity ceiling.
+#[test]
 fn runtime_adapter_binding_is_owner_fenced_and_poisons_once() {
     let subject = active_subject();
     let owner = OwnerGeneration::new(4);

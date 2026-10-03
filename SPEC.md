@@ -15193,6 +15193,16 @@ excess records MUST refuse without publishing a partial registry or fabricating 
 Enabled empty-registry retained-account policy MUST use `GNTCDP07` carriage rather than
 silently omitting the ceiling; legacy empty-registry policy carriage remains available.
 
+A registry MAY separately declare a finite adapter-identity ceiling through
+`with_adapter_identity_limit`. Successful binding or substitution MUST reserve each distinct
+accepted identity before publishing the binding; aliases consume no additional place. Existing
+subject, owner and substitution checks MUST precede capacity admission. Excess identities MUST
+refuse `AdapterIdentityLimitReached` without changing bindings, accounting or reservations.
+Reservations MUST survive settlement and account reclamation so later poisoning never discards
+a failed-identity reuse fence. Existing constructors leave this policy absent. Current graph and
+envelope capture MUST refuse configured adapter-identity policy, even when empty, rather than
+silently omit it; this policy grants no authority or durable adapter reconstruction.
+
 A registry's storage subject MUST qualify portable operation/resource-generation identity with
 the issuing execution and task. Equal portable identities from independent task-local counters
 MUST remain separate accounts and physical slots, each counted against the same registry ceiling.

@@ -41,6 +41,13 @@ without consuming physical inputs or publishing pending capacity. Existing const
 this policy disabled. `new_with_budget_and_accounting_limits` exposes it through coordinator
 ownership. Empty retained-account policy uses `GNTCDP07` to preserve its exact ceiling;
 ordinary v6 empty-policy carriage is unchanged. Eligible accounting records use version-eight carriage below.
+`with_adapter_identity_limit(limit)` separately caps distinct accepted adapter identities over
+the registry lifetime. Bindings and substitutions validate existing fences before reserving a
+place; aliases share a place and refusals preserve bindings and accounting. Reservations survive
+account reclamation so poisoning can always retain failed-identity fences. `adapter_identity_limit`
+and `retained_adapter_identities` inspect this policy and its occupancy. Legacy constructors leave
+it absent. Configured policy currently refuses graph/envelope capture even when empty, because
+those wires cannot retain it; it enables no host authority or durable adapter reconstruction.
 Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.
