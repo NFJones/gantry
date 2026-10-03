@@ -26,57 +26,43 @@
 
 ***
 
-Gantry is a language for orchestrating model-backed agents and
-typed host capabilities. It makes the work that crosses an agent integration
-boundary explicit, so an agent workflow can be read, reviewed, validated, and
-run with clear control-flow and recovery semantics.
+Gantry is a typed language for orchestrating model-backed agents and
+host-provided tools. It makes model requests, tool calls, and ordinary control
+flow explicit, so workflows can be read, reviewed, and validated before
+execution rather than hidden inside ad hoc integration code.
 
-A Gantry program uses ordinary typed expressions for deterministic work and
-three visible operations for agent integration-backed work:
+This repository contains the language specification, a Rust implementation,
+a command-line tool, and a library for embedding Gantry in a host application.
+Workflow authors describe the work; application developers supply the models,
+tools, and credentials through the host.
+
+A Gantry program combines ordinary typed expressions with three visible
+integration operations:
 
 - `prompt` asks a selected agent to produce a value that satisfies a declared
   type.
 - `decide` asks an agent for a structured judgment that can guide control
   flow.
-- `action` invokes a typed capability supplied by the embedding harness.
+- `action` invokes a typed capability supplied by the host.
 
-Packages also provide typed structs, enums, options, results, modules,
-workflows, pattern routing, loops, sessions, and structured parallel work.
-`spawn` creates a child task; every task is visibly consumed with `join`,
-`joinall()`, or `detach`.
+## Status
+
+Gantry v1 is not yet declared stable; the language and embedding contracts may
+still change. The implementation supports source validation, semantic
+analysis, sequential and concurrent execution, and durable recovery through
+the Rust library. The CLI provides checking, analysis, and deterministic
+execution, but does not configure model or tool integrations.
+
+The current release is qualified on Linux. Hosted macOS validation and
+SQLite power-loss durability are not claimed. See the
+[release qualifications](docs/async-execution-release.md) for the exact scope
+and the [general-purpose implementation effort](docs/general-purpose-preregistration.md)
+for remaining evidence requirements.
 
 ## Example
 
-Generic workflows and statically selected traits remain concrete at runtime:
-
-```rust
-struct Envelope<T> { value: T }
-trait Label { pure fn label(self) -> String; }
-impl<T> Label for Envelope<T> {
-    pure fn label(self) -> String { "envelope" }
-}
-pure fn preserve<T>(value: T) -> T { value }
-pure fn main() -> String {
-    let value: Envelope<String> =
-        preserve::<Envelope<String>>(Envelope::<String> { value: "ready" });
-    value.label()
-}
-```
-
-The analyzer infers the complete `Envelope<String>` application and lowers
-the trait call to one selected concrete workflow. See the
-[`generics-and-traits` guide](docs/generics-and-traits.md) for inference,
-traits, limits, diagnostics, concurrency, and durable recovery.
-
-For task-focused source, see the
-[`parallel-execution` guide](docs/parallel-execution.md) and its
-[`hook-free example`](examples/parallel-execution/main.gnt). They cover
-`spawn`, named and lexical joins, detachment, capture and session isolation,
-execution ownership, operational limits, observation, and durable resume.
-
-The following complete package researches a topic through a harness action,
-asks a research agent to draft a brief, and lets an editor revise it when a
-model judgment calls for revision:
+This package searches for sources, asks a research agent to draft a typed
+brief, and lets an editor revise it when a model judgment calls for revision:
 
 ```rust
 struct Brief {
@@ -105,103 +91,122 @@ fn main(topic: String) -> Brief {
 }
 ```
 
-The `action`, `prompt`, and `decide` sites are the only integration requests.
-Bindings, branching, and the `with editor` scope are deterministic Gantry
-orchestration. An embedding maps `researcher` and `editor` to its agents and
-implements the declared `search` capability.
-
-## Language model
-
-Gantry separates portable source semantics from embedding-specific policy.
-The language defines package validation, typed structured output, operation
-retries and failure handling, agent and session context, cancellation,
-concurrency, durability, resume, and observation. The embedding supplies
-models, tools, credentials, transports, resource policies, persistence, and
-event delivery.
-
-Conformance is profile-based: frontend, analyzer, evaluator,
-concurrent-evaluator, durable-runtime, and embedding profiles describe which
-parts of the contract an implementation or integration provides. This lets a
-deployment make precise capability claims without changing source meaning.
-
-The executor-backed language publication is adopted for all six profiles on
-the qualified Linux release cells recorded by `GNT-ASYNC-REL-001`. The release
-does not claim a hosted macOS environment or stable-media power-loss
-qualification.
+Only `action`, `prompt`, and `decide` request integration work. Bindings,
+branching, and the `with editor` scope are deterministic orchestration.
+Executing this example requires a host application that supplies the `topic`
+input, maps `researcher` and `editor` to agents, and implements `search`.
+It is not a standalone CLI demo.
 
 ## Getting started
 
-Create a package directory with a `main.gnt` entry point, then check it with
-the command-line tool:
+### Set up a source checkout
+
+Install Git, [Rust through rustup](https://rustup.rs/), and
+[`just`](https://github.com/casey/just#installation). Rustup uses the pinned
+toolchain in `rust-toolchain.toml` automatically inside the checkout; the
+workspace's minimum supported Rust version is 1.91.
 
 ```sh
-just run -- check [PACKAGE_ROOT]
+git clone https://github.com/NFJones/gantry.git
+cd gantry
 ```
 
-`PACKAGE_ROOT` defaults to the current directory. The command prints
-`syntax-valid` when its source is syntactically valid; otherwise it reports
-diagnostics, prints `syntax-invalid`, and exits with status 1.
+### Check and run a package
 
-Run complete semantic analysis in concise text mode or deterministic
-machine-readable mode:
+Try the checked-in [generics and traits package](examples/generics-and-traits/main.gnt).
+It needs no model credentials or tool bindings:
 
 ```sh
-just run -- analyze [PACKAGE_ROOT]
-just run -- analyze --json [PACKAGE_ROOT]
+just run check examples/generics-and-traits
+just run analyze examples/generics-and-traits
+just run run examples/generics-and-traits
 ```
 
-The JSON form emits `gantry.analysis/v1` with structured diagnostics and, for
-source-valid packages, the canonical package manifest, analysis IR, source
-map, concrete schemas, generic substitutions, selected calls, exact effects,
-source origins, and closed executable projection. Operational failures remain
-separate from source-invalid results.
+The commands build the CLI as needed and print, respectively:
 
-For repository development:
-
-```sh
-just check
-just test
+```text
+syntax-valid
+source-valid
+"envelope"
 ```
 
-Run `just help` to list all development commands.
+- `check` validates source syntax.
+- `analyze` checks types and other semantic rules. Add `--json` for structured
+  diagnostics and analysis artifacts: `just run analyze --json examples/generics-and-traits`.
+- `run` executes the package and prints its result as JSON. The default CLI
+  build supports sequential, hook-free execution; agent-backed workflows need
+  a host integration, and concurrent execution requires library features.
+
+To write your own package, create a directory containing `main.gnt` and pass
+that directory instead of the example path. An omitted package path defaults
+to the current directory. Start with the
+[minimal entry-point examples](SPEC.md#141-minimal-package-entry-point).
+
+## How Gantry works
+
+Gantry defines the meaning of source programs: typed values, branching,
+operation retries and failure handling, agent sessions, cancellation,
+concurrency, and recovery. The host application supplies integration policy:
+models, tools, credentials, transports, resource limits, persistence, and
+event delivery.
+
+The language includes structs, enums, options, results, modules, generics,
+traits, and loops. For parallel work, `spawn` creates child tasks that are
+explicitly handled with `join`, `joinall()`, or `detach`. Durable execution
+adds the ability to resume work under the documented recovery contract.
+
+## Embedding in Rust
+
+The [`gantry` crate](crates/gantry/src/lib.rs) is the supported public Rust
+facade. Features select validation, analysis, execution, concurrency, and
+durability. An embedding constructs an `Interpreter`, supplies host services
+and an executor, and uses execution handles to observe, cancel, or await work.
+Gantry does not create a hidden executor runtime inside the library.
+
+See the [embedding interfaces](SPEC.md#15-required-embedding-interfaces) and
+[execution integration guide](docs/parallel-execution.md). The library is
+packaged as a version-locked crate set; the CLI remains source-only.
 
 ## Documentation
 
-- [`SPEC.md`](SPEC.md) is the normative Gantry language, execution, and
-  embedding contract. Start with Sections 1.1 and 1.2, then use Section 14 for
-  focused authoring examples.
-- [`docs/`](docs/README.md) indexes language, user, and contributor
-  documentation.
-- [`docs/generics-and-traits.md`](docs/generics-and-traits.md) is the source
-  author guide for parametric declarations and static trait selection.
-- [`docs/parallel-execution.md`](docs/parallel-execution.md) is the source
-  author guide for structured parallel work, background ownership, executor
-  policy, observation, and durable resume.
-- [`docs/async-execution-release.md`](docs/async-execution-release.md) records
-  the executor-backed publication boundary and migration from manual driving.
-- [`docs/general-purpose-preregistration.md`](docs/general-purpose-preregistration.md)
-  records the fixed evidence scope and claim blockers for the staged
-  general-purpose implementation effort.
-- [`AGENTS.md`](AGENTS.md) describes repository workflow and contribution
-  requirements.
+**Learn the language**
 
-## Rust library packages
+- [Authoring examples and common errors](SPEC.md#14-authoring-examples-and-common-errors)
+- [Generics and traits](docs/generics-and-traits.md)
+- [Parallel execution](docs/parallel-execution.md)
 
-The supported Rust library is published as a version-locked package set rather
-than as one archive containing private path dependencies. The public set is
-`gantry`, `gantry-core`, `gantry-frontend`, `gantry-host`, `gantry-ir`,
-`gantry-observe`, `gantry-analysis`, `gantry-runtime`,
-`gantry-adapter-tokio`, and `gantry-storage-sqlite`. All members use the same
-release version, and the facade's feature graph selects the required members.
+**Integrate and operate**
 
-Before registry publication, `just package-check` assembles every normalized
-Cargo source archive and verifies the complete set together through local
-registry patches. Registry publication follows dependency order: core first;
-frontend, host, and IR next; observation, analysis, and adapters after their
-dependencies; runtime after observation; and the `gantry` facade last. The
-CLI, conformance harness, and repository tooling remain source-only packages.
-- [`protocol/`](protocol/README.md) contains versioned protocol inputs,
-  schemas, generated bindings, and conformance material.
+- [Rust facade](crates/gantry/src/lib.rs) and
+  [required embedding interfaces](SPEC.md#15-required-embedding-interfaces)
+- [CLI runtime policy](docs/cli-runtime-policy.md)
+- [Durable recovery](docs/executor-backed-recovery.md) and
+  [SQLite storage](docs/sqlite-journal-storage.md)
+
+**Reference and project status**
+
+- [Complete documentation index](docs/README.md)
+- [Normative language and runtime specification](SPEC.md)
+- [Versioned protocols and conformance material](protocol/README.md)
+- [Release qualifications and embedding migration](docs/async-execution-release.md)
+- [General-purpose implementation evidence scope](docs/general-purpose-preregistration.md)
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md) for repository structure, development workflow,
+and contribution requirements. Useful commands from the repository root are:
+
+```sh
+just check
+just fmt
+just clippy
+timeout 120s just test
+```
+
+Run `just help` to list all recipes, including `just package-check` for library
+packaging validation. Report bugs or propose improvements through
+[GitHub issues](https://github.com/NFJones/gantry/issues); include a small
+reproducing package and the command and diagnostics when reporting a bug.
 
 ## License
 
