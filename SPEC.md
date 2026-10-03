@@ -15386,7 +15386,17 @@ then enter finishing atomically. Ownership and lifetime MUST precede quota valid
 MUST preserve its source. Success changes only lifetime and explicitly charged quota use, retaining
 all historical evidence. Complete candidates MUST refuse nonempty vectors rather than recharge
 accepted cleanup. Existing `GNTRFT01` evidence MUST NOT authorize additional quota changes; charged
-candidates require a separately declared journal carrier before publication.
+candidates require the separately declared `GNTRFT02` carrier below before publication.
+
+`ResourceFinishEvidenceV1::new_with_charges` MAY validate an explicit release vector with one
+exact Begin transition. The authored vector MUST contain at most 128 members before any
+deduplication, retaining order and duplicate keys for whole-vector ledger validation. Nonempty
+vectors select `GNTRFT02` and `gantry.resource-finish-evidence/v2`; empty vectors MUST retain
+`GNTRFT01` bytes and the version-one journal kind. Closed quota-owner/family tags, bounded counts,
+canonical framing and exact journal-kind/carrier correspondence MUST validate before replay.
+The same 4,194,304-byte journal ceiling and complete predecessor/successor fences apply.
+`stage_resource_finish_with_charges` MAY stage this transition privately; quota use and finishing
+MUST install together only after a validated receipt, with no physical cleanup authority.
 
 `ResourceFinishEvidenceV1` MAY validate one exact finish candidate between two complete graph
 checkpoints. Both graphs MUST validate against the executable; applying the owner-qualified

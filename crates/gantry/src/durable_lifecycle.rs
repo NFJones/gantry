@@ -4144,9 +4144,17 @@ mod tests {
                 .pending_resource_subject()
                 .unwrap_or_else(|| panic!("subject"));
             let owner = OwnerGeneration::new(4);
-            let record =
-                ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
-                    .unwrap_or_else(|error| panic!("record: {error:?}"));
+            let record = ResourceLedger::new(
+                owner,
+                ResourceState::Usable,
+                &[LivenessRoot::Resource],
+                &[(
+                    gantry_ir::QuotaOwner::Owner,
+                    gantry_ir::QuotaFamily::Bytes,
+                    gantry_ir::Quota::new(8, 0),
+                )],
+            )
+            .unwrap_or_else(|error| panic!("record: {error:?}"));
             accounting
                 .admit_resource_with_issuing_evidence(
                     &machine,
@@ -4262,22 +4270,43 @@ mod tests {
                 _ => unreachable!("closed fixture lifetimes"),
             };
             for transition in transitions {
-                match transition {
-                    gantry_runtime::ResourceFinishTransition::Begin => accounting
-                        .begin_resource_finish(&subject, owner)
-                        .unwrap_or_else(|error| panic!("finish: {error:?}")),
-                    gantry_runtime::ResourceFinishTransition::Complete { settled_at } => accounting
-                        .complete_resource_finalization(&subject, owner, settled_at)
-                        .unwrap_or_else(|error| panic!("finalization: {error:?}")),
+                let charges = if transition == gantry_runtime::ResourceFinishTransition::Begin {
+                    vec![gantry_ir::Charge {
+                        owner: gantry_ir::QuotaOwner::Owner,
+                        family: gantry_ir::QuotaFamily::Bytes,
+                        amount: 2,
+                    }]
+                } else {
+                    vec![]
                 };
+                match transition {
+                    gantry_runtime::ResourceFinishTransition::Begin => {
+                        accounting
+                            .charge_resource(
+                                &subject,
+                                owner,
+                                gantry_ir::ResourceAction::Release,
+                                &charges,
+                            )
+                            .unwrap_or_else(|error| panic!("fixture release charge: {error:?}"));
+                        accounting
+                            .begin_resource_finish(&subject, owner)
+                            .unwrap_or_else(|error| panic!("fixture begin: {error:?}"));
+                    }
+                    gantry_runtime::ResourceFinishTransition::Complete { settled_at } => {
+                        accounting
+                            .complete_resource_finalization(&subject, owner, settled_at)
+                            .unwrap_or_else(|error| panic!("fixture complete: {error:?}"));
+                    }
+                }
                 let successor = checkpoint();
-                let finish = gantry_runtime::ResourceFinishEvidenceV1::new(
+                let finish = gantry_runtime::ResourceFinishEvidenceV1::new_with_charges(
                     Arc::clone(&program),
                     predecessor,
                     successor.clone(),
                     0,
-                    owner,
-                    transition,
+                    (owner, transition),
+                    &charges,
                 )
                 .unwrap_or_else(|error| panic!("terminal finish evidence: {error:?}"));
                 let previous_id = evidence
@@ -4289,7 +4318,7 @@ mod tests {
                     &journal,
                     sequence,
                     ProtocolIdentity::from_storage_material([51 + sequence as u8; 32]),
-                    gantry_runtime::RESOURCE_FINISH_EVIDENCE_KIND_V1,
+                    finish.journal_kind(),
                     finish
                         .encode(4_194_304)
                         .unwrap_or_else(|error| panic!("finish encoding: {error:?}")),

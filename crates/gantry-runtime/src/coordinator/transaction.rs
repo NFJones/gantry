@@ -42,6 +42,7 @@ pub struct DurableGraphTransaction<'a> {
         usize,
         gantry_ir::OwnerGeneration,
         crate::ResourceFinishTransition,
+        Vec<gantry_ir::Charge>,
     )>,
     commit_started: bool,
     installed: bool,
@@ -178,6 +179,23 @@ impl DurableGraphTransaction<'_> {
         owner: gantry_ir::OwnerGeneration,
         transition: crate::ResourceFinishTransition,
     ) -> Result<(), CoordinatorResourceRefusal> {
+        self.stage_resource_finish_with_charges(subject, owner, transition, &[])
+    }
+
+    /// Privately stages a bounded explicit release vector with one logical Begin transition.
+    /// Refusal preserves the staged record; publication requires exact charged evidence.
+    pub fn stage_resource_finish_with_charges(
+        &mut self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        transition: crate::ResourceFinishTransition,
+        charges: &[gantry_ir::Charge],
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        if charges.len() > crate::ResourceFinishEvidenceV1::MAXIMUM_CHARGES {
+            return Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::ResourceStateUnsupported,
+            ));
+        }
         if self.resource_finish.is_some() || self.operation.is_some() || !self.events.is_empty() {
             return Err(CoordinatorResourceRefusal::Task(
                 TaskStateError::ResourceStateUnsupported,
@@ -191,14 +209,14 @@ impl DurableGraphTransaction<'_> {
                 crate::ResourceRegistryRefusal::UnknownSubject,
             ))?;
         let candidate = self.resource_records[index]
-            .stage_finish(owner, transition)
+            .stage_finish_with_charges(owner, transition, charges)
             .map_err(|error| {
                 CoordinatorResourceRefusal::Registry(crate::ResourceRegistryRefusal::Admission(
                     error,
                 ))
             })?;
         self.resource_records[index] = candidate;
-        self.resource_finish = Some((index, owner, transition));
+        self.resource_finish = Some((index, owner, transition, charges.to_vec()));
         Ok(())
     }
 
@@ -393,7 +411,8 @@ impl DurableGraphTransaction<'_> {
         }
         commits.retain_graph_resource_baseline(&self.original_checkpoint)?;
         let mut staged_resources = None;
-        let receipt = if let Some((index, owner, transition)) = self.resource_finish {
+        let receipt = if let Some((index, owner, transition, charges)) = self.resource_finish.take()
+        {
             if cut != DurableCommitCutV1::ResourceFinish
                 || self.operation.is_some()
                 || !self.events.is_empty()
@@ -402,13 +421,13 @@ impl DurableGraphTransaction<'_> {
             {
                 return Err(DurableCommitError::InvalidState);
             }
-            let evidence = crate::ResourceFinishEvidenceV1::new(
+            let evidence = crate::ResourceFinishEvidenceV1::new_with_charges(
                 self.staged_foreground.program_arc(),
                 (*self.original_checkpoint).clone(),
                 checkpoint,
                 index,
-                owner,
-                transition,
+                (owner, transition),
+                &charges,
             )
             .map_err(DurableCommitError::Evidence)?;
             let (live, pending) = self

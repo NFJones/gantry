@@ -292,8 +292,17 @@ fn resource_records_survive_version_eight_graph_recovery() {
         .pending_resource_subject()
         .unwrap_or_else(|| panic!("subject"));
     let owner = OwnerGeneration::new(4);
-    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
-        .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+    let record = ResourceLedger::new(
+        owner,
+        ResourceState::Usable,
+        &[LivenessRoot::Resource],
+        &[(
+            gantry_ir::QuotaOwner::Owner,
+            gantry_ir::QuotaFamily::Bytes,
+            gantry_ir::Quota::new(8, 0),
+        )],
+    )
+    .unwrap_or_else(|error| panic!("ledger: {error:?}"));
     coordinator
         .admit_resource_with_issuing_evidence(
             &root,
@@ -980,9 +989,54 @@ fn resource_records_survive_version_eight_graph_recovery() {
         let mut stage = finish_owner
             .stage_graph(&mut finish_root, &mut finish_children)
             .unwrap_or_else(|error| panic!("finish stage: {error:?}"));
+        let charge = gantry_ir::Charge {
+            owner: gantry_ir::QuotaOwner::Owner,
+            family: gantry_ir::QuotaFamily::Bytes,
+            amount: 2,
+        };
+        let charges = if transition == crate::ResourceFinishTransition::Begin {
+            assert_eq!(
+                stage.stage_resource_finish_with_charges(
+                    &subject,
+                    owner,
+                    transition,
+                    &[
+                        charge,
+                        gantry_ir::Charge {
+                            family: gantry_ir::QuotaFamily::Operations,
+                            ..charge
+                        }
+                    ]
+                ),
+                Err(CoordinatorResourceRefusal::Registry(
+                    crate::ResourceRegistryRefusal::Admission(
+                        gantry_ir::ResourceError::UndeclaredQuota
+                    )
+                ))
+            );
+            assert_eq!(
+                stage.stage_resource_finish_with_charges(
+                    &subject,
+                    owner,
+                    transition,
+                    &[gantry_ir::Charge {
+                        amount: 9,
+                        ..charge
+                    }]
+                ),
+                Err(CoordinatorResourceRefusal::Registry(
+                    crate::ResourceRegistryRefusal::Admission(
+                        gantry_ir::ResourceError::QuotaExhausted
+                    )
+                ))
+            );
+            vec![charge]
+        } else {
+            vec![]
+        };
         stage
-            .stage_resource_finish(&subject, owner, transition)
-            .unwrap_or_else(|error| panic!("staged finish: {error:?}"));
+            .stage_resource_finish_with_charges(&subject, owner, transition, &charges)
+            .unwrap_or_else(|error| panic!("staged charged finish: {error:?}"));
         let receipt = ready(stage.commit(&mut restored, DurableCommitCutV1::ResourceFinish, task))
             .unwrap_or_else(|error| panic!("finish commit: {error:?}"));
         assert_eq!(receipt.cut, DurableCommitCutV1::ResourceFinish);
@@ -1017,6 +1071,69 @@ fn resource_records_survive_version_eight_graph_recovery() {
             journaled.current().resource_records(),
             committed.resource_records()
         );
+        assert_eq!(journaled.charges(), charges);
+        assert_eq!(
+            committed.resource_records()[0].record().quotas()
+                [&(gantry_ir::QuotaOwner::Owner, gantry_ir::QuotaFamily::Bytes)]
+                .used(),
+            2
+        );
+        if !charges.is_empty() {
+            assert_eq!(
+                journaled.journal_kind(),
+                crate::RESOURCE_FINISH_EVIDENCE_KIND_V2
+            );
+            assert!(
+                crate::ResourceFinishEvidenceV1::new(
+                    Arc::clone(&program),
+                    journaled.previous().clone(),
+                    journaled.current().clone(),
+                    0,
+                    owner,
+                    transition
+                )
+                .is_err(),
+                "uncharged evidence cannot authorize charged quota use"
+            );
+            let mut wrong_kind = full.clone();
+            let mut entries = wrong_kind.evidence.to_vec();
+            entries
+                .last_mut()
+                .unwrap_or_else(|| panic!("finish entry"))
+                .kind = Arc::from(crate::RESOURCE_FINISH_EVIDENCE_KIND_V1);
+            wrong_kind.evidence = entries.into();
+            assert!(
+                crate::recover_concurrent_authoritative_prefix(
+                    Arc::clone(&program),
+                    &JournalPrefixV1::Full(wrong_kind)
+                )
+                .is_err()
+            );
+            let mut hostile = journaled
+                .encode(4_194_304)
+                .unwrap_or_else(|error| panic!("charged bytes: {error:?}"));
+            let exact = hostile.len() as u64;
+            assert_eq!(journaled.encode(exact), Ok(hostile.clone()));
+            assert!(journaled.encode(exact - 1).is_err());
+            assert!(
+                crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &hostile, exact - 1,)
+                    .is_err()
+            );
+            for offset in [33, 34, 42] {
+                let mut corrupt = hostile.clone();
+                corrupt[offset] ^= 0xff;
+                assert!(
+                    crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &corrupt, exact,)
+                        .is_err(),
+                    "altered quota tag or amount at {offset}"
+                );
+            }
+            hostile[25..33].copy_from_slice(&129_u64.to_be_bytes());
+            assert!(
+                crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &hostile, 4_194_304)
+                    .is_err()
+            );
+        }
         assert_eq!(
             replay
                 .execution()

@@ -2836,19 +2836,25 @@ pub fn recover_concurrent_authoritative_prefix(
             CONCURRENT_DURABLE_EVIDENCE_KIND_V4
                 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
                 | super::RESOURCE_FINISH_EVIDENCE_KIND_V1
+                | super::RESOURCE_FINISH_EVIDENCE_KIND_V2
         ) {
             let evidence = if envelope.kind.as_ref() == CONCURRENT_DURABLE_EVIDENCE_KIND_V4 {
                 let evidence =
                     ConcurrentDurableEvidenceV4::decode(&program, &envelope.canonical_body)?;
                 ConcurrentDurableEvidenceBody::V4(Box::new(evidence))
-            } else if envelope.kind.as_ref() == super::RESOURCE_FINISH_EVIDENCE_KIND_V1 {
-                super::ResourceFinishEvidenceV1::decode(
+            } else if matches!(
+                envelope.kind.as_ref(),
+                super::RESOURCE_FINISH_EVIDENCE_KIND_V1 | super::RESOURCE_FINISH_EVIDENCE_KIND_V2
+            ) {
+                let finish = super::ResourceFinishEvidenceV1::decode(
                     Arc::clone(&program),
                     &envelope.canonical_body,
                     super::resource_finish::MAXIMUM_RESOURCE_FINISH_EVIDENCE_BYTES,
-                )
-                .map(Box::new)
-                .map(ConcurrentDurableEvidenceBody::Finish)?
+                )?;
+                if finish.journal_kind() != envelope.kind.as_ref() {
+                    return Err(DurableEvidenceError::Encoding);
+                }
+                ConcurrentDurableEvidenceBody::Finish(Box::new(finish))
             } else {
                 ConcurrentDurableEvidenceV5::decode(&program, &envelope.canonical_body)
                     .map(Box::new)

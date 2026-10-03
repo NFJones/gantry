@@ -139,7 +139,7 @@ pub use recovery::{
     CONCURRENT_DURABLE_RECOVERY_SNAPSHOT_FORMAT_V1, CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1,
     CONCURRENT_FINISH_SNAPSHOT_VERSION_V1, ConcurrentDurableEvidenceRecordV5,
     ConcurrentDurableEvidenceV4, ConcurrentDurableEvidenceV5, ConcurrentDurableRecoverySnapshotV1,
-    ConcurrentFinishSnapshotV1, RESOURCE_FINISH_EVIDENCE_KIND_V1,
+    ConcurrentFinishSnapshotV1, RESOURCE_FINISH_EVIDENCE_KIND_V1, RESOURCE_FINISH_EVIDENCE_KIND_V2,
     RecoveredConcurrentDurableStateV1, ResourceFinishEvidenceV1,
     recover_concurrent_authoritative_prefix,
 };

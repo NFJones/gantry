@@ -149,7 +149,15 @@ finalization or journal publication; publication requires the exact finish cut d
 entering finishing. Refusal leaves the source unchanged; success retains historical evidence and
 changes only declared quota use and lifetime. Complete candidates refuse additional charges.
 The existing `GNTRFT01` journal validator still rejects these extra quota changes: a charged
-candidate is not publication authority and needs a separately declared carrier.
+candidate is not publication authority and requires the `GNTRFT02` carrier.
+
+`new_with_charges` retains at most 128 authored release members before deduplication, including
+order and duplicate keys, and reproduces exactly one charged Begin successor. Nonempty vectors
+select `GNTRFT02` / `gantry.resource-finish-evidence/v2`; empty vectors preserve legacy bytes and
+kind. Closed quota tags, canonical framing and journal-kind correspondence refuse substitution.
+`stage_resource_finish_with_charges` installs declared quota use with finishing only after a
+validated receipt under the same 4 MiB journal bound and authoritative predecessor fence.
+Full-prefix and selector-eight snapshot replay retain these explicit charges without physical cleanup.
 
 `ResourceFinishEvidenceV1` compares two executable-validated graph checkpoints. One owner-qualified
 finish at a canonical record index must reproduce the complete successor, rejecting unrelated
