@@ -72,6 +72,10 @@ task; settled tasks may retain accounting for cleanup. Registry carrier, kind, d
 generation and live-ceiling checks all run before exposing a coordinator. No physical slots,
 adapter bindings, pending policy or pending work are reconstructed. Journal provenance remains
 the caller's recovery responsibility; this entry point does not add resource records to graph cuts.
+`new_with_budget_and_recovered_resources` additionally retains the matching shared execution-budget
+owner. Budget execution mismatch refuses with `InvalidTaskMachine` before record validation;
+the same complete-set accounting checks follow. Budget retention neither authenticates journal
+provenance nor reconstructs physical slots, adapters or pending work.
 
 The current durable graph wire carries no resource reconstruction records. `GNTCDP06` separately
 retains an enabled empty registry's exact optional live and pending ceilings. Absence differs from

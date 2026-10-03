@@ -536,6 +536,80 @@ fn coordinator_resource_reconstruction_refuses_invalid_sets() {
     );
 }
 
+/// Accounting reconstruction retains a shared budget without inventing pending or physical work.
+#[test]
+fn coordinator_resource_reconstruction_retains_execution_budget() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ExecutionCoordinator, TaskStateError};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let records = vec![presented(
+        subject,
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+    )];
+    let budget = machine.execution_budget();
+    let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    let coordinator = ExecutionCoordinator::new_with_budget_and_recovered_resources(
+        tasks,
+        sessions,
+        budget.clone(),
+        1,
+        records.clone(),
+    )
+    .unwrap_or_else(|error| panic!("budget-qualified recovery: {error:?}"));
+    assert_eq!(
+        coordinator.snapshot().execution_budget(),
+        Some(budget.snapshot())
+    );
+    assert_eq!(
+        coordinator.snapshot().resource_records(),
+        Some(records.as_slice())
+    );
+    assert!(!coordinator.has_pending_resource_operations());
+    assert!(!coordinator.has_resource_host_values());
+    let mut successor = budget.snapshot();
+    successor.remaining_transitions = successor
+        .remaining_transitions
+        .map(|remaining| remaining - 1);
+    successor.revision += 1;
+    budget
+        .publish_committed_snapshot(successor)
+        .unwrap_or_else(|error| panic!("shared committed budget projection: {error:?}"));
+    assert_eq!(
+        coordinator.clone().snapshot().execution_budget(),
+        Some(budget.snapshot())
+    );
+
+    let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    assert_eq!(
+        ExecutionCoordinator::new_with_budget_and_recovered_resources(
+            tasks,
+            sessions,
+            budget.clone(),
+            2,
+            vec![records[0].clone(), records[0].clone()],
+        )
+        .err(),
+        Some(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::SecondAdmission
+        ))
+    );
+
+    let foreign_execution =
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [99; 32])
+            .unwrap_or_else(|error| panic!("foreign execution: {error}"));
+    let (tasks, sessions) = resource_recovery_inputs(foreign_execution, machine.task_id());
+    assert_eq!(
+        ExecutionCoordinator::new_with_budget_and_recovered_resources(
+            tasks, sessions, budget, 1, records,
+        )
+        .err(),
+        Some(CoordinatorResourceRefusal::Task(
+            TaskStateError::InvalidTaskMachine
+        ))
+    );
+}
+
 /// Coordinator clones share admission and quota fences, and terminal cleanup retains records.
 #[test]
 fn coordinator_resource_accounts_share_one_owner_and_release_only_live_places() {

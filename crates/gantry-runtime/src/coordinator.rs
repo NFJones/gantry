@@ -346,6 +346,46 @@ impl ExecutionCoordinator {
         maximum_live_resources: u64,
         recovered: Vec<crate::RecoveredResourceRecord>,
     ) -> Result<Self, CoordinatorResourceRefusal> {
+        Self::reconstruct_resources(tasks, sessions, None, maximum_live_resources, recovered)
+    }
+
+    /// Reconstructs accounting and retains the matching shared execution-budget owner atomically.
+    ///
+    /// Budget execution identity is checked before record provenance and registry admission.
+    /// Physical slots, adapters, pending-operation policy and accepted work are not recovered.
+    /// The caller remains responsible for authenticating journal provenance.
+    pub fn new_with_budget_and_recovered_resources(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: ExecutionBudget,
+        maximum_live_resources: u64,
+        recovered: Vec<crate::RecoveredResourceRecord>,
+    ) -> Result<Self, CoordinatorResourceRefusal> {
+        Self::reconstruct_resources(
+            tasks,
+            sessions,
+            Some(execution_budget),
+            maximum_live_resources,
+            recovered,
+        )
+    }
+
+    /// Validates optional budget ownership and the complete accounting set before publication.
+    fn reconstruct_resources(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: Option<ExecutionBudget>,
+        maximum_live_resources: u64,
+        recovered: Vec<crate::RecoveredResourceRecord>,
+    ) -> Result<Self, CoordinatorResourceRefusal> {
+        if execution_budget
+            .as_ref()
+            .is_some_and(|budget| budget.snapshot().execution != tasks.execution_id())
+        {
+            return Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::InvalidTaskMachine,
+            ));
+        }
         for record in &recovered {
             if record.subject().execution_id() != tasks.execution_id() {
                 return Err(CoordinatorResourceRefusal::ForeignExecution);
@@ -360,7 +400,7 @@ impl ExecutionCoordinator {
         let resources =
             crate::ResourceRegistry::reconstruct(Some(maximum_live_resources), recovered)
                 .map_err(CoordinatorResourceRefusal::Registry)?;
-        Self::new_inner(tasks, sessions, None, Some(resources))
+        Self::new_inner(tasks, sessions, execution_budget, Some(resources))
             .map_err(CoordinatorResourceRefusal::Task)
     }
 

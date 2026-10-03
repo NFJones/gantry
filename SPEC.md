@@ -15267,6 +15267,11 @@ owner generation and live-ceiling checks MUST all succeed before exposing the co
 Reconstruction MUST create no physical slots, adapter bindings, pending-operation policy or pending
 work. This accounting-only construction does not authenticate journal provenance or replace a
 versioned durable graph resource member.
+`new_with_budget_and_recovered_resources` MAY retain a separately recovered shared execution-budget
+owner with the same accounting set. Budget execution identity MUST match task execution before
+record validation; mismatch MUST refuse with `InvalidTaskMachine`. The complete record set retains
+the same provenance, carrier, owner and quota checks before publication. Retaining a budget MUST
+NOT reconstruct physical ownership or pending work, or authenticate journal provenance.
 
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
