@@ -15366,6 +15366,13 @@ retained capacity checks MUST succeed before exposing the registry; pending poli
 admission only and MUST NOT create accepted-work leases. This restore does not authenticate journal
 provenance or relax combined-graph resource-state refusal.
 
+`new_with_budget_and_recovered_resource_envelopes` MAY bind this restore to a coordinator.
+The current budget MUST name the task execution before envelope decoding; issuing execution,
+issuing task and cleanup-task membership MUST validate before publication. Every issuing budget
+MUST be a valid predecessor of the current budget frontier, and that frontier MUST remain unchanged
+during validation. Success retains the shared current budget and exact optional accounting policy
+without creating physical slots or accepted-work leases. Journal provenance remains caller-authenticated.
+
 `admit_pending_operation_with_issuing_evidence` MAY retain validated issuing evidence during
 live accounting admission under an explicit envelope byte ceiling. Evidence validation and byte
 admission MUST precede registry insertion; ordinary authoritative machine-lease and quota checks

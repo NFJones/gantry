@@ -442,6 +442,59 @@ impl ExecutionCoordinator {
         )
     }
 
+    /// Restores bounded resource envelopes under an execution's task and budget owners.
+    ///
+    /// Budget identity is checked before decoding. Issuing and cleanup tasks must be known,
+    /// and every issuing budget must precede the supplied current frontier. No physical slots
+    /// or accepted-work leases are restored; journal authentication remains the caller's duty.
+    #[cfg(feature = "durable")]
+    pub fn new_with_budget_and_recovered_resource_envelopes(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: ExecutionBudget,
+        program: Arc<gantry_ir::MachineProgram>,
+        envelopes: &[(&[u8], gantry_ir::OwnerGeneration, ProtocolIdentity)],
+        maximum_bytes: u64,
+        policy: (Option<u64>, Option<u64>, Option<u64>),
+    ) -> Result<Self, CoordinatorResourceRefusal> {
+        let frontier = execution_budget.snapshot();
+        if frontier.execution != tasks.execution_id() {
+            return Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::InvalidTaskMachine,
+            ));
+        }
+        let resources = crate::ResourceRegistry::reconstruct_recovery_envelopes(
+            program,
+            envelopes,
+            maximum_bytes,
+            policy,
+        )
+        .map_err(CoordinatorResourceRefusal::RecoveryEnvelope)?;
+        for record in resources.declared_records_with_containment() {
+            if record.subject().execution_id() != tasks.execution_id() {
+                return Err(CoordinatorResourceRefusal::ForeignExecution);
+            }
+            if tasks.task_record(record.subject().task_id()).is_none()
+                || tasks.task_record(record.task_owner()).is_none()
+            {
+                return Err(CoordinatorResourceRefusal::UnknownTask);
+            }
+            let (_, issuing_budget) = record
+                .issuing_evidence()
+                .unwrap_or_else(|| unreachable!("envelope restoration retains issuing evidence"));
+            crate::recovery::validate_budget_successor(&issuing_budget, &frontier).map_err(
+                |_| CoordinatorResourceRefusal::Task(TaskStateError::InvalidTaskMachine),
+            )?;
+        }
+        if execution_budget.snapshot() != frontier {
+            return Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::InvalidTaskMachine,
+            ));
+        }
+        Self::new_inner(tasks, sessions, Some(execution_budget), Some(resources))
+            .map_err(CoordinatorResourceRefusal::Task)
+    }
+
     /// Validates optional budget ownership and the complete accounting set before publication.
     fn reconstruct_resources(
         tasks: ConcurrentTaskStateV1,

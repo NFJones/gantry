@@ -9587,6 +9587,114 @@ fn resource_envelope_set_restore_preserves_distinct_canonical_members() {
     );
 }
 
+/// Coordinator restore binds issuing budgets to the current execution frontier.
+#[test]
+fn coordinator_envelope_restore_validates_issuing_budget_frontier() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ExecutionCoordinator};
+    let (program, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let owner = OwnerGeneration::new(4);
+    let issuing_budget = machine.budget_checkpoint();
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+    let mut registry = ResourceRegistry::with_accounting_limits(1, 2, 3);
+    registry
+        .admit_pending_operation_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    let envelopes = registry
+        .capture_recovery_envelopes(65_536)
+        .unwrap_or_else(|error| panic!("capture: {error:?}"));
+    let inputs = [(envelopes[0].as_slice(), owner, machine.task_id())];
+    let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("budget: {error:?}"));
+    let restored = ExecutionCoordinator::new_with_budget_and_recovered_resource_envelopes(
+        tasks.clone(),
+        sessions.clone(),
+        budget.clone(),
+        Arc::clone(&program),
+        &inputs,
+        65_536,
+        (Some(1), Some(2), Some(3)),
+    )
+    .unwrap_or_else(|error| panic!("restore: {error:?}"));
+    let snapshot = restored.snapshot();
+    assert_eq!(
+        snapshot.resource_records(),
+        Some(registry.declared_records().as_slice())
+    );
+    assert_eq!(
+        snapshot.execution_budget(),
+        Some(machine.budget_checkpoint())
+    );
+    assert_eq!(restored.retained_resource_limit(), Some(3));
+    assert!(!restored.has_pending_resource_operations());
+    assert!(!restored.has_resource_host_values());
+    assert_eq!(
+        snapshot
+            .resource_records()
+            .unwrap_or_else(|| panic!("records"))[0]
+            .subject(),
+        &subject
+    );
+    let mut earlier = issuing_budget;
+    earlier.revision -= 1;
+    earlier.remaining_operations = earlier.remaining_operations.map(|remaining| remaining + 1);
+    let earlier = ExecutionBudget::recover_from_checkpoint(earlier)
+        .unwrap_or_else(|error| panic!("earlier budget: {error:?}"));
+    assert_eq!(
+        ExecutionCoordinator::new_with_budget_and_recovered_resource_envelopes(
+            tasks.clone(),
+            sessions.clone(),
+            earlier,
+            Arc::clone(&program),
+            &inputs,
+            65_536,
+            (Some(1), Some(2), Some(3)),
+        )
+        .err(),
+        Some(CoordinatorResourceRefusal::Task(
+            gantry::runtime::TaskStateError::InvalidTaskMachine
+        ))
+    );
+    let mut foreign = machine.budget_checkpoint();
+    foreign.execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [91; 32])
+        .unwrap_or_else(|error| panic!("foreign execution: {error}"));
+    let foreign = ExecutionBudget::recover_from_checkpoint(foreign)
+        .unwrap_or_else(|error| panic!("foreign budget: {error:?}"));
+    assert_eq!(
+        ExecutionCoordinator::new_with_budget_and_recovered_resource_envelopes(
+            tasks,
+            sessions,
+            foreign,
+            program,
+            &inputs,
+            0,
+            (Some(1), Some(2), Some(3)),
+        )
+        .err(),
+        Some(CoordinatorResourceRefusal::Task(
+            gantry::runtime::TaskStateError::InvalidTaskMachine
+        ))
+    );
+}
+
 /// Bounded live admission retains issuing facts after machine work settles.
 #[test]
 fn bounded_live_admission_retains_issuing_evidence_after_settlement() {

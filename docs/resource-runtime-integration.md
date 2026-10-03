@@ -150,6 +150,12 @@ loan-bearing records refuse without exposing a partial registry. Live and retain
 apply to reconstructed accounting; pending policy applies only to future admission. No physical
 slots or accepted-work leases are created, and journal authentication remains the caller's duty.
 
+`ExecutionCoordinator::new_with_budget_and_recovered_resource_envelopes` additionally checks
+current budget execution before decoding, issuing execution and known issuing/cleanup tasks,
+and each issuing budget against the unchanged current frontier. It retains the shared current
+budget and optional accounting policy only after complete validation. This is not authenticated
+journal recovery or physical-resource reconstruction.
+
 `admit_pending_operation_with_issuing_evidence` opts live accounting admission into retaining
 validated issuing facts under an explicit envelope byte ceiling. Evidence and byte admission run
 before insertion; ordinary machine-lease and quota checks still decide acquisition. The admitted
