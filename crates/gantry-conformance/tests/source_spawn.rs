@@ -672,6 +672,34 @@ fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
                 .retained_resource_limit(),
             retained,
         );
+        if retained == Some(0) {
+            let coordinator = interpreter
+                .test_nondurable_resource_coordinator(handle.execution_id())
+                .unwrap_or_else(|| panic!("fresh execution owner exists"));
+            let machine = resource_cleanup::resource_machine(handle.execution_id());
+            let record = gantry::ir::ResourceLedger::new(
+                gantry::ir::OwnerGeneration::new(4),
+                gantry::ir::ResourceState::Usable,
+                &[gantry::ir::LivenessRoot::Resource],
+                &[],
+            )
+            .unwrap_or_else(|error| panic!("fixture accounting: {error:?}"));
+            let before = coordinator.snapshot();
+            assert_eq!(
+                coordinator.admit_resource(
+                    &machine,
+                    gantry::ir::ResourceCarrier::ReconstructionRecord,
+                    record.durable_record(),
+                ),
+                Err(gantry::runtime::CoordinatorResourceRefusal::Registry(
+                    gantry::runtime::ResourceRegistryRefusal::RetainedResourceLimitReached {
+                        limit: 0,
+                    },
+                ))
+            );
+            assert_eq!(coordinator.snapshot(), before);
+            assert!(!coordinator.has_pending_resource_operations());
+        }
         drop(accepted);
         let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
         assert_eq!(
