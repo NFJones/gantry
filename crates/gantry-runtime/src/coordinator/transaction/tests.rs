@@ -1083,6 +1083,47 @@ fn resource_records_survive_version_eight_graph_recovery() {
                 journaled.journal_kind(),
                 crate::RESOURCE_FINISH_EVIDENCE_KIND_V2
             );
+            assert_eq!(crate::ResourceFinishEvidenceV1::MAXIMUM_CHARGES, 128);
+            let mut maximum_vector = vec![
+                gantry_ir::Charge {
+                    amount: 0,
+                    ..charges[0]
+                };
+                crate::ResourceFinishEvidenceV1::MAXIMUM_CHARGES
+            ];
+            maximum_vector[0] = charges[0];
+            let maximum = crate::ResourceFinishEvidenceV1::new_with_charges(
+                Arc::clone(&program),
+                journaled.previous().clone(),
+                journaled.current().clone(),
+                0,
+                (owner, transition),
+                &maximum_vector,
+            )
+            .unwrap_or_else(|error| panic!("maximum authored vector: {error:?}"));
+            let bytes = maximum
+                .encode(4_194_304)
+                .unwrap_or_else(|error| panic!("maximum vector encoding: {error:?}"));
+            assert_eq!(
+                crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &bytes, 4_194_304,),
+                Ok(maximum)
+            );
+            maximum_vector.push(gantry_ir::Charge {
+                amount: 0,
+                ..charges[0]
+            });
+            assert!(
+                crate::ResourceFinishEvidenceV1::new_with_charges(
+                    Arc::clone(&program),
+                    journaled.previous().clone(),
+                    journaled.current().clone(),
+                    0,
+                    (owner, transition),
+                    &maximum_vector,
+                )
+                .is_err(),
+                "pre-deduplication limit counts zero and duplicate members"
+            );
             assert!(
                 crate::ResourceFinishEvidenceV1::new(
                     Arc::clone(&program),
@@ -1132,6 +1173,63 @@ fn resource_records_survive_version_eight_graph_recovery() {
             assert!(
                 crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &hostile, 4_194_304)
                     .is_err()
+            );
+            let mut uncharged_records = journaled.previous().resource_records().to_vec();
+            uncharged_records[0] = uncharged_records[0]
+                .stage_finish(owner, transition)
+                .unwrap_or_else(|error| panic!("uncharged control: {error:?}"));
+            let uncharged_successor = journaled
+                .previous()
+                .clone()
+                .with_resource_records(Arc::clone(&program), uncharged_records)
+                .unwrap_or_else(|error| panic!("uncharged successor: {error:?}"));
+            let uncharged = crate::ResourceFinishEvidenceV1::new(
+                Arc::clone(&program),
+                journaled.previous().clone(),
+                uncharged_successor,
+                0,
+                owner,
+                transition,
+            )
+            .unwrap_or_else(|error| panic!("uncharged evidence control: {error:?}"));
+            let control = uncharged
+                .encode(4_194_304)
+                .unwrap_or_else(|error| panic!("uncharged encoding: {error:?}"));
+            assert_eq!(
+                crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &control, 4_194_304,),
+                Ok(uncharged)
+            );
+            let mut zero_vector = control;
+            zero_vector[..8].copy_from_slice(b"GNTRFT02");
+            zero_vector.splice(25..25, 0_u64.to_be_bytes());
+            assert!(
+                crate::ResourceFinishEvidenceV1::decode(
+                    Arc::clone(&program),
+                    &zero_vector,
+                    4_194_304,
+                )
+                .is_err(),
+                "otherwise valid zero-vector charged framing cannot select the legacy carrier"
+            );
+        } else {
+            assert_eq!(
+                journaled.journal_kind(),
+                crate::RESOURCE_FINISH_EVIDENCE_KIND_V1
+            );
+            let mut wrong_kind = full.clone();
+            let mut entries = wrong_kind.evidence.to_vec();
+            entries
+                .last_mut()
+                .unwrap_or_else(|| panic!("finish entry"))
+                .kind = Arc::from(crate::RESOURCE_FINISH_EVIDENCE_KIND_V2);
+            wrong_kind.evidence = entries.into();
+            assert!(
+                crate::recover_concurrent_authoritative_prefix(
+                    Arc::clone(&program),
+                    &JournalPrefixV1::Full(wrong_kind),
+                )
+                .is_err(),
+                "charged journal kind cannot relabel an uncharged carrier"
             );
         }
         assert_eq!(
