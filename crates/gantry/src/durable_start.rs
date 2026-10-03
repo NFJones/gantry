@@ -606,6 +606,18 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 .await;
         }
 
+        if self.configuration.adapter_identity_limit().is_some() {
+            return self
+                .reject_and_release(
+                    journal_id,
+                    ownership.token,
+                    start_failure(
+                        StartFailureCategory::IntegrationPreflight,
+                        "unsupported-durable-adapter-identity-policy",
+                    ),
+                )
+                .await;
+        }
         let mut prepared = match self
             .start
             .prepare_with_mode(request.start, gantry_core::mode::SemanticMode::Durable)
@@ -878,6 +890,18 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                     ResumeRejection::new(
                         ResumeStartFailureCategory::SourceOrConfigurationIncompatibility,
                         "execution-identity-mismatch",
+                    ),
+                )
+                .await;
+        }
+        if self.configuration.adapter_identity_limit().is_some() {
+            return self
+                .reject_resume_and_release(
+                    journal_id,
+                    ownership.token,
+                    ResumeRejection::new(
+                        ResumeStartFailureCategory::IntegrationPreflight,
+                        "unsupported-durable-adapter-identity-policy",
                     ),
                 )
                 .await;

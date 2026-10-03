@@ -48,6 +48,12 @@ account reclamation so poisoning can always retain failed-identity fences. `adap
 and `retained_adapter_identities` inspect this policy and its occupancy. Legacy constructors leave
 it absent. Configured policy currently refuses graph/envelope capture even when empty, because
 those wires cannot retain it; it enables no host authority or durable adapter reconstruction.
+`with_adapter_bounded_resource_accounting_limits(live, pending, retained, adapters)` applies all
+four finite ceilings to fresh sequential and concurrent execution owners, retaining their shared
+budget. Older accounting builders replace and clear adapter policy. The coordinator exposes
+`adapter_identity_limit()` for inspection. Durable start/resume refuses configured policy with
+`unsupported-durable-adapter-identity-policy` before mappings or admission, without evidence writes;
+this is a fail-closed limitation rather than adapter-policy recovery.
 Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.

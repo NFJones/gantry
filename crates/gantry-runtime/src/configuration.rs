@@ -525,6 +525,7 @@ pub struct InterpreterConfiguration {
     maximum_tasks_per_execution: ResourceLimit,
     resource_accounting_limits: Option<(u64, u64)>,
     retained_resource_limit: Option<u64>,
+    adapter_identity_limit: Option<u64>,
 }
 
 impl fmt::Debug for InterpreterConfiguration {
@@ -539,6 +540,7 @@ impl fmt::Debug for InterpreterConfiguration {
             )
             .field("retained_resource_limit", &self.retained_resource_limit)
             .field("retry", &self.retry)
+            .field("adapter_identity_limit", &self.adapter_identity_limit)
             .field("graceful_shutdown_timeout", &self.graceful_shutdown_timeout)
             .field("post_cancellation_drain", &self.post_cancellation_drain)
             .field(
@@ -578,6 +580,7 @@ impl InterpreterConfiguration {
             maximum_tasks_per_execution: ResourceLimit::Unlimited,
             resource_accounting_limits: None,
             retained_resource_limit: None,
+            adapter_identity_limit: None,
         }
     }
 
@@ -724,18 +727,19 @@ impl InterpreterConfiguration {
     /// Enables finite live-account and pending-operation ceilings for fresh execution owners.
     ///
     /// Zero denies admission. These accounting ceilings grant no transport or host authority.
-    /// Replaces any retained-account ceiling with absent policy; empty policy uses graph v6.
+    /// Clears retained-account and adapter-identity policy; empty policy uses graph v6.
     #[must_use]
     pub fn with_resource_accounting_limits(mut self, live: u64, pending: u64) -> Self {
         self.resource_accounting_limits = Some((live, pending));
         self.retained_resource_limit = None;
+        self.adapter_identity_limit = None;
         self
     }
 
     /// Enables independent live, pending-work and retained-account ceilings for fresh owners.
     ///
     /// Zero is permitted. Retained places persist until eligible reclamation, independently
-    /// of semantic lifetime release. Empty policy uses graph v7; no host authority is granted.
+    /// of semantic lifetime release. Clears adapter policy; empty policy uses graph v7.
     #[must_use]
     pub fn with_bounded_resource_accounting_limits(
         mut self,
@@ -745,7 +749,32 @@ impl InterpreterConfiguration {
     ) -> Self {
         self.resource_accounting_limits = Some((live, pending));
         self.retained_resource_limit = Some(retained);
+        self.adapter_identity_limit = None;
         self
+    }
+
+    /// Enables finite accounting ceilings and lifetime adapter-identity reservations.
+    ///
+    /// Zero is permitted. Current durable launch/resume cannot retain this additional policy
+    /// and refuses it before execution admission. Existing builders replace and clear it.
+    #[must_use]
+    pub fn with_adapter_bounded_resource_accounting_limits(
+        mut self,
+        live: u64,
+        pending: u64,
+        retained: u64,
+        adapters: u64,
+    ) -> Self {
+        self.resource_accounting_limits = Some((live, pending));
+        self.retained_resource_limit = Some(retained);
+        self.adapter_identity_limit = Some(adapters);
+        self
+    }
+
+    /// Returns the optional lifetime adapter-identity reservation ceiling.
+    #[must_use]
+    pub const fn adapter_identity_limit(&self) -> Option<u64> {
+        self.adapter_identity_limit
     }
 
     /// Returns the independent retained-account ceiling; None leaves retention unbounded.

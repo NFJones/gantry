@@ -15202,6 +15202,12 @@ Reservations MUST survive settlement and account reclamation so later poisoning 
 a failed-identity reuse fence. Existing constructors leave this policy absent. Current graph and
 envelope capture MUST refuse configured adapter-identity policy, even when empty, rather than
 silently omit it; this policy grants no authority or durable adapter reconstruction.
+`with_adapter_bounded_resource_accounting_limits(live, pending, retained, adapters)` MAY configure
+fresh execution owners with all four finite ceilings. Sequential and concurrent owners MUST retain
+the same shared budget and adapter policy. Older accounting builders MUST clear adapter policy
+when replacing it. Durable start and resume MUST refuse configured adapter policy with
+`unsupported-durable-adapter-identity-policy` before mappings or execution admission and without
+appending evidence until a separately declared wire retains that policy.
 
 A registry's storage subject MUST qualify portable operation/resource-generation identity with
 the issuing execution and task. Equal portable identities from independent task-local counters

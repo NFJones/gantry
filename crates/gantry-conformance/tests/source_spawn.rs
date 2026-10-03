@@ -630,12 +630,14 @@ impl Drop for TempDirectory {
 /// Accounting configuration changes ownership inspection, not ordinary source eligibility.
 #[test]
 fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
-    for (accounting, retained) in [
-        (None, None),
-        (Some((0, 0)), None),
-        (Some((2, 3)), None),
-        (Some((2, 3)), Some(0)),
-        (Some((2, 3)), Some(4)),
+    for (accounting, retained, adapters) in [
+        (None, None, None),
+        (Some((0, 0)), None, None),
+        (Some((2, 3)), None, None),
+        (Some((2, 3)), Some(0), None),
+        (Some((2, 3)), Some(4), None),
+        (Some((2, 3)), Some(4), Some(0)),
+        (Some((2, 3)), Some(4), Some(5)),
     ] {
         let root = TempDirectory::new("fn main() {}");
         let executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -649,7 +651,7 @@ fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
         let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
             (1_u8..=192).map(|byte| Ok([byte; 32])),
         ));
-        let interpreter = interpreter_with_accounting_service(
+        let interpreter = interpreter_with_adapter_accounting_service(
             executor.clone(),
             integration.clone(),
             integration,
@@ -660,6 +662,7 @@ fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
             identities,
             accounting,
             retained,
+            adapters,
             None,
         );
         let accepted = accepted(&interpreter, &root);
@@ -674,6 +677,13 @@ fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
                 .unwrap_or_else(|| panic!("fresh execution owner exists"))
                 .retained_resource_limit(),
             retained,
+        );
+        assert_eq!(
+            interpreter
+                .test_nondurable_resource_coordinator(handle.execution_id())
+                .unwrap_or_else(|| panic!("fresh execution owner exists"))
+                .adapter_identity_limit(),
+            adapters,
         );
         if retained == Some(0) {
             let coordinator = interpreter
@@ -4414,6 +4424,36 @@ fn interpreter_with_accounting_service(
     retained: Option<u64>,
     service: Option<Box<dyn gantry::host::contracts::BlockingWorkService>>,
 ) -> Interpreter {
+    interpreter_with_adapter_accounting_service(
+        executor,
+        integration,
+        runtime_sessions,
+        capacities,
+        maximum_tasks_per_execution,
+        event_delivery,
+        identities,
+        accounting,
+        retained,
+        None,
+        service,
+    )
+}
+
+/// Extends launch fixtures with explicit adapter reservations without changing legacy callers.
+#[allow(clippy::too_many_arguments)]
+fn interpreter_with_adapter_accounting_service(
+    executor: Arc<dyn ExecutorAdapter>,
+    integration: Arc<ScriptedIntegration>,
+    runtime_sessions: Arc<dyn RuntimeSessionService>,
+    capacities: AsyncCapacityLimits,
+    maximum_tasks_per_execution: u64,
+    event_delivery: SinkPlan,
+    identities: Arc<dyn IdentitySource>,
+    accounting: Option<(u64, u64)>,
+    retained: Option<u64>,
+    adapters: Option<u64>,
+    service: Option<Box<dyn gantry::host::contracts::BlockingWorkService>>,
+) -> Interpreter {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
@@ -4434,6 +4474,13 @@ fn interpreter_with_accounting_service(
         .unwrap_or_else(|error| panic!("task-limit configuration failed: {error}"));
     assert_eq!(configuration.resource_accounting_limits(), None);
     let configuration = match accounting {
+        Some((live, pending)) if adapters.is_some() => configuration
+            .with_adapter_bounded_resource_accounting_limits(
+                live,
+                pending,
+                retained.unwrap_or_else(|| panic!("adapter policy requires retention")),
+                adapters.unwrap_or_else(|| panic!("adapter policy exists")),
+            ),
         Some((live, pending)) if retained.is_some() => configuration
             .with_bounded_resource_accounting_limits(
                 live,
@@ -4445,6 +4492,7 @@ fn interpreter_with_accounting_service(
     };
     assert_eq!(configuration.resource_accounting_limits(), accounting);
     assert_eq!(configuration.retained_resource_limit(), retained);
+    assert_eq!(configuration.adapter_identity_limit(), adapters);
     let configuration = match service {
         Some(service) => configuration
             .with_blocking_work_service(service)

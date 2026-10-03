@@ -844,6 +844,20 @@ impl ResourceRegistry {
         }
     }
 
+    /// Creates finite accounting and adapter-identity policy together for fresh owners.
+    #[must_use]
+    pub fn with_adapter_accounting_limits(
+        live: u64,
+        pending: u64,
+        retained: u64,
+        adapters: u64,
+    ) -> Self {
+        Self {
+            adapter_identity_limit: Some(adapters),
+            ..Self::with_accounting_limits(live, pending, retained)
+        }
+    }
+
     /// Returns the separately declared adapter identity ceiling, when enabled.
     #[must_use]
     pub const fn adapter_identity_limit(&self) -> Option<u64> {

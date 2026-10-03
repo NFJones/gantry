@@ -1752,6 +1752,25 @@ impl PreparedRootDriver {
         .map_err(RunExecutionError::TaskState)?;
         #[cfg(feature = "concurrent")]
         let coordinator = match inner.configuration.resource_accounting_limits() {
+            Some((live, pending)) if inner.configuration.adapter_identity_limit().is_some() => {
+                ExecutionCoordinator::new_with_budget_and_adapter_accounting_limits(
+                    tasks,
+                    sessions,
+                    execution_budget.clone(),
+                    live,
+                    pending,
+                    inner
+                        .configuration
+                        .retained_resource_limit()
+                        .unwrap_or_else(|| {
+                            unreachable!("adapter builder retains accounting policy")
+                        }),
+                    inner
+                        .configuration
+                        .adapter_identity_limit()
+                        .unwrap_or_else(|| unreachable!("guard requires adapter policy")),
+                )
+            }
             Some((live, pending)) if inner.configuration.retained_resource_limit().is_some() => {
                 ExecutionCoordinator::new_with_budget_and_accounting_limits(
                     tasks,
@@ -1786,6 +1805,7 @@ impl PreparedRootDriver {
                 sessions,
                 inner.configuration.resource_accounting_limits(),
                 inner.configuration.retained_resource_limit(),
+                inner.configuration.adapter_identity_limit(),
             )
             .map_err(RunExecutionError::TaskState)?
         };
@@ -3403,6 +3423,7 @@ impl Interpreter {
             sessions,
             self.inner.configuration.resource_accounting_limits(),
             self.inner.configuration.retained_resource_limit(),
+            self.inner.configuration.adapter_identity_limit(),
         )
         .map_err(|_| "invalid-recovered-task-state")?;
         let create_request = TaskContextV1 {
@@ -14836,8 +14857,21 @@ fn sequential_execution_coordinator(
     sessions: LogicalSessionRegistryV1,
     accounting: Option<(u64, u64)>,
     retained: Option<u64>,
+    adapters: Option<u64>,
 ) -> Result<ExecutionCoordinator, TaskStateError> {
     match accounting {
+        Some((live, pending)) if adapters.is_some() => {
+            ExecutionCoordinator::new_with_budget_and_adapter_accounting_limits(
+                tasks,
+                sessions,
+                machine.execution_budget(),
+                live,
+                pending,
+                retained
+                    .unwrap_or_else(|| unreachable!("adapter builder retains accounting policy")),
+                adapters.unwrap_or_else(|| unreachable!("guard requires adapter policy")),
+            )
+        }
         Some((live, pending)) if retained.is_some() => {
             ExecutionCoordinator::new_with_budget_and_accounting_limits(
                 tasks,
@@ -14989,12 +15023,14 @@ mod accounting_owner_tests {
         );
         let limits = MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
             .unwrap_or_else(|| panic!("positive limits"));
-        for (accounting, retained) in [
-            (None, None),
-            (Some((0, 0)), None),
-            (Some((2, 3)), None),
-            (Some((2, 3)), Some(0)),
-            (Some((2, 3)), Some(4)),
+        for (accounting, retained, adapters) in [
+            (None, None, None),
+            (Some((0, 0)), None, None),
+            (Some((2, 3)), None, None),
+            (Some((2, 3)), Some(0), None),
+            (Some((2, 3)), Some(4), None),
+            (Some((2, 3)), Some(4), Some(0)),
+            (Some((2, 3)), Some(4), Some(5)),
         ] {
             let mut machine =
                 Machine::new(Arc::clone(&program), &path, Vec::new(), execution, limits)
@@ -15009,10 +15045,11 @@ mod accounting_owner_tests {
             )
             .unwrap_or_else(|error| panic!("sessions: {error:?}"));
             let coordinator = super::sequential_execution_coordinator(
-                &machine, tasks, sessions, accounting, retained,
+                &machine, tasks, sessions, accounting, retained, adapters,
             )
             .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
             assert_eq!(coordinator.retained_resource_limit(), retained);
+            assert_eq!(coordinator.adapter_identity_limit(), adapters);
             assert_eq!(
                 coordinator.snapshot().resource_records(),
                 accounting.map(|_| &[][..])
@@ -15059,10 +15096,11 @@ mod accounting_owner_tests {
                 )
                 .unwrap_or_else(|error| panic!("recovered sessions: {error:?}"));
                 let owner = super::sequential_execution_coordinator(
-                    &recovered, tasks, sessions, accounting, retained,
+                    &recovered, tasks, sessions, accounting, retained, adapters,
                 )
                 .unwrap_or_else(|error| panic!("recovered owner: {error:?}"));
                 assert_eq!(owner.retained_resource_limit(), retained);
+                assert_eq!(owner.adapter_identity_limit(), adapters);
                 assert_eq!(
                     owner.snapshot().resource_records(),
                     accounting.map(|_| &[][..])

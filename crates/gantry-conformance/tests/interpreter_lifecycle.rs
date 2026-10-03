@@ -263,9 +263,16 @@ fn public_configuration_admits_an_explicit_fully_unlimited_policy() {
     let bounded = configuration().with_bounded_resource_accounting_limits(2, 3, 0);
     assert_eq!(bounded.resource_accounting_limits(), Some((2, 3)));
     assert_eq!(bounded.retained_resource_limit(), Some(0));
+    let supervised = configuration().with_adapter_bounded_resource_accounting_limits(2, 3, 4, 0);
+    assert_eq!(supervised.resource_accounting_limits(), Some((2, 3)));
+    assert_eq!(supervised.retained_resource_limit(), Some(4));
+    assert_eq!(supervised.adapter_identity_limit(), Some(0));
+    let replaced_adapter = supervised.with_bounded_resource_accounting_limits(5, 6, 7);
+    assert_eq!(replaced_adapter.adapter_identity_limit(), None);
     let replaced = bounded.with_resource_accounting_limits(4, 5);
     assert_eq!(replaced.resource_accounting_limits(), Some((4, 5)));
     assert_eq!(replaced.retained_resource_limit(), None);
+    assert_eq!(replaced.adapter_identity_limit(), None);
 
     let required = RequiredConfiguration::unlimited(
         FrontendLimits::unlimited(),

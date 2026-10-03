@@ -958,6 +958,58 @@ fn durable_live_struct_construction_rejects_without_preflight_or_commit() {
     assert_eq!(storage.release_calls(), 1);
 }
 
+/// Unsupported adapter policy must refuse even ordinary source before mappings or journal writes.
+#[test]
+fn durable_adapter_identity_policy_refuses_without_preflight_or_commit() {
+    let root = TempDirectory::new(b"fn main() {}");
+    let services = Arc::new(Services::default());
+    let configuration = test_configuration(Arc::clone(&services))
+        .with_adapter_bounded_resource_accounting_limits(2, 3, 4, 0);
+    let selection = selection();
+    let storage = Arc::new(InstrumentedJournalStore::default());
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &FixedClock,
+        gantry_conformance::blocking_work(),
+    );
+    let preflight = Arc::new(RecordingPreflight::default());
+    let start = StartExecutionCoordinator::new(
+        &package,
+        &lifecycle,
+        &configuration,
+        &allocator,
+        preflight.clone(),
+    );
+    let durable = DurableStartExecutionCoordinator::new(start, &configuration, storage.clone());
+    let journal_id = JournalId::new("adapter-policy-refusal")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let result = block_on(durable.start(DurableStartExecutionRequest {
+        journal_id: journal_id.clone(),
+        start: start_request(&root.0, &selection),
+    }));
+    let DurableStartExecutionResult::Rejected(failure) = result else {
+        panic!("unsupported adapter policy was accepted");
+    };
+    assert_eq!(
+        failure.failure.category,
+        StartFailureCategory::IntegrationPreflight
+    );
+    assert_eq!(
+        failure.failure.code.as_ref(),
+        "unsupported-durable-adapter-identity-policy"
+    );
+    assert!(preflight.mapping_requests().is_empty());
+    assert_eq!(storage.commit_calls(), 0);
+    assert_eq!(storage.release_calls(), 1);
+    let JournalPrefixV1::Full(prefix) = read_prefix(storage.as_ref(), &journal_id) else {
+        panic!("full prefix")
+    };
+    assert!(prefix.evidence.is_empty());
+}
+
 #[test]
 fn durable_start_preflight_authenticates_the_transitive_reachable_dependency_closure() {
     let root = TempDirectory::new(
@@ -1063,7 +1115,12 @@ fn main() -> Int { discard Handle {}; leaf() }
         &journal_id,
         accepted.test_ownership_token().clone(),
     );
-    for unsupported in [unsupported, unsupported_aggregate, unclassified] {
+    for (unsupported, adapter_limit) in [
+        (unsupported, None),
+        (unsupported_aggregate, None),
+        (unclassified, None),
+        (program.as_ref().clone(), Some(0)),
+    ] {
         let retained = DurableExecutionStartV3::new(
             execution_start.execution_id(),
             execution_start.task_id(),
@@ -1083,6 +1140,11 @@ fn main() -> Int { discard Handle {}; leaf() }
             .unwrap_or_else(|error| panic!("otherwise valid retained program: {error:?}"));
         storage.set_prefix_override(unsupported_prefix.clone());
         let commits_before = storage.commit_calls();
+        let configuration = match adapter_limit {
+            Some(limit) => test_configuration(Arc::clone(&services))
+                .with_adapter_bounded_resource_accounting_limits(2, 3, 4, limit),
+            None => test_configuration(Arc::clone(&services)),
+        };
         let resume_lifecycle = InterpreterLifecycle::new(&configuration);
         let resume_allocator = FreshIdentityAllocator::default();
         let resume_package = AnalyzePackageCoordinator::new(
@@ -1113,7 +1175,14 @@ fn main() -> Int { discard Handle {}; leaf() }
         let DurableResumeExecutionResult::Rejected(failure) = result else {
             panic!("unsupported retained live-resource transport accepted");
         };
-        assert_eq!(failure.code.as_ref(), "unsupported-live-resource-transport");
+        assert_eq!(
+            failure.code.as_ref(),
+            if adapter_limit.is_some() {
+                "unsupported-durable-adapter-identity-policy"
+            } else {
+                "unsupported-live-resource-transport"
+            }
+        );
         assert_eq!(preflight.mapping_requests().len(), 1);
         assert_eq!(storage.commit_calls(), commits_before);
         assert_eq!(

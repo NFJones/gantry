@@ -335,6 +335,32 @@ impl ExecutionCoordinator {
         )
     }
 
+    /// Creates budget-sharing accounting with finite lifetime adapter-identity reservations.
+    ///
+    /// The budget must belong to the task execution. This fresh-owner policy creates no host
+    /// authority and remains unsupported by current durable graph capture.
+    pub fn new_with_budget_and_adapter_accounting_limits(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: ExecutionBudget,
+        live: u64,
+        pending: u64,
+        retained: u64,
+        adapters: u64,
+    ) -> Result<Self, TaskStateError> {
+        if execution_budget.snapshot().execution != tasks.execution_id() {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        Self::new_inner(
+            tasks,
+            sessions,
+            Some(execution_budget),
+            Some(crate::ResourceRegistry::with_adapter_accounting_limits(
+                live, pending, retained, adapters,
+            )),
+        )
+    }
+
     /// Creates one shared accounting registry with an explicit live-account ceiling.
     ///
     /// Cloned coordinator handles share this registry under the existing coordinator mutex.
@@ -1213,6 +1239,15 @@ impl ExecutionCoordinator {
             .resources
             .as_ref()
             .and_then(crate::ResourceRegistry::retained_limit)
+    }
+
+    /// Reports lifetime adapter-identity policy without changing publication.
+    #[must_use]
+    pub fn adapter_identity_limit(&self) -> Option<u64> {
+        lock(&self.inner.state)
+            .resources
+            .as_ref()
+            .and_then(crate::ResourceRegistry::adapter_identity_limit)
     }
 
     /// Reports whether active or finishing accounting still requires semantic settlement.
