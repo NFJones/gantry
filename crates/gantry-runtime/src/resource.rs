@@ -2717,6 +2717,17 @@ impl AdmittedResource {
         owner: OwnerGeneration,
         successor: OwnerGeneration,
     ) -> Result<(), crate::HostResourceError> {
+        self.transfer_owner_with_charges(owner, successor, &[])
+    }
+
+    /// Commits explicit move charges and successor ownership only after every transfer fence.
+    /// A refused vector or successor record leaves the original ledger and history unchanged.
+    pub(crate) fn transfer_owner_with_charges(
+        &mut self,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+        charges: &[Charge],
+    ) -> Result<(), crate::HostResourceError> {
         use crate::HostResourceError;
 
         self.require_current_owner(owner)
@@ -2751,7 +2762,11 @@ impl AdmittedResource {
         if self.adapter.is_some() {
             return Err(HostResourceError::AdapterBound);
         }
-        let record = self.ledger.durable_record();
+        let mut staged = self.ledger.clone();
+        staged
+            .charge(owner, ResourceAction::Move, charges)
+            .map_err(HostResourceError::Model)?;
+        let record = staged.durable_record();
         let transferred = DurableResourceRecord::from_durable_facts(
             successor,
             record.lifetime(),

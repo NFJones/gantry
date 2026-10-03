@@ -519,6 +519,11 @@ settled historical containment, no bound adapter, and unpoisoned transport. Refu
 complete owner untouched. Success preserves the physical value, subject, quota/root facts and
 historical containment; it neither rebinds an adapter nor implements source-task transfer.
 
+`transfer_with_charges` commits an explicit whole move vector and successor ownership together,
+after the same eligibility fences. Quota refusal returns the complete owner unchanged; success
+preserves physical ownership and historical containment while retaining the declared quota use.
+Legacy transfer remains uncharged; physical size never supplies an implicit charge.
+
 `OwnedHostResource::borrow_receiver` consumes an exact borrowed `LiveResource` into an exclusive
 `HostReceiverLoan`, returning the handle on refusal. Admission checks the account's operation,
 site, resource generation, current owner and declared loan root. The loan's recovery class must

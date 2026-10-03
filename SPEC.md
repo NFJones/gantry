@@ -15586,6 +15586,11 @@ unpoisoned transport holding its value. Refusal MUST return the complete affine 
 Success changes only current accounting ownership and moves the same host value; subject, quotas,
 roots and historical containment evidence MUST remain unchanged. This does not rebind an adapter,
 reopen settlement, grant authority, or implement source-task transfer.
+`transfer_with_charges` MAY additionally admit an explicit whole move-charge vector after all
+transfer eligibility checks. Charges and successor ownership MUST publish atomically; refusal
+MUST return the complete owner with unchanged accounting and physical ownership. Success changes
+only the current owner and explicitly charged quota use, preserving subject, roots and historical
+containment. No physical-size charge is inferred and legacy uncharged transfer remains unchanged.
 The wrapper MAY admit an exclusive `HostReceiverLoan` only from an unsettled borrowed
 `LiveResource` with its exact operation, site, resource generation and current owner, while
 active/open accounting retains a declared loan root. Its recovery class MUST equal the admitted

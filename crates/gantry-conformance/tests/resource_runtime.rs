@@ -6946,6 +6946,89 @@ fn host_receiver_loan_abandonment_and_forgetting_fence_reuse() {
     }
 }
 
+/// Explicit move charges commit with ownership, never with a refused transfer.
+#[test]
+fn charged_host_transfer_preserves_refusals_and_commits_once() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let owner = OwnerGeneration::new(4);
+    let successor = OwnerGeneration::new(5);
+    let charges = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 2,
+    }];
+    let mut resource = OwnedHostResource::bind(transfer_account(false, false, false), 17_u64)
+        .unwrap_or_else(|_| panic!("bind"));
+    let before = resource.account().durable_record();
+    for (next, vector, expected) in [
+        (
+            owner,
+            vec![Charge {
+                amount: 9,
+                ..charges[0]
+            }],
+            ResourceError::InvalidSuccessorGeneration,
+        ),
+        (
+            successor,
+            vec![
+                charges[0],
+                Charge {
+                    family: QuotaFamily::Operations,
+                    ..charges[0]
+                },
+            ],
+            ResourceError::UndeclaredQuota,
+        ),
+        (
+            successor,
+            vec![Charge {
+                amount: 9,
+                ..charges[0]
+            }],
+            ResourceError::QuotaExhausted,
+        ),
+    ] {
+        let (error, returned) = *resource
+            .transfer_with_charges(owner, next, &vector)
+            .err()
+            .unwrap_or_else(|| panic!("transfer must refuse"));
+        assert_eq!(error, HostResourceError::Model(expected));
+        assert_eq!(returned.account().durable_record(), before);
+        resource = returned;
+    }
+    let mut moved = resource
+        .transfer_with_charges(owner, successor, &charges)
+        .unwrap_or_else(|_| panic!("valid charged transfer"));
+    assert_eq!(moved.account().ledger().owner(), successor);
+    assert_eq!(
+        moved
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(6)
+    );
+    assert_eq!(moved.account().containment().owner(), owner);
+    assert_eq!(
+        moved.account().containment().outcome(),
+        Some(ExternalOutcome::Accepted)
+    );
+    assert_eq!(
+        moved.account().durable_record().liveness_roots(),
+        before.liveness_roots()
+    );
+    assert_eq!(moved.invoke(successor, |value| Ok(*value)), Ok(17));
+    assert_eq!(
+        moved.finish(successor, 40, |_| Ok(())),
+        Ok(ResourceLifetimeState::Finished)
+    );
+    assert_eq!(
+        moved
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(6)
+    );
+}
+
 /// A consuming move advances only the owner and retains one physical value and historical evidence.
 #[test]
 fn owned_host_resource_transfer_preserves_facts_and_fences_the_previous_owner() {

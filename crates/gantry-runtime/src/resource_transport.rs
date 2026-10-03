@@ -146,9 +146,30 @@ impl<T> OwnedHostResource<T> {
     /// before mutation. Historical containment remains settled under its original owner. Refusal
     /// returns the complete owner; success preserves subject, quota, roots and physical identity.
     pub fn transfer(
+        self,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+    ) -> Result<Self, Box<(HostResourceError, Self)>> {
+        self.transfer_using(owner, successor, None)
+    }
+
+    /// Consumes an affine owner with an explicit whole move-charge vector.
+    /// Transfer eligibility precedes charging; refusal returns the complete owner unchanged.
+    pub fn transfer_with_charges(
+        self,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+        charges: &[gantry_ir::Charge],
+    ) -> Result<Self, Box<(HostResourceError, Self)>> {
+        self.transfer_using(owner, successor, Some(charges))
+    }
+
+    /// Shares physical eligibility and preserves the legacy uncharged transfer path.
+    fn transfer_using(
         mut self,
         owner: OwnerGeneration,
         successor: OwnerGeneration,
+        charges: Option<&[gantry_ir::Charge]>,
     ) -> Result<Self, Box<(HostResourceError, Self)>> {
         if let Err(error) = self.require_owner(owner) {
             return Err(Box::new((error, self)));
@@ -162,7 +183,13 @@ impl<T> OwnedHostResource<T> {
         if self.value.is_none() {
             return Err(Box::new((HostResourceError::Disposed, self)));
         }
-        if let Err(error) = self.account.transfer_owner(owner, successor) {
+        let result = match charges {
+            Some(charges) => self
+                .account
+                .transfer_owner_with_charges(owner, successor, charges),
+            None => self.account.transfer_owner(owner, successor),
+        };
+        if let Err(error) = result {
             return Err(Box::new((error, self)));
         }
         Ok(self)
