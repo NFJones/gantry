@@ -2814,6 +2814,25 @@ mod tests {
         )
         .unwrap_or_else(|error| panic!("abi: {error:?}"));
         let failure = abi.settle_failure(gantry_ir::FailureClass::AdapterFailure);
+        let mut failed_live = abi
+            .open_live(
+                owner,
+                gantry_ir::OperationAbi::observation_allowance(
+                    1,
+                    gantry_ir::DisclosureCharge::new(1)
+                        .unwrap_or_else(|| panic!("positive charge")),
+                ),
+            )
+            .unwrap_or_else(|error| panic!("live resource: {error:?}"));
+        assert!(
+            failed_live
+                .settle_failure(gantry_ir::FailureClass::AdapterFailure)
+                .is_ok()
+        );
+        assert_eq!(
+            coordinator.project_resource_failure_state(&failed_live, &subject),
+            Err(reserved.clone())
+        );
         assert_eq!(
             coordinator.poison_resource_adapter_from_post_failure(
                 &failure,

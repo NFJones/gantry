@@ -2197,6 +2197,12 @@ fn registry_physical_routes_refuse_a_foreign_execution_with_matching_static_iden
     .unwrap_or_else(|error| panic!("settlement: {error:?}"));
     live.settle(&settlement)
         .unwrap_or_else(|error| panic!("accepted settlement: {error:?}"));
+    let mut failed_live = transport_live(FIXTURE_DECLARATION, 0, 4, false);
+    assert!(
+        failed_live
+            .settle_failure(FailureClass::AdapterFailure)
+            .is_ok()
+    );
     let mismatched = declared_subject(SECOND_FIXTURE_DECLARATION);
     for (requested, expected) in [
         (&foreign, ResourceRegistryRefusal::ForeignSubject),
@@ -2212,6 +2218,10 @@ fn registry_physical_routes_refuse_a_foreign_execution_with_matching_static_iden
         );
         assert_eq!(
             registry.project_operation_state(&live, requested),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            registry.project_failure_state(&failed_live, requested),
             Err(expected.clone())
         );
         assert_eq!(
