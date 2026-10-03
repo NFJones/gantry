@@ -2609,6 +2609,20 @@ fn configuration_json(
     let required = configuration.required();
     let retry = configuration.retry_defaults();
     let version = |family| selection.version(family);
+    let accounting = configuration.resource_accounting_limits().map_or_else(
+        String::new,
+        |(live, pending)| {
+            let retained = configuration.retained_resource_limit().map_or_else(
+                || "null".to_owned(),
+                |limit| json_string(&limit.to_string()),
+            );
+            format!(
+                ",\"resource_accounting\":{{\"live\":{},\"pending\":{},\"retained\":{retained}}}",
+                json_string(&live.to_string()),
+                json_string(&pending.to_string())
+            )
+        },
+    );
     let protocol = |family| {
         let version = version(family);
         format!(
@@ -2617,7 +2631,7 @@ fn configuration_json(
         )
     };
     format!(
-        "{{\"canonical_ir_protocol\":{},\"configuration_protocol\":{},\"deterministic_values\":{{\"maximum_entry_input_bytes\":{},\"maximum_hook_output_bytes\":{},\"maximum_list_items\":{},\"maximum_string_scalars\":{},\"maximum_value_nesting_depth\":{},\"maximum_value_nodes\":{}}},\"embedding_protocol\":{},\"event_protocol\":{},\"hook_protocol\":{},\"interpreter\":{{\"maximum_deterministic_transitions_per_execution\":{},\"maximum_loop_iterations_per_task\":{},\"maximum_operations_per_execution\":{},\"maximum_tasks_per_execution\":{},\"maximum_workflow_call_depth\":{}}},\"journal_protocol\":{},\"maximum_directive_integer\":{},\"recovery_projection_protocol\":{},\"required_event_sinks\":{},\"root_session\":{{\"id\":{},\"provenance\":{}}},\"source_language\":{},\"source_map_protocol\":{},\"structured_output\":{{\"action_retry_limit\":{},\"backoff\":{{\"cap_us\":{},\"initial_us\":{},\"jitter\":{}}},\"model_retry_limit\":{}}},\"value_protocol\":{}}}",
+        "{{\"canonical_ir_protocol\":{},\"configuration_protocol\":{},\"deterministic_values\":{{\"maximum_entry_input_bytes\":{},\"maximum_hook_output_bytes\":{},\"maximum_list_items\":{},\"maximum_string_scalars\":{},\"maximum_value_nesting_depth\":{},\"maximum_value_nodes\":{}}},\"embedding_protocol\":{},\"event_protocol\":{},\"hook_protocol\":{},\"interpreter\":{{\"maximum_deterministic_transitions_per_execution\":{},\"maximum_loop_iterations_per_task\":{},\"maximum_operations_per_execution\":{},\"maximum_tasks_per_execution\":{},\"maximum_workflow_call_depth\":{}}},\"journal_protocol\":{},\"maximum_directive_integer\":{},\"recovery_projection_protocol\":{},\"required_event_sinks\":{}{accounting},\"root_session\":{{\"id\":{},\"provenance\":{}}},\"source_language\":{},\"source_map_protocol\":{},\"structured_output\":{{\"action_retry_limit\":{},\"backoff\":{{\"cap_us\":{},\"initial_us\":{},\"jitter\":{}}},\"model_retry_limit\":{}}},\"value_protocol\":{}}}",
         protocol(gantry_core::portable::ProtocolFamily::CanonicalIr),
         protocol(gantry_core::portable::ProtocolFamily::Configuration),
         json_string(&required.maximum_entry_input_bytes.to_string()),

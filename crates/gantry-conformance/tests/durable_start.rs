@@ -1030,7 +1030,8 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         b"agents { worker } default agent = worker; action read_only inspect(value: Int) -> Int; fn main() {}",
     );
     let services = Arc::new(Services::default());
-    let configuration = test_configuration(Arc::clone(&services));
+    let configuration =
+        test_configuration(Arc::clone(&services)).with_bounded_resource_accounting_limits(2, 3, 4);
     let selection = selection();
     let storage = Arc::new(InMemoryJournalStore::new());
     let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
@@ -1150,6 +1151,10 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     assert_eq!(metadata["journal_schema"]["major"], 1);
     assert_eq!(metadata["journal_schema"]["minor"], 0);
     assert_eq!(
+        metadata["configuration"]["resource_accounting"],
+        serde_json::json!({"live":"2","pending":"3","retained":"4"})
+    );
+    assert_eq!(
         metadata["configuration"]["root_session"]["id"],
         metadata["root_session"]["id"]
     );
@@ -1266,49 +1271,58 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         prefix_after_start
     );
 
-    let incompatible_configuration = test_configuration(Arc::clone(&services))
-        .with_maximum_workflow_call_depth(2_048)
-        .unwrap_or_else(|error| panic!("configuration mutation failed: {error:?}"));
-    let incompatible_lifecycle = InterpreterLifecycle::new(&incompatible_configuration);
-    let incompatible_allocator = FreshIdentityAllocator::default();
-    let incompatible_package = AnalyzePackageCoordinator::new(
-        &incompatible_allocator,
-        services.as_ref(),
-        &clock,
-        gantry_conformance::blocking_work(),
-    );
-    let incompatible_start = StartExecutionCoordinator::new(
-        &incompatible_package,
-        &incompatible_lifecycle,
-        &incompatible_configuration,
-        &incompatible_allocator,
-        preflight.clone(),
-    );
-    let incompatible = DurableStartExecutionCoordinator::new(
-        incompatible_start,
-        &incompatible_configuration,
-        Arc::clone(&storage_adapter),
-    );
-    let result = block_on(incompatible.resume(DurableResumeExecutionRequest {
-        journal_id: journal_id.clone(),
-        protocol_selection: &selection,
-        candidate_package_root: None,
-        expected_execution_id: Some(execution_id),
-        event_delivery: None,
-    }));
-    let DurableResumeExecutionResult::Rejected(failure) = result else {
-        panic!("immutable configuration mismatch was accepted");
-    };
-    assert_eq!(
-        failure.category,
-        ResumeStartFailureCategory::SourceOrConfigurationIncompatibility
-    );
-    assert_eq!(&*failure.code, "immutable-configuration-mismatch");
-    assert!(failure.release_error.is_none());
-    assert_eq!(
-        read_prefix(storage.as_ref(), &journal_id),
-        prefix_after_start
-    );
+    for incompatible_configuration in [
+        test_configuration(Arc::clone(&services)).with_bounded_resource_accounting_limits(2, 3, 5),
+        test_configuration(Arc::clone(&services)).with_bounded_resource_accounting_limits(3, 3, 4),
+        test_configuration(Arc::clone(&services)).with_bounded_resource_accounting_limits(2, 4, 4),
+        test_configuration(Arc::clone(&services)).with_resource_accounting_limits(2, 3),
+        test_configuration(Arc::clone(&services)),
+        test_configuration(Arc::clone(&services))
+            .with_bounded_resource_accounting_limits(2, 3, 4)
+            .with_maximum_workflow_call_depth(2_048)
+            .unwrap_or_else(|error| panic!("configuration mutation failed: {error:?}")),
+    ] {
+        let incompatible_lifecycle = InterpreterLifecycle::new(&incompatible_configuration);
+        let incompatible_allocator = FreshIdentityAllocator::default();
+        let incompatible_package = AnalyzePackageCoordinator::new(
+            &incompatible_allocator,
+            services.as_ref(),
+            &clock,
+            gantry_conformance::blocking_work(),
+        );
+        let incompatible_start = StartExecutionCoordinator::new(
+            &incompatible_package,
+            &incompatible_lifecycle,
+            &incompatible_configuration,
+            &incompatible_allocator,
+            preflight.clone(),
+        );
+        let incompatible = DurableStartExecutionCoordinator::new(
+            incompatible_start,
+            &incompatible_configuration,
+            Arc::clone(&storage_adapter),
+        );
+        let result = block_on(incompatible.resume(DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        }));
+        let DurableResumeExecutionResult::Rejected(failure) = result else {
+            panic!("immutable configuration mismatch was accepted");
+        };
+        assert_eq!(
+            failure.category,
+            ResumeStartFailureCategory::SourceOrConfigurationIncompatibility
+        );
+        assert_eq!(&*failure.code, "immutable-configuration-mismatch");
+        assert!(failure.release_error.is_none());
+        assert_eq!(
+            read_prefix(storage.as_ref(), &journal_id),
+            prefix_after_start
+        );
+    }
 
     let resume_lifecycle = InterpreterLifecycle::new(&configuration);
     let resume_allocator = FreshIdentityAllocator::default();
@@ -1360,7 +1374,8 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     );
 
     let deep_candidate = TempDirectory::new(b"fn main(value: Option<Option<Int>>) {}");
-    let limited_configuration = test_configuration_with_type_depth(Arc::clone(&services), 2);
+    let limited_configuration = test_configuration_with_type_depth(Arc::clone(&services), 2)
+        .with_bounded_resource_accounting_limits(2, 3, 4);
     let limited_lifecycle = InterpreterLifecycle::new(&limited_configuration);
     let limited_allocator = FreshIdentityAllocator::default();
     let limited_package = AnalyzePackageCoordinator::new(
@@ -1493,6 +1508,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     );
 
     let revised_configuration = test_configuration(Arc::clone(&services))
+        .with_bounded_resource_accounting_limits(2, 3, 4)
         .with_graceful_shutdown_timeout_us(45_000_000)
         .unwrap_or_else(|error| panic!("mutable configuration failed: {error:?}"));
     let revised_lifecycle = InterpreterLifecycle::new(&revised_configuration);
@@ -1553,6 +1569,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
 
     let best_effort_plan = best_effort_plan();
     let best_effort_configuration = test_configuration(Arc::clone(&services))
+        .with_bounded_resource_accounting_limits(2, 3, 4)
         .with_graceful_shutdown_timeout_us(45_000_000)
         .unwrap_or_else(|error| panic!("best-effort configuration failed: {error:?}"));
     let best_effort_lifecycle = InterpreterLifecycle::new(&best_effort_configuration);
@@ -1607,6 +1624,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     );
 
     let yield_configuration = test_configuration_with_quantum(Arc::clone(&services), 7)
+        .with_bounded_resource_accounting_limits(2, 3, 4)
         .with_graceful_shutdown_timeout_us(45_000_000)
         .unwrap_or_else(|error| panic!("yield configuration failed: {error:?}"));
     let yield_lifecycle = InterpreterLifecycle::new(&yield_configuration);

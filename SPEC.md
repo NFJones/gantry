@@ -15233,6 +15233,11 @@ MAY additionally select a retained-account ceiling through
 fresh owners MUST retain that ceiling; zero permits ordinary source execution but denies new
 account records. Replacing this policy with `with_resource_accounting_limits` MUST clear the
 retained ceiling. Default retained policy is absent. This configuration
+MUST bind enabled live, pending and retained accounting policy to the durable execution-start
+configuration identity. Disabled accounting retains its legacy configuration encoding. Resume
+with changed ceilings, removed retained policy or disabled accounting MUST refuse
+`immutable-configuration-mismatch` without journal mutation; absent retained policy is distinct
+from a zero ceiling. This identity check does not itself reconstruct accounting or host resources.
 MUST NOT enable unsupported live-handle transport or grant host authority. The version-six combined
 graph recovers enabled empty-registry admission policy as declared below; resource records,
 physical handles and admitted pending work remain unsupported by that wire.

@@ -78,6 +78,11 @@ in both sequential and concurrent fresh owners, preserving their shared executio
 `retained_resource_limit()` inspects this independent ceiling. The default leaves it absent;
 calling the two-ceiling builder replaces and clears retained policy. Zero denies record admission,
 not ordinary source execution. Empty bounded policy uses version-seven graph carriage.
+Enabled accounting policy is also included in the immutable durable execution-start configuration
+identity. Changed live, pending or retained ceilings, retained-policy removal and disabled accounting
+refuse resume with `immutable-configuration-mismatch` without journal mutation. Disabled-policy
+configuration bytes remain unchanged; absent retention differs from zero. Binding this policy is
+not itself resource reconstruction or host authority admission.
 
 `ExecutionCoordinator::new_with_recovered_resources` constructs one shared accounting owner
 atomically from declared reconstruction records. Each binding must name the execution and a known
