@@ -713,6 +713,67 @@ fn fresh_launch_owns_only_explicitly_configured_resource_accounting() {
             assert_eq!(coordinator.snapshot(), before);
             assert!(!coordinator.has_pending_resource_operations());
         }
+        if adapters == Some(0) {
+            let coordinator = interpreter
+                .test_nondurable_resource_coordinator(handle.execution_id())
+                .unwrap_or_else(|| panic!("fresh execution owner exists"));
+            let mut machine = resource_cleanup::resource_machine(handle.execution_id());
+            let subject = machine
+                .pending_resource_subject()
+                .unwrap_or_else(|| panic!("fixture subject"));
+            let owner = gantry::ir::OwnerGeneration::new(4);
+            let record = gantry::ir::ResourceLedger::new(
+                owner,
+                gantry::ir::ResourceState::Usable,
+                &[gantry::ir::LivenessRoot::Resource],
+                &[],
+            )
+            .unwrap_or_else(|error| panic!("fixture accounting: {error:?}"));
+            coordinator
+                .admit_resource(
+                    &machine,
+                    gantry::ir::ResourceCarrier::ReconstructionRecord,
+                    record.durable_record(),
+                )
+                .unwrap_or_else(|error| panic!("admission: {error:?}"));
+            let receiver = gantry::ir::TypeExpression::from_canonical_string("crate::Adapter", 4)
+                .unwrap_or_else(|error| panic!("receiver: {error:?}"));
+            let adapter = gantry::ir::AdapterInstance::bind(
+                &gantry::ir::CanonicalImplementationIdentity::inherent(&receiver),
+                gantry::ir::RightsSet::empty(),
+                owner,
+                0,
+            );
+            let before = coordinator.snapshot();
+            assert_eq!(
+                coordinator.bind_resource_adapter(&subject, owner, adapter),
+                Err(gantry::runtime::CoordinatorResourceRefusal::Registry(
+                    gantry::runtime::ResourceRegistryRefusal::AdapterIdentityLimitReached {
+                        limit: 0
+                    }
+                ))
+            );
+            assert_eq!(coordinator.snapshot(), before);
+            assert!(coordinator.has_pending_resource_operations());
+            let operation = machine
+                .checkpoint()
+                .pending_operation()
+                .unwrap_or_else(|| panic!("fixture operation"))
+                .identity;
+            machine
+                .fail_operation(
+                    operation,
+                    gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+                )
+                .unwrap_or_else(|error| panic!("fixture settlement: {error:?}"));
+            coordinator
+                .begin_resource_finish(&subject, owner)
+                .unwrap_or_else(|error| panic!("finish: {error:?}"));
+            coordinator
+                .complete_resource_finalization(&subject, owner, 20)
+                .unwrap_or_else(|error| panic!("finalization: {error:?}"));
+            assert!(!coordinator.has_pending_resource_operations());
+        }
         drop(accepted);
         let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
         assert_eq!(
