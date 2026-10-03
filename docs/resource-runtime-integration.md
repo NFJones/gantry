@@ -121,8 +121,10 @@ and coordinator-backed driver recovery preserve the policy without reconstructin
 owner unchanged; use `into_driver_admission` to retain policy in its coordinator. Every replayed
 graph transition rejects changed or removed policy, including operation cuts.
 `capture_checkpoint` and `stage_graph` refuse `ResourceStateUnsupported` before cloning machines
-or reserving publication if retained accounts, physical slots or pending admitted work would be
-omitted. An empty configured registry remains eligible. This fail-closed boundary prevents silent
+or reserving publication if retained accounts, physical slots, adapter poison history or pending
+admitted work would be omitted. Poison history remains a refusal even after accounts are reaped,
+so policy-only recovery cannot re-enable a failed adapter identity. An empty configured registry
+without that history remains eligible. This fail-closed boundary prevents silent
 accounting loss; it is not durable resource reconstruction integration.
 `publish_committed_root` likewise refuses before installing task, session, budget, event or root
 projections when retained resource state would be omitted. It does not undo an existing journal cut.

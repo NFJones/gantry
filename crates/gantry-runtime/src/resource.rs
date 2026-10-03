@@ -1090,11 +1090,14 @@ impl ResourceRegistry {
 
     /// Reports process-local resource state that the current durable graph wire cannot retain.
     ///
-    /// Accounts, physical slots and still-pending admitted work require explicit
+    /// Accounts, physical slots, adapter poison history and still-pending admitted work require explicit
     /// reconstruction integration; empty-registry policy is carried by the graph wire.
     #[must_use]
     pub(crate) fn has_uncheckpointed_state(&self) -> bool {
-        !self.accounts.is_empty() || !self.physical.is_empty() || self.pending_operations() != 0
+        !self.accounts.is_empty()
+            || !self.physical.is_empty()
+            || self.adapter_faults != PoisonLedger::new()
+            || self.pending_operations() != 0
     }
 
     /// Captures the declared reconstruction records of every admitted account.

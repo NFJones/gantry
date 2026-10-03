@@ -15312,7 +15312,9 @@ retained policy; no entry point authenticates journal provenance merely by recon
 
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
-slots or admitted pending work would be omitted. Refusal MUST precede private machine cloning or
+slots, adapter poison history or admitted pending work would be omitted. Failed-adapter identity
+evidence MUST retain this refusal even after all accounts have been reclaimed; policy-only recovery
+MUST NOT reset that evidence and re-enable an identity. Refusal MUST precede private machine cloning or
 publication reservation and leave accounting, machines and publication unchanged. An empty configured
 registry alone does not require refusal. This boundary does not implement durable resource recovery.
 For an enabled empty registry, combined graph capture MAY retain the exact optional live-account

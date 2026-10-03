@@ -197,6 +197,112 @@ fn resource_records_refuse_durable_graph_capture_and_staging_without_mutation() 
     assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
 }
 
+/// Reaping accounting must not make retained failed-adapter evidence disappear on recovery.
+#[test]
+fn adapter_poison_history_refuses_empty_graph_capture_and_staging() {
+    let (coordinator, mut root, mut children) = fixture();
+    let path =
+        CanonicalPath::new("crate::poison_history").unwrap_or_else(|error| panic!("path: {error}"));
+    let lease = Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open()));
+    let subject = crate::ResourceSubjectBinding::derive(
+        &path,
+        path.clone(),
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}")),
+        0,
+        Some(OperationKind::LiveResource),
+        Arc::clone(&lease),
+        (root.execution_id(), root.task_id()),
+    );
+    let owner = OwnerGeneration::new(4);
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("record: {error:?}"));
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let receiver = gantry_ir::TypeExpression::from_canonical_string("crate::Adapter", 4)
+        .unwrap_or_else(|error| panic!("receiver: {error:?}"));
+    let instance = gantry_ir::AdapterInstance::bind(
+        &gantry_ir::CanonicalImplementationIdentity::inherent(&receiver),
+        gantry_ir::RightsSet::empty(),
+        owner,
+        0,
+    );
+    registry
+        .bind_adapter_instance(&subject, owner, instance.clone())
+        .unwrap_or_else(|error| panic!("bind: {error:?}"));
+    registry
+        .poison_adapter_instance(&subject, owner, gantry_ir::PoisonReason::InvariantFailure)
+        .unwrap_or_else(|error| panic!("poison: {error:?}"));
+    registry
+        .begin_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("finish: {error:?}"));
+    registry
+        .complete_finalization(&subject, owner, 20)
+        .unwrap_or_else(|error| panic!("finalization: {error:?}"));
+    registry
+        .close_liveness_root(&subject, owner, LivenessRoot::Resource)
+        .unwrap_or_else(|error| panic!("root: {error:?}"));
+    registry
+        .retire(
+            &subject,
+            gantry_ir::RetentionFence::new(2, 10)
+                .unwrap_or_else(|error| panic!("fence: {error:?}")),
+            owner,
+            OwnerGeneration::new(5),
+            35,
+        )
+        .unwrap_or_else(|error| panic!("retire: {error:?}"));
+    registry
+        .delete(&subject, owner)
+        .unwrap_or_else(|error| panic!("delete: {error:?}"));
+    assert_eq!(registry.reap_deleted(), 1);
+    lock(&lease).pending = false;
+    assert!(registry.declared_records().is_empty());
+    assert_eq!(registry.pending_operations(), 0);
+    assert!(registry.host_values_are_quiescent());
+    lock(&coordinator.inner.state).resources = Some(registry);
+    let before = coordinator.snapshot();
+    let machine_before = root.checkpoint().canonical_bytes();
+    assert_eq!(
+        coordinator.capture_checkpoint(&root, &children).err(),
+        Some(crate::ConcurrentDurableCheckpointError::ResourceStateUnsupported)
+    );
+    assert_eq!(
+        coordinator.stage_graph(&mut root, &mut children).err(),
+        Some(TaskStateError::ResourceStateUnsupported)
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(root.checkpoint().canonical_bytes(), machine_before);
+    assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
+    // The failed identity still cannot bind after the refused capture.
+    let mut state = lock(&coordinator.inner.state);
+    let registry = state
+        .resources
+        .as_mut()
+        .unwrap_or_else(|| panic!("registry"));
+    lock(&lease).pending = true;
+    registry
+        .admit(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("readmit: {error:?}"));
+    assert!(matches!(
+        registry.bind_adapter_instance(&subject, owner, instance),
+        Err(ResourceRegistryRefusal::AdapterBinding(
+            crate::AdapterBindingRefusal::Substitution(
+                gantry_ir::OperationAbiError::AdapterInstancePoisoned { .. }
+            )
+        ))
+    ));
+}
+
 /// Empty accounting remains enabled with exact limits after durable graph recovery.
 #[test]
 fn empty_resource_policy_survives_graph_recovery() {
