@@ -1246,6 +1246,28 @@ impl MachineCheckpointV3 {
             .map(|pending| &pending.occurrence)
     }
 
+    /// Checks that this retained task reached the generation in a validated issuing checkpoint.
+    ///
+    /// This is a correspondence check, not journal authentication or a proof of all intervening
+    /// transitions. Historical issuing facts must already have passed program recovery validation.
+    pub(crate) fn retains_resource_origin(&self, origin: &Self) -> bool {
+        if self.execution != origin.execution
+            || self.task_id != origin.task_id
+            || self.task_path != origin.task_path
+        {
+            return false;
+        }
+        let Some(occurrence) = origin.pending_operation() else {
+            return false;
+        };
+        let key = resource_generation_counter_key(&occurrence.workflow, &occurrence.site);
+        origin.counters.get(&key).is_some_and(|issued| {
+            self.counters
+                .get(&key)
+                .is_some_and(|retained| retained >= issued)
+        })
+    }
+
     #[cfg(all(test, feature = "durable"))]
     pub(crate) fn test_set_resource_generation(&mut self, generation: Option<u64>) -> bool {
         let Some(pending) = self.pending_operation.as_mut() else {

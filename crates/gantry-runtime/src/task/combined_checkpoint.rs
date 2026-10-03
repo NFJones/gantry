@@ -245,6 +245,17 @@ impl ConcurrentDurableCheckpointV4 {
         let (live, pending) = self
             .resource_policy
             .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+        for record in &self.resource_records {
+            if let Some(issuing_machine) = self.task_checkpoint(record.subject().task_id()) {
+                let (bytes, _) = record
+                    .issuing_evidence()
+                    .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+                let origin = MachineCheckpointV3::decode(&program, bytes)?;
+                if !issuing_machine.retains_resource_origin(&origin) {
+                    return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                }
+            }
+        }
         let inputs = encode_graph_resource_records(&self.resource_records)?;
         let inputs = inputs
             .iter()
@@ -1326,6 +1337,10 @@ impl RecoveredConcurrentDurableExecutionV1 {
     pub fn into_driver_admission(
         self,
     ) -> Result<RecoveredConcurrentDriverAdmissionV1, super::TaskStateError> {
+        if !self.scheduler.resource_records.is_empty() {
+            self.capture_replayed_checkpoint()
+                .map_err(|_| super::TaskStateError::InvalidTaskMachine)?;
+        }
         let Self {
             foreground,
             scheduler,

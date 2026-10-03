@@ -15451,6 +15451,14 @@ poison history before private machine cloning or publication reservation. Missin
 or excess bytes MUST also refuse without mutation. Coordinator-backed recovery MUST atomically
 validate issuing execution, known issuing/cleanup tasks, budget predecessors, current owners,
 canonical subject order, containment winners and policy ceilings before exposing accounting.
+When the graph retains the issuing task's machine, its execution, task and task path MUST match
+the validated issuing checkpoint, and its retained generation counter for that operation site
+MUST be no earlier than the issued generation. A shared budget alone MUST NOT substitute for
+that machine history. Settled children without a retained machine still require validated issuing
+evidence and known task membership; this correspondence check is not journal authentication.
+Consuming driver admission MUST revalidate the actual machine graph after mutable recovery access
+and before exposing coordinator-backed resource records. Prior checkpoint validation alone MUST
+NOT authorize a substituted machine with missing issuing-generation history.
 No physical ownership, adapter binding or accepted-work lease is reconstructed. Version-eight
 records MUST remain unchanged across every replayed graph transition until separately declared
 resource mutation cuts exist. Coordinator staging and capture MUST compare the committed resource

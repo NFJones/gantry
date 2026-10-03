@@ -217,7 +217,13 @@ before recovering members. Capture/staging preflight refuses pending admitted wo
 physical slots, adapter bindings, poison history, missing issuing evidence and excess bytes before
 cloning machines or reserving publication. Coordinator-backed recovery checks the complete set's
 execution/task provenance, budget predecessors, current owners, canonical order, containment and
-capacity before exposing accounting. Records are frozen across replay transitions: this slice has
+capacity before exposing accounting. Where an issuing machine remains in the graph, its task path
+and retained operation-site generation frontier must agree with validated issuing evidence; a
+shared budget cannot substitute for missing machine history. Settled children without retained
+machines still use validated issuing evidence and known task membership. This is correspondence,
+not journal authentication. Consuming driver admission revalidates the actual machine graph after
+mutable recovery access, so replacing a recovered machine cannot bypass this history check.
+Records are frozen across replay transitions: this slice has
 no resource-mutation cut. Coordinator capture/staging compares the committed resource image before
 cloning or reservation, and graph committers reject image drift before storage invocation. Recovery
 seeds the same image; local accounting cleanup cannot silently become a new durable mutation cut.

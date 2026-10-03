@@ -329,10 +329,46 @@ fn resource_records_survive_version_eight_graph_recovery() {
     )
     .unwrap_or_else(|error| panic!("settlement: {error:?}"));
     let before = coordinator.snapshot();
+    let unrelated_root = Machine::new_with_budget(
+        Arc::clone(&program),
+        &path,
+        vec![],
+        execution,
+        root.checkpoint().machine_limits(),
+        root.execution_budget(),
+    )
+    .unwrap_or_else(|error| panic!("otherwise valid root: {error:?}"));
+    assert_eq!(
+        coordinator
+            .capture_checkpoint(&unrelated_root, &BTreeMap::new())
+            .err(),
+        Some(crate::ConcurrentDurableCheckpointError::InvalidCheckpoint),
+        "a shared budget cannot substitute for retained issuing-machine generation history"
+    );
+    assert_eq!(coordinator.snapshot(), before);
     let checkpoint = coordinator
         .capture_checkpoint(&root, &BTreeMap::new())
         .unwrap_or_else(|error| panic!("resource capture: {error:?}"));
     let bytes = checkpoint.canonical_bytes();
+    let mut replaced = checkpoint
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("mutable recovered owner: {error:?}"));
+    let replacement = Machine::new_with_budget(
+        Arc::clone(&program),
+        &path,
+        vec![],
+        execution,
+        root.checkpoint().machine_limits(),
+        replaced.foreground().execution_budget(),
+    )
+    .unwrap_or_else(|error| panic!("replacement root: {error:?}"));
+    *replaced.foreground_mut() = replacement;
+    assert_eq!(
+        replaced.into_driver_admission().err(),
+        Some(TaskStateError::InvalidTaskMachine),
+        "consuming admission must revalidate mutable issuing-machine history"
+    );
     assert_eq!(&bytes[..8], b"GNTCDP08");
     assert!(crate::ConcurrentDurableCheckpointV7::decode(&program, &bytes).is_err());
     assert!(crate::ConcurrentDurableCheckpointV8::decode(&program, &bytes).is_ok());
