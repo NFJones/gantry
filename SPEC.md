@@ -15500,7 +15500,10 @@ resource-poisoning evidence. Unused callbacks MUST be disposed under containment
 refusal, including an already-poisoned boundary, without executing their bodies. A callback
 destruction panic takes precedence over the original refusal and poisons the transport boundary.
 Explicit finish MUST enter finishing before its callback and record
-finished only after callback and contained disposal succeed. A failed finish remains finishing,
+finished only after callback and contained disposal succeed. Before entering finishing, bound
+finalizer dispatch MUST pass the admitted account's recovery-class adapter checks after existing
+loan, owner and lifetime refusals. Admission refusal MUST preserve accounting and physical ownership;
+sealed emergency cleanup remains available. A failure after admitted finish remains finishing,
 is not implicitly retried, and does not roll back accepted external work. Sealed emergency release
 MUST settle accounting before physical disposal; disposal failure MUST NOT undo semantic release.
 The wrapper MAY expose `poison_from_failure` for normal evidence-qualified cleanup. It MUST

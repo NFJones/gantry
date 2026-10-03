@@ -294,11 +294,16 @@ impl<T> OwnedHostResource<T> {
         if let Err(error) = self.require_owner(owner) {
             return self.refuse_callback(finalize, error);
         }
-        if self.account.ledger().operation_state() == ResourceState::Poisoned {
+        if self.account.ledger().operation_state() == ResourceState::Poisoned
+            || self.account.ledger().lifetime() != ResourceLifetimeState::Active
+        {
             return self.refuse_callback(
                 finalize,
                 HostResourceError::Model(ResourceError::IllegalLifetimeTransition),
             );
+        }
+        if let Err(error) = self.account.require_adapter_dispatch() {
+            return self.refuse_callback(finalize, error);
         }
         if let Err(error) = self.account.begin_finish_for(owner) {
             return self.refuse_callback(finalize, HostResourceError::Model(error));

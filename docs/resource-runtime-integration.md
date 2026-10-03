@@ -442,7 +442,9 @@ synchronous callback, using existing `gantry-host` unwind containment. A panic p
 transport boundary, not the accounting lifetime. Unused callbacks are disposed under containment
 on refusal, including an already-poisoned boundary, without executing their bodies; a destruction
 panic takes precedence over the original refusal. `finish` enters finishing before the callback and
-records finished only after callback and contained physical disposal succeed. Failure remains
+records finished only after callback and contained physical disposal succeed. Bound finalizers
+first pass account-qualified adapter dispatch checks after loan, owner and lifetime validation;
+admission refusal changes no accounting or physical ownership. Failure after admitted finish remains
 finishing without implicit retry; sealed `emergency_release` settles accounting before disposal,
 so destruction failure cannot undo semantic release. Disposal removes the value before destruction;
 wrapper drop contains physical destruction but never fabricates semantic finish. This owner is

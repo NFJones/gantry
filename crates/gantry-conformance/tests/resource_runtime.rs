@@ -8682,6 +8682,54 @@ fn owned_adapter_invocation_requires_authenticated_dispatch_rights() {
     }
 }
 
+/// Finalizer dispatch cannot bypass adapter rights or consume accounting on admission refusal.
+#[test]
+fn owned_adapter_finalization_requires_dispatch_rights_before_accounting_mutation() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let owner = OwnerGeneration::new(4);
+    for authorized in [false, true] {
+        let mut account = admitted_active();
+        let rights = if authorized {
+            RightsSet::from_rights(&[gantry::ir::AuthorityRight::InvokeIdempotent])
+        } else {
+            RightsSet::empty()
+        };
+        account
+            .bind_adapter_instance(
+                owner,
+                adapter_instance_with("finalizer_dispatch", rights, 4, 0),
+            )
+            .unwrap_or_else(|error| panic!("bind: {error:?}"));
+        let mut resource =
+            OwnedHostResource::bind(account, 17_u64).unwrap_or_else(|_| panic!("physical binding"));
+        let before = resource.account().durable_record();
+        let called = std::sync::atomic::AtomicBool::new(false);
+        let result = resource.finish(owner, 20, |_| {
+            called.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        });
+        if authorized {
+            assert_eq!(result, Ok(ResourceLifetimeState::Finished));
+        } else {
+            assert_eq!(
+                result,
+                Err(HostResourceError::Operation(
+                    OperationAbiError::AdapterRightsInsufficient {
+                        recovery: RecoveryClass::Idempotent,
+                        rights: 0,
+                    }
+                ))
+            );
+            assert_eq!(resource.account().durable_record(), before);
+            assert_eq!(
+                resource.emergency_release(emergency_cleanup()),
+                Ok(ResourceLifetimeState::EmergencyReleased)
+            );
+        }
+        assert_eq!(called.load(std::sync::atomic::Ordering::SeqCst), authorized);
+    }
+}
+
 /// A poisoned adapter cannot carry another physical callback, while siblings remain usable.
 #[test]
 fn registry_physical_invocation_refuses_a_poisoned_bound_adapter() {
