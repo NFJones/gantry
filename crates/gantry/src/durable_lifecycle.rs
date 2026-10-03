@@ -4240,11 +4240,19 @@ mod tests {
             let handle = admission
                 .accept_execution(execution)
                 .unwrap_or_else(|error| panic!("accept: {error:?}"));
-            let owner = DurableLifecycleCoordinator::new(Arc::new(InMemoryJournalStore::new()))
+            let storage = Arc::new(InMemoryJournalStore::new());
+            let ownership = ready_test(storage.acquire_owner(
+                gantry_host::journal::AcquireJournalOwnerV1 {
+                    journal_id: journal.clone(),
+                    operation: gantry_host::journal::JournalOwnerOperationV1::Start,
+                },
+            ))
+            .unwrap_or_else(|error| panic!("journal ownership: {error:?}"));
+            let durable = DurableLifecycleCoordinator::new(storage.clone());
+            let owner = durable
                 .own_recovered_concurrent_start(
-                    journal,
-                    JournalOwnershipToken::new("owner")
-                        .unwrap_or_else(|error| panic!("token: {error:?}")),
+                    journal.clone(),
+                    ownership.token,
                     handle.clone(),
                     start,
                     recovered,
@@ -4257,8 +4265,38 @@ mod tests {
                 expected_records
             );
             let unsettled = lifetime != ResourceLifetimeState::Finished;
-            assert_eq!(owner.record_shutdown_resource_obligations(), Ok(unsettled));
-            assert_eq!(owner.observation(), before);
+            assert_eq!(
+                handle
+                    .snapshot()
+                    .unwrap_or_else(|error| panic!("snapshot: {error:?}"))
+                    .resource_cleanup_failure,
+                None
+            );
+            let prefix_before = ready_test(storage.read_prefix(ReadJournalPrefixV1 {
+                journal_id: journal.clone(),
+            }))
+            .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+            let report = ready_test(durable.shutdown(
+                &lifecycle,
+                std::slice::from_ref(&owner),
+                None,
+                None,
+                FinalShutdownEventSettlement::Settled,
+            ))
+            .unwrap_or_else(|error| panic!("durable shutdown: {error:?}"));
+            let after = owner.observation();
+            assert_eq!(after.owner, Some(DurableJournalOwnerState::Released));
+            assert_eq!(after.foreground, before.foreground);
+            assert_eq!(after.terminal, before.terminal);
+            assert_eq!(after.latest_evidence_id, before.latest_evidence_id);
+            assert_eq!(after.latest_sequence, before.latest_sequence);
+            assert_eq!(
+                ready_test(storage.read_prefix(ReadJournalPrefixV1 {
+                    journal_id: journal.clone()
+                }))
+                .unwrap_or_else(|error| panic!("prefix after shutdown: {error:?}")),
+                prefix_before
+            );
             assert_eq!(
                 lock_state(&owner.state).graph_resource_records,
                 expected_records
@@ -4273,20 +4311,29 @@ mod tests {
                 )
             );
             assert_eq!(owner.record_shutdown_resource_obligations(), Ok(unsettled));
-            let shutdown = lifecycle
-                .begin_shutdown(None, None)
-                .unwrap_or_else(|error| panic!("shutdown: {error:?}"));
-            let report = shutdown
-                .coordinator
-                .unwrap_or_else(|| panic!("shutdown coordinator"))
-                .complete(true, FinalShutdownEventSettlement::Settled, Arc::from([]))
-                .unwrap_or_else(|error| panic!("report: {error:?}"));
-            assert_eq!(report.orderly, !unsettled);
+            assert_eq!(report.lifecycle.orderly, !unsettled);
+            assert_eq!(report.lifecycle.journal_owner_releases.len(), 1);
             assert_eq!(
-                report.resource_cleanup_failures.len(),
+                report.lifecycle.journal_owner_releases[0].status,
+                ShutdownJournalOwnerReleaseStatus::Released
+            );
+            assert_eq!(
+                report.lifecycle.resource_cleanup_failures.len(),
                 usize::from(unsettled)
             );
         }
+    }
+
+    /// Drives bounded immediate test futures and fails rather than silently spinning forever.
+    fn ready_test<F: Future>(future: F) -> F::Output {
+        let mut future = std::pin::pin!(future);
+        let mut context = Context::from_waker(Waker::noop());
+        for _ in 0..64 {
+            if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
+                return output;
+            }
+        }
+        panic!("test future did not complete within its polling bound");
     }
 
     fn graph_evidence(
