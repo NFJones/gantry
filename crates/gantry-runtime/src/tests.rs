@@ -5054,14 +5054,17 @@ fn pending_action_checkpoint_rejects_missing_or_future_resource_generation() {
         Vec::new(),
         TypeDescriptor::UNIT,
         EffectSet::default(),
-        vec![instruction(
-            0,
-            TypeDescriptor::UNIT,
-            InstructionKind::OperationCall {
-                operation,
-                operands: 0,
-            },
-        )],
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::UNIT,
+                InstructionKind::OperationCall {
+                    operation,
+                    operands: 0,
+                },
+            ),
+            instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+        ],
     )]);
     let mut machine = new_machine(
         Arc::clone(&program),
@@ -5075,6 +5078,17 @@ fn pending_action_checkpoint_rejects_missing_or_future_resource_generation() {
     ));
     let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
         .unwrap_or_else(|error| panic!("action budget recovery failed: {error:?}"));
+
+    let subject = machine
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("authenticated action has a subject"));
+    let recovered = Machine::recover_from_checkpoint(
+        Arc::clone(&program),
+        machine.checkpoint(),
+        budget.clone(),
+    )
+    .unwrap_or_else(|error| panic!("untampered action checkpoint must recover: {error:?}"));
+    assert_eq!(recovered.pending_resource_subject(), Some(subject));
 
     let mut missing_generation = machine.checkpoint();
     assert!(missing_generation.test_set_resource_generation(None));
