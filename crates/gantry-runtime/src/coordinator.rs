@@ -382,7 +382,13 @@ impl ExecutionCoordinator {
         maximum_live_resources: u64,
         recovered: Vec<crate::RecoveredResourceRecord>,
     ) -> Result<Self, CoordinatorResourceRefusal> {
-        Self::reconstruct_resources(tasks, sessions, None, maximum_live_resources, recovered)
+        Self::reconstruct_resources(
+            tasks,
+            sessions,
+            None,
+            (maximum_live_resources, None, None),
+            recovered,
+        )
     }
 
     /// Reconstructs accounting and retains the matching shared execution-budget owner atomically.
@@ -401,7 +407,34 @@ impl ExecutionCoordinator {
             tasks,
             sessions,
             Some(execution_budget),
-            maximum_live_resources,
+            (maximum_live_resources, None, None),
+            recovered,
+        )
+    }
+
+    /// Reconstructs records with a matching budget and explicit future admission ceilings.
+    ///
+    /// All records count against retention before publication. Supplied pending policy
+    /// applies to future admission only; no accepted work or physical ownership is created.
+    /// Journal provenance remains the caller's responsibility.
+    pub fn new_with_budget_and_bounded_recovered_resources(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: ExecutionBudget,
+        maximum_live_resources: u64,
+        maximum_pending_operations: u64,
+        maximum_retained_resources: u64,
+        recovered: Vec<crate::RecoveredResourceRecord>,
+    ) -> Result<Self, CoordinatorResourceRefusal> {
+        Self::reconstruct_resources(
+            tasks,
+            sessions,
+            Some(execution_budget),
+            (
+                maximum_live_resources,
+                Some(maximum_pending_operations),
+                Some(maximum_retained_resources),
+            ),
             recovered,
         )
     }
@@ -411,7 +444,7 @@ impl ExecutionCoordinator {
         tasks: ConcurrentTaskStateV1,
         sessions: LogicalSessionRegistryV1,
         execution_budget: Option<ExecutionBudget>,
-        maximum_live_resources: u64,
+        policy: (u64, Option<u64>, Option<u64>),
         recovered: Vec<crate::RecoveredResourceRecord>,
     ) -> Result<Self, CoordinatorResourceRefusal> {
         if execution_budget
@@ -433,9 +466,10 @@ impl ExecutionCoordinator {
                 return Err(CoordinatorResourceRefusal::UnknownTask);
             }
         }
-        let resources =
-            crate::ResourceRegistry::reconstruct(Some(maximum_live_resources), recovered)
-                .map_err(CoordinatorResourceRefusal::Registry)?;
+        let resources = crate::ResourceRegistry::reconstruct_with_accounting_limits(
+            policy.0, policy.1, policy.2, recovered,
+        )
+        .map_err(CoordinatorResourceRefusal::Registry)?;
         Self::new_inner(tasks, sessions, execution_budget, Some(resources))
             .map_err(CoordinatorResourceRefusal::Task)
     }

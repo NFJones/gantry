@@ -15287,6 +15287,13 @@ record validation; mismatch MUST refuse with `InvalidTaskMachine`. The complete 
 the same provenance, carrier, owner and quota checks before publication. Retaining a budget MUST
 NOT reconstruct physical ownership or pending work, or authenticate journal provenance.
 
+`new_with_budget_and_bounded_recovered_resources` MAY additionally accept explicit live,
+pending-operation and retained-account ceilings. The complete reconstructed set MUST satisfy
+live and retained bounds before publication; the supplied pending ceiling applies only to future
+admission and MUST NOT fabricate accepted-work leases. Budget, subject, carrier and owner checks
+retain their existing precedence. Legacy reconstruction entry points retain absent pending and
+retained policy; no entry point authenticates journal provenance merely by reconstructing records.
+
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
 slots or admitted pending work would be omitted. Refusal MUST precede private machine cloning or

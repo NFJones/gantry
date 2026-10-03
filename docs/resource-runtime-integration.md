@@ -85,6 +85,12 @@ owner. Budget execution mismatch refuses with `InvalidTaskMachine` before record
 the same complete-set accounting checks follow. Budget retention neither authenticates journal
 provenance nor reconstructs physical slots, adapters or pending work.
 
+`new_with_budget_and_bounded_recovered_resources` composes the same budget-qualified complete-set
+validation with explicitly supplied live, pending and retained ceilings. Reconstructed records
+consume live/retained capacity as applicable; pending policy governs future work only, with no
+invented leases. Legacy entry points keep pending and retained policy absent. These inputs remain
+caller-authenticated reconstruction evidence, not a journal provenance guarantee.
+
 `ResourceRegistry::reconstruct_with_retained_limit` additionally bounds every reconstructed
 account, including terminal records. Existing evidence and live-capacity refusals retain
 precedence; the retained ceiling is checked before insertion. Recovery publishes the complete

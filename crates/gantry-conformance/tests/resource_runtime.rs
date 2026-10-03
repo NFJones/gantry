@@ -636,6 +636,110 @@ fn coordinator_resource_reconstruction_retains_execution_budget() {
     );
 }
 
+/// Explicit reconstruction policy bounds records and future admission independently.
+#[test]
+fn coordinator_bounded_reconstruction_preserves_admission_policy() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ExecutionCoordinator};
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let records = vec![presented(
+        subject.unwrap_or_else(|| panic!("subject exists")),
+        ResourceCarrier::ReconstructionRecord,
+        settled_record(),
+    )];
+    let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    for (pending, retained, expected) in [
+        (
+            1,
+            1,
+            ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 1 },
+        ),
+        (
+            0,
+            2,
+            ResourceRegistryRefusal::PendingOperationLimitReached { limit: 0 },
+        ),
+    ] {
+        let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+        let coordinator = ExecutionCoordinator::new_with_budget_and_bounded_recovered_resources(
+            tasks,
+            sessions,
+            machine.execution_budget(),
+            1,
+            pending,
+            retained,
+            records.clone(),
+        )
+        .unwrap_or_else(|error| panic!("bounded reconstruction: {error:?}"));
+        let before = coordinator.snapshot();
+        assert_eq!(before.resource_records(), Some(records.as_slice()));
+        assert_eq!(
+            before.execution_budget(),
+            Some(machine.execution_budget().snapshot())
+        );
+        assert!(!coordinator.has_pending_resource_operations());
+        assert!(!coordinator.has_resource_host_values());
+        assert_eq!(
+            coordinator.clone().admit_resource(
+                &sibling,
+                ResourceCarrier::ReconstructionRecord,
+                settled_record()
+            ),
+            Err(CoordinatorResourceRefusal::Registry(expected))
+        );
+        assert_eq!(coordinator.snapshot(), before);
+    }
+    let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    assert_eq!(
+        ExecutionCoordinator::new_with_budget_and_bounded_recovered_resources(
+            tasks,
+            sessions,
+            machine.execution_budget(),
+            1,
+            1,
+            0,
+            records.clone(),
+        )
+        .err(),
+        Some(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 0 }
+        ))
+    );
+    let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    assert_eq!(
+        ExecutionCoordinator::new_with_budget_and_bounded_recovered_resources(
+            tasks,
+            sessions,
+            machine.execution_budget(),
+            1,
+            1,
+            1,
+            vec![records[0].clone(), records[0].clone()],
+        )
+        .err(),
+        Some(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::SecondAdmission
+        ))
+    );
+    let foreign = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [98; 32])
+        .unwrap_or_else(|error| panic!("foreign execution: {error}"));
+    let (tasks, sessions) = resource_recovery_inputs(foreign, machine.task_id());
+    assert_eq!(
+        ExecutionCoordinator::new_with_budget_and_bounded_recovered_resources(
+            tasks,
+            sessions,
+            machine.execution_budget(),
+            1,
+            1,
+            0,
+            records,
+        )
+        .err(),
+        Some(CoordinatorResourceRefusal::Task(
+            gantry::runtime::TaskStateError::InvalidTaskMachine
+        ))
+    );
+}
+
 /// Coordinator clones share admission and quota fences, and terminal cleanup retains records.
 #[test]
 fn coordinator_resource_accounts_share_one_owner_and_release_only_live_places() {

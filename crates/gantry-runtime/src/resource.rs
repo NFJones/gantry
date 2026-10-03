@@ -1019,6 +1019,18 @@ impl ResourceRegistry {
         Self::reconstruct_bounded(live_limit, Some(retained_limit), recovered)
     }
 
+    /// Reconstructs records and installs explicit policy for future work, never pending leases.
+    pub(crate) fn reconstruct_with_accounting_limits(
+        live: u64,
+        pending: Option<u64>,
+        retained: Option<u64>,
+        recovered: impl IntoIterator<Item = RecoveredResourceRecord>,
+    ) -> Result<Self, ResourceRegistryRefusal> {
+        let mut registry = Self::reconstruct_bounded(Some(live), retained, recovered)?;
+        registry.pending_limit = pending;
+        Ok(registry)
+    }
+
     /// Validates the complete reconstruction set with optional independent capacity bounds.
     fn reconstruct_bounded(
         live_limit: Option<u64>,
