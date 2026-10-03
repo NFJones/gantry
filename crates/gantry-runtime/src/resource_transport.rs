@@ -778,6 +778,107 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    /// Refused callbacks can inspect their lease during destruction without observing a held lock.
+    #[test]
+    fn charged_refusal_destroys_callbacks_after_unlocking_the_lease() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        struct DisposalProbe {
+            lease: Arc<Mutex<crate::machine::ResourceOperationLease>>,
+            unlocked: Arc<AtomicBool>,
+            drops: Arc<AtomicUsize>,
+            panic_on_drop: bool,
+        }
+
+        impl Drop for DisposalProbe {
+            fn drop(&mut self) {
+                self.unlocked
+                    .store(self.lease.try_lock().is_ok(), Ordering::SeqCst);
+                self.drops.fetch_add(1, Ordering::SeqCst);
+                if self.panic_on_drop {
+                    panic!("fixture callback destruction");
+                }
+            }
+        }
+
+        for panic_on_drop in [false, true] {
+            let lease = Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open()));
+            let path = gantry_ir::CanonicalPath::new("crate::resource")
+                .unwrap_or_else(|error| panic!("path: {error}"));
+            let execution = gantry_core::identity::ProtocolIdentity::from_fresh_material(
+                gantry_core::portable::IdentityKind::Execution,
+                [43; 32],
+            )
+            .unwrap_or_else(|error| panic!("identity: {error}"));
+            let subject = crate::ResourceSubjectBinding::derive(
+                &path,
+                path.clone(),
+                gantry_ir::StructuralPosition::new(vec![0])
+                    .unwrap_or_else(|error| panic!("site: {error}")),
+                0,
+                Some(gantry_ir::OperationKind::LiveResource),
+                Arc::clone(&lease),
+                (execution, crate::root_task_identity(execution)),
+            );
+            let owner = OwnerGeneration::new(4);
+            let record = gantry_ir::ResourceLedger::new(
+                owner,
+                ResourceState::Usable,
+                &[LivenessRoot::Resource],
+                &[],
+            )
+            .unwrap_or_else(|error| panic!("ledger: {error:?}"))
+            .durable_record();
+            let account = AdmittedResource::admit(
+                gantry_ir::ResourceCarrier::ReconstructionRecord,
+                record.clone(),
+                subject,
+            )
+            .unwrap_or_else(|error| panic!("account: {error:?}"));
+            let mut resource = OwnedHostResource::bind(account, 17_u64)
+                .unwrap_or_else(|_| panic!("physical binding"));
+            let unlocked = Arc::new(AtomicBool::new(false));
+            let drops = Arc::new(AtomicUsize::new(0));
+            let probe = DisposalProbe {
+                lease: Arc::clone(&lease),
+                unlocked: Arc::clone(&unlocked),
+                drops: Arc::clone(&drops),
+                panic_on_drop,
+            };
+            let result = resource.invoke_with_charges::<()>(
+                owner,
+                &[gantry_ir::Charge {
+                    owner: gantry_ir::QuotaOwner::Owner,
+                    family: gantry_ir::QuotaFamily::Bytes,
+                    amount: 1,
+                }],
+                move |_| {
+                    drop(probe);
+                    panic!("refused callback body must not execute");
+                },
+            );
+            if panic_on_drop {
+                assert!(matches!(result, Err(HostResourceError::Boundary(_))));
+            } else {
+                assert_eq!(
+                    result,
+                    Err(HostResourceError::Model(ResourceError::UndeclaredQuota))
+                );
+            }
+            assert!(unlocked.load(Ordering::SeqCst));
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+            assert_eq!(resource.account().durable_record(), record);
+            assert_eq!(resource.value, Some(17));
+            assert_eq!(resource.is_poisoned(), panic_on_drop);
+            assert!(
+                lease
+                    .lock()
+                    .unwrap_or_else(|_| panic!("lease remains readable"))
+                    .pending
+            );
+        }
+    }
+
     /// Extracted or disposed physical ownership cannot be advanced back into service.
     #[test]
     fn physical_owner_advancement_requires_an_eligible_slot() {
