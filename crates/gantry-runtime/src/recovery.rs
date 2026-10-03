@@ -5,7 +5,7 @@ mod concurrent;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 mod resource_finish;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
-pub use resource_finish::ResourceFinishEvidenceV1;
+pub use resource_finish::{RESOURCE_FINISH_EVIDENCE_KIND_V1, ResourceFinishEvidenceV1};
 mod execution_start;
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -81,6 +81,8 @@ pub enum DurableCommitCutV1 {
     ForegroundCompletion,
     /// Terminal execution state was fixed before reporting it.
     TerminalCompletion,
+    /// One owner-qualified logical resource finish became durable without machine advancement.
+    ResourceFinish,
 }
 
 impl DurableCommitCutV1 {
@@ -99,6 +101,7 @@ impl DurableCommitCutV1 {
             Self::TaskSettlement => "task-settlement",
             Self::ForegroundCompletion => "foreground-completion",
             Self::TerminalCompletion => "terminal-completion",
+            Self::ResourceFinish => "resource-finish",
         }
     }
 
@@ -125,6 +128,7 @@ impl DurableCommitCutV1 {
             "task-settlement" => Some(Self::TaskSettlement),
             "foreground-completion" => Some(Self::ForegroundCompletion),
             "terminal-completion" => Some(Self::TerminalCompletion),
+            "resource-finish" => Some(Self::ResourceFinish),
             _ => None,
         }
     }
@@ -195,6 +199,9 @@ pub struct DurableCommitCoordinatorV1<'a> {
     /// Exact accounting policy of that same validated predecessor.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     graph_resource_policy: Option<GraphResourcePolicy>,
+    /// Complete last validated graph, required for resource-only transitions.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_checkpoint_baseline: Option<Box<crate::ConcurrentDurableCheckpointV4>>,
 }
 
 impl<'a> DurableCommitCoordinatorV1<'a> {
@@ -227,6 +234,8 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             graph_resource_baseline: None,
             #[cfg(all(feature = "concurrent", feature = "durable"))]
             graph_resource_policy: None,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            graph_checkpoint_baseline: None,
         })
     }
 
@@ -1297,6 +1306,7 @@ impl DurableLogicalEvidenceV3 {
             || task_id.kind() != IdentityKind::Task
             || checkpoint.execution_id() != execution_id
             || budget.execution != execution_id
+            || cut == DurableCommitCutV1::ResourceFinish
             || sessions
                 .as_ref()
                 .is_some_and(|sessions| sessions.execution_id() != execution_id)

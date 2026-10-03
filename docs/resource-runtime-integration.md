@@ -143,13 +143,25 @@ advancement does not rewrite issuing evidence or qualify it as journal-authentic
 records a declared logical settlement instant using the same ledger rules. Both leave the source
 record unchanged and preserve its subject, cleanup ownership, quotas, roots and historical evidence.
 Stale ownership refuses before lifetime classification. This candidate performs no physical
-finalization or journal publication and does not relax graph resource-image immutability.
+finalization or journal publication; publication requires the exact finish cut described below.
 
 `ResourceFinishEvidenceV1` compares two executable-validated graph checkpoints. One owner-qualified
 finish at a canonical record index must reproduce the complete successor, rejecting unrelated
 graph, policy or historical changes. Its separate `GNTRFT01` carrier uses an independent total
 byte ceiling and canonical framing. Temporary checkpoint encoding is not a peak-heap bound.
-This is transition validation only: current journal writers still refuse changed resource images.
+This validator alone grants no journal publication authority.
+
+`stage_resource_finish` privately stages one exact begin/complete transition for journal-first
+`ResourceFinish` publication. Its `gantry.resource-finish-evidence/v1` carrier is bounded to
+4 MiB and names complete predecessor/successor graphs. The writer requires the actual committed
+predecessor; a validated receipt precedes logical registry installation. Rollback before submission
+discards the candidate, while indeterminate submission retains the existing publication fence.
+Only authoritative prefix recovery or a validated graph receipt seeds the complete predecessor.
+Capturing mutable transaction machines cannot seed it: matching records and journal coordinates
+do not establish that uncommitted machine progress belongs to the preceding cut.
+Full-prefix replay checks exact predecessor correspondence. Snapshot compaction containing these
+cuts refuses until its versioned carrier exists. No physical cleanup or accepted-work recovery
+is supplied, and a finish after terminal publication does not reopen the language execution.
 
 `encode_resource_recovery_envelope` and `decode_resource_recovery_envelope` carry those facts in
 the exact `GNTRRE01` envelope. Both accept an independent total byte ceiling; encoding checks
@@ -235,8 +247,8 @@ shared budget cannot substitute for missing machine history. Settled children wi
 machines still use validated issuing evidence and known task membership. This is correspondence,
 not journal authentication. Consuming driver admission revalidates the actual machine graph after
 mutable recovery access, so replacing a recovered machine cannot bypass this history check.
-Records are frozen across replay transitions: this slice has
-no resource-mutation cut. Coordinator capture/staging compares the committed resource image before
+Records are frozen across ordinary replay transitions; the exact typed `ResourceFinish` cut is
+the only mutation exception. Coordinator capture/staging compares the committed resource image before
 cloning or reservation, and graph committers reject image drift before storage invocation. Recovery
 seeds the same image; local accounting cleanup cannot silently become a new durable mutation cut.
 The writer also retains exact optional live, pending and retained policy with that predecessor
@@ -247,7 +259,7 @@ that its unknown predecessor had no resources. Staged owners supply the validate
 Public `DurableCommitCoordinatorV1::from_concurrent_prefix` validates a full or snapshot prefix
 for the sink's journal before deriving the execution, root task, authoritative tip and resource
 baseline. Construction writes no evidence, does not authenticate storage by itself and never
-permits resource-image mutation. Wrong-journal prefixes refuse before recovery.
+permits arbitrary resource-image mutation. Wrong-journal prefixes refuse before recovery.
 Machine-only extraction refuses; scheduler/driver recovery and replay
 capture retain the records. Record-free legacy bytes remain unchanged. This reconstructs logical
 accounting, not physical handles, adapters or accepted work, and does not qualify publication.

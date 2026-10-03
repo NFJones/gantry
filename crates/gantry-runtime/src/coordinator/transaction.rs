@@ -38,6 +38,11 @@ pub struct DurableGraphTransaction<'a> {
     retained_resource_limit: Option<u64>,
     resource_records: Vec<crate::RecoveredResourceRecord>,
     original_checkpoint: Box<ConcurrentDurableCheckpointV4>,
+    resource_finish: Option<(
+        usize,
+        gantry_ir::OwnerGeneration,
+        crate::ResourceFinishTransition,
+    )>,
     commit_started: bool,
     installed: bool,
     events: Vec<(
@@ -147,6 +152,7 @@ impl ExecutionCoordinator {
                 .and_then(crate::ResourceRegistry::retained_limit),
             resource_records,
             original_checkpoint: Box::new(original_checkpoint),
+            resource_finish: None,
             commit_started: false,
             installed: false,
             events: Vec::new(),
@@ -156,6 +162,46 @@ impl ExecutionCoordinator {
 }
 
 impl DurableGraphTransaction<'_> {
+    /// Returns the immutable executable needed to validate authoritative finish history.
+    #[must_use]
+    pub fn program_arc(&self) -> Arc<gantry_ir::MachineProgram> {
+        self.staged_foreground.program_arc()
+    }
+
+    /// Stages one logical finish without changing the published registry or physical ownership.
+    ///
+    /// Commit must use ResourceFinish and preserve all other graph facts. A second transition,
+    /// operation or event combination refuses; dropping the transaction before submission rolls back.
+    pub fn stage_resource_finish(
+        &mut self,
+        subject: &crate::ResourceSubjectBinding,
+        owner: gantry_ir::OwnerGeneration,
+        transition: crate::ResourceFinishTransition,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        if self.resource_finish.is_some() || self.operation.is_some() || !self.events.is_empty() {
+            return Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::ResourceStateUnsupported,
+            ));
+        }
+        let index = self
+            .resource_records
+            .iter()
+            .position(|record| record.subject() == subject)
+            .ok_or(CoordinatorResourceRefusal::Registry(
+                crate::ResourceRegistryRefusal::UnknownSubject,
+            ))?;
+        let candidate = self.resource_records[index]
+            .stage_finish(owner, transition)
+            .map_err(|error| {
+                CoordinatorResourceRefusal::Registry(crate::ResourceRegistryRefusal::Admission(
+                    error,
+                ))
+            })?;
+        self.resource_records[index] = candidate;
+        self.resource_finish = Some((index, owner, transition));
+        Ok(())
+    }
+
     /// Freezes the causal event and delivery policy before journal submission.
     ///
     /// Sets the primary occurrence. Distinct task cancellation labels may be
@@ -346,18 +392,75 @@ impl DurableGraphTransaction<'_> {
             }
         }
         commits.retain_graph_resource_baseline(&self.original_checkpoint)?;
-        let receipt = commits
-            .commit_graph_checkpoint_with_record_submission(
-                cut,
-                submission_resolution.unwrap_or(affected_task),
-                self.operation.take(),
-                submission_resolution.is_some(),
+        let mut staged_resources = None;
+        let receipt = if let Some((index, owner, transition)) = self.resource_finish {
+            if cut != DurableCommitCutV1::ResourceFinish
+                || self.operation.is_some()
+                || !self.events.is_empty()
+                || submission_resolution.is_some()
+                || self.resource_records[index].task_owner() != affected_task
+            {
+                return Err(DurableCommitError::InvalidState);
+            }
+            let evidence = crate::ResourceFinishEvidenceV1::new(
+                self.staged_foreground.program_arc(),
+                (*self.original_checkpoint).clone(),
                 checkpoint,
-                || {
-                    self.commit_started = true;
-                },
+                index,
+                owner,
+                transition,
             )
-            .await?;
+            .map_err(DurableCommitError::Evidence)?;
+            let (live, pending) = self
+                .resource_policy
+                .ok_or(DurableCommitError::InvalidState)?;
+            let encoded = self
+                .resource_records
+                .iter()
+                .map(|record| {
+                    crate::encode_resource_recovery_envelope(
+                        record,
+                        crate::task::MAXIMUM_RESOURCE_SECTION_BYTES,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| DurableCommitError::InvalidState)?;
+            let inputs = encoded
+                .iter()
+                .zip(&self.resource_records)
+                .map(|(bytes, record)| (bytes.as_slice(), record.owner(), record.task_owner()))
+                .collect::<Vec<_>>();
+            staged_resources = Some(
+                crate::ResourceRegistry::reconstruct_recovery_envelopes(
+                    self.staged_foreground.program_arc(),
+                    &inputs,
+                    crate::task::MAXIMUM_RESOURCE_SECTION_BYTES,
+                    (live, pending, self.retained_resource_limit),
+                )
+                .map_err(|_| DurableCommitError::InvalidState)?,
+            );
+            commits
+                .commit_resource_finish_with_submission(evidence, || {
+                    self.commit_started = true;
+                })
+                .await?
+        } else {
+            if cut == DurableCommitCutV1::ResourceFinish {
+                return Err(DurableCommitError::InvalidState);
+            }
+            commits
+                .commit_graph_checkpoint_with_record_submission(
+                    cut,
+                    submission_resolution.unwrap_or(affected_task),
+                    self.operation.take(),
+                    submission_resolution.is_some(),
+                    checkpoint,
+                    || {
+                        self.commit_started = true;
+                    },
+                )
+                .await?
+        };
         let mut event_envelopes = Vec::with_capacity(self.events.len());
         for (event, plan, payloads) in std::mem::take(&mut self.events) {
             event_envelopes.push(
@@ -399,6 +502,9 @@ impl DurableGraphTransaction<'_> {
                 .map_err(|_| DurableCommitError::InvalidState)?;
             state.durable_graph_baseline = Some((self.tasks.clone(), self.sessions.clone()));
             state.durable_resource_baseline = Some(self.resource_records.clone());
+            if let Some(resources) = staged_resources.take() {
+                state.resources = Some(resources);
+            }
             self.foreground
                 .commit_staged_resource_admission(&mut self.staged_foreground);
             for (task_id, authoritative) in self.children.iter_mut() {

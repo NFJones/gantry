@@ -91,7 +91,8 @@ impl ConcurrentDurableEvidenceV4 {
             DurableCommitCutV1::OperationPrepared
             | DurableCommitCutV1::OperationOutcome
             | DurableCommitCutV1::OperationResult
-            | DurableCommitCutV1::RetryWaiting => false,
+            | DurableCommitCutV1::RetryWaiting
+            | DurableCommitCutV1::ResourceFinish => false,
         };
         if !valid_cut {
             return Err(DurableEvidenceError::InvalidState);
@@ -651,6 +652,7 @@ impl ConcurrentDurableEvidenceV5 {
 enum ConcurrentDurableEvidenceBody {
     V4(Box<ConcurrentDurableEvidenceV4>),
     V5(Box<ConcurrentDurableEvidenceV5>),
+    Finish(Box<super::ResourceFinishEvidenceV1>),
 }
 
 impl ConcurrentDurableEvidenceBody {
@@ -658,6 +660,7 @@ impl ConcurrentDurableEvidenceBody {
         match self {
             Self::V4(evidence) => evidence.cut(),
             Self::V5(evidence) => evidence.cut(),
+            Self::Finish(_) => DurableCommitCutV1::ResourceFinish,
         }
     }
 
@@ -665,6 +668,7 @@ impl ConcurrentDurableEvidenceBody {
         match self {
             Self::V4(evidence) => evidence.task_id(),
             Self::V5(evidence) => evidence.task_id(),
+            Self::Finish(evidence) => evidence.task_id(),
         }
     }
 
@@ -676,6 +680,7 @@ impl ConcurrentDurableEvidenceBody {
         match self {
             Self::V4(evidence) => evidence.checkpoint(),
             Self::V5(evidence) => evidence.checkpoint(),
+            Self::Finish(evidence) => evidence.current(),
         }
     }
 }
@@ -1437,6 +1442,12 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                 CONCURRENT_DURABLE_EVIDENCE_KIND_V5,
                 evidence.canonical_body(),
             ),
+            ConcurrentDurableEvidenceBody::Finish(evidence) => (
+                super::RESOURCE_FINISH_EVIDENCE_KIND_V1,
+                evidence
+                    .encode(super::resource_finish::MAXIMUM_RESOURCE_FINISH_EVIDENCE_BYTES)
+                    .unwrap_or_else(|_| unreachable!("finish snapshots are not constructible")),
+            ),
         };
         push_json_string(&mut output, &super::encode_hex(&graph_body));
         output.push_str(",\"graph_evidence_id\":");
@@ -2038,6 +2049,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             Some((recovered.latest_evidence_id(), recovered.latest_sequence())),
         )?;
         commits.retain_graph_resource_baseline(&checkpoint)?;
+        commits.graph_checkpoint_baseline = Some(Box::new(checkpoint));
         Ok(commits)
     }
 
@@ -2247,6 +2259,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
         } else {
             false
         };
+        let graph_checkpoint = checkpoint.clone();
         let body = match (operation, submission_resolution, cancellation) {
             (None, false, Some(cancellation)) => ConcurrentDurableEvidenceV5::new_cancellation(
                 affected_task,
@@ -2283,6 +2296,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             .await?;
         self.graph_resource_baseline = Some(resource_records);
         self.graph_resource_policy = Some(resource_policy);
+        self.graph_checkpoint_baseline = Some(Box::new(graph_checkpoint));
         Ok(receipt)
     }
 }
@@ -2812,12 +2826,22 @@ pub fn recover_concurrent_authoritative_prefix(
             execution_state = Some(revision);
         } else if matches!(
             envelope.kind.as_ref(),
-            CONCURRENT_DURABLE_EVIDENCE_KIND_V4 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
+            CONCURRENT_DURABLE_EVIDENCE_KIND_V4
+                | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
+                | super::RESOURCE_FINISH_EVIDENCE_KIND_V1
         ) {
             let evidence = if envelope.kind.as_ref() == CONCURRENT_DURABLE_EVIDENCE_KIND_V4 {
                 let evidence =
                     ConcurrentDurableEvidenceV4::decode(&program, &envelope.canonical_body)?;
                 ConcurrentDurableEvidenceBody::V4(Box::new(evidence))
+            } else if envelope.kind.as_ref() == super::RESOURCE_FINISH_EVIDENCE_KIND_V1 {
+                super::ResourceFinishEvidenceV1::decode(
+                    Arc::clone(&program),
+                    &envelope.canonical_body,
+                    super::resource_finish::MAXIMUM_RESOURCE_FINISH_EVIDENCE_BYTES,
+                )
+                .map(Box::new)
+                .map(ConcurrentDurableEvidenceBody::Finish)?
             } else {
                 ConcurrentDurableEvidenceV5::decode(&program, &envelope.canonical_body)
                     .map(Box::new)
@@ -3097,6 +3121,13 @@ fn validate_transition(
     {
         return Err(DurableEvidenceError::MixedExecution);
     }
+    if let ConcurrentDurableEvidenceBody::Finish(evidence) = current {
+        return if evidence.previous() == previous.checkpoint() {
+            Ok(())
+        } else {
+            Err(DurableEvidenceError::InvalidState)
+        };
+    }
     if current.checkpoint().resource_policy() != previous.checkpoint().resource_policy()
         || current.checkpoint().retained_resource_limit()
             != previous.checkpoint().retained_resource_limit()
@@ -3150,6 +3181,7 @@ fn validate_transition(
             ConcurrentDurableEvidenceBody::V5(_) => {
                 validate_execution_cancellation_transition(program, previous, current)?
             }
+            ConcurrentDurableEvidenceBody::Finish(_) => false,
         },
         DurableCommitCutV1::TaskSettlement => {
             previous_tasks == current_tasks
@@ -3185,6 +3217,7 @@ fn validate_transition(
         | DurableCommitCutV1::OperationOutcome
         | DurableCommitCutV1::OperationResult
         | DurableCommitCutV1::RetryWaiting => previous_tasks == current_tasks,
+        DurableCommitCutV1::ResourceFinish => false,
     };
     valid
         .then_some(())
@@ -3978,6 +4011,7 @@ fn validate_task_ownership_transition(
             evidence.record() == ConcurrentDurableEvidenceRecordV5::Ownership
                 && evidence.ownership() == Some(&ownership)
         }
+        ConcurrentDurableEvidenceBody::Finish(_) => false,
     })
 }
 

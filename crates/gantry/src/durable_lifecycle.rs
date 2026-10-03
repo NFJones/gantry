@@ -1099,13 +1099,33 @@ impl DurableOwnedExecution {
             self.journal_id.clone(),
             self.ownership_token.clone(),
         );
-        let mut commits = DurableCommitCoordinatorV1::new(
-            &sink,
-            self.execution_id(),
-            root_task,
-            Some(predecessor),
-        )
-        .map_err(DurableRunFailure::Commit)?;
+        let mut commits = if cut == DurableCommitCutV1::ResourceFinish {
+            let prefix = self
+                .storage
+                .read_prefix(ReadJournalPrefixV1 {
+                    journal_id: self.journal_id.clone(),
+                })
+                .await
+                .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Journal(error)))?;
+            let commits = DurableCommitCoordinatorV1::from_concurrent_prefix(
+                &sink,
+                transaction.program_arc(),
+                &prefix,
+            )
+            .map_err(DurableRunFailure::Commit)?;
+            if commits.frontier() != Some(predecessor) {
+                return Err(DurableRunFailure::Commit(DurableCommitError::InvalidState));
+            }
+            commits
+        } else {
+            DurableCommitCoordinatorV1::new(
+                &sink,
+                self.execution_id(),
+                root_task,
+                Some(predecessor),
+            )
+            .map_err(DurableRunFailure::Commit)?
+        };
         if cut == DurableCommitCutV1::Cancellation {
             let reason = lock_state(&self.state)
                 .graph_cancellation
@@ -2791,7 +2811,7 @@ impl DurableOwnedExecution {
                 #[cfg(all(feature = "concurrent", feature = "durable"))]
                 if state
                     .graph_frontier
-                    .is_some_and(|frontier| frontier.2 == DurableCommitCutV1::TerminalCompletion)
+                    .is_some_and(|_| state.last_observation.terminal.is_some())
                 {
                     let result = DurableCancelExecutionResult::AlreadyTerminal(Box::new(
                         state.last_observation.clone(),
@@ -3217,9 +3237,8 @@ impl Future for DurableExecutionWait<'_> {
         let mut state = lock_state(&self.execution.state);
         let observation = state.last_observation.clone();
         #[cfg(all(feature = "concurrent", feature = "durable"))]
-        let graph_terminal = state.graph_frontier.is_some_and(|frontier| {
-            frontier.2 == DurableCommitCutV1::TerminalCompletion
-                && state.owner != DurableJournalOwnerState::Held
+        let graph_terminal = state.graph_frontier.is_some_and(|_| {
+            observation.terminal.is_some() && state.owner != DurableJournalOwnerState::Held
         });
         #[cfg(not(all(feature = "concurrent", feature = "durable")))]
         let graph_terminal = false;

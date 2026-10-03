@@ -15379,7 +15379,7 @@ It MUST validate the presented current owner before applying the existing ledger
 preserve subject, cleanup ownership, issuing and containment evidence, roots and quotas, and
 leave its source record unchanged on success or refusal. Completion records only its declared
 logical instant. A candidate grants no physical finalization, accepted-work settlement or
-journal publication authority; graph resource-image mutation remains unsupported.
+journal publication authority; publication requires the separately declared exact finish cut below.
 
 `ResourceFinishEvidenceV1` MAY validate one exact finish candidate between two complete graph
 checkpoints. Both graphs MUST validate against the executable; applying the owner-qualified
@@ -15388,7 +15388,23 @@ Unrelated machine, task, session, budget, policy, provenance or record changes M
 The separate `GNTRFT01` binary carrier MUST enforce an independent total byte ceiling before
 input parsing and before copying encoded checkpoints into its output; unknown tags, malformed
 framing, trailing bytes and noncanonical encodings MUST refuse. This validator grants no journal
-publication or physical cleanup authority and does not relax graph resource-image immutability.
+publication or physical cleanup authority by itself.
+
+The journal kind `gantry.resource-finish-evidence/v1` MAY carry this exact evidence under an
+independent 4,194,304-byte ceiling. `commit_resource_finish` MUST require its complete predecessor
+to equal the writer's held committed graph before storage invocation. Unseeded, stale or unrelated
+predecessors MUST refuse; only a validated receipt advances the graph and accounting baselines.
+The complete graph baseline MUST be initialized only by authoritative prefix recovery or a
+validated graph receipt. Transaction capture of mutable machines MUST NOT seed it; predecessor
+coordinates and matching resource records alone do not prove complete graph correspondence.
+`DurableGraphTransaction::stage_resource_finish` MAY privately stage one begin or complete finish.
+Commit MUST use `ResourceFinish`, target the record's cleanup task, preserve every other graph fact,
+and install the reconstructed logical registry only after receipt validation. Dropping before
+submission MUST discard the private candidate; indeterminate submission MUST retain publication
+fencing. No callback, physical finalization or accepted-work recovery occurs. Full-prefix recovery
+MUST compare the embedded predecessor with the preceding authoritative graph before adopting the
+exact successor. Snapshot compaction containing these cuts remains unsupported and MUST refuse
+rather than omit them. Terminal outcomes MUST remain terminal when a later finish advances the tip.
 
 The separately scoped `GNTRRE01` reconstruction envelope MAY carry canonical issuing checkpoint
 bytes, issuing budget, current cleanup-task identity and the declared subject-free record.
@@ -15484,8 +15500,8 @@ Consuming driver admission MUST revalidate the actual machine graph after mutabl
 and before exposing coordinator-backed resource records. Prior checkpoint validation alone MUST
 NOT authorize a substituted machine with missing issuing-generation history.
 No physical ownership, adapter binding or accepted-work lease is reconstructed. Version-eight
-records MUST remain unchanged across every replayed graph transition until separately declared
-resource mutation cuts exist. Coordinator staging and capture MUST compare the committed resource
+records MUST remain unchanged across every ordinary replayed graph transition; only the separately
+declared exact `ResourceFinish` cut may change them. Coordinator staging and capture MUST compare the committed resource
 image before cloning or reservation; changed local accounting MUST NOT enter a new journal cut.
 Graph committers MUST reject resource-image drift before storage invocation and retain the image
 only after a validated receipt. Recovered owners MUST seed that image from validated recovery.

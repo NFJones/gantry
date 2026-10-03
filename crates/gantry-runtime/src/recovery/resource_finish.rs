@@ -14,6 +14,10 @@ use crate::{ConcurrentDurableCheckpointV4, ResourceFinishTransition};
 use super::DurableEvidenceError;
 
 const MAGIC: &[u8; 8] = b"GNTRFT01";
+/// Journal kind for exact logical resource finishing; older graph evidence is unchanged.
+pub const RESOURCE_FINISH_EVIDENCE_KIND_V1: &str = "gantry.resource-finish-evidence/v1";
+/// Independent ceiling for the complete journal finish carrier, including both graphs.
+pub const MAXIMUM_RESOURCE_FINISH_EVIDENCE_BYTES: u64 = 4_194_304;
 
 /// One exact logical finish transition between two validated graph checkpoints.
 ///
@@ -82,6 +86,11 @@ impl ResourceFinishEvidenceV1 {
     #[must_use]
     pub const fn current(&self) -> &ConcurrentDurableCheckpointV4 {
         &self.current
+    }
+
+    /// Returns the current cleanup task qualified by the validated target record.
+    pub fn task_id(&self) -> gantry_core::identity::ProtocolIdentity {
+        self.current.resource_records()[self.record_index].task_owner()
     }
 
     /// Encodes canonical evidence under an independent total byte ceiling.
@@ -163,5 +172,77 @@ impl ResourceFinishEvidenceV1 {
             return Err(DurableEvidenceError::Encoding);
         }
         Ok(evidence)
+    }
+}
+
+impl super::DurableCommitCoordinatorV1<'_> {
+    /// Commits exact logical finish evidence against the held complete predecessor graph.
+    ///
+    /// Unseeded or stale predecessors refuse before storage. Receipt validation advances
+    /// baselines; this method does not install coordinator state or invoke physical cleanup.
+    pub async fn commit_resource_finish(
+        &mut self,
+        evidence: ResourceFinishEvidenceV1,
+    ) -> Result<super::DurableEvidenceCommitV1, super::DurableCommitError> {
+        self.commit_resource_finish_with_submission(evidence, || {})
+            .await
+    }
+
+    /// Marks the existing journal submission boundary for the private staging owner.
+    pub(crate) async fn commit_resource_finish_with_submission(
+        &mut self,
+        evidence: ResourceFinishEvidenceV1,
+        submitted: impl FnOnce(),
+    ) -> Result<super::DurableEvidenceCommitV1, super::DurableCommitError> {
+        use super::{DurableCommitCutV1, DurableCommitError};
+        use gantry_host::journal::{
+            BatchLocalEvidenceId, JournalEvidenceReferenceV1, UnfinalizedEvidenceV1,
+        };
+        if self.graph_checkpoint_baseline.as_deref() != Some(evidence.previous())
+            || self.predecessor.is_none()
+            || self.graph_cancellation.is_some()
+            || self.graph_task_cancellation
+            || self.execution_id != evidence.current().execution_id()
+            || self.task_id != evidence.current().root_task_id()
+        {
+            return Err(DurableCommitError::InvalidState);
+        }
+        let number = self
+            .next_local_id
+            .checked_add(1)
+            .ok_or(DurableCommitError::InvalidState)?;
+        let local = BatchLocalEvidenceId::new(format!("cut-{number}"))
+            .map_err(|_| DurableCommitError::InvalidState)?;
+        let references = self
+            .predecessor
+            .map(|(id, _)| JournalEvidenceReferenceV1::Existing(id))
+            .into_iter()
+            .collect::<Vec<_>>();
+        let body = UnfinalizedEvidenceV1::new(
+            local.clone(),
+            RESOURCE_FINISH_EVIDENCE_KIND_V1,
+            evidence
+                .encode(MAXIMUM_RESOURCE_FINISH_EVIDENCE_BYTES)
+                .map_err(DurableCommitError::Evidence)?,
+            references,
+            Arc::from([]),
+        )
+        .map_err(|_| DurableCommitError::InvalidState)?;
+        let receipt = self
+            .commit_body_with_submission(
+                DurableCommitCutV1::ResourceFinish,
+                number,
+                local,
+                body,
+                submitted,
+            )
+            .await?;
+        self.graph_resource_baseline = Some(evidence.current().resource_records().to_vec());
+        self.graph_resource_policy = Some(super::GraphResourcePolicy {
+            policy: evidence.current().resource_policy(),
+            retained: evidence.current().retained_resource_limit(),
+        });
+        self.graph_checkpoint_baseline = Some(Box::new(evidence.current().clone()));
+        Ok(receipt)
     }
 }

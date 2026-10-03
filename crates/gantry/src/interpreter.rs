@@ -2756,7 +2756,12 @@ impl Interpreter {
                     next_event_sequence,
                     recovered.operation_recoveries().clone(),
                     recovered_events_have_pending_delivery(recovered.events()),
-                    recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion,
+                    recovered
+                        .execution()
+                        .scheduler()
+                        .state()
+                        .terminal_outcome()
+                        .is_some(),
                     recovered.events().clone(),
                 )
             }

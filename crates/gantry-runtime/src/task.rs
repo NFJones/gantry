@@ -40,6 +40,8 @@ use crate::{
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 mod combined_checkpoint;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
+pub(crate) use combined_checkpoint::MAXIMUM_RESOURCE_SECTION_BYTES;
+#[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
     ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointV5,
     ConcurrentDurableCheckpointV6, ConcurrentDurableCheckpointV7, ConcurrentDurableCheckpointV8,

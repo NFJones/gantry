@@ -593,12 +593,16 @@ fn resource_records_survive_version_eight_graph_recovery() {
     let storage = Arc::new(InMemoryJournalStore::new());
     let journal = JournalId::new("resource-record-graph")
         .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let counted = Arc::new(CountedCommitStore {
+        storage: Arc::clone(&storage),
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
     let journal_owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
         journal_id: journal.clone(),
         operation: JournalOwnerOperationV1::Start,
     }))
     .unwrap_or_else(|error| panic!("journal owner: {error:?}"));
-    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), journal_owner.token);
+    let sink = DurableTransitionSink::new(counted.clone(), journal.clone(), journal_owner.token);
     let task = root.task_id();
     let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, task, None)
         .unwrap_or_else(|error| panic!("commits: {error:?}"));
@@ -708,6 +712,215 @@ fn resource_records_survive_version_eight_graph_recovery() {
         without_records,
     )
     .unwrap_or_else(|error| panic!("changed evidence: {error:?}"));
+    // Rebuild a coherent owner from the committed cut, not the locally drifted registry.
+    let recovered = crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &prefix)
+        .unwrap_or_else(|error| panic!("finish predecessor recovery: {error:?}"));
+    let admission = recovered
+        .execution()
+        .capture_replayed_checkpoint()
+        .unwrap_or_else(|error| panic!("finish predecessor capture: {error:?}"))
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("finish graph recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("finish driver admission: {error:?}"));
+    let (finish_owner, mut finish_root, mut finish_children, _) = admission.into_parts();
+    let before_finish = finish_owner.snapshot();
+    // A valid but locally advanced machine is not an authoritative finish predecessor.
+    let drift_admission = recovered
+        .execution()
+        .capture_replayed_checkpoint()
+        .unwrap_or_else(|error| panic!("drift capture: {error:?}"))
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("drift recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("drift admission: {error:?}"));
+    let (drift_owner, mut drift_root, mut drift_children, _) = drift_admission.into_parts();
+    let machine_before = drift_root.checkpoint();
+    assert!(matches!(drift_root.step(), MachineStep::Transition(_)));
+    assert_ne!(drift_root.checkpoint(), machine_before);
+    let drift_snapshot = drift_owner.snapshot();
+    let calls_before = counted.calls.load(std::sync::atomic::Ordering::Acquire);
+    let mut fresh = DurableCommitCoordinatorV1::new(&sink, execution, task, restored.frontier())
+        .unwrap_or_else(|error| panic!("fresh predecessor-only writer: {error:?}"));
+    let mut drift = drift_owner
+        .stage_graph(&mut drift_root, &mut drift_children)
+        .unwrap_or_else(|error| panic!("valid locally advanced graph: {error:?}"));
+    drift
+        .stage_resource_finish(&subject, owner, crate::ResourceFinishTransition::Begin)
+        .unwrap_or_else(|error| panic!("drift candidate: {error:?}"));
+    assert_eq!(
+        ready(drift.commit(&mut fresh, DurableCommitCutV1::ResourceFinish, task)),
+        Err(DurableCommitError::InvalidState)
+    );
+    assert_eq!(
+        counted.calls.load(std::sync::atomic::Ordering::Acquire),
+        calls_before
+    );
+    assert_eq!(fresh.frontier(), restored.frontier());
+    assert_eq!(drift_owner.snapshot(), drift_snapshot);
+    assert!(!lock(&drift_owner.inner.state).durable_publication_reserved);
+    let mut validated =
+        DurableCommitCoordinatorV1::from_concurrent_prefix(&sink, Arc::clone(&program), &prefix)
+            .unwrap_or_else(|error| panic!("validated drift writer: {error:?}"));
+    let mut drift = drift_owner
+        .stage_graph(&mut drift_root, &mut drift_children)
+        .unwrap_or_else(|error| panic!("validated drift stage: {error:?}"));
+    drift
+        .stage_resource_finish(&subject, owner, crate::ResourceFinishTransition::Begin)
+        .unwrap_or_else(|error| panic!("validated drift candidate: {error:?}"));
+    assert_eq!(
+        ready(drift.commit(&mut validated, DurableCommitCutV1::ResourceFinish, task)),
+        Err(DurableCommitError::InvalidState)
+    );
+    assert_eq!(
+        counted.calls.load(std::sync::atomic::Ordering::Acquire),
+        calls_before
+    );
+    assert_eq!(validated.frontier(), restored.frontier());
+    assert_eq!(drift_owner.snapshot(), drift_snapshot);
+    assert!(!lock(&drift_owner.inner.state).durable_publication_reserved);
+    assert_eq!(
+        ready(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: sink.journal_id().clone(),
+        }))
+        .unwrap_or_else(|error| panic!("drift refusal prefix: {error:?}")),
+        prefix
+    );
+    let mut rollback = finish_owner
+        .stage_graph(&mut finish_root, &mut finish_children)
+        .unwrap_or_else(|error| panic!("rollback stage: {error:?}"));
+    assert!(
+        rollback
+            .stage_resource_finish(
+                &subject,
+                OwnerGeneration::new(3),
+                crate::ResourceFinishTransition::Begin
+            )
+            .is_err()
+    );
+    rollback
+        .stage_resource_finish(&subject, owner, crate::ResourceFinishTransition::Begin)
+        .unwrap_or_else(|error| panic!("rollback finish: {error:?}"));
+    assert_eq!(finish_owner.snapshot(), before_finish);
+    drop(rollback);
+    assert_eq!(finish_owner.snapshot(), before_finish);
+    let mut wrong_cut = finish_owner
+        .stage_graph(&mut finish_root, &mut finish_children)
+        .unwrap_or_else(|error| panic!("wrong-cut stage: {error:?}"));
+    wrong_cut
+        .stage_resource_finish(&subject, owner, crate::ResourceFinishTransition::Begin)
+        .unwrap_or_else(|error| panic!("wrong-cut finish: {error:?}"));
+    assert!(
+        wrong_cut
+            .stage_resource_finish(&subject, owner, crate::ResourceFinishTransition::Begin)
+            .is_err()
+    );
+    let frontier = restored.frontier();
+    assert_eq!(
+        ready(wrong_cut.commit(&mut restored, DurableCommitCutV1::Checkpoint, task)),
+        Err(DurableCommitError::InvalidState)
+    );
+    assert_eq!(restored.frontier(), frontier);
+    assert_eq!(finish_owner.snapshot(), before_finish);
+    assert!(!lock(&finish_owner.inner.state).durable_publication_reserved);
+    assert_eq!(
+        ready(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: sink.journal_id().clone(),
+        }))
+        .unwrap_or_else(|error| panic!("refused finish prefix: {error:?}")),
+        prefix
+    );
+    for (transition, lifetime) in [
+        (
+            crate::ResourceFinishTransition::Begin,
+            gantry_ir::ResourceLifetimeState::Finishing,
+        ),
+        (
+            crate::ResourceFinishTransition::Complete { settled_at: 20 },
+            gantry_ir::ResourceLifetimeState::Finished,
+        ),
+    ] {
+        let current_prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: sink.journal_id().clone(),
+        }))
+        .unwrap_or_else(|error| panic!("fresh finish prefix: {error:?}"));
+        restored = DurableCommitCoordinatorV1::from_concurrent_prefix(
+            &sink,
+            Arc::clone(&program),
+            &current_prefix,
+        )
+        .unwrap_or_else(|error| panic!("fresh validated finish writer: {error:?}"));
+        let mut stage = finish_owner
+            .stage_graph(&mut finish_root, &mut finish_children)
+            .unwrap_or_else(|error| panic!("finish stage: {error:?}"));
+        stage
+            .stage_resource_finish(&subject, owner, transition)
+            .unwrap_or_else(|error| panic!("staged finish: {error:?}"));
+        let receipt = ready(stage.commit(&mut restored, DurableCommitCutV1::ResourceFinish, task))
+            .unwrap_or_else(|error| panic!("finish commit: {error:?}"));
+        assert_eq!(receipt.cut, DurableCommitCutV1::ResourceFinish);
+        let committed = finish_owner
+            .capture_checkpoint(&finish_root, &finish_children)
+            .unwrap_or_else(|error| panic!("committed finish capture: {error:?}"));
+        assert_eq!(
+            committed.resource_records()[0].record().lifetime(),
+            lifetime
+        );
+        let finished_prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: sink.journal_id().clone(),
+        }))
+        .unwrap_or_else(|error| panic!("finish prefix: {error:?}"));
+        let replay =
+            crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &finished_prefix)
+                .unwrap_or_else(|error| panic!("finish replay: {error:?}"));
+        let JournalPrefixV1::Full(full) = &finished_prefix else {
+            panic!("full prefix")
+        };
+        let journaled = crate::ResourceFinishEvidenceV1::decode(
+            Arc::clone(&program),
+            &full
+                .evidence
+                .last()
+                .unwrap_or_else(|| panic!("finish evidence"))
+                .canonical_body,
+            4_194_304,
+        )
+        .unwrap_or_else(|error| panic!("journaled finish: {error:?}"));
+        assert_eq!(
+            journaled.current().resource_records(),
+            committed.resource_records()
+        );
+        assert_eq!(
+            replay
+                .execution()
+                .capture_replayed_checkpoint()
+                .unwrap_or_else(|error| panic!("finish replay capture: {error:?}")),
+            *journaled.current()
+        );
+        assert_eq!(replay.latest_cut(), DurableCommitCutV1::ResourceFinish);
+        let frontier = restored.frontier();
+        assert_eq!(
+            ready(restored.commit_resource_finish(journaled.clone())),
+            Err(DurableCommitError::InvalidState),
+            "already committed finish evidence must not be appended again"
+        );
+        assert_eq!(restored.frontier(), frontier);
+        assert_eq!(
+            ready(storage.read_prefix(ReadJournalPrefixV1 {
+                journal_id: sink.journal_id().clone(),
+            }))
+            .unwrap_or_else(|error| panic!("stale finish prefix: {error:?}")),
+            finished_prefix
+        );
+        let JournalPrefixV1::Full(full) = &finished_prefix else {
+            panic!("full prefix")
+        };
+        assert!(
+            crate::ConcurrentDurableRecoverySnapshotV1::from_full_prefix(&program, full).is_err(),
+            "unsupported finish compaction must fail closed"
+        );
+    }
+    assert!(!finish_owner.has_unsettled_resource_accounts());
     let JournalPrefixV1::Full(mut full) = prefix else {
         panic!("full prefix")
     };
