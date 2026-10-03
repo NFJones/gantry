@@ -1890,6 +1890,64 @@ fn string_float_parsing_never_trims_input() {
     ));
 }
 
+/// Runtime parsing keeps noncanonical JSON numbers and refuses invalid input without failing.
+#[test]
+fn string_float_parsing_preserves_json_number_contract() {
+    let option_float = TypeDescriptor::option(TypeDescriptor::FLOAT)
+        .unwrap_or_else(|error| panic!("option: {error}"));
+    for (source, expected) in [
+        ("1e+0".to_owned(), Some(1.0)),
+        (format!("1.{}", "0".repeat(1000)), Some(1.0)),
+        ("-0".to_owned(), Some(0.0)),
+        ("1.79769313486231571e308".to_owned(), None),
+        ("1 ".to_owned(), None),
+        ("[1]".to_owned(), None),
+    ] {
+        let root = workflow(
+            "crate::main",
+            Vec::new(),
+            option_float.clone(),
+            EffectSet::default(),
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::STRING,
+                    InstructionKind::Push(
+                        LogicalValue::string(source, DEFAULT_VALUE_LIMITS)
+                            .unwrap_or_else(|error| panic!("input: {error:?}")),
+                    ),
+                ),
+                instruction(
+                    1,
+                    option_float.clone(),
+                    InstructionKind::Primitive(Primitive::StringParseFloat),
+                ),
+                instruction(2, option_float.clone(), InstructionKind::Return),
+            ],
+        );
+        let mut machine = new_machine(
+            program(vec![root]),
+            "crate::main",
+            Vec::new(),
+            limits(8, 1, 1, 1, 8),
+        );
+        let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+            panic!("parsing must not fail the task")
+        };
+        let expected = expected.map_or_else(LogicalValue::none, |number| {
+            LogicalValue::some(
+                LogicalValue::float(
+                    gantry_core::numeric::GantryFloat::new(number)
+                        .unwrap_or_else(|| panic!("finite fixture")),
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("result: {error:?}"))
+        });
+        assert_eq!(value, expected);
+    }
+}
+
 #[test]
 fn malformed_programs_are_rejected_before_machine_construction() {
     let duplicate = workflow(

@@ -8,7 +8,7 @@ use gantry_core::identity::ProtocolIdentity;
 use gantry_core::limit::ResourceLimit;
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind};
-use gantry_core::strict_json::{JsonLimits, JsonNode, StrictJsonDocument};
+use gantry_core::strict_json::parse_json_float;
 use gantry_core::unicode::{is_white_space, to_full_lowercase_bounded, to_full_uppercase_bounded};
 use gantry_core::value::{
     LogicalValue, LogicalValueView, ValueError, ValueLimitKind, ValueLimits, ValuePathSegment,
@@ -6211,32 +6211,7 @@ fn parse_int(value: &str) -> Option<GantryInt> {
 }
 
 fn parse_float(value: &str) -> Option<GantryFloat> {
-    let bytes = value.as_bytes();
-    if bytes
-        .first()
-        .is_some_and(|byte| matches!(byte, b' ' | b'\n' | b'\r' | b'\t'))
-        || bytes
-            .last()
-            .is_some_and(|byte| matches!(byte, b' ' | b'\n' | b'\r' | b'\t'))
-    {
-        return None;
-    }
-    let maximum_bytes = u64::try_from(bytes.len()).ok()?;
-    let document = StrictJsonDocument::decode(
-        bytes,
-        JsonLimits {
-            maximum_bytes,
-            maximum_nesting_depth: 1,
-            maximum_nodes: 1,
-            maximum_string_scalars: 1,
-            maximum_list_items: 1,
-        },
-    )
-    .ok()?;
-    let JsonNode::Number(number) = document.node(document.root())? else {
-        return None;
-    };
-    number.to_gantry_float().ok().and_then(GantryFloat::new)
+    parse_json_float(value).and_then(GantryFloat::new)
 }
 
 pub(crate) fn value_matches_type(value: &LogicalValue, expected: &TypeDescriptor) -> bool {

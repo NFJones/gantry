@@ -3491,6 +3491,10 @@ Format major changes may alter eligibility, framing, order, or hashing; a minor 
       finite binary64 value; it otherwise returns `None`, including when
       parsing, range checking, or normalization fails. These parsers do not
       trim and never fail the task for invalid input.
+      Runtime Float token admission MAY borrow the String and share the strict JSON number
+      scanner and exact decimal range converter without constructing a JSON document.
+      This MUST NOT restrict admitted noncanonical number spellings or alter rounding,
+      normalized zero, transition charging or refusal. It declares no work or cancellation bound.
     `List<String>.join(separator) -> String` joins items in list order with the
     exact separator only between adjacent items. It returns the empty String
     for an empty list and the sole item unchanged for a one-item list. `join`

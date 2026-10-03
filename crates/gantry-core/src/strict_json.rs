@@ -54,17 +54,7 @@ impl ExactDecimal {
 
     /// Correctly rounds the token to finite binary64 and normalizes negative zero.
     pub fn to_gantry_float(&self) -> Result<f64, NumberError> {
-        if compare_decimal_magnitude(self.lexeme(), "1.7976931348623157e308") == Ordering::Greater {
-            return Err(NumberError::OutOfRange);
-        }
-        let parsed = self
-            .lexeme()
-            .parse::<f64>()
-            .map_err(|_| NumberError::OutOfRange)?;
-        if !parsed.is_finite() {
-            return Err(NumberError::OutOfRange);
-        }
-        Ok(if parsed == 0.0 { 0.0 } else { parsed })
+        decimal_to_float(self.lexeme())
     }
 
     /// Compares two exact mathematical decimal values without binary64 rounding.
@@ -600,43 +590,8 @@ impl Decoder {
 
     fn parse_number(&mut self) -> Result<Range<usize>, JsonError> {
         let start = self.cursor;
-        if self.peek() == Some(b'-') {
-            self.cursor += 1;
-        }
-        match self.peek() {
-            Some(b'0') => {
-                self.cursor += 1;
-                if self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-                    return Err(self.syntax());
-                }
-            }
-            Some(b'1'..=b'9') => self.consume_digits(),
-            _ => return Err(self.syntax()),
-        }
-        if self.peek() == Some(b'.') {
-            self.cursor += 1;
-            if !self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-                return Err(self.syntax());
-            }
-            self.consume_digits();
-        }
-        if matches!(self.peek(), Some(b'e' | b'E')) {
-            self.cursor += 1;
-            if matches!(self.peek(), Some(b'+' | b'-')) {
-                self.cursor += 1;
-            }
-            if !self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-                return Err(self.syntax());
-            }
-            self.consume_digits();
-        }
+        scan_number(&self.input, &mut self.cursor)?;
         Ok(start..self.cursor)
-    }
-
-    fn consume_digits(&mut self) {
-        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-            self.cursor += 1;
-        }
     }
 
     fn consume_literal(&mut self, expected: &[u8]) -> Result<(), JsonError> {
@@ -666,6 +621,76 @@ impl Decoder {
             offset: self.cursor,
         }
     }
+}
+
+/// Parses exactly one borrowed RFC 8259 number token into Gantry's finite Float domain.
+///
+/// Whitespace, non-number JSON values and trailing bytes refuse. Shares grammar and exact
+/// decimal range conversion with document decoding without copying input or constructing an
+/// arena. Decimal normalization still uses input-dependent scratch; this is not a work,
+/// cancellation, or total-allocation bound.
+#[must_use]
+pub fn parse_json_float(token: &str) -> Option<f64> {
+    let mut cursor = 0;
+    scan_number(token.as_bytes(), &mut cursor).ok()?;
+    if cursor != token.len() {
+        return None;
+    }
+    decimal_to_float(token).ok()
+}
+
+/// Scans one JSON numeric token, preserving the first refusal offset for document decoding.
+fn scan_number(bytes: &[u8], cursor: &mut usize) -> Result<(), JsonError> {
+    if bytes.get(*cursor) == Some(&b'-') {
+        *cursor += 1;
+    }
+    match bytes.get(*cursor) {
+        Some(b'0') => {
+            *cursor += 1;
+            if bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
+                return Err(JsonError::Syntax { offset: *cursor });
+            }
+        }
+        Some(b'1'..=b'9') => consume_number_digits(bytes, cursor),
+        _ => return Err(JsonError::Syntax { offset: *cursor }),
+    }
+    if bytes.get(*cursor) == Some(&b'.') {
+        *cursor += 1;
+        if !bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
+            return Err(JsonError::Syntax { offset: *cursor });
+        }
+        consume_number_digits(bytes, cursor);
+    }
+    if matches!(bytes.get(*cursor), Some(b'e' | b'E')) {
+        *cursor += 1;
+        if matches!(bytes.get(*cursor), Some(b'+' | b'-')) {
+            *cursor += 1;
+        }
+        if !bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
+            return Err(JsonError::Syntax { offset: *cursor });
+        }
+        consume_number_digits(bytes, cursor);
+    }
+    Ok(())
+}
+
+/// Advances only across ASCII decimal digits in an already bounded borrowed input.
+fn consume_number_digits(bytes: &[u8], cursor: &mut usize) {
+    while bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
+        *cursor += 1;
+    }
+}
+
+/// Applies the shared exact mathematical range check before binary64 rounding.
+fn decimal_to_float(lexeme: &str) -> Result<f64, NumberError> {
+    if compare_decimal_magnitude(lexeme, "1.7976931348623157e308") == Ordering::Greater {
+        return Err(NumberError::OutOfRange);
+    }
+    let parsed = lexeme.parse::<f64>().map_err(|_| NumberError::OutOfRange)?;
+    if !parsed.is_finite() {
+        return Err(NumberError::OutOfRange);
+    }
+    Ok(if parsed == 0.0 { 0.0 } else { parsed })
 }
 
 fn decimal_to_int(lexeme: &str) -> Result<i64, NumberError> {
@@ -938,6 +963,70 @@ mod tests {
             number("1e999999999999999999999999999999999999").to_gantry_float(),
             Err(NumberError::OutOfRange)
         );
+    }
+
+    /// Borrowed tokens preserve noncanonical numeric spellings without admitting JSON whitespace.
+    #[test]
+    fn borrowed_float_tokens_match_document_numeric_normalization() {
+        for source in [
+            "0",
+            "-0",
+            "1",
+            "1.0",
+            "1e+0",
+            "100e-2",
+            "5e-324",
+            "1.7976931348623157e308",
+            "1.79769313486231571e308",
+            "1e999999999999999999999999",
+            "1e-999999999999999999999999",
+            "",
+            "-",
+            "+1",
+            "01",
+            "-01",
+            ".1",
+            "1.",
+            "1e",
+            "1e+",
+            "1e-",
+            "1_0",
+            "NaN",
+            "Infinity",
+            "null",
+            "true",
+            "[1]",
+            "\"1\"",
+            "1x",
+            " 1",
+            "1 ",
+            "\t1",
+            "1\n",
+            "١",
+            "1\u{a0}",
+        ] {
+            let expected = if source
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_whitespace)
+                || source
+                    .as_bytes()
+                    .last()
+                    .is_some_and(u8::is_ascii_whitespace)
+            {
+                None
+            } else {
+                StrictJsonDocument::decode(source.as_bytes(), limits(1, 1))
+                    .ok()
+                    .and_then(|document| match document.node(document.root()) {
+                        Some(JsonNode::Number(number)) => number.to_gantry_float().ok(),
+                        _ => None,
+                    })
+            };
+            assert_eq!(super::parse_json_float(source), expected, "{source:?}");
+        }
+        let long = format!("1.{}", "0".repeat(100_000));
+        assert_eq!(super::parse_json_float(&long), Some(1.0));
     }
 
     #[test]
