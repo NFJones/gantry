@@ -59,6 +59,15 @@ executable canonical IR or an execution-package identity. An artifact-limit
 failure is an operational `frontend-resource-limit`, not a source-invalid
 judgment.
 
+Value-producing agent and session contexts lower their complete blocks in source
+order, not merely the first nested operation. Discarded work, trailing results,
+and context entry/restoration remain explicit in the executable projection.
+The `executable_agent_context_preserves_discarded_prompt_and_tail_action`
+regression in `analyzer_lowering.rs` inspects the operation inventory and drives
+agent, inline-session, and nested fork/new contexts on the shared machine. This
+regression is implementation evidence, not a refresh of revision-bound profile
+qualification.
+
 ## Assumptions and abstraction boundary
 
 - The frontend supplied one syntax-valid, immutable, completely selected

@@ -426,6 +426,138 @@ fn analyzed_operation_result_authenticates_live_and_protected_kinds_only() {
     );
 }
 
+/// A value-producing agent context must retain both discarded operations and its tail action.
+#[test]
+fn executable_agent_context_preserves_discarded_prompt_and_tail_action() {
+    use gantry::ir::InstructionKind;
+    for context in [
+        "with worker { discard prompt \"reachable\" -> String; action direct(1) }",
+        "session(inline) { discard prompt \"reachable\" -> String; action direct(1) }",
+        "with worker { session(fork) { discard prompt \"reachable\" -> String; action direct(1) } }",
+        "with worker { session(new) { discard prompt \"reachable\" -> String; action direct(1) } }",
+        "adjust(with worker { discard prompt \"reachable\" -> String; action direct(1) })",
+        "1 + (with worker { discard prompt \"reachable\" -> String; action direct(1) })",
+        "(with worker { discard prompt \"reachable\" -> String; action direct(1) }) + 1",
+    ] {
+        let package = analyze(&format!(
+            "agents {{ worker }} default agent = worker;\n\
+         action read_only direct(value: Int) -> Int;\n\
+         pure fn adjust(value: Int) -> Int {{ value + 1 }}\n\
+         fn leaf() -> Int {{ {context} }}\n\
+         fn main() -> Int {{ leaf() }}",
+        ));
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let program = package
+            .executable_program()
+            .unwrap_or_else(|| panic!("valid executable"));
+        let leaf = program
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "crate::leaf")
+            .unwrap_or_else(|| panic!("reachable leaf"));
+        let operations = leaf
+            .instructions
+            .iter()
+            .filter_map(|instruction| {
+                if let InstructionKind::OperationCall { operation, .. } = &instruction.kind {
+                    Some(operation)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(operations.len(), 2, "{:?}", leaf.instructions);
+        assert!(operations[0].action.is_none());
+        assert_eq!(
+            operations[1]
+                .action
+                .as_ref()
+                .map(|action| action.path.as_str()),
+            Some("crate::direct")
+        );
+        use gantry::identity::ProtocolIdentity;
+        use gantry::portable::IdentityKind;
+        use gantry::runtime::{Machine, MachineLimits, MachineOutcome, MachineStep};
+        use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
+        use std::sync::Arc;
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [71; 32])
+            .unwrap_or_else(|error| panic!("execution: {error}"));
+        let root_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [72; 32])
+            .unwrap_or_else(|error| panic!("session: {error}"));
+        let mut machine = Machine::new_with_context(
+            Arc::new(program.clone()),
+            &package.entry().unwrap_or_else(|| panic!("entry")).path,
+            vec![],
+            execution,
+            MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| panic!("positive limits")),
+            Some(Arc::from("original")),
+            Some(root_session),
+        )
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        let mut completed = 0;
+        let outcome = loop {
+            match machine.step() {
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+                MachineStep::WaitingSessionScope(scope) => {
+                    let child =
+                        ProtocolIdentity::from_fresh_material(IdentityKind::Session, [73; 32])
+                            .unwrap_or_else(|error| panic!("child session: {error}"));
+                    machine
+                        .complete_session_scope(&scope, child)
+                        .unwrap_or_else(|error| panic!("session completion: {error:?}"));
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    assert_eq!(
+                        operation.active_agent.as_deref(),
+                        Some(if context.contains("with worker") {
+                            "worker"
+                        } else {
+                            "original"
+                        })
+                    );
+                    let value = match completed {
+                        0 => LogicalValue::string("discarded", DEFAULT_VALUE_LIMITS)
+                            .unwrap_or_else(|error| panic!("string: {error:?}")),
+                        1 => LogicalValue::integer(
+                            gantry::numeric::GantryInt::new(7)
+                                .unwrap_or_else(|| panic!("fixture integer is valid")),
+                        ),
+                        _ => panic!("extra operation"),
+                    };
+                    machine
+                        .complete_operation(operation.identity, value)
+                        .unwrap_or_else(|error| panic!("completion: {error:?}"));
+                    completed += 1;
+                }
+                MachineStep::Complete(outcome) => break outcome,
+            }
+        };
+        assert_eq!(completed, 2);
+        assert_eq!(
+            outcome,
+            MachineOutcome::Succeeded(LogicalValue::integer(
+                gantry::numeric::GantryInt::new(
+                    if context.starts_with("adjust") || context.contains(" + ") {
+                        8
+                    } else {
+                        7
+                    }
+                )
+                .unwrap_or_else(|| panic!("fixture integer is valid"))
+            ))
+        );
+        assert_eq!(machine.active_agent(), Some("original"));
+        assert_eq!(machine.active_session(), Some(root_session));
+    }
+}
+
 fn analyze(source: &str) -> TypedPackage {
     let phase = syntax(source);
     analyze_package_types(&phase)

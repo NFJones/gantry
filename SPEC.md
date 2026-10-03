@@ -2223,6 +2223,10 @@ before body evaluation: `fork` copies the parent's committed transcript and
 `new` uses the empty transcript. Exit restores the prior session. Session
 creation is part of the transition's semantic state and must satisfy the
 commit rule in Section 3.6 before an operation can use it.
+Executable lowering of a value-producing agent or session context MUST preserve
+the entire body in source order, including discarded operations and its trailing
+value, before restoring the prior context. Selecting a nested operation as the
+enclosing context's result MUST NOT omit sibling work or context entry and exit.
 
 ### 3.5 Operations, tasks, cancellation, and failure
 

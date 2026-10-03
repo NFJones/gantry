@@ -1758,8 +1758,20 @@ impl Compiler<'_> {
     }
 
     fn compile_context_statement(&mut self, statement: NodeId) -> Result<bool, AnalysisError> {
+        self.compile_context_block(statement, BlockMode::Statement)
+    }
+
+    /// Lowers an agent or session context while preserving its body's completion mode.
+    fn compile_context_block(
+        &mut self,
+        statement: NodeId,
+        mode: BlockMode,
+    ) -> Result<bool, AnalysisError> {
         let node = self.node(statement)?.clone();
-        let is_with = matches!(node.form(), SyntaxForm::WithStatement);
+        let is_with = matches!(
+            node.form(),
+            SyntaxForm::WithStatement | SyntaxForm::WithExpression
+        );
         let body = direct_child_form(self.tree, &node, SyntaxForm::Block)
             .ok_or(AnalysisError::Invariant)?;
         if is_with {
@@ -1776,7 +1788,7 @@ impl Compiler<'_> {
             InstructionKind::ExitSession
         });
         let body_bindings = self.binding_types.clone();
-        let body_falls_through = self.compile_block(body, BlockMode::Statement)?;
+        let body_falls_through = self.compile_block(body, mode)?;
         self.binding_types = body_bindings;
         self.cleanup.pop();
         self.emit(
@@ -1798,6 +1810,28 @@ impl Compiler<'_> {
             .cloned()
             .or_else(|| literal_type(self.tree, &node))
             .unwrap_or(TypeDescriptor::UNIT);
+
+        // The context owns its entire block, not the first operation nested inside it.
+        let context = if matches!(
+            node.form(),
+            SyntaxForm::WithExpression | SyntaxForm::SessionExpression
+        ) {
+            Some(expression)
+        } else {
+            let children = semantic_children(self.tree, expression)?;
+            (children.len() == 1).then(|| children[0]).filter(|child| {
+                self.tree.node(*child).is_some_and(|node| {
+                    matches!(
+                        node.form(),
+                        SyntaxForm::WithExpression | SyntaxForm::SessionExpression
+                    )
+                })
+            })
+        };
+        if let Some(context) = context {
+            self.compile_context_block(context, BlockMode::Value)?;
+            return Ok(ty);
+        }
 
         // One admitted propagation (`GNT-38.1-typed-error-propagation`) lowers to a result branch:
         // the `Ok` payload continues the expression while the `Err` payload is converted and
@@ -1846,7 +1880,7 @@ impl Compiler<'_> {
             return self.compile_task_control(control, ty);
         }
         if let Some(match_expression) =
-            descendant_form(self.tree, expression, &[SyntaxForm::MatchExpression])
+            owned_expression_form(self.tree, expression, &[SyntaxForm::MatchExpression])
         {
             self.compile_match(match_expression)?;
             return Ok(ty);
@@ -1854,7 +1888,7 @@ impl Compiler<'_> {
         // One node that carries its own operator tokens is an operator chain whose operands may
         // hold an operation, so the chain decides whether an operand is reached at all.
         if binary_operators(self.tree, node.children()).is_empty()
-            && let Some(operation) = descendant_form(
+            && let Some(operation) = owned_expression_form(
                 self.tree,
                 expression,
                 &[
@@ -4808,6 +4842,28 @@ fn descendant_form(tree: &SyntaxTree, root: NodeId, forms: &[SyntaxForm]) -> Opt
         work.extend(node.children().iter().rev().copied());
     }
     None
+}
+
+/// Finds a construct owned by this expression, descending only transparent wrappers.
+fn owned_expression_form(tree: &SyntaxTree, root: NodeId, forms: &[SyntaxForm]) -> Option<NodeId> {
+    let mut current = root;
+    loop {
+        let node = tree.node(current)?;
+        if forms
+            .iter()
+            .any(|form| std::mem::discriminant(node.form()) == std::mem::discriminant(form))
+        {
+            return Some(current);
+        }
+        if !matches!(
+            node.form(),
+            SyntaxForm::Expression | SyntaxForm::BinaryExpression
+        ) || !binary_operators(tree, node.children()).is_empty()
+        {
+            return None;
+        }
+        current = single_wrapped_node(tree, node)?;
+    }
 }
 
 fn direct_identifier(tree: &SyntaxTree, id: NodeId) -> Option<Arc<str>> {
