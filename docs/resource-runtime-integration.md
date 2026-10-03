@@ -108,6 +108,13 @@ consume live/retained capacity as applicable; pending policy governs future work
 invented leases. Legacy entry points keep pending and retained policy absent. These inputs remain
 caller-authenticated reconstruction evidence, not a journal provenance guarantee.
 
+`RecoveredResourceRecord::from_issuing_checkpoint` derives an accounting subject from a validated
+issuing machine checkpoint and budget, rather than caller-selected identity strings. It validates
+the declared kind, carrier and owner, and closes only its private recovered admission lease.
+The source machine lease remains unchanged; no accepted work or physical slot is reconstructed.
+The caller must authenticate the issuing checkpoint's journal provenance and current cleanup
+ownership. This is not resource-record carriage in the combined graph wire.
+
 `ResourceRegistry::reconstruct_with_retained_limit` additionally bounds every reconstructed
 account, including terminal records. Existing evidence and live-capacity refusals retain
 precedence; the retained ceiling is checked before insertion. Recovery publishes the complete

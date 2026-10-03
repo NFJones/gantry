@@ -643,6 +643,41 @@ impl RecoveredResourceRecord {
         }
     }
 
+    /// Derives accounting provenance from an independently retained issuing checkpoint.
+    ///
+    /// Validates the program, machine and budget before reading the pending action subject.
+    /// The private recovered lease is closed before returning accounting evidence, so this
+    /// route neither restores accepted work nor changes the source machine's lease. The caller
+    /// must authenticate the checkpoint's journal provenance and the current owner separately.
+    #[cfg(feature = "durable")]
+    pub fn from_issuing_checkpoint(
+        program: Arc<gantry_ir::MachineProgram>,
+        checkpoint: crate::MachineCheckpointV3,
+        budget: crate::ExecutionBudgetSnapshot,
+        carrier: ResourceCarrier,
+        owner: OwnerGeneration,
+        record: DurableResourceRecord,
+    ) -> Result<Self, ResourceOriginRecoveryError> {
+        let budget = crate::ExecutionBudget::recover_from_checkpoint(budget)
+            .map_err(ResourceOriginRecoveryError::Machine)?;
+        let mut machine = crate::Machine::recover_from_checkpoint(program, checkpoint, budget)
+            .map_err(ResourceOriginRecoveryError::Machine)?;
+        let subject =
+            machine
+                .pending_resource_subject()
+                .ok_or(ResourceOriginRecoveryError::Registry(
+                    ResourceRegistryRefusal::NoPendingResourceSubject,
+                ))?;
+        machine.close_resource_admission();
+        let account =
+            AdmittedResource::admit_reconstructed(carrier, record.clone(), subject.clone())
+                .map_err(ResourceOriginRecoveryError::Registry)?;
+        account.require_current_owner(owner).map_err(|error| {
+            ResourceOriginRecoveryError::Registry(ResourceRegistryRefusal::Admission(error))
+        })?;
+        Ok(Self::new(subject, carrier, owner, record))
+    }
+
     /// Returns current cleanup ownership, independently of immutable issuing provenance.
     #[must_use]
     pub const fn task_owner(&self) -> gantry_core::identity::ProtocolIdentity {
@@ -672,6 +707,16 @@ impl RecoveredResourceRecord {
     pub const fn record(&self) -> &DurableResourceRecord {
         &self.record
     }
+}
+
+/// Refusal while validating the issuing evidence of a declared accounting record.
+#[cfg(feature = "durable")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResourceOriginRecoveryError {
+    /// Issuing machine, program or shared-budget facts do not validate.
+    Machine(crate::MachineRecoveryError),
+    /// The issuing subject or declared reconstruction facts do not admit accounting.
+    Registry(ResourceRegistryRefusal),
 }
 
 impl ResourceRegistry {

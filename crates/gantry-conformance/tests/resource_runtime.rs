@@ -9076,6 +9076,96 @@ fn runtime_subject_survives_checkpoint_recovery() {
     );
 }
 
+/// An issuing checkpoint derives accounting provenance without reopening its pending work.
+#[test]
+fn reconstruction_from_issuing_checkpoint_validates_origin_and_closes_admission() {
+    use gantry::runtime::ResourceOriginRecoveryError;
+    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let origin = RecoveredResourceRecord::from_issuing_checkpoint(
+        Arc::clone(&program),
+        machine.checkpoint(),
+        machine.budget_checkpoint(),
+        ResourceCarrier::ReconstructionRecord,
+        OwnerGeneration::new(4),
+        ledger().durable_record(),
+    )
+    .unwrap_or_else(|error| panic!("validated origin: {error:?}"));
+    assert_eq!(origin.subject(), &subject);
+    let registry = ResourceRegistry::reconstruct(Some(1), vec![origin.clone()])
+        .unwrap_or_else(|error| panic!("accounting recovery: {error:?}"));
+    assert_eq!(registry.pending_operations(), 0);
+    assert_eq!(registry.declared_records(), vec![origin.clone()]);
+    let mut fresh = ResourceRegistry::new();
+    assert_eq!(
+        fresh.admit(
+            origin.subject().clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject)
+    );
+    assert!(registry.account(&subject).is_some());
+    assert!(!registry.has_host_value(&subject));
+    assert!(
+        ResourceRegistry::new()
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            )
+            .is_ok(),
+        "origin validation must not close the source machine lease"
+    );
+    let mut foreign_budget = machine.budget_checkpoint();
+    foreign_budget.execution =
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [88; 32])
+            .unwrap_or_else(|error| panic!("foreign execution: {error}"));
+    assert!(matches!(
+        RecoveredResourceRecord::from_issuing_checkpoint(
+            Arc::clone(&program),
+            machine.checkpoint(),
+            foreign_budget,
+            ResourceCarrier::ReconstructionRecord,
+            OwnerGeneration::new(4),
+            ledger().durable_record(),
+        ),
+        Err(ResourceOriginRecoveryError::Machine(
+            gantry::runtime::MachineRecoveryError::ExecutionBudgetMismatch
+        ))
+    ));
+    for (carrier, owner, expected) in [
+        (
+            ResourceCarrier::OrdinarySerialization,
+            OwnerGeneration::new(4),
+            ResourceError::OrdinaryCarrierRefused,
+        ),
+        (
+            ResourceCarrier::ReconstructionRecord,
+            OwnerGeneration::new(3),
+            ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: OwnerGeneration::new(4),
+            },
+        ),
+    ] {
+        assert_eq!(
+            RecoveredResourceRecord::from_issuing_checkpoint(
+                Arc::clone(&program),
+                machine.checkpoint(),
+                machine.budget_checkpoint(),
+                carrier,
+                owner,
+                ledger().durable_record(),
+            )
+            .err(),
+            Some(ResourceOriginRecoveryError::Registry(
+                ResourceRegistryRefusal::Admission(expected)
+            ))
+        );
+    }
+}
+
 #[test]
 fn resource_registry_gives_one_subject_exactly_one_account() {
     let (_program, _machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));

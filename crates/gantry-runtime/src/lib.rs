@@ -149,6 +149,8 @@ pub use recovery::{
     DurableOperationRecoveryV1, DurableRecoverySnapshotV3, RecoveredDurableStateV1,
     recover_authoritative_prefix, recover_authoritative_prefix_with_retained_program,
 };
+#[cfg(feature = "durable")]
+pub use resource::ResourceOriginRecoveryError;
 pub use resource::{
     AdapterBindingRefusal, AdmittedResource, CohortEmergencyCleanup, CohortEmergencySettlement,
     PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRecordCodecError,

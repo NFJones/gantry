@@ -15319,6 +15319,13 @@ admission and MUST NOT fabricate accepted-work leases. Budget, subject, carrier 
 retain their existing precedence. Legacy reconstruction entry points retain absent pending and
 retained policy; no entry point authenticates journal provenance merely by reconstructing records.
 
+`RecoveredResourceRecord::from_issuing_checkpoint` MAY derive accounting provenance from a
+separately retained issuing checkpoint and budget. Machine, executable metadata and generation
+validation MUST precede subject derivation; kind, carrier and current-owner checks MUST precede
+publication. The private recovered admission lease MUST be closed without changing the source
+machine's lease. This route MUST NOT reconstruct accepted work or physical ownership, and the
+caller remains responsible for authenticating journal provenance and current cleanup ownership.
+
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
 slots, adapter poison history or admitted pending work would be omitted. Failed-adapter identity
