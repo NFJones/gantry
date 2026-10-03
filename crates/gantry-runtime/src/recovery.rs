@@ -2,6 +2,10 @@
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 mod concurrent;
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+mod resource_finish;
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub use resource_finish::ResourceFinishEvidenceV1;
 mod execution_start;
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]

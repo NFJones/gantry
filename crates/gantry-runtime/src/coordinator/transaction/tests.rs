@@ -350,6 +350,86 @@ fn resource_records_survive_version_eight_graph_recovery() {
         .capture_checkpoint(&root, &BTreeMap::new())
         .unwrap_or_else(|error| panic!("resource capture: {error:?}"));
     let bytes = checkpoint.canonical_bytes();
+    // Finish evidence validates an exact logical candidate; it does not authorize graph writes.
+    let mut previous = checkpoint.clone();
+    for transition in [
+        crate::ResourceFinishTransition::Begin,
+        crate::ResourceFinishTransition::Complete { settled_at: 20 },
+    ] {
+        let mut records = previous.resource_records().to_vec();
+        records[0] = records[0]
+            .stage_finish(owner, transition)
+            .unwrap_or_else(|error| panic!("finish candidate: {error:?}"));
+        let current = previous
+            .clone()
+            .with_resource_records(Arc::clone(&program), records)
+            .unwrap_or_else(|error| panic!("finish graph: {error:?}"));
+        let evidence = crate::ResourceFinishEvidenceV1::new(
+            Arc::clone(&program),
+            previous.clone(),
+            current.clone(),
+            0,
+            owner,
+            transition,
+        )
+        .unwrap_or_else(|error| panic!("finish evidence: {error:?}"));
+        let encoded = evidence
+            .encode(1_048_576)
+            .unwrap_or_else(|error| panic!("finish encode: {error:?}"));
+        let exact = encoded.len() as u64;
+        assert_eq!(evidence.encode(exact), Ok(encoded.clone()));
+        assert!(evidence.encode(exact - 1).is_err());
+        assert_eq!(
+            crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &encoded, exact,),
+            Ok(evidence.clone())
+        );
+        assert!(
+            crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &encoded, exact - 1,)
+                .is_err()
+        );
+        assert_eq!(evidence.previous(), &previous);
+        assert_eq!(evidence.current(), &current);
+        for offset in [0, 15, 23, 24] {
+            let mut corrupted = encoded.clone();
+            corrupted[offset] = 255;
+            assert!(
+                crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &corrupted, exact,)
+                    .is_err(),
+                "hostile finish field at {offset}"
+            );
+        }
+        let mut trailing = encoded.clone();
+        trailing.push(0);
+        assert!(
+            crate::ResourceFinishEvidenceV1::decode(Arc::clone(&program), &trailing, exact + 1,)
+                .is_err()
+        );
+        assert!(
+            crate::ResourceFinishEvidenceV1::new(
+                Arc::clone(&program),
+                previous.clone(),
+                previous.clone(),
+                0,
+                owner,
+                transition,
+            )
+            .is_err(),
+            "unchanged accounting is not a finish transition"
+        );
+        assert!(
+            crate::ResourceFinishEvidenceV1::new(
+                Arc::clone(&program),
+                previous.clone(),
+                current.clone(),
+                0,
+                OwnerGeneration::new(3),
+                transition,
+            )
+            .is_err()
+        );
+        previous = current;
+    }
+    assert_eq!(coordinator.snapshot(), before);
     let mut replaced = checkpoint
         .clone()
         .recover(Arc::clone(&program))

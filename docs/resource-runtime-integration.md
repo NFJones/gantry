@@ -145,6 +145,12 @@ record unchanged and preserve its subject, cleanup ownership, quotas, roots and 
 Stale ownership refuses before lifetime classification. This candidate performs no physical
 finalization or journal publication and does not relax graph resource-image immutability.
 
+`ResourceFinishEvidenceV1` compares two executable-validated graph checkpoints. One owner-qualified
+finish at a canonical record index must reproduce the complete successor, rejecting unrelated
+graph, policy or historical changes. Its separate `GNTRFT01` carrier uses an independent total
+byte ceiling and canonical framing. Temporary checkpoint encoding is not a peak-heap bound.
+This is transition validation only: current journal writers still refuse changed resource images.
+
 `encode_resource_recovery_envelope` and `decode_resource_recovery_envelope` carry those facts in
 the exact `GNTRRE01` envelope. Both accept an independent total byte ceiling; encoding checks
 the complete framed size before copying the checkpoint, and decoding refuses excess bytes before

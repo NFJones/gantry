@@ -139,7 +139,7 @@ pub use recovery::{
     CONCURRENT_DURABLE_RECOVERY_SNAPSHOT_FORMAT_V1, CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1,
     ConcurrentDurableEvidenceRecordV5, ConcurrentDurableEvidenceV4, ConcurrentDurableEvidenceV5,
     ConcurrentDurableRecoverySnapshotV1, RecoveredConcurrentDurableStateV1,
-    recover_concurrent_authoritative_prefix,
+    ResourceFinishEvidenceV1, recover_concurrent_authoritative_prefix,
 };
 #[cfg(feature = "durable")]
 pub use recovery::{

@@ -15381,6 +15381,15 @@ leave its source record unchanged on success or refusal. Completion records only
 logical instant. A candidate grants no physical finalization, accepted-work settlement or
 journal publication authority; graph resource-image mutation remains unsupported.
 
+`ResourceFinishEvidenceV1` MAY validate one exact finish candidate between two complete graph
+checkpoints. Both graphs MUST validate against the executable; applying the owner-qualified
+transition at the supplied canonical record index MUST reproduce the entire successor exactly.
+Unrelated machine, task, session, budget, policy, provenance or record changes MUST refuse.
+The separate `GNTRFT01` binary carrier MUST enforce an independent total byte ceiling before
+input parsing and before copying encoded checkpoints into its output; unknown tags, malformed
+framing, trailing bytes and noncanonical encodings MUST refuse. This validator grants no journal
+publication or physical cleanup authority and does not relax graph resource-image immutability.
+
 The separately scoped `GNTRRE01` reconstruction envelope MAY carry canonical issuing checkpoint
 bytes, issuing budget, current cleanup-task identity and the declared subject-free record.
 Encoding and decoding MUST enforce a caller-supplied total byte ceiling independent of input
