@@ -10897,6 +10897,26 @@ fn explicit_resource_capture_preserves_containment_winners() {
         )
         .unwrap_or_else(|error| panic!("decode: {error:?}"));
         assert_eq!(decoded, captured[0]);
+        let exact_limit = u64::try_from(bytes.len()).unwrap_or_else(|_| panic!("bounded length"));
+        assert_eq!(
+            encode_resource_recovery_envelope(&captured[0], exact_limit),
+            Ok(bytes.clone())
+        );
+        assert_eq!(
+            encode_resource_recovery_envelope(&captured[0], exact_limit - 1),
+            Err(gantry::runtime::ResourceRecoveryEnvelopeError::ByteLimit)
+        );
+        assert_eq!(
+            decode_resource_recovery_envelope(
+                Arc::clone(&program),
+                &bytes,
+                exact_limit - 1,
+                OwnerGeneration::new(5),
+                machine.task_id()
+            )
+            .err(),
+            Some(gantry::runtime::ResourceRecoveryEnvelopeError::ByteLimit)
+        );
         // The closed containment member is owner (8), winner flag (1), effect (1), outcome (1).
         let mut future_owner = bytes.clone();
         let start = future_owner.len() - 11;
@@ -10968,10 +10988,51 @@ fn explicit_resource_capture_preserves_containment_winners() {
     }
 }
 
-/// The containment settlement is runtime state of one admitted account value, not a declared durable
-/// fact: a subject rebuilt from its declared capture, and the same subject readmitted after physical
-/// reclamation, each hold a fresh unsettled settlement, so the runtime publishes no cross-recovery
-/// single-settlement claim.
+/// Explicit capture preserves an unsettled containment owner without inventing an observation.
+#[test]
+fn explicit_resource_capture_preserves_unsettled_containment() {
+    use gantry::runtime::{decode_resource_recovery_envelope, encode_resource_recovery_envelope};
+    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let owner = OwnerGeneration::new(4);
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    registry
+        .admit_pending_operation_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let captured = registry.declared_records_with_containment();
+    assert_eq!(captured[0].containment_evidence(), Some((owner, None)));
+    let bytes = encode_resource_recovery_envelope(&captured[0], 65_536)
+        .unwrap_or_else(|error| panic!("envelope: {error:?}"));
+    assert_eq!(&bytes[..8], b"GNTRRE02");
+    let decoded =
+        decode_resource_recovery_envelope(program, &bytes, 65_536, owner, machine.task_id())
+            .unwrap_or_else(|error| panic!("decode: {error:?}"));
+    assert_eq!(decoded, captured[0]);
+    let mut rebuilt = ResourceRegistry::reconstruct(Some(1), vec![decoded])
+        .unwrap_or_else(|error| panic!("reconstruction: {error:?}"));
+    let containment = rebuilt
+        .account(&subject)
+        .unwrap_or_else(|| panic!("account"))
+        .containment();
+    assert_eq!(containment.owner(), owner);
+    assert_eq!(containment.effect_state(), None);
+    assert_eq!(containment.outcome(), None);
+    assert_eq!(
+        rebuilt.settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Rejected, EffectState::DefiniteRejection)
+        ),
+        Ok(ExternalOutcome::Rejected)
+    );
+}
+
+/// Ordinary capture intentionally reconstructs fresh containment rather than retaining a winner.
 #[test]
 fn runtime_containment_settlement_restarts_with_the_account_value() {
     let subject = active_subject();
