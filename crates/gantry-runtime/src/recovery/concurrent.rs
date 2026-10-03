@@ -2127,6 +2127,24 @@ impl DurableCommitCoordinatorV1<'_> {
         .await
     }
 
+    /// Seeds a recovered committer only from its execution owner's validated predecessor image.
+    pub(crate) fn retain_graph_resource_baseline(
+        &mut self,
+        checkpoint: &ConcurrentDurableCheckpointV4,
+    ) -> Result<(), DurableCommitError> {
+        if checkpoint.execution_id() != self.execution_id
+            || checkpoint.root_task_id() != self.task_id
+            || self
+                .graph_resource_baseline
+                .as_ref()
+                .is_some_and(|records| records.as_slice() != checkpoint.resource_records())
+        {
+            return Err(DurableCommitError::InvalidState);
+        }
+        self.graph_resource_baseline = Some(checkpoint.resource_records().to_vec());
+        Ok(())
+    }
+
     /// Reports a discriminated graph record and the storage invocation boundary.
     pub(crate) async fn commit_graph_checkpoint_with_record_submission(
         &mut self,
@@ -2144,6 +2162,15 @@ impl DurableCommitCoordinatorV1<'_> {
                 && self.graph_cancellation.is_none()
                 && !self.graph_task_cancellation)
             || (cut != DurableCommitCutV1::Cancellation && self.graph_task_cancellation)
+        {
+            return Err(DurableCommitError::InvalidState);
+        }
+        let resource_records = checkpoint.resource_records().to_vec();
+        if self
+            .graph_resource_baseline
+            .as_ref()
+            .is_some_and(|baseline| baseline != &resource_records)
+            || (self.graph_resource_baseline.is_none() && self.predecessor.is_some())
         {
             return Err(DurableCommitError::InvalidState);
         }
@@ -2199,8 +2226,11 @@ impl DurableCommitCoordinatorV1<'_> {
             _ => Err(DurableEvidenceError::InvalidState),
         }
         .map_err(DurableCommitError::Evidence)?;
-        self.commit_body_with_submission(cut, local_number, local_id, body, submitted)
-            .await
+        let receipt = self
+            .commit_body_with_submission(cut, local_number, local_id, body, submitted)
+            .await?;
+        self.graph_resource_baseline = Some(resource_records);
+        Ok(receipt)
     }
 }
 
@@ -3017,6 +3047,7 @@ fn validate_transition(
     if current.checkpoint().resource_policy() != previous.checkpoint().resource_policy()
         || current.checkpoint().retained_resource_limit()
             != previous.checkpoint().retained_resource_limit()
+        || current.checkpoint().resource_records() != previous.checkpoint().resource_records()
     {
         return Err(DurableEvidenceError::InvalidState);
     }

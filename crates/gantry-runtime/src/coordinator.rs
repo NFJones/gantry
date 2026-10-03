@@ -175,6 +175,9 @@ struct CoordinatorState {
     /// Last committed graph task/session semantics, excluding process-local driver drift.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     durable_graph_baseline: Option<(ConcurrentTaskStateV1, LogicalSessionRegistryV1)>,
+    /// Resource image fixed by the committed graph; resource mutation cuts are unsupported.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    durable_resource_baseline: Option<Vec<crate::RecoveredResourceRecord>>,
     /// Complete committed root cut retained independently of its running driver.
     #[cfg(feature = "durable")]
     durable_root: Option<crate::RecoveredDurableStateV1>,
@@ -570,6 +573,8 @@ impl ExecutionCoordinator {
                     durable_publication_reserved: false,
                     #[cfg(all(feature = "concurrent", feature = "durable"))]
                     durable_graph_baseline: None,
+                    #[cfg(all(feature = "concurrent", feature = "durable"))]
+                    durable_resource_baseline: None,
                     #[cfg(feature = "durable")]
                     durable_root: None,
                     #[cfg(feature = "durable")]
@@ -1439,10 +1444,13 @@ impl ExecutionCoordinator {
         children: &BTreeMap<ProtocolIdentity, crate::Machine>,
     ) -> Result<crate::ConcurrentDurableCheckpointV4, crate::ConcurrentDurableCheckpointError> {
         let state = lock(&self.inner.state);
+        let records = crate::ConcurrentDurableCheckpointV4::capture_resource_records(
+            state.resources.as_ref(),
+        )?;
         if state
-            .resources
+            .durable_resource_baseline
             .as_ref()
-            .is_some_and(crate::ResourceRegistry::has_uncheckpointed_state)
+            .is_some_and(|baseline| baseline != &records)
         {
             return Err(crate::ConcurrentDurableCheckpointError::ResourceStateUnsupported);
         }
@@ -1476,7 +1484,8 @@ impl ExecutionCoordinator {
                 .resources
                 .as_ref()
                 .and_then(crate::ResourceRegistry::retained_limit),
-        )
+        )?
+        .with_resource_records(foreground.program_arc(), records)
     }
 
     /// Publishes successful root submission and supervision registration.
@@ -1493,6 +1502,10 @@ impl ExecutionCoordinator {
     pub(crate) fn prepare_recovered_driver_admission(&self) -> Vec<ProtocolIdentity> {
         let mut state = lock(&self.inner.state);
         state.durable_graph_baseline = Some((state.tasks.clone(), state.sessions.clone()));
+        state.durable_resource_baseline = Some(state.resources.as_ref().map_or_else(
+            Vec::new,
+            crate::ResourceRegistry::declared_records_with_containment,
+        ));
         state.tasks.prepare_recovered_driver_admission()
     }
 

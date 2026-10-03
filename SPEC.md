@@ -15390,7 +15390,7 @@ slots, adapter poison history or admitted pending work would be omitted. Failed-
 evidence MUST retain this refusal even after all accounts have been reclaimed; policy-only recovery
 MUST NOT reset that evidence and re-enable an identity. Refusal MUST precede private machine cloning or
 publication reservation and leave accounting, machines and publication unchanged. An empty configured
-registry alone does not require refusal. This boundary does not implement durable resource recovery.
+registry alone does not require refusal. Versions four through seven do not implement resource-record recovery.
 For an enabled empty registry, combined graph capture MAY retain the exact optional live-account
 and pending-operation ceilings in `GNTCDP06`. Absent accounting and enabled unlimited accounting
 MUST remain distinct. Capture, staging, replay and coordinator-backed driver recovery MUST preserve
@@ -15403,6 +15403,25 @@ replay and coordinator-backed driver recovery MUST retain all ceilings; every gr
 MUST reject a changed or removed retained ceiling. This carries policy only, not resource records.
 Machine-only recovery consumption MUST refuse policy-bearing graphs and return the complete
 recovered owner unchanged; coordinator-backed driver admission retains that policy instead.
+`GNTCDP08` MAY carry a nonempty complete accounting set with validated issuing and containment
+evidence and exact optional live, pending and retained policy. The complete resource section,
+including count, current-owner and cleanup-task framing and envelope bytes, MUST fit an independent
+1,048,576-byte ceiling. Framing admission MUST precede resource-member decoding. Capture and
+staging MUST refuse unsupported pending work, live loans, physical slots, adapter bindings and
+poison history before private machine cloning or publication reservation. Missing issuing evidence
+or excess bytes MUST also refuse without mutation. Coordinator-backed recovery MUST atomically
+validate issuing execution, known issuing/cleanup tasks, budget predecessors, current owners,
+canonical subject order, containment winners and policy ceilings before exposing accounting.
+No physical ownership, adapter binding or accepted-work lease is reconstructed. Version-eight
+records MUST remain unchanged across every replayed graph transition until separately declared
+resource mutation cuts exist. Coordinator staging and capture MUST compare the committed resource
+image before cloning or reservation; changed local accounting MUST NOT enter a new journal cut.
+Graph committers MUST reject resource-image drift before storage invocation and retain the image
+only after a validated receipt. Recovered owners MUST seed that image from validated recovery.
+An unknown predecessor image MUST NOT be inferred empty from a record-free successor; recovered
+graph writes require a validated predecessor image even when the proposed set is empty.
+Machine-only extraction MUST refuse rather than discard records;
+all recovery owners and replay captures MUST retain them. Record-free v4–v7 bytes remain unchanged.
 Sequential committed-root installation MUST likewise refuse `ResourceStateUnsupported` before
 changing task, session, budget, event or retained-root projections when resource state would be
 omitted. This refusal does not undo a previously committed journal cut or claim its completeness.

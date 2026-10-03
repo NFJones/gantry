@@ -197,6 +197,317 @@ fn resource_records_refuse_durable_graph_capture_and_staging_without_mutation() 
     assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
 }
 
+/// Settled issuing work permits exact accounting and containment recovery, never physical recovery.
+#[test]
+fn resource_records_survive_version_eight_graph_recovery() {
+    let (old, root, _) = fixture();
+    let execution = root.execution_id();
+    let path = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+    let action =
+        CanonicalPath::new("crate::resource").unwrap_or_else(|error| panic!("action: {error}"));
+    let program = Arc::new(
+        MachineProgram::new(vec![Workflow {
+            path: path.clone(),
+            parameters: vec![],
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::OperationCall {
+                        operation: ExecutableOperation {
+                            kind: OperationSiteKind::Action,
+                            section20_kind: Some(OperationKind::LiveResource),
+                            result_type: TypeDescriptor::UNIT,
+                            action: Some(ExecutableAction {
+                                path: action.clone(),
+                                signature: CanonicalSignature::action(
+                                    RecoveryClass::Idempotent,
+                                    &action,
+                                    &[],
+                                    &TypeDescriptor::UNIT,
+                                ),
+                                recovery: RecoveryClass::Idempotent,
+                                parameters: vec![],
+                            }),
+                            template_segments: vec![],
+                            interpolation_types: vec![],
+                            named_input_names: vec![],
+                            named_input_types: vec![],
+                            retry_limit: None,
+                            session_mode: None,
+                            attempted: false,
+                        },
+                        operands: 0,
+                    },
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let mut root = Machine::new(
+        Arc::clone(&program),
+        &path,
+        vec![],
+        execution,
+        root.checkpoint().machine_limits(),
+    )
+    .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let old = lock(&old.inner.state);
+    let coordinator = ExecutionCoordinator::new_with_budget_and_accounting_limits(
+        old.tasks.clone(),
+        old.sessions.clone(),
+        root.execution_budget(),
+        1,
+        2,
+        3,
+    )
+    .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+    assert!(matches!(
+        root.step(),
+        MachineStep::Transition(crate::MachineLabel::OperationPrepared(_))
+    ));
+    let subject = root
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("subject"));
+    let owner = OwnerGeneration::new(4);
+    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+    coordinator
+        .admit_resource_with_issuing_evidence(
+            &root,
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    assert_eq!(
+        coordinator
+            .capture_checkpoint(&root, &BTreeMap::new())
+            .err(),
+        Some(crate::ConcurrentDurableCheckpointError::ResourceStateUnsupported)
+    );
+    coordinator
+        .settle_resource_containment(
+            &subject,
+            owner,
+            gantry_ir::Completion::observed(
+                gantry_ir::ExternalOutcome::Accepted,
+                gantry_ir::EffectState::NotStarted,
+            ),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    let operation = root
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("operation"))
+        .identity;
+    root.fail_operation(
+        operation,
+        gantry_core::portable::RuntimeErrorCategory::ExecutorFailure,
+    )
+    .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+    let before = coordinator.snapshot();
+    let checkpoint = coordinator
+        .capture_checkpoint(&root, &BTreeMap::new())
+        .unwrap_or_else(|error| panic!("resource capture: {error:?}"));
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(&bytes[..8], b"GNTCDP08");
+    assert!(crate::ConcurrentDurableCheckpointV7::decode(&program, &bytes).is_err());
+    assert!(crate::ConcurrentDurableCheckpointV8::decode(&program, &bytes).is_ok());
+    assert!(
+        crate::ConcurrentDurableCheckpointV8::decode(&program, &bytes[..bytes.len() - 1]).is_err()
+    );
+    let refused = checkpoint
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("machine-only recovery: {error:?}"))
+        .into_machine_graph()
+        .err()
+        .unwrap_or_else(|| panic!("resource owner must be retained"));
+    assert_eq!(
+        refused
+            .capture_replayed_checkpoint()
+            .unwrap_or_else(|error| panic!("retained recovery: {error:?}"))
+            .resource_records(),
+        checkpoint.resource_records()
+    );
+    let recovered = crate::ConcurrentDurableCheckpointV4::decode_compatible(&program, &bytes)
+        .unwrap_or_else(|error| panic!("decode: {error:?}"))
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("recover: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("driver admission: {error:?}"));
+    assert_eq!(
+        recovered.coordinator().snapshot().resource_records(),
+        before.resource_records()
+    );
+    assert_eq!(recovered.coordinator().retained_resource_limit(), Some(3));
+    assert!(!recovered.coordinator().has_pending_resource_operations());
+    let state = lock(&recovered.coordinator().inner.state);
+    let account = state
+        .resources
+        .as_ref()
+        .unwrap_or_else(|| panic!("resources"))
+        .account(&subject)
+        .unwrap_or_else(|| panic!("account"));
+    assert_eq!(
+        account.containment().outcome(),
+        Some(gantry_ir::ExternalOutcome::Accepted)
+    );
+    drop(state);
+    assert_eq!(coordinator.snapshot(), before);
+    let mut children = BTreeMap::new();
+    let (recovered_coordinator, mut recovered_root, mut recovered_children, _) =
+        recovered.into_parts();
+    recovered_coordinator
+        .begin_resource_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("recovered accounting advancement: {error:?}"));
+    let recovered_before = recovered_coordinator.snapshot();
+    assert_eq!(
+        recovered_coordinator
+            .stage_graph(&mut recovered_root, &mut recovered_children)
+            .err(),
+        Some(TaskStateError::ResourceStateUnsupported),
+        "recovery must seed the committed resource image"
+    );
+    assert_eq!(recovered_coordinator.snapshot(), recovered_before);
+    let machine_before = root.checkpoint().canonical_bytes();
+    let stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("resource staging: {error:?}"));
+    drop(stage);
+    assert_eq!(coordinator.snapshot(), before);
+    assert_eq!(root.checkpoint().canonical_bytes(), machine_before);
+    assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal = JournalId::new("resource-record-graph")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let journal_owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("journal owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), journal_owner.token);
+    let task = root.task_id();
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, task, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    ready(commits.commit_graph_checkpoint(
+        DurableCommitCutV1::Checkpoint,
+        task,
+        checkpoint.clone(),
+    ))
+    .unwrap_or_else(|error| panic!("initial resource commit: {error:?}"));
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("resource commit stage: {error:?}"));
+    stage
+        .update(|root, _, tasks, _| {
+            tasks.settle(
+                task,
+                root.outcome()
+                    .cloned()
+                    .unwrap_or_else(|| panic!("fixed machine outcome")),
+            )
+        })
+        .unwrap_or_else(|error| panic!("task settlement: {error:?}"));
+    ready(stage.commit(&mut commits, DurableCommitCutV1::TaskSettlement, task))
+        .unwrap_or_else(|error| panic!("resource commit: {error:?}"));
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let replayed = crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &prefix)
+        .unwrap_or_else(|error| panic!("resource replay: {error:?}"));
+    coordinator
+        .begin_resource_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("local accounting advancement: {error:?}"));
+    let changed_snapshot = coordinator.snapshot();
+    assert_eq!(
+        coordinator.stage_graph(&mut root, &mut children).err(),
+        Some(TaskStateError::ResourceStateUnsupported),
+        "unsupported resource mutation must refuse before journal submission"
+    );
+    assert_eq!(coordinator.snapshot(), changed_snapshot);
+    assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
+    assert_eq!(
+        ready(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: journal
+        }))
+        .unwrap_or_else(|error| panic!("unchanged prefix: {error:?}")),
+        prefix
+    );
+    let replayed_checkpoint = replayed
+        .execution()
+        .capture_replayed_checkpoint()
+        .unwrap_or_else(|error| panic!("replay capture: {error:?}"));
+    assert_eq!(
+        replayed_checkpoint.resource_records(),
+        checkpoint.resource_records()
+    );
+    let without_records = replayed_checkpoint
+        .with_resource_records(Arc::clone(&program), vec![])
+        .unwrap_or_else(|error| panic!("otherwise valid record-free checkpoint: {error:?}"));
+    let frontier_before = commits.frontier();
+    assert_eq!(
+        ready(commits.commit_graph_checkpoint(
+            DurableCommitCutV1::TaskSettlement,
+            task,
+            without_records.clone(),
+        )),
+        Err(DurableCommitError::InvalidState),
+        "direct commits must refuse resource-image drift before storage"
+    );
+    assert_eq!(commits.frontier(), frontier_before);
+    let mut unseeded = DurableCommitCoordinatorV1::new(&sink, execution, task, frontier_before)
+        .unwrap_or_else(|error| panic!("recovered committer: {error:?}"));
+    assert_eq!(
+        ready(unseeded.commit_graph_checkpoint(
+            DurableCommitCutV1::TaskSettlement,
+            task,
+            without_records.clone(),
+        )),
+        Err(DurableCommitError::InvalidState),
+        "an unknown predecessor image cannot be inferred empty from its successor"
+    );
+    assert_eq!(unseeded.frontier(), frontier_before);
+    assert_eq!(
+        ready(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: sink.journal_id().clone(),
+        }))
+        .unwrap_or_else(|error| panic!("direct refusal prefix: {error:?}")),
+        prefix
+    );
+    let changed = crate::ConcurrentDurableEvidenceV4::new(
+        DurableCommitCutV1::TaskSettlement,
+        task,
+        without_records,
+    )
+    .unwrap_or_else(|error| panic!("changed evidence: {error:?}"));
+    let JournalPrefixV1::Full(mut full) = prefix else {
+        panic!("full prefix")
+    };
+    let mut evidence = full.evidence.to_vec();
+    evidence
+        .last_mut()
+        .unwrap_or_else(|| panic!("settlement evidence"))
+        .canonical_body = Arc::from(changed.canonical_body());
+    full.evidence = Arc::from(evidence);
+    assert!(
+        crate::recover_concurrent_authoritative_prefix(program, &JournalPrefixV1::Full(full))
+            .is_err(),
+        "replay must refuse removed resource records"
+    );
+}
+
 /// Reaping accounting must not make retained failed-adapter evidence disappear on recovery.
 #[test]
 fn adapter_poison_history_refuses_empty_graph_capture_and_staging() {

@@ -177,7 +177,7 @@ pub use supervision::{
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use task::{
     ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointV5,
-    ConcurrentDurableCheckpointV6, ConcurrentDurableCheckpointV7,
+    ConcurrentDurableCheckpointV6, ConcurrentDurableCheckpointV7, ConcurrentDurableCheckpointV8,
     RecoveredConcurrentDriverAdmissionV1, RecoveredConcurrentDurableExecutionV1,
 };
 #[cfg(feature = "concurrent")]

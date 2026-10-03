@@ -177,6 +177,9 @@ pub struct DurableCommitCoordinatorV1<'a> {
     graph_cancellation: Option<CancellationReason>,
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     graph_task_cancellation: bool,
+    /// Last validated resource image; every unseeded recovered graph write fails closed.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_resource_baseline: Option<Vec<crate::RecoveredResourceRecord>>,
 }
 
 impl<'a> DurableCommitCoordinatorV1<'a> {
@@ -205,6 +208,8 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             graph_cancellation: None,
             #[cfg(all(feature = "concurrent", feature = "durable"))]
             graph_task_cancellation: false,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            graph_resource_baseline: None,
         })
     }
 

@@ -28,6 +28,9 @@ const MAGIC_V4: &[u8; 8] = b"GNTCDP04";
 const MAGIC_V5: &[u8; 8] = b"GNTCDP05";
 const MAGIC_V6: &[u8; 8] = b"GNTCDP06";
 const MAGIC_V7: &[u8; 8] = b"GNTCDP07";
+const MAGIC_V8: &[u8; 8] = b"GNTCDP08";
+/// Independent ceiling for the complete framed resource-record section.
+pub(crate) const MAXIMUM_RESOURCE_SECTION_BYTES: u64 = 1_048_576;
 const MAX_CAPTURE_ATTEMPTS: usize = 8;
 
 /// One versioned commit-cut snapshot of the composed concurrent-durable runtime.
@@ -40,6 +43,7 @@ pub struct ConcurrentDurableCheckpointV4 {
     execution_budget: ExecutionBudgetSnapshot,
     resource_policy: Option<(Option<u64>, Option<u64>)>,
     retained_resource_limit: Option<u64>,
+    resource_records: Vec<crate::RecoveredResourceRecord>,
     foreground: MachineCheckpointV3,
     sessions: LogicalSessionRegistryCheckpointV1,
     state: TaskStateCheckpointV1,
@@ -157,6 +161,34 @@ impl std::ops::Deref for ConcurrentDurableCheckpointV7 {
     }
 }
 
+/// Exact version-eight decoder for complete accounting and containment carriage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConcurrentDurableCheckpointV8(ConcurrentDurableCheckpointV4);
+
+impl ConcurrentDurableCheckpointV8 {
+    /// Decodes only the canonical record-bearing graph representation.
+    pub fn decode(
+        program: &MachineProgram,
+        bytes: &[u8],
+    ) -> Result<Self, ConcurrentDurableCheckpointError> {
+        ConcurrentDurableCheckpointV4::decode_with_magic(program, bytes, MAGIC_V8).map(Self)
+    }
+}
+
+impl From<ConcurrentDurableCheckpointV8> for ConcurrentDurableCheckpointV4 {
+    fn from(checkpoint: ConcurrentDurableCheckpointV8) -> Self {
+        checkpoint.0
+    }
+}
+
+impl std::ops::Deref for ConcurrentDurableCheckpointV8 {
+    type Target = ConcurrentDurableCheckpointV4;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl ConcurrentDurableCheckpointV4 {
     /// Reports enabled empty accounting policy separately from absent accounting.
     #[must_use]
@@ -168,6 +200,73 @@ impl ConcurrentDurableCheckpointV4 {
     #[must_use]
     pub const fn retained_resource_limit(&self) -> Option<u64> {
         self.retained_resource_limit
+    }
+
+    /// Returns immutable resource reconstruction and containment facts carried by version eight.
+    #[must_use]
+    pub fn resource_records(&self) -> &[crate::RecoveredResourceRecord] {
+        &self.resource_records
+    }
+
+    /// Attaches a complete validated accounting image without changing the machine graph.
+    pub(crate) fn with_resource_records(
+        mut self,
+        program: Arc<MachineProgram>,
+        records: Vec<crate::RecoveredResourceRecord>,
+    ) -> Result<Self, ConcurrentDurableCheckpointError> {
+        self.resource_records = records;
+        self.validate_resource_records(program)?;
+        Ok(self)
+    }
+
+    /// Preflights complete accounting carriage before cloning machines or reserving publication.
+    pub(crate) fn capture_resource_records(
+        resources: Option<&crate::ResourceRegistry>,
+    ) -> Result<Vec<crate::RecoveredResourceRecord>, ConcurrentDurableCheckpointError> {
+        let Some(resources) = resources else {
+            return Ok(Vec::new());
+        };
+        resources
+            .capture_recovery_envelopes(MAXIMUM_RESOURCE_SECTION_BYTES)
+            .map_err(|_| ConcurrentDurableCheckpointError::ResourceStateUnsupported)?;
+        let records = resources.declared_records_with_containment();
+        encode_graph_resource_records(&records)?;
+        Ok(records)
+    }
+
+    /// Validates record provenance, current policy and containment before graph recovery.
+    fn validate_resource_records(
+        &self,
+        program: Arc<MachineProgram>,
+    ) -> Result<(), ConcurrentDurableCheckpointError> {
+        if self.resource_records.is_empty() {
+            return Ok(());
+        }
+        let (live, pending) = self
+            .resource_policy
+            .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+        let inputs = encode_graph_resource_records(&self.resource_records)?;
+        let inputs = inputs
+            .iter()
+            .zip(&self.resource_records)
+            .map(|(bytes, record)| (bytes.as_slice(), record.owner(), record.task_owner()))
+            .collect::<Vec<_>>();
+        let sessions = LogicalSessionRegistryV1::recover_from_checkpoint(self.sessions.clone())?;
+        let tasks = self
+            .state
+            .recover(&sessions, self.foreground.value_limits())?;
+        let budget = ExecutionBudget::recover_from_checkpoint(self.execution_budget)?;
+        crate::ExecutionCoordinator::new_with_budget_and_recovered_resource_envelopes(
+            tasks,
+            sessions,
+            budget,
+            program,
+            &inputs,
+            MAXIMUM_RESOURCE_SECTION_BYTES,
+            (live, pending, self.retained_resource_limit),
+        )
+        .map_err(|_| ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+        Ok(())
     }
 
     /// Captures immutably borrowed machines under the coordinator's state lock.
@@ -192,6 +291,7 @@ impl ConcurrentDurableCheckpointV4 {
             execution_budget: before,
             resource_policy,
             retained_resource_limit,
+            resource_records: Vec::new(),
             foreground: foreground.checkpoint(),
             sessions: sessions.checkpoint(),
             state: TaskStateCheckpointV1::from_state(tasks),
@@ -263,6 +363,7 @@ impl ConcurrentDurableCheckpointV4 {
                 execution_budget: budget_before,
                 resource_policy: scheduler.resource_policy,
                 retained_resource_limit: scheduler.retained_resource_limit,
+                resource_records: scheduler.resource_records.clone(),
                 foreground: foreground.checkpoint(),
                 sessions: sessions.checkpoint(),
                 state: TaskStateCheckpointV1::from_state(&scheduler.state),
@@ -285,6 +386,7 @@ impl ConcurrentDurableCheckpointV4 {
                 return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
             }
             checkpoint.validate()?;
+            checkpoint.validate_resource_records(foreground.program_arc())?;
             return Ok(checkpoint);
         }
         Err(ConcurrentDurableCheckpointError::CaptureRace)
@@ -466,6 +568,7 @@ impl ConcurrentDurableCheckpointV4 {
             || self.sessions != previous.sessions
             || self.resource_policy != previous.resource_policy
             || self.retained_resource_limit != previous.retained_resource_limit
+            || self.resource_records != previous.resource_records
         {
             return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
         }
@@ -628,7 +731,9 @@ impl ConcurrentDurableCheckpointV4 {
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         let mut writer = Writer::default();
-        writer.raw(if self.retained_resource_limit.is_some() {
+        writer.raw(if !self.resource_records.is_empty() {
+            MAGIC_V8
+        } else if self.retained_resource_limit.is_some() {
             MAGIC_V7
         } else if self.resource_policy.is_some() {
             MAGIC_V6
@@ -665,8 +770,26 @@ impl ConcurrentDurableCheckpointV4 {
                 }
             }
         }
+        if !self.resource_records.is_empty() {
+            writer.boolean(self.retained_resource_limit.is_some());
+        }
         if let Some(limit) = self.retained_resource_limit {
             writer.u64(limit);
+        }
+        if !self.resource_records.is_empty() {
+            writer.count(self.resource_records.len());
+            for record in &self.resource_records {
+                writer.u64(record.owner().value());
+                write_identity(&mut writer, record.task_owner());
+                let bytes = crate::encode_resource_recovery_envelope(
+                    record,
+                    MAXIMUM_RESOURCE_SECTION_BYTES,
+                )
+                .unwrap_or_else(|_| {
+                    unreachable!("validated graph retains bounded issuing evidence")
+                });
+                writer.bytes(&bytes);
+            }
         }
         writer.finish()
     }
@@ -702,6 +825,7 @@ impl ConcurrentDurableCheckpointV4 {
             Some(magic) if magic == MAGIC_V7 => {
                 ConcurrentDurableCheckpointV7::decode(program, bytes).map(Into::into)
             }
+            Some(magic) if magic == MAGIC_V8 => Self::decode_with_magic(program, bytes, MAGIC_V8),
             _ => Err(ConcurrentDurableCheckpointError::InvalidEncoding),
         }
     }
@@ -741,7 +865,10 @@ impl ConcurrentDurableCheckpointV4 {
         for _ in 0..runnable_count {
             runnable.push_back(read_identity(&mut reader, IdentityKind::Task)?);
         }
-        let resource_policy = if expected_magic == MAGIC_V6 || expected_magic == MAGIC_V7 {
+        let resource_policy = if expected_magic == MAGIC_V6
+            || expected_magic == MAGIC_V7
+            || expected_magic == MAGIC_V8
+        {
             let live = if reader.boolean()? {
                 Some(reader.u64()?)
             } else {
@@ -756,11 +883,46 @@ impl ConcurrentDurableCheckpointV4 {
         } else {
             None
         };
-        let retained_resource_limit = if expected_magic == MAGIC_V7 {
-            Some(reader.u64()?)
-        } else {
-            None
-        };
+        let retained_resource_limit =
+            if expected_magic == MAGIC_V7 || (expected_magic == MAGIC_V8 && reader.boolean()?) {
+                Some(reader.u64()?)
+            } else {
+                None
+            };
+        let mut resource_records = Vec::new();
+        if expected_magic == MAGIC_V8 {
+            let count = reader.count()?;
+            let mut total = 8_u64;
+            let mut members = Vec::new();
+            for _ in 0..count {
+                let owner = gantry_ir::OwnerGeneration::new(reader.u64()?);
+                let cleanup = reader.bytes()?;
+                let envelope = reader.bytes()?;
+                total = total
+                    .checked_add(24)
+                    .and_then(|total| total.checked_add(u64::try_from(cleanup.len()).ok()?))
+                    .and_then(|total| total.checked_add(u64::try_from(envelope.len()).ok()?))
+                    .filter(|total| *total <= MAXIMUM_RESOURCE_SECTION_BYTES)
+                    .ok_or(ConcurrentDurableCheckpointError::InvalidEncoding)?;
+                members.push((owner, cleanup, envelope));
+            }
+            let program = Arc::new(program.clone());
+            for (owner, cleanup, envelope) in members {
+                let cleanup = std::str::from_utf8(cleanup)
+                    .ok()
+                    .and_then(|text| ProtocolIdentity::parse_kind(text, IdentityKind::Task).ok())
+                    .ok_or(ConcurrentDurableCheckpointError::InvalidEncoding)?;
+                let record = crate::decode_resource_recovery_envelope(
+                    Arc::clone(&program),
+                    envelope,
+                    MAXIMUM_RESOURCE_SECTION_BYTES,
+                    owner,
+                    cleanup,
+                )
+                .map_err(|_| ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+                resource_records.push(record);
+            }
+        }
         if !reader.is_empty() {
             return Err(ConcurrentDurableCheckpointError::InvalidEncoding);
         }
@@ -768,6 +930,7 @@ impl ConcurrentDurableCheckpointV4 {
             execution_budget,
             resource_policy,
             retained_resource_limit,
+            resource_records,
             foreground,
             sessions,
             state,
@@ -775,6 +938,7 @@ impl ConcurrentDurableCheckpointV4 {
             runnable,
         };
         checkpoint.validate()?;
+        checkpoint.validate_resource_records(Arc::new(program.clone()))?;
         if checkpoint.canonical_bytes() != bytes {
             return Err(ConcurrentDurableCheckpointError::InvalidEncoding);
         }
@@ -787,6 +951,7 @@ impl ConcurrentDurableCheckpointV4 {
         program: Arc<MachineProgram>,
     ) -> Result<RecoveredConcurrentDurableExecutionV1, ConcurrentDurableCheckpointError> {
         self.validate()?;
+        self.validate_resource_records(Arc::clone(&program))?;
         let sessions = LogicalSessionRegistryV1::recover_from_checkpoint(self.sessions)?;
         let state = self
             .state
@@ -813,6 +978,7 @@ impl ConcurrentDurableCheckpointV4 {
                 execution_budget,
                 resource_policy: self.resource_policy,
                 retained_resource_limit: self.retained_resource_limit,
+                resource_records: self.resource_records,
                 machines,
                 runnable: self.runnable,
             },
@@ -986,6 +1152,32 @@ fn budget_matches_machine(budget: &ExecutionBudgetSnapshot, machine: &MachineChe
         && limits.maximum_operations == budget.maximum_operations
 }
 
+/// Encodes the complete resource section under its independent framed byte ceiling.
+fn encode_graph_resource_records(
+    records: &[crate::RecoveredResourceRecord],
+) -> Result<Vec<Vec<u8>>, ConcurrentDurableCheckpointError> {
+    let mut remaining = MAXIMUM_RESOURCE_SECTION_BYTES - 8;
+    let mut encoded = Vec::new();
+    for record in records {
+        let cleanup_length = u64::try_from(record.task_owner().to_string().len())
+            .map_err(|_| ConcurrentDurableCheckpointError::ResourceStateUnsupported)?;
+        // Current owner, cleanup identity length and bytes, and envelope length.
+        remaining = remaining
+            .checked_sub(24 + cleanup_length)
+            .ok_or(ConcurrentDurableCheckpointError::ResourceStateUnsupported)?;
+        let bytes = crate::encode_resource_recovery_envelope(record, remaining)
+            .map_err(|_| ConcurrentDurableCheckpointError::ResourceStateUnsupported)?;
+        remaining = remaining
+            .checked_sub(
+                u64::try_from(bytes.len())
+                    .map_err(|_| ConcurrentDurableCheckpointError::ResourceStateUnsupported)?,
+            )
+            .ok_or(ConcurrentDurableCheckpointError::ResourceStateUnsupported)?;
+        encoded.push(bytes);
+    }
+    Ok(encoded)
+}
+
 /// Recovered ownership of all existing runtime components in one combined execution.
 #[derive(Debug)]
 pub struct RecoveredConcurrentDurableExecutionV1 {
@@ -1066,6 +1258,10 @@ impl RecoveredConcurrentDurableExecutionV1 {
             &self.foreground.execution_budget(),
             self.scheduler.resource_policy,
             self.scheduler.retained_resource_limit,
+        )?
+        .with_resource_records(
+            self.foreground.program_arc(),
+            self.scheduler.resource_records.clone(),
         )
     }
 
@@ -1140,16 +1336,39 @@ impl RecoveredConcurrentDurableExecutionV1 {
             execution_budget,
             resource_policy,
             retained_resource_limit,
+            resource_records,
             machines,
             runnable: _,
         } = scheduler;
-        let coordinator = crate::ExecutionCoordinator::new_with_budget_and_resource_policy(
-            state,
-            sessions,
-            execution_budget,
-            resource_policy,
-            retained_resource_limit,
-        )?;
+        let coordinator = if resource_records.is_empty() {
+            crate::ExecutionCoordinator::new_with_budget_and_resource_policy(
+                state,
+                sessions,
+                execution_budget,
+                resource_policy,
+                retained_resource_limit,
+            )?
+        } else {
+            let (live, pending) =
+                resource_policy.ok_or(super::TaskStateError::InvalidTaskMachine)?;
+            let encoded = encode_graph_resource_records(&resource_records)
+                .map_err(|_| super::TaskStateError::InvalidTaskMachine)?;
+            let inputs = encoded
+                .iter()
+                .zip(&resource_records)
+                .map(|(bytes, record)| (bytes.as_slice(), record.owner(), record.task_owner()))
+                .collect::<Vec<_>>();
+            crate::ExecutionCoordinator::new_with_budget_and_recovered_resource_envelopes(
+                state,
+                sessions,
+                execution_budget,
+                foreground.program_arc(),
+                &inputs,
+                MAXIMUM_RESOURCE_SECTION_BYTES,
+                (live, pending, retained_resource_limit),
+            )
+            .map_err(|_| super::TaskStateError::InvalidTaskMachine)?
+        };
         let unfinished_task_ids = coordinator.prepare_recovered_driver_admission();
         Ok(RecoveredConcurrentDriverAdmissionV1 {
             coordinator,
@@ -3210,6 +3429,7 @@ mod tests {
             execution_budget: fixture.budget.snapshot(),
             resource_policy: fixture.scheduler.resource_policy,
             retained_resource_limit: fixture.scheduler.retained_resource_limit,
+            resource_records: fixture.scheduler.resource_records.clone(),
             foreground: fixture.foreground.checkpoint(),
             sessions: fixture.sessions.checkpoint(),
             state: super::TaskStateCheckpointV1::from_state(&fixture.scheduler.state),

@@ -40,6 +40,18 @@ The version-seven graph (`GNTCDP07`) additionally retains the exact retained-acc
 Legacy v4–v6 bytes remain unchanged; replay rejects changes or removal of any ceiling, and
 coordinator-backed recovery restores the same admission policy without creating accepted work.
 
+Version eight (`GNTCDP08`) additionally retains a complete nonempty logical resource-accounting
+set with validated issuing provenance and historical containment winners. Its complete resource
+section has an independent 1 MiB ceiling. Capture and journal-first staging preflight before
+cloning/reservation; unsupported physical, adapter, loan and pending-work obligations still refuse.
+Recovery retains exact policy and atomically validates every record under the graph's execution,
+tasks and budget frontier before coordinator-backed admission. Resource records remain frozen
+across replay transitions; resource mutation cuts and physical-resource reconstruction are not
+implemented by this slice. Coordinator and graph committer baselines reject changed resource images
+before cloning/reservation or storage invocation, including after recovery. This prevents a writer
+from appending a resource mutation that authoritative replay would refuse. Record-free legacy
+encodings remain unchanged.
+
 The graph task driver heap-pins both action and model operation futures. Keeping either large
 operation future inline inflates the enclosing task's polling frame on every branch, including
 replacement model execution. Normal-stack child-prompt recovery and the source-spawn suite cover

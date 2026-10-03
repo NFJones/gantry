@@ -36,6 +36,7 @@ pub struct DurableGraphTransaction<'a> {
     original_budget: ExecutionBudgetSnapshot,
     resource_policy: Option<(Option<u64>, Option<u64>)>,
     retained_resource_limit: Option<u64>,
+    resource_records: Vec<crate::RecoveredResourceRecord>,
     original_checkpoint: Box<ConcurrentDurableCheckpointV4>,
     commit_started: bool,
     installed: bool,
@@ -59,10 +60,13 @@ impl ExecutionCoordinator {
     ) -> Result<DurableGraphTransaction<'a>, TaskStateError> {
         let mut state = lock(&self.inner.state);
         require_publication_available(&state)?;
+        let resource_records =
+            ConcurrentDurableCheckpointV4::capture_resource_records(state.resources.as_ref())
+                .map_err(|_| TaskStateError::ResourceStateUnsupported)?;
         if state
-            .resources
+            .durable_resource_baseline
             .as_ref()
-            .is_some_and(crate::ResourceRegistry::has_uncheckpointed_state)
+            .is_some_and(|baseline| baseline != &resource_records)
         {
             return Err(TaskStateError::ResourceStateUnsupported);
         }
@@ -116,6 +120,9 @@ impl ExecutionCoordinator {
                 .as_ref()
                 .and_then(crate::ResourceRegistry::retained_limit),
         )
+        .and_then(|checkpoint| {
+            checkpoint.with_resource_records(foreground.program_arc(), resource_records.clone())
+        })
         .map_err(|_| TaskStateError::InvalidTaskMachine)?;
         state.durable_publication_reserved = true;
         Ok(DurableGraphTransaction {
@@ -138,6 +145,7 @@ impl ExecutionCoordinator {
                 .resources
                 .as_ref()
                 .and_then(crate::ResourceRegistry::retained_limit),
+            resource_records,
             original_checkpoint: Box::new(original_checkpoint),
             commit_started: false,
             installed: false,
@@ -291,6 +299,12 @@ impl DurableGraphTransaction<'_> {
             self.resource_policy,
             self.retained_resource_limit,
         )
+        .and_then(|checkpoint| {
+            checkpoint.with_resource_records(
+                self.staged_foreground.program_arc(),
+                self.resource_records.clone(),
+            )
+        })
         .map_err(|error| {
             DurableCommitError::Evidence(crate::DurableEvidenceError::ConcurrentCheckpoint(error))
         })?;
@@ -331,6 +345,7 @@ impl DurableGraphTransaction<'_> {
                 return Err(DurableCommitError::InvalidState);
             }
         }
+        commits.retain_graph_resource_baseline(&self.original_checkpoint)?;
         let receipt = commits
             .commit_graph_checkpoint_with_record_submission(
                 cut,
@@ -383,6 +398,7 @@ impl DurableGraphTransaction<'_> {
             let execution_budget = ExecutionBudget::recover_from_checkpoint(committed_budget)
                 .map_err(|_| DurableCommitError::InvalidState)?;
             state.durable_graph_baseline = Some((self.tasks.clone(), self.sessions.clone()));
+            state.durable_resource_baseline = Some(self.resource_records.clone());
             self.foreground
                 .commit_staged_resource_admission(&mut self.staged_foreground);
             for (task_id, authoritative) in self.children.iter_mut() {

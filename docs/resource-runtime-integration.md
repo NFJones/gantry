@@ -40,7 +40,7 @@ Excess admission returns `RetainedResourceLimitReached` after existing accountin
 without consuming physical inputs or publishing pending capacity. Existing constructors leave
 this policy disabled. `new_with_budget_and_accounting_limits` exposes it through coordinator
 ownership. Empty retained-account policy uses `GNTCDP07` to preserve its exact ceiling;
-ordinary v6 empty-policy carriage is unchanged. Actual resource records remain unsupported.
+ordinary v6 empty-policy carriage is unchanged. Eligible accounting records use version-eight carriage below.
 Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.
@@ -70,7 +70,8 @@ owners into finite accounting ceilings; the default `resource_accounting_limits(
 Zero denies resource admission, not ordinary source execution. Concurrent root construction uses
 `new_with_budget_and_resource_limits` to retain the same execution budget. This policy enables
 accounting ownership only, not live-handle transport or host authority; current durable resume
-reconstructs enabled empty-registry policy only through the version-six combined graph. For example, an embedder can use
+reconstructs enabled empty-registry policy through the version-six combined graph. Eligible records
+use the separately bounded version-eight path below. For example, an embedder can use
 `configuration.with_resource_accounting_limits(64, 16)` for new execution owners while retaining
 the existing raw-byte-hook refusal for live-resource results.
 `with_bounded_resource_accounting_limits(64, 16, 128)` additionally limits retained account records
@@ -85,7 +86,7 @@ configuration bytes remain unchanged; absent retention differs from zero. Bindin
 not itself resource reconstruction or host authority admission.
 Serial root-driver recovery restores enabled empty accounting from identity-validated configuration,
 retaining the recovered machine's shared execution budget and all configured ceilings. It creates
-no resource records, physical slots or accepted-work leases; graph record refusal remains intact.
+no resource records, physical slots or accepted-work leases; sequential record refusal remains intact.
 Concurrent resume additionally compares recovered graph accounting policy with that validated
 configuration before lifecycle admission, journal repair or replacement-driver submission.
 Disagreement refuses with `graph-accounting-policy-mismatch` without journal mutation, even when
@@ -172,7 +173,7 @@ account, including terminal records. Existing evidence and live-capacity refusal
 precedence; the retained ceiling is checked before insertion. Recovery publishes the complete
 set or refuses it, never a partial registry, and still creates no pending work or physical slots.
 
-The current durable graph wire carries no resource reconstruction records. `GNTCDP06` separately
+Record-free graph versions carry no resource reconstruction records. `GNTCDP06` separately
 retains an enabled empty registry's exact optional live and pending ceilings. Absence differs from
 enabled unlimited policy; legacy v4/v5 graph bytes retain absent policy. Capture, staging, replay
 and coordinator-backed driver recovery preserve the policy without reconstructing accepted work.
@@ -184,9 +185,26 @@ or reserving publication if retained accounts, physical slots, adapter poison hi
 admitted work would be omitted. Poison history remains a refusal even after accounts are reaped,
 so policy-only recovery cannot re-enable a failed adapter identity. An empty configured registry
 without that history remains eligible. This fail-closed boundary prevents silent
-accounting loss; it is not durable resource reconstruction integration.
+accounting loss. Version-eight accounting recovery is separately scoped below.
 `publish_committed_root` likewise refuses before installing task, session, budget, event or root
 projections when retained resource state would be omitted. It does not undo an existing journal cut.
+
+`GNTCDP08` carries a complete nonempty accounting set with issuing and containment evidence and
+exact optional admission policy. Its independently bounded resource section is at most 1 MiB,
+including count, owner, cleanup-task and envelope framing. Decoding admits the complete raw section
+before recovering members. Capture/staging preflight refuses pending admitted work, live loans,
+physical slots, adapter bindings, poison history, missing issuing evidence and excess bytes before
+cloning machines or reserving publication. Coordinator-backed recovery checks the complete set's
+execution/task provenance, budget predecessors, current owners, canonical order, containment and
+capacity before exposing accounting. Records are frozen across replay transitions: this slice has
+no resource-mutation cut. Coordinator capture/staging compares the committed resource image before
+cloning or reservation, and graph committers reject image drift before storage invocation. Recovery
+seeds the same image; local accounting cleanup cannot silently become a new durable mutation cut.
+An unseeded recovered graph committer refuses even a record-free successor rather than inferring
+that its unknown predecessor had no resources. Staged owners supply the validated predecessor image.
+Machine-only extraction refuses; scheduler/driver recovery and replay
+capture retain the records. Record-free legacy bytes remain unchanged. This reconstructs logical
+accounting, not physical handles, adapters or accepted work, and does not qualify publication.
 
 `attach_host_value` optionally attaches one typed process-local value to an existing active/open
 account without moving or duplicating accounting and without changing quotas. The embedding caller

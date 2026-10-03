@@ -42,7 +42,7 @@ mod combined_checkpoint;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
     ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointV5,
-    ConcurrentDurableCheckpointV6, ConcurrentDurableCheckpointV7,
+    ConcurrentDurableCheckpointV6, ConcurrentDurableCheckpointV7, ConcurrentDurableCheckpointV8,
     RecoveredConcurrentDriverAdmissionV1, RecoveredConcurrentDurableExecutionV1,
 };
 
@@ -2168,6 +2168,9 @@ pub struct ConcurrentSchedulerV1 {
     /// Retained-account policy carried separately to preserve the legacy graph encodings.
     #[cfg(feature = "durable")]
     retained_resource_limit: Option<u64>,
+    /// Validated accounting and containment records retained by durable recovery.
+    #[cfg(feature = "durable")]
+    resource_records: Vec<crate::RecoveredResourceRecord>,
     machines: BTreeMap<ProtocolIdentity, Machine>,
     runnable: VecDeque<ProtocolIdentity>,
 }
@@ -2189,6 +2192,8 @@ impl ConcurrentSchedulerV1 {
             resource_policy: None,
             #[cfg(feature = "durable")]
             retained_resource_limit: None,
+            #[cfg(feature = "durable")]
+            resource_records: Vec::new(),
             machines: BTreeMap::new(),
             runnable: VecDeque::new(),
         })
