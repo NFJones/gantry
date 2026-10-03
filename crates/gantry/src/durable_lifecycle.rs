@@ -4151,16 +4151,6 @@ mod tests {
                     gantry_core::portable::RuntimeErrorCategory::ExecutorFailure,
                 )
                 .unwrap_or_else(|error| panic!("settlement: {error:?}"));
-            if lifetime != ResourceLifetimeState::Active {
-                accounting
-                    .begin_resource_finish(&subject, owner)
-                    .unwrap_or_else(|error| panic!("finish: {error:?}"));
-            }
-            if lifetime == ResourceLifetimeState::Finished {
-                accounting
-                    .complete_resource_finalization(&subject, owner, 20)
-                    .unwrap_or_else(|error| panic!("finalization: {error:?}"));
-            }
             let checkpoint = || {
                 accounting
                     .capture_checkpoint(&machine, &BTreeMap::new())
@@ -4237,13 +4227,70 @@ mod tests {
                     &[previous],
                 ));
             }
+            let mut predecessor = checkpoint();
+            let transitions = match lifetime {
+                ResourceLifetimeState::Active => Vec::new(),
+                ResourceLifetimeState::Finishing => {
+                    vec![gantry_runtime::ResourceFinishTransition::Begin]
+                }
+                ResourceLifetimeState::Finished => vec![
+                    gantry_runtime::ResourceFinishTransition::Begin,
+                    gantry_runtime::ResourceFinishTransition::Complete { settled_at: 20 },
+                ],
+                _ => unreachable!("closed fixture lifetimes"),
+            };
+            for transition in transitions {
+                match transition {
+                    gantry_runtime::ResourceFinishTransition::Begin => accounting
+                        .begin_resource_finish(&subject, owner)
+                        .unwrap_or_else(|error| panic!("finish: {error:?}")),
+                    gantry_runtime::ResourceFinishTransition::Complete { settled_at } => accounting
+                        .complete_resource_finalization(&subject, owner, settled_at)
+                        .unwrap_or_else(|error| panic!("finalization: {error:?}")),
+                };
+                let successor = checkpoint();
+                let finish = gantry_runtime::ResourceFinishEvidenceV1::new(
+                    Arc::clone(&program),
+                    predecessor,
+                    successor.clone(),
+                    0,
+                    owner,
+                    transition,
+                )
+                .unwrap_or_else(|error| panic!("terminal finish evidence: {error:?}"));
+                let previous_id = evidence
+                    .last()
+                    .unwrap_or_else(|| panic!("predecessor"))
+                    .evidence_id;
+                let sequence = evidence.len() as u64 + 1;
+                evidence.push(envelope(
+                    &journal,
+                    sequence,
+                    ProtocolIdentity::from_storage_material([51 + sequence as u8; 32]),
+                    gantry_runtime::RESOURCE_FINISH_EVIDENCE_KIND_V1,
+                    finish
+                        .encode(4_194_304)
+                        .unwrap_or_else(|error| panic!("finish encoding: {error:?}")),
+                    &[previous_id],
+                ));
+                predecessor = successor;
+            }
+            let committed_through = evidence.len() as u64;
             let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
                 journal_id: journal.clone(),
                 evidence: Arc::from(evidence),
-                committed_through: 5,
+                committed_through,
             });
             let recovered = recover_concurrent_authoritative_prefix(program, &prefix)
                 .unwrap_or_else(|error| panic!("resource recovery: {error:?}"));
+            assert_eq!(
+                recovered.latest_cut(),
+                if lifetime == ResourceLifetimeState::Active {
+                    DurableCommitCutV1::TerminalCompletion
+                } else {
+                    DurableCommitCutV1::ResourceFinish
+                }
+            );
             let expected_records = recovered
                 .execution()
                 .scheduler()
@@ -4278,6 +4325,20 @@ mod tests {
                 )
                 .unwrap_or_else(|error| panic!("owner: {error:?}"));
             let before = owner.observation();
+            assert_eq!(before.state, ExecutionObservationState::Terminal);
+            assert_eq!(before.latest_sequence, committed_through);
+            let reason = CancellationReason::new(
+                CancellationReasonCategory::Caller,
+                Some(Arc::from("late cancellation")),
+                None,
+                32,
+            )
+            .unwrap_or_else(|error| panic!("reason: {error:?}"));
+            assert!(matches!(
+                ready_test(owner.cancel_execution(execution, reason)),
+                DurableCancelExecutionResult::AlreadyTerminal(_)
+            ));
+            assert_eq!(owner.observation(), before);
             assert_eq!(
                 lock_state(&owner.state).graph_resource_records,
                 expected_records
@@ -4304,6 +4365,7 @@ mod tests {
             .unwrap_or_else(|error| panic!("durable shutdown: {error:?}"));
             let after = owner.observation();
             assert_eq!(after.owner, Some(DurableJournalOwnerState::Released));
+            assert_eq!(ready_test(owner.await_terminal()), after);
             assert_eq!(after.foreground, before.foreground);
             assert_eq!(after.terminal, before.terminal);
             assert_eq!(after.latest_evidence_id, before.latest_evidence_id);
