@@ -284,6 +284,74 @@ fn durable_resource_handoff_preserves_exact_graph_and_task_eligibility() {
         .unwrap_or_else(|error| panic!("refused closure prefix: {error:?}")),
         prefix_before
     );
+    // Dropping a submitted pending handoff is indeterminate, not a rollback.
+    let admission = previous
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("pending handoff recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("pending handoff admission: {error:?}"));
+    let (pending_owner, mut pending_root, mut pending_children, _) = admission.into_parts();
+    let pending_before = pending_owner.snapshot();
+    let pending_root_before = pending_root.checkpoint();
+    let pending_children_before = pending_children
+        .iter()
+        .map(|(id, machine)| (*id, machine.checkpoint()))
+        .collect::<BTreeMap<_, _>>();
+    let pending_sink = DurableTransitionSink::new(
+        Arc::new(PendingStore),
+        journal.clone(),
+        JournalOwnershipToken::new("pending-handoff")
+            .unwrap_or_else(|error| panic!("pending token: {error:?}")),
+    );
+    let mut pending_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &pending_sink,
+        Arc::clone(&program),
+        &prefix_before,
+    )
+    .unwrap_or_else(|error| panic!("pending handoff writer: {error:?}"));
+    let pending_frontier = pending_writer.frontier();
+    let mut pending_stage = pending_owner
+        .stage_graph(&mut pending_root, &mut pending_children)
+        .unwrap_or_else(|error| panic!("pending handoff stage: {error:?}"));
+    pending_stage
+        .stage_resource_task_handoff(
+            &subject,
+            (source, created.task_id),
+            (owner, successor),
+            &[charge],
+        )
+        .unwrap_or_else(|error| panic!("pending handoff candidate: {error:?}"));
+    let mut pending_commit = Box::pin(pending_stage.commit(
+        &mut pending_writer,
+        DurableCommitCutV1::ResourceOwnerAdvance,
+        created.task_id,
+    ));
+    assert!(
+        pending_commit
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert_eq!(pending_owner.try_snapshot(), Some(pending_before.clone()));
+    drop(pending_commit);
+    assert_eq!(pending_writer.frontier(), pending_frontier);
+    assert_eq!(pending_owner.snapshot(), pending_before);
+    assert_eq!(pending_root.checkpoint(), pending_root_before);
+    assert_eq!(
+        pending_children
+            .iter()
+            .map(|(id, machine)| (*id, machine.checkpoint()))
+            .collect::<BTreeMap<_, _>>(),
+        pending_children_before
+    );
+    assert!(lock(&pending_owner.inner.state).durable_publication_reserved);
+    assert_eq!(
+        pending_owner.advance_resource_owner(&subject, owner, successor),
+        Err(CoordinatorResourceRefusal::Task(
+            TaskStateError::DurablePublicationReserved
+        ))
+    );
     // Submitted handoffs cannot expose the candidate task or charges without a valid receipt.
     for invalid_receipt in [false, true] {
         let admission = previous
