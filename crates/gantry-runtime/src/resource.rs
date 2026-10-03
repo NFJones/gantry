@@ -65,19 +65,25 @@ use gantry_ir::{
 /// The returned facts are still subject-free: callers must derive the subject from retained
 /// executable/checkpoint metadata and present this record only through
 /// [`ResourceCarrier::ReconstructionRecord`].
+/// The closed v1 schema admits at most nine quota pairs and four roots. Fixed parser
+/// budgets cover every canonical record and refuse oversized input before copying it.
 pub fn decode_resource_reconstruction_record(
     bytes: &[u8],
 ) -> Result<DurableResourceRecord, ResourceRecordCodecError> {
-    let maximum_bytes =
-        u64::try_from(bytes.len()).map_err(|_| ResourceRecordCodecError::Encoding)?;
+    // Nine quota objects with five fields each, four roots, u64 decimal strings,
+    // and optional settlement/fence facts fit comfortably within these v1 bounds.
+    const MAXIMUM_BYTES: usize = 4096;
+    if bytes.len() > MAXIMUM_BYTES {
+        return Err(ResourceRecordCodecError::Encoding);
+    }
     let document = StrictJsonDocument::decode(
         bytes,
         JsonLimits {
-            maximum_bytes,
-            maximum_nesting_depth: maximum_bytes.max(1),
-            maximum_nodes: maximum_bytes.max(1),
-            maximum_string_scalars: maximum_bytes.max(1),
-            maximum_list_items: maximum_bytes.max(1),
+            maximum_bytes: MAXIMUM_BYTES as u64,
+            maximum_nesting_depth: 5,
+            maximum_nodes: 128,
+            maximum_string_scalars: 64,
+            maximum_list_items: 9,
         },
     )
     .map_err(|_| ResourceRecordCodecError::Encoding)?;

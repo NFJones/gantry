@@ -15108,6 +15108,9 @@ from that record reproduces those facts exactly and does not discover a live hos
 adapter, path, clock, process, environment fact, or journal implementation. This clause defines
 the portable reconstruction model only and does not define durable runtime recovery or a journal
 schema.
+Decoders of the closed reconstruction-record schema MUST bound input copying and parsing
+independently of untrusted input length, while admitting every canonical record of that schema.
+Excess bytes, nesting, nodes, strings, or list members MUST refuse without publishing partial facts.
 
 <a id="GNT-28.8-retention-and-compaction-fences"></a>
 

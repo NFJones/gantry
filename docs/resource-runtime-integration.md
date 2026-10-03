@@ -9,6 +9,14 @@ the model's own reason. Two things are runtime policy over declared facts rather
 decisions - the registry's live-account ceiling and physical reclamation - and both are named as such
 below. Where a clause owns a fence rather than the runtime policy that consumes it, this note says so.
 
+The subject-free v1 reconstruction codec rejects input above 4096 bytes before copying it.
+Parsing is bounded to depth 5, 128 nodes, 64 scalars per string value, and 9 members per list;
+object keys remain bounded by the input-byte ceiling.
+these budgets cover all nine quota owner/family pairs, four roots, and full-range u64 facts.
+Malformed excess input returns `ResourceRecordCodecError::Encoding` before model interpretation,
+without allocating a parse tree proportional to arbitrary recovery input. This is not a journal
+format or host-resource reconstruction claim.
+
 ## Registry surfaces
 
 Registry storage keys qualify portable operation/resource-generation identity with the issuing

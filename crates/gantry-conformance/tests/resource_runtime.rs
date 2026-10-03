@@ -8248,11 +8248,15 @@ fn recovery_reconstructs_every_presented_record_or_refuses_the_whole_set() {
 fn reconstruction_record_codec_round_trips_full_range_facts_and_rejects_noncanonical_bytes() {
     let source = ledger().durable_record();
     let mut quotas = source.quotas().clone();
-    quotas.insert(
-        (QuotaOwner::Owner, QuotaFamily::Bytes),
-        Quota::from_durable_facts(u64::MAX, u64::MAX, u64::MAX)
-            .unwrap_or_else(|error| panic!("maximum quota facts are reachable: {error:?}")),
-    );
+    for owner in QuotaOwner::ALL {
+        for family in QuotaFamily::ALL {
+            quotas.insert(
+                (owner, family),
+                Quota::from_durable_facts(u64::MAX, u64::MAX, u64::MAX)
+                    .unwrap_or_else(|error| panic!("maximum quota facts are reachable: {error:?}")),
+            );
+        }
+    }
     let record = DurableResourceRecord::from_durable_facts(
         OwnerGeneration::new(u64::MAX),
         ResourceLifetimeState::Active,
@@ -8270,6 +8274,34 @@ fn reconstruction_record_codec_round_trips_full_range_facts_and_rejects_noncanon
         Ok(record),
         "the declared record codec preserves all u64 model facts"
     );
+    let mut small_quotas = source.quotas().clone();
+    small_quotas.insert(
+        (QuotaOwner::Owner, QuotaFamily::Bytes),
+        Quota::from_durable_facts(u64::MAX, u64::MAX, u64::MAX)
+            .unwrap_or_else(|error| panic!("maximum quota facts are reachable: {error:?}")),
+    );
+    let small_record = DurableResourceRecord::from_durable_facts(
+        OwnerGeneration::new(u64::MAX),
+        ResourceLifetimeState::Active,
+        source.operation_state(),
+        small_quotas,
+        source.liveness_roots().clone(),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("small record facts are reachable: {error:?}"));
+    let encoded = encode_resource_reconstruction_record(&small_record);
+    for hostile in [
+        vec![b' '; 4097],
+        format!("{}0{}", "[".repeat(100), "]".repeat(100)).into_bytes(),
+        format!("\"{}\"", "x".repeat(65)).into_bytes(),
+    ] {
+        assert_eq!(
+            decode_resource_reconstruction_record(&hostile),
+            Err(ResourceRecordCodecError::Encoding),
+            "oversized, deeply nested, and excess string inputs refuse"
+        );
+    }
     let settled = settled_record();
     let settled_bytes = encode_resource_reconstruction_record(&settled);
     assert_eq!(
@@ -8356,6 +8388,32 @@ fn reconstruction_record_codec_round_trips_full_range_facts_and_rejects_noncanon
             ResourceError::DuplicateQuota
         )),
         "duplicate quota identities are refused"
+    );
+
+    // The closed schema has only nine owner/family pairs. Reject a larger array at
+    // parser admission, before interpreting even its first duplicate quota identity.
+    let quota_start = encoded_text
+        .find("\"quotas\":[")
+        .map(|offset| offset + "\"quotas\":[".len())
+        .unwrap_or_else(|| panic!("encoded quota array exists"));
+    let quota_end = encoded_text[quota_start..]
+        .find(']')
+        .map(|offset| quota_start + offset)
+        .unwrap_or_else(|| panic!("encoded quota array closes"));
+    let first_quota_end = encoded_text[quota_start..]
+        .find('}')
+        .map(|offset| quota_start + offset + 1)
+        .unwrap_or_else(|| panic!("encoded quota array has an entry"));
+    let excess_quotas = format!(
+        "{}{}{}",
+        &encoded_text[..quota_start],
+        [&encoded_text[quota_start..first_quota_end]; 10].join(","),
+        &encoded_text[quota_end..]
+    );
+    assert_eq!(
+        decode_resource_reconstruction_record(excess_quotas.as_bytes()),
+        Err(ResourceRecordCodecError::Encoding),
+        "excess quota arrays refuse at the schema-sized parser budget"
     );
 
     let first_field_start = encoded_text
