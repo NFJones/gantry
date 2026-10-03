@@ -343,6 +343,32 @@ impl<T> OwnedHostResource<T> {
         settled_at: u64,
         finalize: impl FnOnce(&mut T) -> Result<(), HostError>,
     ) -> Result<ResourceLifetimeState, HostResourceError> {
+        self.finish_using(owner, settled_at, None, finalize)
+    }
+
+    /// Admits an explicit whole release-charge vector atomically with finalization.
+    ///
+    /// Eligibility and transport checks precede charging. Quota refusal preserves active
+    /// accounting and physical ownership; admitted errors retain charges and Finishing.
+    /// This cleanup route adds no cancellation gate or implicit retry.
+    pub fn finish_with_charges(
+        &mut self,
+        owner: OwnerGeneration,
+        settled_at: u64,
+        charges: &[gantry_ir::Charge],
+        finalize: impl FnOnce(&mut T) -> Result<(), HostError>,
+    ) -> Result<ResourceLifetimeState, HostResourceError> {
+        self.finish_using(owner, settled_at, Some(charges), finalize)
+    }
+
+    /// Shares finalizer admission while retaining legacy uncharged refusal ordering.
+    fn finish_using(
+        &mut self,
+        owner: OwnerGeneration,
+        settled_at: u64,
+        charges: Option<&[gantry_ir::Charge]>,
+        finalize: impl FnOnce(&mut T) -> Result<(), HostError>,
+    ) -> Result<ResourceLifetimeState, HostResourceError> {
         if self.loan_pending {
             return self.refuse_callback(finalize, HostResourceError::LoanOutstanding);
         }
@@ -360,7 +386,23 @@ impl<T> OwnedHostResource<T> {
         if let Err(error) = self.account.require_adapter_dispatch() {
             return self.refuse_callback(finalize, error);
         }
-        if let Err(error) = self.account.begin_finish_for(owner) {
+        let admission = if let Some(charges) = charges {
+            if self.value.is_none() {
+                return self.refuse_callback(finalize, HostResourceError::Disposed);
+            }
+            if self.poison.is_poisoned() {
+                return self.refuse_callback(
+                    finalize,
+                    HostResourceError::Boundary(BoundaryFailure {
+                        origin: gantry_host::containment::PanicOrigin::Integration,
+                    }),
+                );
+            }
+            self.account.begin_finish_with_charges_for(owner, charges)
+        } else {
+            self.account.begin_finish_for(owner)
+        };
+        if let Err(error) = admission {
             return self.refuse_callback(finalize, HostResourceError::Model(error));
         }
         let Some(value) = self.value.as_mut() else {

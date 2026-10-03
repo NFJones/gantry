@@ -2994,6 +2994,26 @@ impl AdmittedResource {
         self.begin_finish()
     }
 
+    /// Atomically admits release charges and finishing, preserving all facts on refusal.
+    ///
+    /// Current ownership and lifetime precede quota validation. Only the private ledger
+    /// advances until the whole vector succeeds; this invokes no physical cleanup.
+    pub(crate) fn begin_finish_with_charges_for(
+        &mut self,
+        presented_owner: OwnerGeneration,
+        charges: &[Charge],
+    ) -> Result<ResourceLifetimeState, ResourceError> {
+        self.require_current_owner(presented_owner)?;
+        let mut staged = self.ledger.clone();
+        if staged.lifetime() != ResourceLifetimeState::Active {
+            return Err(ResourceError::IllegalLifetimeTransition);
+        }
+        staged.charge(presented_owner, ResourceAction::Release, charges)?;
+        staged.begin_finish()?;
+        self.ledger = staged;
+        Ok(self.ledger.lifetime())
+    }
+
     /// Completes finalization for one presented owner generation.
     ///
     /// The presented generation must be this account's current one, exactly as

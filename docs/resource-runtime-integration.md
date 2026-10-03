@@ -497,8 +497,13 @@ records finished only after callback and contained physical disposal succeed. Bo
 first pass account-qualified adapter dispatch checks after loan, owner and lifetime validation;
 admission refusal changes no accounting or physical ownership. Failure after admitted finish remains
 finishing without implicit retry; sealed `emergency_release` settles accounting before disposal,
-so destruction failure cannot undo semantic release. Disposal removes the value before destruction;
-wrapper drop contains physical destruction but never fabricates semantic finish. This owner is
+so destruction failure cannot undo semantic release. Disposal removes the value before destruction.
+`finish_with_charges` additionally commits an explicit whole release vector together with entering
+finishing, after eligibility, adapter, physical-presence and transport checks. Quota refusal leaves
+active accounting and the held value unchanged. Accepted finalizer errors or panics retain charges
+and finishing state; cleanup remains independent of cancellation admission. No implicit charge or
+retry is introduced, and the legacy uncharged finish path is unchanged.
+Wrapper drop contains physical destruction but never fabricates semantic finish. This owner is
 also able to perform normal evidence-qualified cleanup through `poison_from_failure`: an outstanding
 transport loan refuses first, then the accounting owner validates exact operation/generation,
 accepting owner and resource-poisoning evidence before lifetime settlement and contained disposal.

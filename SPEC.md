@@ -15567,6 +15567,11 @@ loan, owner and lifetime refusals. Admission refusal MUST preserve accounting an
 sealed emergency cleanup remains available. A failure after admitted finish remains finishing,
 is not implicitly retried, and does not roll back accepted external work. Sealed emergency release
 MUST settle accounting before physical disposal; disposal failure MUST NOT undo semantic release.
+`finish_with_charges` MAY admit an explicit whole release-charge vector atomically with entering
+finishing. Loan, owner, lifetime, adapter, physical-presence and transport checks MUST precede quota
+admission. Quota refusal MUST leave active accounting and physical ownership unchanged; admitted
+callback error or panic MUST retain charges and finishing state. Cleanup adds no cancellation gate,
+implicit retry or inferred physical-size charge. Legacy uncharged finish remains unchanged.
 The wrapper MAY expose `poison_from_failure` for normal evidence-qualified cleanup. It MUST
 refuse an outstanding transport loan before mutation, validate the exact operation, generation,
 accepting owner and resource-poisoning evidence through the accounting owner, then settle lifetime

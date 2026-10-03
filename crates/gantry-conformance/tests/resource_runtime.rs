@@ -9156,6 +9156,93 @@ fn owned_adapter_finalization_requires_dispatch_rights_before_accounting_mutatio
     }
 }
 
+/// Release charges and finishing commit together only for admitted physical finalizers.
+#[test]
+fn charged_finalization_preserves_refusal_and_accepted_release_charges() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let owner = OwnerGeneration::new(4);
+    let charge = |family, amount| Charge {
+        owner: QuotaOwner::Owner,
+        family,
+        amount,
+    };
+    for failure_kind in 0..3 {
+        let mut resource = OwnedHostResource::bind(admitted_active(), 17_u64)
+            .unwrap_or_else(|_| panic!("physical binding"));
+        let before = resource.account().durable_record();
+        assert_eq!(
+            resource.finish_with_charges(
+                owner,
+                20,
+                &[
+                    charge(QuotaFamily::Bytes, 1),
+                    charge(QuotaFamily::Operations, 1)
+                ],
+                |_| panic!("undeclared vector tail cannot finalize")
+            ),
+            Err(HostResourceError::Model(ResourceError::UndeclaredQuota))
+        );
+        assert_eq!(resource.account().durable_record(), before);
+        assert_eq!(
+            resource.finish_with_charges(owner, 20, &[charge(QuotaFamily::Bytes, 9)], |_| panic!(
+                "exhausted quota cannot finalize"
+            )),
+            Err(HostResourceError::Model(ResourceError::QuotaExhausted))
+        );
+        assert_eq!(resource.account().durable_record(), before);
+        let failure = gantry::host::contracts::HostError {
+            code: Arc::from("finalizer-failed"),
+            protected_diagnostic: None,
+        };
+        let result =
+            resource.finish_with_charges(owner, 20, &[charge(QuotaFamily::Bytes, 2)], |value| {
+                assert_eq!(*value, 17);
+                match failure_kind {
+                    0 => Ok(()),
+                    1 => Err(failure.clone()),
+                    _ => panic!("accepted finalizer panic"),
+                }
+            });
+        assert_eq!(
+            resource
+                .account()
+                .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+            Some(6)
+        );
+        if failure_kind != 0 {
+            if failure_kind == 1 {
+                assert_eq!(result, Err(HostResourceError::Host(failure)));
+            } else {
+                assert!(matches!(result, Err(HostResourceError::Boundary(_))));
+                assert!(resource.is_poisoned());
+            }
+            assert_eq!(
+                resource.account().ledger().lifetime(),
+                ResourceLifetimeState::Finishing
+            );
+            let retained = resource.account().durable_record();
+            assert_eq!(
+                resource.finish_with_charges(
+                    owner,
+                    21,
+                    &[charge(QuotaFamily::Bytes, 1)],
+                    |_| panic!("accepted finalization cannot be retried")
+                ),
+                Err(HostResourceError::Model(
+                    ResourceError::IllegalLifetimeTransition
+                ))
+            );
+            assert_eq!(resource.account().durable_record(), retained);
+            assert_eq!(
+                resource.emergency_release(emergency_cleanup()),
+                Ok(ResourceLifetimeState::EmergencyReleased)
+            );
+        } else {
+            assert_eq!(result, Ok(ResourceLifetimeState::Finished));
+        }
+    }
+}
+
 /// A poisoned adapter cannot carry another physical callback, while siblings remain usable.
 #[test]
 fn registry_physical_invocation_refuses_a_poisoned_bound_adapter() {
