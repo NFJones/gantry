@@ -2004,7 +2004,43 @@ fn optional_cancellation(
     .map_err(|_| DurableEvidenceError::Encoding)
 }
 
-impl DurableCommitCoordinatorV1<'_> {
+impl<'a> DurableCommitCoordinatorV1<'a> {
+    /// Restores a graph committer from a validated authoritative journal prefix.
+    ///
+    /// The prefix must name this sink's journal. Recovery validates the program and full
+    /// causal graph before deriving execution, root task, journal tip and resource baseline.
+    /// The caller authenticates the storage prefix and holds the sink's ownership fence;
+    /// this constructor neither writes evidence nor authorizes resource-image mutation.
+    pub fn from_concurrent_prefix(
+        sink: &'a crate::DurableTransitionSink,
+        program: Arc<MachineProgram>,
+        prefix: &JournalPrefixV1,
+    ) -> Result<Self, DurableCommitError> {
+        let journal = match prefix {
+            JournalPrefixV1::Full(prefix) => &prefix.journal_id,
+            JournalPrefixV1::Snapshot(prefix) => &prefix.journal_id,
+        };
+        if journal != sink.journal_id() {
+            return Err(DurableCommitError::InvalidState);
+        }
+        let recovered = recover_concurrent_authoritative_prefix(program, prefix)
+            .map_err(DurableCommitError::Evidence)?;
+        let checkpoint = recovered
+            .execution()
+            .capture_replayed_checkpoint()
+            .map_err(|error| {
+                DurableCommitError::Evidence(DurableEvidenceError::ConcurrentCheckpoint(error))
+            })?;
+        let mut commits = Self::new(
+            sink,
+            checkpoint.execution_id(),
+            checkpoint.root_task_id(),
+            Some((recovered.latest_evidence_id(), recovered.latest_sequence())),
+        )?;
+        commits.retain_graph_resource_baseline(&checkpoint)?;
+        Ok(commits)
+    }
+
     /// Selects one untyped task-local cancellation cut for an owning graph transaction.
     #[doc(hidden)]
     pub fn set_graph_task_cancellation(&mut self) -> Result<(), DurableCommitError> {

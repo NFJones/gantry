@@ -601,6 +601,20 @@ fn resource_records_survive_version_eight_graph_recovery() {
         "an unknown predecessor image cannot be inferred empty from its successor"
     );
     assert_eq!(unseeded.frontier(), frontier_before);
+    let mut restored =
+        DurableCommitCoordinatorV1::from_concurrent_prefix(&sink, Arc::clone(&program), &prefix)
+            .unwrap_or_else(|error| panic!("validated recovered committer: {error:?}"));
+    assert_eq!(restored.frontier(), frontier_before);
+    assert_eq!(
+        ready(restored.commit_graph_checkpoint(
+            DurableCommitCutV1::TaskSettlement,
+            task,
+            without_records.clone(),
+        )),
+        Err(DurableCommitError::InvalidState),
+        "validated initialization must preserve the record-bearing predecessor image"
+    );
+    assert_eq!(restored.frontier(), frontier_before);
     assert_eq!(
         ready(storage.read_prefix(ReadJournalPrefixV1 {
             journal_id: sink.journal_id().clone(),

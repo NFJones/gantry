@@ -285,13 +285,28 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
         }
     );
 
-    let mut commits = DurableCommitCoordinatorV1::new(
-        &sink,
-        execution,
-        root_task,
-        Some((occurrence_commit.evidence_id, occurrence_commit.sequence)),
-    )
-    .unwrap_or_else(|error| panic!("post-event coordinator failed: {error:?}"));
+    let prefix = read_prefix(storage.as_ref(), &journal_id);
+    let wrong_sink = DurableTransitionSink::new(
+        Arc::clone(&storage),
+        JournalId::new("another-recovery-journal")
+            .unwrap_or_else(|error| panic!("journal identity: {error:?}")),
+        release_token.clone(),
+    );
+    assert!(matches!(
+        DurableCommitCoordinatorV1::from_concurrent_prefix(
+            &wrong_sink,
+            Arc::clone(&program),
+            &prefix,
+        ),
+        Err(gantry::runtime::DurableCommitError::InvalidState)
+    ));
+    let mut commits =
+        DurableCommitCoordinatorV1::from_concurrent_prefix(&sink, Arc::clone(&program), &prefix)
+            .unwrap_or_else(|error| panic!("post-event coordinator failed: {error:?}"));
+    assert_eq!(
+        commits.frontier(),
+        Some((occurrence_commit.evidence_id, occurrence_commit.sequence))
+    );
     assert_eq!(
         scheduler
             .cancel_execution("shutdown")

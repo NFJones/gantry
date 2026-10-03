@@ -229,6 +229,10 @@ cloning or reservation, and graph committers reject image drift before storage i
 seeds the same image; local accounting cleanup cannot silently become a new durable mutation cut.
 An unseeded recovered graph committer refuses even a record-free successor rather than inferring
 that its unknown predecessor had no resources. Staged owners supply the validated predecessor image.
+Public `DurableCommitCoordinatorV1::from_concurrent_prefix` validates a full or snapshot prefix
+for the sink's journal before deriving the execution, root task, authoritative tip and resource
+baseline. Construction writes no evidence, does not authenticate storage by itself and never
+permits resource-image mutation. Wrong-journal prefixes refuse before recovery.
 Machine-only extraction refuses; scheduler/driver recovery and replay
 capture retain the records. Record-free legacy bytes remain unchanged. This reconstructs logical
 accounting, not physical handles, adapters or accepted work, and does not qualify publication.

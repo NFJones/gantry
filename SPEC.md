@@ -15475,6 +15475,11 @@ Graph committers MUST reject resource-image drift before storage invocation and 
 only after a validated receipt. Recovered owners MUST seed that image from validated recovery.
 An unknown predecessor image MUST NOT be inferred empty from a record-free successor; recovered
 graph writes require a validated predecessor image even when the proposed set is empty.
+`DurableCommitCoordinatorV1::from_concurrent_prefix` MAY initialize this image by validating an
+authoritative full or snapshot prefix for the sink's exact journal. It MUST derive execution,
+root task, authoritative journal tip and complete resource baseline from that recovery, without
+writing evidence. A mismatched journal MUST refuse. Caller authentication of storage evidence
+and ownership remains required; this route MUST NOT authorize resource-image mutation.
 Machine-only extraction MUST refuse rather than discard records;
 all recovery owners and replay captures MUST retain them. Record-free v4–v7 bytes remain unchanged.
 Durable lifecycle owners MUST retain the committed accounting image independently of graph-driver
