@@ -308,6 +308,73 @@ fn resource_recovery_inputs(
     (tasks, sessions)
 }
 
+/// Recovered empty accounting policy still enforces live and pending admission limits.
+#[test]
+fn durable_resource_policy_enforces_admission_after_driver_recovery() {
+    use gantry::runtime::{
+        ConcurrentDurableCheckpointV6, CoordinatorResourceRefusal, ExecutionCoordinator,
+    };
+    for (live, pending, expected) in [
+        (
+            0,
+            1,
+            Some(ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 }),
+        ),
+        (
+            1,
+            0,
+            Some(ResourceRegistryRefusal::PendingOperationLimitReached { limit: 0 }),
+        ),
+        (1, 1, None),
+    ] {
+        let (program, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+        let coordinator = ExecutionCoordinator::new_with_budget_and_resource_limits(
+            tasks,
+            sessions,
+            machine.execution_budget(),
+            live,
+            pending,
+        )
+        .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+        let checkpoint = coordinator
+            .capture_checkpoint(&machine, &std::collections::BTreeMap::new())
+            .unwrap_or_else(|error| panic!("empty accounting capture: {error:?}"));
+        let decoded =
+            ConcurrentDurableCheckpointV6::decode(&program, &checkpoint.canonical_bytes())
+                .unwrap_or_else(|error| panic!("policy decode: {error:?}"));
+        let decoded: gantry::runtime::ConcurrentDurableCheckpointV4 = decoded.into();
+        let admission = decoded
+            .recover(program)
+            .unwrap_or_else(|error| panic!("policy recovery: {error:?}"))
+            .into_driver_admission()
+            .unwrap_or_else(|error| panic!("driver admission: {error:?}"));
+        admission
+            .register_submitted_drivers()
+            .unwrap_or_else(|error| panic!("driver registration: {error:?}"));
+        let (recovered, root, _, _) = admission.into_parts();
+        let before = recovered.snapshot();
+        let result = recovered.admit_resource(
+            &root,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+        );
+        match expected {
+            Some(refusal) => {
+                assert_eq!(result, Err(CoordinatorResourceRefusal::Registry(refusal)));
+                assert_eq!(recovered.snapshot(), before);
+                assert!(!recovered.has_pending_resource_operations());
+            }
+            None => {
+                assert_eq!(result, Ok(()));
+                assert_eq!(recovered.snapshot().publication(), before.publication() + 1);
+                assert!(recovered.has_unsettled_resource_accounts());
+                assert!(recovered.has_pending_resource_operations());
+            }
+        }
+    }
+}
+
 /// Declared records reconstruct one shared accounting owner, never physical or pending work.
 #[test]
 fn coordinator_reconstructs_declared_resource_records_for_known_tasks() {
