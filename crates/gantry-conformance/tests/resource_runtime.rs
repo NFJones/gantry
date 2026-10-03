@@ -9264,6 +9264,87 @@ fn resource_recovery_envelope_round_trips_and_refuses_invalid_admission() {
         encode_resource_recovery_envelope(&decoded, limit),
         Ok(bytes.clone())
     );
+    let mut fresh = ResourceRegistry::new();
+    assert_eq!(
+        fresh.admit(
+            decoded.subject().clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(ResourceRegistryRefusal::NoPendingResourceSubject),
+        "decoding must not reopen issuing work"
+    );
+    let mut forged_length = bytes.clone();
+    forged_length[8..16].copy_from_slice(&u64::MAX.to_be_bytes());
+    assert_eq!(
+        decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &forged_length,
+            limit,
+            owner,
+            machine.task_id()
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Encoding)
+    );
+    // Reframe valid members so failures come from evidence validation, not truncation.
+    let reframe = |budget: &[u8], facts: &[u8]| {
+        let checkpoint = origin
+            .issuing_evidence()
+            .unwrap_or_else(|| panic!("origin evidence"))
+            .0;
+        let cleanup = machine.task_id().to_string();
+        let mut framed = b"GNTRRE01".to_vec();
+        for member in [checkpoint, budget, cleanup.as_bytes(), facts] {
+            framed.extend_from_slice(
+                &u64::try_from(member.len())
+                    .unwrap_or_else(|_| panic!("bounded member"))
+                    .to_be_bytes(),
+            );
+            framed.extend_from_slice(member);
+        }
+        framed
+    };
+    let facts = encode_resource_reconstruction_record(origin.record());
+    let mut foreign_budget = machine.budget_checkpoint();
+    foreign_budget.execution =
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [89; 32])
+            .unwrap_or_else(|error| panic!("foreign execution: {error}"));
+    let forged_budget = reframe(&foreign_budget.canonical_bytes(), &facts);
+    assert_eq!(
+        decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &forged_budget,
+            65_536,
+            owner,
+            machine.task_id()
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Origin(
+            gantry::runtime::ResourceOriginRecoveryError::Machine(
+                gantry::runtime::MachineRecoveryError::ExecutionBudgetMismatch
+            )
+        ))
+    );
+    let mut alternate_facts = facts;
+    alternate_facts.push(b' ');
+    let noncanonical = reframe(
+        &machine.budget_checkpoint().canonical_bytes(),
+        &alternate_facts,
+    );
+    assert_eq!(
+        decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &noncanonical,
+            65_536,
+            owner,
+            machine.task_id()
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Record(
+            ResourceRecordCodecError::Encoding
+        ))
+    );
     assert_eq!(
         encode_resource_recovery_envelope(&origin, limit - 1),
         Err(ResourceRecoveryEnvelopeError::ByteLimit)
