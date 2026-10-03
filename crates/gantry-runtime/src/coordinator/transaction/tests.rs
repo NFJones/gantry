@@ -284,6 +284,84 @@ fn durable_resource_handoff_preserves_exact_graph_and_task_eligibility() {
         .unwrap_or_else(|error| panic!("refused closure prefix: {error:?}")),
         prefix_before
     );
+    // Submitted handoffs cannot expose the candidate task or charges without a valid receipt.
+    for invalid_receipt in [false, true] {
+        let admission = previous
+            .clone()
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("failed handoff recovery: {error:?}"))
+            .into_driver_admission()
+            .unwrap_or_else(|error| panic!("failed handoff admission: {error:?}"));
+        let (failed_owner, mut failed_root, mut failed_children, _) = admission.into_parts();
+        let before_failure = failed_owner.snapshot();
+        let root_before = failed_root.checkpoint();
+        let children_before = failed_children
+            .iter()
+            .map(|(id, machine)| (*id, machine.checkpoint()))
+            .collect::<BTreeMap<_, _>>();
+        let failures = Arc::new(FinishFailureStore {
+            storage: Arc::clone(&storage),
+            invalid_receipt,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let failure_sink = DurableTransitionSink::new(
+            failures.clone(),
+            journal.clone(),
+            JournalOwnershipToken::new("failed-handoff")
+                .unwrap_or_else(|error| panic!("failure token: {error:?}")),
+        );
+        let mut failure_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+            &failure_sink,
+            Arc::clone(&program),
+            &prefix_before,
+        )
+        .unwrap_or_else(|error| panic!("failed handoff writer: {error:?}"));
+        let frontier_before = failure_writer.frontier();
+        let mut failed_stage = failed_owner
+            .stage_graph(&mut failed_root, &mut failed_children)
+            .unwrap_or_else(|error| panic!("failed handoff stage: {error:?}"));
+        failed_stage
+            .stage_resource_task_handoff(
+                &subject,
+                (source, created.task_id),
+                (owner, successor),
+                &[charge],
+            )
+            .unwrap_or_else(|error| panic!("failed handoff candidate: {error:?}"));
+        assert_eq!(
+            ready(failed_stage.commit(
+                &mut failure_writer,
+                DurableCommitCutV1::ResourceOwnerAdvance,
+                created.task_id
+            )),
+            if invalid_receipt {
+                Err(DurableCommitError::InvalidReceipt)
+            } else {
+                Err(DurableCommitError::Journal(JournalError::new(
+                    JournalErrorCode::Internal,
+                )))
+            }
+        );
+        assert_eq!(failures.calls.load(std::sync::atomic::Ordering::Acquire), 1);
+        assert_eq!(failure_writer.frontier(), frontier_before);
+        assert_eq!(failed_owner.snapshot(), before_failure);
+        assert_eq!(failed_root.checkpoint(), root_before);
+        assert_eq!(
+            failed_children
+                .iter()
+                .map(|(id, machine)| (*id, machine.checkpoint()))
+                .collect::<BTreeMap<_, _>>(),
+            children_before
+        );
+        assert!(lock(&failed_owner.inner.state).durable_publication_reserved);
+        assert_eq!(
+            ready(storage.read_prefix(ReadJournalPrefixV1 {
+                journal_id: journal.clone()
+            }))
+            .unwrap_or_else(|error| panic!("failed handoff prefix: {error:?}")),
+            prefix_before
+        );
+    }
     let mut stage = coordinator
         .stage_graph(&mut root, &mut children)
         .unwrap_or_else(|error| panic!("publish stage: {error:?}"));
