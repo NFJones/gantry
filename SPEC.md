@@ -941,7 +941,15 @@ portable outcomes, identity, or durable compatibility.
    future. Checking cancellation does not itself consume a transition. The
    per-task counter resets after any such await or explicit scheduler yield.
    The yield quantum MUST be nonzero and finite, and Gantry MUST observe
-   cancellation immediately before and after the yield. Changing the quantum
+   cancellation immediately before and after the yield.
+   Direct String equality and inequality MUST compare at most 4096 UTF-8 octets before
+   returning a scheduling-only yield when more comparison work remains. Such work MUST
+   preserve operands, assignment targets and program position until atomic publication,
+   and consume exactly the existing single transition only after comparison succeeds.
+   Recomputable comparison scratch is not a logical checkpoint fact; recovery MAY restart
+   that pure work from retained operands. Replay MUST bound scheduling yields separately
+   from semantic transitions using admitted value limits. These yields grant no new source
+   cooperative-stop observation point, hook, event or resource authority. Changing the quantum
    affects scheduling only: it MUST NOT alter deterministic computation within
    one task, dynamic operation or task identities, retry accounting, or the
    semantic content and per-task order of logical evidence and events. It MAY

@@ -1849,6 +1849,149 @@ fn deterministic_string_and_numeric_primitives_return_exact_failures() {
     ));
 }
 
+/// Long String equality yields before publication without spending a semantic transition.
+#[test]
+fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
+    for primitive in [Primitive::Equal, Primitive::NotEqual] {
+        let text = LogicalValue::string("é".repeat(10_000), DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("text: {error:?}"));
+        let root = workflow(
+            "crate::main",
+            vec![],
+            TypeDescriptor::BOOL,
+            EffectSet::default(),
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::STRING,
+                    InstructionKind::Push(text.clone()),
+                ),
+                instruction(1, TypeDescriptor::STRING, InstructionKind::Push(text)),
+                instruction(
+                    2,
+                    TypeDescriptor::BOOL,
+                    InstructionKind::Primitive(primitive),
+                ),
+                instruction(3, TypeDescriptor::BOOL, InstructionKind::Return),
+            ],
+        );
+        let mut machine = new_machine(
+            program(vec![root]),
+            "crate::main",
+            vec![],
+            limits(8, 1, 1, 1, 8),
+        );
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let before = machine.execution_budget().snapshot();
+        assert_eq!(machine.step(), MachineStep::YieldRequired);
+        assert_eq!(machine.execution_budget().snapshot(), before);
+        assert!(machine.outcome().is_none());
+        let mut completing = machine.clone();
+        #[cfg(feature = "durable")]
+        {
+            let bytes = machine.checkpoint().canonical_bytes();
+            let checkpoint = crate::MachineCheckpointV3::decode(&machine.program_arc(), &bytes)
+                .unwrap_or_else(|error| panic!("comparison checkpoint: {error:?}"));
+            let budget = ExecutionBudget::recover_from_checkpoint(before)
+                .unwrap_or_else(|error| panic!("comparison budget: {error:?}"));
+            let mut recovered =
+                Machine::recover_from_checkpoint(machine.program_arc(), checkpoint, budget)
+                    .unwrap_or_else(|error| panic!("comparison recovery: {error:?}"));
+            assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+            assert!(recovered.resume_after_yield());
+            assert_eq!(
+                drive(&mut recovered),
+                MachineOutcome::Succeeded(LogicalValue::boolean(primitive == Primitive::Equal))
+            );
+            assert_eq!(
+                recovered.execution_budget().snapshot().revision,
+                before.revision + 1
+            );
+        }
+        assert!(completing.resume_after_yield());
+        assert_eq!(
+            drive(&mut completing),
+            MachineOutcome::Succeeded(LogicalValue::boolean(primitive == Primitive::Equal))
+        );
+        assert_eq!(
+            completing.execution_budget().snapshot().revision,
+            before.revision + 1
+        );
+        assert!(machine.cancel("comparison cancelled").is_some());
+        assert!(
+            matches!(drive(&mut machine), MachineOutcome::Cancelled(reason) if reason.as_ref() == "comparison cancelled")
+        );
+    }
+}
+
+/// Chunk boundaries preserve exact equality for unequal lengths and late UTF-8 differences.
+#[test]
+fn cooperative_string_comparison_preserves_unequal_and_boundary_results() {
+    for (left, right) in [
+        (String::new(), String::new()),
+        ("a".repeat(4096), "a".repeat(4096)),
+        ("a".repeat(4097), "a".repeat(4096)),
+        (
+            format!("{}é", "a".repeat(4095)),
+            format!("{}ê", "a".repeat(4095)),
+        ),
+        (
+            format!("{}b", "a".repeat(10_000)),
+            format!("{}c", "a".repeat(10_000)),
+        ),
+    ] {
+        for primitive in [Primitive::Equal, Primitive::NotEqual] {
+            let expected = if primitive == Primitive::Equal {
+                left == right
+            } else {
+                left != right
+            };
+            let root = workflow(
+                "crate::main",
+                vec![],
+                TypeDescriptor::BOOL,
+                EffectSet::default(),
+                vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::STRING,
+                        InstructionKind::Push(
+                            LogicalValue::string(left.clone(), DEFAULT_VALUE_LIMITS)
+                                .unwrap_or_else(|error| panic!("left: {error:?}")),
+                        ),
+                    ),
+                    instruction(
+                        1,
+                        TypeDescriptor::STRING,
+                        InstructionKind::Push(
+                            LogicalValue::string(right.clone(), DEFAULT_VALUE_LIMITS)
+                                .unwrap_or_else(|error| panic!("right: {error:?}")),
+                        ),
+                    ),
+                    instruction(
+                        2,
+                        TypeDescriptor::BOOL,
+                        InstructionKind::Primitive(primitive),
+                    ),
+                    instruction(3, TypeDescriptor::BOOL, InstructionKind::Return),
+                ],
+            );
+            let mut machine = new_machine(
+                program(vec![root]),
+                "crate::main",
+                vec![],
+                limits(8, 1, 1, 1, 8),
+            );
+            assert_eq!(
+                drive(&mut machine),
+                MachineOutcome::Succeeded(LogicalValue::boolean(expected))
+            );
+            assert_eq!(machine.execution_budget().snapshot().revision, 3);
+        }
+    }
+}
+
 #[test]
 fn string_float_parsing_never_trims_input() {
     let option_float = TypeDescriptor::option(TypeDescriptor::FLOAT)

@@ -777,6 +777,15 @@ checking the operand type. It avoids rescanning the input; shared copies retain 
 Length conversion and transition charging remain unchanged. This optimization does not establish
 complete semantic-work metering or cancellation-safe execution of other String primitives.
 
+Direct String equality and inequality compare at most 4096 UTF-8 octets per machine call
+before requesting a scheduling-only executor yield. Operands and program position remain
+unchanged until the Boolean result commits with the existing single transition charge.
+Cancellation is checked by the existing yield/driver boundary; this adds no source cooperative-stop
+observation point. Comparison scratch is private and recomputable, so checkpoint recovery restarts
+from retained operands. Replay grants a finite separate yield allowance from admitted String limits.
+This covers direct String operands only, not nested aggregate equality, other primitives or complete
+semantic-work metering. The comparison does not hold the execution-budget lock across its chunks.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

@@ -1773,6 +1773,16 @@ pub enum MachineRecoveryError {
     ExecutionBudgetMismatch,
 }
 
+/// Private recomputable String comparison progress, never a logical checkpoint fact.
+#[derive(Clone, Debug)]
+struct StringEqualityWork {
+    offset: usize,
+    result: Option<bool>,
+}
+
+/// Maximum octets compared before returning control to the executor.
+const STRING_EQUALITY_WORK_QUANTUM: usize = 4096;
+
 /// One task-neutral explicit-frame machine.
 #[derive(Clone, Debug)]
 pub struct Machine {
@@ -1802,6 +1812,8 @@ pub struct Machine {
     pending_session_scope: Option<SessionScopeOccurrence>,
     pending_operation: Option<PendingOperation>,
     resource_admission_tracker: Option<Arc<Mutex<ResourceAdmissionTracker>>>,
+    /// Recomputable scratch; operands and PC remain unchanged until comparison commits.
+    string_equality_work: Option<StringEqualityWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2092,6 +2104,7 @@ impl Machine {
             pending_session_scope: None,
             pending_operation: None,
             resource_admission_tracker: None,
+            string_equality_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2200,6 +2213,7 @@ impl Machine {
             pending_session_scope: None,
             pending_operation: None,
             resource_admission_tracker: None,
+            string_equality_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2606,6 +2620,7 @@ impl Machine {
                 pending
             }),
             resource_admission_tracker: None,
+            string_equality_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3082,6 +3097,13 @@ impl Machine {
                 self.advance_pc();
                 continue;
             }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::Equal | Primitive::NotEqual)
+            ) && self.prepare_string_equality()
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3556,12 +3578,73 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = evaluate_primitive(primitive, operands, self.limits.value_limits)?;
+        let result = if matches!(primitive, Primitive::Equal | Primitive::NotEqual)
+            && let Some(equal) = self
+                .string_equality_work
+                .as_ref()
+                .and_then(|work| work.result)
+        {
+            LogicalValue::boolean(if primitive == Primitive::Equal {
+                equal
+            } else {
+                !equal
+            })
+        } else {
+            evaluate_primitive(primitive, operands, self.limits.value_limits)?
+        };
         self.charge_transition(budget_state)?;
+        self.string_equality_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
         Ok(())
+    }
+
+    /// Compares a bounded octet chunk without changing logical state or holding the budget lock.
+    /// UTF-8 byte equality is exact String equality; chunk boundaries need not split at scalars
+    /// because no chunk is exposed as text. Recovery discards progress and restarts this pure work.
+    /// Returns true only when another executor yield is required before publication.
+    fn prepare_string_equality(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(2) else {
+            return false;
+        };
+        let (Some(left), Some(right)) = (operands[0].as_string(), operands[1].as_string()) else {
+            return false;
+        };
+        let offset = self
+            .string_equality_work
+            .as_ref()
+            .map_or(0, |work| work.offset);
+        let end = offset
+            .saturating_add(STRING_EQUALITY_WORK_QUANTUM)
+            .min(left.len());
+        let equal = left.len() == right.len()
+            && left.as_bytes()[offset..end] == right.as_bytes()[offset..end];
+        let pending = equal && end < left.len();
+        self.string_equality_work = Some(StringEqualityWork {
+            offset: end,
+            result: (!pending).then_some(equal),
+        });
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
+    /// Bounds replay-only scheduling yields per semantic step from admitted String limits.
+    /// Four UTF-8 octets per scalar bound comparison chunks; one extra yield covers the
+    /// ordinary transition quantum. Saturation remains finite and never changes charges.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn replay_yield_allowance(&self, steps: u64) -> u64 {
+        let chunks = self
+            .limits
+            .value_limits
+            .maximum_string_scalars()
+            .saturating_mul(4)
+            .div_ceil(STRING_EQUALITY_WORK_QUANTUM as u64);
+        chunks
+            .saturating_add(1)
+            .saturating_mul(steps.saturating_add(1))
     }
 
     fn enter_scope(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
@@ -4483,6 +4566,7 @@ impl Machine {
     }
 
     fn finish_outcome(&mut self, outcome: MachineOutcome) -> MachineStep {
+        self.string_equality_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,
