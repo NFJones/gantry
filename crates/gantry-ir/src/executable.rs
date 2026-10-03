@@ -888,6 +888,8 @@ pub enum ProgramError {
     InvalidTarget(CanonicalPath),
     /// A call references no workflow or has the wrong arity.
     InvalidCall(CanonicalPath),
+    /// Action signature disagrees with its retained path, recovery, parameters or result.
+    InvalidOperationMetadata(CanonicalPath),
     /// Aggregate metadata and operand count disagree.
     InvalidAggregate(CanonicalPath),
     /// Retained resource classifications do not exactly cover aggregate result types.
@@ -1037,6 +1039,19 @@ fn validate_instruction(
     task_body_indexes: &BTreeMap<TaskBodyIdentity, usize>,
 ) -> Result<(), ProgramError> {
     match &instruction.kind {
+        InstructionKind::OperationCall { operation, .. }
+            if operation.action.as_ref().is_some_and(|action| {
+                action.signature
+                    != CanonicalSignature::action(
+                        action.recovery,
+                        &action.path,
+                        &action.parameters,
+                        &operation.result_type,
+                    )
+            }) =>
+        {
+            return Err(ProgramError::InvalidOperationMetadata(workflow.clone()));
+        }
         InstructionKind::Jump(target)
         | InstructionKind::Branch {
             when_true: target, ..
@@ -1250,6 +1265,70 @@ mod tests {
         ];
         callables.sort_by(|left, right| left.0.cmp(&right.0));
         MachineProgram::with_callable_identities(callables)
+    }
+
+    /// In-memory executable admission must not disagree with signatures rebuilt by recovery.
+    #[test]
+    fn action_signatures_must_match_executable_metadata() {
+        let declaration = path("crate::action");
+        let operation = ExecutableOperation {
+            kind: OperationSiteKind::Action,
+            section20_kind: Some(OperationKind::LiveResource),
+            result_type: TypeDescriptor::UNIT,
+            action: Some(ExecutableAction {
+                path: declaration.clone(),
+                signature: CanonicalSignature::action(
+                    RecoveryClass::Idempotent,
+                    &declaration,
+                    &[],
+                    &TypeDescriptor::UNIT,
+                ),
+                recovery: RecoveryClass::Idempotent,
+                parameters: Vec::new(),
+            }),
+            template_segments: Vec::new(),
+            interpolation_types: Vec::new(),
+            named_input_names: Vec::new(),
+            named_input_types: Vec::new(),
+            retry_limit: None,
+            session_mode: None,
+            attempted: false,
+        };
+        let admit = |operation| {
+            call_program(
+                InstructionKind::OperationCall {
+                    operation,
+                    operands: 0,
+                },
+                CanonicalCallableIdentity::free(&path("crate::callee"), &[]),
+                None,
+            )
+        };
+        assert!(admit(operation.clone()).is_ok());
+        for change in 0..3 {
+            let mut changed = operation.clone();
+            match change {
+                0 => {
+                    changed
+                        .action
+                        .as_mut()
+                        .unwrap_or_else(|| panic!("action"))
+                        .recovery = RecoveryClass::ReadOnly
+                }
+                1 => {
+                    changed
+                        .action
+                        .as_mut()
+                        .unwrap_or_else(|| panic!("action"))
+                        .path = path("crate::other")
+                }
+                _ => changed.result_type = TypeDescriptor::BOOL,
+            }
+            assert!(
+                admit(changed).is_err(),
+                "contradictory metadata {change} was admitted"
+            );
+        }
     }
 
     #[test]

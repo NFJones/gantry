@@ -12150,6 +12150,13 @@ live-resource operation. Implementations MUST refuse to report other kinds as li
 live-resource operation as a durable value. No operation changes kind after declaration or may be
 read as, reported as, or substituted for another.
 
+Executable admission MUST require each retained action signature to equal the canonical signature
+derived from its action path, recovery class, declaration-order parameters and successful result
+type. Contradictory workflow metadata MUST refuse with `InvalidOperationMetadata`; spawned-body
+validation wraps that refusal as `InvalidTaskBody`. Both MUST refuse before machine execution;
+retained decoding MUST NOT silently repair an in-memory contradiction. This consistency check
+does not authenticate the executable artifact or grant dispatch authority.
+
 The ordinary `Machine::complete_operation` logical-value path MUST refuse an authenticated
 live-resource result with `OperationCompletionError::LiveResourceValueRefused`, after pending
 identity and cancellation checks but before value validation or mutation. Refusal MUST retain

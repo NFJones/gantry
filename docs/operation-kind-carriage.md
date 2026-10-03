@@ -11,6 +11,12 @@ carried it and no machine-retained metadata recorded it. This note records what 
   (`crates/gantry-ir/src/executable.rs`) records the kind an analysis authenticated. `None` means no
   layer authenticated one, and a consumer that needs the kind must fail closed rather than assume
   one: the hook-site `OperationSiteKind` is a different fact and never stands in for it.
+- **Action metadata consistency.** Executable admission checks each action signature against its
+  retained path, recovery class, declaration-order parameters and successful result type. A
+  workflow contradiction refuses with `InvalidOperationMetadata`; spawned-body validation wraps
+  it as `InvalidTaskBody`, rather than changing meaning when the
+  retained codec reconstructs the signature. This is consistency validation, not authentication
+  of the artifact or a dispatch-authority grant.
 - **Analysis rule.** Lowering first authenticates the live-resource arm, from the result type's
   resource class through `OperationKind::for_value_resource_class`: a `LiveResource` class yields
   `Some(LiveResource)`, while a non-live class yields `None`, because the resource class cannot
