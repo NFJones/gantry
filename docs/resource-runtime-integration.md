@@ -30,6 +30,9 @@ Portable identity derivation and host authority remain unchanged.
 `ResourceRegistry::with_limits` optionally declares independent live-account and pending
 resource-operation ceilings under `GNT-28.11-runtime-admission-mapping`. `pending_limit` inspects
 the ceiling; `pending_operations` tracks accepted work even when that ceiling is absent.
+Already-settled accounting records require no live-account place, including at a zero ceiling;
+their machine lease still undergoes independent pending-work admission. Physical acquisition
+continues to require active lifetime and open operation state.
 Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.

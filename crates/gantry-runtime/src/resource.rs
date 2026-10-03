@@ -880,6 +880,10 @@ impl ResourceRegistry {
                 let account = AdmittedResource::admit_reconstructed(carrier, record, subject)?;
                 if let Some(limit) = limit
                     && live >= limit
+                    && matches!(
+                        account.ledger().lifetime(),
+                        ResourceLifetimeState::Active | ResourceLifetimeState::Finishing
+                    )
                 {
                     return Err(ResourceRegistryRefusal::LiveResourceLimitReached { limit });
                 }

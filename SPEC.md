@@ -15157,7 +15157,8 @@ refuse an ordinary serialization or ordinary durable-state carrier before recons
 facts. It MUST refuse a duplicate subject or an admission beyond its explicitly declared live
 account ceiling without replacing an existing account. A live account is one whose whole-resource
 lifetime is active or finishing; leaving those states releases its live-account place independently
-of retention and physical reclamation. This mapping concerns accounting admission only: it does not
+of retention and physical reclamation. Admission of an already-settled record MUST NOT consume a
+live-account place, but MUST retain the independent pending-work admission checks. This mapping concerns accounting admission only: it does not
 create, discover, reconstruct, or claim ownership of a physical host resource, and it does not
 define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
 

@@ -1820,6 +1820,74 @@ fn registry_admission_uses_the_machines_pending_resource_subject() {
     );
 }
 
+/// Terminal accounting consumes pending-work capacity, but never a live-account place.
+#[test]
+fn terminal_account_admission_does_not_consume_live_capacity() {
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let mut registry = ResourceRegistry::with_limits(0, 1);
+    assert!(
+        registry
+            .admit_pending_operation(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                settled_record(),
+            )
+            .is_ok()
+    );
+    assert_eq!(registry.live_resources(), 0);
+    assert_eq!(registry.pending_operations(), 1);
+    assert_eq!(
+        registry
+            .account(&subject)
+            .map(AdmittedResource::durable_record),
+        Some(settled_record())
+    );
+    let before = registry.declared_records();
+    assert_eq!(
+        registry.admit(
+            subject,
+            ResourceCarrier::ReconstructionRecord,
+            settled_record()
+        ),
+        Err(ResourceRegistryRefusal::SecondAdmission)
+    );
+    let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    assert_eq!(
+        registry.admit_pending_operation(
+            &sibling,
+            ResourceCarrier::ReconstructionRecord,
+            settled_record(),
+        ),
+        Err(ResourceRegistryRefusal::PendingOperationLimitReached { limit: 1 })
+    );
+    assert_eq!(registry.declared_records(), before);
+    let mut physical = ResourceRegistry::with_limits(0, 1);
+    let sibling_subject = sibling
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("sibling subject exists"));
+    let (error, value) = *physical
+        .admit_host_value(
+            sibling_subject,
+            ResourceCarrier::ReconstructionRecord,
+            settled_record(),
+            17_u64,
+        )
+        .err()
+        .unwrap_or_else(|| panic!("terminal accounting cannot acquire a host value"));
+    assert_eq!(
+        error,
+        ResourceRegistryRefusal::PhysicalAdmission(gantry::runtime::HostResourceError::Model(
+            ResourceError::LifetimeDoesNotAdmitCharge {
+                state: ResourceLifetimeState::Poisoned,
+            }
+        ))
+    );
+    assert_eq!(value, 17);
+    assert!(physical.declared_records().is_empty());
+    assert_eq!(physical.pending_operations(), 0);
+}
+
 /// A declared live-resource limit is enforced at admission and released semantically: settling an
 /// account frees its place while the retained account stays queryable, so no retirement, deletion,
 /// or physical reclamation is needed to reuse the quota.
