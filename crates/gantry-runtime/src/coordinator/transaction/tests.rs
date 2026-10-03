@@ -830,6 +830,63 @@ fn resource_records_survive_version_eight_graph_recovery() {
         .unwrap_or_else(|error| panic!("refused finish prefix: {error:?}")),
         prefix
     );
+    // An indeterminate finish retains the old logical registry and fences further publication.
+    let interrupted_admission = recovered
+        .execution()
+        .capture_replayed_checkpoint()
+        .unwrap_or_else(|error| panic!("interrupted capture: {error:?}"))
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("interrupted recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("interrupted admission: {error:?}"));
+    let (interrupted_owner, mut interrupted_root, mut interrupted_children, _) =
+        interrupted_admission.into_parts();
+    let interrupted_before = interrupted_owner.snapshot();
+    let interrupted_machine = interrupted_root.checkpoint();
+    let pending_sink = DurableTransitionSink::new(
+        Arc::new(PendingStore),
+        sink.journal_id().clone(),
+        JournalOwnershipToken::new("pending-finish")
+            .unwrap_or_else(|error| panic!("pending token: {error:?}")),
+    );
+    let mut pending_commits = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &pending_sink,
+        Arc::clone(&program),
+        &prefix,
+    )
+    .unwrap_or_else(|error| panic!("pending writer: {error:?}"));
+    let pending_frontier = pending_commits.frontier();
+    let mut interrupted = interrupted_owner
+        .stage_graph(&mut interrupted_root, &mut interrupted_children)
+        .unwrap_or_else(|error| panic!("interrupted stage: {error:?}"));
+    interrupted
+        .stage_resource_finish(&subject, owner, crate::ResourceFinishTransition::Begin)
+        .unwrap_or_else(|error| panic!("interrupted finish: {error:?}"));
+    let mut future = Box::pin(interrupted.commit(
+        &mut pending_commits,
+        DurableCommitCutV1::ResourceFinish,
+        task,
+    ));
+    assert!(
+        future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert_eq!(
+        interrupted_owner.try_snapshot(),
+        Some(interrupted_before.clone())
+    );
+    drop(future);
+    assert_eq!(pending_commits.frontier(), pending_frontier);
+    assert_eq!(interrupted_owner.snapshot(), interrupted_before);
+    assert_eq!(interrupted_root.checkpoint(), interrupted_machine);
+    assert_eq!(
+        interrupted_owner.begin_resource_finish(&subject, owner),
+        Err(CoordinatorResourceRefusal::Task(
+            TaskStateError::DurablePublicationReserved
+        )),
+    );
     for (transition, lifetime) in [
         (
             crate::ResourceFinishTransition::Begin,
