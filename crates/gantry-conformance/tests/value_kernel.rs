@@ -409,12 +409,21 @@ fn external_value_note_names_the_landed_boundaries_and_non_claims() {
         "the note must name the diagnostic that refuses the excluded Option shapes"
     );
 
-    let roadmap = read_text(&root.join("docs/reference/general-purpose-refactor.md"));
+    let specification = read_text(&root.join("SPEC.md"));
+    let compatibility_anchor = "GNT-11.6-compatibility-classes";
     let boundary_rule = "meaning or bytes of an existing v1 entry";
+    let specification = specification
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let note = note.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        roadmap.contains(boundary_rule),
-        "the roadmap must still record the v1 boundary rule"
+        specification.contains(compatibility_anchor)
+            && specification.contains("canonical identity equality"),
+        "the committed specification must retain the artifact compatibility boundary"
     );
+    assert!(note.contains(compatibility_anchor));
+    assert!(note.contains("canonical identity equality"));
     assert!(
         note.contains(boundary_rule),
         "the note must restate the v1 boundary rule it depends on"

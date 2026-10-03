@@ -49,4 +49,7 @@ reinterpreting it (`crates/gantry-ir/src/package.rs`, `crates/gantry-ir/src/regi
 - Live handles cannot enter a checkpoint; recovery projections exclude them.
 - The next boundary revision is an open versioned protocol and source-edition decision: an
   implementation must not silently change the meaning or bytes of an existing v1 entry, action,
-  schema, journal, or durable artifact (`docs/reference/general-purpose-refactor.md`).
+  schema, journal, or durable artifact. The committed owner is
+  `SPEC.md#GNT-11.6-compatibility-classes`: artifact compatibility in v1 requires canonical identity
+  equality, and source/boundary, authority, declared-behavior, and artifact compatibility remain
+  independent relations. Local research roadmaps are not conformance inputs.
