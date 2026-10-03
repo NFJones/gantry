@@ -616,6 +616,11 @@ retained records nor snapshot size; whole-execution resource integration remains
 
 ## Bounded deterministic string construction
 
+String length reads the exact scalar count retained in immutable logical-value metrics after
+checking the operand type. It avoids rescanning the input; shared copies retain the same count.
+Length conversion and transition charging remain unchanged. This optimization does not establish
+complete semantic-work metering or cancellation-safe execution of other String primitives.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

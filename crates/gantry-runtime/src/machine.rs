@@ -5655,7 +5655,12 @@ fn evaluate_primitive(
                 DeterministicEvaluationCode::ListIndexOutOfBounds,
             ))
         }
-        Primitive::StringLength => length_value(string_operand(operands, 0)?.chars().count()),
+        Primitive::StringLength => {
+            string_operand(operands, 0)?;
+            let length = usize::try_from(operands[0].metrics().maximum_string_scalars)
+                .map_err(|_| RuntimeCode::InternalInvariant)?;
+            length_value(length)
+        }
         Primitive::StringIsEmpty => Ok(LogicalValue::boolean(
             string_operand(operands, 0)?.is_empty(),
         )),
@@ -5842,6 +5847,41 @@ mod bounded_string_tests {
         assert_eq!(
             append_bounded_string(&mut output, &mut scalars, "", limits),
             Ok(())
+        );
+    }
+
+    /// Stored scalar metrics preserve exact length across Unicode and shared value copies.
+    #[test]
+    fn string_length_uses_exact_stored_scalar_metrics() {
+        for input in ["", "é😀a", "e\u{301}", "ΟΣ"] {
+            let value = LogicalValue::string(input, DEFAULT_STRING_TEST_LIMITS)
+                .unwrap_or_else(|error| panic!("string: {error:?}"));
+            let expected = length_value(input.chars().count());
+            let shared = value.clone();
+            assert_eq!(
+                evaluate_primitive(
+                    Primitive::StringLength,
+                    std::slice::from_ref(&shared),
+                    DEFAULT_STRING_TEST_LIMITS
+                ),
+                expected
+            );
+            assert_eq!(
+                evaluate_primitive(
+                    Primitive::StringLength,
+                    &[value],
+                    DEFAULT_STRING_TEST_LIMITS
+                ),
+                expected
+            );
+        }
+        assert_eq!(
+            evaluate_primitive(
+                Primitive::StringLength,
+                &[LogicalValue::unit()],
+                DEFAULT_STRING_TEST_LIMITS
+            ),
+            Err(RuntimeCode::InternalInvariant)
         );
     }
 
