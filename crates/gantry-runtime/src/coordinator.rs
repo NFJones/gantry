@@ -72,6 +72,9 @@ pub enum CoordinatorResourceRefusal {
     RegistryDisabled,
     /// The registry refused the exact pending subject or its accounting facts.
     Registry(crate::ResourceRegistryRefusal),
+    /// Issuing evidence validation or bounded reconstruction carriage refused admission.
+    #[cfg(feature = "durable")]
+    RecoveryEnvelope(crate::ResourceRecoveryEnvelopeError),
     /// Process-local physical attachment or contained disposal refused or failed.
     Host(crate::HostResourceError),
 }
@@ -541,6 +544,46 @@ impl ExecutionCoordinator {
         carrier: gantry_ir::ResourceCarrier,
         record: gantry_ir::DurableResourceRecord,
     ) -> Result<(), CoordinatorResourceRefusal> {
+        self.admit_resource_using(machine, |resources| {
+            resources
+                .admit_pending_operation(machine, carrier, record)
+                .map(|_| ())
+                .map_err(CoordinatorResourceRefusal::Registry)
+        })
+    }
+
+    /// Admits accounting and bounded issuing evidence under the ordinary coordinator fences.
+    ///
+    /// Successful admission publishes once and retains the authoritative machine lease.
+    /// Refusal changes neither accounting nor publication. No physical or journal authority
+    /// is granted, and retained resource state remains unsupported by combined graph recovery.
+    #[cfg(feature = "durable")]
+    pub fn admit_resource_with_issuing_evidence(
+        &self,
+        machine: &crate::Machine,
+        carrier: gantry_ir::ResourceCarrier,
+        record: gantry_ir::DurableResourceRecord,
+        maximum_bytes: u64,
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        self.admit_resource_using(machine, |resources| {
+            resources
+                .admit_pending_operation_with_issuing_evidence(
+                    machine,
+                    carrier,
+                    record,
+                    maximum_bytes,
+                )
+                .map(|_| ())
+                .map_err(CoordinatorResourceRefusal::RecoveryEnvelope)
+        })
+    }
+
+    /// Serializes task-qualified accounting admission and publishes only after complete success.
+    fn admit_resource_using(
+        &self,
+        machine: &crate::Machine,
+        admit: impl FnOnce(&mut crate::ResourceRegistry) -> Result<(), CoordinatorResourceRefusal>,
+    ) -> Result<(), CoordinatorResourceRefusal> {
         let mut state = lock(&self.inner.state);
         require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
         if machine.execution_id() != state.tasks.execution_id() {
@@ -564,12 +607,12 @@ impl ExecutionCoordinator {
         if state.resource_admission_closed {
             return Err(CoordinatorResourceRefusal::ResourceAdmissionClosed);
         }
-        state
-            .resources
-            .as_mut()
-            .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?
-            .admit_pending_operation(machine, carrier, record)
-            .map_err(CoordinatorResourceRefusal::Registry)?;
+        admit(
+            state
+                .resources
+                .as_mut()
+                .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?,
+        )?;
         state.publication = state.publication.wrapping_add(1);
         Ok(())
     }

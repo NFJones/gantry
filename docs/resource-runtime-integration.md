@@ -134,6 +134,10 @@ before insertion; ordinary machine-lease and quota checks still decide acquisiti
 account keeps the authoritative machine lease, so settlement releases pending capacity without
 discarding historical evidence. Refusal publishes no account or pending place. The route does not
 grant host authority, authenticate journal state or relax graph capture refusal.
+`ExecutionCoordinator::admit_resource_with_issuing_evidence` applies the same publication,
+execution, running-task, cancellation, shutdown and enabled-registry fences as ordinary admission.
+Success publishes once; evidence, byte or registry refusal preserves the snapshot and publication.
+Captured issuing evidence remains inspection rather than journal-committed resource state.
 
 `ResourceRegistry::reconstruct_with_retained_limit` additionally bounds every reconstructed
 account, including terminal records. Existing evidence and live-capacity refusals retain

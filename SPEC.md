@@ -15346,6 +15346,10 @@ admission MUST precede registry insertion; ordinary authoritative machine-lease 
 MUST still succeed. Success MUST retain the authoritative lease, not the closed private recovery
 lease, so machine settlement releases pending capacity while historical issuing facts remain.
 Refusal MUST publish no account or pending capacity. This route grants no host or journal authority.
+The coordinator MAY expose this route as `admit_resource_with_issuing_evidence`, retaining its
+ordinary publication-reservation, execution, task, cancellation, shutdown and enabled-registry
+checks before evidence admission. Success MUST publish once; refusal MUST change neither
+accounting nor publication. Historical evidence remains inspection, not committed journal state.
 
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical

@@ -9318,6 +9318,86 @@ fn bounded_live_admission_retains_issuing_evidence_after_settlement() {
     assert!(encode_resource_recovery_envelope(&captured[0], 65_536).is_ok());
 }
 
+/// Coordinator provenance admission publishes once and retains historical evidence after settlement.
+#[test]
+fn coordinator_issuing_evidence_admission_preserves_publication_fences() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ResourceRecoveryEnvelopeError};
+    let (_, mut machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    let before = coordinator.snapshot();
+    assert_eq!(
+        coordinator.admit_resource_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            0,
+        ),
+        Err(CoordinatorResourceRefusal::RecoveryEnvelope(
+            ResourceRecoveryEnvelopeError::ByteLimit
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(!coordinator.has_pending_resource_operations());
+    coordinator
+        .admit_resource_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("provenance admission: {error:?}"));
+    let admitted = coordinator.snapshot();
+    assert_eq!(admitted.publication(), before.publication() + 1);
+    let records = admitted
+        .resource_records()
+        .unwrap_or_else(|| panic!("records"));
+    assert!(records[0].issuing_evidence().is_some());
+    assert!(coordinator.has_pending_resource_operations());
+    assert_eq!(
+        coordinator.admit_resource_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            65_536,
+        ),
+        Err(CoordinatorResourceRefusal::RecoveryEnvelope(
+            ResourceRecoveryEnvelopeError::Origin(
+                gantry::runtime::ResourceOriginRecoveryError::Registry(
+                    ResourceRegistryRefusal::SecondAdmission
+                )
+            )
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), admitted);
+    assert!(coordinator.close_resource_admission());
+    assert_eq!(
+        coordinator.admit_resource_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            0,
+        ),
+        Err(CoordinatorResourceRefusal::ResourceAdmissionClosed)
+    );
+    assert_eq!(coordinator.snapshot(), admitted);
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("operation"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+    assert!(!coordinator.has_pending_resource_operations());
+    assert_eq!(
+        coordinator.snapshot().resource_records(),
+        admitted.resource_records()
+    );
+}
+
 /// Issuing evidence travels canonically under independent byte and ownership admission bounds.
 #[test]
 fn resource_recovery_envelope_round_trips_and_refuses_invalid_admission() {
