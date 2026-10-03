@@ -1950,6 +1950,17 @@ impl ResourceRegistry {
         owner: OwnerGeneration,
         successor: OwnerGeneration,
     ) -> Result<(), ResourceRegistryRefusal> {
+        self.advance_owner_with_charges(subject, owner, successor, &[])
+    }
+
+    /// Shares provenance and physical fences before atomically admitting a move vector.
+    fn advance_owner_with_charges(
+        &mut self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+        charges: &[Charge],
+    ) -> Result<(), ResourceRegistryRefusal> {
         let key = self.selection_key(subject);
         let account = self
             .accounts
@@ -1964,7 +1975,7 @@ impl ResourceRegistry {
                 .map_err(ResourceRegistryRefusal::OwnershipTransfer)?;
         }
         account
-            .transfer_owner(owner, successor)
+            .transfer_owner_with_charges(owner, successor, charges)
             .map_err(ResourceRegistryRefusal::OwnershipTransfer)
     }
 
@@ -1979,6 +1990,7 @@ impl ResourceRegistry {
         destination: gantry_core::identity::ProtocolIdentity,
         owner: OwnerGeneration,
         successor: OwnerGeneration,
+        charges: &[Charge],
     ) -> Result<(), ResourceRegistryRefusal> {
         let key = self.selection_key(subject);
         let account = self
@@ -1989,7 +2001,7 @@ impl ResourceRegistry {
         if account.task_owner() != source {
             return Err(ResourceRegistryRefusal::TaskOwnerMismatch);
         }
-        self.advance_owner(subject, owner, successor)?;
+        self.advance_owner_with_charges(subject, owner, successor, charges)?;
         self.accounts
             .get_mut(&key)
             .unwrap_or_else(|| unreachable!("validated account remains registered"))

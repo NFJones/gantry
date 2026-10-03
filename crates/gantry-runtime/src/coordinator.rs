@@ -868,6 +868,27 @@ impl ExecutionCoordinator {
         owner: gantry_ir::OwnerGeneration,
         successor: gantry_ir::OwnerGeneration,
     ) -> Result<(), CoordinatorResourceRefusal> {
+        self.transfer_resource_task_owner_with_charges(
+            subject,
+            source,
+            destination,
+            (owner, successor),
+            &[],
+        )
+    }
+
+    /// Atomically admits explicit move charges with cleanup-task and generation handoff.
+    /// All task and transfer fences precede charging; refusal publishes nothing.
+    /// This grants no authority or source-handle transport and preserves historical provenance.
+    pub fn transfer_resource_task_owner_with_charges(
+        &self,
+        subject: &crate::ResourceSubjectBinding,
+        source: ProtocolIdentity,
+        destination: ProtocolIdentity,
+        generations: (gantry_ir::OwnerGeneration, gantry_ir::OwnerGeneration),
+        charges: &[gantry_ir::Charge],
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        let (owner, successor) = generations;
         let mut state = lock(&self.inner.state);
         require_publication_available(&state).map_err(CoordinatorResourceRefusal::Task)?;
         if subject.execution_id() != state.tasks.execution_id() {
@@ -897,7 +918,7 @@ impl ExecutionCoordinator {
             .resources
             .as_mut()
             .ok_or(CoordinatorResourceRefusal::RegistryDisabled)?
-            .transfer_task_owner(subject, source, destination, owner, successor)
+            .transfer_task_owner(subject, source, destination, owner, successor, charges)
             .map_err(CoordinatorResourceRefusal::Registry)?;
         state.publication = state.publication.wrapping_add(1);
         Ok(())

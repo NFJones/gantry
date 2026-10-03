@@ -15699,6 +15699,12 @@ cleanup and new physical attachment MUST use the current cleanup task, while sub
 and current-generation fences remain required. This route grants no authority, source syntax,
 copyable handle or durable graph format and does not settle accepted machine work.
 
+`transfer_resource_task_owner_with_charges` MAY additionally admit an explicit whole move vector
+after all task, provenance, physical and ownership fences. Quota use, successor generation and
+cleanup-task ownership MUST commit together with one publication; refusal MUST preserve every
+accounting fact, the physical slot and publication. Legacy handoff remains uncharged, and no
+physical-size charge, authority or durable ownership transition is inferred.
+
 The coordinator MAY expose physical attachment and disposal over its existing registry. Attachment
 and disposal extraction MUST respect the durable-publication reservation and current account owner.
 Physical attachment MUST additionally require the issuing execution to match and the current cleanup task

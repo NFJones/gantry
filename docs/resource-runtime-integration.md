@@ -384,6 +384,12 @@ task selection and physical attachment follow current cleanup ownership, not the
 task. The caller authenticates authority; this route enables neither source syntax nor durable graph
 resource transport and does not settle pending machine work.
 
+`transfer_resource_task_owner_with_charges` applies an explicit whole move vector after the same
+task, provenance, physical and ownership checks. Declared quota use, successor generation and
+cleanup task commit together before one coordinator publication. Refusals preserve the complete
+accounting image and physical slot; legacy handoff uses an empty vector. No implicit physical
+charge, authority grant or durable ownership transition is introduced.
+
 `bind_resource_adapter` and `poison_resource_adapter_from_post_failure` expose the registry's
 adapter binding and evidence-qualified one-way poisoning through coordinator publication fencing.
 Binding retains current-owner and substitution checks; failure poisoning retains the evidence's

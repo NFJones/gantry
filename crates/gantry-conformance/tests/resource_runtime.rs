@@ -5458,6 +5458,134 @@ fn resource_task_handoff_preserves_provenance_recovery_and_cleanup_selection() {
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Move charges commit together with cleanup ownership and one coordinator publication.
+#[test]
+fn charged_task_handoff_preserves_refusal_and_recovered_quota_use() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ExecutionCoordinator, HostResourceError};
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let (coordinator, child, tasks, sessions) = resource_handoff_fixture(&machine);
+    let owner = OwnerGeneration::new(4);
+    let successor = OwnerGeneration::new(5);
+    let record = ResourceLedger::new(
+        owner,
+        ResourceState::Usable,
+        &[LivenessRoot::Resource],
+        &[(QuotaOwner::Owner, QuotaFamily::Bytes, Quota::new(8, 0))],
+    )
+    .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+    coordinator
+        .admit_resource_host_value(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+            17_u64,
+        )
+        .unwrap_or_else(|_| panic!("admission"));
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    coordinator
+        .settle_resource_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    let charges = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 2,
+    }];
+    let before = coordinator.snapshot();
+    for (destination, vector, expected) in [
+        (
+            machine.task_id(),
+            vec![Charge {
+                amount: 9,
+                ..charges[0]
+            }],
+            CoordinatorResourceRefusal::SameTaskTransfer,
+        ),
+        (
+            child,
+            vec![
+                charges[0],
+                Charge {
+                    family: QuotaFamily::Operations,
+                    ..charges[0]
+                },
+            ],
+            CoordinatorResourceRefusal::Registry(ResourceRegistryRefusal::OwnershipTransfer(
+                HostResourceError::Model(ResourceError::UndeclaredQuota),
+            )),
+        ),
+        (
+            child,
+            vec![Charge {
+                amount: 9,
+                ..charges[0]
+            }],
+            CoordinatorResourceRefusal::Registry(ResourceRegistryRefusal::OwnershipTransfer(
+                HostResourceError::Model(ResourceError::QuotaExhausted),
+            )),
+        ),
+    ] {
+        assert_eq!(
+            coordinator.transfer_resource_task_owner_with_charges(
+                &subject,
+                machine.task_id(),
+                destination,
+                (owner, successor),
+                &vector
+            ),
+            Err(expected)
+        );
+        assert_eq!(coordinator.snapshot(), before);
+        assert!(coordinator.has_resource_host_values());
+    }
+    assert_eq!(
+        coordinator.transfer_resource_task_owner_with_charges(
+            &subject,
+            machine.task_id(),
+            child,
+            (owner, successor),
+            &charges
+        ),
+        Ok(())
+    );
+    let after = coordinator.snapshot();
+    assert_eq!(after.publication(), before.publication() + 1);
+    let records = after
+        .resource_records()
+        .unwrap_or_else(|| panic!("records"));
+    assert_eq!(records[0].subject(), &subject);
+    assert_eq!(records[0].owner(), successor);
+    assert_eq!(records[0].task_owner(), child);
+    assert_eq!(
+        records[0].record().quotas()[&(QuotaOwner::Owner, QuotaFamily::Bytes)].used(),
+        2
+    );
+    assert_eq!(
+        records[0].record().liveness_roots(),
+        record.liveness_roots()
+    );
+    let recovered =
+        ExecutionCoordinator::new_with_recovered_resources(tasks, sessions, 1, records.to_vec())
+            .unwrap_or_else(|error| panic!("reconstruction: {error:?}"));
+    assert_eq!(recovered.snapshot().resource_records(), Some(records));
+    assert!(!recovered.has_resource_host_values());
+    assert!(!recovered.has_pending_resource_operations());
+}
+
 /// Handoff refusals never publish a partial owner change or consume pending work.
 #[test]
 fn resource_task_handoff_refuses_ineligible_tasks_and_outstanding_work() {
