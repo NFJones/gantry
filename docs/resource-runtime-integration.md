@@ -83,6 +83,9 @@ identity. Changed live, pending or retained ceilings, retained-policy removal an
 refuse resume with `immutable-configuration-mismatch` without journal mutation. Disabled-policy
 configuration bytes remain unchanged; absent retention differs from zero. Binding this policy is
 not itself resource reconstruction or host authority admission.
+Serial root-driver recovery restores enabled empty accounting from identity-validated configuration,
+retaining the recovered machine's shared execution budget and all configured ceilings. It creates
+no resource records, physical slots or accepted-work leases; graph record refusal remains intact.
 
 `ExecutionCoordinator::new_with_recovered_resources` constructs one shared accounting owner
 atomically from declared reconstruction records. Each binding must name the execution and a known

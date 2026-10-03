@@ -15238,6 +15238,9 @@ configuration identity. Disabled accounting retains its legacy configuration enc
 with changed ceilings, removed retained policy or disabled accounting MUST refuse
 `immutable-configuration-mismatch` without journal mutation; absent retained policy is distinct
 from a zero ceiling. This identity check does not itself reconstruct accounting or host resources.
+After validating execution-start identity, serial root-driver recovery MUST restore enabled empty
+accounting with the same live, pending and retained policy and the recovered machine's shared budget.
+It MUST create no resource records, physical slots or accepted-work leases. This configuration
 MUST NOT enable unsupported live-handle transport or grant host authority. The version-six combined
 graph recovers enabled empty-registry admission policy as declared below; resource records,
 physical handles and admitted pending work remain unsupported by that wire.

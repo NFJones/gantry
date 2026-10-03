@@ -3397,16 +3397,14 @@ impl Interpreter {
             prepared.recovered.machine().outcome().cloned(),
         )
         .map_err(|_| "invalid-recovered-task-state")?;
-        #[cfg(feature = "concurrent")]
-        let coordinator = ExecutionCoordinator::new_with_budget(
+        let coordinator = sequential_execution_coordinator(
+            prepared.recovered.machine(),
             tasks,
             sessions,
-            prepared.recovered.machine().execution_budget(),
+            self.inner.configuration.resource_accounting_limits(),
+            self.inner.configuration.retained_resource_limit(),
         )
         .map_err(|_| "invalid-recovered-task-state")?;
-        #[cfg(not(feature = "concurrent"))]
-        let coordinator = ExecutionCoordinator::new(tasks, sessions)
-            .map_err(|_| "invalid-recovered-task-state")?;
         let create_request = TaskContextV1 {
             execution_id: prepared.execution_id,
             task_id,
@@ -14826,8 +14824,10 @@ pub fn root_task_identity(execution_id: ProtocolIdentity) -> ProtocolIdentity {
     gantry_runtime::root_task_identity(execution_id)
 }
 
-/// Retains the sequential machine's budget when explicitly enabling resource accounting.
-#[cfg(not(feature = "concurrent"))]
+/// Builds serial fresh or identity-validated recovered accounting with the machine budget.
+///
+/// Recovery creates empty accounting only, never physical slots or accepted-work leases.
+#[cfg(any(not(feature = "concurrent"), feature = "durable"))]
 fn sequential_execution_coordinator(
     machine: &Machine,
     tasks: ConcurrentTaskStateV1,
@@ -14853,7 +14853,16 @@ fn sequential_execution_coordinator(
             live,
             pending,
         ),
-        None => ExecutionCoordinator::new(tasks, sessions),
+        None => {
+            #[cfg(feature = "concurrent")]
+            {
+                ExecutionCoordinator::new_with_budget(tasks, sessions, machine.execution_budget())
+            }
+            #[cfg(not(feature = "concurrent"))]
+            {
+                ExecutionCoordinator::new(tasks, sessions)
+            }
+        }
     }
 }
 
@@ -14921,8 +14930,12 @@ mod resource_handoff_tests {
     }
 }
 
-#[cfg(all(test, feature = "evaluator", not(feature = "concurrent")))]
-mod evaluator_only_tests {
+#[cfg(all(
+    test,
+    feature = "evaluator",
+    any(not(feature = "concurrent"), feature = "durable")
+))]
+mod accounting_owner_tests {
     use super::should_defer_execution_completion_event;
     use gantry_core::value::LogicalValue;
     use gantry_runtime::{MachineLabel, MachineOutcome};
@@ -15011,9 +15024,58 @@ mod evaluator_only_tests {
             assert_ne!(before, after, "fixture transition charges its budget");
             assert_eq!(
                 coordinator.snapshot().execution_budget(),
-                accounting.map(|_| after),
+                if cfg!(feature = "concurrent") {
+                    Some(after)
+                } else {
+                    accounting.map(|_| after)
+                },
                 "enabled accounting observes the same budget after a machine transition"
             );
+            #[cfg(feature = "durable")]
+            {
+                let budget = gantry_runtime::ExecutionBudget::recover_from_checkpoint(after)
+                    .unwrap_or_else(|error| panic!("recovered budget: {error:?}"));
+                let recovered = Machine::recover_from_checkpoint(
+                    Arc::clone(&program),
+                    machine.checkpoint(),
+                    budget,
+                )
+                .unwrap_or_else(|error| panic!("recovered machine: {error:?}"));
+                let tasks = ConcurrentTaskStateV1::from_sequential_recovery_with_limit(
+                    execution,
+                    recovered.task_id(),
+                    gantry_core::limit::ResourceLimit::Unlimited,
+                    gantry_runtime::DurableCommitCutV1::Checkpoint,
+                    None,
+                )
+                .unwrap_or_else(|error| panic!("recovered tasks: {error:?}"));
+                let sessions = LogicalSessionRegistryV1::new(
+                    execution,
+                    session,
+                    SessionCreationModeV1::GantryRoot,
+                    CanonicalTranscriptV1::empty(),
+                )
+                .unwrap_or_else(|error| panic!("recovered sessions: {error:?}"));
+                let owner = super::sequential_execution_coordinator(
+                    &recovered, tasks, sessions, accounting, retained,
+                )
+                .unwrap_or_else(|error| panic!("recovered owner: {error:?}"));
+                assert_eq!(owner.retained_resource_limit(), retained);
+                assert_eq!(
+                    owner.snapshot().resource_records(),
+                    accounting.map(|_| &[][..])
+                );
+                assert!(!owner.has_pending_resource_operations());
+                assert!(!owner.has_resource_host_values());
+                assert_eq!(
+                    owner.snapshot().execution_budget(),
+                    if cfg!(feature = "concurrent") {
+                        Some(after)
+                    } else {
+                        accounting.map(|_| after)
+                    }
+                );
+            }
         }
     }
 
