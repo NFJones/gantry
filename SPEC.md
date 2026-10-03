@@ -12188,6 +12188,11 @@ than infer a non-live class. Source-free resume MUST require retained non-live c
 each aggregate; live or absent classification MUST refuse `unsupported-live-resource-transport`
 before mappings, lifecycle admission, repair or submission, without appending evidence. Retention
 does not itself authenticate a caller-supplied program or grant live-handle authority.
+Low-level machine aggregation MUST also refuse retained live-resource classification before
+copying operands or constructing ordinary values. The machine failure is
+`unsupported-live-resource-transport`, retained exactly through checkpoint recovery; task and
+event projections classify it as an internal-invariant failure of unsupported transport.
+This defense does not infer classifications for legacy unclassified programs or create a live handle.
 
 Ordinary JSON entry input MUST NOT supply a type whose analyzed stored-member resource class
 is live-resource, including enclosing aggregates. Once required entry input is present, product

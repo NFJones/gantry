@@ -73,6 +73,10 @@ with the same transport code when their analyzed type is live-resource, includin
 absent options, empty lists, and payload-free enum variants. Ordinary data cannot fabricate
 live-handle ownership or bypass static transport eligibility. Unused declarations do not trigger
 this instruction-level refusal, and ordinary non-live aggregate construction remains eligible.
+The low-level machine also refuses aggregation with retained live-resource classification before
+operand copying or ordinary value construction. Its `unsupported-live-resource-transport` failure
+round-trips through checkpoints and projects to the existing internal-invariant task/event category.
+Unclassified legacy programs remain caller-authenticated; this supplies no live-handle path.
 
 Ordinary JSON entry normalization separately refuses an analyzed live-resource parameter,
 including enclosing aggregates, with `live-resource-entry-value-refused` in the

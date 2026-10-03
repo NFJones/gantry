@@ -1046,9 +1046,9 @@ fn runtime_category(code: RuntimeCode) -> &'static str {
         RuntimeCode::Operation(category) => category.wire_name(),
         RuntimeCode::IntegrationPanic => "hook-failure",
         RuntimeCode::RootSubmissionFailure => "executor-failure",
-        RuntimeCode::InternalInvariant | RuntimeCode::UnsupportedEffect => {
-            "internal-invariant-failure"
-        }
+        RuntimeCode::InternalInvariant
+        | RuntimeCode::UnsupportedEffect
+        | RuntimeCode::UnsupportedLiveResourceTransport => "internal-invariant-failure",
         RuntimeCode::Deterministic(_)
         | RuntimeCode::SourcePanic
         | RuntimeCode::DeterministicTransitionBudget

@@ -2595,7 +2595,9 @@ fn machine_failure_category(code: crate::RuntimeCode) -> RuntimeErrorCategory {
         crate::RuntimeCode::Operation(category) => category,
         crate::RuntimeCode::IntegrationPanic => RuntimeErrorCategory::HookFailure,
         crate::RuntimeCode::RootSubmissionFailure => RuntimeErrorCategory::ExecutorFailure,
-        crate::RuntimeCode::UnsupportedEffect | crate::RuntimeCode::InternalInvariant => {
+        crate::RuntimeCode::UnsupportedEffect
+        | crate::RuntimeCode::InternalInvariant
+        | crate::RuntimeCode::UnsupportedLiveResourceTransport => {
             RuntimeErrorCategory::InternalInvariantFailure
         }
         crate::RuntimeCode::Deterministic(_)

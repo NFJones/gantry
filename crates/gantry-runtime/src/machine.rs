@@ -359,6 +359,8 @@ pub enum RuntimeCode {
     LoopLimitExhausted,
     /// The selected profile does not admit one analyzed effect.
     UnsupportedEffect,
+    /// Ordinary value construction cannot carry an authenticated live resource.
+    UnsupportedLiveResourceTransport,
     /// The configured executor rejected an already accepted root task.
     RootSubmissionFailure,
     /// The executable program violated an analyzer/runtime invariant.
@@ -379,6 +381,7 @@ impl RuntimeCode {
             Self::LoopIterationBudget => "loop-iteration-budget",
             Self::LoopLimitExhausted => "loop-limit-exhausted",
             Self::UnsupportedEffect => "unsupported-effect",
+            Self::UnsupportedLiveResourceTransport => "unsupported-live-resource-transport",
             Self::RootSubmissionFailure => "root-submission-failure",
             Self::InternalInvariant => "internal-invariant-failure",
         }
@@ -3097,7 +3100,13 @@ impl Machine {
             } => self.assign_value(&name, &path, &target_type, &mut budget_state),
             InstructionKind::Pop => self.pop_value(&mut budget_state),
             InstructionKind::Aggregate { kind, operands } => {
-                self.construct_aggregate(kind, operands, &mut budget_state)
+                if self.program.aggregate_resource_class(&instruction.ty)
+                    == Some(gantry_ir::ValueResourceClass::LiveResource)
+                {
+                    Err(RuntimeCode::UnsupportedLiveResourceTransport)
+                } else {
+                    self.construct_aggregate(kind, operands, &mut budget_state)
+                }
             }
             InstructionKind::Project(projection) => {
                 self.project_value(projection, &mut budget_state)

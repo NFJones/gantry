@@ -5460,6 +5460,56 @@ fn monomorphic_receiver_call_operands_still_execute() {
     }
 }
 
+/// Ordinary aggregation cannot fabricate an analyzer-authenticated live-resource value.
+#[test]
+fn authenticated_live_resource_aggregation_refuses_ordinary_construction() {
+    let root =
+        TempDirectory::new("live_resource struct Handle {} fn main() { discard Handle {}; }");
+    let package = analyze(&root);
+    let program = Arc::new(
+        package
+            .executable_program()
+            .cloned()
+            .unwrap_or_else(|| panic!("executable program")),
+    );
+    let entry = package.entry().unwrap_or_else(|| panic!("entry"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6c; 32])
+        .unwrap_or_else(|error| panic!("execution: {error}"));
+    let mut machine = Machine::new(
+        Arc::clone(&program),
+        &entry.path,
+        vec![],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let outcome = drive(&mut machine);
+    let MachineOutcome::Failed(failure) = outcome else {
+        panic!("ordinary construction fabricated a live resource: {outcome:?}");
+    };
+    assert_eq!(
+        failure.code.wire_name(),
+        "unsupported-live-resource-transport"
+    );
+    let bytes = machine.checkpoint().canonical_bytes();
+    let checkpoint = gantry::runtime::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("failure checkpoint: {error:?}"));
+    let recovered = Machine::recover_from_checkpoint(
+        program,
+        checkpoint,
+        ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+            .unwrap_or_else(|error| panic!("budget: {error:?}")),
+    )
+    .unwrap_or_else(|error| panic!("failure recovery: {error:?}"));
+    assert_eq!(recovered.outcome(), machine.outcome());
+    assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+    let ordinary = TempDirectory::new("struct Handle {} fn main() { discard Handle {}; }");
+    assert_eq!(
+        run_entry_outcome(&analyze(&ordinary)),
+        MachineOutcome::Succeeded(LogicalValue::unit()),
+    );
+}
+
 /// Ordinary serialized values cannot substitute for an authenticated live-resource result.
 #[test]
 fn authenticated_live_resource_refuses_ordinary_completion_without_mutation() {
