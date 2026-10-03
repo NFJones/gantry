@@ -12,7 +12,9 @@ carried it and no machine-retained metadata recorded it. This note records what 
   layer authenticated one, and a consumer that needs the kind must fail closed rather than assume
   one: the hook-site `OperationSiteKind` is a different fact and never stands in for it.
 - **Action metadata consistency.** Executable admission checks each action signature against its
-  retained path, recovery class, declaration-order parameters and successful result type. A
+  retained path, recovery class, declaration-order parameters and successful result type. Present
+  action metadata also requires an action-kind operation and the declared parameter count as its
+  operand count. A
   workflow contradiction refuses with `InvalidOperationMetadata`; spawned-body validation wraps
   it as `InvalidTaskBody`, rather than changing meaning when the
   retained codec reconstructs the signature. This is consistency validation, not authentication

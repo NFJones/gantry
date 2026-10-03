@@ -888,7 +888,7 @@ pub enum ProgramError {
     InvalidTarget(CanonicalPath),
     /// A call references no workflow or has the wrong arity.
     InvalidCall(CanonicalPath),
-    /// Action signature disagrees with its retained path, recovery, parameters or result.
+    /// Action kind, operand count or signature disagrees with its retained declaration metadata.
     InvalidOperationMetadata(CanonicalPath),
     /// Aggregate metadata and operand count disagree.
     InvalidAggregate(CanonicalPath),
@@ -1039,16 +1039,20 @@ fn validate_instruction(
     task_body_indexes: &BTreeMap<TaskBodyIdentity, usize>,
 ) -> Result<(), ProgramError> {
     match &instruction.kind {
-        InstructionKind::OperationCall { operation, .. }
-            if operation.action.as_ref().is_some_and(|action| {
-                action.signature
+        InstructionKind::OperationCall {
+            operation,
+            operands,
+        } if operation.action.as_ref().is_some_and(|action| {
+            operation.kind != OperationSiteKind::Action
+                || *operands != action.parameters.len()
+                || action.signature
                     != CanonicalSignature::action(
                         action.recovery,
                         &action.path,
                         &action.parameters,
                         &operation.result_type,
                     )
-            }) =>
+        }) =>
         {
             return Err(ProgramError::InvalidOperationMetadata(workflow.clone()));
         }
@@ -1305,7 +1309,7 @@ mod tests {
             )
         };
         assert!(admit(operation.clone()).is_ok());
-        for change in 0..3 {
+        for change in 0..4 {
             let mut changed = operation.clone();
             match change {
                 0 => {
@@ -1322,13 +1326,26 @@ mod tests {
                         .unwrap_or_else(|| panic!("action"))
                         .path = path("crate::other")
                 }
-                _ => changed.result_type = TypeDescriptor::BOOL,
+                2 => changed.result_type = TypeDescriptor::BOOL,
+                _ => changed.kind = OperationSiteKind::Prompt,
             }
             assert!(
                 admit(changed).is_err(),
                 "contradictory metadata {change} was admitted"
             );
         }
+        assert!(
+            call_program(
+                InstructionKind::OperationCall {
+                    operation,
+                    operands: 1
+                },
+                CanonicalCallableIdentity::free(&path("crate::callee"), &[]),
+                None,
+            )
+            .is_err(),
+            "action operand count must equal its declared parameter count"
+        );
     }
 
     #[test]
