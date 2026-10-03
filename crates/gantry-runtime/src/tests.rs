@@ -1925,6 +1925,78 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Cooperative chunks do not spend transition budget or bypass final-publication refusal.
+#[test]
+fn cooperative_string_comparison_preserves_budget_and_quantum_boundaries() {
+    let text = LogicalValue::string("é".repeat(10_000), DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|error| panic!("text: {error:?}"));
+    let fixture = program(vec![workflow(
+        "crate::main",
+        vec![],
+        TypeDescriptor::BOOL,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::STRING,
+                InstructionKind::Push(text.clone()),
+            ),
+            instruction(1, TypeDescriptor::STRING, InstructionKind::Push(text)),
+            instruction(
+                2,
+                TypeDescriptor::BOOL,
+                InstructionKind::Primitive(Primitive::Equal),
+            ),
+            instruction(3, TypeDescriptor::BOOL, InstructionKind::Return),
+        ],
+    )]);
+    let mut exhausted = new_machine(
+        Arc::clone(&fixture),
+        "crate::main",
+        vec![],
+        limits(2, 1, 1, 1, 8),
+    );
+    assert!(matches!(exhausted.step(), MachineStep::Transition(_)));
+    assert!(matches!(exhausted.step(), MachineStep::Transition(_)));
+    let before = exhausted.execution_budget().snapshot();
+    assert_eq!(exhausted.step(), MachineStep::YieldRequired);
+    assert_eq!(exhausted.execution_budget().snapshot(), before);
+    assert!(exhausted.resume_after_yield());
+    assert!(
+        matches!(drive(&mut exhausted), MachineOutcome::Failed(failure)
+        if failure.code == RuntimeCode::DeterministicTransitionBudget)
+    );
+    assert_eq!(exhausted.execution_budget().snapshot(), before);
+
+    let mut quantum_one = new_machine(
+        Arc::clone(&fixture),
+        "crate::main",
+        vec![],
+        limits(8, 1, 1, 1, 1),
+    );
+    assert_eq!(
+        drive(&mut quantum_one),
+        MachineOutcome::Succeeded(LogicalValue::boolean(true))
+    );
+    assert_eq!(quantum_one.execution_budget().snapshot().revision, 3);
+
+    let mut cancelled = new_machine(fixture, "crate::main", vec![], limits(8, 1, 1, 1, 8));
+    assert!(matches!(cancelled.step(), MachineStep::Transition(_)));
+    assert!(matches!(cancelled.step(), MachineStep::Transition(_)));
+    let before = cancelled.execution_budget().snapshot();
+    for _ in 0..3 {
+        assert_eq!(cancelled.step(), MachineStep::YieldRequired);
+        assert_eq!(cancelled.execution_budget().snapshot(), before);
+        assert!(cancelled.resume_after_yield());
+    }
+    assert!(cancelled.cancel("cancel after three chunks").is_some());
+    assert!(
+        matches!(drive(&mut cancelled), MachineOutcome::Cancelled(reason)
+        if reason.as_ref() == "cancel after three chunks")
+    );
+    assert_eq!(cancelled.execution_budget().snapshot(), before);
+}
+
 /// Chunk boundaries preserve exact equality for unequal lengths and late UTF-8 differences.
 #[test]
 fn cooperative_string_comparison_preserves_unequal_and_boundary_results() {
