@@ -15214,8 +15214,9 @@ Interpreter configuration MAY opt fresh execution owners into explicit finite li
 pending-operation ceilings, including zero to deny admission. The default MUST leave accounting
 disabled. Fresh root construction MUST retain the shared execution budget when enabling this
 registry; ordinary source execution remains eligible with zero accounting ceilings. This policy
-MUST NOT enable unsupported live-handle transport or grant host authority, and the current durable
-graph wire does not recover it on resume.
+MUST NOT enable unsupported live-handle transport or grant host authority. The version-six combined
+graph recovers enabled empty-registry admission policy as declared below; resource records,
+physical handles and admitted pending work remain unsupported by that wire.
 Coordinator handles cloned from that owner MUST
 share one registry and serialize admission, atomic quota charging, accepted operation-state
 projection, accounting finalization, and emergency release. Charging retains the owner and
