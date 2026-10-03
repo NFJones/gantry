@@ -167,7 +167,9 @@ This validator alone grants no journal publication authority.
 
 `stage_resource_finish` privately stages one exact begin/complete transition for journal-first
 `ResourceFinish` publication. Its `gantry.resource-finish-evidence/v1` carrier is bounded to
-4 MiB and names complete predecessor/successor graphs. The writer requires the actual committed
+4 MiB and names complete predecessor/successor graphs. Both finish versions reject nonempty
+protected-payload lists before decoding, because neither represents such obligations.
+The writer requires the actual committed
 predecessor; a validated receipt precedes logical registry installation. Rollback before submission
 discards the candidate, while indeterminate submission retains the existing publication fence.
 Only authoritative prefix recovery or a validated graph receipt seeds the complete predecessor.

@@ -1072,6 +1072,22 @@ fn resource_records_survive_version_eight_graph_recovery() {
             committed.resource_records()
         );
         assert_eq!(journaled.charges(), charges);
+        let mut unexpected_payload = full.clone();
+        let mut entries = unexpected_payload.evidence.to_vec();
+        entries
+            .last_mut()
+            .unwrap_or_else(|| panic!("finish entry"))
+            .protected_payloads = Arc::from([JournalPayloadKey::new("undeclared-finish-payload")
+            .unwrap_or_else(|error| panic!("payload key: {error:?}"))]);
+        unexpected_payload.evidence = entries.into();
+        assert!(
+            crate::recover_concurrent_authoritative_prefix(
+                Arc::clone(&program),
+                &JournalPrefixV1::Full(unexpected_payload)
+            )
+            .is_err(),
+            "finish evidence cannot introduce an unrepresented protected payload obligation"
+        );
         assert_eq!(
             committed.resource_records()[0].record().quotas()
                 [&(gantry_ir::QuotaOwner::Owner, gantry_ir::QuotaFamily::Bytes)]

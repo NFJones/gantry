@@ -15408,7 +15408,9 @@ framing, trailing bytes and noncanonical encodings MUST refuse. This validator g
 publication or physical cleanup authority by itself.
 
 The journal kind `gantry.resource-finish-evidence/v1` MAY carry this exact evidence under an
-independent 4,194,304-byte ceiling. `commit_resource_finish` MUST require its complete predecessor
+independent 4,194,304-byte ceiling. Both finish journal versions MUST refuse nonempty protected-payload
+lists before decoding: these carriers represent no protected-payload obligation.
+`commit_resource_finish` MUST require its complete predecessor
 to equal the writer's held committed graph before storage invocation. Unseeded, stale or unrelated
 predecessors MUST refuse; only a validated receipt advances the graph and accounting baselines.
 The complete graph baseline MUST be initialized only by authoritative prefix recovery or a

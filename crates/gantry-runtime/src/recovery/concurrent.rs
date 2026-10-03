@@ -2846,6 +2846,9 @@ pub fn recover_concurrent_authoritative_prefix(
                 envelope.kind.as_ref(),
                 super::RESOURCE_FINISH_EVIDENCE_KIND_V1 | super::RESOURCE_FINISH_EVIDENCE_KIND_V2
             ) {
+                if !envelope.protected_payloads.is_empty() {
+                    return Err(DurableEvidenceError::Encoding);
+                }
                 let finish = super::ResourceFinishEvidenceV1::decode(
                     Arc::clone(&program),
                     &envelope.canonical_body,
