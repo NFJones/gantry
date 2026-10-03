@@ -139,6 +139,13 @@ accounting reconstruction and declared capture. `issuing_evidence()` inspects th
 facts without opening a lease; legacy record construction leaves them absent. Current accounting
 advancement does not rewrite issuing evidence or qualify it as journal-authenticated state.
 
+`stage_owner_advance` builds a private same-cleanup-task candidate by reconstructing the account
+and reusing existing ownership transfer fences. Active/open accounting, strict successor, no loan,
+closed machine work and settled historical containment precede atomic Move charging; missing
+containment stays unsettled. Success preserves issuing/history facts, roots and cleanup task.
+Refusal leaves the source unchanged. This is not physical transfer or journal publication authority;
+no durable ownership mutation cut is enabled and existing graph-image fences remain intact.
+
 `stage_finish(owner, ResourceFinishTransition::Begin)` builds a finishing candidate; `Complete`
 records a declared logical settlement instant using the same ledger rules. Both leave the source
 record unchanged and preserve its subject, cleanup ownership, quotas, roots and historical evidence.

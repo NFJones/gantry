@@ -12595,6 +12595,158 @@ fn runtime_containment_settlement_settles_one_operation_once() {
     );
 }
 
+/// Private owner candidates retain history and charge only after outstanding work settles.
+#[test]
+fn owner_candidates_preserve_history_and_refuse_outstanding_work() {
+    use gantry::runtime::{
+        HostResourceError, decode_resource_recovery_envelope, encode_resource_recovery_envelope,
+    };
+    let (program, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let owner = OwnerGeneration::new(4);
+    let successor = OwnerGeneration::new(5);
+    let record = ResourceLedger::new(
+        owner,
+        ResourceState::Usable,
+        &[LivenessRoot::Resource],
+        &[(QuotaOwner::Owner, QuotaFamily::Bytes, Quota::new(8, 0))],
+    )
+    .unwrap_or_else(|error| panic!("record: {error:?}"));
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    registry
+        .admit_pending_operation_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            record.durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    let charge = Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 2,
+    };
+    let pending = registry.declared_records_with_containment();
+    assert_eq!(
+        pending[0].stage_owner_advance(owner, successor, &[charge]),
+        Err(ResourceRegistryRefusal::OwnershipTransfer(
+            HostResourceError::PendingOperation
+        ))
+    );
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("operation"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    assert_eq!(
+        pending[0].stage_owner_advance(owner, successor, &[charge]),
+        Err(ResourceRegistryRefusal::OwnershipTransfer(
+            HostResourceError::ContainmentPending
+        ))
+    );
+    registry
+        .settle_containment(
+            &subject,
+            owner,
+            Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    let captured = registry.declared_records_with_containment();
+    let original = &captured[0];
+    for (presented, next, charges, expected) in [
+        (
+            OwnerGeneration::new(3),
+            owner,
+            vec![Charge {
+                amount: 9,
+                ..charge
+            }],
+            ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: owner,
+            },
+        ),
+        (
+            owner,
+            owner,
+            vec![Charge {
+                amount: 9,
+                ..charge
+            }],
+            ResourceError::InvalidSuccessorGeneration,
+        ),
+        (
+            owner,
+            successor,
+            vec![
+                charge,
+                Charge {
+                    family: QuotaFamily::Operations,
+                    ..charge
+                },
+            ],
+            ResourceError::UndeclaredQuota,
+        ),
+        (
+            owner,
+            successor,
+            vec![Charge {
+                amount: 9,
+                ..charge
+            }],
+            ResourceError::QuotaExhausted,
+        ),
+    ] {
+        assert_eq!(
+            original.stage_owner_advance(presented, next, &charges),
+            Err(ResourceRegistryRefusal::OwnershipTransfer(
+                HostResourceError::Model(expected)
+            ))
+        );
+        assert_eq!(registry.declared_records_with_containment(), captured);
+    }
+    let moved = original
+        .stage_owner_advance(owner, successor, &[charge])
+        .unwrap_or_else(|error| panic!("candidate: {error:?}"));
+    assert_eq!(moved.owner(), successor);
+    assert_eq!(moved.record().owner(), successor);
+    assert_eq!(
+        moved.record().quotas()[&(QuotaOwner::Owner, QuotaFamily::Bytes)].used(),
+        2
+    );
+    assert_eq!(moved.subject(), original.subject());
+    assert_eq!(moved.task_owner(), original.task_owner());
+    assert_eq!(moved.issuing_evidence(), original.issuing_evidence());
+    assert_eq!(
+        moved.containment_evidence(),
+        original.containment_evidence()
+    );
+    assert_eq!(
+        moved.record().liveness_roots(),
+        original.record().liveness_roots()
+    );
+    let bytes = encode_resource_recovery_envelope(&moved, 65_536)
+        .unwrap_or_else(|error| panic!("encode: {error:?}"));
+    assert_eq!(
+        decode_resource_recovery_envelope(program, &bytes, 65_536, successor, machine.task_id()),
+        Ok(moved)
+    );
+    assert_eq!(registry.declared_records_with_containment(), captured);
+    let legacy = registry.declared_records();
+    assert_eq!(
+        legacy[0].stage_owner_advance(owner, successor, &[]),
+        Err(ResourceRegistryRefusal::OwnershipTransfer(
+            HostResourceError::ContainmentPending
+        ))
+    );
+}
+
 /// Explicit containment capture preserves historical winners; ordinary capture remains accounting-only.
 #[test]
 fn explicit_resource_capture_preserves_containment_winners() {

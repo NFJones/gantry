@@ -15388,6 +15388,14 @@ Accounting reconstruction and declared capture MUST preserve this evidence indep
 current lifetime, owner and cleanup-task facts. Legacy construction leaves evidence absent;
 inspection of retained bytes MUST NOT reopen admission or imply journal authentication.
 
+`RecoveredResourceRecord::stage_owner_advance` MAY build a same-cleanup-task ownership candidate
+through complete accounting reconstruction and the existing transfer fences. Active/open lifetime,
+strict successor generation, absent loan roots, closed machine work and settled historical containment
+MUST precede atomic move charging. Missing containment MUST remain unsettled. Success changes only
+current owner and explicit quota use, preserving issuing evidence, cleanup task, roots and historical
+containment. Refusal MUST preserve the source. This candidate grants no physical transfer, journal
+publication or durable ownership mutation cut; existing graph-image fences remain required.
+
 `RecoveredResourceRecord::stage_finish` MAY build a logical begin/complete finish candidate.
 It MUST validate the presented current owner before applying the existing ledger transition,
 preserve subject, cleanup ownership, issuing and containment evidence, roots and quotas, and

@@ -772,6 +772,8 @@ impl RecoveredResourceRecord {
     /// Current ownership is checked before the model lifetime transition. Historical issuing
     /// and containment evidence, subject, cleanup ownership, roots and quotas are preserved.
     /// This creates no journal evidence, physical finalization or accepted-work settlement.
+    ///
+    /// See [`Self::stage_owner_advance`] for separately fenced ownership candidates.
     #[cfg(feature = "durable")]
     pub fn stage_finish(
         &self,
@@ -817,6 +819,37 @@ impl RecoveredResourceRecord {
         }
         let mut candidate = self.clone();
         candidate.record = ledger.durable_record();
+        Ok(candidate)
+    }
+
+    /// Builds a same-cleanup-task ownership candidate after existing transfer fences.
+    ///
+    /// Reconstruction validates the retained owner/carrier and preserves historical containment.
+    /// Active/open accounting, a strict successor, no loan, closed machine work and settled
+    /// containment must precede atomic Move charging. Missing containment remains unsettled.
+    /// Success preserves issuing evidence, roots and cleanup task; refusal changes no source fact.
+    /// This grants no physical transfer, journal publication or durable ownership mutation cut.
+    #[cfg(feature = "durable")]
+    pub fn stage_owner_advance(
+        &self,
+        owner: OwnerGeneration,
+        successor: OwnerGeneration,
+        charges: &[Charge],
+    ) -> Result<Self, ResourceRegistryRefusal> {
+        let mut registry =
+            ResourceRegistry::reconstruct_bounded(None, None, std::iter::once(self.clone()))?;
+        let account = registry
+            .accounts
+            .get_mut(&self.subject.registry_key())
+            .unwrap_or_else(|| {
+                unreachable!("successful one-record reconstruction retains its account")
+            });
+        account
+            .transfer_owner_with_charges(owner, successor, charges)
+            .map_err(ResourceRegistryRefusal::OwnershipTransfer)?;
+        let mut candidate = self.clone();
+        candidate.owner = successor;
+        candidate.record = account.durable_record();
         Ok(candidate)
     }
 }
