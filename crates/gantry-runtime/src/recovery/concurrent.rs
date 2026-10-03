@@ -2672,6 +2672,13 @@ pub fn recover_concurrent_authoritative_prefix(
     let (journal_id, envelopes, snapshot) = match prefix {
         JournalPrefixV1::Full(prefix) => (&prefix.journal_id, prefix.evidence.as_ref(), None),
         JournalPrefixV1::Snapshot(prefix) => {
+            if prefix.snapshot_version == super::CONCURRENT_FINISH_SNAPSHOT_VERSION_V1 {
+                let full = super::ConcurrentFinishSnapshotV1::expand(Arc::clone(&program), prefix)?;
+                return recover_concurrent_authoritative_prefix(
+                    program,
+                    &JournalPrefixV1::Full(full),
+                );
+            }
             if prefix.snapshot_version != CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1 {
                 return Err(DurableEvidenceError::Encoding);
             }

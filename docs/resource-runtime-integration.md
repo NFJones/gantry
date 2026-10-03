@@ -159,9 +159,16 @@ discards the candidate, while indeterminate submission retains the existing publ
 Only authoritative prefix recovery or a validated graph receipt seeds the complete predecessor.
 Capturing mutable transaction machines cannot seed it: matching records and journal coordinates
 do not establish that uncommitted machine progress belongs to the preceding cut.
-Full-prefix replay checks exact predecessor correspondence. Snapshot compaction containing these
-cuts refuses until its versioned carrier exists. No physical cleanup or accepted-work recovery
+Full-prefix replay checks exact predecessor correspondence. Legacy version-seven snapshot compaction
+containing these cuts refuses rather than discarding them. No physical cleanup or accepted-work recovery
 is supplied, and a finish after terminal publication does not reopen the language execution.
+
+`ConcurrentFinishSnapshotV1` retains complete envelope history in bounded `GNTCSF01` bytes under
+snapshot selector eight. It checks the caller's byte ceiling and a separate 16 MiB ceiling before
+body copying or input parsing. Recovery compares journal/frontier/evidence bindings, then replays
+the retained history and suffix through the same authoritative full-prefix validator. Legacy
+snapshot bytes remain unchanged. This preserves causal evidence without reducing history or
+embedding protected payload content; it supplies neither storage authenticity nor physical recovery.
 
 `encode_resource_recovery_envelope` and `decode_resource_recovery_envelope` carry those facts in
 the exact `GNTRRE01` envelope. Both accept an independent total byte ceiling; encoding checks

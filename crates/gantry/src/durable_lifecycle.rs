@@ -3445,6 +3445,28 @@ pub(crate) fn recover_durable_prefix(
 ) -> Result<RecoveredDurablePrefix, DurableEvidenceError> {
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     if let JournalPrefixV1::Snapshot(snapshot) = prefix
+        && snapshot.snapshot_version == gantry_runtime::CONCURRENT_FINISH_SNAPSHOT_VERSION_V1
+    {
+        let program = Arc::new(
+            gantry_runtime::ConcurrentFinishSnapshotV1::retained_program(
+                &snapshot.canonical_snapshot,
+            )?,
+        );
+        let retained = gantry_runtime::ConcurrentFinishSnapshotV1::decode(
+            Arc::clone(&program),
+            &snapshot.canonical_snapshot,
+            16_777_216,
+        )?;
+        let execution_start = retained.execution_start(&program)?;
+        let recovered = recover_concurrent_authoritative_prefix(program, prefix)?;
+        return Ok(RecoveredDurablePrefix::Concurrent {
+            execution_start: Box::new(execution_start),
+            recovered: Box::new(recovered),
+        });
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    if let JournalPrefixV1::Snapshot(snapshot) = prefix
         && snapshot.snapshot_version == CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1
     {
         let program = Arc::new(ConcurrentDurableRecoverySnapshotV1::retained_program(
@@ -4281,8 +4303,88 @@ mod tests {
                 evidence: Arc::from(evidence),
                 committed_through,
             });
-            let recovered = recover_concurrent_authoritative_prefix(program, &prefix)
+            let recovered = recover_concurrent_authoritative_prefix(Arc::clone(&program), &prefix)
                 .unwrap_or_else(|error| panic!("resource recovery: {error:?}"));
+            let JournalPrefixV1::Full(full) = &prefix else {
+                panic!("full fixture")
+            };
+            for frontier in [5, committed_through] {
+                let retained = FullJournalPrefixV1 {
+                    journal_id: journal.clone(),
+                    evidence: Arc::from(&full.evidence[..frontier as usize]),
+                    committed_through: frontier,
+                };
+                let snapshot = gantry_runtime::ConcurrentFinishSnapshotV1::from_full_prefix(
+                    Arc::clone(&program),
+                    &retained,
+                    16_777_216,
+                )
+                .unwrap_or_else(|error| panic!("finish snapshot: {error:?}"));
+                let exact = snapshot.canonical_bytes().len() as u64;
+                assert_eq!(
+                    gantry_runtime::ConcurrentFinishSnapshotV1::decode(
+                        Arc::clone(&program),
+                        snapshot.canonical_bytes(),
+                        exact,
+                    ),
+                    Ok(snapshot.clone())
+                );
+                assert!(
+                    gantry_runtime::ConcurrentFinishSnapshotV1::decode(
+                        Arc::clone(&program),
+                        snapshot.canonical_bytes(),
+                        exact - 1,
+                    )
+                    .is_err()
+                );
+                assert!(
+                    gantry_runtime::ConcurrentFinishSnapshotV1::from_full_prefix(
+                        Arc::clone(&program),
+                        &retained,
+                        exact - 1,
+                    )
+                    .is_err()
+                );
+                let mut framed = snapshot.prefix();
+                framed.suffix = Arc::from(&full.evidence[frontier as usize..]);
+                framed.committed_through = committed_through;
+                let framed = JournalPrefixV1::Snapshot(framed);
+                let replay = recover_concurrent_authoritative_prefix(Arc::clone(&program), &framed)
+                    .unwrap_or_else(|error| panic!("snapshot replay: {error:?}"));
+                assert_eq!(replay.latest_sequence(), recovered.latest_sequence());
+                assert_eq!(replay.latest_evidence_id(), recovered.latest_evidence_id());
+                assert_eq!(
+                    replay.execution().scheduler().resource_records(),
+                    recovered.execution().scheduler().resource_records()
+                );
+                assert_eq!(
+                    replay.execution().scheduler().state(),
+                    recovered.execution().scheduler().state()
+                );
+                assert!(matches!(
+                    recover_durable_prefix(&framed),
+                    Ok(RecoveredDurablePrefix::Concurrent { .. })
+                ));
+                let mut invalid = snapshot.prefix();
+                invalid.retained_evidence.clear();
+                assert!(
+                    recover_concurrent_authoritative_prefix(
+                        Arc::clone(&program),
+                        &JournalPrefixV1::Snapshot(invalid)
+                    )
+                    .is_err()
+                );
+                let mut corrupt = snapshot.canonical_bytes().to_vec();
+                corrupt[0] ^= 1;
+                assert!(
+                    gantry_runtime::ConcurrentFinishSnapshotV1::decode(
+                        Arc::clone(&program),
+                        &corrupt,
+                        exact,
+                    )
+                    .is_err()
+                );
+            }
             assert_eq!(
                 recovered.latest_cut(),
                 if lifetime == ResourceLifetimeState::Active {

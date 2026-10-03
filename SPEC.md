@@ -15403,8 +15403,17 @@ and install the reconstructed logical registry only after receipt validation. Dr
 submission MUST discard the private candidate; indeterminate submission MUST retain publication
 fencing. No callback, physical finalization or accepted-work recovery occurs. Full-prefix recovery
 MUST compare the embedded predecessor with the preceding authoritative graph before adopting the
-exact successor. Snapshot compaction containing these cuts remains unsupported and MUST refuse
+exact successor. Legacy version-seven snapshot compaction containing these cuts MUST refuse
 rather than omit them. Terminal outcomes MUST remain terminal when a later finish advances the tip.
+
+`ConcurrentFinishSnapshotV1` MAY retain the complete authoritative envelope history through the
+separate `GNTCSF01` carrier and snapshot selector eight. Its encoded history MUST fit both the
+caller-supplied ceiling and the independent 16,777,216-byte ceiling before envelope-body copying;
+decoding MUST admit bytes before parsing. Reconstruction MUST replay the retained history and
+suffix together, comparing the journal, frontier and exact retained identity/sequence bindings.
+Malformed framing, altered history, mismatched coordinates or noncanonical bytes MUST refuse.
+Legacy snapshot bytes remain unchanged. This is lossless history retention, not history reduction,
+storage authentication, protected-payload embedding or physical-resource reconstruction.
 
 The separately scoped `GNTRRE01` reconstruction envelope MAY carry canonical issuing checkpoint
 bytes, issuing budget, current cleanup-task identity and the declared subject-free record.

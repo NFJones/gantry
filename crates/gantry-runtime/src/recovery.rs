@@ -3,6 +3,10 @@
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 mod concurrent;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
+mod finish_snapshot;
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub use finish_snapshot::{CONCURRENT_FINISH_SNAPSHOT_VERSION_V1, ConcurrentFinishSnapshotV1};
+#[cfg(all(feature = "concurrent", feature = "durable"))]
 mod resource_finish;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use resource_finish::{RESOURCE_FINISH_EVIDENCE_KIND_V1, ResourceFinishEvidenceV1};
