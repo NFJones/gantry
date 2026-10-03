@@ -5092,6 +5092,25 @@ fn pending_action_checkpoint_rejects_missing_or_future_resource_generation() {
 
     let mut missing_generation = machine.checkpoint();
     assert!(missing_generation.test_set_resource_generation(None));
+    let origin_record = gantry_ir::ResourceLedger::new(
+        gantry_ir::OwnerGeneration::new(4),
+        gantry_ir::ResourceState::Usable,
+        &[gantry_ir::LivenessRoot::Resource],
+        &[],
+    )
+    .unwrap_or_else(|error| panic!("origin ledger: {error:?}"))
+    .durable_record();
+    assert!(matches!(
+        crate::RecoveredResourceRecord::from_issuing_checkpoint(
+            Arc::clone(&program),
+            missing_generation.clone(),
+            machine.budget_checkpoint(),
+            gantry_ir::ResourceCarrier::ReconstructionRecord,
+            gantry_ir::OwnerGeneration::new(4),
+            origin_record.clone(),
+        ),
+        Err(crate::ResourceOriginRecoveryError::Machine(_))
+    ));
     let missing_recovery =
         Machine::recover_from_checkpoint(Arc::clone(&program), missing_generation, budget.clone());
     assert!(
@@ -5101,6 +5120,20 @@ fn pending_action_checkpoint_rejects_missing_or_future_resource_generation() {
 
     let mut future_generation = machine.checkpoint();
     assert!(future_generation.test_set_resource_generation(Some(budget.snapshot().revision)));
+    assert_eq!(
+        crate::RecoveredResourceRecord::from_issuing_checkpoint(
+            Arc::clone(&program),
+            future_generation.clone(),
+            machine.budget_checkpoint(),
+            gantry_ir::ResourceCarrier::ReconstructionRecord,
+            gantry_ir::OwnerGeneration::new(4),
+            origin_record,
+        )
+        .err(),
+        Some(crate::ResourceOriginRecoveryError::Machine(
+            crate::MachineRecoveryError::InvalidCheckpoint
+        ))
+    );
     assert!(
         matches!(
             Machine::recover_from_checkpoint(program, future_generation, budget),

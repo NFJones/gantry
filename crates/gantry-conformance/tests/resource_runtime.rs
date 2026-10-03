@@ -9080,6 +9080,40 @@ fn runtime_subject_survives_checkpoint_recovery() {
 #[test]
 fn reconstruction_from_issuing_checkpoint_validates_origin_and_closes_admission() {
     use gantry::runtime::ResourceOriginRecoveryError;
+    for (program, machine, expected) in [
+        {
+            let (program, machine, _) =
+                machine_with_unauthenticated_subject(Some(FIXTURE_DECLARATION));
+            (
+                program,
+                machine,
+                ResourceRegistryRefusal::UnauthenticatedOperationKind,
+            )
+        },
+        {
+            let (program, machine, _) = machine_with_declared_subject(None);
+            (
+                program,
+                machine,
+                ResourceRegistryRefusal::NoPendingResourceSubject,
+            )
+        },
+    ] {
+        let before = machine.checkpoint().canonical_bytes();
+        assert_eq!(
+            RecoveredResourceRecord::from_issuing_checkpoint(
+                program,
+                machine.checkpoint(),
+                machine.budget_checkpoint(),
+                ResourceCarrier::ReconstructionRecord,
+                OwnerGeneration::new(4),
+                ledger().durable_record(),
+            )
+            .err(),
+            Some(ResourceOriginRecoveryError::Registry(expected))
+        );
+        assert_eq!(machine.checkpoint().canonical_bytes(), before);
+    }
     let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
     let subject = subject.unwrap_or_else(|| panic!("subject exists"));
     let origin = RecoveredResourceRecord::from_issuing_checkpoint(
