@@ -142,9 +142,15 @@ fn canonical_numeric_text_round_trips_exactly() {
         -1.0,
         -0.5,
         -f64::MIN_POSITIVE,
+        -f64::from_bits(1),
         0.0,
         0.5,
         1.0,
+        f64::from_bits(1),
+        0.000001,
+        0.0000001,
+        1e20,
+        1e21,
         f64::MIN_POSITIVE,
         f64::MAX,
     ] {
@@ -174,4 +180,18 @@ fn canonical_numeric_text_round_trips_exactly() {
         );
     }
     assert_eq!(parse_canonical_float("0.5"), Some(float(0.5)));
+    for exponent in 0_u64..2047 {
+        for fraction in [0, 1, (1_u64 << 52) - 1] {
+            for sign in [0, 1_u64 << 63] {
+                let element = float(f64::from_bits(sign | (exponent << 52) | fraction));
+                let text = format_canonical_float(element);
+                assert!(text.len() <= 32, "canonical spelling: {text}");
+                assert_eq!(parse_canonical_float(&text), Some(element));
+            }
+        }
+    }
+    assert_eq!(
+        parse_canonical_float(&format!("0.{}1", "0".repeat(1_048_576))),
+        None
+    );
 }

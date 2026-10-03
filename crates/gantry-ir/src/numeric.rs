@@ -121,6 +121,12 @@ pub fn format_canonical_float(value: GantryFloat) -> String {
 /// the same value is refused rather than normalized.
 #[must_use]
 pub fn parse_canonical_float(text: &str) -> Option<GantryFloat> {
+    // Shortest binary64 has at most seventeen significant digits. Fixed notation adds
+    // at most five leading fractional zeros; scientific notation has a three-digit
+    // exponent. Thirty-two bytes conservatively admits every canonical spelling.
+    if text.len() > 32 {
+        return None;
+    }
     let value = GantryFloat::new(text.parse::<f64>().ok()?)?;
     (format_canonical_float(value) == text).then_some(value)
 }

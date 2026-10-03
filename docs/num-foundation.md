@@ -141,6 +141,10 @@ Canonical integer parsing rejects more than sixteen magnitude octets before scan
 allocating formatted text, because the fixed canonical Int domain admits no longer magnitude.
 The runtime String parser uses this same canonical parser. This is implementation admission,
 not a new numeric work-budget contract; canonical spelling and range refusals remain unchanged.
+Canonical Float parsing likewise rejects text beyond a conservative 32-byte ceiling before
+scanning. Shortest binary64 significands and the canonical fixed/scientific formatting thresholds
+fit within that ceiling. Runtime String-to-Float parsing admits noncanonical JSON number text
+under a different contract and does not use this restriction.
 
 `GNT-40.6-canonical-numeric-text` publishes canonical text for the canonical `Int` and finite `Float` domains, adopting `GNT-35.2-literal-formation-and-canonical-text`'s rule: an `Int`'s text is an optional `-` with decimal digits, no leading zero on a multi-digit magnitude and no negative zero; a `Float`'s text is the canonical number spelling of its normalized binary64 value, the canonical number spelling `GNT-8.5` requires at canonical JSON boundaries. Formatting is total and publishes exactly the canonical text; parsing admits exactly the canonical text of one value and publishes nothing otherwise, so a non-canonical spelling is refused rather than normalized and `-0` is refused for both domains; the two directions round-trip exactly. `format_canonical_int`, `parse_canonical_int`, `format_canonical_float`, and `parse_canonical_float` publish this surface in the model. No source-literal grammar, digit separator, radix prefix, type suffix, bare `+`, trailing decimal point, non-finite or `NaN` text, rounding, host text facility, locale formatting, other type's text, work limit, cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine representation, or family behavior is published with them, and no performance, storage layout, or physical-representation claim is made.
 
