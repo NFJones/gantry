@@ -1055,6 +1055,49 @@ impl ResourceRegistry {
         self.admit(subject, carrier, record)
     }
 
+    /// Admits live accounting with validated issuing evidence under an envelope byte ceiling.
+    ///
+    /// Evidence validation and envelope admission precede registry insertion. Ordinary admission
+    /// still checks the authoritative machine lease and quotas; success retains that lease, not
+    /// the closed private recovery lease. This route grants no physical or journal authority.
+    #[cfg(feature = "durable")]
+    pub fn admit_pending_operation_with_issuing_evidence(
+        &mut self,
+        machine: &crate::Machine,
+        carrier: ResourceCarrier,
+        record: DurableResourceRecord,
+        maximum_bytes: u64,
+    ) -> Result<&AdmittedResource, ResourceRecoveryEnvelopeError> {
+        let origin = RecoveredResourceRecord::from_issuing_checkpoint(
+            machine.program_arc(),
+            machine.checkpoint(),
+            machine.budget_checkpoint(),
+            carrier,
+            record.owner(),
+            record.clone(),
+        )
+        .map_err(ResourceRecoveryEnvelopeError::Origin)?;
+        encode_resource_recovery_envelope(&origin, maximum_bytes)?;
+        let subject =
+            machine
+                .pending_resource_subject()
+                .ok_or(ResourceRecoveryEnvelopeError::Origin(
+                    ResourceOriginRecoveryError::Registry(
+                        ResourceRegistryRefusal::NoPendingResourceSubject,
+                    ),
+                ))?;
+        let key = subject.registry_key();
+        self.admit(subject, carrier, record).map_err(|error| {
+            ResourceRecoveryEnvelopeError::Origin(ResourceOriginRecoveryError::Registry(error))
+        })?;
+        let account = self
+            .accounts
+            .get_mut(&key)
+            .unwrap_or_else(|| unreachable!("successful admission retains the account"));
+        account.issuing_evidence = origin.issuing_evidence;
+        Ok(account)
+    }
+
     /// Reconstructs a whole registry from the records one recovery pass presents.
     ///
     /// Every presented record enters through the same admission path a live admission uses: the

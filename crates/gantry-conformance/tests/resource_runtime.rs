@@ -9230,6 +9230,94 @@ fn reconstruction_from_issuing_checkpoint_validates_origin_and_closes_admission(
     }
 }
 
+/// Bounded live admission retains issuing facts after machine work settles.
+#[test]
+fn bounded_live_admission_retains_issuing_evidence_after_settlement() {
+    use gantry::runtime::{ResourceRecoveryEnvelopeError, encode_resource_recovery_envelope};
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let issuing_bytes = machine.checkpoint().canonical_bytes();
+    let issuing_budget = machine.budget_checkpoint();
+    let mut refused = ResourceRegistry::with_limits(1, 1);
+    assert_eq!(
+        refused
+            .admit_pending_operation_with_issuing_evidence(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+                0,
+            )
+            .err(),
+        Some(ResourceRecoveryEnvelopeError::ByteLimit)
+    );
+    assert!(refused.declared_records().is_empty());
+    assert_eq!(refused.pending_operations(), 0);
+    let mut registry = ResourceRegistry::with_limits(1, 1);
+    registry
+        .admit_pending_operation_with_issuing_evidence(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("bounded admission: {error:?}"));
+    assert_eq!(registry.pending_operations(), 1);
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending operation"))
+        .identity;
+    let before_duplicate = registry.declared_records();
+    assert_eq!(
+        registry
+            .admit_pending_operation_with_issuing_evidence(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+                65_536,
+            )
+            .err(),
+        Some(ResourceRecoveryEnvelopeError::Origin(
+            gantry::runtime::ResourceOriginRecoveryError::Registry(
+                ResourceRegistryRefusal::SecondAdmission
+            )
+        ))
+    );
+    assert_eq!(registry.declared_records(), before_duplicate);
+    let mut no_live_capacity = ResourceRegistry::with_limits(0, 1);
+    assert_eq!(
+        no_live_capacity
+            .admit_pending_operation_with_issuing_evidence(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record(),
+                65_536,
+            )
+            .err(),
+        Some(ResourceRecoveryEnvelopeError::Origin(
+            gantry::runtime::ResourceOriginRecoveryError::Registry(
+                ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 }
+            )
+        ))
+    );
+    assert!(no_live_capacity.declared_records().is_empty());
+    assert_eq!(no_live_capacity.pending_operations(), 0);
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+    assert_eq!(registry.pending_operations(), 0);
+    let captured = registry.declared_records();
+    assert_eq!(captured[0].subject(), &subject);
+    assert_eq!(
+        captured[0].issuing_evidence(),
+        Some((issuing_bytes.as_slice(), issuing_budget))
+    );
+    assert!(encode_resource_recovery_envelope(&captured[0], 65_536).is_ok());
+}
+
 /// Issuing evidence travels canonically under independent byte and ownership admission bounds.
 #[test]
 fn resource_recovery_envelope_round_trips_and_refuses_invalid_admission() {

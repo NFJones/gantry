@@ -15340,6 +15340,13 @@ bytes, missing issuing evidence or noncanonical encodings MUST refuse without pu
 facts. This envelope grants no journal authentication, physical ownership or accepted-work recovery
 and does not relax combined-graph resource-state refusal.
 
+`admit_pending_operation_with_issuing_evidence` MAY retain validated issuing evidence during
+live accounting admission under an explicit envelope byte ceiling. Evidence validation and byte
+admission MUST precede registry insertion; ordinary authoritative machine-lease and quota checks
+MUST still succeed. Success MUST retain the authoritative lease, not the closed private recovery
+lease, so machine settlement releases pending capacity while historical issuing facts remain.
+Refusal MUST publish no account or pending capacity. This route grants no host or journal authority.
+
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
 slots, adapter poison history or admitted pending work would be omitted. Failed-adapter identity

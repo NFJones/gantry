@@ -128,6 +128,13 @@ trailing or alternate encodings. Legacy records without issuing evidence cannot 
 This is declared reconstruction carriage, not ordinary value serialization, journal authentication,
 or combined-graph integration; physical slots and accepted work are not restored.
 
+`admit_pending_operation_with_issuing_evidence` opts live accounting admission into retaining
+validated issuing facts under an explicit envelope byte ceiling. Evidence and byte admission run
+before insertion; ordinary machine-lease and quota checks still decide acquisition. The admitted
+account keeps the authoritative machine lease, so settlement releases pending capacity without
+discarding historical evidence. Refusal publishes no account or pending place. The route does not
+grant host authority, authenticate journal state or relax graph capture refusal.
+
 `ResourceRegistry::reconstruct_with_retained_limit` additionally bounds every reconstructed
 account, including terminal records. Existing evidence and live-capacity refusals retain
 precedence; the retained ceiling is checked before insertion. Recovery publishes the complete
