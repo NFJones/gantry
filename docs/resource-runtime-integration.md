@@ -145,6 +145,12 @@ record unchanged and preserve its subject, cleanup ownership, quotas, roots and 
 Stale ownership refuses before lifetime classification. This candidate performs no physical
 finalization or journal publication; publication requires the exact finish cut described below.
 
+`stage_finish_with_charges` privately admits a whole explicit release vector while active before
+entering finishing. Refusal leaves the source unchanged; success retains historical evidence and
+changes only declared quota use and lifetime. Complete candidates refuse additional charges.
+The existing `GNTRFT01` journal validator still rejects these extra quota changes: a charged
+candidate is not publication authority and needs a separately declared carrier.
+
 `ResourceFinishEvidenceV1` compares two executable-validated graph checkpoints. One owner-qualified
 finish at a canonical record index must reproduce the complete successor, rejecting unrelated
 graph, policy or historical changes. Its separate `GNTRFT01` carrier uses an independent total

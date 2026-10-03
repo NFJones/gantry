@@ -15381,6 +15381,13 @@ leave its source record unchanged on success or refusal. Completion records only
 logical instant. A candidate grants no physical finalization, accepted-work settlement or
 journal publication authority; publication requires the separately declared exact finish cut below.
 
+`stage_finish_with_charges` MAY privately admit an explicit whole release vector while active,
+then enter finishing atomically. Ownership and lifetime MUST precede quota validation; refusal
+MUST preserve its source. Success changes only lifetime and explicitly charged quota use, retaining
+all historical evidence. Complete candidates MUST refuse nonempty vectors rather than recharge
+accepted cleanup. Existing `GNTRFT01` evidence MUST NOT authorize additional quota changes; charged
+candidates require a separately declared journal carrier before publication.
+
 `ResourceFinishEvidenceV1` MAY validate one exact finish candidate between two complete graph
 checkpoints. Both graphs MUST validate against the executable; applying the owner-qualified
 transition at the supplied canonical record index MUST reproduce the entire successor exactly.

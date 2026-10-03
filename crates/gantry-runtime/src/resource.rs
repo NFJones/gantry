@@ -778,6 +778,21 @@ impl RecoveredResourceRecord {
         owner: OwnerGeneration,
         transition: ResourceFinishTransition,
     ) -> Result<Self, ResourceError> {
+        self.stage_finish_with_charges(owner, transition, &[])
+    }
+
+    /// Builds a private begin-finish candidate with one explicit atomic release vector.
+    ///
+    /// Ownership and lifetime precede charging. Complete candidates admit no new charges;
+    /// refusal preserves the source, and success changes only declared use and lifetime.
+    /// Existing journal finish evidence does not authorize these additional quota changes.
+    #[cfg(feature = "durable")]
+    pub fn stage_finish_with_charges(
+        &self,
+        owner: OwnerGeneration,
+        transition: ResourceFinishTransition,
+        charges: &[Charge],
+    ) -> Result<Self, ResourceError> {
         if owner != self.owner || owner != self.record.owner() {
             return Err(ResourceError::StaleOwner {
                 presented: owner,
@@ -786,8 +801,19 @@ impl RecoveredResourceRecord {
         }
         let mut ledger = ResourceLedger::reconstruct(self.record.clone());
         match transition {
-            ResourceFinishTransition::Begin => ledger.begin_finish()?,
-            ResourceFinishTransition::Complete { settled_at } => ledger.finish(settled_at)?,
+            ResourceFinishTransition::Begin => {
+                if ledger.lifetime() != ResourceLifetimeState::Active {
+                    return Err(ResourceError::IllegalLifetimeTransition);
+                }
+                ledger.charge(owner, ResourceAction::Release, charges)?;
+                ledger.begin_finish()?;
+            }
+            ResourceFinishTransition::Complete { settled_at } => {
+                if !charges.is_empty() {
+                    return Err(ResourceError::IllegalLifetimeTransition);
+                }
+                ledger.finish(settled_at)?;
+            }
         }
         let mut candidate = self.clone();
         candidate.record = ledger.durable_record();

@@ -10274,8 +10274,13 @@ fn resource_envelope_set_restore_preserves_policy_and_refuses_partial_sets() {
     let (program, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
     let subject = subject.unwrap_or_else(|| panic!("subject"));
     let owner = OwnerGeneration::new(4);
-    let record = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
-        .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+    let record = ResourceLedger::new(
+        owner,
+        ResourceState::Usable,
+        &[LivenessRoot::Resource],
+        &[(QuotaOwner::Owner, QuotaFamily::Bytes, Quota::new(8, 0))],
+    )
+    .unwrap_or_else(|error| panic!("ledger: {error:?}"));
     let mut registry = ResourceRegistry::with_accounting_limits(1, 2, 3);
     registry
         .admit_pending_operation_with_issuing_evidence(
@@ -10304,6 +10309,102 @@ fn resource_envelope_set_restore_preserves_policy_and_refuses_partial_sets() {
     let captured = registry.declared_records_with_containment();
     let original = &captured[0];
     use gantry::runtime::ResourceFinishTransition;
+    let charge = Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 2,
+    };
+    assert_eq!(
+        original.stage_finish_with_charges(
+            owner,
+            ResourceFinishTransition::Begin,
+            &[
+                charge,
+                Charge {
+                    family: QuotaFamily::Operations,
+                    ..charge
+                }
+            ]
+        ),
+        Err(ResourceError::UndeclaredQuota)
+    );
+    assert_eq!(
+        original.stage_finish_with_charges(
+            owner,
+            ResourceFinishTransition::Begin,
+            &[Charge {
+                amount: 9,
+                ..charge
+            }]
+        ),
+        Err(ResourceError::QuotaExhausted)
+    );
+    let charged = original
+        .stage_finish_with_charges(owner, ResourceFinishTransition::Begin, &[charge])
+        .unwrap_or_else(|error| panic!("charged candidate: {error:?}"));
+    assert_eq!(
+        charged.record().lifetime(),
+        ResourceLifetimeState::Finishing
+    );
+    assert_eq!(
+        charged.record().quotas()[&(QuotaOwner::Owner, QuotaFamily::Bytes)].used(),
+        2
+    );
+    assert_eq!(charged.subject(), original.subject());
+    assert_eq!(charged.task_owner(), original.task_owner());
+    assert_eq!(charged.issuing_evidence(), original.issuing_evidence());
+    assert_eq!(
+        charged.containment_evidence(),
+        original.containment_evidence()
+    );
+    assert_eq!(
+        charged.record().liveness_roots(),
+        original.record().liveness_roots()
+    );
+    assert_eq!(
+        charged.stage_finish_with_charges(
+            owner,
+            ResourceFinishTransition::Complete { settled_at: 20 },
+            &[charge]
+        ),
+        Err(ResourceError::IllegalLifetimeTransition)
+    );
+    let charged_finished = charged
+        .stage_finish(owner, ResourceFinishTransition::Complete { settled_at: 20 })
+        .unwrap_or_else(|error| panic!("charged completion: {error:?}"));
+    assert_eq!(
+        charged_finished.record().quotas(),
+        charged.record().quotas()
+    );
+    for candidate in [&charged, &charged_finished] {
+        assert_eq!(
+            candidate.stage_finish_with_charges(
+                OwnerGeneration::new(3),
+                ResourceFinishTransition::Begin,
+                &[Charge {
+                    amount: 9,
+                    ..charge
+                }]
+            ),
+            Err(ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: owner
+            })
+        );
+        let bytes = gantry::runtime::encode_resource_recovery_envelope(candidate, 65_536)
+            .unwrap_or_else(|error| panic!("charged envelope: {error:?}"));
+        assert_eq!(
+            gantry::runtime::decode_resource_recovery_envelope(
+                Arc::clone(&program),
+                &bytes,
+                65_536,
+                owner,
+                machine.task_id()
+            ),
+            Ok(candidate.clone())
+        );
+    }
+    assert_eq!(registry.declared_records_with_containment(), captured);
     assert_eq!(
         original.stage_finish(OwnerGeneration::new(3), ResourceFinishTransition::Begin),
         Err(ResourceError::StaleOwner {
