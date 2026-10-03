@@ -193,7 +193,11 @@ fn durable_resource_handoff_preserves_exact_graph_and_task_eligibility() {
         operation: JournalOwnerOperationV1::Start,
     }))
     .unwrap_or_else(|error| panic!("ownership: {error:?}"));
-    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), ownership.token);
+    let counted = Arc::new(CountedCommitStore {
+        storage: Arc::clone(&storage),
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let sink = DurableTransitionSink::new(counted.clone(), journal.clone(), ownership.token);
     let source = root.task_id();
     let mut writer = DurableCommitCoordinatorV1::new(&sink, execution, source, None)
         .unwrap_or_else(|error| panic!("writer: {error:?}"));
@@ -229,6 +233,57 @@ fn durable_resource_handoff_preserves_exact_graph_and_task_eligibility() {
     drop(stage);
     assert_eq!(coordinator.snapshot(), before);
     assert_eq!(root.checkpoint(), machine_before);
+    // Closure is monotonic and can race private staging without entering journal history.
+    let admission = previous
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("closure recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("closure admission: {error:?}"));
+    let (closed_owner, mut closed_root, mut closed_children, _) = admission.into_parts();
+    let closed_before = closed_owner.snapshot();
+    let closed_machine = closed_root.checkpoint();
+    let frontier = writer.frontier();
+    let prefix_before = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("closure prefix: {error:?}"));
+    let calls_before = counted.calls.load(std::sync::atomic::Ordering::Acquire);
+    let mut closed_stage = closed_owner
+        .stage_graph(&mut closed_root, &mut closed_children)
+        .unwrap_or_else(|error| panic!("closure stage: {error:?}"));
+    closed_stage
+        .stage_resource_task_handoff(
+            &subject,
+            (source, created.task_id),
+            (owner, successor),
+            &[charge],
+        )
+        .unwrap_or_else(|error| panic!("closure candidate: {error:?}"));
+    assert!(closed_owner.close_resource_admission());
+    assert_eq!(
+        ready(closed_stage.commit(
+            &mut writer,
+            DurableCommitCutV1::ResourceOwnerAdvance,
+            created.task_id
+        )),
+        Err(DurableCommitError::InvalidState)
+    );
+    assert_eq!(
+        counted.calls.load(std::sync::atomic::Ordering::Acquire),
+        calls_before
+    );
+    assert_eq!(writer.frontier(), frontier);
+    assert_eq!(closed_owner.snapshot(), closed_before);
+    assert_eq!(closed_root.checkpoint(), closed_machine);
+    assert!(!lock(&closed_owner.inner.state).durable_publication_reserved);
+    assert_eq!(
+        ready(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: journal.clone(),
+        }))
+        .unwrap_or_else(|error| panic!("refused closure prefix: {error:?}")),
+        prefix_before
+    );
     let mut stage = coordinator
         .stage_graph(&mut root, &mut children)
         .unwrap_or_else(|error| panic!("publish stage: {error:?}"));
