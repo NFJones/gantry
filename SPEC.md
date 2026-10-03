@@ -12153,7 +12153,10 @@ read as, reported as, or substituted for another.
 Executable admission MUST require each retained action signature to equal the canonical signature
 derived from its action path, recovery class, declaration-order parameters and successful result
 type. Present action metadata MUST belong to an action-kind operation, and its operand count MUST
-equal the declared parameter count. Contradictory workflow metadata MUST refuse with `InvalidOperationMetadata`; spawned-body
+equal the declared parameter count. Every metadata-bearing operation instruction MUST consume
+its declared successful result type, or exactly `Result<successful-result, OperationError>` when
+attempted; neither result nor sealed error type may be substituted. Contradictory workflow metadata
+MUST refuse with `InvalidOperationMetadata`; spawned-body
 validation wraps that refusal as `InvalidTaskBody`. Both MUST refuse before machine execution;
 retained decoding MUST NOT silently repair an in-memory contradiction. This consistency check
 does not authenticate the executable artifact or grant dispatch authority.

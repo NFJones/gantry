@@ -888,7 +888,7 @@ pub enum ProgramError {
     InvalidTarget(CanonicalPath),
     /// A call references no workflow or has the wrong arity.
     InvalidCall(CanonicalPath),
-    /// Action kind, operand count or signature disagrees with its retained declaration metadata.
+    /// Operation result type, action kind, operand count or signature contradicts retained metadata.
     InvalidOperationMetadata(CanonicalPath),
     /// Aggregate metadata and operand count disagree.
     InvalidAggregate(CanonicalPath),
@@ -1039,6 +1039,19 @@ fn validate_instruction(
     task_body_indexes: &BTreeMap<TaskBodyIdentity, usize>,
 ) -> Result<(), ProgramError> {
     match &instruction.kind {
+        InstructionKind::OperationCall { operation, .. }
+            if instruction.ty
+                != if operation.attempted {
+                    TypeDescriptor::result(
+                        operation.result_type.clone(),
+                        TypeDescriptor::OPERATION_ERROR,
+                    )
+                } else {
+                    operation.result_type.clone()
+                } =>
+        {
+            return Err(ProgramError::InvalidOperationMetadata(workflow.clone()));
+        }
         InstructionKind::OperationCall {
             operation,
             operands,
@@ -1337,7 +1350,7 @@ mod tests {
         assert!(
             call_program(
                 InstructionKind::OperationCall {
-                    operation,
+                    operation: operation.clone(),
                     operands: 1
                 },
                 CanonicalCallableIdentity::free(&path("crate::callee"), &[]),
@@ -1346,6 +1359,57 @@ mod tests {
             .is_err(),
             "action operand count must equal its declared parameter count"
         );
+        // Dispatch metadata and source consumption must describe the same successful value.
+        // Attempt adds exactly the sealed OperationError wrapper, not a caller-selected type.
+        let admit_result = |operation: ExecutableOperation, ty: TypeDescriptor| {
+            MachineProgram::new(vec![Workflow {
+                path: path("crate::result_correspondence"),
+                parameters: vec![],
+                result: TypeDescriptor::UNIT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: StructuralPosition::new(vec![0])
+                            .unwrap_or_else(|error| panic!("site: {error}")),
+                        ty,
+                        kind: InstructionKind::OperationCall {
+                            operation,
+                            operands: 0,
+                        },
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![1])
+                            .unwrap_or_else(|error| panic!("site: {error}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+        };
+        assert!(admit_result(operation.clone(), TypeDescriptor::UNIT).is_ok());
+        assert!(
+            admit_result(operation.clone(), TypeDescriptor::BOOL).is_err(),
+            "instruction type cannot substitute for the declared successful result"
+        );
+        let mut attempted = operation;
+        attempted.attempted = true;
+        assert!(
+            admit_result(
+                attempted.clone(),
+                TypeDescriptor::result(TypeDescriptor::UNIT, TypeDescriptor::OPERATION_ERROR,)
+            )
+            .is_ok()
+        );
+        for ty in [
+            TypeDescriptor::UNIT,
+            TypeDescriptor::result(TypeDescriptor::BOOL, TypeDescriptor::OPERATION_ERROR),
+            TypeDescriptor::result(TypeDescriptor::UNIT, TypeDescriptor::STRING),
+        ] {
+            assert!(
+                admit_result(attempted.clone(), ty).is_err(),
+                "attempt must retain the exact successful result and sealed error type"
+            );
+        }
     }
 
     #[test]
