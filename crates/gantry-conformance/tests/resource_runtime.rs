@@ -308,42 +308,68 @@ fn resource_recovery_inputs(
     (tasks, sessions)
 }
 
-/// Recovered empty accounting policy still enforces live and pending admission limits.
+/// Recovered empty accounting policy still enforces independent admission limits.
 #[test]
 fn durable_resource_policy_enforces_admission_after_driver_recovery() {
     use gantry::runtime::{
-        ConcurrentDurableCheckpointV6, CoordinatorResourceRefusal, ExecutionCoordinator,
+        ConcurrentDurableCheckpointV6, ConcurrentDurableCheckpointV7, CoordinatorResourceRefusal,
+        ExecutionCoordinator,
     };
-    for (live, pending, expected) in [
+    for (live, pending, retained, expected) in [
         (
             0,
             1,
+            None,
             Some(ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 }),
         ),
         (
             1,
             0,
+            None,
             Some(ResourceRegistryRefusal::PendingOperationLimitReached { limit: 0 }),
         ),
-        (1, 1, None),
+        (1, 1, None, None),
+        (
+            1,
+            1,
+            Some(0),
+            Some(ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 0 }),
+        ),
+        (1, 1, Some(1), None),
     ] {
         let (program, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
         let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
-        let coordinator = ExecutionCoordinator::new_with_budget_and_resource_limits(
-            tasks,
-            sessions,
-            machine.execution_budget(),
-            live,
-            pending,
-        )
+        let coordinator = if let Some(retained) = retained {
+            ExecutionCoordinator::new_with_budget_and_accounting_limits(
+                tasks,
+                sessions,
+                machine.execution_budget(),
+                live,
+                pending,
+                retained,
+            )
+        } else {
+            ExecutionCoordinator::new_with_budget_and_resource_limits(
+                tasks,
+                sessions,
+                machine.execution_budget(),
+                live,
+                pending,
+            )
+        }
         .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
         let checkpoint = coordinator
             .capture_checkpoint(&machine, &std::collections::BTreeMap::new())
             .unwrap_or_else(|error| panic!("empty accounting capture: {error:?}"));
-        let decoded =
+        let decoded: gantry::runtime::ConcurrentDurableCheckpointV4 = if retained.is_some() {
+            ConcurrentDurableCheckpointV7::decode(&program, &checkpoint.canonical_bytes())
+                .unwrap_or_else(|error| panic!("retained policy decode: {error:?}"))
+                .into()
+        } else {
             ConcurrentDurableCheckpointV6::decode(&program, &checkpoint.canonical_bytes())
-                .unwrap_or_else(|error| panic!("policy decode: {error:?}"));
-        let decoded: gantry::runtime::ConcurrentDurableCheckpointV4 = decoded.into();
+                .unwrap_or_else(|error| panic!("policy decode: {error:?}"))
+                .into()
+        };
         let admission = decoded
             .recover(program)
             .unwrap_or_else(|error| panic!("policy recovery: {error:?}"))

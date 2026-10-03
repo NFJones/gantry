@@ -6951,7 +6951,12 @@ mod tests {
             dispatch_id,
             request_bytes,
         };
-        for policy in [None, Some((None, None)), Some((Some(1), Some(3)))] {
+        for policy in [
+            None,
+            Some((None, None)),
+            Some((Some(1), Some(3))),
+            Some((Some(0), Some(3))),
+        ] {
             let mut bytes = prepared.checkpoint().canonical_bytes();
             bytes.truncate(bytes.len() - 26);
             if let Some((live, pending)) = policy {
