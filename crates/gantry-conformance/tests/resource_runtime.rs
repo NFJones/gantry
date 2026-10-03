@@ -6113,7 +6113,50 @@ fn host_receiver_loan_settlement_survives_machine_cancellation() {
             .borrow_receiver(transport_live(FIXTURE_DECLARATION, 0, 4, true))
             .unwrap_or_else(|_| panic!("loan admits before cancellation"));
         assert!(machine.cancel("accepted loan cancelled").is_some());
+        let charges = [Charge {
+            owner: QuotaOwner::Owner,
+            family: QuotaFamily::Bytes,
+            amount: 1,
+        }];
+        assert_eq!(
+            loan.invoke_with_charges(&charges, |value| Ok(*value)),
+            Ok(17)
+        );
+        let progress = loan.live().clone();
+        assert_eq!(
+            loan.invoke_with_charges::<()>(
+                &[Charge {
+                    amount: 9,
+                    ..charges[0]
+                }],
+                |_| { panic!("exhausted quota cannot invoke acquired work") }
+            ),
+            Err(gantry::runtime::HostResourceError::Model(
+                ResourceError::QuotaExhausted
+            )),
+        );
+        assert_eq!(loan.live(), &progress);
+        let failure = gantry::host::contracts::HostError {
+            code: Arc::from("acquired-loan-failure"),
+            protected_diagnostic: None,
+        };
+        assert_eq!(
+            loan.invoke_with_charges::<()>(&charges, |_| Err(failure.clone())),
+            Err(gantry::runtime::HostResourceError::Host(failure)),
+        );
+        assert!(matches!(
+            loan.invoke_with_charges::<()>(&charges, |_| panic!("accepted loan callback panic")),
+            Err(gantry::runtime::HostResourceError::Boundary(_)),
+        ));
+        assert!(matches!(
+            loan.invoke_with_charges::<()>(&charges, |_| panic!("poisoned loan cannot invoke")),
+            Err(gantry::runtime::HostResourceError::Boundary(_)),
+        ));
         assert!(loan.settle_failure(FailureClass::ResourceFailure).is_ok());
+        assert_eq!(
+            loan.invoke_with_charges::<()>(&charges, |_| panic!("settled loan cannot invoke")),
+            Err(gantry::runtime::HostResourceError::LoanSettled),
+        );
     }
     assert!(
         !resource
@@ -6125,6 +6168,12 @@ fn host_receiver_loan_settlement_survives_machine_cancellation() {
     assert_eq!(
         resource.account().ledger().lifetime(),
         ResourceLifetimeState::Active
+    );
+    assert_eq!(
+        resource
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(5)
     );
     assert!(machine.checkpoint().pending_operation().is_some());
     assert_eq!(

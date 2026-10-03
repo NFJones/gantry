@@ -15565,6 +15565,12 @@ physical size or observation allowance. Ordinary borrowing uses an empty vector.
 settlement and sealed cleanup remain available after cancellation. Accepted Section 20 settlement MUST project
 only operation state and close that loan root; refused settlement MUST retain the guard and
 observed progress. No loan settlement releases whole-resource lifetime or pending machine work.
+An acquired `HostReceiverLoan` MAY expose `invoke_with_charges` for an explicit whole update
+vector. Loan, adapter, disposal and transport eligibility MUST precede quota admission; refusal
+MUST retain the loan and progress without spending quota. Admitted callback error or panic MUST
+retain charges. This route MUST NOT reacquire cancellation admission for already-owned loan work
+or implicitly settle it; explicit settlement and sealed cleanup remain available. Legacy uncharged
+loan invocation remains unchanged and no physical-size or observation charge is inferred.
 The guard MAY explicitly settle a classified adapter or resource failure through the retained
 Section 20 failure winner. Failure settlement MUST project only that winner's operation state
 and close only the loan root; adapter failure additionally poisons the transport boundary.

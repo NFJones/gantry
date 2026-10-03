@@ -474,6 +474,28 @@ impl<T> HostReceiverLoan<'_, T> {
         &mut self,
         callback: impl FnOnce(&mut T) -> Result<R, HostError>,
     ) -> Result<R, HostResourceError> {
+        self.invoke_using(None, callback)
+    }
+
+    /// Admits acquired-loan callback work with an explicit atomic update-charge vector.
+    ///
+    /// Existing loan, adapter, disposal and transport eligibility precedes charging. Quota
+    /// refusal preserves the guard and progress; admitted callback errors retain charges.
+    /// This does not reacquire a cancellation lease or settle already-admitted loan work.
+    pub fn invoke_with_charges<R>(
+        &mut self,
+        charges: &[gantry_ir::Charge],
+        callback: impl FnOnce(&mut T) -> Result<R, HostError>,
+    ) -> Result<R, HostResourceError> {
+        self.invoke_using(Some(charges), callback)
+    }
+
+    /// Shares acquired-loan admission without changing legacy uncharged callback behavior.
+    fn invoke_using<R>(
+        &mut self,
+        charges: Option<&[gantry_ir::Charge]>,
+        callback: impl FnOnce(&mut T) -> Result<R, HostError>,
+    ) -> Result<R, HostResourceError> {
         if self.settled {
             return self
                 .resource
@@ -492,6 +514,25 @@ impl<T> HostReceiverLoan<'_, T> {
                 .resource
                 .refuse_callback(callback, HostResourceError::Disposed);
         };
+        if let Some(charges) = charges {
+            if self.resource.poison.is_poisoned() {
+                return self.resource.refuse_callback(
+                    callback,
+                    HostResourceError::Boundary(BoundaryFailure {
+                        origin: gantry_host::containment::PanicOrigin::Integration,
+                    }),
+                );
+            }
+            if let Err(error) = self.resource.account.charge(
+                self.live.owner(),
+                gantry_ir::ResourceAction::Update,
+                charges,
+            ) {
+                return self
+                    .resource
+                    .refuse_callback(callback, HostResourceError::Model(error));
+            }
+        }
         invoke_contained(&self.resource.poison, value, callback)
     }
 

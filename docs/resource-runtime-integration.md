@@ -518,8 +518,14 @@ remains available and does not rewrite accepted settlement or progress evidence.
 `observe` retains Section 20
 allowances and progress rules; accepted `settle` projects operation state and closes only the
 loan root. Refusal retains the guard and progress for another candidate. Whole-resource lifetime,
-quotas and pending machine work remain separate. Owner invocation, finish and transfer stay
-fenced even if the guard is forgotten; dropping an unsettled guard poisons transport without
+quotas and pending machine work remain separate.
+`HostReceiverLoan::invoke_with_charges` admits an explicit whole update vector after existing
+loan, adapter, disposal and transport checks. Quota refusal preserves the acquired guard and
+progress; admitted callback errors or panics retain charges. It does not reacquire cancellation
+admission for already-owned loan work or settle it. Explicit settlement and cleanup remain available.
+Legacy uncharged invocation remains unchanged, with no inferred physical or observation charge.
+Owner invocation, finish and transfer stay fenced even if the guard is forgotten;
+dropping an unsettled guard poisons transport without
 claiming settlement. Sealed emergency cleanup can still dispose the held value. These are
 process-local synchronous loans, not source-evaluator borrowing or durable loan recovery.
 `HostReceiverLoan::settle_failure` explicitly accepts one classified failure winner, projects
