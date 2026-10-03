@@ -6939,6 +6939,31 @@ fn runtime_projects_retained_failure_state_without_releasing_accounting() {
             registry.project_operation_state(&live, &subject),
             Err(ResourceRegistryRefusal::OperationStateProjectionNotSettled)
         );
+        if failure == FailureClass::AdapterFailure {
+            let half_closed = registry.declared_records();
+            let mut older_success = transport_live(FIXTURE_DECLARATION, 0, 4, false);
+            let completion = OperationSettlement::new(
+                older_success.operation(),
+                older_success.generation(),
+                older_success.owner(),
+                ExternalOutcome::Accepted,
+                ProgressObservation::ShortRead,
+                29,
+            )
+            .unwrap_or_else(|error| panic!("older completion: {error:?}"));
+            assert!(older_success.settle(&completion).is_ok());
+            assert_eq!(
+                registry.project_operation_state(&older_success, &subject),
+                Err(ResourceRegistryRefusal::OperationStateProjection(
+                    ResourceError::TerminalOperationStateRevival
+                ))
+            );
+            assert_eq!(registry.declared_records(), half_closed);
+            assert_eq!(
+                registry.project_failure_state(&live, &subject),
+                Ok(ResourceState::HalfClosed)
+            );
+        }
         let records = registry.declared_records();
         let stale = transport_live(FIXTURE_DECLARATION, 0, 3, false);
         let mut stale = stale;

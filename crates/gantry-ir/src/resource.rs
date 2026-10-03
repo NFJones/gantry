@@ -699,7 +699,7 @@ impl ResourceLedger {
         }
         if matches!(
             self.operation_state,
-            ResourceState::Consumed | ResourceState::Closed
+            ResourceState::HalfClosed | ResourceState::Consumed | ResourceState::Closed
         ) && projection.state().is_open()
         {
             return Err(ResourceError::TerminalOperationStateRevival);

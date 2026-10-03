@@ -373,7 +373,7 @@ would otherwise derive another state; projection preserves the fence without rew
 or progress evidence.
 Once the ledger retains `Poisoned`, older non-poisoned projections refuse with
 `PoisonedOperationStateRevival` without changing any accounting fact.
-Consumed and closed generations likewise refuse projections restoring an open half with
+Half-closed, consumed and closed generations likewise refuse projections restoring an open half with
 `TerminalOperationStateRevival`. Current-owner validation still precedes this refusal;
 repeated terminal projection and subsequent poison fencing remain available.
 The route updates only the distinct operation-state field; it does not settle whole-resource
