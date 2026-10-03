@@ -1397,10 +1397,23 @@ impl ResourceRegistry {
             .checked_sub(8)
             .ok_or(ResourceRecoveryEnvelopeError::ByteLimit)?;
         let mut envelopes = Vec::new();
-        for record in self.declared_records_with_containment() {
+        for account in self.accounts.values() {
             remaining = remaining
                 .checked_sub(8)
                 .ok_or(ResourceRecoveryEnvelopeError::ByteLimit)?;
+            let mut record = RecoveredResourceRecord::new(
+                account.subject().clone(),
+                ResourceCarrier::ReconstructionRecord,
+                account.ledger().owner(),
+                account.durable_record(),
+            );
+            record.task_owner = account.task_owner;
+            record.issuing_evidence = account.issuing_evidence.clone();
+            let containment = account.containment();
+            record.containment_evidence = Some((
+                containment.owner(),
+                containment.effect_state().zip(containment.outcome()),
+            ));
             let envelope = encode_resource_recovery_envelope(&record, remaining)?;
             remaining = remaining
                 .checked_sub(

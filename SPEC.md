@@ -15356,7 +15356,10 @@ under one total ceiling accounting for an eight-byte count and each eight-byte m
 Pending admitted work, live loan roots, physical slots, adapter bindings and retained poison history
 MUST refuse before record projection because these envelopes cannot preserve those obligations.
 Missing issuing evidence or aggregate byte exhaustion MUST refuse the whole capture without
-publishing partial output or changing accounting. This capture does not relax graph eligibility.
+publishing partial output or changing accounting. Capture MUST project members incrementally
+after admitting their framing rather than eagerly cloning the complete accounting set.
+This bounds projection to the processed prefix, not total transient heap usage.
+This capture does not relax graph eligibility.
 
 `reconstruct_recovery_envelopes` MAY atomically restore a complete canonical set under separately
 supplied current owners, cleanup tasks and optional live, pending and retained ceilings. Aggregate

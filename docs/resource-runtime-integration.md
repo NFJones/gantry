@@ -142,7 +142,9 @@ runtime-subject order, preserving issuing and containment evidence under one sha
 The ceiling includes an eight-byte count and eight-byte lengths for every envelope. Pending
 work, live loan roots, physical slots, adapter bindings and poison history refuse before
 projection. Missing evidence or byte exhaustion returns no partial set and changes no
-accounting; combined graph eligibility remains unchanged.
+accounting. Members are projected incrementally after framing admission, avoiding an eager
+clone of the complete accounting set. This is not a total transient-allocation guarantee;
+combined graph eligibility remains unchanged.
 
 `reconstruct_recovery_envelopes` restores a complete ordered set with independently supplied
 owner generations, cleanup tasks and optional live/pending/retained policy. Aggregate framed
