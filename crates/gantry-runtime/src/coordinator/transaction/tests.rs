@@ -1051,6 +1051,90 @@ fn resource_records_survive_version_eight_graph_recovery() {
     let JournalPrefixV1::Full(mut full) = prefix else {
         panic!("full prefix")
     };
+    // A lost response is not evidence that the finish did not commit.
+    let lost_storage = Arc::new(InMemoryJournalStore::new());
+    let lost_journal = JournalId::new("resource-finish-lost-response")
+        .unwrap_or_else(|error| panic!("lost journal: {error:?}"));
+    let lost_ownership = ready(lost_storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: lost_journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("lost ownership: {error:?}"));
+    let lost_sink = DurableTransitionSink::new(
+        lost_storage.clone(),
+        lost_journal.clone(),
+        lost_ownership.token.clone(),
+    );
+    let mut seed = DurableCommitCoordinatorV1::new(&lost_sink, execution, task, None)
+        .unwrap_or_else(|error| panic!("lost seed: {error:?}"));
+    ready(seed.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, task, checkpoint.clone()))
+        .unwrap_or_else(|error| panic!("lost predecessor commit: {error:?}"));
+    let lost_prefix = ready(lost_storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: lost_journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("lost predecessor prefix: {error:?}"));
+    let admission = checkpoint
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("lost recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("lost admission: {error:?}"));
+    let (lost_owner, mut lost_root, mut lost_children, _) = admission.into_parts();
+    let before = lost_owner.snapshot();
+    let response_store = Arc::new(LostFinishResponseStore {
+        storage: lost_storage.clone(),
+    });
+    let response_sink =
+        DurableTransitionSink::new(response_store, lost_journal.clone(), lost_ownership.token);
+    let mut lost_commits = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &response_sink,
+        Arc::clone(&program),
+        &lost_prefix,
+    )
+    .unwrap_or_else(|error| panic!("lost writer: {error:?}"));
+    let frontier = lost_commits.frontier();
+    let mut stage = lost_owner
+        .stage_graph(&mut lost_root, &mut lost_children)
+        .unwrap_or_else(|error| panic!("lost stage: {error:?}"));
+    stage
+        .stage_resource_finish(&subject, owner, crate::ResourceFinishTransition::Begin)
+        .unwrap_or_else(|error| panic!("lost candidate: {error:?}"));
+    assert_eq!(
+        ready(stage.commit(&mut lost_commits, DurableCommitCutV1::ResourceFinish, task)),
+        Err(DurableCommitError::Journal(JournalError::new(
+            JournalErrorCode::Internal
+        )))
+    );
+    assert_eq!(lost_commits.frontier(), frontier);
+    assert_eq!(lost_owner.snapshot(), before);
+    assert!(lock(&lost_owner.inner.state).durable_publication_reserved);
+    let authoritative = ready(lost_storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: lost_journal,
+    }))
+    .unwrap_or_else(|error| panic!("lost authoritative prefix: {error:?}"));
+    let replay =
+        crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &authoritative)
+            .unwrap_or_else(|error| panic!("lost response replay: {error:?}"));
+    assert_eq!(
+        replay.latest_sequence(),
+        frontier.unwrap_or_else(|| panic!("frontier")).1 + 1
+    );
+    assert_eq!(
+        replay.execution().scheduler().resource_records()[0]
+            .record()
+            .lifetime(),
+        gantry_ir::ResourceLifetimeState::Finishing
+    );
+    let recovered_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &lost_sink,
+        Arc::clone(&program),
+        &authoritative,
+    )
+    .unwrap_or_else(|error| panic!("lost response writer recovery: {error:?}"));
+    assert_eq!(
+        recovered_writer.frontier(),
+        Some((replay.latest_evidence_id(), replay.latest_sequence()))
+    );
     let mut evidence = full.evidence.to_vec();
     evidence
         .last_mut()
@@ -2389,6 +2473,47 @@ struct FinishFailureStore {
     storage: Arc<InMemoryJournalStore>,
     invalid_receipt: bool,
     calls: std::sync::atomic::AtomicUsize,
+}
+
+/// Commits to authoritative storage, then loses the receipt instead of acknowledging it.
+struct LostFinishResponseStore {
+    storage: Arc<InMemoryJournalStore>,
+}
+
+impl JournalStorage for LostFinishResponseStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.storage.acquire_owner(request)
+    }
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.storage.read_prefix(request)
+    }
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        Box::pin(async move {
+            self.storage.commit(request).await?;
+            Err(JournalError::new(JournalErrorCode::Internal))
+        })
+    }
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.storage.resolve_payload(request)
+    }
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.storage.release_owner(request)
+    }
 }
 
 impl JournalStorage for FinishFailureStore {
