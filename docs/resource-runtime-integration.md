@@ -119,6 +119,15 @@ accounting reconstruction and declared capture. `issuing_evidence()` inspects th
 facts without opening a lease; legacy record construction leaves them absent. Current accounting
 advancement does not rewrite issuing evidence or qualify it as journal-authenticated state.
 
+`encode_resource_recovery_envelope` and `decode_resource_recovery_envelope` carry those facts in
+the exact `GNTRRE01` envelope. Both accept an independent total byte ceiling; encoding checks
+the complete framed size before copying the checkpoint, and decoding refuses excess bytes before
+parsing. The decoder validates issuing machine/budget facts, rederives the subject, and compares
+cleanup-task and current-owner facts supplied by the recovery pass. Canonical round trips reject
+trailing or alternate encodings. Legacy records without issuing evidence cannot be encoded.
+This is declared reconstruction carriage, not ordinary value serialization, journal authentication,
+or combined-graph integration; physical slots and accepted work are not restored.
+
 `ResourceRegistry::reconstruct_with_retained_limit` additionally bounds every reconstructed
 account, including terminal records. Existing evidence and live-capacity refusals retain
 precedence; the retained ceiling is checked before insertion. Recovery publishes the complete

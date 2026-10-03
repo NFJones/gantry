@@ -15330,6 +15330,16 @@ Accounting reconstruction and declared capture MUST preserve this evidence indep
 current lifetime, owner and cleanup-task facts. Legacy construction leaves evidence absent;
 inspection of retained bytes MUST NOT reopen admission or imply journal authentication.
 
+The separately scoped `GNTRRE01` reconstruction envelope MAY carry canonical issuing checkpoint
+bytes, issuing budget, current cleanup-task identity and the declared subject-free record.
+Encoding and decoding MUST enforce a caller-supplied total byte ceiling independent of input
+length before copying the checkpoint or parsing input. Decoding MUST rederive the subject from
+validated issuing evidence, compare cleanup ownership with a separately supplied expected task,
+and validate the record against a separately supplied current owner. Malformed framing, trailing
+bytes, missing issuing evidence or noncanonical encodings MUST refuse without publishing partial
+facts. This envelope grants no journal authentication, physical ownership or accepted-work recovery
+and does not relax combined-graph resource-state refusal.
+
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
 slots, adapter poison history or admitted pending work would be omitted. Failed-adapter identity

@@ -9230,6 +9230,108 @@ fn reconstruction_from_issuing_checkpoint_validates_origin_and_closes_admission(
     }
 }
 
+/// Issuing evidence travels canonically under independent byte and ownership admission bounds.
+#[test]
+fn resource_recovery_envelope_round_trips_and_refuses_invalid_admission() {
+    use gantry::runtime::{
+        ResourceRecoveryEnvelopeError, decode_resource_recovery_envelope,
+        encode_resource_recovery_envelope,
+    };
+    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let owner = OwnerGeneration::new(4);
+    let origin = RecoveredResourceRecord::from_issuing_checkpoint(
+        Arc::clone(&program),
+        machine.checkpoint(),
+        machine.budget_checkpoint(),
+        ResourceCarrier::ReconstructionRecord,
+        owner,
+        ledger().durable_record(),
+    )
+    .unwrap_or_else(|error| panic!("origin: {error:?}"));
+    let bytes = encode_resource_recovery_envelope(&origin, 65_536)
+        .unwrap_or_else(|error| panic!("envelope: {error:?}"));
+    let limit = u64::try_from(bytes.len()).unwrap_or_else(|_| panic!("bounded length"));
+    let decoded = decode_resource_recovery_envelope(
+        Arc::clone(&program),
+        &bytes,
+        limit,
+        owner,
+        machine.task_id(),
+    )
+    .unwrap_or_else(|error| panic!("decode: {error:?}"));
+    assert_eq!(decoded, origin);
+    assert_eq!(
+        encode_resource_recovery_envelope(&decoded, limit),
+        Ok(bytes.clone())
+    );
+    assert_eq!(
+        encode_resource_recovery_envelope(&origin, limit - 1),
+        Err(ResourceRecoveryEnvelopeError::ByteLimit)
+    );
+    assert_eq!(
+        decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &bytes,
+            limit - 1,
+            owner,
+            machine.task_id()
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::ByteLimit)
+    );
+    for invalid in [&bytes[..bytes.len() - 1], &bytes[1..]] {
+        assert!(
+            decode_resource_recovery_envelope(
+                Arc::clone(&program),
+                invalid,
+                limit,
+                owner,
+                machine.task_id()
+            )
+            .is_err()
+        );
+    }
+    let mut trailing = bytes.clone();
+    trailing.push(0);
+    assert_eq!(
+        decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &trailing,
+            limit + 1,
+            owner,
+            machine.task_id()
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Encoding)
+    );
+    assert!(
+        decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &bytes,
+            limit,
+            OwnerGeneration::new(3),
+            machine.task_id()
+        )
+        .is_err()
+    );
+    let foreign_task = ProtocolIdentity::derive(IdentityKind::Task, b"foreign-envelope-cleanup")
+        .unwrap_or_else(|error| panic!("task: {error}"));
+    assert_eq!(
+        decode_resource_recovery_envelope(program, &bytes, limit, owner, foreign_task).err(),
+        Some(ResourceRecoveryEnvelopeError::CleanupTaskMismatch)
+    );
+    let legacy = RecoveredResourceRecord::new(
+        subject.unwrap_or_else(|| panic!("subject")),
+        ResourceCarrier::ReconstructionRecord,
+        owner,
+        ledger().durable_record(),
+    );
+    assert_eq!(
+        encode_resource_recovery_envelope(&legacy, limit),
+        Err(ResourceRecoveryEnvelopeError::MissingIssuingEvidence)
+    );
+}
+
 #[test]
 fn resource_registry_gives_one_subject_exactly_one_account() {
     let (_program, _machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));

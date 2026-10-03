@@ -149,13 +149,16 @@ pub use recovery::{
     DurableOperationRecoveryV1, DurableRecoverySnapshotV3, RecoveredDurableStateV1,
     recover_authoritative_prefix, recover_authoritative_prefix_with_retained_program,
 };
-#[cfg(feature = "durable")]
-pub use resource::ResourceOriginRecoveryError;
 pub use resource::{
     AdapterBindingRefusal, AdmittedResource, CohortEmergencyCleanup, CohortEmergencySettlement,
     PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRecordCodecError,
     ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
     decode_resource_reconstruction_record, encode_resource_reconstruction_record,
+};
+#[cfg(feature = "durable")]
+pub use resource::{
+    ResourceOriginRecoveryError, ResourceRecoveryEnvelopeError, decode_resource_recovery_envelope,
+    encode_resource_recovery_envelope,
 };
 pub use resource_cleanup::{ResourceCleanupError, ResourceCleanupObserver};
 pub use resource_transport::{HostReceiverLoan, HostResourceError, OwnedHostResource};

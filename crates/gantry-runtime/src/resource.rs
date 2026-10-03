@@ -60,6 +60,14 @@ use gantry_ir::{
     StaticSiteId, StructuralPosition, admit_resource_carrier,
 };
 
+#[cfg(feature = "durable")]
+mod recovery_envelope;
+#[cfg(feature = "durable")]
+pub use recovery_envelope::{
+    ResourceRecoveryEnvelopeError, decode_resource_recovery_envelope,
+    encode_resource_recovery_envelope,
+};
+
 /// Decodes one exact canonical declared resource reconstruction record.
 ///
 /// The returned facts are still subject-free: callers must derive the subject from retained
