@@ -2029,6 +2029,134 @@ fn terminal_account_admission_does_not_consume_live_capacity() {
     assert_eq!(physical.pending_operations(), 0);
 }
 
+/// Settled records remain bounded independently of live and pending accounting.
+#[test]
+fn retained_resource_limit_refuses_terminal_growth_without_mutation() {
+    let first = active_subject();
+    let second = declared_subject(SECOND_FIXTURE_DECLARATION);
+    let mut registry = ResourceRegistry::with_accounting_limits(0, 2, 1);
+    assert_eq!(registry.retained_limit(), Some(1));
+    assert!(
+        registry
+            .admit(
+                first.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                settled_record()
+            )
+            .is_ok()
+    );
+    let before = registry.declared_records();
+    assert_eq!(registry.retained_resources(), 1);
+    assert_eq!(registry.live_resources(), 0);
+    assert_eq!(
+        registry.admit(
+            second.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            settled_record()
+        ),
+        Err(ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 1 })
+    );
+    assert_eq!(registry.declared_records(), before);
+    assert_eq!(registry.pending_operations(), 1);
+    assert_eq!(
+        registry.admit(
+            first,
+            ResourceCarrier::ReconstructionRecord,
+            settled_record()
+        ),
+        Err(ResourceRegistryRefusal::SecondAdmission)
+    );
+    let (error, value) = *registry
+        .admit_host_value(
+            second,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            17_u64,
+        )
+        .err()
+        .unwrap_or_else(|| panic!("full retained quota refuses"));
+    assert_eq!(
+        error,
+        ResourceRegistryRefusal::LiveResourceLimitReached { limit: 0 }
+    );
+    assert_eq!(value, 17);
+    assert_eq!(registry.declared_records(), before);
+    let mut denied = ResourceRegistry::with_accounting_limits(1, 1, 0);
+    assert_eq!(
+        denied.admit(
+            active_subject(),
+            ResourceCarrier::ReconstructionRecord,
+            settled_record()
+        ),
+        Err(ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 0 })
+    );
+    assert!(denied.declared_records().is_empty());
+    assert_eq!(denied.pending_operations(), 0);
+    let (error, value) = *denied
+        .admit_host_value(
+            active_subject(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            19_u64,
+        )
+        .err()
+        .unwrap_or_else(|| panic!("retained quota must refuse physical acquisition"));
+    assert_eq!(
+        error,
+        ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 0 }
+    );
+    assert_eq!(value, 19);
+    assert!(denied.declared_records().is_empty());
+    assert_eq!(denied.pending_operations(), 0);
+}
+
+/// Coordinator clones share the retained ceiling without publishing a refused admission.
+#[test]
+fn coordinator_retained_resource_limit_preserves_refusal_publication() {
+    use gantry::runtime::{CoordinatorResourceRefusal, ExecutionCoordinator};
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let (tasks, sessions) = resource_recovery_inputs(machine.execution_id(), machine.task_id());
+    let coordinator = ExecutionCoordinator::new_with_budget_and_accounting_limits(
+        tasks,
+        sessions,
+        machine.execution_budget(),
+        1,
+        2,
+        1,
+    )
+    .unwrap_or_else(|error| panic!("bounded coordinator: {error:?}"));
+    assert!(
+        coordinator
+            .admit_resource(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                settled_record()
+            )
+            .is_ok()
+    );
+    let before = coordinator.snapshot();
+    let (_, sibling, _) = machine_with_declared_subject(Some(SECOND_FIXTURE_DECLARATION));
+    assert_eq!(
+        coordinator.clone().admit_resource(
+            &sibling,
+            ResourceCarrier::ReconstructionRecord,
+            settled_record()
+        ),
+        Err(CoordinatorResourceRefusal::Registry(
+            ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 1 }
+        ))
+    );
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(coordinator.has_pending_resource_operations());
+    assert!(!coordinator.has_unsettled_resource_accounts());
+    assert_eq!(
+        coordinator
+            .capture_checkpoint(&machine, &std::collections::BTreeMap::new())
+            .err(),
+        Some(gantry::runtime::ConcurrentDurableCheckpointError::ResourceStateUnsupported)
+    );
+}
+
 /// A declared live-resource limit is enforced at admission and released semantically: settling an
 /// account frees its place while the retained account stays queryable, so no retirement, deletion,
 /// or physical reclamation is needed to reuse the quota.
@@ -2127,7 +2255,7 @@ fn live_resource_quota_is_enforced_at_admission_and_released_by_settlement() {
 #[test]
 fn retirement_and_deletion_never_reclaim_a_released_live_place() {
     let subject = active_subject();
-    let mut registry = ResourceRegistry::with_live_limit(1);
+    let mut registry = ResourceRegistry::with_accounting_limits(1, 2, 1);
     registry
         .admit(
             subject.clone(),
@@ -2213,6 +2341,16 @@ fn retirement_and_deletion_never_reclaim_a_released_live_place() {
         registry.account(&subject).is_some(),
         "a deleted account stays registry-held until it is reaped"
     );
+    let next = declared_subject(SECOND_FIXTURE_DECLARATION);
+    assert_eq!(registry.retained_resources(), 1);
+    assert_eq!(
+        registry.admit(
+            next.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record()
+        ),
+        Err(ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 1 })
+    );
     assert_eq!(
         registry.reap_deleted(),
         1,
@@ -2225,6 +2363,17 @@ fn retirement_and_deletion_never_reclaim_a_released_live_place() {
         0,
         "reaping is idempotent once the deleted account is gone"
     );
+    assert_eq!(registry.retained_resources(), 0);
+    assert!(
+        registry
+            .admit(
+                next,
+                ResourceCarrier::ReconstructionRecord,
+                ledger().durable_record()
+            )
+            .is_ok()
+    );
+    assert_eq!(registry.retained_resources(), 1);
 }
 
 fn machine_with_declared_subject(

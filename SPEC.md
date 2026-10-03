@@ -15162,6 +15162,16 @@ live-account place, but MUST retain the independent pending-work admission check
 create, discover, reconstruct, or claim ownership of a physical host resource, and it does not
 define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
 
+A registry MAY independently declare a retained-account ceiling
+through `with_accounting_limits`; every registry-held account consumes one retained place,
+including settled, retired and deleted accounts until eligible `reap_deleted` reclamation.
+Excess admission MUST refuse `RetainedResourceLimitReached` without changing accounting,
+physical inputs or pending-capacity bookkeeping. Duplicate, kind, carrier, live and pending
+refusals retain precedence. Existing constructors leave the retained ceiling absent.
+`new_with_budget_and_accounting_limits` MAY expose this policy through the shared coordinator.
+The current durable graph wire MUST refuse configured retained-account policy, even when empty,
+rather than silently omit it; legacy empty-registry policy carriage remains available.
+
 A registry's storage subject MUST qualify portable operation/resource-generation identity with
 the issuing execution and task. Equal portable identities from independent task-local counters
 MUST remain separate accounts and physical slots, each counted against the same registry ceiling.
@@ -15277,7 +15287,7 @@ Until a reviewed graph wire carries resource reconstruction records and runtime 
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
 slots or admitted pending work would be omitted. Refusal MUST precede private machine cloning or
 publication reservation and leave accounting, machines and publication unchanged. An empty configured
-registry alone does not require refusal. This boundary does not implement durable resource recovery.
+registry without retained-account policy alone does not require refusal. This boundary does not implement durable resource recovery.
 For an enabled empty registry, combined graph capture MAY retain the exact optional live-account
 and pending-operation ceilings in `GNTCDP06`. Absent accounting and enabled unlimited accounting
 MUST remain distinct. Capture, staging, replay and coordinator-backed driver recovery MUST preserve

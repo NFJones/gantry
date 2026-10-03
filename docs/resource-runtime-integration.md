@@ -33,6 +33,14 @@ the ceiling; `pending_operations` tracks accepted work even when that ceiling is
 Already-settled accounting records require no live-account place, including at a zero ceiling;
 their machine lease still undergoes independent pending-work admission. Physical acquisition
 continues to require active lifetime and open operation state.
+`with_accounting_limits(live, pending, retained)` independently caps all registry-held accounts.
+`retained_limit` inspects the ceiling and `retained_resources` counts occupied places. Settlement,
+retirement and deletion do not free a retained place; eligible `reap_deleted` reclamation does.
+Excess admission returns `RetainedResourceLimitReached` after existing accounting quota checks,
+without consuming physical inputs or publishing pending capacity. Existing constructors leave
+this policy disabled. `new_with_budget_and_accounting_limits` exposes it through coordinator
+ownership. The current graph wire refuses this policy even for an empty registry rather than
+silently dropping the retained ceiling; ordinary v6 empty-policy carriage is unchanged.
 Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.

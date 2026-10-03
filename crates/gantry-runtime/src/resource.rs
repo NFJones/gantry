@@ -594,6 +594,7 @@ pub struct ResourceRegistry {
     physical: BTreeMap<ResourceRegistryKey, crate::resource_transport::HostValueSlot>,
     live_limit: Option<u64>,
     pending_limit: Option<u64>,
+    retained_limit: Option<u64>,
     pending_admissions: Vec<Arc<Mutex<crate::machine::ResourceOperationLease>>>,
     adapter_faults: PoisonLedger,
 }
@@ -682,6 +683,7 @@ impl ResourceRegistry {
             physical: BTreeMap::new(),
             live_limit: None,
             pending_limit: None,
+            retained_limit: None,
             pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
         }
@@ -699,6 +701,7 @@ impl ResourceRegistry {
             physical: BTreeMap::new(),
             live_limit: Some(limit),
             pending_limit: None,
+            retained_limit: None,
             pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
         }
@@ -714,6 +717,30 @@ impl ResourceRegistry {
             pending_limit: Some(pending_limit),
             ..Self::with_live_limit(live_limit)
         }
+    }
+
+    /// Declares independent live, pending-work, and retained-account ceilings.
+    ///
+    /// Every registry-held account consumes retained capacity until eligible reaping,
+    /// even after lifetime settlement. Existing constructors leave this ceiling absent.
+    #[must_use]
+    pub fn with_accounting_limits(live: u64, pending: u64, retained: u64) -> Self {
+        Self {
+            retained_limit: Some(retained),
+            ..Self::with_limits(live, pending)
+        }
+    }
+
+    /// Returns the separately declared retained-account ceiling, when any.
+    #[must_use]
+    pub const fn retained_limit(&self) -> Option<u64> {
+        self.retained_limit
+    }
+
+    /// Counts all accounts still held by the registry, independently of semantic lifetime.
+    #[must_use]
+    pub fn retained_resources(&self) -> u64 {
+        u64::try_from(self.accounts.len()).unwrap_or(u64::MAX)
     }
 
     /// Returns the separately declared pending resource-operation ceiling, when any.
@@ -871,6 +898,7 @@ impl ResourceRegistry {
         }
         let live = self.live_resources();
         let limit = self.live_limit;
+        let retained_accounts = self.retained_resources();
         let key = subject.registry_key();
         match self.accounts.entry(key.clone()) {
             std::collections::btree_map::Entry::Occupied(_) => {
@@ -892,6 +920,11 @@ impl ResourceRegistry {
                     && pending >= limit
                 {
                     return Err(ResourceRegistryRefusal::PendingOperationLimitReached { limit });
+                }
+                if let Some(limit) = self.retained_limit
+                    && retained_accounts >= limit
+                {
+                    return Err(ResourceRegistryRefusal::RetainedResourceLimitReached { limit });
                 }
                 if value.is_some() {
                     let lifetime = account.ledger().lifetime();
@@ -998,6 +1031,7 @@ impl ResourceRegistry {
             physical: BTreeMap::new(),
             live_limit,
             pending_limit: None,
+            retained_limit: None,
             pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
         })
@@ -1005,11 +1039,14 @@ impl ResourceRegistry {
 
     /// Reports process-local resource state that the current durable graph wire cannot retain.
     ///
-    /// Retained accounts, physical slots and still-pending admitted work require explicit
-    /// reconstruction integration; an empty configured registry alone does not.
+    /// Retained-account policy, accounts, physical slots and still-pending admitted work
+    /// require explicit reconstruction integration; legacy empty-registry policy does not.
     #[must_use]
     pub(crate) fn has_uncheckpointed_state(&self) -> bool {
-        !self.accounts.is_empty() || !self.physical.is_empty() || self.pending_operations() != 0
+        self.retained_limit.is_some()
+            || !self.accounts.is_empty()
+            || !self.physical.is_empty()
+            || self.pending_operations() != 0
     }
 
     /// Captures the declared reconstruction records of every admitted account.
@@ -1918,6 +1955,11 @@ pub enum ResourceRegistryRefusal {
     },
     /// The separately declared admitted pending-operation ceiling is already reached.
     PendingOperationLimitReached {
+        /// The declared limit.
+        limit: u64,
+    },
+    /// The separately declared retained-account ceiling is already reached.
+    RetainedResourceLimitReached {
         /// The declared limit.
         limit: u64,
     },

@@ -142,6 +142,19 @@ fn fixture() -> (
 #[test]
 fn resource_records_refuse_durable_graph_capture_and_staging_without_mutation() {
     let (coordinator, mut root, mut children) = fixture();
+    lock(&coordinator.inner.state).resources =
+        Some(ResourceRegistry::with_accounting_limits(1, 1, 1));
+    let before_policy = coordinator.snapshot();
+    assert_eq!(
+        coordinator.capture_checkpoint(&root, &children).err(),
+        Some(crate::ConcurrentDurableCheckpointError::ResourceStateUnsupported)
+    );
+    assert_eq!(
+        coordinator.stage_graph(&mut root, &mut children).err(),
+        Some(TaskStateError::ResourceStateUnsupported)
+    );
+    assert_eq!(coordinator.snapshot(), before_policy);
+    assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
     lock(&coordinator.inner.state).resources = Some(ResourceRegistry::with_live_limit(1));
     assert!(coordinator.capture_checkpoint(&root, &children).is_ok());
     let path = CanonicalPath::new("crate::checkpoint_resource")

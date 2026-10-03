@@ -293,6 +293,33 @@ impl ExecutionCoordinator {
         )
     }
 
+    /// Creates budget-sharing accounting with independent live, pending and retained ceilings.
+    ///
+    /// Retained capacity survives semantic settlement until eligible record reclamation.
+    /// The current durable wire cannot retain this policy and refuses graph capture/staging.
+    pub fn new_with_budget_and_accounting_limits(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: ExecutionBudget,
+        maximum_live_resources: u64,
+        maximum_pending_operations: u64,
+        maximum_retained_resources: u64,
+    ) -> Result<Self, TaskStateError> {
+        if execution_budget.snapshot().execution != tasks.execution_id() {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        Self::new_inner(
+            tasks,
+            sessions,
+            Some(execution_budget),
+            Some(crate::ResourceRegistry::with_accounting_limits(
+                maximum_live_resources,
+                maximum_pending_operations,
+                maximum_retained_resources,
+            )),
+        )
+    }
+
     /// Creates one shared accounting registry with an explicit live-account ceiling.
     ///
     /// Cloned coordinator handles share this registry under the existing coordinator mutex.
