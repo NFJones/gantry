@@ -887,6 +887,76 @@ fn resource_records_survive_version_eight_graph_recovery() {
             TaskStateError::DurablePublicationReserved
         )),
     );
+    // Neither an explicit storage error nor a malformed receipt authorizes installation.
+    for invalid_receipt in [false, true] {
+        let admission = recovered
+            .execution()
+            .capture_replayed_checkpoint()
+            .unwrap_or_else(|error| panic!("failure capture: {error:?}"))
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("failure recovery: {error:?}"))
+            .into_driver_admission()
+            .unwrap_or_else(|error| panic!("failure admission: {error:?}"));
+        let (failed_owner, mut failed_root, mut failed_children, _) = admission.into_parts();
+        let before = failed_owner.snapshot();
+        let machine_before = failed_root.checkpoint();
+        let failed_storage = Arc::new(FinishFailureStore {
+            storage: Arc::clone(&storage),
+            invalid_receipt,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let failed_sink = DurableTransitionSink::new(
+            failed_storage.clone(),
+            sink.journal_id().clone(),
+            JournalOwnershipToken::new("failed-finish")
+                .unwrap_or_else(|error| panic!("token: {error:?}")),
+        );
+        let mut failed_commits = DurableCommitCoordinatorV1::from_concurrent_prefix(
+            &failed_sink,
+            Arc::clone(&program),
+            &prefix,
+        )
+        .unwrap_or_else(|error| panic!("failed writer: {error:?}"));
+        let frontier = failed_commits.frontier();
+        let mut stage = failed_owner
+            .stage_graph(&mut failed_root, &mut failed_children)
+            .unwrap_or_else(|error| panic!("failed stage: {error:?}"));
+        stage
+            .stage_resource_finish(&subject, owner, crate::ResourceFinishTransition::Begin)
+            .unwrap_or_else(|error| panic!("failed candidate: {error:?}"));
+        let result = ready(stage.commit(
+            &mut failed_commits,
+            DurableCommitCutV1::ResourceFinish,
+            task,
+        ));
+        if invalid_receipt {
+            assert_eq!(result, Err(DurableCommitError::InvalidReceipt));
+        } else {
+            assert_eq!(
+                result,
+                Err(DurableCommitError::Journal(JournalError::new(
+                    JournalErrorCode::Internal
+                )))
+            );
+        }
+        assert_eq!(
+            failed_storage
+                .calls
+                .load(std::sync::atomic::Ordering::Acquire),
+            1
+        );
+        assert_eq!(failed_commits.frontier(), frontier);
+        assert_eq!(failed_owner.snapshot(), before);
+        assert_eq!(failed_root.checkpoint(), machine_before);
+        assert!(lock(&failed_owner.inner.state).durable_publication_reserved);
+        assert_eq!(
+            ready(storage.read_prefix(ReadJournalPrefixV1 {
+                journal_id: sink.journal_id().clone(),
+            }))
+            .unwrap_or_else(|error| panic!("failure prefix: {error:?}")),
+            prefix
+        );
+    }
     for (transition, lifetime) in [
         (
             crate::ResourceFinishTransition::Begin,
@@ -2312,6 +2382,57 @@ struct EventFailureStore(InMemoryJournalStore);
 struct CountedCommitStore {
     storage: Arc<InMemoryJournalStore>,
     calls: std::sync::atomic::AtomicUsize,
+}
+
+/// Returns a storage failure or invalid receipt without appending the private finish cut.
+struct FinishFailureStore {
+    storage: Arc<InMemoryJournalStore>,
+    invalid_receipt: bool,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl JournalStorage for FinishFailureStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.storage.acquire_owner(request)
+    }
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.storage.read_prefix(request)
+    }
+    fn commit<'a>(
+        &'a self,
+        _: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        Box::pin(async move {
+            if self.invalid_receipt {
+                Ok(JournalCommitReceiptV1 {
+                    first_sequence: 0,
+                    last_sequence: 0,
+                    entries: Arc::from([]),
+                })
+            } else {
+                Err(JournalError::new(JournalErrorCode::Internal))
+            }
+        })
+    }
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.storage.resolve_payload(request)
+    }
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.storage.release_owner(request)
+    }
 }
 
 impl JournalStorage for CountedCommitStore {
