@@ -1849,7 +1849,11 @@ mod tests {
             attempt_consumed: false,
         };
         assert!(lifecycle.accept_attempt_failure(&mut machine).is_ok());
-        assert!(machine.checkpoint().pending_operation().is_none());
+        assert_eq!(machine.status(), crate::MachineStatus::Running);
+        assert_eq!(
+            machine.complete_operation(occurrence.identity, LogicalValue::unit()),
+            Err(OperationCompletionError::NotWaiting)
+        );
         assert_eq!(
             lifecycle.accept_attempt_failure(&mut machine),
             Err(OperationLifecycleError::AttemptResultConsumed)
