@@ -17,6 +17,411 @@ use gantry_ir::{
     ResourceCarrier, ResourceLedger, ResourceState, TaskBodyIdentity, TypeDescriptor, Workflow,
 };
 
+/// Lossless snapshots replay cleanup handoff both as retained history and as a causal suffix.
+#[test]
+fn resource_handoff_survives_lossless_snapshot_and_suffix_recovery() {
+    let (base, original, _) = fixture();
+    let execution = original.execution_id();
+    let path = CanonicalPath::new("crate::snapshot_handoff")
+        .unwrap_or_else(|error| panic!("path: {error}"));
+    let action =
+        CanonicalPath::new("crate::resource").unwrap_or_else(|error| panic!("action: {error}"));
+    let caller = CanonicalCallableIdentity::free(&path, &[]);
+    let site =
+        |parts| StructuralPosition::new(parts).unwrap_or_else(|error| panic!("site: {error}"));
+    let body_id = TaskBodyIdentity::new(caller.clone(), site(vec![2]));
+    let body = ExecutableTaskBody::new(
+        body_id.clone(),
+        TypeDescriptor::UNIT,
+        vec![],
+        ExecutableTaskContext::v1(),
+        vec![
+            Instruction {
+                site: site(vec![2, 0]),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: site(vec![2, 1]),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::TaskComplete,
+            },
+        ],
+    )
+    .unwrap_or_else(|error| panic!("body: {error:?}"));
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(
+            vec![(
+                caller,
+                Workflow {
+                    path: path.clone(),
+                    parameters: vec![],
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: site(vec![0]),
+                            ty: TypeDescriptor::result(
+                                TypeDescriptor::UNIT,
+                                TypeDescriptor::OPERATION_ERROR,
+                            ),
+                            kind: InstructionKind::OperationCall {
+                                operation: ExecutableOperation {
+                                    kind: OperationSiteKind::Action,
+                                    section20_kind: Some(OperationKind::LiveResource),
+                                    result_type: TypeDescriptor::UNIT,
+                                    action: Some(ExecutableAction {
+                                        path: action.clone(),
+                                        signature: CanonicalSignature::action(
+                                            RecoveryClass::Idempotent,
+                                            &action,
+                                            &[],
+                                            &TypeDescriptor::UNIT,
+                                        ),
+                                        recovery: RecoveryClass::Idempotent,
+                                        parameters: vec![],
+                                    }),
+                                    template_segments: vec![],
+                                    interpolation_types: vec![],
+                                    named_input_names: vec![],
+                                    named_input_types: vec![],
+                                    retry_limit: None,
+                                    session_mode: None,
+                                    attempted: true,
+                                },
+                                operands: 0,
+                            },
+                        },
+                        Instruction {
+                            site: site(vec![1]),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Pop,
+                        },
+                        Instruction {
+                            site: site(vec![2]),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Spawn {
+                                handle: ExecutableTaskHandle::new(
+                                    Arc::from("child"),
+                                    TypeDescriptor::UNIT,
+                                )
+                                .unwrap_or_else(|error| panic!("handle: {error:?}")),
+                                body: body_id,
+                            },
+                        },
+                        Instruction {
+                            site: site(vec![3]),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Push(LogicalValue::unit()),
+                        },
+                        Instruction {
+                            site: site(vec![4]),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            )],
+            vec![body],
+        )
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let (tasks, sessions) = {
+        let state = lock(&base.inner.state);
+        (state.tasks.clone(), state.sessions.clone())
+    };
+    let session = base.snapshot().sessions()[0].id;
+    let limits = original.checkpoint().machine_limits();
+    let mut root = Machine::new_with_context(
+        Arc::clone(&program),
+        &path,
+        vec![],
+        execution,
+        limits,
+        None,
+        Some(session),
+    )
+    .unwrap_or_else(|error| panic!("root: {error:?}"));
+    let task = root.task_id();
+    let logical = crate::DurableLogicalEvidenceV3::new_with_sessions(
+        execution,
+        task,
+        DurableCommitCutV1::Checkpoint,
+        None,
+        &root,
+        Some(sessions.checkpoint()),
+    )
+    .unwrap_or_else(|error| panic!("start state: {error:?}"));
+    let start = crate::DurableExecutionStartV3::new(
+        execution,
+        task,
+        &program,
+        Arc::<[u8]>::from(&b"{}"[..]),
+        logical,
+    )
+    .unwrap_or_else(|error| panic!("start: {error:?}"));
+    let coordinator = ExecutionCoordinator::new_with_budget_and_accounting_limits(
+        tasks,
+        sessions,
+        root.execution_budget(),
+        1,
+        1,
+        1,
+    )
+    .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+    let mut children = BTreeMap::new();
+    assert!(matches!(
+        root.step(),
+        MachineStep::Transition(crate::MachineLabel::OperationPrepared(_))
+    ));
+    let subject = root
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("subject"));
+    let owner = OwnerGeneration::new(4);
+    coordinator
+        .admit_resource_with_issuing_evidence(
+            &root,
+            ResourceCarrier::ReconstructionRecord,
+            ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+                .unwrap_or_else(|error| panic!("ledger: {error:?}"))
+                .durable_record(),
+            65_536,
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    coordinator
+        .settle_resource_containment(
+            &subject,
+            owner,
+            gantry_ir::Completion::observed(
+                gantry_ir::ExternalOutcome::Rejected,
+                gantry_ir::EffectState::NotStarted,
+            ),
+        )
+        .unwrap_or_else(|error| panic!("containment: {error:?}"));
+    let operation = root
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("operation"))
+        .identity;
+    let error = LogicalValue::operation_error(
+        gantry_core::value::OperationErrorValue::InvalidOutput,
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("error value: {error:?}"));
+    root.complete_operation(
+        operation,
+        LogicalValue::err(error, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("attempted value: {error:?}")),
+    )
+    .unwrap_or_else(|error| panic!("attempt settlement: {error:?}"));
+    assert!(matches!(root.step(), MachineStep::Transition(_)));
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal = JournalId::new("snapshot-resource-handoff")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let ownership = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("ownership: {error:?}"));
+    let receipt = ready(
+        storage.commit(JournalCommitRequestV1 {
+            journal_id: journal.clone(),
+            ownership_token: ownership.token.clone(),
+            batch: JournalBatchV1::new(
+                Arc::from([start
+                    .unfinalized(
+                        BatchLocalEvidenceId::new("start")
+                            .unwrap_or_else(|error| panic!("local: {error:?}")),
+                    )
+                    .unwrap_or_else(|error| panic!("start body: {error:?}"))]),
+                Arc::from([]),
+            )
+            .unwrap_or_else(|error| panic!("batch: {error:?}")),
+        }),
+    )
+    .unwrap_or_else(|error| panic!("start commit: {error:?}"));
+    // The initial resource image is established by the first graph cut, not a mutation exception.
+    let initial = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("initial graph: {error:?}"));
+    let initial =
+        crate::ConcurrentDurableEvidenceV4::new(DurableCommitCutV1::Checkpoint, task, initial)
+            .unwrap_or_else(|error| panic!("initial evidence: {error:?}"));
+    ready(
+        storage.commit(JournalCommitRequestV1 {
+            journal_id: journal.clone(),
+            ownership_token: ownership.token.clone(),
+            batch: JournalBatchV1::new(
+                Arc::from([UnfinalizedEvidenceV1::new(
+                    BatchLocalEvidenceId::new("initial-graph")
+                        .unwrap_or_else(|error| panic!("initial local: {error:?}")),
+                    crate::CONCURRENT_DURABLE_EVIDENCE_KIND_V4,
+                    initial.canonical_body(),
+                    Arc::from([JournalEvidenceReferenceV1::Existing(
+                        receipt.entries[0].evidence_id,
+                    )]),
+                    Arc::from([]),
+                )
+                .unwrap_or_else(|error| panic!("initial body: {error:?}"))]),
+                Arc::from([]),
+            )
+            .unwrap_or_else(|error| panic!("initial batch: {error:?}")),
+        }),
+    )
+    .unwrap_or_else(|error| panic!("initial commit: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), ownership.token);
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("initial prefix: {error:?}"));
+    let mut writer =
+        DurableCommitCoordinatorV1::from_concurrent_prefix(&sink, Arc::clone(&program), &prefix)
+            .unwrap_or_else(|error| panic!("graph writer: {error:?}"));
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("spawn stage: {error:?}"));
+    let (created, spawn) = stage.update(|root, _, tasks, sessions| {
+        let spawn = match root.step() {
+            MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(spawn)) => spawn,
+            other => panic!("spawn: {other:?}"),
+        };
+        let created = tasks
+            .create_child(
+                sessions,
+                crate::TaskCreationRequestV1 {
+                    parent_task_id: task,
+                    handle_name: Arc::from(spawn.handle.name()),
+                    workflow: spawn.workflow.clone(),
+                    spawn_site: spawn.site.clone(),
+                    spawn_occurrence: spawn.occurrence,
+                    result_type: spawn.handle.result_type().clone(),
+                    captures: vec![],
+                    inherited_agent: None,
+                    parent_session_id: session,
+                },
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("child: {error:?}"));
+        (created, spawn)
+    });
+    ready(stage.commit(
+        &mut writer,
+        DurableCommitCutV1::TaskCreation,
+        created.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("creation commit: {error:?}"));
+    let child_path = Arc::from(
+        coordinator
+            .snapshot()
+            .state()
+            .task(created.task_id)
+            .unwrap_or_else(|| panic!("child record"))
+            .task_path(),
+    );
+    let child = Machine::new_concurrent_task_body_with_context(
+        Arc::clone(&program),
+        &spawn.body,
+        &[],
+        execution,
+        created.task_id,
+        child_path,
+        limits,
+        root.execution_budget(),
+        None,
+        Some(created.base_session_id),
+    )
+    .unwrap_or_else(|error| panic!("child machine: {error:?}"));
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("submission stage: {error:?}"));
+    stage.update(|root, _, tasks, _| {
+        root.complete_spawn(&spawn, created.handle_id)
+            .unwrap_or_else(|error| panic!("spawn completion: {error:?}"));
+        tasks
+            .resolve_submission(created.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    });
+    stage
+        .install_child_machine(created.task_id, child)
+        .unwrap_or_else(|error| panic!("child install: {error:?}"));
+    ready(stage.commit(&mut writer, DurableCommitCutV1::Checkpoint, created.task_id))
+        .unwrap_or_else(|error| panic!("submission commit: {error:?}"));
+    let before_handoff = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("handoff predecessor: {error:?}"));
+    writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &sink,
+        Arc::clone(&program),
+        &before_handoff,
+    )
+    .unwrap_or_else(|error| panic!("handoff writer: {error:?}"));
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("handoff stage: {error:?}"));
+    stage
+        .stage_resource_task_handoff(
+            &subject,
+            (task, created.task_id),
+            (owner, OwnerGeneration::new(5)),
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("handoff: {error:?}"));
+    ready(stage.commit(
+        &mut writer,
+        DurableCommitCutV1::ResourceOwnerAdvance,
+        created.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("handoff commit: {error:?}"));
+    let final_prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("final prefix: {error:?}"));
+    let expected =
+        crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &final_prefix)
+            .unwrap_or_else(|error| panic!("full replay: {error:?}"));
+    let JournalPrefixV1::Full(full) = &final_prefix else {
+        panic!("full prefix")
+    };
+    let JournalPrefixV1::Full(before) = &before_handoff else {
+        panic!("full predecessor")
+    };
+    for retained in [before, full] {
+        let snapshot = crate::ConcurrentFinishSnapshotV1::from_full_prefix(
+            Arc::clone(&program),
+            retained,
+            16_777_216,
+        )
+        .unwrap_or_else(|error| panic!("snapshot: {error:?}"));
+        let decoded = crate::ConcurrentFinishSnapshotV1::decode(
+            Arc::clone(&program),
+            snapshot.canonical_bytes(),
+            snapshot.canonical_bytes().len() as u64,
+        )
+        .unwrap_or_else(|error| panic!("snapshot decode: {error:?}"));
+        let mut prefix = decoded.prefix();
+        prefix.suffix = Arc::from(&full.evidence[retained.evidence.len()..]);
+        prefix.committed_through = full.committed_through;
+        let recovered = crate::recover_concurrent_authoritative_prefix(
+            Arc::clone(&program),
+            &JournalPrefixV1::Snapshot(prefix),
+        )
+        .unwrap_or_else(|error| panic!("snapshot replay: {error:?}"));
+        assert_eq!(
+            recovered.latest_cut(),
+            DurableCommitCutV1::ResourceOwnerAdvance
+        );
+        assert_eq!(
+            recovered.execution().capture_replayed_checkpoint(),
+            expected.execution().capture_replayed_checkpoint()
+        );
+        assert_eq!(
+            recovered.execution().scheduler().resource_records()[0].task_owner(),
+            created.task_id
+        );
+    }
+}
+
 /// A task-qualified journal cut changes cleanup ownership, not the issuing machine or history.
 #[test]
 fn durable_resource_handoff_preserves_exact_graph_and_task_eligibility() {
