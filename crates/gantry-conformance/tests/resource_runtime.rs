@@ -5572,17 +5572,20 @@ fn resource_task_handoff_refuses_ineligible_tasks_and_outstanding_work() {
 #[test]
 fn resource_task_handoff_attachment_uses_current_cleanup_task() {
     use gantry::runtime::CoordinatorResourceRefusal;
-    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let (program, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
     let subject = subject.unwrap_or_else(|| panic!("subject"));
     let (coordinator, child, tasks, sessions) = resource_handoff_fixture(&machine);
     let owner = OwnerGeneration::new(4);
+    let issuing_bytes = machine.checkpoint().canonical_bytes();
+    let issuing_budget = machine.budget_checkpoint();
     coordinator
-        .admit_resource(
+        .admit_resource_with_issuing_evidence(
             &machine,
             ResourceCarrier::ReconstructionRecord,
             ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
                 .unwrap_or_else(|error| panic!("ledger: {error:?}"))
                 .durable_record(),
+            65_536,
         )
         .unwrap_or_else(|error| panic!("admit: {error:?}"));
     let operation = machine
@@ -5620,6 +5623,23 @@ fn resource_task_handoff_attachment_uses_current_cleanup_task() {
     let (root_only, root_sessions) =
         resource_recovery_inputs(machine.execution_id(), machine.task_id());
     assert_eq!(
+        records[0].issuing_evidence(),
+        Some((issuing_bytes.as_slice(), issuing_budget))
+    );
+    let envelope = gantry::runtime::encode_resource_recovery_envelope(&records[0], 65_536)
+        .unwrap_or_else(|error| panic!("transferred envelope: {error:?}"));
+    let decoded = gantry::runtime::decode_resource_recovery_envelope(
+        program,
+        &envelope,
+        65_536,
+        OwnerGeneration::new(5),
+        child,
+    )
+    .unwrap_or_else(|error| panic!("transferred reconstruction: {error:?}"));
+    assert_eq!(decoded, records[0]);
+    assert_eq!(decoded.subject().task_id(), machine.task_id());
+    assert_eq!(decoded.task_owner(), child);
+    assert_eq!(
         gantry::runtime::ExecutionCoordinator::new_with_recovered_resources(
             root_only,
             root_sessions,
@@ -5631,7 +5651,10 @@ fn resource_task_handoff_attachment_uses_current_cleanup_task() {
         "reconstruction validates the cleanup task too"
     );
     let reconstructed = gantry::runtime::ExecutionCoordinator::new_with_recovered_resources(
-        tasks, sessions, 1, records,
+        tasks,
+        sessions,
+        1,
+        vec![decoded],
     )
     .unwrap_or_else(|error| panic!("reconstruct: {error:?}"));
     reconstructed
