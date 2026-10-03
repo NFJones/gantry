@@ -15325,6 +15325,10 @@ validation MUST precede subject derivation; kind, carrier and current-owner chec
 publication. The private recovered admission lease MUST be closed without changing the source
 machine's lease. This route MUST NOT reconstruct accepted work or physical ownership, and the
 caller remains responsible for authenticating journal provenance and current cleanup ownership.
+Validated records MAY retain immutable canonical issuing checkpoint bytes and their budget.
+Accounting reconstruction and declared capture MUST preserve this evidence independently of
+current lifetime, owner and cleanup-task facts. Legacy construction leaves evidence absent;
+inspection of retained bytes MUST NOT reopen admission or imply journal authentication.
 
 Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
 graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical

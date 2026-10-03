@@ -623,6 +623,8 @@ pub struct RecoveredResourceRecord {
     owner: OwnerGeneration,
     task_owner: gantry_core::identity::ProtocolIdentity,
     record: DurableResourceRecord,
+    #[cfg(feature = "durable")]
+    issuing_evidence: Option<(Arc<[u8]>, crate::ExecutionBudgetSnapshot)>,
 }
 
 impl RecoveredResourceRecord {
@@ -640,6 +642,8 @@ impl RecoveredResourceRecord {
             carrier,
             owner,
             record,
+            #[cfg(feature = "durable")]
+            issuing_evidence: None,
         }
     }
 
@@ -658,6 +662,7 @@ impl RecoveredResourceRecord {
         owner: OwnerGeneration,
         record: DurableResourceRecord,
     ) -> Result<Self, ResourceOriginRecoveryError> {
+        let issuing_budget = budget;
         let budget = crate::ExecutionBudget::recover_from_checkpoint(budget)
             .map_err(ResourceOriginRecoveryError::Machine)?;
         let mut machine = crate::Machine::recover_from_checkpoint(program, checkpoint, budget)
@@ -668,6 +673,7 @@ impl RecoveredResourceRecord {
                 .ok_or(ResourceOriginRecoveryError::Registry(
                     ResourceRegistryRefusal::NoPendingResourceSubject,
                 ))?;
+        let issuing_bytes = machine.checkpoint().canonical_bytes();
         machine.close_resource_admission();
         let account =
             AdmittedResource::admit_reconstructed(carrier, record.clone(), subject.clone())
@@ -675,7 +681,18 @@ impl RecoveredResourceRecord {
         account.require_current_owner(owner).map_err(|error| {
             ResourceOriginRecoveryError::Registry(ResourceRegistryRefusal::Admission(error))
         })?;
-        Ok(Self::new(subject, carrier, owner, record))
+        let mut recovered = Self::new(subject, carrier, owner, record);
+        recovered.issuing_evidence = Some((Arc::from(issuing_bytes), issuing_budget));
+        Ok(recovered)
+    }
+
+    /// Returns immutable validated issuing bytes and budget, not journal authentication.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub fn issuing_evidence(&self) -> Option<(&[u8], crate::ExecutionBudgetSnapshot)> {
+        self.issuing_evidence
+            .as_ref()
+            .map(|(bytes, budget)| (bytes.as_ref(), *budget))
     }
 
     /// Returns current cleanup ownership, independently of immutable issuing provenance.
@@ -1095,6 +1112,10 @@ impl ResourceRegistry {
                 presented.subject,
             )?;
             account.task_owner = presented.task_owner;
+            #[cfg(feature = "durable")]
+            {
+                account.issuing_evidence = presented.issuing_evidence;
+            }
             let current = account.ledger().owner();
             if current != presented.owner {
                 return Err(ResourceRegistryRefusal::Admission(
@@ -1166,6 +1187,10 @@ impl ResourceRegistry {
                     account.durable_record(),
                 );
                 record.task_owner = account.task_owner;
+                #[cfg(feature = "durable")]
+                {
+                    record.issuing_evidence = account.issuing_evidence.clone();
+                }
                 record
             })
             .collect()
@@ -2192,6 +2217,8 @@ pub struct AdmittedResource {
     task_owner: gantry_core::identity::ProtocolIdentity,
     containment: ContainmentSettlement,
     adapter: Option<AdapterInstance>,
+    #[cfg(feature = "durable")]
+    issuing_evidence: Option<(Arc<[u8]>, crate::ExecutionBudgetSnapshot)>,
 }
 
 impl AdmittedResource {
@@ -2242,6 +2269,8 @@ impl AdmittedResource {
             subject,
             containment,
             adapter: None,
+            #[cfg(feature = "durable")]
+            issuing_evidence: None,
         })
     }
 

@@ -9126,10 +9126,40 @@ fn reconstruction_from_issuing_checkpoint_validates_origin_and_closes_admission(
     )
     .unwrap_or_else(|error| panic!("validated origin: {error:?}"));
     assert_eq!(origin.subject(), &subject);
+    let issuing_bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(
+        origin.issuing_evidence(),
+        Some((issuing_bytes.as_slice(), machine.budget_checkpoint()))
+    );
+    let legacy = RecoveredResourceRecord::new(
+        subject.clone(),
+        ResourceCarrier::ReconstructionRecord,
+        OwnerGeneration::new(4),
+        ledger().durable_record(),
+    );
+    assert_eq!(legacy.issuing_evidence(), None);
     let registry = ResourceRegistry::reconstruct(Some(1), vec![origin.clone()])
         .unwrap_or_else(|error| panic!("accounting recovery: {error:?}"));
     assert_eq!(registry.pending_operations(), 0);
     assert_eq!(registry.declared_records(), vec![origin.clone()]);
+    let captured = registry.declared_records();
+    assert_eq!(captured[0].issuing_evidence(), origin.issuing_evidence());
+    let recaptured = ResourceRegistry::reconstruct(Some(1), captured)
+        .unwrap_or_else(|error| panic!("recaptured provenance: {error:?}"));
+    assert_eq!(recaptured.declared_records(), vec![origin.clone()]);
+    let mut advanced = recaptured;
+    advanced
+        .begin_finish(&subject, OwnerGeneration::new(4))
+        .unwrap_or_else(|error| panic!("accounting advancement: {error:?}"));
+    let advanced_records = advanced.declared_records();
+    assert_eq!(
+        advanced_records[0].issuing_evidence(),
+        origin.issuing_evidence()
+    );
+    assert_eq!(
+        advanced_records[0].record().lifetime(),
+        ResourceLifetimeState::Finishing
+    );
     let mut fresh = ResourceRegistry::new();
     assert_eq!(
         fresh.admit(

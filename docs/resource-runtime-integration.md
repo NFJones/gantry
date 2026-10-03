@@ -114,6 +114,10 @@ the declared kind, carrier and owner, and closes only its private recovered admi
 The source machine lease remains unchanged; no accepted work or physical slot is reconstructed.
 The caller must authenticate the issuing checkpoint's journal provenance and current cleanup
 ownership. This is not resource-record carriage in the combined graph wire.
+Validated origins retain immutable canonical checkpoint bytes and their issuing budget through
+accounting reconstruction and declared capture. `issuing_evidence()` inspects these historical
+facts without opening a lease; legacy record construction leaves them absent. Current accounting
+advancement does not rewrite issuing evidence or qualify it as journal-authenticated state.
 
 `ResourceRegistry::reconstruct_with_retained_limit` additionally bounds every reconstructed
 account, including terminal records. Existing evidence and live-capacity refusals retain
