@@ -5531,6 +5531,75 @@ fn host_receiver_loan_settlement_survives_machine_cancellation() {
     );
 }
 
+/// A cancellation race either refuses acquisition or leaves one explicitly settled loan.
+#[test]
+fn host_receiver_loan_cancellation_race_preserves_ownership() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    for _ in 0..32 {
+        let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let account = admitted(
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            subject.unwrap_or_else(|| panic!("subject exists")),
+        )
+        .unwrap_or_else(|error| panic!("account: {error:?}"));
+        let mut resource =
+            OwnedHostResource::bind(account, 17_u64).unwrap_or_else(|_| panic!("bind"));
+        let before = resource.account().durable_record();
+        let barrier = std::sync::Barrier::new(2);
+        let acquired = std::thread::scope(|scope| {
+            let acquisition = scope.spawn(|| {
+                let live = transport_live(FIXTURE_DECLARATION, 0, 4, true);
+                let preserved = live.clone();
+                barrier.wait();
+                match resource.borrow_receiver(live) {
+                    Ok(mut loan) => {
+                        assert!(loan.settle_failure(FailureClass::ResourceFailure).is_ok());
+                        true
+                    }
+                    Err(refusal) => {
+                        let (error, returned) = *refusal;
+                        assert_eq!(error, HostResourceError::CancellationRequested);
+                        assert_eq!(returned, preserved);
+                        false
+                    }
+                }
+            });
+            barrier.wait();
+            assert!(machine.cancel("receiver acquisition race").is_some());
+            acquisition
+                .join()
+                .unwrap_or_else(|_| panic!("acquisition thread"))
+        });
+        if acquired {
+            assert_eq!(
+                resource.account().ledger().operation_state(),
+                ResourceState::Poisoned
+            );
+            assert!(
+                !resource
+                    .account()
+                    .ledger()
+                    .liveness_roots()
+                    .contains(&LivenessRoot::Loan)
+            );
+            assert_eq!(resource.account().ledger().lifetime(), before.lifetime());
+            assert_eq!(
+                resource.account().durable_record().quotas(),
+                before.quotas()
+            );
+        } else {
+            assert_eq!(resource.account().durable_record(), before);
+        }
+        assert!(!resource.is_poisoned());
+        assert!(machine.checkpoint().pending_operation().is_some());
+        assert_eq!(
+            resource.emergency_release(emergency_cleanup()),
+            Ok(ResourceLifetimeState::EmergencyReleased)
+        );
+    }
+}
+
 /// Physical acquisition is eligible only for the two open operation states.
 #[test]
 fn owned_host_resource_binding_requires_open_operation_state() {

@@ -772,5 +772,68 @@ mod tests {
         assert_eq!(account.subject(), &subject);
         assert_eq!(value, 17);
         assert!(lease.lock().is_err());
+
+        // Binding happened before the fault in this second owner; loan acquisition must
+        // still consult the exact account lease instead of treating prior binding as permission.
+        let second_lease = Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open()));
+        let second_subject = crate::ResourceSubjectBinding::derive(
+            &path,
+            path.clone(),
+            gantry_ir::StructuralPosition::new(vec![0])
+                .unwrap_or_else(|error| panic!("fixture site: {error}")),
+            0,
+            Some(gantry_ir::OperationKind::LiveResource),
+            Arc::clone(&second_lease),
+            (execution, execution),
+        );
+        let second_account = AdmittedResource::admit(
+            gantry_ir::ResourceCarrier::ReconstructionRecord,
+            record.clone(),
+            second_subject.clone(),
+        )
+        .unwrap_or_else(|error| panic!("second account: {error:?}"));
+        let mut resource = OwnedHostResource::bind(second_account, 19_u64)
+            .unwrap_or_else(|_| panic!("bind before lease fault"));
+        let abi = gantry_ir::OperationAbi::new(
+            gantry_ir::OperationKind::LiveResource,
+            &path,
+            second_subject.site(),
+            0,
+            gantry_ir::generated::RecoveryClass::Idempotent,
+            gantry_ir::ReceiverOwnership::BorrowedLoan(gantry_ir::LoanId::seal(
+                &path,
+                second_subject.site(),
+                second_subject.generation(),
+            )),
+        )
+        .unwrap_or_else(|error| panic!("loan ABI: {error:?}"));
+        let live = abi
+            .open_live(
+                OwnerGeneration::new(4),
+                gantry_ir::OperationAbi::observation_allowance(
+                    1,
+                    gantry_ir::DisclosureCharge::new(1)
+                        .unwrap_or_else(|| panic!("positive charge")),
+                ),
+            )
+            .unwrap_or_else(|error| panic!("live loan: {error:?}"));
+        let preserved = live.clone();
+        assert!(
+            std::panic::catch_unwind(|| {
+                let _guard = second_lease.lock().unwrap_or_else(|_| panic!("lease"));
+                panic!("poison loan lease");
+            })
+            .is_err()
+        );
+        let (error, returned) = *resource
+            .borrow_receiver(live)
+            .err()
+            .unwrap_or_else(|| panic!("unreadable loan lease refuses"));
+        assert_eq!(error, HostResourceError::PendingOperation);
+        assert_eq!(returned, preserved);
+        assert_eq!(resource.account().durable_record(), record);
+        assert!(!resource.loan_pending);
+        assert!(!resource.is_poisoned());
+        assert_eq!(resource.value, Some(19));
     }
 }
