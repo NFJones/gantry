@@ -766,6 +766,48 @@ impl RecoveredResourceRecord {
     pub const fn record(&self) -> &DurableResourceRecord {
         &self.record
     }
+
+    /// Builds one exact logical finish candidate without changing this retained record.
+    ///
+    /// Current ownership is checked before the model lifetime transition. Historical issuing
+    /// and containment evidence, subject, cleanup ownership, roots and quotas are preserved.
+    /// This creates no journal evidence, physical finalization or accepted-work settlement.
+    #[cfg(feature = "durable")]
+    pub fn stage_finish(
+        &self,
+        owner: OwnerGeneration,
+        transition: ResourceFinishTransition,
+    ) -> Result<Self, ResourceError> {
+        if owner != self.owner || owner != self.record.owner() {
+            return Err(ResourceError::StaleOwner {
+                presented: owner,
+                current: self.record.owner(),
+            });
+        }
+        let mut ledger = ResourceLedger::reconstruct(self.record.clone());
+        match transition {
+            ResourceFinishTransition::Begin => ledger.begin_finish()?,
+            ResourceFinishTransition::Complete { settled_at } => ledger.finish(settled_at)?,
+        }
+        let mut candidate = self.clone();
+        candidate.record = ledger.durable_record();
+        Ok(candidate)
+    }
+}
+
+/// One explicit logical finish transition for a retained accounting candidate.
+///
+/// Neither variant invokes a finalizer or supplies journal publication authority.
+#[cfg(feature = "durable")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResourceFinishTransition {
+    /// Advances active accounting to finishing without releasing its live place.
+    Begin,
+    /// Completes finishing at a declared logical instant, never a host clock reading.
+    Complete {
+        /// Declared logical settlement instant retained in the model baseline.
+        settled_at: u64,
+    },
 }
 
 /// Refusal while validating the issuing evidence of a declared accounting record.

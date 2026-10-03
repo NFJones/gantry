@@ -139,6 +139,12 @@ accounting reconstruction and declared capture. `issuing_evidence()` inspects th
 facts without opening a lease; legacy record construction leaves them absent. Current accounting
 advancement does not rewrite issuing evidence or qualify it as journal-authenticated state.
 
+`stage_finish(owner, ResourceFinishTransition::Begin)` builds a finishing candidate; `Complete`
+records a declared logical settlement instant using the same ledger rules. Both leave the source
+record unchanged and preserve its subject, cleanup ownership, quotas, roots and historical evidence.
+Stale ownership refuses before lifetime classification. This candidate performs no physical
+finalization or journal publication and does not relax graph resource-image immutability.
+
 `encode_resource_recovery_envelope` and `decode_resource_recovery_envelope` carry those facts in
 the exact `GNTRRE01` envelope. Both accept an independent total byte ceiling; encoding checks
 the complete framed size before copying the checkpoint, and decoding refuses excess bytes before

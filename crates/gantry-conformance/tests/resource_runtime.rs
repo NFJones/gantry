@@ -9954,6 +9954,67 @@ fn resource_envelope_set_restore_preserves_policy_and_refuses_partial_sets() {
         .unwrap_or_else(|error| panic!("capture: {error:?}"));
     let inputs = [(envelopes[0].as_slice(), owner, machine.task_id())];
     let exact = 16 + envelopes[0].len() as u64;
+    let captured = registry.declared_records_with_containment();
+    let original = &captured[0];
+    use gantry::runtime::ResourceFinishTransition;
+    assert_eq!(
+        original.stage_finish(OwnerGeneration::new(3), ResourceFinishTransition::Begin),
+        Err(ResourceError::StaleOwner {
+            presented: OwnerGeneration::new(3),
+            current: owner,
+        }),
+    );
+    assert_eq!(
+        original.stage_finish(owner, ResourceFinishTransition::Complete { settled_at: 20 }),
+        Err(ResourceError::IllegalLifetimeTransition),
+    );
+    let finishing = original
+        .stage_finish(owner, ResourceFinishTransition::Begin)
+        .unwrap_or_else(|error| panic!("finish candidate: {error:?}"));
+    assert_eq!(
+        finishing.record().lifetime(),
+        ResourceLifetimeState::Finishing
+    );
+    assert_eq!(finishing.issuing_evidence(), original.issuing_evidence());
+    assert_eq!(
+        finishing.containment_evidence(),
+        original.containment_evidence()
+    );
+    assert_eq!(finishing.subject(), original.subject());
+    assert_eq!(finishing.task_owner(), original.task_owner());
+    assert_eq!(finishing.record().quotas(), original.record().quotas());
+    assert_eq!(
+        finishing.record().liveness_roots(),
+        original.record().liveness_roots()
+    );
+    assert_eq!(
+        finishing.stage_finish(owner, ResourceFinishTransition::Begin),
+        Err(ResourceError::IllegalLifetimeTransition)
+    );
+    let finished = finishing
+        .stage_finish(owner, ResourceFinishTransition::Complete { settled_at: 20 })
+        .unwrap_or_else(|error| panic!("finished candidate: {error:?}"));
+    assert_eq!(
+        finished.record().lifetime(),
+        ResourceLifetimeState::Finished
+    );
+    assert_eq!(
+        finished
+            .record()
+            .settlement()
+            .map(|value| value.settled_at()),
+        Some(20)
+    );
+    assert_eq!(finished.issuing_evidence(), original.issuing_evidence());
+    assert_eq!(
+        finished.containment_evidence(),
+        original.containment_evidence()
+    );
+    assert_eq!(
+        finished.stage_finish(owner, ResourceFinishTransition::Complete { settled_at: 21 }),
+        Err(ResourceError::IllegalLifetimeTransition)
+    );
+    assert_eq!(registry.declared_records_with_containment(), captured);
     for policy in [
         (Some(1), Some(2), Some(3)),
         (None, None, None),

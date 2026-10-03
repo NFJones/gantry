@@ -15374,6 +15374,13 @@ Accounting reconstruction and declared capture MUST preserve this evidence indep
 current lifetime, owner and cleanup-task facts. Legacy construction leaves evidence absent;
 inspection of retained bytes MUST NOT reopen admission or imply journal authentication.
 
+`RecoveredResourceRecord::stage_finish` MAY build a logical begin/complete finish candidate.
+It MUST validate the presented current owner before applying the existing ledger transition,
+preserve subject, cleanup ownership, issuing and containment evidence, roots and quotas, and
+leave its source record unchanged on success or refusal. Completion records only its declared
+logical instant. A candidate grants no physical finalization, accepted-work settlement or
+journal publication authority; graph resource-image mutation remains unsupported.
+
 The separately scoped `GNTRRE01` reconstruction envelope MAY carry canonical issuing checkpoint
 bytes, issuing budget, current cleanup-task identity and the declared subject-free record.
 Encoding and decoding MUST enforce a caller-supplied total byte ceiling independent of input

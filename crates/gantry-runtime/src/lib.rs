@@ -157,8 +157,8 @@ pub use resource::{
 };
 #[cfg(feature = "durable")]
 pub use resource::{
-    ResourceOriginRecoveryError, ResourceRecoveryEnvelopeError, decode_resource_recovery_envelope,
-    encode_resource_recovery_envelope,
+    ResourceFinishTransition, ResourceOriginRecoveryError, ResourceRecoveryEnvelopeError,
+    decode_resource_recovery_envelope, encode_resource_recovery_envelope,
 };
 pub use resource_cleanup::{ResourceCleanupError, ResourceCleanupObserver};
 pub use resource_transport::{HostReceiverLoan, HostResourceError, OwnedHostResource};
