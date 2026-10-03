@@ -5922,6 +5922,20 @@ fn host_receiver_loan_admission_refuses_machine_cancellation() {
     assert_eq!(resource.account().durable_record(), before);
     assert!(!resource.is_poisoned());
     assert!(machine.checkpoint().pending_operation().is_some());
+    let (error, returned) = *resource
+        .borrow_receiver_with_charges(
+            returned,
+            &[Charge {
+                owner: QuotaOwner::Owner,
+                family: QuotaFamily::Bytes,
+                amount: 9,
+            }],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("cancellation precedes quota exhaustion"));
+    assert_eq!(error, HostResourceError::CancellationRequested);
+    assert_eq!(returned, preserved);
+    assert_eq!(resource.account().durable_record(), before);
     let stale = transport_live(FIXTURE_DECLARATION, 0, 3, true);
     let (error, _) = *resource
         .borrow_receiver(stale)
@@ -6177,6 +6191,73 @@ fn transport_live(
         ),
     )
     .unwrap_or_else(|error| panic!("live handle: {error:?}"))
+}
+
+/// Charged acquisition refuses whole vectors without acquiring a loan or consuming its handle.
+#[test]
+fn charged_receiver_loan_acquisition_preserves_refusal_and_commits_once() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let mut resource =
+        OwnedHostResource::bind(admitted_active(), 11_u64).unwrap_or_else(|_| panic!("bind"));
+    let before = resource.account().durable_record();
+    let live = transport_live(FIXTURE_DECLARATION, 0, 4, true);
+    let preserved = live.clone();
+    let charge = |family, amount| Charge {
+        owner: QuotaOwner::Owner,
+        family,
+        amount,
+    };
+    let vector = [
+        charge(QuotaFamily::Bytes, 3),
+        charge(QuotaFamily::Handles, 1),
+    ];
+    let (error, returned) = *resource
+        .borrow_receiver_with_charges(live, &vector)
+        .err()
+        .unwrap_or_else(|| panic!("undeclared quota refuses"));
+    assert!(matches!(error, HostResourceError::Model(_)));
+    assert_eq!(returned, preserved);
+    assert_eq!(resource.account().durable_record(), before);
+    assert_eq!(
+        resource.invoke(OwnerGeneration::new(4), |value| Ok(*value)),
+        Ok(11)
+    );
+    let vector = [charge(QuotaFamily::Bytes, 9)];
+    let (error, returned) = *resource
+        .borrow_receiver_with_charges(returned, &vector)
+        .err()
+        .unwrap_or_else(|| panic!("exhausted quota refuses"));
+    assert!(matches!(
+        error,
+        HostResourceError::Model(ResourceError::QuotaExhausted)
+    ));
+    assert_eq!(returned, preserved);
+    assert_eq!(resource.account().durable_record(), before);
+    {
+        let mut loan = resource
+            .borrow_receiver_with_charges(returned, &[charge(QuotaFamily::Bytes, 3)])
+            .unwrap_or_else(|_| panic!("valid vector admits"));
+        assert_eq!(loan.invoke(|value| Ok(*value)), Ok(11));
+        loan.settle_failure(FailureClass::ResourceFailure)
+            .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    }
+    assert_eq!(
+        resource
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(5)
+    );
+    assert_eq!(
+        resource.account().ledger().lifetime(),
+        ResourceLifetimeState::Active
+    );
+    assert!(
+        !resource
+            .account()
+            .ledger()
+            .liveness_roots()
+            .contains(&LivenessRoot::Loan)
+    );
 }
 
 /// Accepted settlement releases only the receiver loan, while refused progress claims retain it.

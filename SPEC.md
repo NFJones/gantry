@@ -15535,7 +15535,12 @@ recovery-contract substitution. After those eligibility checks, loan admission
 MUST check the admitted account's machine lease and refuse recorded cancellation with
 `CancellationRequested`, or an unreadable lease with `PendingOperation`, returning the model handle
 unchanged. The cancellation check and loan acquisition MUST linearize under that lease; refusal
-MUST NOT change accounting, poison transport, or settle pending work. Already-admitted loan
+MUST NOT change accounting, poison transport, or settle pending work. Loan acquisition
+MAY accept an explicit charge vector through `borrow_receiver_with_charges`.
+Eligibility and cancellation MUST precede quota admission. The complete Section 28 loan vector
+MUST commit under the same lease before acquiring the loan, with no remaining fallible step;
+quota refusal MUST return the handle unchanged and acquire no loan. No charge is inferred from
+physical size or observation allowance. Ordinary borrowing uses an empty vector. Accepted loan
 settlement and sealed cleanup remain available after cancellation. Accepted Section 20 settlement MUST project
 only operation state and close that loan root; refused settlement MUST retain the guard and
 observed progress. No loan settlement releases whole-resource lifetime or pending machine work.

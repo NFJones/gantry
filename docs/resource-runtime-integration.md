@@ -476,7 +476,11 @@ match issuing executable metadata retained by the account; absent or mismatched 
 contract. Eligible acquisition then checks
 the admitted account's machine lease: cancellation refuses with `CancellationRequested`, and an
 unreadable lease refuses with `PendingOperation`. The check and acquisition share the lease lock;
-refusal returns the complete handle without changing accounting or poisoning transport. Already
+refusal returns the complete handle without changing accounting or poisoning transport.
+`borrow_receiver_with_charges` applies an explicit whole Section 28 loan-charge vector under that
+same lease, after eligibility and cancellation and before the infallible acquisition. Quota refusal
+preserves the handle and every quota and acquires no loan. Ordinary borrowing uses an empty vector;
+neither physical size nor observation allowance supplies implicit charges. Already
 admitted loan settlement and sealed cleanup remain available after cancellation. The underlying `LiveResource`
 refuses observation after accepted settlement with `SecondSettlement`, preserving progress,
 state and observation allowance even for a partial winner with an open half. Generation fencing

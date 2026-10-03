@@ -178,6 +178,19 @@ impl<T> OwnedHostResource<T> {
         &mut self,
         live: LiveResource,
     ) -> Result<HostReceiverLoan<'_, T>, Box<(HostResourceError, LiveResource)>> {
+        self.borrow_receiver_with_charges(live, &[])
+    }
+
+    /// Atomically charges an explicit loan vector and acquires the exact receiver loan.
+    ///
+    /// Eligibility and cancellation retain precedence over quota refusal. The complete
+    /// vector commits under the account lease before acquisition, with no fallible step
+    /// remaining. Refusal returns the unchanged handle and preserves every quota.
+    pub fn borrow_receiver_with_charges(
+        &mut self,
+        live: LiveResource,
+        charges: &[gantry_ir::Charge],
+    ) -> Result<HostReceiverLoan<'_, T>, Box<(HostResourceError, LiveResource)>> {
         if let Err(error) = self.require_owner(live.owner()) {
             return Err(Box::new((error, live)));
         }
@@ -222,6 +235,12 @@ impl<T> OwnedHostResource<T> {
         };
         if admission.cancellation_requested {
             return Err(Box::new((HostResourceError::CancellationRequested, live)));
+        }
+        if let Err(error) =
+            self.account
+                .charge(live.owner(), gantry_ir::ResourceAction::Loan, charges)
+        {
+            return Err(Box::new((HostResourceError::Model(error), live)));
         }
         self.loan_pending = true;
         drop(admission);
