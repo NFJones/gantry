@@ -5450,6 +5450,87 @@ fn owned_host_resource_binding_refuses_machine_cancellation_without_mutation() {
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
+/// Cancellation after physical binding must refuse a fresh loan without disposing its receiver.
+#[test]
+fn host_receiver_loan_admission_refuses_machine_cancellation() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject,
+    )
+    .unwrap_or_else(|error| panic!("account: {error:?}"));
+    let mut resource = OwnedHostResource::bind(account, 17_u64)
+        .unwrap_or_else(|_| panic!("physical binding admits"));
+    let before = resource.account().durable_record();
+    assert!(machine.cancel("loan acquisition cancelled").is_some());
+    let live = transport_live(FIXTURE_DECLARATION, 0, 4, true);
+    let preserved = live.clone();
+    let (error, returned) = *resource
+        .borrow_receiver(live)
+        .err()
+        .unwrap_or_else(|| panic!("cancelled work cannot acquire a loan"));
+    assert_eq!(error, HostResourceError::CancellationRequested);
+    assert_eq!(returned, preserved);
+    assert_eq!(resource.account().durable_record(), before);
+    assert!(!resource.is_poisoned());
+    assert!(machine.checkpoint().pending_operation().is_some());
+    let stale = transport_live(FIXTURE_DECLARATION, 0, 3, true);
+    let (error, _) = *resource
+        .borrow_receiver(stale)
+        .err()
+        .unwrap_or_else(|| panic!("stale owner refuses before cancellation"));
+    assert!(matches!(
+        error,
+        HostResourceError::Model(ResourceError::StaleOwner { .. })
+    ));
+    assert_eq!(
+        resource.emergency_release(emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+}
+
+/// Cancellation does not settle accepted loan work or prevent its explicit failure settlement.
+#[test]
+fn host_receiver_loan_settlement_survives_machine_cancellation() {
+    use gantry::runtime::OwnedHostResource;
+    let (_, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject exists"));
+    let account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject,
+    )
+    .unwrap_or_else(|error| panic!("account: {error:?}"));
+    let mut resource = OwnedHostResource::bind(account, 17_u64)
+        .unwrap_or_else(|_| panic!("physical binding admits"));
+    {
+        let mut loan = resource
+            .borrow_receiver(transport_live(FIXTURE_DECLARATION, 0, 4, true))
+            .unwrap_or_else(|_| panic!("loan admits before cancellation"));
+        assert!(machine.cancel("accepted loan cancelled").is_some());
+        assert!(loan.settle_failure(FailureClass::ResourceFailure).is_ok());
+    }
+    assert!(
+        !resource
+            .account()
+            .ledger()
+            .liveness_roots()
+            .contains(&LivenessRoot::Loan)
+    );
+    assert_eq!(
+        resource.account().ledger().lifetime(),
+        ResourceLifetimeState::Active
+    );
+    assert!(machine.checkpoint().pending_operation().is_some());
+    assert_eq!(
+        resource.emergency_release(emergency_cleanup()),
+        Ok(ResourceLifetimeState::EmergencyReleased)
+    );
+}
+
 /// Physical acquisition is eligible only for the two open operation states.
 #[test]
 fn owned_host_resource_binding_requires_open_operation_state() {

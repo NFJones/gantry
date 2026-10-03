@@ -15319,7 +15319,12 @@ roots and historical containment evidence MUST remain unchanged. This does not r
 reopen settlement, grant authority, or implement source-task transfer.
 The wrapper MAY admit an exclusive `HostReceiverLoan` only from an unsettled borrowed
 `LiveResource` with its exact operation, site, resource generation and current owner, while
-active/open accounting retains a declared loan root. Accepted Section 20 settlement MUST project
+active/open accounting retains a declared loan root. After those eligibility checks, loan admission
+MUST check the admitted account's machine lease and refuse recorded cancellation with
+`CancellationRequested`, or an unreadable lease with `PendingOperation`, returning the model handle
+unchanged. The cancellation check and loan acquisition MUST linearize under that lease; refusal
+MUST NOT change accounting, poison transport, or settle pending work. Already-admitted loan
+settlement and sealed cleanup remain available after cancellation. Accepted Section 20 settlement MUST project
 only operation state and close that loan root; refused settlement MUST retain the guard and
 observed progress. No loan settlement releases whole-resource lifetime or pending machine work.
 The guard MAY explicitly settle a classified adapter or resource failure through the retained

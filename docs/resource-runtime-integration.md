@@ -308,7 +308,11 @@ historical containment; it neither rebinds an adapter nor implements source-task
 
 `OwnedHostResource::borrow_receiver` consumes an exact borrowed `LiveResource` into an exclusive
 `HostReceiverLoan`, returning the handle on refusal. Admission checks the account's operation,
-site, resource generation, current owner and declared loan root. The underlying `LiveResource`
+site, resource generation, current owner and declared loan root. Eligible acquisition then checks
+the admitted account's machine lease: cancellation refuses with `CancellationRequested`, and an
+unreadable lease refuses with `PendingOperation`. The check and acquisition share the lease lock;
+refusal returns the complete handle without changing accounting or poisoning transport. Already
+admitted loan settlement and sealed cleanup remain available after cancellation. The underlying `LiveResource`
 refuses observation after accepted settlement with `SecondSettlement`, preserving progress,
 state and observation allowance even for a partial winner with an open half. Generation fencing
 retains observation-refusal precedence and the first fencing category on repeated requests,

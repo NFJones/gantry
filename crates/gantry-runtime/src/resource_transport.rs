@@ -170,6 +170,8 @@ impl<T> OwnedHostResource<T> {
     ///
     /// Admission consumes the model handle, returning it on refusal. The retained pending flag
     /// also fences reuse if the guard is forgotten; abandonment does not fabricate settlement.
+    /// Eligible acquisition linearizes against cancellation under the admitted account's lease.
+    /// Cancellation or an unreadable lease returns the complete handle without acquiring a loan.
     pub fn borrow_receiver(
         &mut self,
         live: LiveResource,
@@ -211,7 +213,15 @@ impl<T> OwnedHostResource<T> {
         if let Some(error) = error {
             return Err(Box::new((error, live)));
         }
+        let subject = self.account.subject().clone();
+        let Some(admission) = subject.lock_admission() else {
+            return Err(Box::new((HostResourceError::PendingOperation, live)));
+        };
+        if admission.cancellation_requested {
+            return Err(Box::new((HostResourceError::CancellationRequested, live)));
+        }
         self.loan_pending = true;
+        drop(admission);
         Ok(HostReceiverLoan {
             resource: self,
             live,
