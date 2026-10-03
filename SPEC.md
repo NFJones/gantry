@@ -15256,6 +15256,9 @@ and explicit whole charge vector after cancellation, capacity and physical eligi
 Charging and both insertions MUST share the machine lease. Refusal MUST return the physical input
 untouched and publish no account, slot, quota use or pending capacity. No charge is inferred from
 physical size; legacy acquisition remains uncharged and the caller still authenticates authority.
+`ExecutionCoordinator::admit_resource_host_value_with_charges` MAY expose this admission under
+the same task, cancellation, closure and publication fences. Successful charged accounting and
+physical acquisition MUST publish once; refusal MUST return the input outside the shared lock.
 
 A registry MAY separately declare a finite ceiling on admitted pending resource operations.
 Every successful live admission MUST retain its pending settlement lease even without that ceiling;

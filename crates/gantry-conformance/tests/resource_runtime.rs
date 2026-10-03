@@ -5072,6 +5072,92 @@ fn coordinator_atomic_host_admission_publishes_once_and_preserves_refusal() {
     );
 }
 
+/// Charged coordinator acquisition publishes once and preserves inputs and accounting on refusal.
+#[test]
+fn coordinator_charged_acquisition_preserves_refusal_and_publication() {
+    use gantry::runtime::CoordinatorResourceRefusal;
+    let (_, machine, _) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let coordinator = resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+    let charge = Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 2,
+    };
+    let before = coordinator.snapshot();
+    let (error, returned) = *coordinator
+        .admit_resource_host_value_with_charges(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            17_u64,
+            (
+                ResourceAction::Move,
+                &[
+                    charge,
+                    Charge {
+                        family: QuotaFamily::Operations,
+                        ..charge
+                    },
+                ],
+            ),
+        )
+        .err()
+        .unwrap_or_else(|| panic!("undeclared vector tail must refuse"));
+    assert_eq!(
+        error,
+        CoordinatorResourceRefusal::Registry(ResourceRegistryRefusal::Admission(
+            ResourceError::UndeclaredQuota
+        ))
+    );
+    assert_eq!(returned, 17);
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(!coordinator.has_resource_host_values());
+    assert!(!coordinator.has_pending_resource_operations());
+    assert_eq!(
+        coordinator.admit_resource_host_value_with_charges(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            19_u64,
+            (ResourceAction::Move, &[charge]),
+        ),
+        Ok(())
+    );
+    let acquired = coordinator.snapshot();
+    assert_eq!(acquired.publication(), before.publication() + 1);
+    assert_eq!(
+        acquired
+            .resource_records()
+            .unwrap_or_else(|| panic!("records"))[0]
+            .record()
+            .quotas()[&(QuotaOwner::Owner, QuotaFamily::Bytes)]
+            .used(),
+        2
+    );
+    assert!(coordinator.has_resource_host_values());
+    assert!(coordinator.has_pending_resource_operations());
+    assert!(coordinator.close_resource_admission());
+    let (error, returned) = *coordinator
+        .admit_resource_host_value_with_charges(
+            &machine,
+            ResourceCarrier::ReconstructionRecord,
+            ledger().durable_record(),
+            23_u64,
+            (
+                ResourceAction::Move,
+                &[Charge {
+                    amount: 9,
+                    ..charge
+                }],
+            ),
+        )
+        .err()
+        .unwrap_or_else(|| panic!("closure must precede quota failure"));
+    assert_eq!(error, CoordinatorResourceRefusal::ResourceAdmissionClosed);
+    assert_eq!(returned, 23);
+    assert_eq!(coordinator.snapshot(), acquired);
+}
+
 /// Coordinator cancellation refuses complete acquisition without consuming the physical input.
 #[test]
 fn coordinator_atomic_host_admission_refuses_requested_cancellation() {

@@ -340,6 +340,9 @@ cancellation, capacity and active/open physical eligibility checks. The private 
 under the same machine lease before either insertion. Refusal returns the input untouched without
 publishing accounting, a slot or pending capacity. Legacy acquisition remains uncharged; physical
 size implies no charge and this boundary grants no authority.
+`admit_resource_host_value_with_charges` exposes the same atomic admission through coordinator
+task, cancellation, closure and publication guards. Success publishes the charged account once;
+refused inputs remain owned outside the coordinator lock without a partial acquisition.
 
 `ExecutionCoordinator::attach_resource_host_value` retains physical ownership in the same registry
 without changing accounting publication; refused inputs are returned untouched outside the lock.

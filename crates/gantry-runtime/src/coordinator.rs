@@ -714,6 +714,32 @@ impl ExecutionCoordinator {
         record: gantry_ir::DurableResourceRecord,
         value: T,
     ) -> Result<(), Box<(CoordinatorResourceRefusal, T)>> {
+        self.admit_resource_host_value_using(machine, carrier, record, value, None)
+    }
+
+    /// Admits caller-declared charges together with accounting and physical ownership.
+    /// Task, cancellation, closure and publication fences precede registry charging.
+    /// Refusal returns the complete input outside the lock; success publishes once.
+    pub fn admit_resource_host_value_with_charges<T: std::any::Any + Send>(
+        &self,
+        machine: &crate::Machine,
+        carrier: gantry_ir::ResourceCarrier,
+        record: gantry_ir::DurableResourceRecord,
+        value: T,
+        accounting: (gantry_ir::ResourceAction, &[gantry_ir::Charge]),
+    ) -> Result<(), Box<(CoordinatorResourceRefusal, T)>> {
+        self.admit_resource_host_value_using(machine, carrier, record, value, Some(accounting))
+    }
+
+    /// Shares coordinator acquisition guards while retaining legacy uncharged admission.
+    fn admit_resource_host_value_using<T: std::any::Any + Send>(
+        &self,
+        machine: &crate::Machine,
+        carrier: gantry_ir::ResourceCarrier,
+        record: gantry_ir::DurableResourceRecord,
+        value: T,
+        accounting: Option<(gantry_ir::ResourceAction, &[gantry_ir::Charge])>,
+    ) -> Result<(), Box<(CoordinatorResourceRefusal, T)>> {
         let mut value = Some(value);
         let result = (|| {
             let mut state = lock(&self.inner.state);
@@ -752,7 +778,12 @@ impl ExecutionCoordinator {
             let input = value
                 .take()
                 .unwrap_or_else(|| unreachable!("input transferred once"));
-            if let Err(refusal) = resources.admit_host_value(subject, carrier, record, input) {
+            let admission = match accounting {
+                Some(accounting) => resources
+                    .admit_host_value_with_charges(subject, carrier, record, input, accounting),
+                None => resources.admit_host_value(subject, carrier, record, input),
+            };
+            if let Err(refusal) = admission {
                 let (error, returned) = *refusal;
                 value = Some(returned);
                 return Err(CoordinatorResourceRefusal::Registry(error));
