@@ -58,6 +58,12 @@ replacement model execution. Normal-stack child-prompt recovery and the source-s
 this boundary without increasing the test-thread stack. This is an implementation stack-usage
 repair, not a portable stack-size or allocation guarantee.
 
+Lifecycle graph commits also heap-pin the journal-first transaction future at its existing await
+boundary, including task-local cancellation commits. This keeps the large transaction state out
+of enclosing lifecycle polling frames without spawning work or changing borrowed ownership,
+publication order or cancellation behavior. Normal-stack replacement execution covers this boundary;
+it remains an operational stack-usage repair, not a portable stack-size guarantee.
+
 `ExecutionCoordinator::stage_graph` provides an exclusive quiescent transaction
 primitive over borrowed root and child machines. Its private copies share one
 isolated budget; ordinary coordinator semantic writers are rejected until

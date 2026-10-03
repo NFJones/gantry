@@ -166,6 +166,14 @@ pub struct DurableEvidenceCommitV1 {
     pub cut: DurableCommitCutV1,
 }
 
+/// Exact graph accounting policy retained independently of the resource-record image.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GraphResourcePolicy {
+    policy: Option<(Option<u64>, Option<u64>)>,
+    retained: Option<u64>,
+}
+
 /// Serial causal commit boundary for one task in one fenced durable execution.
 pub struct DurableCommitCoordinatorV1<'a> {
     sink: &'a DurableTransitionSink,
@@ -180,6 +188,9 @@ pub struct DurableCommitCoordinatorV1<'a> {
     /// Last validated resource image; every unseeded recovered graph write fails closed.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     graph_resource_baseline: Option<Vec<crate::RecoveredResourceRecord>>,
+    /// Exact accounting policy of that same validated predecessor.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_resource_policy: Option<GraphResourcePolicy>,
 }
 
 impl<'a> DurableCommitCoordinatorV1<'a> {
@@ -210,6 +221,8 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             graph_task_cancellation: false,
             #[cfg(all(feature = "concurrent", feature = "durable"))]
             graph_resource_baseline: None,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            graph_resource_policy: None,
         })
     }
 

@@ -15473,6 +15473,9 @@ resource mutation cuts exist. Coordinator staging and capture MUST compare the c
 image before cloning or reservation; changed local accounting MUST NOT enter a new journal cut.
 Graph committers MUST reject resource-image drift before storage invocation and retain the image
 only after a validated receipt. Recovered owners MUST seed that image from validated recovery.
+The same predecessor baseline MUST retain exact optional live, pending and retained accounting
+policy, including disabled versus enabled-unlimited accounting. Changed or removed policy MUST
+refuse before storage invocation; successful receipt validation alone advances the held baseline.
 An unknown predecessor image MUST NOT be inferred empty from a record-free successor; recovered
 graph writes require a validated predecessor image even when the proposed set is empty.
 `DurableCommitCoordinatorV1::from_concurrent_prefix` MAY initialize this image by validating an

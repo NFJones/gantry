@@ -227,6 +227,9 @@ Records are frozen across replay transitions: this slice has
 no resource-mutation cut. Coordinator capture/staging compares the committed resource image before
 cloning or reservation, and graph committers reject image drift before storage invocation. Recovery
 seeds the same image; local accounting cleanup cannot silently become a new durable mutation cut.
+The writer also retains exact optional live, pending and retained policy with that predecessor
+image. Changed ceilings, removed policy and disabled/enabled-unlimited substitution refuse before
+storage invocation, matching replay's policy invariants. Baselines advance only after validated receipts.
 An unseeded recovered graph committer refuses even a record-free successor rather than inferring
 that its unknown predecessor had no resources. Staged owners supply the validated predecessor image.
 Public `DurableCommitCoordinatorV1::from_concurrent_prefix` validates a full or snapshot prefix

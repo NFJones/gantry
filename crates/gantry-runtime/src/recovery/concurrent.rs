@@ -2168,8 +2168,15 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
         &mut self,
         checkpoint: &ConcurrentDurableCheckpointV4,
     ) -> Result<(), DurableCommitError> {
+        let policy = super::GraphResourcePolicy {
+            policy: checkpoint.resource_policy(),
+            retained: checkpoint.retained_resource_limit(),
+        };
         if checkpoint.execution_id() != self.execution_id
             || checkpoint.root_task_id() != self.task_id
+            || self
+                .graph_resource_policy
+                .is_some_and(|held| held != policy)
             || self
                 .graph_resource_baseline
                 .as_ref()
@@ -2178,6 +2185,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             return Err(DurableCommitError::InvalidState);
         }
         self.graph_resource_baseline = Some(checkpoint.resource_records().to_vec());
+        self.graph_resource_policy = Some(policy);
         Ok(())
     }
 
@@ -2202,10 +2210,18 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             return Err(DurableCommitError::InvalidState);
         }
         let resource_records = checkpoint.resource_records().to_vec();
+        let resource_policy = super::GraphResourcePolicy {
+            policy: checkpoint.resource_policy(),
+            retained: checkpoint.retained_resource_limit(),
+        };
         if self
             .graph_resource_baseline
             .as_ref()
             .is_some_and(|baseline| baseline != &resource_records)
+            || self
+                .graph_resource_policy
+                .is_some_and(|held| held != resource_policy)
+            || (self.graph_resource_policy.is_none() && self.predecessor.is_some())
             || (self.graph_resource_baseline.is_none() && self.predecessor.is_some())
         {
             return Err(DurableCommitError::InvalidState);
@@ -2266,6 +2282,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             .commit_body_with_submission(cut, local_number, local_id, body, submitted)
             .await?;
         self.graph_resource_baseline = Some(resource_records);
+        self.graph_resource_policy = Some(resource_policy);
         Ok(receipt)
     }
 }

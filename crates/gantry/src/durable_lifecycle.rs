@@ -1115,8 +1115,8 @@ impl DurableOwnedExecution {
                 .set_graph_cancellation(reason)
                 .map_err(DurableRunFailure::Commit)?;
         }
-        transaction
-            .commit(&mut commits, cut, affected_task)
+        // Keep the large journal-first transaction future out of this lifecycle poll frame.
+        Box::pin(transaction.commit(&mut commits, cut, affected_task))
             .await
             .map_err(DurableRunFailure::Commit)?;
         let frontier = commits.frontier().ok_or(DurableRunFailure::Internal)?;
@@ -1154,14 +1154,13 @@ impl DurableOwnedExecution {
         commits
             .set_graph_task_cancellation()
             .map_err(DurableRunFailure::Commit)?;
-        transaction
-            .commit(
-                &mut commits,
-                DurableCommitCutV1::Cancellation,
-                affected_task,
-            )
-            .await
-            .map_err(DurableRunFailure::Commit)?;
+        Box::pin(transaction.commit(
+            &mut commits,
+            DurableCommitCutV1::Cancellation,
+            affected_task,
+        ))
+        .await
+        .map_err(DurableRunFailure::Commit)?;
         let frontier = commits.frontier().ok_or(DurableRunFailure::Internal)?;
         self.publish_graph_progress(
             coordinator,

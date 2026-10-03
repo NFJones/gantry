@@ -799,6 +799,69 @@ fn empty_resource_policy_survives_graph_recovery() {
     assert_eq!(registry.pending_operations(), 0);
 }
 
+/// A writer must not append policy changes that authoritative replay would reject.
+#[test]
+fn graph_writer_refuses_resource_policy_drift_before_storage() {
+    let (coordinator, root, children, _) = fixture_with_program();
+    lock(&coordinator.inner.state).resources =
+        Some(ResourceRegistry::with_accounting_limits(2, 3, 4));
+    let checkpoint = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("initial capture: {error:?}"));
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal = JournalId::new("writer-resource-policy")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let ownership = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("ownership: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), ownership.token);
+    let mut commits =
+        DurableCommitCoordinatorV1::new(&sink, root.execution_id(), root.task_id(), None)
+            .unwrap_or_else(|error| panic!("committer: {error:?}"));
+    ready(commits.commit_graph_checkpoint(
+        DurableCommitCutV1::Checkpoint,
+        root.task_id(),
+        checkpoint,
+    ))
+    .unwrap_or_else(|error| panic!("initial commit: {error:?}"));
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let frontier = commits.frontier();
+    for resources in [
+        None,
+        Some(ResourceRegistry::with_optional_limits(None, None)),
+        Some(ResourceRegistry::with_limits(2, 3)),
+        Some(ResourceRegistry::with_accounting_limits(1, 3, 4)),
+        Some(ResourceRegistry::with_accounting_limits(2, 1, 4)),
+        Some(ResourceRegistry::with_accounting_limits(2, 3, 1)),
+    ] {
+        lock(&coordinator.inner.state).resources = resources;
+        let changed = coordinator
+            .capture_checkpoint(&root, &children)
+            .unwrap_or_else(|error| panic!("independently valid changed policy: {error:?}"));
+        assert_eq!(
+            ready(commits.commit_graph_checkpoint(
+                DurableCommitCutV1::Checkpoint,
+                root.task_id(),
+                changed
+            )),
+            Err(DurableCommitError::InvalidState)
+        );
+        assert_eq!(commits.frontier(), frontier);
+        assert_eq!(
+            ready(storage.read_prefix(ReadJournalPrefixV1 {
+                journal_id: journal.clone()
+            }))
+            .unwrap_or_else(|error| panic!("unchanged prefix: {error:?}")),
+            prefix
+        );
+    }
+}
+
 /// Retained ceilings survive empty-registry graph recovery without creating accepted work.
 #[test]
 fn retained_resource_policy_survives_graph_recovery() {
