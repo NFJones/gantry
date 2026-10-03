@@ -62,6 +62,9 @@ use gantry_ir::{
 
 #[cfg(feature = "durable")]
 mod recovery_envelope;
+
+#[cfg(test)]
+mod tests;
 #[cfg(feature = "durable")]
 pub use recovery_envelope::{
     ResourceRecoveryEnvelopeError, decode_resource_recovery_envelope,
@@ -954,7 +957,8 @@ impl ResourceRegistry {
     /// Deletion is the only state in which the retained record is gone, so reaping is physical
     /// reclamation alone: it frees registry memory without changing any semantic release, and the
     /// registry holds no account for a reaped subject afterwards. A settled lifetime that is still
-    /// retained keeps its account and stays queryable.
+    /// retained keeps its account and stays queryable. Conclusively closed pending-lease references
+    /// are also pruned; pending or unreadable leases remain owned. The return counts accounts only.
     pub fn reap_deleted(&mut self) -> usize {
         let before = self.accounts.len();
         self.accounts.retain(|key, account| {
@@ -966,6 +970,8 @@ impl ResourceRegistry {
         });
         self.physical
             .retain(|key, _| self.accounts.contains_key(key));
+        self.pending_admissions
+            .retain(|lease| lease.lock().map_or(true, |lease| lease.pending));
         before.saturating_sub(self.accounts.len())
     }
 

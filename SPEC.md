@@ -15247,6 +15247,9 @@ once, without consuming another pending place. New leases remain subject to the 
 That ceiling counts admitted machine settlement leases, not active accounting lifetimes. An
 accepted machine completion, failure, or settled cancellation closes its lease and releases its
 pending place; a refused completion or a cancellation request alone does not.
+Storage reclamation MAY prune conclusively closed lease references even without another admission.
+It MUST retain pending or unreadable leases and MUST NOT close accepted work itself. The reaped
+account count remains independent of lease-reference reclamation.
 Machine-local cancellation MUST separately close new admission through current or saved subject
 bindings with `CancellationRequested` while retaining the pending place for accepted work. Recovery
 MUST restore that admission refusal from recorded cancellation; an uncommitted staged cancellation

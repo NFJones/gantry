@@ -74,7 +74,9 @@ returning the input untouched. It checks the admitted account's lease, not a cal
 speculative binding, and holds that lease through acquisition. Accepted-work settlement and cleanup
 remain separate and available.
 Accounting lifetime settlement and physical reclamation do not release still-pending work. Closed leases are pruned at successful
-admission; poisoned leases conservatively retain capacity. Reconstruction does not recover this
+admission and during `reap_deleted`, including when no account is reaped; pending and unreadable
+leases remain retained. Lease pruning changes storage references, not accepted-work settlement or
+the returned reaped-account count. Poisoned leases conservatively retain capacity. Reconstruction does not recover this
 process-local pending policy, and unadmitted evaluator work is outside its scope.
 
 `ExecutionCoordinator::new_with_resource_limits` enables both ceilings in one shared registry;
