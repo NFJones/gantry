@@ -1080,12 +1080,20 @@ fn failure_first_settlement_refuses_late_success_without_mutation() {
     );
     for failure in FailureClass::ALL {
         let mut live = resource(&current, owner, 1);
+        assert!(live.failure_state_projection().is_none());
         let evidence = live
             .settle_failure(failure)
             .unwrap_or_else(|error| panic!("failure settlement: {error:?}"));
         assert_eq!(live.failure_settlement(), Some(&evidence));
         assert!(live.settlement().is_none());
         assert!(live.operation_state_projection().is_none());
+        let projection = live
+            .failure_state_projection()
+            .unwrap_or_else(|| panic!("accepted failure has its own projection"));
+        assert_eq!(projection.operation(), evidence.operation());
+        assert_eq!(projection.generation(), evidence.generation());
+        assert_eq!(projection.owner(), owner);
+        assert_eq!(projection.state(), evidence.state());
         let before = live.clone();
         let late = settlement(
             &current,
@@ -1111,6 +1119,16 @@ fn failure_first_settlement_refuses_late_success_without_mutation() {
             OperationAbiDiagnosticCode::SecondSettlement
         );
         assert_eq!(live, before);
+        live.fence(FenceCategory::Revocation);
+        assert_eq!(live.failure_settlement(), Some(&evidence));
+        assert_eq!(live.progress(), before.progress());
+        let fenced = live
+            .failure_state_projection()
+            .unwrap_or_else(|| panic!("generation fencing retains failure projection"));
+        assert_eq!(fenced.operation(), projection.operation());
+        assert_eq!(fenced.generation(), projection.generation());
+        assert_eq!(fenced.owner(), projection.owner());
+        assert_eq!(fenced.state(), ResourceState::Poisoned);
     }
 }
 

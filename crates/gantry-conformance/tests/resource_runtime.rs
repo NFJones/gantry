@@ -5566,6 +5566,25 @@ fn host_receiver_loan_failure_closes_the_loan_once() {
         assert_eq!(after.quotas(), before.quotas());
         assert_eq!(after.lifetime(), before.lifetime());
         assert_eq!(after.settlement(), before.settlement());
+        let mut expected_roots = before.liveness_roots().clone();
+        expected_roots.remove(&LivenessRoot::Loan);
+        assert_eq!(after.liveness_roots(), &expected_roots);
+        let projection = {
+            let mut live = transport_live(FIXTURE_DECLARATION, 0, 4, true);
+            assert!(live.settle_failure(failure).is_ok());
+            live.failure_state_projection()
+                .unwrap_or_else(|| panic!("accepted failure projects state"))
+        };
+        let mut stale = ledger_owned_by(5);
+        let stale_before = stale.durable_record();
+        assert_eq!(
+            stale.project_operation_state(&projection),
+            Err(ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(4),
+                current: OwnerGeneration::new(5),
+            })
+        );
+        assert_eq!(stale.durable_record(), stale_before);
         assert_eq!(
             resource.is_poisoned(),
             failure == FailureClass::AdapterFailure
