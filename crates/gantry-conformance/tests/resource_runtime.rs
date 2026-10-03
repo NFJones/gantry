@@ -9474,6 +9474,119 @@ fn resource_envelope_set_restore_preserves_policy_and_refuses_partial_sets() {
     assert_eq!(registry.capture_recovery_envelopes(65_536), Ok(envelopes));
 }
 
+/// Distinct subjects restore in canonical registry order, never in caller-selected order.
+#[test]
+fn resource_envelope_set_restore_preserves_distinct_canonical_members() {
+    use gantry::runtime::ResourceRecoveryEnvelopeError;
+    let owner = OwnerGeneration::new(4);
+    let workflows = ["crate::first", "crate::second"]
+        .into_iter()
+        .map(|name| Workflow {
+            path: CanonicalPath::new(name).unwrap_or_else(|error| panic!("workflow: {error}")),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![FIXTURE_SITE])
+                        .unwrap_or_else(|error| panic!("site: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::OperationCall {
+                        operation: operation_metadata(
+                            Some(FIXTURE_DECLARATION),
+                            Some(OperationKind::LiveResource),
+                        ),
+                        operands: 0,
+                    },
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![FIXTURE_SITE + 1])
+                        .unwrap_or_else(|error| panic!("site: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        })
+        .collect();
+    let program = Arc::new(
+        MachineProgram::new(workflows).unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [90; 32])
+        .unwrap_or_else(|error| panic!("execution: {error}"));
+    let limits = MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("positive limits"));
+    let mut registry = ResourceRegistry::with_accounting_limits(2, 2, 2);
+    for workflow in program.workflows() {
+        let mut machine = Machine::new(
+            Arc::clone(&program),
+            &workflow.path,
+            vec![],
+            execution,
+            limits,
+        )
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        assert!(matches!(
+            machine.step(),
+            MachineStep::Transition(MachineLabel::OperationPrepared(_))
+        ));
+        let record =
+            ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+                .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+        registry
+            .admit_pending_operation_with_issuing_evidence(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                record.durable_record(),
+                65_536,
+            )
+            .unwrap_or_else(|error| panic!("admit: {error:?}"));
+        let operation = machine
+            .checkpoint()
+            .pending_operation()
+            .unwrap_or_else(|| panic!("pending"))
+            .identity;
+        machine
+            .fail_operation(
+                operation,
+                gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+            )
+            .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    }
+    let envelopes = registry
+        .capture_recovery_envelopes(131_072)
+        .unwrap_or_else(|error| panic!("capture: {error:?}"));
+    assert_eq!(envelopes.len(), 2);
+    let records = registry.declared_records_with_containment();
+    let inputs = envelopes
+        .iter()
+        .zip(&records)
+        .map(|(bytes, record)| (bytes.as_slice(), record.owner(), record.task_owner()))
+        .collect::<Vec<_>>();
+    let recovered = ResourceRegistry::reconstruct_recovery_envelopes(
+        Arc::clone(&program),
+        &inputs,
+        131_072,
+        (Some(2), Some(2), Some(2)),
+    )
+    .unwrap_or_else(|error| panic!("restore: {error:?}"));
+    assert_eq!(recovered.declared_records_with_containment(), records);
+    assert_eq!(
+        recovered.capture_recovery_envelopes(131_072),
+        Ok(envelopes.clone())
+    );
+    let reversed = inputs.into_iter().rev().collect::<Vec<_>>();
+    assert_eq!(
+        ResourceRegistry::reconstruct_recovery_envelopes(
+            program,
+            &reversed,
+            131_072,
+            (Some(2), Some(2), Some(2)),
+        )
+        .err(),
+        Some(ResourceRecoveryEnvelopeError::Encoding)
+    );
+}
+
 /// Bounded live admission retains issuing facts after machine work settles.
 #[test]
 fn bounded_live_admission_retains_issuing_evidence_after_settlement() {
