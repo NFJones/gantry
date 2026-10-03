@@ -299,6 +299,9 @@ impl std::fmt::Debug for DurableOwnedExecution {
 
 struct DurableOwnedExecutionState {
     recovered: Option<RecoveredDurableStateV1>,
+    /// Last committed logical accounting image, independent of graph-driver lifetime.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_resource_records: Vec<gantry_ir::DurableResourceRecord>,
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     graph_frontier: Option<(ProtocolIdentity, u64, DurableCommitCutV1)>,
     #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -431,6 +434,8 @@ impl DurableLifecycleCoordinator {
             state: Arc::new(Mutex::new(DurableOwnedExecutionState {
                 recovered: Some(recovered),
                 #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_resource_records: Vec::new(),
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
                 graph_frontier: None,
                 #[cfg(all(feature = "concurrent", feature = "durable"))]
                 graph_active: false,
@@ -507,6 +512,13 @@ impl DurableLifecycleCoordinator {
             recovered.latest_cut(),
         ));
         let committed_budget = recovered.execution().foreground().execution_budget();
+        let graph_resource_records = recovered
+            .execution()
+            .scheduler()
+            .resource_records()
+            .iter()
+            .map(|record| record.record().clone())
+            .collect();
         Ok(Arc::new(DurableOwnedExecution {
             storage: Arc::clone(&self.storage),
             event_plan,
@@ -518,6 +530,7 @@ impl DurableLifecycleCoordinator {
             owner_release: Mutex::new(DurableOwnerRelease::default()),
             state: Arc::new(Mutex::new(DurableOwnedExecutionState {
                 recovered: None,
+                graph_resource_records,
                 graph_frontier,
                 graph_active: false,
                 graph_failure_pending: None,
@@ -690,6 +703,9 @@ impl DurableLifecycleCoordinator {
         let mut executions = Vec::with_capacity(owned.len());
         let mut journal_owner_releases = Vec::with_capacity(owned.len());
         for execution in owned.values() {
+            orderly &= execution
+                .record_shutdown_resource_obligations()
+                .is_ok_and(|unsettled| !unsettled);
             let execution_id = execution.execution_id();
             let (observation, status) = match deadline_race(
                 executor.as_ref(),
@@ -853,6 +869,8 @@ impl DurableLifecycleCoordinator {
             state: Arc::new(Mutex::new(DurableOwnedExecutionState {
                 recovered: Some(recovered),
                 #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_resource_records: Vec::new(),
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
                 graph_frontier: None,
                 #[cfg(all(feature = "concurrent", feature = "durable"))]
                 graph_active: false,
@@ -957,6 +975,34 @@ impl DurableOwnedExecution {
 
     pub(crate) fn execution_handle(&self) -> ExecutionHandle {
         self.handle.clone()
+    }
+
+    /// Reports unsettled committed accounting independently of driver and journal ownership.
+    ///
+    /// Records the first operational cleanup failure without changing language outcomes,
+    /// accounting, or journal evidence. Serial owners have no graph resource records.
+    pub(crate) fn record_shutdown_resource_obligations(
+        &self,
+    ) -> Result<bool, ExecutionTransitionError> {
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        let unsettled = lock_state(&self.state)
+            .graph_resource_records
+            .iter()
+            .any(|record| {
+                matches!(
+                    record.lifetime(),
+                    gantry_ir::ResourceLifetimeState::Active
+                        | gantry_ir::ResourceLifetimeState::Finishing
+                )
+            });
+        #[cfg(not(all(feature = "concurrent", feature = "durable")))]
+        let unsettled = false;
+        if unsettled {
+            self.handle.record_resource_cleanup_failure(
+                gantry_runtime::ExecutionResourceCleanupFailure::UnsettledAccounting,
+            )?;
+        }
+        Ok(unsettled)
     }
 
     /// Returns the stable journal target controlled by this owner.
@@ -1166,7 +1212,11 @@ impl DurableOwnedExecution {
             .handle
             .snapshot()
             .map_err(DurableRunFailure::Lifecycle)?;
+        let graph_resource_records = coordinator
+            .committed_resource_records()
+            .ok_or(DurableRunFailure::Internal)?;
         let mut state = lock_state(&self.state);
+        state.graph_resource_records = graph_resource_records;
         state.graph_frontier = Some((frontier.0, frontier.1, cut));
         if committed_cancellation.is_some() {
             state.graph_cancellation_committed = true;
@@ -3927,6 +3977,316 @@ mod tests {
         assert_eq!(state.graph_cancellation, Some(reason));
         assert!(state.graph_cancellation_committed);
         assert!(!state.graph_cancellation_claimed);
+    }
+
+    /// Terminal language execution does not discharge active committed accounting at shutdown.
+    #[test]
+    fn recovered_resource_accounting_remains_a_shutdown_obligation() {
+        use gantry_ir::generated::{OperationSiteKind, RecoveryClass};
+        use gantry_ir::{
+            CanonicalSignature, Completion, EffectState, ExecutableAction, ExecutableOperation,
+            ExternalOutcome, LivenessRoot, OperationKind, OwnerGeneration, ResourceCarrier,
+            ResourceLedger, ResourceLifetimeState, ResourceState,
+        };
+        for lifetime in [
+            ResourceLifetimeState::Active,
+            ResourceLifetimeState::Finishing,
+            ResourceLifetimeState::Finished,
+        ] {
+            let execution = fresh(IdentityKind::Execution, 31);
+            let task = root_task_identity(execution);
+            let session = fresh(IdentityKind::Session, 32);
+            let path =
+                CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+            let action = CanonicalPath::new("crate::resource")
+                .unwrap_or_else(|error| panic!("action: {error}"));
+            let program = Arc::new(
+                MachineProgram::new(vec![Workflow {
+                    path: path.clone(),
+                    parameters: vec![],
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: StructuralPosition::new(vec![0])
+                                .unwrap_or_else(|error| panic!("site: {error}")),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::OperationCall {
+                                operation: ExecutableOperation {
+                                    kind: OperationSiteKind::Action,
+                                    section20_kind: Some(OperationKind::LiveResource),
+                                    result_type: TypeDescriptor::UNIT,
+                                    action: Some(ExecutableAction {
+                                        path: action.clone(),
+                                        signature: CanonicalSignature::action(
+                                            RecoveryClass::Idempotent,
+                                            &action,
+                                            &[],
+                                            &TypeDescriptor::UNIT,
+                                        ),
+                                        recovery: RecoveryClass::Idempotent,
+                                        parameters: vec![],
+                                    }),
+                                    template_segments: vec![],
+                                    interpolation_types: vec![],
+                                    named_input_names: vec![],
+                                    named_input_types: vec![],
+                                    retry_limit: None,
+                                    session_mode: None,
+                                    attempted: false,
+                                },
+                                operands: 0,
+                            },
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site: {error}")),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                }])
+                .unwrap_or_else(|error| panic!("program: {error:?}")),
+            );
+            let mut machine = Machine::new_with_context(
+                Arc::clone(&program),
+                &path,
+                vec![],
+                execution,
+                MachineLimits::new(32, 4, 4, 8, 16, DEFAULT_VALUE_LIMITS)
+                    .unwrap_or_else(|| panic!("limits")),
+                None,
+                Some(session),
+            )
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+            let sessions = gantry_runtime::LogicalSessionRegistryV1::new(
+                execution,
+                session,
+                SessionCreationModeV1::GantryRoot,
+                CanonicalTranscriptV1::empty(),
+            )
+            .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+            let logical = DurableLogicalEvidenceV3::new_with_sessions(
+                execution,
+                task,
+                DurableCommitCutV1::Checkpoint,
+                None,
+                &machine,
+                Some(sessions.checkpoint()),
+            )
+            .unwrap_or_else(|error| panic!("start state: {error:?}"));
+            let start = DurableExecutionStartV3::new(
+                execution,
+                task,
+                &program,
+                Arc::<[u8]>::from(&b"{}"[..]),
+                logical,
+            )
+            .unwrap_or_else(|error| panic!("start: {error:?}"));
+            let tasks = ConcurrentTaskStateV1::new(execution, task, 8)
+                .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+            let accounting = ExecutionCoordinator::new_with_budget_and_accounting_limits(
+                tasks,
+                sessions,
+                machine.execution_budget(),
+                2,
+                3,
+                4,
+            )
+            .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+            assert!(matches!(
+                machine.step(),
+                gantry_runtime::MachineStep::Transition(
+                    gantry_runtime::MachineLabel::OperationPrepared(_)
+                )
+            ));
+            let subject = machine
+                .pending_resource_subject()
+                .unwrap_or_else(|| panic!("subject"));
+            let owner = OwnerGeneration::new(4);
+            let record =
+                ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+                    .unwrap_or_else(|error| panic!("record: {error:?}"));
+            accounting
+                .admit_resource_with_issuing_evidence(
+                    &machine,
+                    ResourceCarrier::ReconstructionRecord,
+                    record.durable_record(),
+                    65_536,
+                )
+                .unwrap_or_else(|error| panic!("admit: {error:?}"));
+            accounting
+                .settle_resource_containment(
+                    &subject,
+                    owner,
+                    Completion::observed(ExternalOutcome::Accepted, EffectState::NotStarted),
+                )
+                .unwrap_or_else(|error| panic!("containment: {error:?}"));
+            let operation = machine
+                .checkpoint()
+                .pending_operation()
+                .unwrap_or_else(|| panic!("operation"))
+                .identity;
+            machine
+                .fail_operation(
+                    operation,
+                    gantry_core::portable::RuntimeErrorCategory::ExecutorFailure,
+                )
+                .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+            if lifetime != ResourceLifetimeState::Active {
+                accounting
+                    .begin_resource_finish(&subject, owner)
+                    .unwrap_or_else(|error| panic!("finish: {error:?}"));
+            }
+            if lifetime == ResourceLifetimeState::Finished {
+                accounting
+                    .complete_resource_finalization(&subject, owner, 20)
+                    .unwrap_or_else(|error| panic!("finalization: {error:?}"));
+            }
+            let checkpoint = || {
+                accounting
+                    .capture_checkpoint(&machine, &BTreeMap::new())
+                    .unwrap_or_else(|error| panic!("capture: {error:?}"))
+            };
+            let mut graph = vec![
+                ConcurrentDurableEvidenceV4::new(
+                    DurableCommitCutV1::Checkpoint,
+                    task,
+                    checkpoint(),
+                )
+                .unwrap_or_else(|error| panic!("initial: {error:?}")),
+            ];
+            accounting
+                .settle_task(
+                    task,
+                    machine
+                        .outcome()
+                        .cloned()
+                        .unwrap_or_else(|| panic!("outcome")),
+                )
+                .unwrap_or_else(|error| panic!("task settlement: {error:?}"));
+            graph.push(
+                ConcurrentDurableEvidenceV4::new(
+                    DurableCommitCutV1::TaskSettlement,
+                    task,
+                    checkpoint(),
+                )
+                .unwrap_or_else(|error| panic!("task cut: {error:?}")),
+            );
+            accounting
+                .complete_foreground()
+                .unwrap_or_else(|error| panic!("foreground: {error:?}"));
+            graph.push(
+                ConcurrentDurableEvidenceV4::new(
+                    DurableCommitCutV1::ForegroundCompletion,
+                    task,
+                    checkpoint(),
+                )
+                .unwrap_or_else(|error| panic!("foreground cut: {error:?}")),
+            );
+            accounting
+                .complete_terminal()
+                .unwrap_or_else(|error| panic!("terminal: {error:?}"));
+            graph.push(
+                ConcurrentDurableEvidenceV4::new(
+                    DurableCommitCutV1::TerminalCompletion,
+                    task,
+                    checkpoint(),
+                )
+                .unwrap_or_else(|error| panic!("terminal cut: {error:?}")),
+            );
+            let journal = JournalId::new(format!("resource-shutdown-{}", lifetime.wire_name()))
+                .unwrap_or_else(|error| panic!("journal: {error:?}"));
+            let mut evidence = vec![envelope(
+                &journal,
+                1,
+                ProtocolIdentity::from_storage_material([51; 32]),
+                "gantry.execution-start/v3",
+                start.canonical_body(),
+                &[],
+            )];
+            for (index, cut) in graph.into_iter().enumerate() {
+                let previous = evidence
+                    .last()
+                    .unwrap_or_else(|| panic!("predecessor"))
+                    .evidence_id;
+                evidence.push(envelope(
+                    &journal,
+                    index as u64 + 2,
+                    ProtocolIdentity::from_storage_material([52 + index as u8; 32]),
+                    CONCURRENT_DURABLE_EVIDENCE_KIND_V4,
+                    cut.canonical_body(),
+                    &[previous],
+                ));
+            }
+            let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
+                journal_id: journal.clone(),
+                evidence: Arc::from(evidence),
+                committed_through: 5,
+            });
+            let recovered = recover_concurrent_authoritative_prefix(program, &prefix)
+                .unwrap_or_else(|error| panic!("resource recovery: {error:?}"));
+            let expected_records = recovered
+                .execution()
+                .scheduler()
+                .resource_records()
+                .iter()
+                .map(|record| record.record().clone())
+                .collect::<Vec<_>>();
+            let lifecycle = InterpreterLifecycle::new(&configuration());
+            let mut admission = lifecycle
+                .admit(AdmissionKind::NewWork)
+                .unwrap_or_else(|error| panic!("admission: {error:?}"));
+            let handle = admission
+                .accept_execution(execution)
+                .unwrap_or_else(|error| panic!("accept: {error:?}"));
+            let owner = DurableLifecycleCoordinator::new(Arc::new(InMemoryJournalStore::new()))
+                .own_recovered_concurrent_start(
+                    journal,
+                    JournalOwnershipToken::new("owner")
+                        .unwrap_or_else(|error| panic!("token: {error:?}")),
+                    handle.clone(),
+                    start,
+                    recovered,
+                    SinkPlan::default(),
+                )
+                .unwrap_or_else(|error| panic!("owner: {error:?}"));
+            let before = owner.observation();
+            assert_eq!(
+                lock_state(&owner.state).graph_resource_records,
+                expected_records
+            );
+            let unsettled = lifetime != ResourceLifetimeState::Finished;
+            assert_eq!(owner.record_shutdown_resource_obligations(), Ok(unsettled));
+            assert_eq!(owner.observation(), before);
+            assert_eq!(
+                lock_state(&owner.state).graph_resource_records,
+                expected_records
+            );
+            assert_eq!(
+                handle
+                    .snapshot()
+                    .unwrap_or_else(|error| panic!("snapshot: {error:?}"))
+                    .resource_cleanup_failure,
+                unsettled.then_some(
+                    gantry_runtime::ExecutionResourceCleanupFailure::UnsettledAccounting
+                )
+            );
+            assert_eq!(owner.record_shutdown_resource_obligations(), Ok(unsettled));
+            let shutdown = lifecycle
+                .begin_shutdown(None, None)
+                .unwrap_or_else(|error| panic!("shutdown: {error:?}"));
+            let report = shutdown
+                .coordinator
+                .unwrap_or_else(|| panic!("shutdown coordinator"))
+                .complete(true, FinalShutdownEventSettlement::Settled, Arc::from([]))
+                .unwrap_or_else(|error| panic!("report: {error:?}"));
+            assert_eq!(report.orderly, !unsettled);
+            assert_eq!(
+                report.resource_cleanup_failures.len(),
+                usize::from(unsettled)
+            );
+        }
     }
 
     fn graph_evidence(

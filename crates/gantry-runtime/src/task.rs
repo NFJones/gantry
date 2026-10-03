@@ -2225,6 +2225,13 @@ impl ConcurrentSchedulerV1 {
         self.retained_resource_limit
     }
 
+    /// Returns validated logical accounting retained by durable recovery, never physical handles.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub fn resource_records(&self) -> &[crate::RecoveredResourceRecord] {
+        &self.resource_records
+    }
+
     /// Records one child before an executor submission is attempted.
     pub fn create_child(
         &mut self,

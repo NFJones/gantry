@@ -15476,6 +15476,12 @@ An unknown predecessor image MUST NOT be inferred empty from a record-free succe
 graph writes require a validated predecessor image even when the proposed set is empty.
 Machine-only extraction MUST refuse rather than discard records;
 all recovery owners and replay captures MUST retain them. Record-free v4–v7 bytes remain unchanged.
+Durable lifecycle owners MUST retain the committed accounting image independently of graph-driver
+lifetime. Shutdown MUST report active or finishing committed accounts as `UnsettledAccounting`,
+including after terminal language publication, and MUST NOT report orderly resource cleanup merely
+because journal ownership was released. Observation MUST preserve the first cleanup failure,
+fixed language outcomes, accounting and journal evidence; it grants no implicit settlement or
+physical cleanup authority. Uncommitted local accounting drift MUST NOT replace this image.
 Sequential committed-root installation MUST likewise refuse `ResourceStateUnsupported` before
 changing task, session, budget, event or retained-root projections when resource state would be
 omitted. This refusal does not undo a previously committed journal cut or claim its completeness.

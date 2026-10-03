@@ -12510,6 +12510,9 @@ impl Interpreter {
                 let mut retained_owner_releases = Vec::new();
                 #[cfg(feature = "durable")]
                 for owner in shutdown_owner.durable_executions.all_owned() {
+                    orderly &= owner
+                        .record_shutdown_resource_obligations()
+                        .is_ok_and(|unsettled| !unsettled);
                     let execution_id = owner.execution_id();
                     let mut release =
                         Box::pin(async move { owner.release_owner_for_shutdown().await });

@@ -1250,6 +1250,24 @@ impl ExecutionCoordinator {
             .and_then(crate::ResourceRegistry::adapter_identity_limit)
     }
 
+    /// Copies the committed graph accounting image, never process-local accounting drift.
+    ///
+    /// Absence means no graph resource baseline was committed or installed by recovery.
+    /// This inspection neither settles resources nor reconstructs physical ownership.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[must_use]
+    pub fn committed_resource_records(&self) -> Option<Vec<gantry_ir::DurableResourceRecord>> {
+        lock(&self.inner.state)
+            .durable_resource_baseline
+            .as_ref()
+            .map(|records| {
+                records
+                    .iter()
+                    .map(|record| record.record().clone())
+                    .collect()
+            })
+    }
+
     /// Reports whether active or finishing accounting still requires semantic settlement.
     ///
     /// This obligation is independent of physical slot presence and does not release quota.

@@ -232,6 +232,11 @@ that its unknown predecessor had no resources. Staged owners supply the validate
 Machine-only extraction refuses; scheduler/driver recovery and replay
 capture retain the records. Record-free legacy bytes remain unchanged. This reconstructs logical
 accounting, not physical handles, adapters or accepted work, and does not qualify publication.
+Durable lifecycle owners also retain the committed accounting image after graph drivers finish.
+Shutdown records `UnsettledAccounting` for active or finishing committed accounts, including
+terminal executions, without settling resources or rewriting fixed outcomes. Journal-owner release
+does not establish resource cleanup. First cleanup failures remain retained; local uncommitted
+accounting drift cannot replace the committed image used by this inspection.
 
 `attach_host_value` optionally attaches one typed process-local value to an existing active/open
 account without moving or duplicating accounting and without changing quotas. The embedding caller
