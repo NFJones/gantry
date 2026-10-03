@@ -362,6 +362,130 @@ fn durable_resource_handoff_preserves_exact_graph_and_task_eligibility() {
             prefix_before
         );
     }
+    // Losing a receipt after backing commitment cannot roll back cleanup ownership.
+    let lost_storage = Arc::new(InMemoryJournalStore::new());
+    let lost_journal = JournalId::new("resource-handoff-lost-response")
+        .unwrap_or_else(|error| panic!("lost handoff journal: {error:?}"));
+    let lost_ownership = ready(lost_storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: lost_journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("lost handoff ownership: {error:?}"));
+    let seed_sink = DurableTransitionSink::new(
+        lost_storage.clone(),
+        lost_journal.clone(),
+        lost_ownership.token.clone(),
+    );
+    let mut seed = DurableCommitCoordinatorV1::new(&seed_sink, execution, source, None)
+        .unwrap_or_else(|error| panic!("lost handoff seed: {error:?}"));
+    ready(seed.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, source, previous.clone()))
+        .unwrap_or_else(|error| panic!("lost handoff base: {error:?}"));
+    let lost_prefix = ready(lost_storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: lost_journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("lost handoff predecessor: {error:?}"));
+    let response_sink = DurableTransitionSink::new(
+        Arc::new(LostFinishResponseStore {
+            storage: lost_storage.clone(),
+        }),
+        lost_journal.clone(),
+        lost_ownership.token,
+    );
+    let mut lost_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &response_sink,
+        Arc::clone(&program),
+        &lost_prefix,
+    )
+    .unwrap_or_else(|error| panic!("lost handoff writer: {error:?}"));
+    let admission = previous
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("lost handoff recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("lost handoff admission: {error:?}"));
+    let (lost_owner, mut lost_root, mut lost_children, _) = admission.into_parts();
+    let before_loss = lost_owner.snapshot();
+    let root_before_loss = lost_root.checkpoint();
+    let children_before_loss = lost_children
+        .iter()
+        .map(|(id, machine)| (*id, machine.checkpoint()))
+        .collect::<BTreeMap<_, _>>();
+    let lost_frontier = lost_writer.frontier();
+    let mut lost_stage = lost_owner
+        .stage_graph(&mut lost_root, &mut lost_children)
+        .unwrap_or_else(|error| panic!("lost handoff stage: {error:?}"));
+    lost_stage
+        .stage_resource_task_handoff(
+            &subject,
+            (source, created.task_id),
+            (owner, successor),
+            &[charge],
+        )
+        .unwrap_or_else(|error| panic!("lost handoff candidate: {error:?}"));
+    assert_eq!(
+        ready(lost_stage.commit(
+            &mut lost_writer,
+            DurableCommitCutV1::ResourceOwnerAdvance,
+            created.task_id
+        )),
+        Err(DurableCommitError::Journal(JournalError::new(
+            JournalErrorCode::Internal
+        )))
+    );
+    assert_eq!(lost_writer.frontier(), lost_frontier);
+    assert_eq!(lost_owner.snapshot(), before_loss);
+    assert_eq!(lost_root.checkpoint(), root_before_loss);
+    assert_eq!(
+        lost_children
+            .iter()
+            .map(|(id, machine)| (*id, machine.checkpoint()))
+            .collect::<BTreeMap<_, _>>(),
+        children_before_loss
+    );
+    assert!(lock(&lost_owner.inner.state).durable_publication_reserved);
+    let authoritative = ready(lost_storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: lost_journal,
+    }))
+    .unwrap_or_else(|error| panic!("authoritative handoff prefix: {error:?}"));
+    let recovered =
+        crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &authoritative)
+            .unwrap_or_else(|error| panic!("authoritative handoff replay: {error:?}"));
+    assert_eq!(
+        recovered.latest_sequence(),
+        lost_frontier.unwrap_or_else(|| panic!("frontier")).1 + 1
+    );
+    assert_eq!(
+        recovered.latest_cut(),
+        DurableCommitCutV1::ResourceOwnerAdvance
+    );
+    let recovered_record = &recovered.execution().scheduler().resource_records()[0];
+    assert_eq!(recovered_record.task_owner(), created.task_id);
+    assert_eq!(recovered_record.owner(), successor);
+    assert_eq!(
+        recovered_record.record().quotas()
+            [&(gantry_ir::QuotaOwner::Owner, gantry_ir::QuotaFamily::Bytes)]
+            .used(),
+        2
+    );
+    assert_eq!(recovered_record.subject(), &subject);
+    assert_eq!(
+        recovered_record.issuing_evidence(),
+        previous.resource_records()[0].issuing_evidence()
+    );
+    assert_eq!(
+        recovered_record.containment_evidence(),
+        previous.resource_records()[0].containment_evidence()
+    );
+    let recovered_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &seed_sink,
+        Arc::clone(&program),
+        &authoritative,
+    )
+    .unwrap_or_else(|error| panic!("authoritative handoff writer: {error:?}"));
+    assert_eq!(
+        recovered_writer.frontier(),
+        Some((recovered.latest_evidence_id(), recovered.latest_sequence()))
+    );
     let mut stage = coordinator
         .stage_graph(&mut root, &mut children)
         .unwrap_or_else(|error| panic!("publish stage: {error:?}"));
